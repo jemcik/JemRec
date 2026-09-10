@@ -1,0 +1,25 @@
+#!/bin/bash
+# Everything that can be checked without a phone, before anything leaves here.
+#
+# Install once per clone:   git config core.hooksPath tools/hooks
+# Skip deliberately:        git push --no-verify
+#
+# The same two checks CI runs, so a push that passes here is a push that goes
+# green - the point being to find out in twenty seconds rather than in three
+# minutes and a failed workflow.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-push: tests"
+./gradlew test -q
+
+echo "pre-push: lint"
+./gradlew lint -q
+REPORT=app/build/reports/lint-results-debug.txt
+if [ -f "$REPORT" ] && grep -q "Error:" "$REPORT"; then
+    echo "pre-push: lint reported errors"
+    grep "Error:" "$REPORT" | head -5
+    exit 1
+fi
+
+echo "pre-push: ok"

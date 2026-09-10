@@ -1,0 +1,144 @@
+# Attaches a signed APK to a GitHub Release, whether the release was made by
+# pushing a version tag or by pressing "Create a new release" in the web UI.
+#
+# Releases exist here because workflow ARTIFACTS require a signed-in GitHub
+# account to download, while release assets do not - so this is the one that
+# gives anybody a link they can tap on a phone. There is no Play listing and
+# there will not be one: Play forbade call recorders in 2022.
+#
+# THE KEY IS THE WHOLE POINT. An APK signed by a different certificate cannot
+# install over an earlier one, whatever its version number - so a release built
+# with the runner's throwaway debug key would strand every person who installed
+# it. Four secrets are required, and the job fails loudly rather than falling
+# back to anything:
+#   JEMREC_KEYSTORE_BASE64    the .jks, base64-encoded
+#   JEMREC_KEYSTORE_PASSWORD
+#   JEMREC_KEY_ALIAS
+#   JEMREC_KEY_PASSWORD
+# The keystore itself never enters the repo - see .gitignore, which has refused
+# signing material since before any existed.
+name: release
+
+on:
+  push:
+    # Both styles. The convention here is a bare "0.2", but a "v0.2" that
+    # silently did nothing would be a worse outcome than accepting both.
+    tags: ['v[0-9]*', '[0-9]*']
+  release:
+    types: [published]
+
+# Creating a release from the web UI fires BOTH of the above - it pushes the tag
+# and publishes the release - so two runs can start for the same tag. Queue them
+# instead of cancelling; the publish step is idempotent either way.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      # 36 and its build-tools are for the shell daemon, which every build
+      # compiles from source. See build.yml.
+      - name: Install the SDK the app and the daemon need
+        run: sdkmanager --install "platforms;android-37" "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The version comes from the TAG, not from build.gradle.kts, whose
+      # fallbacks would ship every release as versionCode 1 - and Android
+      # refuses to install an APK whose versionCode is not HIGHER than the
+      # installed one. MAJOR*10000 + MINOR*100 + PATCH keeps it monotonic with
+      # room to spare: 0.1 -> 100, 0.2 -> 200, 1.0 -> 10000.
+      - name: Read the version out of the tag
+        # Explicitly bash: this reads BASH_REMATCH, which zsh does not set, so
+        # the same lines silently derive versionCode 0 there.
+        shell: bash
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+          if [[ ! "$VERSION" =~ ^([0-9]+)\.([0-9]+)(\.([0-9]+))?$ ]]; then
+            echo "::error::Tag '$TAG' is not MAJOR.MINOR[.PATCH], so no versionCode can be derived from it. Tag as 0.2, v0.2, 0.2.1 or v0.2.1."
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          PATCH="${BASH_REMATCH[4]:-0}"
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CODE=$CODE" >> "$GITHUB_ENV"
+          echo "$TAG -> versionName $VERSION, versionCode $CODE"
+
+      # Written to RUNNER_TEMP, not the workspace, so it cannot be picked up by
+      # anything that archives the checkout.
+      - name: Decode the signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.JEMREC_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::JEMREC_KEYSTORE_BASE64 is not set. Releases must be signed with a stable key or they cannot be installed over the previous version. See the header of this workflow."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/jemrec.jks"
+          echo "JEMREC_KEYSTORE=$RUNNER_TEMP/jemrec.jks" >> "$GITHUB_ENV"
+
+      - name: Build the release APK
+        env:
+          JEMREC_KEYSTORE_PASSWORD: ${{ secrets.JEMREC_KEYSTORE_PASSWORD }}
+          JEMREC_KEY_ALIAS: ${{ secrets.JEMREC_KEY_ALIAS }}
+          JEMREC_KEY_PASSWORD: ${{ secrets.JEMREC_KEY_PASSWORD }}
+        run: >
+          ./gradlew assembleRelease
+          -PjemrecVersionName="$VERSION"
+          -PjemrecVersionCode="$CODE"
+
+      # The gate. app/build.gradle.kts deliberately leaves the APK UNSIGNED
+      # rather than falling back to a debug key, and AGP names an unsigned build
+      # app-release-unsigned.apk - so a missing or wrong secret stops the release
+      # here instead of publishing something nobody can upgrade to. The
+      # certificate digest is printed so a change of signing identity is visible
+      # in the log rather than discovered on a phone.
+      - name: Refuse to publish an APK that is not signed
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$APK" ]; then
+            echo "::error::$APK is missing. AGP writes app-release-unsigned.apk when no signing config is attached, so the keystore did not reach the build."
+            ls -la app/build/outputs/apk/release/ || true
+            exit 1
+          fi
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK"
+          echo "APK=$APK" >> "$GITHUB_ENV"
+
+      # Named from VERSION rather than the raw tag, so "0.2" and "v0.2" produce
+      # the same asset name.
+      - name: Name it after the version
+        run: |
+          mkdir -p dist
+          cp "$APK" "dist/jemrec-${VERSION}.apk"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          # The release may already exist - the normal case when it was made
+          # with the web UI's "Create a new release" button - which is why this
+          # creates only when missing rather than unconditionally.
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            --notes "Requires Android 12 (API 31) or newer. Signed with the project release key, so it installs over any earlier release of the same lineage."
+          gh release upload "$TAG" dist/*.apk --clobber

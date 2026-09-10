@@ -1,0 +1,66 @@
+# Everything the pre-push hook checks, plus the APK, on every branch and PR.
+#
+# THE SDK LIST IS LONGER THAN A NORMAL ANDROID PROJECT'S, and the extra entries
+# are load-bearing. The shell-side capture daemon is not a Gradle module: it is
+# compiled by shellserver/build.sh against the platform the DEVICE runs, with
+# its @hide framework internals intact, and dexed with d8 by hand. Gradle runs
+# that script as part of preBuild, so a runner without android-36 and
+# build-tools 36.0.0 fails before the app is compiled at all - not at the end,
+# where it would be obvious.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      # compileSdk 37 for the app; 36 and its build-tools for the daemon.
+      - name: Install the SDK the app and the daemon need
+        run: sdkmanager --install "platforms;android-37" "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Tests
+        run: ./gradlew test
+
+      - name: Lint
+        run: ./gradlew lint
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: jemrec-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload reports when something fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: app/build/reports/
+          if-no-files-found: ignore

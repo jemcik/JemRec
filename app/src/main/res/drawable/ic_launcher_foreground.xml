@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A waveform whose middle bar is the record button.
+
+  Two ideas fused into one shape rather than set beside each other: the red
+  capsule is a bar of the waveform AND the record mark, which is what a call
+  recorder is. Symmetrical, so it sits square inside a circular launcher mask.
+
+  NOT A MICROPHONE, deliberately. This app holds no microphone permission and
+  never opens an audio device - the shell-side process does the capturing - and
+  an icon promising one would misrepresent it, on the one kind of app where
+  that matters.
+
+  GEOMETRY. Adaptive icons are 108dp with only the central 66dp circle
+  guaranteed to survive the launcher's mask, so everything here is measured
+  against a centre of 54,54. The bars are mirrored exactly - 24 and 76, 36 and
+  64 - with equal gaps either side of the capsule. The first draft was not:
+  five units of gap on one side and one on the other, and the whole group two
+  units left of centre, which read as broken without being obviously wrong.
+
+  Furthest point from centre is about 31, inside the 33 the mask guarantees.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#8AB4F8"
+        android:pathData="M24,49a4,4 0 0 1 8,0v10a4,4 0 0 1 -8,0z" />
+    <path
+        android:fillColor="#8AB4F8"
+        android:pathData="M36,40a4,4 0 0 1 8,0v28a4,4 0 0 1 -8,0z" />
+    <path
+        android:fillColor="#8AB4F8"
+        android:pathData="M64,40a4,4 0 0 1 8,0v28a4,4 0 0 1 -8,0z" />
+    <path
+        android:fillColor="#8AB4F8"
+        android:pathData="M76,49a4,4 0 0 1 8,0v10a4,4 0 0 1 -8,0z" />
+
+    <path
+        android:fillColor="#E8564B"
+        android:pathData="M49,32a5,5 0 0 1 10,0v44a5,5 0 0 1 -10,0z" />
+</vector>

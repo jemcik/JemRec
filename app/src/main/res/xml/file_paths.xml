@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!--
+      Only the recordings directory is shared, and only as long as a grant
+      lasts. Recordings live in the app's own external files dir, which no
+      other app may read - so playing one in a music player needs a content
+      URI handed out deliberately, per file, rather than loosening storage.
+    -->
+    <external-files-path name="recordings" path="recordings/" />
+    <!--
+      Throwaway .m4a copies made only at the moment of sharing, so a recording
+      plays in Apple's stock apps (which will not open the Ogg it is kept as).
+      Same app-private root as the recordings, handed out per file by the same
+      per-grant content URI; swept when stale.
+    -->
+    <external-files-path name="shares" path="shares/" />
+</paths>

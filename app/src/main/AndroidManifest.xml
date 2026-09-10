@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      The whole permission list is below, and it is worth noticing what is NOT
+      in it. A call recorder would normally hold RECORD_AUDIO; this one does
+      not, because it never records anything. The capture happens in a
+      shell-privileged process on the other end of a loopback socket, and this
+      app only moves the bytes it sends into a file.
+
+      INTERNET is not about the internet. It is required for any TCP socket,
+      including one to 127.0.0.1, which is the only address this app connects to.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      Breaks the post-reboot deadlock, and cannot be obtained by deception.
+
+      Measured: a reboot resets adb_wifi_enabled to 0. The app needs ADB to run
+      shell commands, ADB needs Wireless debugging, and turning Wireless
+      debugging back on is itself a secure setting. Without this the user has to
+      re-toggle it by hand after every single reboot.
+
+      Its protection level is signature|privileged|DEVELOPMENT, and the
+      development flag is the whole point: `pm grant` can give it to an app that
+      declares it, but no runtime permission dialog can, so no user can be
+      talked into granting it. It is taken once, over the ADB session that
+      already exists during setup. Declared but ungranted it does nothing.
+    -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!--
+      Permissions this app does not want and never asked for. Removed, not
+      merely unused.
+
+      The manifest merger adds them by itself. libadb-android declares no
+      targetSdkVersion, so the merger applies a compatibility rule meant for
+      pre-2009 apps and grants three things on its behalf:
+
+        WRITE_EXTERNAL_STORAGE
+          IMPLIED ... reason: io.github.muntashirakon.adb has a targetSdkVersion < 4
+        READ_EXTERNAL_STORAGE
+          IMPLIED ... reason: io.github.muntashirakon.adb requested WRITE_EXTERNAL_STORAGE
+        READ_PHONE_STATE
+          IMPLIED ... reason: io.github.muntashirakon.adb has a targetSdkVersion < 4
+
+      None is wanted. Writing needs no permission at all - MediaStore lets an
+      app create its own media - and blanket read access to every file on the
+      phone is exactly what a call recorder should not be asking for. Phone
+      state is read by the shell-side daemon, never by this app; the app used
+      to declare this one itself, for a call listener it no longer has, and
+      when that declaration went the merger quietly put it back. Every user
+      was asked to allow it either way.
+    -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"
+        tools:node="remove" />
+
+    <!--
+      READ_MEDIA_AUDIO: to show recordings THIS APP made, after a reinstall.
+
+      Narrower than the blanket permission removed just above, and asked for a
+      reason that can be written in one sentence next to the button.
+
+      MediaStore hands an app the media it owns with no permission at all,
+      which is why listing needed nothing here before. Ownership does not
+      survive the app, though. Uninstall JemRec and every recording it made is
+      left with owner_package_name = NULL, so the reinstalled app queries its
+      own folder and is told it is empty - while the files sit untouched in
+      Recordings/JemRec, playable by every other audio app on the phone.
+
+      Measured rather than assumed: seven recordings on disk, seven rows in
+      MediaStore, all of them owner NULL, and a list saying "No recordings yet".
+
+      Losing sight of someone's calls because they reinstalled an app is worse
+      than this permission. So it is asked for where the loss actually shows -
+      in the empty list, with the reason beside it - and refusing costs nothing
+      but the older recordings: JemRec still records, and still sees everything
+      it makes from here on.
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <!--
+      NOT here, deliberately: RECORD_AUDIO, and the microphone
+      foreground-service type that would require it.
+
+      This app never opens an audio device. The capture happens in a shell-UID
+      process on the other end of a loopback socket, and this process only moves
+      bytes from that socket into a file. Declaring a microphone permission
+      would mean asking the user for access this code has no use for, to
+      describe work it does not do - and it is the sort of over-declaration that
+      makes a recorder look like something worse than it is.
+
+      SPECIAL_USE is the honest type for "keep me alive while I drain a socket".
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- A reboot kills the shell-side recorder and turns Wireless debugging
+         off. BootReceiver arms the keep-alive job that brings it back once
+         there is Wi-Fi to do it over. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      Optional, and asked for in the app rather than assumed here.
+
+      The only way to know who a call was with. Nothing else the app holds can
+      answer it - the daemon's call watch reports that a call started, and
+      which way, and nothing more, by design - so without this the list can
+      say when a call happened and not with whom.
+
+      It is a dangerous permission on an app that records phone calls, which is
+      worth a moment's thought from the user, so nothing depends on it: the app
+      is fully functional ungranted, a banner offers it once, and Settings keeps
+      the offer open. READ_CONTACTS goes with it, asked for together: the log
+      caches a name, but the photo, the star and a name the log has not cached
+      live in the contacts provider (see CallLogLookup).
+    -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!--
+      Lets the mid-call prompt survive longer than five seconds.
+
+      NOT auto-granted. From Android 14 this is given automatically only to
+      apps that declare themselves calling or alarm apps, which this is not, so
+      the user grants it in Settings or the prompt simply behaves as an ordinary
+      notification. Everything still works without it - the prompt is in the
+      shade either way - so nothing is gated on it and nothing nags.
+    -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.JemRec">
+
+        <!--
+          The mid-call prompt's full-screen half. Opens for real only on a
+          locked screen; the rest of the time the system demotes it to a
+          banner, and that demotion is what makes the banner stay up for about
+          a minute instead of five seconds. See RecordPromptActivity.
+
+          excludeFromRecents and noHistory because it is a question, not a
+          place: it should never be something the user swipes back to later and
+          answers about a call that ended an hour ago.
+        -->
+        <activity
+            android:name=".RecordPromptActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTop"
+            android:showOnLockScreen="true" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Not exported: BOOT_COMPLETED is a protected broadcast that only the
+          system may send, so exporting would gain nothing.
+
+          directBootAware is deliberately FALSE. LOCKED_BOOT_COMPLETED arrives
+          before first unlock while /data is still encrypted, and everything
+          this app needs - its ADB identity above all - lives there.
+        -->
+        <!--
+          Woken by the system, through our own PendingIntent, when Wi-Fi
+          returns - to revive the recorder at once instead of on the next
+          keep-alive period. Not exported: it is only ever fired by the
+          PendingIntent this app registered (see NetworkRevive), which needs no
+          exported flag.
+        -->
+        <receiver
+            android:name=".capture.NetworkReviveReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".capture.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+          Exported so the shell-side daemon can wake it with
+          `am start-foreground-service` when a call begins. That is the route
+          that lets the app be dormant between calls instead of holding a
+          permanent foreground service: iAware drops the PHONE_STATE broadcast
+          to a dead process, but a direct service start from shell is not a
+          broadcast and nothing filters it.
+
+          Exported is not open. Every intent from outside must carry a token
+          the app minted and handed to the daemon in its environment, and the
+          service does nothing without it. Its own internal actions are
+          unchanged.
+        -->
+        <service
+            android:name=".capture.CallMonitorService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows that a call is being recorded and, when it
+                    ends, collects the finished recording from a shell-privileged
+                    capture process over a loopback socket. The app holds no
+                    audio permission and opens no audio device itself." />
+        </service>
+
+        <!--
+          Receives the pairing code typed into the notification, pairs, then
+          WAITS for the phone to become reachable and finishes setup.
+
+          A foreground service, not a receiver, because on this phone the two
+          switches the connect depends on do not reliably hold after being
+          flipped in Settings - so this watches them and connects the moment
+          both are on, under the same notification, rather than taking one shot
+          and making the user pair again. shortService: bounded, must not be
+          killed part-way, and needs no permission beyond FOREGROUND_SERVICE.
+          The notification action points straight at it, as Shizuku's does.
+
+          Not exported: it is reached only through this app's own PendingIntent,
+          and a service that pairs an ADB session should not be addressable by
+          anything else.
+
+          This replaced a floating overlay, which cannot work. Android hides
+          non-system overlays over the Settings app - correct anti-tapjacking
+          behaviour - so the one screen the box needed to cover is the one screen
+          it may not. The notification shade is a system surface and has no such
+          problem, and it needs no permission beyond POST_NOTIFICATIONS.
+        -->
+        <service
+            android:name=".ui.PairingService"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
+
+        <!--
+          Hands out a read-only URI for ONE recording at a time, so tapping a
+          call opens it in a music player. Recordings live in app-private
+          storage that nothing else may read; this is how a file is shared
+          deliberately instead of by loosening that.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.recordings"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+
+        <!--
+          Cancels the system "Wireless debugging connected" notification, which
+          the recorder cannot avoid keeping on. Bound by the system once granted
+          notification access - given over ADB during setup, not through the
+          Settings switch a side-loaded app cannot reach. See the service class.
+        -->
+        <service
+            android:name=".capture.DebugNotificationCleaner"
+            android:exported="false"
+            android:label="JemRec"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JemRec · A call recorder for unrooted Android.</title>
+<meta name="description" content="A call recorder for unrooted Android.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="jemrec.css">
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="index.html"><img src="icon.png" alt="" width="34" height="34">JemRec</a>
+  <nav><a href="index.html" aria-current="page">Home</a><a href="privacy-policy.html">Privacy</a><a href="https://github.com/jemcik/JemRec">GitHub</a></nav>
+</header>
+<main>
+
+  <h1>A call recorder for unrooted Android.</h1>
+  <p class="lead">One APK. No root, no Shizuku, no companion app, and no computer
+     &mdash; the phone pairs with its own Wireless debugging and sets itself up.</p>
+
+  <div class="cta">
+    <a class="btn" href="https://github.com/jemcik/JemRec/releases">Download the APK</a>
+    <a class="btn ghost" href="https://github.com/jemcik/JemRec">Source on GitHub</a>
+  </div>
+  <p class="muted">Android 12 or newer. Not on Google Play, and never will be.</p>
+
+  <div class="shots">
+    <img src="screenshots/home.png" alt="The recordings list" loading="lazy">
+    <img src="screenshots/home-dark.png" alt="The recordings list, dark" loading="lazy">
+    <img src="screenshots/settings.png" alt="Settings" loading="lazy">
+    <img src="screenshots/selftest-dark.png" alt="The self-test" loading="lazy">
+  </div>
+  <p class="muted">The people in those screenshots do not exist: a screenshot of a
+     call recorder is a screenshot of someone&rsquo;s calls, so the list is filled
+     with invented ones. Everything above the list is real.</p>
+
+  <h2>How it works</h2>
+
+  <p>Android&rsquo;s <code>voice-call</code> audio source carries both sides of a
+     call, and reading it needs permissions no ordinary app can hold &mdash; but
+     the shell user, the one an ADB session runs as, holds them. Getting shell
+     privilege normally means a computer, or root, or a second app you keep
+     alive. JemRec needs none of them, because the phone can be its own
+     computer.</p>
+
+  <h3>The phone is both ADB host and ADB device</h3>
+  <p>The app embeds an ADB client and pairs, over <code>127.0.0.1</code>, with
+     the phone&rsquo;s own Wireless debugging &mdash; the same six-digit pairing a
+     laptop does, with both ends on the same handset. Nothing leaves the phone.</p>
+
+  <h3>ADB is a bootstrap, not a transport</h3>
+  <p>That session lasts seconds. In it the app grants itself one settings
+     permission and launches a small daemon from a jar it carries inside the APK,
+     then closes the session. A process started from an ADB shell outlives the
+     connection, which is the whole trick: with Wi-Fi off there is no ADB at all,
+     so anything that needed it when a call arrived would simply not record.</p>
+
+  <h3>The daemon records; the app collects</h3>
+  <p>The daemon watches the call state and writes the call to a file. The app is
+     never on the audio path. That split was forced by measurement: when the app
+     handled live audio, the phone&rsquo;s process manager froze it while the
+     dialer was in front and a 77-second call arrived as 14. Afterwards the app
+     fetches the finished file at whatever pace the system allows, and a freeze
+     there costs a slower copy rather than a lost second.</p>
+
+  <h3>The socket is authenticated both ways</h3>
+  <p>The daemon listens on loopback, which every process on the phone shares, so
+     each connection proves itself with an HMAC exchange over a token that never
+     crosses the socket. The daemon proves itself first &mdash; anything can bind
+     that port while the daemon is down, and a scheme that sent the token as a
+     password would hand it over.</p>
+
+  <h3>It keeps itself alive</h3>
+  <p>Losing Wi-Fi restarts the ADB daemon and kills what it spawned, so the
+     recorder keeps one debugging switch on to survive it, and minds that switch
+     itself. When it does die &mdash; a reboot, or the system reclaiming it &mdash;
+     a scheduled job and a Wi-Fi watcher rebuild it the moment there is a network
+     to do it over. Recording needs no network; only rebuilding does.</p>
+
+  <h2>What it asks for, and what it does not</h2>
+  <p>No microphone permission. The app never opens an audio device &mdash; the
+     shell-side process does the capturing &mdash; and a call recorder that asks
+     for the microphone anyway is asking for something it does not use. Reading
+     your call log and contacts is optional, offered once, and only labels a
+     recording with who the call was with.</p>
+
+  <div class="note">
+    <p><strong>Recording calls is your responsibility.</strong> Consent law
+       differs by country and sometimes by state: one party, all parties, or a
+       spoken notice. This app records what you tell it to and warns nobody on
+       your behalf.</p>
+  </div>
+
+  <h2>Will it work on your phone?</h2>
+  <p>One thing cannot be worked around: whether your phone&rsquo;s audio hardware
+     hands over the call at all. Some give both sides, some give one, some give
+     silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
+     <strong>Self-test</strong> &mdash; by opening a real capture down the same
+     path a call takes and telling you what came out.</p>
+  <p class="muted">Developed and verified on an Honor Magic&nbsp;8 Pro
+     (MagicOS&nbsp;10, Android&nbsp;16).</p>
+
+</main>
+<footer>
+  <p>JemRec is free software under the Apache&nbsp;2.0 licence.
+     <a href="https://github.com/jemcik/JemRec">Source on GitHub</a>.</p>
+</footer>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Compose draws everything, so the platform theme only has to stay out of
+      the way: no action bar, and a DayNight parent so the window background
+      behind the Compose surface matches the system setting during startup.
+      DeviceDefault.DayNight exists from API 29 and minSdk here is 31.
+    -->
+    <style name="Theme.JemRec" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

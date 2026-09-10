@@ -1,0 +1,47 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+/app/build/
+
+# Signing material has never been in this repo and never will be. CI decodes a
+# base64 secret to a file and points JEMREC_KEYSTORE at it.
+*.jks
+*.keystore
+keystore.properties
+
+# shellprobe build output - the source and the result are what matter
+/shellprobe/build/
+/shellprobe/*.jar
+
+# shellserver build output - source and PATCHES.md are what matter
+/shellserver/build/
+/shellserver/*.jar
+
+# NEVER commit captured audio. docs/evidence holds recordings of real phone
+# calls with real people in them; this repo is meant to be publishable, and a
+# private conversation is not evidence anyone else needs. The MEASUREMENTS from
+# a capture are checked in as text instead.
+/docs/evidence/*.wav
+/docs/evidence/*.opus
+/docs/evidence/*.ogg
+/docs/evidence/*.pcm
+
+# Generated: copied from shellserver by the copyShellServer Gradle task
+/app/src/main/assets/jemrec-capture.jar
+
+# Release output. The APK belongs on a Releases page, not in a git history.
+*.apk
+*.aab
+
+# Python bytecode from tools/
+__pycache__/
+*.pyc
+
+# Claude Code local state
+.claude/

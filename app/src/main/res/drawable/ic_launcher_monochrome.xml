@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The themed-icon layer, for launchers that recolour every icon to match the
+  wallpaper.
+
+  The same shapes in one colour, because that is all a monochrome layer can be:
+  the system throws the colours away and tints the alpha. Kept as its own file
+  rather than pointing the monochrome slot at the foreground, so that changing
+  the red or the blue there cannot quietly change what a themed icon looks
+  like.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#000000"
+        android:pathData="M24,49a4,4 0 0 1 8,0v10a4,4 0 0 1 -8,0z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M36,40a4,4 0 0 1 8,0v28a4,4 0 0 1 -8,0z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M64,40a4,4 0 0 1 8,0v28a4,4 0 0 1 -8,0z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M76,49a4,4 0 0 1 8,0v10a4,4 0 0 1 -8,0z" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M49,32a5,5 0 0 1 10,0v44a5,5 0 0 1 -10,0z" />
+</vector>
