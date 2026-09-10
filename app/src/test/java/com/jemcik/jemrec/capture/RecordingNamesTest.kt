@@ -25,7 +25,7 @@ class RecordingNamesTest {
     @Test fun aTagInsideAWordIsNotADirection() {
         // One of the two old readers matched "_in" and would have said yes here.
         assertFalse(RecordingStore.isIncoming("jemrec_rec_1_input.dat"))
-        assertFalse(RecordingStore.isIncoming("milestone1.txt"))
+        assertFalse(RecordingStore.isIncoming("not-one-of-ours.txt"))
     }
 
     @Test fun theDaemonNameCarriesTheCallsStartTime() {

@@ -62,7 +62,7 @@ private class JemAdbConnectionManager(context: Context) : AbsAdbConnectionManage
  * and is advertised over mDNS, which needs a live network interface. With Wi-Fi
  * off there is nothing to browse, so the port has to be either remembered or
  * pinned. That is what makes the Wi-Fi-off state a real test rather than a
- * formality, and it is tracked separately - see docs/MILESTONE-1.md.
+ * formality, and it is tracked separately.
  */
 object AdbTransport {
 

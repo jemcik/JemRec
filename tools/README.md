@@ -12,9 +12,7 @@ an artefact checked into this repository.
 | `shoot.py` | Captures `docs/screenshots/` on the phone, in both themes, with the invented calls turned on. |
 | `build_site.py` | Generates `docs/index.html` and `docs/privacy-policy.html`, which GitHub Pages serves. |
 | `pair-now.sh` | Pairs the phone with its own Wireless debugging from a USB shell, for testing setup without tapping through it. |
-| `milestone1.sh` | The milestone-1 transport checks: shell uid over the embedded client, in each network state. |
-| `milestone3.sh` | The milestone-3 capture check: records a clip and reports per-channel energy. |
-| `capture-call.py` | Records a real call over the loopback socket and writes the measurements `docs/evidence/` cites. |
+| `capture-call.py` | Records from the daemon in raw PCM and measures each channel separately, which is how to tell "audio arrived" from "both sides of the call arrived". |
 
 The Python ones need Pillow (`python3 -m pip install pillow`); the shell ones
 need `adb` and a phone attached.

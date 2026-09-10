@@ -15,7 +15,7 @@ import java.io.File
 internal object ResultFile {
 
     private const val TAG = "JemRec"
-    const val NAME = "milestone1.txt"
+    const val NAME = "diagnostics.txt"
 
     fun write(context: Context, text: String) {
         try {

@@ -11,7 +11,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * WHAT IT REPLACED, AND WHY THAT HAD TO GO
  *
- * The old self-test was the milestone-1 acceptance check: it ran `id` over an
+ * The old self-test was the transport's acceptance check: it ran `id` over an
  * ADB shell session and passed only on uid=2000(shell). That was the right
  * question while the transport was the thing being proven, and it stopped being
  * the right question the moment ADB became a bootstrap that closes itself. The

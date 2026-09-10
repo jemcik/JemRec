@@ -23,14 +23,14 @@ keystore.properties
 /shellserver/build/
 /shellserver/*.jar
 
-# NEVER commit captured audio. docs/evidence holds recordings of real phone
-# calls with real people in them; this repo is meant to be publishable, and a
-# private conversation is not evidence anyone else needs. The MEASUREMENTS from
-# a capture are checked in as text instead.
-/docs/evidence/*.wav
-/docs/evidence/*.opus
-/docs/evidence/*.ogg
-/docs/evidence/*.pcm
+# NEVER commit captured audio. Testing a call recorder produces recordings of
+# real phone calls with real people in them, and a private conversation is not
+# evidence anyone else needs. Whatever a capture proves, it proves as a
+# measurement, in words.
+*.wav
+*.opus
+*.ogg
+*.pcm
 
 # Generated: copied from shellserver by the copyShellServer Gradle task
 /app/src/main/assets/jemrec-capture.jar

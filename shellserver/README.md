@@ -44,7 +44,7 @@ uncompressed PCM instead of Opus, for diagnostics.
 It then listens on `127.0.0.1:28472` and stays. Started once, it outlives the
 ADB connection that launched it, which is the entire point: with Wi-Fi off adbd
 tears its listener down and the shell UID cannot pin a fixed port, so there is
-no ADB available at the moment a call arrives. See `docs/MILESTONE-1.md`.
+no ADB available at the moment a call arrives.
 
 TCP on loopback specifically, because SELinux refuses an `untrusted_app`
 connecting to the shell domain's abstract unix socket, and a filesystem socket

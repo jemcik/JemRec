@@ -20,7 +20,7 @@ OK   tcp:127.0.0.1:28471   -> hello over tcp from uid 2000
 SELinux refuses `untrusted_app` connecting to the shell domain's abstract unix
 socket. TCP on loopback is allowed, and keeps working with every radio off.
 
-It is also the rehearsal for milestone 2's toolchain - `javac` against platform
+It is also the rehearsal for the daemon's toolchain - `javac` against platform
 36, then `d8`, then run under `app_process` - on a file small enough that a
 failure is obviously the pipeline and not the code.
 

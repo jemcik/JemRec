@@ -182,8 +182,8 @@ class MainViewModel @JvmOverloads constructor(
      * Prove the recording chain end to end, without ringing anyone.
      *
      * No file is written and no report is saved to disk: the old one wrote a
-     * milestone-1 artefact to external storage, which made sense while there
-     * was a milestone to sign off and is litter now.
+     * report to external storage, which made sense while there was an
+     * acceptance check to sign off and is litter now.
      */
     fun selfTest() = launchAction("self test") {
         val result = SelfTest.run(getApplication())

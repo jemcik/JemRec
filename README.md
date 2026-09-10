@@ -244,14 +244,13 @@ every modification is listed in [shellserver/PATCHES.md](shellserver/PATCHES.md)
 
 ## Docs
 
-The measurements behind the design, kept as they were taken:
-
 | | |
 | --- | --- |
-| [SETUP.md](docs/SETUP.md) | The end-user manual. |
-| [MILESTONE-1.md](docs/MILESTONE-1.md) | The embedded ADB transport, and why ADB cannot be a runtime dependency. |
-| [MILESTONE-4.md](docs/MILESTONE-4.md) | Call detection, and why neither a broadcast receiver nor an `InCallService` works here. |
-| [MILESTONE-5.md](docs/MILESTONE-5.md) | The Ogg muxer, the Opus header, and where recordings are stored. |
-| [MILESTONE-6.md](docs/MILESTONE-6.md) | The setup wizard, and the app granting itself a permission. |
-| [WATCHDOG.md](docs/WATCHDOG.md) | Keeping the daemon alive, and the loopback protocol. |
-| [ADB-NOTES.md](docs/ADB-NOTES.md) | Four undocumented behaviours of the ADB library. |
+| [SETUP.md](docs/SETUP.md) | The end-user manual: the three steps, and what to do when one of them misbehaves. |
+| [ADB-NOTES.md](docs/ADB-NOTES.md) | Four undocumented behaviours of the ADB library, each measured, each of which cost a day. |
+
+Everything else that would have gone in a document is in the code, beside the
+thing it explains: why the timestamps are counted rather than read, why an idle
+call state is not believed the first time, why the daemon polls a setting
+instead of observing it. Each of those comments records the measurement it came
+from, because the reason is the part that stops someone undoing it.

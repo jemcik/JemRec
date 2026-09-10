@@ -66,8 +66,8 @@ import javax.crypto.spec.SecretKeySpec;
  *
  * scrcpy's Server is started per session by an ADB client that has already
  * arranged a socket, and it exits when that session ends. JemRec cannot work
- * that way, and the reason was measured rather than assumed (docs/MILESTONE-1.md):
- * with Wi-Fi off, adbd tears its listener down completely, and the shell UID is
+ * that way, and the reason was measured rather than assumed: with Wi-Fi off,
+ * adbd tears its listener down completely, and the shell UID is
  * not permitted to set service.adb.tcp.port to pin a stable one. So there is no
  * ADB to start anything at the moment a call arrives.
  *
@@ -104,7 +104,7 @@ public final class Main {
     private static final int BIT_RATE = 128_000;
 
     /** Send the codec id, and per-packet pts and length. The app needs the pts
-     *  to feed MediaMuxer in milestone 5. */
+     *  to feed MediaMuxer. */
     private static final boolean SEND_CODEC_META = true;
     private static final boolean SEND_FRAME_META = true;
 
@@ -114,7 +114,7 @@ public final class Main {
      * Send uncompressed PCM instead of Opus. Diagnostics only, selected by
      * passing "raw" as the second argument.
      *
-     * It exists because the question milestone 3 has to answer is not "did
+     * It exists because the question worth answering is not "did
      * audio arrive" but "are BOTH directions of the call present", and that is
      * a claim about the two channels of a stereo stream. Measuring per-channel
      * energy on 16-bit PCM answers it arithmetically; doing the same through an

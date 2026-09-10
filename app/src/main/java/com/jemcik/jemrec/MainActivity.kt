@@ -15,7 +15,7 @@ import com.jemcik.jemrec.ui.theme.JemRecTheme
 
 /**
  * Single activity. It owns the theme decision and nothing else - the whole of
- * milestone 1 is the transport, and an activity that grows logic is an activity
+ * the interesting parts are the transport and the daemon, and an activity that grows logic is an activity
  * that has started keeping state the transport should own.
  */
 class MainActivity : ComponentActivity() {

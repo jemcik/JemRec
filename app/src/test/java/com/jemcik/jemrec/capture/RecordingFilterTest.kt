@@ -29,7 +29,7 @@ class RecordingFilterTest {
         number: String? = null,
         favorite: Boolean = false,
         whenLabel: String = "7 Sep, 16:53",
-        name: String = if (at == null) "milestone1.txt" else RecordingStore.nameFor(Date(at), incoming),
+        name: String = if (at == null) "not-one-of-ours.txt" else RecordingStore.nameFor(Date(at), incoming),
     ) = Recording(
         name = name, uri = uri, whenLabel = whenLabel, incoming = incoming,
         durationLabel = "1:02", sizeLabel = "339 KB",

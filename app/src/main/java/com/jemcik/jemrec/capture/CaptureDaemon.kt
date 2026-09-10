@@ -37,7 +37,7 @@ import javax.crypto.spec.SecretKeySpec
  *
  * What there IS at that moment is a process, because a process spawned from an
  * adb shell outlives the adb connection. Start it once, talk to it over
- * loopback forever. See docs/MILESTONE-1.md.
+ * loopback forever.
  */
 object CaptureDaemon {
 

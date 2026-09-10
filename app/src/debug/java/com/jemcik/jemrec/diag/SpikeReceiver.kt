@@ -20,9 +20,9 @@ import kotlinx.coroutines.launch
 import java.security.SecureRandom
 
 /**
- * Debug-only entry point that makes the milestone-1 checks scriptable from a
- * USB shell, so the three required network states can be tested without anyone
- * tapping through the UI in each one.
+ * Debug-only entry point that makes the transport checks scriptable from a
+ * USB shell, so the three network states that matter can be tested without
+ * anyone tapping through the UI in each one.
  *
  * WHY THERE IS A TOKEN
  *
@@ -128,7 +128,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     }
 
                     // The same check the app's own Self-test button runs.
-                    // It used to be the milestone-1 acceptance check, which
+                    // It used to be the transport's acceptance check, which
                     // asked whether an ADB shell session existed - a question
                     // that became meaningless once the app started closing that
                     // session on purpose the moment the recorder was up.
