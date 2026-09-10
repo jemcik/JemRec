@@ -398,6 +398,35 @@ SETUP = [
           "there. Other phones differ in wording; the shape of the process does "
           "not, and JemRec names the right path for your phone as you go."),
 
+    ("h2", "Installing"),
+    ("p", "Download the APK from the project's **Releases** page and open it. "
+          "Android asks whether to allow installing from whatever you opened it "
+          "with — a browser, or a file manager — and that permission is granted "
+          "per app, not once for the phone."),
+    ("p", "**Play Protect may object, and what it takes differs by phone.** It "
+          "warns about apps it has not seen before, which is every app that is "
+          "not on Google Play, so this is not a judgement about JemRec. Three "
+          "phones, three outcomes:"),
+    ("table", (["Phone", "What happened"], [
+        ["Honor Magic 8 Pro", "Installed with no complaint."],
+        ["Samsung Galaxy S20",
+         "Refused. Turning Play Protect off long enough to install, then back "
+         "on, worked — it is in the Play Store under your profile picture → "
+         "Play Protect → Settings."],
+        ["OnePlus on LineageOS",
+         "Refused when the download was opened from the browser. Opening the "
+         "same file from the **Files** app installed it."],
+    ])),
+    ("p", "If yours refuses, those are the two things to try, in that order: "
+          "open the file from a file manager rather than the browser, and only "
+          "then consider turning Play Protect off for the minute it takes — and "
+          "back on afterwards."),
+    ("p", "Every release is signed with the same key, so each one installs over "
+          "the one before it. If you would rather check what you downloaded than "
+          "trust it, `apksigner verify --print-certs` on the file should report "
+          "SHA-256 `50aeab3630f0198ea3845db51413b1ad29582f78240fa2df6fe55ba8537afdf8`, "
+          "the same digest the release workflow prints in its log on every run."),
+
     ("h2", "Step 1 — Open JemRec and allow notifications"),
     ("ol", [
         "Open **JemRec**.",
@@ -789,7 +818,9 @@ INDEX_BODY = f"""
   </div>
   <p class="muted">Android 12 or newer. Not on Google Play, and never will be.
      Setting it up takes about three minutes and no computer &mdash;
-     <a href="setup.html">here is how</a>.</p>
+     <a href="setup.html">here is how</a>. Play Protect sometimes objects to
+     installing an app it has not seen before;
+     <a href="setup.html#installing">the manual says what to do</a>.</p>
 
   <div class="note info">
     <p><strong>A reboot kills the recorder, and building it again takes a few
@@ -878,8 +909,10 @@ INDEX_BODY = f"""
      silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
      <strong>Self-test</strong> &mdash; by opening a real capture down the same
      path a call takes and telling you what came out.</p>
-  <p class="muted">Developed and verified on an Honor Magic&nbsp;8 Pro
-     (MagicOS&nbsp;10, Android&nbsp;16).</p>
+  <p class="muted">Working on three phones across three very different Android
+     builds: an Honor Magic&nbsp;8 Pro on MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20
+     on One&nbsp;UI, and a OnePlus on LineageOS&nbsp;23. Three is not a
+     compatibility list, which is what the self-test is for.</p>
 """
 
 PRIVACY_BODY = f"""

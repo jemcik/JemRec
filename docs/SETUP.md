@@ -10,6 +10,32 @@ and the screen names are the ones that actually appear there. Other phones
 differ in wording; the shape of the process does not, and JemRec names the
 right path for your phone as you go.
 
+## Installing
+
+Download the APK from the project's **Releases** page and open it. Android asks
+whether to allow installing from whatever you opened it with — a browser, or a
+file manager — and that permission is granted per app, not once for the phone.
+
+**Play Protect may object, and what it takes differs by phone.** It warns about
+apps it has not seen before, which is every app that is not on Google Play, so
+this is not a judgement about JemRec. Three phones, three outcomes:
+
+| Phone | What happened |
+|---|---|
+| Honor Magic 8 Pro | Installed with no complaint. |
+| Samsung Galaxy S20 | Refused. Turning Play Protect off long enough to install, then back on, worked — it is in the Play Store under your profile picture → Play Protect → Settings. |
+| OnePlus on LineageOS | Refused when the download was opened from the browser. Opening the same file from the **Files** app installed it. |
+
+If yours refuses, those are the two things to try, in that order: open the file
+from a file manager rather than the browser, and only then consider turning
+Play Protect off for the minute it takes — and back on afterwards.
+
+Every release is signed with the same key, so each one installs over the one
+before it. If you would rather check what you downloaded than trust it,
+`apksigner verify --print-certs` on the file should report SHA-256
+`50aeab3630f0198ea3845db51413b1ad29582f78240fa2df6fe55ba8537afdf8`, the same
+digest the release workflow prints in its log on every run.
+
 ## Step 1 — Open JemRec and allow notifications
 
 1. Open **JemRec**.

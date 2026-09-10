@@ -38,6 +38,23 @@ manager; that is the sideload prompt, and it is the only way this app is
 distributed. Every release is signed with the project key, so one release
 upgrades the previous one in place.
 
+**Play Protect may get in the way, and what it takes differs by phone.** It
+warns about apps it has not seen before, which is every app that is not on
+Play, so this is not a judgement about JemRec. Three phones, three outcomes:
+
+| Phone | What happened |
+| --- | --- |
+| Honor Magic 8 Pro | Installed with no complaint. |
+| Galaxy S20 | Refused. Turning Play Protect off long enough to install, then back on, worked. It is in the Play Store under your profile picture → Play Protect → Settings. |
+| LineageOS | Refused from the browser. Opening the same file from the **Files** app installed it. Each app that can install needs *Install unknown apps* granted to it separately, and not every one of them is allowed to. |
+
+If you want to check what you downloaded rather than trust it, every release
+is signed with the same certificate and the release workflow prints its digest
+on each run:
+
+    apksigner verify --print-certs jemrec-0.2.apk
+    SHA-256: 50aeab3630f0198ea3845db51413b1ad29582f78240fa2df6fe55ba8537afdf8
+
 **It is not on Google Play and never will be.** Play removed call recorders in
 2022 by forbidding the Accessibility API for recording, and no policy change
 since has re-opened the door. That is a distribution decision, not a technical
@@ -218,10 +235,18 @@ The long version, with what to do when a step misbehaves, is the manual:
   that cannot be worked around, and it varies by manufacturer. Some phones give
   both sides of the call, some give one, some give silence.
 
-Developed and verified on an Honor Magic 8 Pro (BKQ-N49, MagicOS 10, Android
-16). Settings → Diagnostics → **Self-test** answers the question on any phone in
-about a second: it opens a real capture over the same path a call takes and
-tells you whether audio came out of it.
+Working on three, across three very different Android builds:
+
+| Phone | Build |
+| --- | --- |
+| Honor Magic 8 Pro (BKQ-N49) | MagicOS 10, Android 16 — the phone it was developed on |
+| Samsung Galaxy S20 | One UI |
+| OnePlus | LineageOS 23 |
+
+Three is not a compatibility list, and the HAL is the part nobody can promise
+for a phone they have not held. Settings → Diagnostics → **Self-test** answers
+it on yours in about a second: it opens a real capture over the same path a
+call takes and tells you what came out of it.
 
 ## Build
 
