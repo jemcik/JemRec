@@ -9,6 +9,8 @@ for the reason written above the palette.
 Run from anywhere:  python3 tools/build_site.py
 """
 import pathlib
+import re
+import textwrap
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
@@ -368,6 +370,324 @@ VIEWER = """<div class="viewer" hidden tabindex="-1" role="dialog" aria-modal="t
 </div>"""
 
 
+# ---------------------------------------------------------------------------
+# THE SETUP MANUAL, WRITTEN ONCE.
+#
+# It is rendered twice: as docs/setup.html for the site and as docs/SETUP.md for
+# people reading the repository. The two used to be one hand-written file with
+# the site not carrying it at all, and by the time the site wanted it the file
+# had drifted badly from the app - it still asked for a Phone permission that
+# had been removed, never mentioned USB debugging, and described a permanent
+# notification that no longer exists. A manual that lies is worse than no
+# manual, and two copies of one is how it happens, so there is one copy and two
+# renderers.
+#
+# Blocks are ("kind", payload). Inline markup is the small Markdown subset the
+# text actually uses: **bold** and `code`.
+# ---------------------------------------------------------------------------
+
+SETUP_TITLE = "Setting up JemRec"
+SETUP_LEAD = (
+    "Everything happens on the phone. You will not need a computer, a cable, or "
+    "a second app. It takes about three minutes, and you do it once."
+)
+
+SETUP = [
+    ("p", "Every step below was walked through on an Honor Magic 8 Pro running "
+          "MagicOS 10, and the screen names are the ones that actually appear "
+          "there. Other phones differ in wording; the shape of the process does "
+          "not, and JemRec names the right path for your phone as you go."),
+
+    ("h2", "Step 1 — Open JemRec and allow notifications"),
+    ("ol", [
+        "Open **JemRec**.",
+        "It asks for **notifications**. Allow them.",
+        "It also offers to read audio files, which lets it list recordings made "
+        "before a reinstall. Refusing that is fine; only the old ones are hidden.",
+    ]),
+    ("p", "Notifications are not decoration here. They are how the app tells you "
+          "a call is being recorded, how it asks whether to record one, and "
+          "where you will type the pairing code in step 4."),
+    ("p", "JemRec does **not** ask for microphone access and does not have it. "
+          "The recording is done by a separate, more privileged helper that the "
+          "app starts later; the app itself only collects the finished file."),
+
+    ("h2", "Step 2 — Turn on Developer options"),
+    ("p", "Skip this if Developer options are already on."),
+    ("ol", [
+        "Open **Settings**.",
+        "Search for `build number`. It usually lives under **About phone**, but "
+        "the path differs between phones, which is why searching beats hunting.",
+        "Tap **Build number** seven times.",
+        "Enter your PIN or pattern if asked.",
+    ]),
+    ("p", "You should see *You are now a developer*."),
+
+    ("h2", "Step 3 — Turn on both debugging switches"),
+    ("p", "**Be on Wi-Fi before you start this.** Wireless debugging only stays "
+          "on while the phone has a Wi-Fi connection."),
+    ("ol", [
+        "In JemRec, tap **Open settings**, and go to **Developer options** — the "
+        "app shows the exact path for your phone, and you can also search "
+        "Settings for it.",
+        "Turn on **USB debugging** and **Wireless debugging**. Either order. No "
+        "cable is needed and none should be plugged in.",
+        "If Android asks whether to allow wireless debugging on this network, "
+        "tick **Always allow** and tap **Allow**.",
+        "Look at both switches once more. One of them can switch itself off the "
+        "first time; turn it on again and it holds.",
+    ]),
+    ("p", "**Why both.** Wireless debugging is the channel JemRec uses to start "
+          "its recorder. USB debugging — the setting, with no cable involved — is "
+          "what keeps Android's debugging service alive, and without it Wireless "
+          "debugging switches itself off again before the app can connect."),
+    ("note", "If you see an old **JemRec** under *Paired devices*, tap the gear "
+             "beside it and forget it. It is left over from a previous install "
+             "and cannot be used: a reinstalled app has a new key and must pair "
+             "again."),
+
+    ("h2", "Step 4 — Pair, from your notifications"),
+    ("p", "**Read this step before starting it.** The obvious approach does not "
+          "work, and knowing why saves repeating it."),
+    ("p", "The pairing dialog exists only while Settings is on screen. Leave "
+          "Settings — by switching to JemRec, or by pressing Back — and Android "
+          "tears the dialog down instantly, taking the code with it."),
+    ("p", "The notification shade is different. It belongs to the system rather "
+          "than to another app, so pulling it down leaves Settings running and "
+          "the dialog intact. That is where you type the code, and JemRec posts "
+          "the field before you go anywhere so it is already waiting."),
+    ("ol", [
+        "In JemRec, tap **Open settings**.",
+        "Open **Wireless debugging**, then tap **Pair device with pairing "
+        "code**. Six digits appear.",
+        "**Swipe down** from the top of the screen, over that dialog.",
+        "Find **JemRec — pairing** and tap **Enter code**.",
+        "Type the six digits and send them.",
+    ]),
+    ("p", "You do not need the port number. JemRec finds that itself."),
+    ("p", "Then watch that same notification. It says what is happening, and if "
+          "a debugging switch turned itself off it says which one — turn it back "
+          "on and the app connects by itself. There is no need to pair again or "
+          "to fetch a new code."),
+    ("note", "The code changes every time the dialog is reopened, so always use "
+             "the one on screen. If you swiped the notification away, tap **Show "
+             "the code field again** in JemRec to bring it back."),
+
+    ("h2", "Step 5 — Wait a few seconds"),
+    ("p", "JemRec does the rest by itself: it grants itself the one privileged "
+          "setting it needs, starts the recorder, and begins watching for calls. "
+          "When it is done the header says **Ready to record**."),
+    ("p", "There is no permanent notification. The app is dormant between calls "
+          "— the recorder is a separate process that does the watching — so a "
+          "notification appears only for the length of a call."),
+
+    ("h2", "Step 6 — Test it"),
+    ("p", "Call someone and talk for twenty seconds, with both of you speaking."),
+    ("ul", [
+        "During the call a notification says **Recording call**.",
+        "After you hang up, open JemRec. The recording is at the top of the list.",
+    ]),
+    ("p", "Files are named like `20260907_150909_out.ogg` — date, time, and `in` "
+          "or `out` for the direction. They are ordinary Ogg Opus files that any "
+          "player can open."),
+    ("p", "If your recording has only your own voice on it, that is the one thing "
+          "no app can fix: your phone's audio hardware does not hand the other "
+          "side to apps at all. **Settings → Diagnostics → Self-test** answers "
+          "that in about a second, without ringing anybody."),
+
+    ("h2", "Where recordings go"),
+    ("p", "The phone's standard **Recordings/JemRec** folder, which any file "
+          "manager or music app can open, and which survives uninstalling the "
+          "app. To use a different folder, open Settings and tap **Change** under "
+          "*Saving to*."),
+
+    ("h2", "Choosing when to record"),
+    ("p", "**Record every call**, in Settings, decides this."),
+    ("ul", [
+        "**On**, the default: every call is recorded and you are not asked.",
+        "**Off**: when a call starts a notification appears with **Record** and "
+        "**Not now**. Nothing is captured until you tap Record, so the opening "
+        "seconds of that call are not saved. That is the honest cost of being "
+        "asked, and it is why the switch is on by default.",
+    ]),
+    ("p", "The prompt stays up for about a minute rather than the few seconds an "
+          "ordinary notification gets, and if you miss it, it waits in the shade "
+          "for the rest of the call. On a locked screen you get the same question "
+          "full screen."),
+
+    ("h2", "Playing, sharing and deleting"),
+    ("p", "Tap a recording to play it inside the app; a scrubber appears under "
+          "the row, and the chevron beside it folds the player away. The share "
+          "button offers the original file or a converted copy that plays "
+          "anywhere."),
+    ("p", "To delete, tap a contact's photo or long-press a row to start "
+          "selecting, tick what you want, and use the bin in the toolbar. It asks "
+          "first and tells you how many. Deleting is permanent."),
+    ("p", "Recordings are kept when JemRec is uninstalled, because they are yours "
+          "rather than the app's — so if you want them gone, delete them **before** "
+          "you uninstall."),
+
+    ("h2", "Turning JemRec off"),
+    ("p", "The switch in the header is the on/off control for the whole app. Off "
+          "means no call is recorded and no notification appears. Your recordings "
+          "and your pairing are untouched, and the recorder itself keeps running "
+          "in the background doing nothing — which is what makes turning it back "
+          "on instant, anywhere, with no network."),
+
+    ("h2", "After a restart"),
+    ("p", "**Connect to Wi-Fi once.** A reboot kills the recorder, and building "
+          "it again takes a few seconds of the debugging channel, which needs "
+          "Wi-Fi. Until the phone next joins a network, calls are not recorded and "
+          "the header says so. It repairs itself the moment Wi-Fi appears, with "
+          "the app closed."),
+    ("p", "Wi-Fi is needed to rebuild the recorder, never to use it. Once it is "
+          "up, calls are recorded with Wi-Fi off, on mobile data, anywhere."),
+
+    ("h2", "What the app tells you"),
+    ("p", "The header is the honest indicator:"),
+    ("table", (["It says", "Meaning"], [
+        ["**Ready to record**", "A call would be recorded right now."],
+        ["**Recording call**", "In the notification, during a call."],
+        ["**Cannot record, needs Wi-Fi**", "Join any Wi-Fi and it resumes on its "
+         "own. Usually a reboot, or a long stretch away from a network."],
+        ["**Starting…**", "Rebuilding the recorder. A few seconds."],
+        ["**Off**", "You turned the switch off."],
+    ])),
+
+    ("h2", "Settings"),
+    ("ul", [
+        "**Record every call** — record everything, or be asked each time.",
+        "**Saving to** — which folder recordings go in, with a Change button.",
+        "**Show who called** — labels each recording with the contact's name and "
+        "photo, or the number when they are not in your contacts. Optional, and "
+        "asked for in the app rather than at install, because it needs your call "
+        "log and contacts. Say no and everything still works, with the time as "
+        "each recording's headline.",
+        "**Start fresh** — puts JemRec back to how it was the day you installed "
+        "it, so setup runs again from step 1. The app closes when you confirm. "
+        "**Your recordings are not deleted.**",
+        "**Diagnostics** — whether the recorder is running, a self-test that "
+        "proves a call would be recorded, and a way to start the recorder by "
+        "hand. It is what a bug report wants.",
+    ]),
+
+    ("h2", "If something goes wrong"),
+    ("p", "**Pairing fails every time.** Almost always the dialog closed. It "
+          "survives only while Settings is on screen, which is why step 4 uses "
+          "the notification shade rather than switching back to the app. Reopen "
+          "the dialog for a fresh code each attempt."),
+    ("p", "**A debugging switch keeps turning itself off.** Some phones do that "
+          "the first time one is enabled without a cable, and Android turns "
+          "Wireless debugging off whenever Wi-Fi drops. Turn it on again with "
+          "Wi-Fi connected; it holds the second time."),
+    ("p", "**It says it cannot record.** Join any Wi-Fi and leave it a few "
+          "seconds; the app rebuilds its recorder without being asked. If you "
+          "would rather not wait, Settings → Diagnostics → **Start recorder**."),
+    ("p", "**Recordings have only your voice.** Your phone's audio hardware does "
+          "not expose the other side to apps. Nothing in any app can change that, "
+          "and the self-test will tell you plainly."),
+
+    ("h2", "Uninstalling"),
+    ("p", "Uninstall it however you like — long-press the icon, or Settings → "
+          "Apps. There is nothing special to do."),
+    ("p", "The recorder is a separate system process rather than part of the app, "
+          "so removing the package does not stop it immediately. It checks every "
+          "few minutes whether JemRec is still installed, and when it is not it "
+          "turns both debugging switches off, deletes its own files and exits. A "
+          "reinstall is never fooled by one that has not got there yet, either: "
+          "the app only trusts a recorder it started itself, and retires any "
+          "other on sight."),
+    ("note", "**What no app can undo.** The phone goes on trusting the key it "
+             "paired with, in a list only root can edit, so it stays under "
+             "*Wireless debugging → Paired devices*; remove it there with the "
+             "gear beside it. Developer options stays on if you turned it on. And "
+             "Start fresh leaves the one privileged setting granted, because "
+             "handing it back would kill the app halfway through the reset."),
+
+    ("h2", "Two honest warnings"),
+    ("p", "**The other person is being recorded too.** Whether you may do that "
+          "without telling them differs by country and sometimes by region. That "
+          "is your call to make, not the app's."),
+    ("p", "**This uses debugging switches, and they stay on.** They are developer "
+          "features that let software on your phone act with elevated privileges. "
+          "JemRec needs them to record calls at all. If you stop using JemRec, "
+          "turn Wireless debugging, USB debugging and Developer options back off."),
+]
+
+
+def _inline_html(text: str) -> str:
+    """The small Markdown subset the manual uses, as HTML."""
+    out = (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+    out = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
+    out = re.sub(r"(?<![*\w])\*([^*]+)\*(?!\w)", r"<em>\1</em>", out)
+    return out
+
+
+def render_html(blocks) -> str:
+    """The manual as the page body."""
+    out = []
+    for kind, payload in blocks:
+        if kind in ("h2", "h3"):
+            out.append(f"  <{kind}>{_inline_html(payload)}</{kind}>")
+        elif kind == "p":
+            out.append(f"  <p>{_inline_html(payload)}</p>")
+        elif kind in ("ol", "ul"):
+            items = "".join(f"\n    <li>{_inline_html(i)}</li>" for i in payload)
+            out.append(f"  <{kind}>{items}\n  </{kind}>")
+        elif kind == "note":
+            out.append(f'  <div class="note info"><p>{_inline_html(payload)}</p></div>')
+        elif kind == "table":
+            headers, rows = payload
+            head = "".join(f"<th>{_inline_html(h)}</th>" for h in headers)
+            body = "".join(
+                "\n    <tr>" + "".join(f"<td>{_inline_html(c)}</td>" for c in r) + "</tr>"
+                for r in rows
+            )
+            out.append(f"  <table>\n    <tr>{head}</tr>{body}\n  </table>")
+        else:
+            raise ValueError(f"unknown block: {kind}")
+    return "\n".join(out)
+
+
+def render_markdown(blocks) -> str:
+    """The same manual as the file people read in the repository.
+
+    Wrapped at 79 columns, because a Markdown file is read in an editor as often
+    as in a browser and a paragraph on one endless line is unreadable in one of
+    them.
+    """
+    out = []
+    for kind, payload in blocks:
+        if kind == "h2":
+            out.append(f"## {payload}\n")
+        elif kind == "h3":
+            out.append(f"### {payload}\n")
+        elif kind == "p":
+            out.append(textwrap.fill(payload, 79) + "\n")
+        elif kind == "ol":
+            for n, item in enumerate(payload, 1):
+                out.append(textwrap.fill(
+                    item, 79, initial_indent=f"{n}. ", subsequent_indent="   "))
+            out.append("")
+        elif kind == "ul":
+            for item in payload:
+                out.append(textwrap.fill(
+                    item, 79, initial_indent="- ", subsequent_indent="  "))
+            out.append("")
+        elif kind == "note":
+            out.append(textwrap.fill(
+                payload, 79, initial_indent="> ", subsequent_indent="> ") + "\n")
+        elif kind == "table":
+            headers, rows = payload
+            out.append("| " + " | ".join(headers) + " |")
+            out.append("|" + "|".join(["---"] * len(headers)) + "|")
+            for row in rows:
+                out.append("| " + " | ".join(c.replace("\n", " ") for c in row) + " |")
+            out.append("")
+    return "\n".join(out)
+
+
 def shot(thumb: str, full: str, alt: str) -> str:
     """A screenshot that opens in the viewer.
 
@@ -404,7 +724,7 @@ def page(title: str, description: str, body: str, here: str) -> str:
   <div class="column">
     <a class="brand" href="index.html"><img src="icon.png" alt="" width="34" height="34">JemRec</a>
     <div class="bar-end">
-      <nav>{nav("index.html", "Home")}{nav("privacy-policy.html", "Privacy")}<a href="{REPO}">GitHub</a></nav>
+      <nav>{nav("index.html", "Home")}{nav("setup.html", "Setup")}{nav("privacy-policy.html", "Privacy")}<a href="{REPO}">GitHub</a></nav>
       {THEME_BUTTON}
     </div>
   </div>
@@ -442,7 +762,9 @@ INDEX_BODY = f"""
     <a class="btn" href="{REPO}/releases">Download the APK</a>
     <a class="btn ghost" href="{REPO}">Source on GitHub</a>
   </div>
-  <p class="muted">Android 12 or newer. Not on Google Play, and never will be.</p>
+  <p class="muted">Android 12 or newer. Not on Google Play, and never will be.
+     Setting it up takes about three minutes and no computer &mdash;
+     <a href="setup.html">here is how</a>.</p>
 
   <div class="note info">
     <p><strong>After every reboot, connect to Wi-Fi once.</strong> A restart kills
@@ -608,6 +930,22 @@ if __name__ == "__main__":
     (DOCS / "index.html").write_text(
         page(f"JemRec · {TAGLINE}", TAGLINE, INDEX_BODY, "index.html")
     )
+    (DOCS / "setup.html").write_text(
+        page(
+            f"JemRec · {SETUP_TITLE}",
+            "How to set up JemRec: three minutes, on the phone, no computer.",
+            f'  <h1>{SETUP_TITLE}</h1>\n  <p class="lead">{SETUP_LEAD}</p>\n'
+            + render_html(SETUP),
+            "setup.html",
+        )
+    )
+    # The same manual for whoever is reading the repository rather than the site.
+    (DOCS / "SETUP.md").write_text(
+        f"# {SETUP_TITLE}\n\n"
+        + textwrap.fill(SETUP_LEAD, 79) + "\n\n"
+        + "<!-- Generated by tools/build_site.py - edit the SETUP blocks there. -->\n\n"
+        + render_markdown(SETUP)
+    )
     (DOCS / "privacy-policy.html").write_text(
         page(
             "JemRec · Privacy policy",
@@ -616,5 +954,6 @@ if __name__ == "__main__":
             "privacy-policy.html",
         )
     )
-    for name in (".nojekyll", "jemrec.css", "jemrec.js", "index.html", "privacy-policy.html"):
+    for name in (".nojekyll", "jemrec.css", "jemrec.js", "index.html",
+                 "setup.html", "privacy-policy.html", "SETUP.md"):
         print(f"wrote docs/{name}")
