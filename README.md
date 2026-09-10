@@ -51,10 +51,12 @@ what you tell it to and warns nobody on your behalf.
 > **A reboot kills the recorder, and building it again takes a few seconds of
 > Wi-Fi.** Whether that happens without you comes down to one phone setting.
 >
-> **Allow JemRec to start automatically.** On an Honor: Settings → Battery →
-> App launch → JemRec → *Manage manually*, with *Auto-launch* on. Measured on
-> that phone: the app started at boot, and the recorder was back **ten seconds**
-> after Wi-Fi came on, with the app never opened.
+> **Allow JemRec to start automatically.** JemRec's Settings has a *Survive a
+> restart* card whose button opens the right screen on your phone; on an Honor
+> that is Settings → Battery → App launch → JemRec → *Manage manually*, with
+> *Auto-launch* on. Measured on that phone: the app started at boot, and the
+> recorder was back **ten seconds** after Wi-Fi came on, with the app never
+> opened.
 >
 > **Without it, nothing happens by itself.** Same phone, auto-launch off: the
 > system declined to start the app for the boot broadcast — `don't meet
