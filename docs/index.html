@@ -7,13 +7,23 @@
 <meta name="description" content="A call recorder for unrooted Android.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="icon.png">
+<script>(function(){try{var v=localStorage.getItem('jemrec-theme');if(v&&v!=='system')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 <link rel="stylesheet" href="jemrec.css">
+<script src="jemrec.js" defer></script>
 </head>
 <body>
 <header class="bar">
   <div class="column">
     <a class="brand" href="index.html"><img src="icon.png" alt="" width="34" height="34">JemRec</a>
-    <nav><a href="index.html" aria-current="page">Home</a><a href="privacy-policy.html">Privacy</a><a href="https://github.com/jemcik/JemRec">GitHub</a></nav>
+    <div class="bar-end">
+      <nav><a href="index.html" aria-current="page">Home</a><a href="privacy-policy.html">Privacy</a><a href="https://github.com/jemcik/JemRec">GitHub</a></nav>
+      <button class="theme" type="button" aria-label="Theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+        </svg><span class="theme-name">System</span>
+      </button>
+    </div>
   </div>
 </header>
 <main>
@@ -29,14 +39,15 @@
   <p class="muted">Android 12 or newer. Not on Google Play, and never will be.</p>
 
   <div class="shots">
-    <img src="screenshots/home.png" alt="The recordings list" loading="lazy">
-    <img src="screenshots/home-dark.png" alt="The recordings list, dark" loading="lazy">
-    <img src="screenshots/settings.png" alt="Settings" loading="lazy">
-    <img src="screenshots/selftest-dark.png" alt="The self-test" loading="lazy">
+    <button class="shot" type="button" data-full="screenshots/light/home.png" aria-label="The recordings list"><img src="screenshots/home.png" alt="The recordings list" loading="lazy"></button>
+    <button class="shot" type="button" data-full="screenshots/dark/home.png" aria-label="The recordings list, dark"><img src="screenshots/home-dark.png" alt="The recordings list, dark" loading="lazy"></button>
+    <button class="shot" type="button" data-full="screenshots/light/settings.png" aria-label="Settings"><img src="screenshots/settings.png" alt="Settings" loading="lazy"></button>
+    <button class="shot" type="button" data-full="screenshots/dark/selftest.png" aria-label="The self-test"><img src="screenshots/selftest-dark.png" alt="The self-test" loading="lazy"></button>
   </div>
-  <p class="muted">The people in those screenshots do not exist: a screenshot of a
-     call recorder is a screenshot of someone&rsquo;s calls, so the list is filled
-     with invented ones. Everything above the list is real.</p>
+  <p class="muted">Tap any of them to look properly. The people in them do not
+     exist: a screenshot of a call recorder is a screenshot of someone&rsquo;s
+     calls, so the list is filled with invented ones. Everything above the list
+     is real.</p>
 
   <h2>How it works</h2>
 
@@ -111,5 +122,12 @@
        <a href="https://github.com/jemcik/JemRec">Source on GitHub</a>.</p>
   </div>
 </footer>
+<div class="viewer" hidden tabindex="-1" role="dialog" aria-modal="true"
+     aria-label="Screenshot">
+  <button class="vnav prev" type="button" aria-label="Previous">&lsaquo;</button>
+  <img alt="">
+  <button class="vnav next" type="button" aria-label="Next">&rsaquo;</button>
+  <span class="vcount"></span>
+</div>
 </body>
 </html>

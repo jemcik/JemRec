@@ -7,13 +7,23 @@
 <meta name="description" content="JemRec has no servers and no analytics: nothing leaves your phone.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="icon.png">
+<script>(function(){try{var v=localStorage.getItem('jemrec-theme');if(v&&v!=='system')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 <link rel="stylesheet" href="jemrec.css">
+<script src="jemrec.js" defer></script>
 </head>
 <body>
 <header class="bar">
   <div class="column">
     <a class="brand" href="index.html"><img src="icon.png" alt="" width="34" height="34">JemRec</a>
-    <nav><a href="index.html">Home</a><a href="privacy-policy.html" aria-current="page">Privacy</a><a href="https://github.com/jemcik/JemRec">GitHub</a></nav>
+    <div class="bar-end">
+      <nav><a href="index.html">Home</a><a href="privacy-policy.html" aria-current="page">Privacy</a><a href="https://github.com/jemcik/JemRec">GitHub</a></nav>
+      <button class="theme" type="button" aria-label="Theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+        </svg><span class="theme-name">System</span>
+      </button>
+    </div>
   </div>
 </header>
 <main>
@@ -52,6 +62,11 @@
      talking to its recorder afterwards. Neither reaches your router, let alone the
      internet.</p>
 
+  <h2>This website</h2>
+  <p>Static files served by GitHub Pages, with no analytics, no cookies, and no
+     fonts or scripts fetched from anywhere else. The one thing it stores is
+     whether you chose light or dark, in your own browser, where it stays.</p>
+
   <h2>The microphone</h2>
   <p>The app holds no microphone permission and opens no audio device. Calls are
      captured by a separate shell-privileged process, which the app starts during
@@ -82,5 +97,12 @@
        <a href="https://github.com/jemcik/JemRec">Source on GitHub</a>.</p>
   </div>
 </footer>
+<div class="viewer" hidden tabindex="-1" role="dialog" aria-modal="true"
+     aria-label="Screenshot">
+  <button class="vnav prev" type="button" aria-label="Previous">&lsaquo;</button>
+  <img alt="">
+  <button class="vnav next" type="button" aria-label="Next">&rsaquo;</button>
+  <span class="vcount"></span>
+</div>
 </body>
 </html>
