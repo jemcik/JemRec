@@ -48,17 +48,20 @@ sometimes by state: one party, all parties, or a spoken notice. This app records
 what you tell it to and warns nobody on your behalf.
 
 > [!IMPORTANT]
-> **After a reboot, open JemRec once, on Wi-Fi.** A restart kills the recorder,
-> and building it again takes a few seconds of Wi-Fi. The app is meant to do
-> that by itself the moment Wi-Fi returns, and on a phone that lets it start in
-> the background at boot, it does.
+> **A reboot kills the recorder, and building it again takes a few seconds of
+> Wi-Fi.** Whether that happens without you comes down to one phone setting.
 >
-> Not every phone does. Measured on the Honor this was developed on: the ROM
-> refused to start the app for the boot broadcast — `don't meet cpuload`, in its
-> own log — so nothing was listening for Wi-Fi, and eight minutes after the
-> restart nothing had come back. Opening the app had it recording again in
-> sixteen seconds. If your phone has an auto-launch or startup manager,
-> allowing JemRec there lets it handle a reboot without you.
+> **Allow JemRec to start automatically.** On an Honor: Settings → Battery →
+> App launch → JemRec → *Manage manually*, with *Auto-launch* on. Measured on
+> that phone: the app started at boot, and the recorder was back **ten seconds**
+> after Wi-Fi came on, with the app never opened.
+>
+> **Without it, nothing happens by itself.** Same phone, auto-launch off: the
+> system declined to start the app for the boot broadcast — `don't meet
+> cpuload`, in its own log — so neither the scheduled job nor the Wi-Fi watcher
+> was ever armed, and seven minutes after Wi-Fi returned nothing had come back.
+> **Opening JemRec once** had it recording sixteen seconds later. That is the
+> fallback, and it always works.
 >
 > Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 > recording carries on with Wi-Fi off, on mobile data, anywhere.

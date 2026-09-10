@@ -162,28 +162,35 @@ network.
 
 ## After a restart
 
-**Open JemRec once, on Wi-Fi.** A reboot kills the recorder, and building it
-again takes a few seconds of Wi-Fi. Until that happens, calls are not recorded
-and the header says so.
+A reboot kills the recorder, and building it again takes a few seconds of Wi-
+Fi. Until that has happened, calls are not recorded and the header says so.
+Whether it happens without you comes down to one setting on your phone.
 
-The app is built to do it without you: at boot it arms a scheduled job and asks
-the system to wake it when Wi-Fi appears, and on a phone that allows that, the
-recorder is back seconds after you join a network, with the app never opened.
+### Allow JemRec to start automatically
 
-**Some phones do not allow it.** Measured on the Honor this was developed on:
-the system declined to start the app for the boot broadcast — *don't meet
-cpuload*, in its own log — so neither the job nor the Wi-Fi watcher was ever
-armed, and eight minutes after the restart with Wi-Fi on, nothing had come
-back. Opening the app had it recording again sixteen seconds later.
+This is the fix, and it is worth doing once. On an Honor: **Settings → Battery
+→ App launch**, find JemRec, switch it from automatic to **Manage manually**,
+and leave **Auto-launch** on. Xiaomi, OPPO, vivo and Samsung each have their
+own version of the same list.
 
-So treat opening it once as part of restarting. To be rid of that step, allow
-JemRec to **start automatically** in your phone's battery or app-launch
-settings — on an Honor that is *Settings → Battery → App launch*, where JemRec
-must be switched to manual management with *Auto-launch* on. Then the boot
-broadcast reaches it and the app handles the reboot itself.
+What it buys, measured on that Honor: the app was started by the boot broadcast
+at 21 seconds of uptime, armed its scheduled job and asked the system to wake
+it when Wi-Fi appeared, and the recorder was back **ten seconds** after Wi-Fi
+came on — with the app never opened.
 
-Wi-Fi is needed to rebuild the recorder, never to use it. Once it is up, calls
-are recorded with Wi-Fi off, on mobile data, anywhere.
+### Without it, open JemRec once
+
+The same phone with auto-launch off does nothing at all. The system declined to
+start the app for the boot broadcast — *don't meet cpuload*, in its own log —
+so neither the job nor the Wi-Fi watcher was ever armed, and seven minutes
+after Wi-Fi returned nothing had come back. Opening the app had it recording
+sixteen seconds later.
+
+So if you would rather not touch battery settings, treat opening JemRec once as
+part of restarting the phone. It always works.
+
+Either way: Wi-Fi is needed to rebuild the recorder, never to use it. Once it
+is up, calls are recorded with Wi-Fi off, on mobile data, anywhere.
 
 ## What the app tells you
 
