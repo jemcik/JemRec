@@ -909,10 +909,11 @@ INDEX_BODY = f"""
      silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
      <strong>Self-test</strong> &mdash; by opening a real capture down the same
      path a call takes and telling you what came out.</p>
-  <p class="muted">Working on three phones across three very different Android
-     builds: an Honor Magic&nbsp;8 Pro on MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20
-     on One&nbsp;UI, and a OnePlus on LineageOS&nbsp;23. Three is not a
-     compatibility list, which is what the self-test is for.</p>
+  <p class="muted">Both sides of the call have been recorded on three phones,
+     across three very different Android builds: an Honor Magic&nbsp;8 Pro on
+     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20 on One&nbsp;UI, and a OnePlus on
+     LineageOS&nbsp;23. Three is not a compatibility list, which is what the
+     self-test is for.</p>
 """
 
 PRIVACY_BODY = f"""

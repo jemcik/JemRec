@@ -235,7 +235,8 @@ The long version, with what to do when a step misbehaves, is the manual:
   that cannot be worked around, and it varies by manufacturer. Some phones give
   both sides of the call, some give one, some give silence.
 
-Working on three, across three very different Android builds:
+**Both sides of the call** have been recorded on three phones, across three very
+different Android builds:
 
 | Phone | Build |
 | --- | --- |
