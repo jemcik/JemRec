@@ -16,8 +16,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.CallLogLookup
@@ -126,6 +128,36 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                     checked = state.automatic,
                     onCheckedChange = { haptics.toggle(it); vm.setAutomatic(it) },
                 )
+            }
+        }
+
+        // ONLY WHERE THERE IS SOMETHING TO OPEN. On a phone with no launch
+        // manager this card would be an offer to fix something that is not
+        // broken, which is worse than saying nothing - so AutoStart answers
+        // whether the screen exists before the card is drawn at all.
+        val context = LocalContext.current
+        if (remember { AutoStart.available(context) }) {
+            Card {
+                Column(
+                    Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Survive a restart", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "A reboot stops the recorder, and JemRec rebuilds it by itself " +
+                            "the moment the phone is back on Wi-Fi - but only if this " +
+                            "phone lets it start on its own after a restart. Yours has a " +
+                            "list for that. Find JemRec in it and allow it to start " +
+                            "automatically.\n\n" +
+                            "Without it nothing is recorded after a restart until you " +
+                            "open JemRec once, which also works.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FilledTonalButton(
+                        onClick = { haptics.tap(); AutoStart.open(context) },
+                    ) { Text("Open ${AutoStart.label(context)}") }
+                }
             }
         }
 

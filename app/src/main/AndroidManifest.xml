@@ -137,6 +137,34 @@
     -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
+    <!--
+      The vendor screens that decide whether this app may start after a reboot.
+
+      NOT a convenience: a phone that will not deliver BOOT_COMPLETED leaves the
+      keep-alive job and the Wi-Fi watcher unarmed, so the recorder is never
+      rebuilt and nothing records until the app is opened by hand. Measured on
+      an Honor, both ways - see AutoStart, which offers to open the right one.
+
+      Declared package by package rather than with QUERY_ALL_PACKAGES. Since
+      Android 11 an app sees only what it declares, and what this app needs to
+      see is these fifteen activities and nothing else. A call recorder asking
+      to enumerate every installed app would be asking for something it does not
+      need, on the one kind of app where that matters.
+    -->
+    <queries>
+        <package android:name="com.hihonor.systemmanager" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.iqoo.secure" />
+        <package android:name="com.samsung.android.lool" />
+        <package android:name="com.letv.android.letvsafe" />
+        <package android:name="com.asus.mobilemanager" />
+        <package android:name="com.meizu.safe" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

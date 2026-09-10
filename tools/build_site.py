@@ -541,10 +541,14 @@ SETUP = [
           "header says so. Whether it happens without you comes down to one "
           "setting on your phone."),
     ("h3", "Allow JemRec to start automatically"),
-    ("p", "This is the fix, and it is worth doing once. On an Honor: **Settings → "
-          "Battery → App launch**, find JemRec, switch it from automatic to "
-          "**Manage manually**, and leave **Auto-launch** on. Xiaomi, OPPO, vivo "
-          "and Samsung each have their own version of the same list."),
+    ("p", "This is the fix, and it is worth doing once. JemRec's own Settings has "
+          "a **Survive a restart** card with a button that opens the right screen "
+          "on your phone, because the list is four levels deep and called "
+          "something different on every make. On an Honor it is *Settings → "
+          "Battery → App launch*; find JemRec, switch it to **Manage manually** "
+          "and leave **Auto-launch** on. Xiaomi calls it Autostart, OPPO and vivo "
+          "have their own. The card only appears on a phone that has such a "
+          "list."),
     ("p", "What it buys, measured on that Honor: the app was started by the boot "
           "broadcast at 21 seconds of uptime, armed its scheduled job and asked "
           "the system to wake it when Wi-Fi appeared, and the recorder was back "
