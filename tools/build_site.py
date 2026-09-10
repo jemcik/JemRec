@@ -167,6 +167,10 @@ th { color: var(--ink-mid); font-weight: 600; }
   border-left: 3px solid var(--record); background: var(--raise);
   padding: .8rem 1rem; border-radius: 0 10px 10px 0; margin: 1.4rem 0;
 }
+/* Two callouts on one page, and they are not the same kind of thing: one is a
+   warning about the law, the other is a fact about how the app behaves. The
+   accent keeps the second from reading as a second alarm. */
+.note.info { border-left-color: var(--accent); }
 .note strong { color: var(--ink); }
 
 footer {
@@ -377,9 +381,10 @@ def shot(thumb: str, full: str, alt: str) -> str:
 
 
 def page(title: str, description: str, body: str, here: str) -> str:
+    # A link to the page you are already on is furniture. The wordmark goes home
+    # from anywhere, so Home only appears when you are somewhere else.
     def nav(href: str, label: str) -> str:
-        current = ' aria-current="page"' if href == here else ""
-        return f'<a href="{href}"{current}>{label}</a>'
+        return "" if href == here else f'<a href="{href}">{label}</a>'
 
     return f"""<!doctype html>
 <html lang="en">
@@ -439,6 +444,16 @@ INDEX_BODY = f"""
   </div>
   <p class="muted">Android 12 or newer. Not on Google Play, and never will be.</p>
 
+  <div class="note info">
+    <p><strong>After every reboot, connect to Wi-Fi once.</strong> A restart kills
+       the recorder, and rebuilding it takes a few seconds of ADB, which needs
+       Wi-Fi. Until the phone next joins a network, calls are not recorded &mdash;
+       the app says so on its own screen, and repairs itself the moment Wi-Fi
+       appears, with the app closed. Wi-Fi rebuilds the recorder; it is never
+       needed to use it. Once it is up, recording carries on with Wi-Fi off, on
+       mobile data, anywhere.</p>
+  </div>
+
   <div class="shots">
     {SHOTS}
   </div>
@@ -486,9 +501,12 @@ INDEX_BODY = f"""
   <h3>It keeps itself alive</h3>
   <p>Losing Wi-Fi restarts the ADB daemon and kills what it spawned, so the
      recorder keeps one debugging switch on to survive it, and minds that switch
-     itself. When it does die &mdash; a reboot, or the system reclaiming it &mdash;
-     a scheduled job and a Wi-Fi watcher rebuild it the moment there is a network
-     to do it over. Recording needs no network; only rebuilding does.</p>
+     itself. That is what lets a call be recorded in a field with no network.</p>
+  <p>A reboot is the one thing it cannot survive, because starting the recorder
+     is the single operation that needs ADB. A scheduled job and a Wi-Fi watcher
+     do the rebuild without you, within seconds of the phone joining a network
+     &mdash; but between the restart and that moment nothing is recorded, and the
+     app says exactly that rather than looking healthy.</p>
 
   <h2>What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never opens an audio device &mdash; the

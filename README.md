@@ -47,6 +47,16 @@ one — the app itself never needed Play.
 sometimes by state: one party, all parties, or a spoken notice. This app records
 what you tell it to and warns nobody on your behalf.
 
+> [!IMPORTANT]
+> **After every reboot, connect to Wi-Fi once.** A restart kills the recorder,
+> and rebuilding it needs a few seconds of ADB, which needs Wi-Fi. Until the
+> phone next joins a network, calls are not recorded — the app's header says
+> **Cannot record, needs Wi-Fi** while that is true, and it repairs itself the
+> moment Wi-Fi appears, with the app closed.
+>
+> Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
+> recording carries on with Wi-Fi off, on mobile data, anywhere.
+
 ## How it works
 
 The whole design follows from one fact and one obstacle.
@@ -125,9 +135,13 @@ seconds, because this phone turns it off on its own.
 Proven on the device: no cable, Wi-Fi off, a real call recorded while `adbd` and
 the daemon kept their process IDs across the outage.
 
-When the daemon does die — a reboot, or the system reclaiming it — a scheduled
-job and a Wi-Fi watcher bring it back the moment there is a network to do it
-over. Recording a call needs no network; only rebuilding the recorder does.
+When the daemon does die — a reboot kills it outright, and the system reclaims
+it eventually — it has to be started again, and starting it is the one operation
+that needs ADB and therefore Wi-Fi. A scheduled job and a Wi-Fi watcher do it
+without you: the app is woken when a network appears, rebuilds the recorder in a
+few seconds, and stands the ADB session back down. **Between the reboot and that
+moment, nothing is recorded**, which is why the header says so plainly rather
+than looking healthy.
 
 ### Recording, and being asked
 
@@ -170,8 +184,10 @@ Two things by hand, once, and the app watches for both:
    type the six digits into JemRec's notification — not back in the app, because
    leaving the Settings screen closes the code window.
 
-Everything after that is automatic, and survives reboots. The long version, with
-the troubleshooting, is in [docs/SETUP.md](docs/SETUP.md).
+Everything after that is automatic. The pairing itself survives reboots — the
+phone remembers it and you never type a code again — but the recorder does not,
+so see the note above about Wi-Fi after a restart. The long version, with the
+troubleshooting, is in [docs/SETUP.md](docs/SETUP.md).
 
 ## Requirements
 

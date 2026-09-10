@@ -16,7 +16,7 @@
   <div class="column">
     <a class="brand" href="index.html"><img src="icon.png" alt="" width="34" height="34">JemRec</a>
     <div class="bar-end">
-      <nav><a href="index.html" aria-current="page">Home</a><a href="privacy-policy.html">Privacy</a><a href="https://github.com/jemcik/JemRec">GitHub</a></nav>
+      <nav><a href="privacy-policy.html">Privacy</a><a href="https://github.com/jemcik/JemRec">GitHub</a></nav>
       <button class="theme" type="button" aria-label="Theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" aria-hidden="true">
@@ -37,6 +37,16 @@
     <a class="btn ghost" href="https://github.com/jemcik/JemRec">Source on GitHub</a>
   </div>
   <p class="muted">Android 12 or newer. Not on Google Play, and never will be.</p>
+
+  <div class="note info">
+    <p><strong>After every reboot, connect to Wi-Fi once.</strong> A restart kills
+       the recorder, and rebuilding it takes a few seconds of ADB, which needs
+       Wi-Fi. Until the phone next joins a network, calls are not recorded &mdash;
+       the app says so on its own screen, and repairs itself the moment Wi-Fi
+       appears, with the app closed. Wi-Fi rebuilds the recorder; it is never
+       needed to use it. Once it is up, recording carries on with Wi-Fi off, on
+       mobile data, anywhere.</p>
+  </div>
 
   <div class="shots">
     <button class="shot" type="button" data-full="screenshots/light/home.png" aria-label="The recordings list"><img src="screenshots/home.png" alt="The recordings list" loading="lazy"></button>
@@ -88,9 +98,12 @@
   <h3>It keeps itself alive</h3>
   <p>Losing Wi-Fi restarts the ADB daemon and kills what it spawned, so the
      recorder keeps one debugging switch on to survive it, and minds that switch
-     itself. When it does die &mdash; a reboot, or the system reclaiming it &mdash;
-     a scheduled job and a Wi-Fi watcher rebuild it the moment there is a network
-     to do it over. Recording needs no network; only rebuilding does.</p>
+     itself. That is what lets a call be recorded in a field with no network.</p>
+  <p>A reboot is the one thing it cannot survive, because starting the recorder
+     is the single operation that needs ADB. A scheduled job and a Wi-Fi watcher
+     do the rebuild without you, within seconds of the phone joining a network
+     &mdash; but between the restart and that moment nothing is recorded, and the
+     app says exactly that rather than looking healthy.</p>
 
   <h2>What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never opens an audio device &mdash; the
