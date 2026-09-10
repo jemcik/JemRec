@@ -427,9 +427,10 @@ SETUP = [
     ("p", "**Be on Wi-Fi before you start this.** Wireless debugging only stays "
           "on while the phone has a Wi-Fi connection."),
     ("ol", [
-        "In JemRec, tap **Open settings**, and go to **Developer options** — the "
-        "app shows the exact path for your phone, and you can also search "
-        "Settings for it.",
+        "In JemRec, tap **Open settings**, then search Settings for **Developer "
+        "options**. The app also names the menu it usually lives in on your "
+        "phone — though on a custom ROM such as LineageOS it is under "
+        "**System**, whoever made the handset.",
         "Turn on **USB debugging** and **Wireless debugging**. Either order. No "
         "cable is needed and none should be plugged in.",
         "If Android asks whether to allow wireless debugging on this network, "

@@ -392,10 +392,21 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
     }
 }
 
-/** One trip to Developer options, with the search fallback for any phone. */
+/**
+ * One trip to Developer options.
+ *
+ * THE SEARCH LEADS AND THE PATH FOLLOWS, because only one of them is always
+ * true. Settings' own search finds Developer options on every phone; the menu
+ * it sits in is a guess from the maker's name, and a guess stated as an
+ * instruction sends someone hunting for a menu their phone does not have -
+ * reported from a OnePlus running LineageOS, which was told to look under
+ * OxygenOS's "Additional settings". "Usually" is the honest word for it, and
+ * DeviceSkin now recognises a custom ROM, but the wording should survive the
+ * next phone that fools it.
+ */
 private fun developerOptionsStep(skin: DeviceSkin): String =
-    "Tap Open settings below and go to ${skin.developerOptionsPath} - or search " +
-        "Settings for Developer options."
+    "Tap Open settings below and search for Developer options - usually " +
+        "${skin.developerOptionsHint}."
 
 /**
  * The two debugging switches as ONE step. Both must be on - Wireless debugging
