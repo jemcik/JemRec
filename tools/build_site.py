@@ -536,11 +536,25 @@ SETUP = [
           "on instant, anywhere, with no network."),
 
     ("h2", "After a restart"),
-    ("p", "**Connect to Wi-Fi once.** A reboot kills the recorder, and building "
-          "it again takes a few seconds of the debugging channel, which needs "
-          "Wi-Fi. Until the phone next joins a network, calls are not recorded and "
-          "the header says so. It repairs itself the moment Wi-Fi appears, with "
-          "the app closed."),
+    ("p", "**Open JemRec once, on Wi-Fi.** A reboot kills the recorder, and "
+          "building it again takes a few seconds of Wi-Fi. Until that happens, "
+          "calls are not recorded and the header says so."),
+    ("p", "The app is built to do it without you: at boot it arms a scheduled job "
+          "and asks the system to wake it when Wi-Fi appears, and on a phone that "
+          "allows that, the recorder is back seconds after you join a network, "
+          "with the app never opened."),
+    ("p", "**Some phones do not allow it.** Measured on the Honor this was "
+          "developed on: the system declined to start the app for the boot "
+          "broadcast — *don't meet cpuload*, in its own log — so neither the job "
+          "nor the Wi-Fi watcher was ever armed, and eight minutes after the "
+          "restart with Wi-Fi on, nothing had come back. Opening the app had it "
+          "recording again sixteen seconds later."),
+    ("p", "So treat opening it once as part of restarting. To be rid of that step, "
+          "allow JemRec to **start automatically** in your phone's battery or "
+          "app-launch settings — on an Honor that is *Settings → Battery → App "
+          "launch*, where JemRec must be switched to manual management with "
+          "*Auto-launch* on. Then the boot broadcast reaches it and the app "
+          "handles the reboot itself."),
     ("p", "Wi-Fi is needed to rebuild the recorder, never to use it. Once it is "
           "up, calls are recorded with Wi-Fi off, on mobile data, anywhere."),
 
@@ -630,7 +644,10 @@ def render_html(blocks) -> str:
     out = []
     for kind, payload in blocks:
         if kind in ("h2", "h3"):
-            out.append(f"  <{kind}>{_inline_html(payload)}</{kind}>")
+            # An id per heading, so the landing page can link straight to a
+            # section rather than to the top of a long manual.
+            anchor = re.sub(r"[^a-z0-9]+", "-", payload.lower()).strip("-")
+            out.append(f'  <{kind} id="{anchor}">{_inline_html(payload)}</{kind}>')
         elif kind == "p":
             out.append(f"  <p>{_inline_html(payload)}</p>")
         elif kind in ("ol", "ul"):
@@ -768,13 +785,14 @@ INDEX_BODY = f"""
      <a href="setup.html">here is how</a>.</p>
 
   <div class="note info">
-    <p><strong>After every reboot, connect to Wi-Fi once.</strong> A restart kills
-       the recorder, and rebuilding it takes a few seconds of ADB, which needs
-       Wi-Fi. Until the phone next joins a network, calls are not recorded &mdash;
-       the app says so on its own screen, and repairs itself the moment Wi-Fi
-       appears, with the app closed. Wi-Fi rebuilds the recorder; it is never
-       needed to use it. Once it is up, recording carries on with Wi-Fi off, on
-       mobile data, anywhere.</p>
+    <p><strong>After a reboot, open JemRec once, on Wi-Fi.</strong> A restart
+       kills the recorder, and building it again takes a few seconds of Wi-Fi.
+       The app is meant to do that by itself when Wi-Fi returns, and on a phone
+       that lets it start in the background at boot, it does &mdash; but not
+       every phone does, and on the Honor this was built on it took opening the
+       app. <a href="setup.html#after-a-restart">The manual explains it</a>.
+       Wi-Fi rebuilds the recorder; it is never needed to use it. Once it is up,
+       recording carries on with Wi-Fi off, anywhere.</p>
   </div>
 
   <div class="shots">
@@ -826,10 +844,12 @@ INDEX_BODY = f"""
      recorder keeps one debugging switch on to survive it, and minds that switch
      itself. That is what lets a call be recorded in a field with no network.</p>
   <p>A reboot is the one thing it cannot survive, because starting the recorder
-     is the single operation that needs ADB. A scheduled job and a Wi-Fi watcher
-     do the rebuild without you, within seconds of the phone joining a network
-     &mdash; but between the restart and that moment nothing is recorded, and the
-     app says exactly that rather than looking healthy.</p>
+     is the single operation that needs ADB. A scheduled job and a system-held
+     Wi-Fi watcher rebuild it without you within seconds of the phone joining a
+     network &mdash; when the phone lets the app start in the background at boot
+     to arm them. Where it does not, nothing is armed and nothing begins, which
+     is why the manual says to open the app once after a restart. Either way the
+     app says plainly that it cannot record rather than looking healthy.</p>
 
   <h2>What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never opens an audio device &mdash; the

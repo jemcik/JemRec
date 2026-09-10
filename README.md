@@ -48,11 +48,17 @@ sometimes by state: one party, all parties, or a spoken notice. This app records
 what you tell it to and warns nobody on your behalf.
 
 > [!IMPORTANT]
-> **After every reboot, connect to Wi-Fi once.** A restart kills the recorder,
-> and rebuilding it needs a few seconds of ADB, which needs Wi-Fi. Until the
-> phone next joins a network, calls are not recorded — the app's header says
-> **Cannot record, needs Wi-Fi** while that is true, and it repairs itself the
-> moment Wi-Fi appears, with the app closed.
+> **After a reboot, open JemRec once, on Wi-Fi.** A restart kills the recorder,
+> and building it again takes a few seconds of Wi-Fi. The app is meant to do
+> that by itself the moment Wi-Fi returns, and on a phone that lets it start in
+> the background at boot, it does.
+>
+> Not every phone does. Measured on the Honor this was developed on: the ROM
+> refused to start the app for the boot broadcast — `don't meet cpuload`, in its
+> own log — so nothing was listening for Wi-Fi, and eight minutes after the
+> restart nothing had come back. Opening the app had it recording again in
+> sixteen seconds. If your phone has an auto-launch or startup manager,
+> allowing JemRec there lets it handle a reboot without you.
 >
 > Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 > recording carries on with Wi-Fi off, on mobile data, anywhere.
@@ -137,11 +143,16 @@ the daemon kept their process IDs across the outage.
 
 When the daemon does die — a reboot kills it outright, and the system reclaims
 it eventually — it has to be started again, and starting it is the one operation
-that needs ADB and therefore Wi-Fi. A scheduled job and a Wi-Fi watcher do it
-without you: the app is woken when a network appears, rebuilds the recorder in a
-few seconds, and stands the ADB session back down. **Between the reboot and that
-moment, nothing is recorded**, which is why the header says so plainly rather
-than looking healthy.
+that needs ADB and therefore Wi-Fi. A scheduled job and a system-held Wi-Fi
+watcher do it without you: the app is woken when a network appears, rebuilds the
+recorder in a few seconds, and stands the ADB session back down.
+
+Both of those have to survive a reboot, and both are armed by the boot
+broadcast — so on a phone whose ROM declines to start the app at boot, neither
+exists and the repair never begins. That is the case above, and it is why the
+manual says to open the app once after a restart rather than trusting the
+machinery. **Between the restart and that moment nothing is recorded**, which is
+why the header says so plainly rather than looking healthy.
 
 ### Recording, and being asked
 
