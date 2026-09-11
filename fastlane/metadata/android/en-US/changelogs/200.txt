@@ -1,0 +1,3 @@
+Settings has a Survive a restart card whose button opens your phone's own auto-start screen. Measured on an Honor: with auto-launch on, the recorder was back ten seconds after Wi-Fi came on, with the app never opened. Without it, nothing happens until the app is opened once.
+
+A setup manual, on the web and in the repository, with what to do when a step misbehaves. The setup screen names the right Settings path for custom ROMs, not just for the manufacturer's skin.

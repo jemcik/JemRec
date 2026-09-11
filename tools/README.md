@@ -7,9 +7,9 @@ an artefact checked into this repository.
 | | |
 | --- | --- |
 | `hooks/pre-push` | Tests and lint before a push. Install with `git config core.hooksPath tools/hooks`. |
-| `render_icon.py` | Redraws the launcher mark as `docs/icon.png` for the README and the site. |
+| `render_icon.py` | Redraws the launcher mark as `docs/icon.png` for the README and the site, and at 512px as the F-Droid listing's icon under `fastlane/`. |
 | `make_demo_faces.py` | Draws the two invented contact portraits the demo list uses. Output goes to the debug source set, so it ships in no release APK. |
-| `shoot.py` | Captures `docs/screenshots/` on the phone, in both themes, with the invented calls turned on. |
+| `shoot.py` | Captures `docs/screenshots/` on the phone, in both themes, with the invented calls turned on, and copies the F-Droid set under `fastlane/`. `--listing` redoes the copies from disk with no phone. |
 | `build_site.py` | Generates the site GitHub Pages serves - the landing page, the setup manual and the privacy policy - and `docs/SETUP.md`, which is the same manual rendered as Markdown from the same source. |
 | `pair-now.sh` | Pairs the phone with its own Wireless debugging from a USB shell, for testing setup without tapping through it. |
 | `capture-call.py` | Records from the daemon in raw PCM and measures each channel separately, which is how to tell "audio arrived" from "both sides of the call arrived". |

@@ -1,0 +1,15 @@
+A call recorder for unrooted Android. One APK. No root, no Shizuku, no companion app, no computer: the phone sets itself up.
+
+<b>How it works.</b> Android's voice-call audio source carries both sides of a call, but reading it takes permissions no ordinary app can hold. The shell user that an ADB session runs as holds them. JemRec embeds an ADB client and pairs with the phone's own Wireless debugging over 127.0.0.1, the same six-digit pairing a laptop would do, with both ends on the same handset. Nothing leaves the phone.
+
+The ADB session lasts a few seconds. In it the app launches a small shell-privileged daemon, then closes the session. The daemon watches the call state and writes each call to a file; the app is not on the audio path at all, and holds no microphone permission. Every connection between the two is authenticated in both directions over a token that never crosses the socket.
+
+<b>Recordings</b> are Opus in an Ogg container, in the phone's standard Recordings/JemRec folder, where any file manager or music app can open them. Automatic mode records every call; ask-first mode records nothing until you tap Record on the start-of-call notification.
+
+<b>Setup</b> takes two things by hand, once: turn on Developer options, then USB debugging and Wireless debugging, and type the pairing code into JemRec's notification. The pairing survives reboots. The recorder does not: after a restart it is rebuilt automatically the next time Wi-Fi is around, provided the phone lets JemRec start on its own. Settings has a card that opens the right screen for that. Wi-Fi is needed only to rebuild the recorder, never to record.
+
+<b>Requirements.</b> Android 12 or newer, and a phone whose audio hardware hands over the voice-call source. That varies by manufacturer and cannot be worked around: some phones give both sides, some give one, some give silence. Both sides have been recorded on an Honor Magic 8 Pro, a Samsung Galaxy S20 and a OnePlus on LineageOS. Settings → Diagnostics → Self-test answers it for your phone in about a second.
+
+<b>Recording calls is your responsibility.</b> Consent law differs by country and sometimes by state. This app records what you tell it to and warns nobody on your behalf.
+
+<b>What it does not ask for:</b> no RECORD_AUDIO, no blanket storage access, no phone state. INTERNET is required by Android for any TCP socket, including one to 127.0.0.1, which is the only address this app connects to. READ_MEDIA_AUDIO is asked for only to list recordings made before a reinstall. READ_CALL_LOG and READ_CONTACTS are optional and only label recordings with who the call was with.

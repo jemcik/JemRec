@@ -18,6 +18,8 @@ Taps are located by TEXT from the view hierarchy rather than by coordinates, so
 this survives a layout change.
 
 Run from anywhere:  python3 tools/shoot.py
+                    python3 tools/shoot.py --listing   (no phone: re-derive the
+                                          README and F-Droid copies from disk)
 """
 import os
 import pathlib
@@ -32,6 +34,16 @@ DEV = os.environ.get("JEMREC_DEVICE", "AUNN025C15000871")
 PKG = "com.jemcik.jemrec"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "screenshots"
+# The F-Droid listing. fastlane orders screenshots by file name, so these are
+# numbered; the same five shots the README shows, at full resolution.
+LISTING = ROOT / "fastlane" / "metadata" / "android" / "en-US" / "images" / "phoneScreenshots"
+LISTING_ORDER = (
+    ("light", "home"),
+    ("light", "settings"),
+    ("light", "selftest"),
+    ("dark", "home"),
+    ("dark", "selftest"),
+)
 
 THEMES = {"light": "no", "dark": "yes"}
 
@@ -178,7 +190,31 @@ def thumbnails() -> None:
             print(f"    {target.relative_to(ROOT)}  {target.stat().st_size // 1024} kB")
 
 
+def listing() -> None:
+    """The F-Droid copies: full resolution, numbered, from the shots above."""
+    import shutil
+
+    LISTING.mkdir(parents=True, exist_ok=True)
+    for old in LISTING.glob("*.png"):
+        old.unlink()
+    for number, (theme, name) in enumerate(LISTING_ORDER, start=1):
+        source = OUT / theme / f"{name}.png"
+        if not source.exists():
+            continue
+        suffix = "" if theme == "light" else "-dark"
+        target = LISTING / f"{number}-{name}{suffix}.png"
+        shutil.copyfile(source, target)
+        print(f"    {target.relative_to(ROOT)}  {target.stat().st_size // 1024} kB")
+
+
 if __name__ == "__main__":
+    # `--listing` rebuilds the README and F-Droid copies from the full-size
+    # shots already on disk, with no phone attached.
+    if sys.argv[1:] == ["--listing"]:
+        thumbnails()
+        listing()
+        sys.exit()
+
     only = sys.argv[1:] or list(THEMES)
     demo(True)
     status_bar(True)
@@ -192,4 +228,5 @@ if __name__ == "__main__":
         shell("cmd uimode night yes")
         shell(f"am force-stop {PKG}")
     thumbnails()
+    listing()
     print("done")

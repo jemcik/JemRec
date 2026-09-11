@@ -69,29 +69,42 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # The version comes from the TAG, not from build.gradle.kts, whose
-      # fallbacks would ship every release as versionCode 1 - and Android
-      # refuses to install an APK whose versionCode is not HIGHER than the
-      # installed one. MAJOR*10000 + MINOR*100 + PATCH keeps it monotonic with
-      # room to spare: 0.1 -> 100, 0.2 -> 200, 1.0 -> 10000.
-      - name: Read the version out of the tag
+      # The version is READ from gradle.properties and CHECKED against the tag,
+      # not derived from the tag. gradle.properties is what F-Droid's update
+      # checker reads at each tag, so it has to be right in the commit the tag
+      # points at - and a tag that disagrees with it means the bump was
+      # forgotten, which is the moment to stop, not to paper over. The
+      # versionCode formula is enforced here for the same reason: it is what
+      # keeps installs upgradeable, so a hand-typed code that breaks it must
+      # not reach a release.
+      - name: Check the tag against gradle.properties
         # Explicitly bash: this reads BASH_REMATCH, which zsh does not set, so
-        # the same lines silently derive versionCode 0 there.
+        # the same lines silently compare against versionCode 0 there.
         shell: bash
         run: |
           TAG="$GITHUB_REF_NAME"
           VERSION="${TAG#v}"
           if [[ ! "$VERSION" =~ ^([0-9]+)\.([0-9]+)(\.([0-9]+))?$ ]]; then
-            echo "::error::Tag '$TAG' is not MAJOR.MINOR[.PATCH], so no versionCode can be derived from it. Tag as 0.2, v0.2, 0.2.1 or v0.2.1."
+            echo "::error::Tag '$TAG' is not MAJOR.MINOR[.PATCH]. Tag as 0.2, v0.2, 0.2.1 or v0.2.1."
             exit 1
           fi
           MAJOR="${BASH_REMATCH[1]}"
           MINOR="${BASH_REMATCH[2]}"
           PATCH="${BASH_REMATCH[4]:-0}"
-          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          EXPECTED_CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+
+          NAME=$(sed -n 's/^jemrecVersionName=//p' gradle.properties)
+          CODE=$(sed -n 's/^jemrecVersionCode=//p' gradle.properties)
+          if [ "$NAME" != "$VERSION" ]; then
+            echo "::error::Tag '$TAG' but gradle.properties says jemrecVersionName=$NAME. Bump gradle.properties, commit, and tag that commit."
+            exit 1
+          fi
+          if [ "$CODE" != "$EXPECTED_CODE" ]; then
+            echo "::error::gradle.properties says jemrecVersionCode=$CODE but $VERSION is MAJOR*10000 + MINOR*100 + PATCH = $EXPECTED_CODE."
+            exit 1
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "CODE=$CODE" >> "$GITHUB_ENV"
-          echo "$TAG -> versionName $VERSION, versionCode $CODE"
+          echo "$TAG -> versionName $VERSION, versionCode $CODE, as gradle.properties says"
 
       # Written to RUNNER_TEMP, not the workspace, so it cannot be picked up by
       # anything that archives the checkout.
@@ -111,10 +124,7 @@ jobs:
           JEMREC_KEYSTORE_PASSWORD: ${{ secrets.JEMREC_KEYSTORE_PASSWORD }}
           JEMREC_KEY_ALIAS: ${{ secrets.JEMREC_KEY_ALIAS }}
           JEMREC_KEY_PASSWORD: ${{ secrets.JEMREC_KEY_PASSWORD }}
-        run: >
-          ./gradlew assembleRelease
-          -PjemrecVersionName="$VERSION"
-          -PjemrecVersionCode="$CODE"
+        run: ./gradlew assembleRelease
 
       # The gate. app/build.gradle.kts deliberately leaves the APK UNSIGNED
       # rather than falling back to a debug key, and AGP names an unsigned build
