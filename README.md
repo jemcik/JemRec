@@ -282,11 +282,12 @@ A pre-push hook runs the tests and lint before anything leaves the machine:
 
 ## Releases
 
-Bump the version, commit, tag, and CI does the rest:
+Bump the version in a pull request, tag the merge, and CI does the rest:
 
     # gradle.properties: jemrecVersionName=0.3, jemrecVersionCode=300
     # fastlane/metadata/android/en-US/changelogs/300.txt: what changed
-    git commit -am "0.3" && git tag 0.3 && git push origin main 0.3
+    # ...merged to main as a PR, like everything else; main takes no direct push
+    git checkout main && git pull && git tag 0.3 && git push origin 0.3
 
 The version lives in `gradle.properties` and nowhere else, because that is
 where F-Droid's update checker reads it from at each tag. The workflow refuses
@@ -294,6 +295,11 @@ a tag that disagrees with it, or a `versionCode` that is not
 `MAJOR*10000 + MINOR*100 + PATCH`, then builds a release APK signed with the
 project key held in repository secrets, refuses to publish anything
 `apksigner` cannot verify, and attaches `jemrec-0.3.apk` to the release.
+
+The tag has to point at a commit **on main**, because that commit is what
+F-Droid builds and what the APK's own version-control stamp names. A tag
+pushed alongside a rejected push of main goes up anyway, pointing at a commit
+nothing else can see - which is how this paragraph came to be written.
 
 The signing key is the thing that makes an upgrade possible: an APK signed with
 a different certificate cannot install over an earlier one, whatever its version
