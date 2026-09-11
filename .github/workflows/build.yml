@@ -76,7 +76,11 @@ jobs:
       #   shasum -a 256 app/build/outputs/apk/release/app-release-unsigned.apk
       #
       # A mismatch means some machine-dependent step got into the build, and
-      # the day to find it is before a tag, not after F-Droid has.
+      # the day to find it is before a tag, not after F-Droid has. Compare on
+      # a push to main or a tag: on a pull request this checks out a merge
+      # commit that exists nowhere else, and the APK records the commit it
+      # was built from, so a PR run's digest matches no local build by design.
+      # The daemon jar's digest has no such stamp and compares anywhere.
       - name: Build the release APK unsigned and print its digest
         run: |
           ./gradlew assembleRelease
