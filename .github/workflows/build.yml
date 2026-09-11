@@ -28,10 +28,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # 21, and exactly 21, because the daemon's bytecode depends on the javac
+      # major that compiled it - see shellserver/build.sh, which refuses any
+      # other. F-Droid's build server is Debian trixie with default-jdk, which
+      # is 21; a release built with a different major cannot be reproduced
+      # there, and F-Droid would have to sign it with its own key instead.
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - uses: android-actions/setup-android@v4
 
@@ -62,6 +67,22 @@ jobs:
 
       - name: Build debug APK
         run: ./gradlew assembleDebug
+
+      # The reproducibility check, on every push. With no keystore in the
+      # environment AGP writes app-release-unsigned.apk, which is exactly what
+      # F-Droid's builder produces and what a local `./gradlew assembleRelease`
+      # produces - so the digest printed here is the one to compare against:
+      #
+      #   shasum -a 256 app/build/outputs/apk/release/app-release-unsigned.apk
+      #
+      # A mismatch means some machine-dependent step got into the build, and
+      # the day to find it is before a tag, not after F-Droid has.
+      - name: Build the release APK unsigned and print its digest
+        run: |
+          ./gradlew assembleRelease
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          echo "unsigned release APK: $(shasum -a 256 "$APK")"
+          echo "daemon jar:           $(unzip -p "$APK" assets/jemrec-capture.jar | shasum -a 256 | cut -c1-64)"
 
       - name: Upload APK
         uses: actions/upload-artifact@v5
