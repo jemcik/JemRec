@@ -15,7 +15,11 @@ of background, which is not what anyone sees on their home screen. The corners
 are made TRANSPARENT with a squircle mask, because the README is read on a white
 page or a near-black one and an opaque square shows its own edge against both.
 
-Run from anywhere:  python3 tools/render_icon.py      (writes docs/icon.png)
+Two outputs, one drawing: docs/icon.png at 112px for the README and the site,
+and the F-Droid listing's icon at the 512px fastlane asks for. Rendered from the
+same numbers so the store icon is the launcher icon and not a second design.
+
+Run from anywhere:  python3 tools/render_icon.py
 """
 import pathlib
 from PIL import Image, ImageDraw
@@ -26,6 +30,7 @@ S = 8
 VIEWPORT = 108
 SAFE = 72          # what a launcher actually shows of the 108dp canvas
 OUT_SIZE = 112     # what the README asks for
+STORE_SIZE = 512   # what fastlane asks for, and F-Droid reads
 
 BACKGROUND = "#0B1B2E"
 WAVE = "#8AB4F8"
@@ -78,7 +83,11 @@ def render(size: int = OUT_SIZE, mask: bool = True) -> Image.Image:
 
 
 if __name__ == "__main__":
-    out = pathlib.Path(__file__).resolve().parent.parent / "docs" / "icon.png"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    render().save(out)
-    print(f"wrote {out} ({out.stat().st_size} bytes)")
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for out, size in (
+        (root / "docs" / "icon.png", OUT_SIZE),
+        (root / "fastlane" / "metadata" / "android" / "en-US" / "images" / "icon.png", STORE_SIZE),
+    ):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        render(size).save(out)
+        print(f"wrote {out.relative_to(root)} ({size}px, {out.stat().st_size} bytes)")

@@ -50,9 +50,13 @@ echo "compiling $(wc -l < "$OUT/sources.txt" | tr -d ' ') files against android-
 # is the entire technique, and a wall of warnings about it hides real problems.
 javac --release 17 -nowarn -cp "$ANDROID_JAR" -d "$OUT/classes" "@$OUT/sources.txt"
 
+# d8 writes the jar itself when --output names one. Not a shortcut: it stamps
+# the classes.dex entry with the epoch, so the same classes give the same bytes
+# every time. The `zip` step this replaced stamped in the build's wall-clock
+# time, which made every APK differ in this one asset and would have failed
+# F-Droid's reproducible-build check for no reason a person would ever find.
 echo "dexing with build-tools $BUILD_TOOLS"
 find "$OUT/classes" -name '*.class' > "$OUT/classes.txt"
-"$D8" --lib "$ANDROID_JAR" --min-api 31 --output "$OUT" @"$OUT/classes.txt"
+"$D8" --lib "$ANDROID_JAR" --min-api 31 --output "$JAR" @"$OUT/classes.txt"
 
-(cd "$OUT" && zip -q "$JAR" classes.dex)
-echo "built $JAR ($(wc -c < "$JAR" | tr -d ' ') bytes)"
+echo "built $JAR ($(wc -c < "$JAR" | tr -d ' ') bytes, sha256 $(shasum -a 256 "$JAR" | cut -c1-16)...)"

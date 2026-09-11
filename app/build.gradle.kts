@@ -30,12 +30,13 @@ android {
         minSdk = 31
         targetSdk = 36
 
-        // Release workflow passes these from the git tag; a local build takes
-        // the fallbacks. Hardcoding them ships every release as versionCode 1,
-        // and Android refuses to install an APK whose versionCode is not higher
-        // than the installed one.
-        versionCode = (findProperty("jemrecVersionCode") as String?)?.toInt() ?: 1
-        versionName = (findProperty("jemrecVersionName") as String?) ?: "0.1"
+        // From gradle.properties, which is the one place the version is
+        // written - see the comment there. property() rather than
+        // findProperty() so a missing key fails with its name instead of
+        // shipping a fallback: a fallback here once meant every release
+        // would have been versionCode 1.
+        versionCode = (property("jemrecVersionCode") as String).toInt()
+        versionName = property("jemrecVersionName") as String
     }
 
     // Release signing comes from the environment, never from the repo.
