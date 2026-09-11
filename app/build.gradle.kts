@@ -72,6 +72,19 @@ android {
 
     buildFeatures { compose = true }
 
+    // Package every native library exactly as its Maven artifact ships it.
+    //
+    // AGP strips debug symbols from .so files when an NDK happens to be
+    // installed, and silently skips the step when one is not. Measured on
+    // 0.3: the GitHub runner has an NDK and ran :app:stripReleaseDebugSymbols,
+    // the machine without one did not, and the four libconscrypt_jni.so came
+    // out the same size and different bytes - the only difference between the
+    // two APKs apart from the daemon jar. F-Droid's builder has no NDK unless
+    // asked for one. Keeping the symbols removes the step on every machine,
+    // and costs nothing: Conscrypt ships its libraries stripped already, which
+    // is why the size never changed.
+    packaging { jniLibs { keepDebugSymbols += "**/*.so" } }
+
     testOptions {
         // android.util.Log and the rest of the stub android.jar throw on the
         // JVM. With this they return defaults instead, so pure logic that

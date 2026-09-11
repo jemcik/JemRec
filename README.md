@@ -251,7 +251,7 @@ call takes and tells you what came out of it.
 
 ## Build
 
-Needs a JDK 17 or newer and an Android SDK with:
+Needs **JDK 21** - that major, not "or newer" - and an Android SDK with:
 
     platforms;android-37       the app's compileSdk
     platforms;android-36       what the shell daemon links against
@@ -264,6 +264,12 @@ Then:
 The daemon is not a Gradle module. `shellserver/build.sh` compiles it against the
 platform the *device* runs, with its `@hide` internals intact, and Gradle runs
 that script as part of every build and packages the jar as an app asset.
+
+The JDK major is exact because the daemon's bytes depend on it: measured, JDK 17
+and JDK 21 turn the same sources into dex files 264 bytes apart, and an APK that
+differs by machine is one F-Droid cannot reproduce. 21 is what F-Droid's build
+server runs, so 21 is what CI installs and what `build.sh` insists on -
+`JEMREC_JAVA_HOME` points it at one if the default is something else.
 
 ## Tests
 
@@ -309,9 +315,12 @@ which has refused signing material since before any existed.
 **The build is reproducible**, and that is what lets F-Droid carry the same
 key: F-Droid builds each tag on its own machine, checks the result against the
 APK on the release page byte for byte, and publishes the release APK, signed
-here, when they match. Two clean builds of this tree give the same bytes. The
-one thing that used to differ was the daemon jar, whose `zip` step stamped in
-the build's wall-clock time; `d8` now writes the jar itself, with the epoch.
+here, when they match. Three things used to differ, each found by building a
+tag on a second machine and diffing against the release: the daemon jar's
+`zip` step stamped in the build's wall-clock time (`d8` now writes the jar,
+with the epoch); AGP stripped the native libraries only where an NDK happened
+to be installed (they are now packaged as shipped); and `javac` 17 and 21 do
+not agree on the daemon's bytecode (the major is now pinned and checked).
 
 ## Licence
 

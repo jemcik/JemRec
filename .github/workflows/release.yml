@@ -43,10 +43,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # 21, and exactly 21, because the daemon's bytecode depends on the javac
+      # major that compiled it - see shellserver/build.sh, which refuses any
+      # other. F-Droid's build server is Debian trixie with default-jdk, which
+      # is 21; a release built with a different major cannot be reproduced
+      # there, and F-Droid would have to sign it with its own key instead.
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - uses: android-actions/setup-android@v4
 
