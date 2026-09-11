@@ -86,7 +86,13 @@ jobs:
           ./gradlew assembleRelease
           APK=app/build/outputs/apk/release/app-release-unsigned.apk
           echo "unsigned release APK: $(shasum -a 256 "$APK")"
+          # The two kinds of entry that have differed by machine before - the
+          # daemon jar (javac major) and the native libraries (NDK-dependent
+          # stripping) - printed on their own, so a mismatch names its cause.
           echo "daemon jar:           $(unzip -p "$APK" assets/jemrec-capture.jar | shasum -a 256 | cut -c1-64)"
+          for so in $(unzip -Z1 "$APK" 'lib/*/libconscrypt_jni.so'); do
+            echo "$so: $(unzip -p "$APK" "$so" | shasum -a 256 | cut -c1-64)"
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v5
