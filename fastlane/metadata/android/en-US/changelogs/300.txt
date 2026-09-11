@@ -1,0 +1,1 @@
+Nothing in the app changed. This is the first release F-Droid can build and verify: the build is reproducible byte for byte, the version is written where F-Droid's update checker can read it, and the listing lives in the repository. On upgrade the shell-side recorder is replaced once, at the next moment of Wi-Fi, because its jar is packaged differently; it records the same.
