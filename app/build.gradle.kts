@@ -82,6 +82,18 @@ android {
 
     buildFeatures { compose = true }
 
+    // No Google Play dependency metadata. By default AGP writes an encrypted
+    // list of the app's dependencies into the APK Signing Block at signing
+    // time, for the Play Console to read - and nobody else can, which is why
+    // F-Droid's scanner refuses an APK that carries it. Found by their check
+    // on the 0.5 release: "found extra signing block 'Dependency metadata'",
+    // 5,977 bytes, inside the one part of the APK the reproducibility
+    // comparison skips by design. There is no Play listing to inform.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     // Package every native library exactly as its Maven artifact ships it.
     //
     // AGP strips debug symbols from .so files when an NDK happens to be
