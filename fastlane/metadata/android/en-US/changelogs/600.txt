@@ -1,0 +1,1 @@
+Nothing in the app changed. The APK no longer carries an encrypted list of its dependencies meant for the Google Play Console, which this app has never had a use for and which F-Droid rightly refuses. This is the release submitted to F-Droid.
