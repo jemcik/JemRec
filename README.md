@@ -265,6 +265,14 @@ The daemon is not a Gradle module. `shellserver/build.sh` compiles it against th
 platform the *device* runs, with its `@hide` internals intact, and Gradle runs
 that script as part of every build and packages the jar as an app asset.
 
+The release build is shrunk with R8 and the debug build is not. Measured on
+0.4, the unshrunk APK was 38 MB of which this app's own code was 0.2 MB; the
+rest was libraries shipped whole, and a third of it was nothing but their
+class, method and field names. Shrunk, it is under 7 MB. Names are kept -
+[app/proguard-rules.pro](app/proguard-rules.pro) says why, and lists the two
+things R8 must not remove and the two references it must not warn about,
+which is the whole file.
+
 The JDK major is exact because the daemon's bytes depend on it: measured, JDK 17
 and JDK 21 turn the same sources into dex files 264 bytes apart, and an APK that
 differs by machine is one F-Droid cannot reproduce. 21 is what F-Droid's build
