@@ -54,10 +54,20 @@ android {
 
     buildTypes {
         release {
-            // Off for now. R8 on a codebase that reaches @hide internals and
-            // reflects into Conscrypt needs its own pass with its own testing,
-            // not a flag flipped while the transport is still being proven.
-            isMinifyEnabled = false
+            // R8, on. Measured on 0.4 before this: 38 MB on disk, of which
+            // 28.5 MB was dex and 0.2 MB of that was this app - the rest was
+            // libraries shipped whole, and 12.8 MB was nothing but the names
+            // of their classes, methods and fields. proguard-rules.pro says
+            // what has to survive and why. Debug stays unshrunk: its
+            // diagnostic receivers are reached by name from tools/, and a
+            // build that takes a minute longer is a measurement that does
+            // not get made.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             // With no keystore configured the APK is left UNSIGNED rather than
             // falling back to the debug key: a debug-signed "release" installs
             // once and can never be upgraded by a properly signed one.
@@ -83,7 +93,30 @@ android {
     // asked for one. Keeping the symbols removes the step on every machine,
     // and costs nothing: Conscrypt ships its libraries stripped already, which
     // is why the size never changed.
-    packaging { jniLibs { keepDebugSymbols += "**/*.so" } }
+    packaging {
+        jniLibs {
+            keepDebugSymbols += "**/*.so"
+            // Phones are ARM. The x86 and x86_64 copies of Conscrypt's
+            // BoringSSL are 4.9 MB that only an emulator could run, and this
+            // app cannot record a call on an emulator anyway - there is no
+            // voice-call audio source to open. armeabi-v7a stays: a 32-bit
+            // phone on Android 12 is rare, and 1.3 MB is a fair price for not
+            // finding out from the one person who has one.
+            excludes += listOf("**/x86/**", "**/x86_64/**")
+        }
+        resources {
+            // BouncyCastle's jar carries 1.3 MB of Java resources this app
+            // never opens: a megabyte of lookup tables for the Picnic
+            // post-quantum signature scheme, and the message catalogues of a
+            // certificate-path reviewer. R8 removes the classes that would
+            // read them; nothing removes the files, so this does.
+            excludes += listOf(
+                "org/bouncycastle/pqc/**",
+                "org/bouncycastle/x509/CertPathReviewerMessages*",
+                "org/bouncycastle/pkix/CertPathReviewerMessages*",
+            )
+        }
+    }
 
     testOptions {
         // android.util.Log and the rest of the stub android.jar throw on the
