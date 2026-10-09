@@ -299,13 +299,38 @@ public final class Main {
             }
             AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
             Handler handler = new Handler(Looper.getMainLooper());
-            telephony.registerTelephonyCallback(
-                    handler::post, new CallWatch(token, telephony, audio, handler));
+            // Into a field, never inline: the framework only holds it weakly.
+            // See callWatch.
+            callWatch = new CallWatch(token, telephony, audio, handler);
+            telephony.registerTelephonyCallback(handler::post, callWatch);
             Ln.i("callwatch: watching call state as uid " + android.os.Process.myUid());
         } catch (Throwable t) {
             Ln.e("callwatch: could not register for call state", t);
         }
     }
+
+    /**
+     * THE CALL WATCH, HELD FOR THE LIFE OF THE PROCESS.
+     *
+     * The framework does not keep a TelephonyCallback alive. The binder stub it
+     * registers refers to the callback through a WeakReference
+     * (TelephonyCallback.IPhoneStateListenerStub), and once that is cleared
+     * every call state change is dropped inside the stub - silently, before any
+     * code here runs. This used to be registered inline with nothing else
+     * referring to it, so the first garbage collection that found it unpinned
+     * took it, and the daemon went deaf: answering pings, passing the
+     * self-test, logging heartbeats, and never seeing another call. The
+     * telephony registry still lists the listener, so nothing on the system
+     * side shows it either.
+     *
+     * Reported as "only the first call is recorded" (Honor 90, MagicOS 9), and
+     * measured on 2026-10-09. On an Android 15 emulator the daemon's first GC
+     * came nine minutes after spawn, unprompted, and the next call was missed.
+     * Forcing one with `kill -USR1` (ART answers it with a full GC) did the same
+     * on an Honor running Android 17, with real calls. Held here, the watch
+     * survived every forced GC and heard every call.
+     */
+    private static CallWatch callWatch;
 
     private static final class CallWatch extends TelephonyCallback
             implements TelephonyCallback.CallStateListener {
