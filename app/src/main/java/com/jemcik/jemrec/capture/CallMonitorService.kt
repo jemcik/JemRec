@@ -78,6 +78,7 @@ class CallMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         createChannel()
     }
 
@@ -194,6 +195,7 @@ class CallMonitorService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         recording?.cancel()
         recording = null
         scope.cancel()
@@ -428,6 +430,17 @@ class CallMonitorService : Service() {
         const val ACTION_CALL_STARTED = "com.jemcik.jemrec.CALL_STARTED"
         const val ACTION_CALL_ENDED = "com.jemcik.jemrec.CALL_ENDED"
         const val EXTRA_TOKEN = "token"
+
+        /**
+         * Whether this service exists in this process right now. For the one
+         * caller that must not start it by asking it to stop: retiring a
+         * wedged daemon (CaptureDaemon.retire) clears a notification that
+         * daemon left up, and a STOP to a service that is not running would
+         * first bring it up, notification and all.
+         */
+        @Volatile
+        var running = false
+            private set
 
         fun stop(context: Context) {
             runCatching {

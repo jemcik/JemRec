@@ -190,6 +190,34 @@ object CallLogLookup {
     }
 
     /**
+     * When each call since a moment began, for the self-test's check that the
+     * daemon heard them (see SelfTest.unheardCall).
+     *
+     * Only answered incoming calls and outgoing ones: the two kinds that
+     * certainly went off-hook on this phone, so the daemon's call watch cannot
+     * have missed them and still be working. A missed or rejected call usually
+     * rings, but call screening can turn one away before it ever does, and a
+     * check that cries wolf teaches people to ignore it.
+     */
+    internal fun callStartsSince(context: Context, since: Long): List<Long> {
+        val out = mutableListOf<Long>()
+        context.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            arrayOf(CallLog.Calls.DATE),
+            "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.TYPE} IN (?, ?)",
+            arrayOf(
+                since.toString(),
+                CallLog.Calls.INCOMING_TYPE.toString(),
+                CallLog.Calls.OUTGOING_TYPE.toString(),
+            ),
+            null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) out += cursor.getLong(0)
+        }
+        return out
+    }
+
+    /**
      * The contact's photo, looked up by number.
      *
      * NOT taken from the call log's cached_photo_uri, which is where it ought

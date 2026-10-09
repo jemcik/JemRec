@@ -45,6 +45,7 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -299,13 +300,53 @@ public final class Main {
             }
             AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
             Handler handler = new Handler(Looper.getMainLooper());
-            telephony.registerTelephonyCallback(
-                    handler::post, new CallWatch(token, telephony, audio, handler));
+            // Into a field, never inline: the framework only holds it weakly.
+            // See callWatch.
+            callWatch = new CallWatch(token, telephony, audio, handler);
+            telephony.registerTelephonyCallback(handler::post, callWatch);
+            watching = true;
             Ln.i("callwatch: watching call state as uid " + android.os.Process.myUid());
         } catch (Throwable t) {
             Ln.e("callwatch: could not register for call state", t);
         }
     }
+
+    /**
+     * THE CALL WATCH, HELD FOR THE LIFE OF THE PROCESS.
+     *
+     * The framework does not keep a TelephonyCallback alive. The binder stub it
+     * registers refers to the callback through a WeakReference
+     * (TelephonyCallback.IPhoneStateListenerStub), and once that is cleared
+     * every call state change is dropped inside the stub - silently, before any
+     * code here runs. This used to be registered inline with nothing else
+     * referring to it, so the first garbage collection that found it unpinned
+     * took it, and the daemon went deaf: answering pings, passing the
+     * self-test, logging heartbeats, and never seeing another call. The
+     * telephony registry still lists the listener, so nothing on the system
+     * side shows it either.
+     *
+     * Reported as "only the first call is recorded" (Honor 90, MagicOS 9), and
+     * measured on 2026-10-09. On an Android 15 emulator the daemon's first GC
+     * came nine minutes after spawn, unprompted, and the next call was missed.
+     * Forcing one with `kill -USR1` (ART answers it with a full GC) did the same
+     * on an Honor running Android 17, with real calls. Held here, the watch
+     * survived every forced GC and heard every call.
+     */
+    private static CallWatch callWatch;
+
+    /**
+     * WHAT THE CALL WATCH HAS HEARD, FOR THE APP'S SELF-TEST. See COMMAND_WATCH.
+     *
+     * A deaf watch is otherwise invisible: the daemon answers pings and the
+     * self-test's live capture works, because neither involves the watch. These
+     * let the app ask whether a call the phone logged ever reached it.
+     */
+    private static final long STARTED_AT = System.currentTimeMillis();
+    private static volatile boolean watching;
+    private static final AtomicInteger callEvents = new AtomicInteger();
+    private static final AtomicInteger offHooks = new AtomicInteger();
+    private static volatile long lastCallEventAt;
+    private static volatile long lastOffHookAt;
 
     private static final class CallWatch extends TelephonyCallback
             implements TelephonyCallback.CallStateListener {
@@ -327,12 +368,18 @@ public final class Main {
 
         @Override
         public void onCallStateChanged(int state) {
+            // Before anything else, so the self-test sees every event that
+            // arrived, whatever came of it.
+            callEvents.incrementAndGet();
+            lastCallEventAt = System.currentTimeMillis();
             switch (state) {
                 case TelephonyManager.CALL_STATE_RINGING:
                     sawRinging = true;
                     Ln.i("callwatch: ringing");
                     break;
                 case TelephonyManager.CALL_STATE_OFFHOOK:
+                    offHooks.incrementAndGet();
+                    lastOffHookAt = System.currentTimeMillis();
                     cancelPendingIdle();
                     inCall = true;
                     Ln.i("callwatch: off-hook (" + (sawRinging ? "incoming" : "outgoing") + ")");
@@ -882,6 +929,26 @@ public final class Main {
      *  progress, once the user has said yes to the start-of-call prompt. */
     private static final int COMMAND_START = 'S';
 
+    /**
+     * Report on the call watch, for the app's self-test.
+     *
+     * The self-test proved that this daemon answers and that the HAL hands over
+     * voice-call audio, and on that alone it said "a call would be recorded" -
+     * while the daemon was deaf to every call, its watch garbage-collected (see
+     * callWatch). Measured: PASS straight after a call it had missed. Neither
+     * check touches the watch, so the app now asks after it directly: when this
+     * process started, whether the watch registered, whether the main looper
+     * that delivers its events still runs, the mode, whether a call is up, how
+     * many events and off-hooks there have been and when the last of each came,
+     * and since when the current recording has run. The app holds that against
+     * the phone's call log. One line, "WATCH 1 key=value ..."; a daemon older
+     * than this hangs up on the command, which the app reads as too old to say.
+     */
+    private static final int COMMAND_WATCH = 'W';
+    private static final int WATCH_FORMAT = 1;
+    /** How long the main looper gets to run a posted no-op before it counts as stuck. */
+    private static final long LOOPER_CHECK_MS = 1000L;
+
     private static final String REC_DIR = "/data/local/tmp";
     private static final String REC_PREFIX = "jemrec_rec_";
     private static final String REC_SUFFIX = ".dat";
@@ -954,13 +1021,16 @@ public final class Main {
     private static final class RecordingSession {
         final String name;
         final boolean incoming;
+        final long startedAt;
         private final File file;
         private final FileOutputStream out;
         private final AsyncProcessor recorder;
 
-        private RecordingSession(String name, boolean incoming, File file, FileOutputStream out, AsyncProcessor recorder) {
+        private RecordingSession(String name, boolean incoming, long startedAt, File file,
+                                 FileOutputStream out, AsyncProcessor recorder) {
             this.name = name;
             this.incoming = incoming;
+            this.startedAt = startedAt;
             this.file = file;
             this.out = out;
             this.recorder = recorder;
@@ -970,7 +1040,8 @@ public final class Main {
             // in/out is baked into the name so an orphan collected after a
             // reboot - when the daemon no longer remembers the call - still
             // knows which it was.
-            String name = REC_PREFIX + System.currentTimeMillis() + (incoming ? "_in" : "_out") + REC_SUFFIX;
+            long startedAt = System.currentTimeMillis();
+            String name = REC_PREFIX + startedAt + (incoming ? "_in" : "_out") + REC_SUFFIX;
             File file = new File(REC_DIR, name);
             FileOutputStream out = new FileOutputStream(file);
             AudioCapture capture = new AudioDirectCapture(AUDIO_SOURCE);
@@ -985,7 +1056,7 @@ public final class Main {
                 }
             });
             Ln.i("recording: started -> " + name);
-            return new RecordingSession(name, incoming, file, out, recorder);
+            return new RecordingSession(name, incoming, startedAt, file, out, recorder);
         }
 
         void stop() {
@@ -1295,6 +1366,11 @@ public final class Main {
             client.getOutputStream().flush();
             return;
         }
+        if (command == COMMAND_WATCH) {
+            client.getOutputStream().write((watchReport() + "\n").getBytes(StandardCharsets.UTF_8));
+            client.getOutputStream().flush();
+            return;
+        }
         if (command == COMMAND_FETCH) {
             String name = readName(client);
             File file = recFileFor(name);
@@ -1336,6 +1412,39 @@ public final class Main {
         client.getOutputStream().write(
                 ("PONG " + PROTOCOL_VERSION + " " + BUILD + "\n").getBytes(StandardCharsets.UTF_8));
         client.getOutputStream().flush();
+    }
+
+    /** The answer to COMMAND_WATCH. Times are wall-clock millis, 0 for never. */
+    private static String watchReport() {
+        RecordingSession rec = activeRecording;
+        return "WATCH " + WATCH_FORMAT
+                + " since=" + STARTED_AT
+                + " watching=" + (watching ? 1 : 0)
+                + " looper=" + (looperResponds() ? "ok" : "stuck")
+                + " mode=" + recordingMode
+                + " call=" + (callActive ? 1 : 0)
+                + " events=" + callEvents.get()
+                + " lastevent=" + lastCallEventAt
+                + " offhooks=" + offHooks.get()
+                + " lastoffhook=" + lastOffHookAt
+                + " recording=" + (rec == null ? 0 : rec.startedAt);
+    }
+
+    /**
+     * Whether the main looper still runs what is posted to it. Call events and
+     * the end-of-call handling all run there, so a looper that does not is a
+     * daemon that has stopped handling calls, however well it answers pings -
+     * those are served on other threads.
+     */
+    private static boolean looperResponds() {
+        CountDownLatch ran = new CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(ran::countDown);
+        try {
+            return ran.await(LOOPER_CHECK_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private static String jarBuild() {

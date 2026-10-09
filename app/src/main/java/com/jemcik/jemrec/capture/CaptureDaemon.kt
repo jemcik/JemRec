@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import android.media.AudioManager
 import android.util.Log
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbIdentity
@@ -111,6 +112,16 @@ object CaptureDaemon {
     private const val COMMAND_SET_ENABLED = 'E'.code.toByte()
     private const val COMMAND_LIST = 'L'.code.toByte()
     private const val COMMAND_START = 'S'.code.toByte()
+    private const val COMMAND_WATCH = 'W'.code.toByte()
+
+    /**
+     * How long a BUSY is given to come true. A daemon really recording a call
+     * lets go within a couple of seconds of the call's audio being released -
+     * see retire() - so three BUSYs across twelve seconds with no call in
+     * progress at any point is not a call.
+     */
+    private const val WEDGE_RECHECKS = 2
+    private const val WEDGE_RECHECK_MS = 6_000L
 
     private const val NONCE_BYTES = 16
     private const val MAC_BYTES = 32
@@ -253,6 +264,12 @@ object CaptureDaemon {
         } catch (_: Exception) {
             null
         }
+
+    /** Our daemon's answer to an authenticated ping, or null if it is not answering. */
+    internal suspend fun answer(context: Context): Answer? = withContext(Dispatchers.IO) { probe(context) }
+
+    /** Whether the daemon that gave that answer runs the jar this APK carries. */
+    internal fun isCurrent(context: Context, answer: Answer): Boolean = upToDate(context, answer)
 
     @Volatile
     private var bundled: String? = null
@@ -460,7 +477,7 @@ object CaptureDaemon {
     }
 
     /** The mode the daemon should be in right now, from the app's settings. */
-    private fun currentMode(context: Context): Int = when {
+    internal fun currentMode(context: Context): Int = when {
         !RecorderSwitch.isOn(context) -> MODE_OFF
         RecordingMode.of(context) == RecordingMode.AUTOMATIC -> MODE_AUTOMATIC
         else -> MODE_ON_DEMAND
@@ -598,27 +615,91 @@ object CaptureDaemon {
      * order: one from a previous install does not know this token and cannot
      * be told anything, so it is left to ensureRunning() to retire over ADB.
      */
-    suspend fun quit(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun quit(context: Context): Boolean =
+        withContext(Dispatchers.IO) { quitReply(context) == QuitReply.BYE }
+
+    /** What a daemon answers a quit with. BUSY means it is recording a call -
+     *  or believes it is; see retire(). */
+    internal enum class QuitReply { BYE, BUSY, NONE }
+
+    /** "BYE" or "BUSY", as Main.session() writes them; anything else, or
+     *  nothing, is no answer. */
+    internal fun parseQuitReply(line: String?): QuitReply = when {
+        line == null -> QuitReply.NONE
+        line.startsWith("BYE") -> QuitReply.BYE
+        line.startsWith("BUSY") -> QuitReply.BUSY
+        else -> QuitReply.NONE
+    }
+
+    /** One quit, and what came back. Blocking; callers are on the IO dispatcher. */
+    private fun quitReply(context: Context): QuitReply =
         try {
             open(context, COMMAND_QUIT, connectMs = 600, readMs = 1_500).use { socket ->
-                val reply = ByteArray(4)
-                val n = socket.getInputStream().read(reply)
-                val said = if (n > 0) String(reply, 0, n) else ""
-                val ok = said.startsWith("BYE")
-                Log.i(
-                    TAG,
-                    "daemon: quit " + when {
-                        ok -> "acknowledged"
-                        said.startsWith("BUS") -> "refused - it is recording a call"
-                        else -> "not acknowledged"
-                    },
-                )
-                ok
+                parseQuitReply(socket.getInputStream().bufferedReader().readLine()).also { reply ->
+                    Log.i(
+                        TAG,
+                        "daemon: quit " + when (reply) {
+                            QuitReply.BYE -> "acknowledged"
+                            QuitReply.BUSY -> "refused - it is recording a call"
+                            QuitReply.NONE -> "not acknowledged"
+                        },
+                    )
+                }
             }
         } catch (t: Exception) {
             Log.w(TAG, "daemon: quit failed - ${t.message}")
-            false
+            QuitReply.NONE
         }
+
+    /**
+     * Whether a call may be up, judged by the audio mode: the signal the
+     * daemon itself trusts to end a recording (Main.CallWatch.audioInCall), and
+     * one this app can read without READ_PHONE_STATE, which it does not hold.
+     * Anything but MODE_NORMAL counts - ringing, a call, a VoIP call,
+     * screening - because getting this wrong in that direction only ever
+     * leaves a daemon alone.
+     */
+    internal fun inCall(mode: Int): Boolean = mode != AudioManager.MODE_NORMAL
+
+    internal fun callInProgress(context: Context): Boolean {
+        val audio = context.getSystemService(AudioManager::class.java) ?: return true
+        return inCall(audio.mode)
+    }
+
+    /** How asking an out-of-date daemon to make way turned out. */
+    private enum class Retirement { QUIT, RECORDING, REFUSED, WEDGED }
+
+    /**
+     * ASK AN OUT-OF-DATE DAEMON TO MAKE WAY - AND DO NOT BELIEVE "BUSY" FOREVER.
+     *
+     * A daemon refuses to quit while it records a call, and that is right: a
+     * call is worth more than an update being prompt. But it judges "recording"
+     * by its own state, and that state can be stuck. Every build before the
+     * call watch was held in a field (see Main.callWatch) could lose its watch
+     * to garbage collection - and one that lost it MID-CALL never hears that
+     * call end, so its recording never stops and it answers BUSY to every quit
+     * for the rest of its life. The update that fixes the bug could then never
+     * replace the daemon that has it.
+     *
+     * A real BUSY cannot outlast its call by much: the daemon ends a recording
+     * within about two seconds of telecom releasing the call's audio mode. So a
+     * BUSY with no call in progress is asked again, twice, six seconds apart,
+     * and only a daemon still saying BUSY with the audio mode normal at every
+     * look is called wedged. Any sign of a call at any point and it is left
+     * alone, as before.
+     */
+    private suspend fun retire(context: Context): Retirement {
+        var reply = quitReply(context)
+        var asked = 1
+        while (reply == QuitReply.BUSY) {
+            if (callInProgress(context)) return Retirement.RECORDING
+            if (asked > WEDGE_RECHECKS) return Retirement.WEDGED
+            delay(WEDGE_RECHECK_MS)
+            if (callInProgress(context)) return Retirement.RECORDING
+            reply = quitReply(context)
+            asked++
+        }
+        return if (reply == QuitReply.BYE) Retirement.QUIT else Retirement.REFUSED
     }
 
     /**
@@ -650,13 +731,33 @@ object CaptureDaemon {
             }
             // Asked, not killed: it says BUSY while recording a call, and a
             // call is worth more than the update being prompt. The next
-            // revive asks again.
+            // revive asks again - unless the BUSY cannot be true; see retire().
             Log.i(TAG, "daemon: replacing build ${running.build} with ${bundledBuild(context)}")
-            if (!quit(context)) {
-                Log.i(TAG, "daemon: it would not quit (recording a call?), keeping the old build for now")
-                return Result.success(Unit)
+            when (retire(context)) {
+                Retirement.QUIT -> retired = true
+                Retirement.RECORDING -> {
+                    Log.i(TAG, "daemon: it is recording a call, keeping the old build for now")
+                    return Result.success(Unit)
+                }
+                Retirement.REFUSED -> {
+                    Log.i(TAG, "daemon: it would not quit, keeping the old build for now")
+                    return Result.success(Unit)
+                }
+                Retirement.WEDGED -> {
+                    Log.w(
+                        TAG,
+                        "daemon: build ${running.build} still says BUSY with no call in progress - " +
+                            "it lost the end of a call and will never quit; retiring it over ADB",
+                    )
+                    exec(PKILL)
+                    // Its call never ended for the app either: CALL_ENDED was
+                    // never sent, so a "Recording call" notification from it
+                    // may still be up. Its file is collected like any orphan,
+                    // by the reconcile that follows a revive.
+                    if (CallMonitorService.running) CallMonitorService.stop(context)
+                    retired = true
+                }
             }
-            retired = true
         }
         return runCatching {
             check(AdbTransport.isConnected) {
@@ -896,6 +997,61 @@ object CaptureDaemon {
         runCatching {
             open(context, COMMAND_START).use { socket ->
                 socket.getInputStream().bufferedReader().readLine()?.trim()?.ifBlank { null }
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * What the daemon says its call watch has heard - see Main.COMMAND_WATCH
+     * for why the self-test needs it. Times are wall-clock millis on this
+     * phone, 0 for never.
+     */
+    internal data class Watch(
+        /** When the daemon started: calls before this are not its business. */
+        val since: Long,
+        val watching: Boolean,
+        /** Whether the thread that delivers call events still runs. */
+        val looperOk: Boolean,
+        val mode: Int,
+        /** Whether the daemon believes a call is up right now. */
+        val inCall: Boolean,
+        val events: Int,
+        val lastEvent: Long,
+        val offHooks: Int,
+        val lastOffHook: Long,
+        /** When the recording in progress started, or 0 if there is none. */
+        val recordingSince: Long,
+    )
+
+    /** "WATCH 1 since=... watching=1 looper=ok ..."; null for anything else,
+     *  including a format this app does not know. */
+    internal fun parseWatch(line: String?): Watch? {
+        val parts = line?.trim()?.split(' ')?.filter { it.isNotEmpty() } ?: return null
+        if (parts.size < 2 || parts[0] != "WATCH" || parts[1] != "1") return null
+        val fields = parts.drop(2).associate { it.substringBefore('=') to it.substringAfter('=', "") }
+        fun long(key: String) = fields[key]?.toLongOrNull()
+        fun int(key: String) = fields[key]?.toIntOrNull()
+        return Watch(
+            since = long("since") ?: return null,
+            watching = fields["watching"] == "1",
+            looperOk = fields["looper"] == "ok",
+            mode = int("mode") ?: return null,
+            inCall = fields["call"] == "1",
+            events = int("events") ?: return null,
+            lastEvent = long("lastevent") ?: return null,
+            offHooks = int("offhooks") ?: return null,
+            lastOffHook = long("lastoffhook") ?: return null,
+            recordingSince = long("recording") ?: return null,
+        )
+    }
+
+    /** The daemon's report on its call watch; null if there is none to be
+     *  had, most often from a daemon too old to give one - it hangs up on the
+     *  command. */
+    internal suspend fun watch(context: Context): Watch? = withContext(Dispatchers.IO) {
+        runCatching {
+            open(context, COMMAND_WATCH).use { socket ->
+                parseWatch(socket.getInputStream().bufferedReader().readLine())
             }
         }.getOrNull()
     }
