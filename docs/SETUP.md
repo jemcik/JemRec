@@ -51,6 +51,13 @@ JemRec does **not** ask for microphone access and does not have it. The
 recording is done by a separate, more privileged helper that the app starts
 later; the app itself only collects the finished file.
 
+**Then one question.** Before you switch anything on, JemRec says what stays
+on: USB debugging and Wireless debugging, for as long as it is installed,
+turned back on if they go off. Android shows a notification for as long as
+debugging is on, and JemRec asks whether to hide it. Either answer works.
+Hidden, nothing on screen reminds you that debugging is on; you can change it
+later in Settings.
+
 ## Step 2 — Turn on Developer options
 
 Skip this if Developer options are already on.
@@ -242,6 +249,10 @@ The header is the honest indicator:
   for in the app rather than at install, because it needs your call log and
   contacts. Say no and everything still works, with the time as each
   recording's headline.
+- **Hide the debugging notification** — the answer to the question in step 1,
+  changeable. Debugging stays on either way; this is only about whether
+  Android's notification saying so is shown. Turning it on after setup needs
+  Wi-Fi.
 - **Start fresh** — puts JemRec back to how it was the day you installed it, so
   setup runs again from step 1. The app closes when you confirm. **Your
   recordings are not deleted.**
@@ -296,5 +307,9 @@ make, not the app's.
 
 **This uses debugging switches, and they stay on.** They are developer features
 that let software on your phone act with elevated privileges. JemRec needs them
-to record calls at all. If you stop using JemRec, turn Wireless debugging, USB
-debugging and Developer options back off.
+to record calls at all, so it keeps them on, and turns them back on if they go
+off. While they are on, a computer that has been paired with this phone can
+connect to it on the same Wi-Fi, and one you have allowed before can connect
+over a cable — so check *Wireless debugging → Paired devices* now and then and
+remove any you do not recognise. If you stop using JemRec, uninstall it first,
+then turn Wireless debugging, USB debugging and Developer options back off.

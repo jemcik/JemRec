@@ -440,6 +440,12 @@ SETUP = [
     ("p", "JemRec does **not** ask for microphone access and does not have it. "
           "The recording is done by a separate, more privileged helper that the "
           "app starts later; the app itself only collects the finished file."),
+    ("p", "**Then one question.** Before you switch anything on, JemRec says what "
+          "stays on: USB debugging and Wireless debugging, for as long as it is "
+          "installed, turned back on if they go off. Android shows a notification "
+          "for as long as debugging is on, and JemRec asks whether to hide it. "
+          "Either answer works. Hidden, nothing on screen reminds you that "
+          "debugging is on; you can change it later in Settings."),
 
     ("h2", "Step 2 — Turn on Developer options"),
     ("p", "Skip this if Developer options are already on."),
@@ -614,6 +620,10 @@ SETUP = [
         "asked for in the app rather than at install, because it needs your call "
         "log and contacts. Say no and everything still works, with the time as "
         "each recording's headline.",
+        "**Hide the debugging notification** — the answer to the question in "
+        "step 1, changeable. Debugging stays on either way; this is only about "
+        "whether Android's notification saying so is shown. Turning it on after "
+        "setup needs Wi-Fi.",
         "**Start fresh** — puts JemRec back to how it was the day you installed "
         "it, so setup runs again from step 1. The app closes when you confirm. "
         "**Your recordings are not deleted.**",
@@ -661,8 +671,13 @@ SETUP = [
           "is your call to make, not the app's."),
     ("p", "**This uses debugging switches, and they stay on.** They are developer "
           "features that let software on your phone act with elevated privileges. "
-          "JemRec needs them to record calls at all. If you stop using JemRec, "
-          "turn Wireless debugging, USB debugging and Developer options back off."),
+          "JemRec needs them to record calls at all, so it keeps them on, and turns "
+          "them back on if they go off. While they are on, a computer that has "
+          "been paired with this phone can connect to it on the same Wi-Fi, and one "
+          "you have allowed before can connect over a cable — so check "
+          "*Wireless debugging → Paired devices* now and then and remove any you do "
+          "not recognise. If you stop using JemRec, uninstall it first, then turn "
+          "Wireless debugging, USB debugging and Developer options back off."),
 ]
 
 
@@ -937,6 +952,11 @@ PRIVACY_BODY = f"""
         <td>Read from the phone&rsquo;s own call log and contacts, only if you
             allow it, and only to label a recording. Nothing is copied or stored;
             the lookup happens each time the list is shown.</td></tr>
+    <tr><td>Notifications</td>
+        <td>Only if you ask JemRec to hide Android&rsquo;s debugging notification.
+            It then has notification access, and looks only at notifications from
+            Android itself, to find that one. It keeps the IDs of the ones it hid,
+            so it can bring them back. Nothing else is read or kept.</td></tr>
     <tr><td>Settings</td>
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
             ask before each call, where to save, and a random token the app uses to

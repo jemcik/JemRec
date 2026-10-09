@@ -7,7 +7,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.RecordPromptActivity
+import java.security.SecureRandom
 
 /**
  * Asks, mid-call, whether to record this one.
@@ -42,8 +44,11 @@ object RecordPrompt {
     private const val CHANNEL_ID = "jemrec.ask.v2"
     private const val LEGACY_CHANNEL_ID = "jemrec.ask"
     private const val NOTIFICATION_ID = 3
+    private const val KEY_TICKET = "prompt_ticket"
+    private val random = SecureRandom()
 
     fun show(context: Context, incoming: Boolean) {
+        val ticket = mintTicket(context)
         val manager = context.getSystemService(NotificationManager::class.java)
         runCatching { manager.deleteNotificationChannel(LEGACY_CHANNEL_ID) }
         manager.createNotificationChannel(
@@ -79,9 +84,9 @@ object RecordPrompt {
             // is the one supported lever: SystemUI leaves a heads-up backed by
             // one on screen far longer. On a locked phone it opens the activity
             // properly, which is the case with no shade to pull down.
-            .setFullScreenIntent(fullScreen(context, incoming), true)
-            .addAction(action(context, "Record", CallMonitorService.ACTION_RECORD_NOW, incoming))
-            .addAction(action(context, "Not now", CallMonitorService.ACTION_DECLINE, incoming))
+            .setFullScreenIntent(fullScreen(context, incoming, ticket), true)
+            .addAction(action(context, "Record", CallMonitorService.ACTION_RECORD_NOW, incoming, ticket))
+            .addAction(action(context, "Not now", CallMonitorService.ACTION_DECLINE, incoming, ticket))
             // Deliberately dismissable: swiping it away is a perfectly clear
             // way to say no, and an unswipeable prompt during a call would be
             // an irritation with no upside.
@@ -93,18 +98,58 @@ object RecordPrompt {
         Log.i(TAG, "prompt: asking whether to record this call")
     }
 
-    private fun fullScreen(context: Context, incoming: Boolean): PendingIntent =
+    private fun fullScreen(context: Context, incoming: Boolean, ticket: String): PendingIntent =
         PendingIntent.getActivity(
             context,
             1,
             Intent(context, RecordPromptActivity::class.java)
                 .putExtra(CallMonitorService.EXTRA_INCOMING, incoming)
+                .putExtra(CallMonitorService.EXTRA_TICKET, ticket)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
+    /** Take the prompt down. Its ticket goes with it: a prompt that is not
+     *  showing has no answer left to give. */
     fun dismiss(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+        synchronized(this) { Prefs.of(context).edit().remove(KEY_TICKET).apply() }
+    }
+
+    /**
+     * Whether an answer came from the prompt that is up right now. Spends the
+     * ticket, so one prompt gives one answer.
+     *
+     * WHY THE ANSWER NEEDS A TICKET AT ALL
+     *
+     * The buttons go to CallMonitorService, and that service is exported so
+     * the daemon can wake it. Exported means any installed app can send it an
+     * intent, and before this a bare RECORD_NOW from anywhere started
+     * recording the call in progress - in the mode where the user had said
+     * they would decide each call themselves, and after they had said Not now.
+     * Reported privately as GHSA-hf4v-7hwh-hx7w.
+     *
+     * The ticket is minted fresh for each prompt and travels only in this
+     * app's own intents: the prompt's PendingIntents, whose extras no other
+     * app can read, and the answer RecordPromptActivity sends. So only this
+     * prompt's own buttons carry it, and only until it is answered, dismissed
+     * or the call ends. Kept in preferences rather than in the service, so the
+     * answer still lands if the service was stopped or the process was killed
+     * while the prompt sat waiting.
+     */
+    fun claim(context: Context, presented: String?): Boolean = synchronized(this) {
+        val prefs = Prefs.of(context)
+        val expected = prefs.getString(KEY_TICKET, null)
+        if (presented.isNullOrEmpty() || presented != expected) return false
+        prefs.edit().remove(KEY_TICKET).apply()
+        true
+    }
+
+    private fun mintTicket(context: Context): String = synchronized(this) {
+        val ticket = ByteArray(16).also { random.nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }
+        Prefs.of(context).edit().putString(KEY_TICKET, ticket).apply()
+        ticket
     }
 
     /**
@@ -121,10 +166,12 @@ object RecordPrompt {
         label: String,
         action: String,
         incoming: Boolean,
+        ticket: String,
     ): Notification.Action {
         val intent = Intent(context, CallMonitorService::class.java)
             .setAction(action)
             .putExtra(CallMonitorService.EXTRA_INCOMING, incoming)
+            .putExtra(CallMonitorService.EXTRA_TICKET, ticket)
         val pending = PendingIntent.getForegroundService(
             context,
             action.hashCode(),

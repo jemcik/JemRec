@@ -103,67 +103,94 @@ class CallMonitorService : Service() {
         startForegroundCompat()
 
         when (intent?.action) {
+            // EVERY ACTION BELOW IS GUARDED. This service is exported, so any
+            // installed app can send it any of them; the guard is the only
+            // thing that tells the daemon or the user apart from the rest. An
+            // unguarded RECORD_NOW was reported (GHSA-hf4v-7hwh-hx7w): any app
+            // could start recording a call in ask-first mode, and follow it
+            // with STOP to take this notification down while it ran.
+            //
+            // What no guard here can refuse is stopService(): any app may call
+            // it on an exported service. That costs this notification for the
+            // rest of a call the user chose to record, and nothing more - the
+            // daemon owns the recording, CALL_ENDED brings this service back to
+            // save it, and the prompt's ticket lives in preferences, not here.
+
             // THE DAEMON SAW A CALL. The route that lets the app be dormant: the
             // shell process wakes this service directly, which is not a broadcast
             // so iAware cannot drop it. Guarded by a token, because an exported
             // service that records phone calls must not be startable by any app.
+            // STOP comes from the app itself and carries the same token.
             //
             // The daemon has already RECORDED the call to a file by the time
             // CALL_ENDED arrives; this service only reflects it and, on end,
             // fetches the finished file to save. It is no longer on the audio
             // path, so a freeze here cannot cost a single packet.
-            ACTION_CALL_STARTED, ACTION_CALL_ENDED -> {
+            ACTION_CALL_STARTED, ACTION_CALL_ENDED, ACTION_STOP -> {
                 if (intent.getStringExtra(EXTRA_TOKEN) != CaptureDaemon.token(this)) {
                     Log.w(TAG, "monitor: ${intent.action} with a bad token, ignoring")
                     finishIfIdle()
                     return START_NOT_STICKY
                 }
-                if (intent.action == ACTION_CALL_STARTED) {
-                    onCallStarted(
+                when (intent.action) {
+                    ACTION_CALL_STARTED -> onCallStarted(
                         intent.getStringExtra(EXTRA_RECFILE),
                         intent.getBooleanExtra(EXTRA_INCOMING, false),
                     )
-                } else {
-                    onCallEnded(
+                    ACTION_CALL_ENDED -> onCallEnded(
                         intent.getStringExtra(EXTRA_RECFILE),
                         intent.getBooleanExtra(EXTRA_INCOMING, false),
                     )
+                    else -> stopSelf()
                 }
             }
 
-            // The user tapped Record on the start-of-call prompt (on-demand).
-            ACTION_RECORD_NOW -> {
-                RecordPrompt.dismiss(this)
-                recording = scope.launch {
-                    val name = CaptureDaemon.startOnDemand(this@CallMonitorService)
-                    if (name.isNullOrBlank()) {
-                        Log.w(TAG, "monitor: on-demand start did not take (call over?)")
-                        finishIfIdle()
-                    } else {
-                        Log.i(TAG, "monitor: on-demand recording started -> $name")
-                        recordingNow = true
-                        startForegroundCompat()
-                    }
+            // The user's answer to the start-of-call prompt (on-demand). Guarded
+            // by the prompt's own ticket rather than the token - see
+            // RecordPrompt.claim - so only the buttons of the prompt that is up
+            // right now can answer it.
+            ACTION_RECORD_NOW, ACTION_DECLINE -> {
+                if (!RecordPrompt.claim(this, intent.getStringExtra(EXTRA_TICKET))) {
+                    Log.w(TAG, "monitor: ${intent.action} without this prompt's ticket, ignoring")
+                    finishIfIdle()
+                    return START_NOT_STICKY
                 }
+                if (intent.action == ACTION_RECORD_NOW) recordNow() else decline()
             }
-
-            // The user tapped Not now: nothing was ever recorded, so nothing to do.
-            ACTION_DECLINE -> {
-                Log.i(TAG, "monitor: user declined to record this call")
-                RecordPrompt.dismiss(this)
-                finishIfIdle()
-            }
-
-            ACTION_STOP -> stopSelf()
 
             else -> {
                 // A bare start with nothing to do - do not linger as a
-                // foreground service for no reason.
-                Log.i(TAG, "monitor: started with no action, stopping")
-                stopSelf()
+                // foreground service for no reason. finishIfIdle, not stopSelf:
+                // any app can send this, and mid-call it must not be a STOP
+                // that skips STOP's guard.
+                Log.i(TAG, "monitor: started with no action")
+                finishIfIdle()
             }
         }
         return START_NOT_STICKY
+    }
+
+    /** The user tapped Record on the start-of-call prompt (on-demand). */
+    private fun recordNow() {
+        RecordPrompt.dismiss(this)
+        recording = scope.launch {
+            val name = CaptureDaemon.startOnDemand(this@CallMonitorService)
+            if (name.isNullOrBlank()) {
+                Log.w(TAG, "monitor: on-demand start did not take (call over?)")
+                finishIfIdle()
+            } else {
+                Log.i(TAG, "monitor: on-demand recording started -> $name")
+                recordingNow = true
+                startForegroundCompat()
+            }
+        }
+    }
+
+    /** The user tapped Not now: nothing was ever recorded, so nothing to do. */
+    private fun decline() {
+        Log.i(TAG, "monitor: user declined to record this call")
+        RecordPrompt.dismiss(this)
+        finishIfIdle()
     }
 
     override fun onDestroy() {
@@ -392,6 +419,8 @@ class CallMonitorService : Service() {
         /** The mid-call prompt's buttons, when automatic recording is off. */
         const val ACTION_RECORD_NOW = "com.jemcik.jemrec.RECORD_NOW"
         const val ACTION_DECLINE = "com.jemcik.jemrec.DECLINE_RECORDING"
+        /** The prompt's one-time ticket, which its answer must carry. */
+        const val EXTRA_TICKET = "ticket"
         const val EXTRA_INCOMING = "incoming"
         const val EXTRA_RECFILE = "recfile"
 
@@ -403,7 +432,9 @@ class CallMonitorService : Service() {
         fun stop(context: Context) {
             runCatching {
                 context.startService(
-                    Intent(context, CallMonitorService::class.java).setAction(ACTION_STOP)
+                    Intent(context, CallMonitorService::class.java)
+                        .setAction(ACTION_STOP)
+                        .putExtra(EXTRA_TOKEN, CaptureDaemon.token(context))
                 )
             }
         }

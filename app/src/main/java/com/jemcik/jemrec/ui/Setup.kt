@@ -13,6 +13,7 @@ import com.jemcik.jemrec.capture.CallMonitorService
 import android.net.Uri
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.GlobalSettings
 import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
@@ -38,6 +39,25 @@ enum class SetupStep {
      *  have not been granted yet. First, because without them nothing else is
      *  worth doing: a recorder whose notification cannot show is invisible. */
     NEEDS_PERMISSIONS,
+
+    /**
+     * The user has not yet been told what setup leaves switched on, or asked
+     * whether to hide Android's debugging notification.
+     *
+     * Asked BEFORE anything is turned on, so nobody flips a switch without
+     * knowing it stays flipped: USB and Wireless debugging stay on for as long
+     * as JemRec is installed, and JemRec turns them back on. That was nowhere
+     * in the app until a private security report pointed it out
+     * (GHSA-hf4v-7hwh-hx7w), along with the notification being hidden without
+     * asking.
+     *
+     * Also asked of installs set up before the question existed - they never
+     * got to answer it - which is why decide() puts it ahead of every READY.
+     * It does not stop anything recording: the daemon runs regardless of what
+     * screen is showing.
+     */
+    NEEDS_DEBUGGING_CHOICE,
+
     /** Developer options are off, so the Wireless debugging screen does not
      *  exist to send anyone to. Its own step, because the intent that opens
      *  Developer options silently does nothing while they are disabled - so
@@ -301,6 +321,7 @@ object Setup {
      */
     internal interface Probe {
         fun missingPermissions(): Boolean
+        fun debuggingChoiceMade(): Boolean
         fun recorderOn(): Boolean
         fun isComplete(): Boolean
         fun markComplete()
@@ -316,6 +337,7 @@ object Setup {
 
     private class LiveProbe(private val context: Context) : Probe {
         override fun missingPermissions() = missingRuntimePermissions(context).isNotEmpty()
+        override fun debuggingChoiceMade() = DebugNotificationCleaner.asked(context)
         override fun recorderOn() = RecorderSwitch.isOn(context)
         override fun isComplete() = Setup.isComplete(context)
         override fun markComplete() = Setup.markComplete(context)
@@ -348,6 +370,12 @@ object Setup {
         // cannot see calls.
         if (world.missingPermissions()) {
             return SetupStep.NEEDS_PERMISSIONS
+        }
+
+        // Before every READY below, so an install from before the question
+        // existed is asked too. See NEEDS_DEBUGGING_CHOICE.
+        if (!world.debuggingChoiceMade()) {
+            return SetupStep.NEEDS_DEBUGGING_CHOICE
         }
 
         // SWITCHED OFF IS NOT "NOT SET UP".
@@ -475,14 +503,15 @@ object Setup {
 
         // Granted the same way and at the same moment as the permission above,
         // over the ADB shell rather than through a Settings switch a side-loaded
-        // app cannot reach. It lets the cleaner listener hide the "Wireless
-        // debugging connected" banner that the recorder cannot avoid keeping on.
+        // app cannot reach - but only if the user said yes to hiding the
+        // "Wireless debugging connected" banner. Withdrawn otherwise, so the
+        // phone's own Notification access list never shows JemRec reading
+        // notifications it was told to leave alone.
+        val hide = DebugNotificationCleaner.hiding(context)
         val notif = AdbTransport.exec(
-            "cmd notification allow_listener " +
-                "${context.packageName}/${context.packageName}.capture.DebugNotificationCleaner " +
-                "&& echo granted"
+            DebugNotificationCleaner.accessCommand(context, allow = hide) + " && echo done"
         ).getOrElse { "failed: ${it.message}" }
-        Log.i(TAG, "setup: notif listener -> $notif")
+        Log.i(TAG, "setup: notif listener (${if (hide) "allow" else "disallow"}) -> $notif")
 
         // Re-assert the off-Wi-Fi shield, over the same ADB session (the app's
         // own WRITE_SECURE_SETTINGS is not live until this process restarts, so
@@ -505,6 +534,23 @@ object Setup {
         markComplete(context)
         // Through the door; put it back.
         CaptureDaemon.standDown(context)
+    }
+
+    /**
+     * Grant notification access over ADB after setup, for a yes given in
+     * Settings. finish() does it during setup; afterwards there is no session,
+     * so this opens one - which needs Wi-Fi, since Wireless debugging is the
+     * only way in - and closes it again if it was not already open.
+     */
+    suspend fun grantNotificationAccess(context: Context): Boolean {
+        val opened = !AdbTransport.isConnected
+        if (opened && AdbTransport.autoConnect(context, timeoutMs = 5_000).isFailure) return false
+        val out = AdbTransport.exec(
+            DebugNotificationCleaner.accessCommand(context, allow = true) + " && echo granted"
+        ).getOrElse { "failed: ${it.message}" }
+        Log.i(TAG, "settings: notif listener -> $out")
+        if (opened) AdbTransport.close()
+        return out.contains("granted")
     }
 
     /**
@@ -567,6 +613,8 @@ object Setup {
 
         RecordingStore.clearTree(context)
         RecordingMode.set(context, RecordingMode.AUTOMATIC)
+        // Setup asks again; until then the banner is back and nothing hides it.
+        DebugNotificationCleaner.forget(context)
         // Or the very next launch reads a flag from the setup being undone.
         Prefs.of(context)
             .edit().remove(KEY_COMPLETE).remove(KEY_PAIRED).apply()

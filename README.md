@@ -109,9 +109,11 @@ network is involved beyond the loopback interface.
 ### ADB is a bootstrap, not a transport
 
 The session exists for a few seconds. In it the app runs `pm grant` to give
-*itself* `WRITE_SECURE_SETTINGS`, allow-lists a notification listener, and
-launches a small Java daemon with `app_process` from a jar it carries as an
-asset. Then it closes the session.
+*itself* `WRITE_SECURE_SETTINGS`, allow-lists a notification listener if you
+asked it to hide Android's debugging notification, and launches a small Java
+daemon with `app_process` from a jar it carries as an asset. Then it closes the
+session. The *session* is short; the debugging switches stay on — see
+[What stays switched on](#what-stays-switched-on).
 
 That matters because ADB is not there when you need it. With Wi-Fi off, `adbd`
 tears its listener down completely, and the shell UID may not pin a port — so
@@ -205,15 +207,42 @@ Three more (`READ_PHONE_STATE` and two storage permissions) are actively
 **removed** from the manifest, because the ADB library's own manifest would
 otherwise pull them in.
 
+### What stays switched on
+
+**USB debugging and Wireless debugging stay on for as long as JemRec is
+installed.** Turning Wireless debugging off restarts `adbd`, which kills the
+recorder, and USB debugging is what keeps `adbd` alive when Wi-Fi drops. So the
+daemon puts USB debugging back on within ten seconds if it goes off, and the app
+turns Wireless debugging back on the next time it rebuilds the recorder.
+
+What that means for the phone: while debugging is on, a computer that has been
+paired with it can open an ADB shell on it from the same Wi-Fi, and one you have
+authorised before can do the same over a cable. An unpaired computer cannot.
+Check *Wireless debugging → Paired devices* now and then and remove anything you
+do not recognise.
+
+Android shows a notification for as long as debugging is on. Setup says all of
+the above before you switch anything on, then asks whether JemRec should hide
+that notification. Only on a yes does it get notification access, and it then
+snoozes nothing but Android's own debugging notifications, matched by their
+system ID, or by the word "debugging" on a ROM that numbers them differently.
+Settings can change the answer at any time.
+
+To switch debugging off for good, uninstall JemRec first. If the recorder is
+running, it notices the uninstall within a few minutes, turns both switches off
+and exits; either way, once JemRec is gone nothing turns them back on.
+
 ## Setup
 
-Two things by hand, once, and the app watches for both:
+A few things by hand, once, and the app watches for each:
 
-1. **Turn on Developer options** — About phone, tap Build number seven times.
-2. **Turn on USB debugging and Wireless debugging**, in any order. No cable is
+1. **Answer one question.** Whether JemRec should hide Android's debugging
+   notification, after it has told you what stays switched on.
+2. **Turn on Developer options** — About phone, tap Build number seven times.
+3. **Turn on USB debugging and Wireless debugging**, in any order. No cable is
    needed; USB debugging is what keeps Wireless debugging from switching itself
    off.
-3. **Pair.** Open Wireless debugging, tap *Pair device with pairing code*, and
+4. **Pair.** Open Wireless debugging, tap *Pair device with pairing code*, and
    type the six digits into JemRec's notification — not back in the app, because
    leaving the Settings screen closes the code window.
 
