@@ -104,6 +104,13 @@ class RecordPromptActivity : ComponentActivity() {
                 Intent(this, CallMonitorService::class.java)
                     .setAction(action)
                     .putExtra(CallMonitorService.EXTRA_INCOMING, incoming)
+                    // Passed on from the prompt that opened this, because the
+                    // service only takes an answer that carries it. See
+                    // RecordPrompt.claim.
+                    .putExtra(
+                        CallMonitorService.EXTRA_TICKET,
+                        intent?.getStringExtra(CallMonitorService.EXTRA_TICKET),
+                    )
             )
         }
         finish()
