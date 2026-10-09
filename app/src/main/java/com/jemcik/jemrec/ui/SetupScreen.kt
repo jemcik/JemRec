@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -29,6 +30,9 @@ import androidx.compose.ui.unit.dp
  * code. The app then grants itself the one PRIVILEGED permission it needs by
  * running `pm grant` over its own ADB session, and starts the recorder. No
  * computer is involved at any point.
+ *
+ * Before any of it, one question: what stays switched on, and whether to hide
+ * Android's notification saying so. See SetupStep.NEEDS_DEBUGGING_CHOICE.
  *
  * The pairing PORT is never asked for. It changes every time the dialog opens
  * and means nothing to anyone, so it is discovered over mDNS instead.
@@ -63,12 +67,22 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
+        // An install set up before the debugging question existed lands here
+        // for that one question, and is not setting anything up - so it is
+        // not greeted as if it were.
+        val askingAfterSetup = state.step == SetupStep.NEEDS_DEBUGGING_CHOICE &&
+            remember(state.step) { Setup.isComplete(context) }
+
         // titleLarge, the same style the app bar gives every other screen's
         // title - setup has no app bar of its own, but its heading should not be
         // a size the rest of the app never uses.
-        Text("Set up JemRec", style = MaterialTheme.typography.titleLarge)
         Text(
-            "A few short steps, all on this phone.",
+            if (askingAfterSetup) "One question" else "Set up JemRec",
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(
+            if (askingAfterSetup) "JemRec now asks this once of everyone."
+            else "A few short steps, all on this phone.",
             style = MaterialTheme.typography.bodyMedium,
         )
 
@@ -122,6 +136,60 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                         enabled = !state.busy,
                     ) { Text("Allow") }
 
+                }
+            }
+
+            // What setup leaves switched on, said BEFORE anything is switched
+            // on, and the one part of it that is the user's to decide. Neither
+            // answer is preselected or styled as the expected one: hiding
+            // Android's reminder that debugging is on is a real trade, and the
+            // app used to make it for everyone. See NEEDS_DEBUGGING_CHOICE.
+            SetupStep.NEEDS_DEBUGGING_CHOICE -> Card(Modifier.fillMaxWidth()) {
+                Column(
+                    Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Debugging stays on",
+                        style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "JemRec records through Android's debugging tools, so USB " +
+                            "debugging and Wireless debugging stay on for as long as " +
+                            "it is installed. If either is turned off, JemRec turns " +
+                            "it back on.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "While they are on, a computer paired with this phone can " +
+                            "connect to it on the same Wi-Fi, and one you have allowed " +
+                            "before can connect over a cable. To switch debugging off " +
+                            "for good, uninstall JemRec first.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    HorizontalDivider()
+                    Text(
+                        "Android shows a notification for as long as debugging is " +
+                            "on. Should JemRec hide it?",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Hidden, nothing on screen reminds you that debugging is on. " +
+                            "You can change this later in Settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(
+                            onClick = { haptics.tap(); vm.setHideDebugNotification(false) },
+                            enabled = !state.busy,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Keep it") }
+                        FilledTonalButton(
+                            onClick = { haptics.tap(); vm.setHideDebugNotification(true) },
+                            enabled = !state.busy,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Hide it") }
+                    }
                 }
             }
 

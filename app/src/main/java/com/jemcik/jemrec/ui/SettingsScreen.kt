@@ -203,6 +203,57 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
             }
         }
 
+        // Setup's debugging question, answerable again. Debugging itself is
+        // not a choice here - the recorder needs it - so the card says what
+        // stays on whichever way the switch is set, and the switch is only
+        // about Android's reminder of it. See DebugNotificationCleaner.
+        Card {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            "Hide the debugging notification",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            "USB and Wireless debugging stay on while JemRec is " +
+                                "installed, because it records through them. A " +
+                                "computer paired with this phone can connect to it " +
+                                "on the same Wi-Fi. " +
+                                if (state.debugNotificationHidden) {
+                                    "Android's notification saying so is hidden."
+                                } else {
+                                    "Android's notification saying so is showing."
+                                },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.debugNotificationHidden,
+                        onCheckedChange = { haptics.toggle(it); vm.setHideDebugNotification(it) },
+                    )
+                }
+                if (state.debugNotificationProblem) {
+                    Text(
+                        "Could not turn this on: it needs Wi-Fi. Try again on Wi-Fi.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+
         Card {
             Column(
                 Modifier.padding(16.dp),

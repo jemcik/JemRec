@@ -13,6 +13,7 @@ import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.NetworkRevive
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.DeleteResult
@@ -100,6 +101,14 @@ data class UiState(
     val usingDefaultFolder: Boolean = true,
     /** True when every call is recorded without asking. */
     val automatic: Boolean = true,
+    /** Whether the user chose to hide Android's debugging notification. */
+    val debugNotificationHidden: Boolean = false,
+    /**
+     * Turning the hiding on from Settings could not grant notification access,
+     * which takes an ADB session and so Wi-Fi. Shown under the switch until the
+     * next try.
+     */
+    val debugNotificationProblem: Boolean = false,
     /** Whether the call log has been offered to the app, and whether the
      *  one-time offer is still worth showing. */
     val canReadCallLog: Boolean = false,
@@ -512,6 +521,30 @@ class MainViewModel @JvmOverloads constructor(
 
     private suspend fun pushDaemonMode() = CaptureDaemon.pushMode(getApplication())
 
+    /**
+     * Hide Android's debugging notification, or stop hiding it: the answer to
+     * setup's question, and the Settings switch after it.
+     *
+     * During setup the answer is only recorded - finish() grants notification
+     * access over the session it opens anyway. After setup a yes needs that
+     * access, which only an ADB session can grant; if there is none to be had,
+     * the switch stays off and says why rather than claiming a yes it cannot
+     * act on.
+     */
+    fun setHideDebugNotification(hide: Boolean) = launchAction("debugging notification") {
+        val app = getApplication<Application>()
+        if (hide && Setup.isComplete(app) && !DebugNotificationCleaner.accessGranted(app) &&
+            !Setup.grantNotificationAccess(app)
+        ) {
+            _state.update { it.copy(debugNotificationProblem = true) }
+            return@launchAction
+        }
+        DebugNotificationCleaner.choose(app, hide)
+        _state.update { it.copy(debugNotificationHidden = hide, debugNotificationProblem = false) }
+        // From the setup step, move on to the next one.
+        if (_state.value.step != SetupStep.READY) recheckSetup()
+    }
+
     fun setQuery(query: String) = _state.update { current ->
         // Searching stays live during selection now, so a query can narrow the
         // list out from under picked rows. Any selection that no longer matches
@@ -605,6 +638,7 @@ class MainViewModel @JvmOverloads constructor(
                 folder = RecordingStore.describe(app),
                 usingDefaultFolder = RecordingStore.treeUri(app) == null,
                 automatic = RecordingMode.of(app) == RecordingMode.AUTOMATIC,
+                debugNotificationHidden = DebugNotificationCleaner.hiding(app),
                 enabled = RecorderSwitch.isOn(app),
                 canReadCallLog = CallLogLookup.granted(app),
                 canReadAudio = AudioAccess.granted(app),
@@ -624,6 +658,7 @@ class MainViewModel @JvmOverloads constructor(
                 folder = snapshot.folder,
                 usingDefaultFolder = snapshot.usingDefaultFolder,
                 automatic = snapshot.automatic,
+                debugNotificationHidden = snapshot.debugNotificationHidden,
                 enabled = snapshot.enabled,
                 canReadCallLog = snapshot.canReadCallLog,
                 canReadAudio = snapshot.canReadAudio,
@@ -648,6 +683,7 @@ class MainViewModel @JvmOverloads constructor(
         val folder: String,
         val usingDefaultFolder: Boolean,
         val automatic: Boolean,
+        val debugNotificationHidden: Boolean,
         val enabled: Boolean,
         val canReadCallLog: Boolean,
         val canReadAudio: Boolean,

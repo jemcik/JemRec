@@ -49,6 +49,7 @@
   </ol>
   <p>Notifications are not decoration here. They are how the app tells you a call is being recorded, how it asks whether to record one, and where you will type the pairing code in step 4.</p>
   <p>JemRec does <strong>not</strong> ask for microphone access and does not have it. The recording is done by a separate, more privileged helper that the app starts later; the app itself only collects the finished file.</p>
+  <p><strong>Then one question.</strong> Before you switch anything on, JemRec says what stays on: USB debugging and Wireless debugging, for as long as it is installed, turned back on if they go off. Android shows a notification for as long as debugging is on, and JemRec asks whether to hide it. Either answer works. Hidden, nothing on screen reminds you that debugging is on; you can change it later in Settings.</p>
   <h2 id="step-2-turn-on-developer-options">Step 2 — Turn on Developer options</h2>
   <p>Skip this if Developer options are already on.</p>
   <ol>
@@ -132,6 +133,7 @@
     <li><strong>Record every call</strong> — record everything, or be asked each time.</li>
     <li><strong>Saving to</strong> — which folder recordings go in, with a Change button.</li>
     <li><strong>Show who called</strong> — labels each recording with the contact's name and photo, or the number when they are not in your contacts. Optional, and asked for in the app rather than at install, because it needs your call log and contacts. Say no and everything still works, with the time as each recording's headline.</li>
+    <li><strong>Hide the debugging notification</strong> — the answer to the question in step 1, changeable. Debugging stays on either way; this is only about whether Android's notification saying so is shown. Turning it on after setup needs Wi-Fi.</li>
     <li><strong>Start fresh</strong> — puts JemRec back to how it was the day you installed it, so setup runs again from step 1. The app closes when you confirm. <strong>Your recordings are not deleted.</strong></li>
     <li><strong>Diagnostics</strong> — whether the recorder is running, a self-test that proves a call would be recorded, and a way to start the recorder by hand. It is what a bug report wants.</li>
   </ul>
@@ -146,7 +148,7 @@
   <div class="note info"><p><strong>What no app can undo.</strong> The phone goes on trusting the key it paired with, in a list only root can edit, so it stays under <em>Wireless debugging → Paired devices</em>; remove it there with the gear beside it. Developer options stays on if you turned it on. And Start fresh leaves the one privileged setting granted, because handing it back would kill the app halfway through the reset.</p></div>
   <h2 id="two-honest-warnings">Two honest warnings</h2>
   <p><strong>The other person is being recorded too.</strong> Whether you may do that without telling them differs by country and sometimes by region. That is your call to make, not the app's.</p>
-  <p><strong>This uses debugging switches, and they stay on.</strong> They are developer features that let software on your phone act with elevated privileges. JemRec needs them to record calls at all. If you stop using JemRec, turn Wireless debugging, USB debugging and Developer options back off.</p>
+  <p><strong>This uses debugging switches, and they stay on.</strong> They are developer features that let software on your phone act with elevated privileges. JemRec needs them to record calls at all, so it keeps them on, and turns them back on if they go off. While they are on, a computer that has been paired with this phone can connect to it on the same Wi-Fi, and one you have allowed before can connect over a cable — so check <em>Wireless debugging → Paired devices</em> now and then and remove any you do not recognise. If you stop using JemRec, uninstall it first, then turn Wireless debugging, USB debugging and Developer options back off.</p>
 </main>
 <footer>
   <div class="column">

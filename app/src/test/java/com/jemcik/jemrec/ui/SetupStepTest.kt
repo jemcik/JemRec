@@ -16,6 +16,7 @@ class SetupStepTest {
 
     private class World(
         var permissionsMissing: Boolean = false,
+        var debuggingChoice: Boolean = true,
         var recorderOn: Boolean = true,
         var complete: Boolean = false,
         var identity: Boolean = false,
@@ -31,6 +32,7 @@ class SetupStepTest {
         var markedComplete = 0
 
         override fun missingPermissions() = permissionsMissing
+        override fun debuggingChoiceMade() = debuggingChoice
         override fun recorderOn() = recorderOn
         override fun isComplete() = complete
         override fun markComplete() { markedComplete++; complete = true }
@@ -50,6 +52,25 @@ class SetupStepTest {
         val world = World(permissionsMissing = true, complete = true, identity = true, daemon = true, connected = true)
         assertEquals(SetupStep.NEEDS_PERMISSIONS, stepOf(world))
         assertEquals(0, world.connectAttempts)
+    }
+
+    @Test fun theDebuggingQuestionComesBeforeAnythingIsSwitchedOn() {
+        val fresh = World(debuggingChoice = false, wirelessDebugging = true)
+        assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, stepOf(fresh))
+        assertEquals(0, fresh.connectAttempts)
+        // Permissions still lead: the question is the step after them.
+        assertEquals(
+            SetupStep.NEEDS_PERMISSIONS,
+            stepOf(World(debuggingChoice = false, permissionsMissing = true)),
+        )
+    }
+
+    @Test fun anInstallSetUpBeforeTheQuestionExistedIsAskedToo() {
+        // Recording, set up, identity and all - and never asked.
+        val upgraded = World(debuggingChoice = false, daemon = true, identity = true, complete = true)
+        assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, stepOf(upgraded))
+        assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, stepOf(World(debuggingChoice = false, recorderOn = false, complete = true)))
+        assertEquals(0, upgraded.retired)
     }
 
     @Test fun switchedOffIsReadyOnlyOnceSetupHasFinished() {
