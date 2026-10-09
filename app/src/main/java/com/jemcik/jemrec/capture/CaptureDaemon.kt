@@ -112,6 +112,7 @@ object CaptureDaemon {
     private const val COMMAND_SET_ENABLED = 'E'.code.toByte()
     private const val COMMAND_LIST = 'L'.code.toByte()
     private const val COMMAND_START = 'S'.code.toByte()
+    private const val COMMAND_WATCH = 'W'.code.toByte()
 
     /**
      * How long a BUSY is given to come true. A daemon really recording a call
@@ -263,6 +264,12 @@ object CaptureDaemon {
         } catch (_: Exception) {
             null
         }
+
+    /** Our daemon's answer to an authenticated ping, or null if it is not answering. */
+    internal suspend fun answer(context: Context): Answer? = withContext(Dispatchers.IO) { probe(context) }
+
+    /** Whether the daemon that gave that answer runs the jar this APK carries. */
+    internal fun isCurrent(context: Context, answer: Answer): Boolean = upToDate(context, answer)
 
     @Volatile
     private var bundled: String? = null
@@ -470,7 +477,7 @@ object CaptureDaemon {
     }
 
     /** The mode the daemon should be in right now, from the app's settings. */
-    private fun currentMode(context: Context): Int = when {
+    internal fun currentMode(context: Context): Int = when {
         !RecorderSwitch.isOn(context) -> MODE_OFF
         RecordingMode.of(context) == RecordingMode.AUTOMATIC -> MODE_AUTOMATIC
         else -> MODE_ON_DEMAND
@@ -990,6 +997,61 @@ object CaptureDaemon {
         runCatching {
             open(context, COMMAND_START).use { socket ->
                 socket.getInputStream().bufferedReader().readLine()?.trim()?.ifBlank { null }
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * What the daemon says its call watch has heard - see Main.COMMAND_WATCH
+     * for why the self-test needs it. Times are wall-clock millis on this
+     * phone, 0 for never.
+     */
+    internal data class Watch(
+        /** When the daemon started: calls before this are not its business. */
+        val since: Long,
+        val watching: Boolean,
+        /** Whether the thread that delivers call events still runs. */
+        val looperOk: Boolean,
+        val mode: Int,
+        /** Whether the daemon believes a call is up right now. */
+        val inCall: Boolean,
+        val events: Int,
+        val lastEvent: Long,
+        val offHooks: Int,
+        val lastOffHook: Long,
+        /** When the recording in progress started, or 0 if there is none. */
+        val recordingSince: Long,
+    )
+
+    /** "WATCH 1 since=... watching=1 looper=ok ..."; null for anything else,
+     *  including a format this app does not know. */
+    internal fun parseWatch(line: String?): Watch? {
+        val parts = line?.trim()?.split(' ')?.filter { it.isNotEmpty() } ?: return null
+        if (parts.size < 2 || parts[0] != "WATCH" || parts[1] != "1") return null
+        val fields = parts.drop(2).associate { it.substringBefore('=') to it.substringAfter('=', "") }
+        fun long(key: String) = fields[key]?.toLongOrNull()
+        fun int(key: String) = fields[key]?.toIntOrNull()
+        return Watch(
+            since = long("since") ?: return null,
+            watching = fields["watching"] == "1",
+            looperOk = fields["looper"] == "ok",
+            mode = int("mode") ?: return null,
+            inCall = fields["call"] == "1",
+            events = int("events") ?: return null,
+            lastEvent = long("lastevent") ?: return null,
+            offHooks = int("offhooks") ?: return null,
+            lastOffHook = long("lastoffhook") ?: return null,
+            recordingSince = long("recording") ?: return null,
+        )
+    }
+
+    /** The daemon's report on its call watch; null if there is none to be
+     *  had, most often from a daemon too old to give one - it hangs up on the
+     *  command. */
+    internal suspend fun watch(context: Context): Watch? = withContext(Dispatchers.IO) {
+        runCatching {
+            open(context, COMMAND_WATCH).use { socket ->
+                parseWatch(socket.getInputStream().bufferedReader().readLine())
             }
         }.getOrNull()
     }
