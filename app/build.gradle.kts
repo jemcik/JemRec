@@ -25,6 +25,16 @@ android {
     // two happening to share the number 36 today is a coincidence.
     compileSdk = 37
 
+    // Pinned because shellserver/build.sh reads d8 out of build-tools/36.0.0 by
+    // path, and until now that worked only because 36.0.0 happens to be AGP's
+    // default. Nothing declared it, so nothing would have caught AGP moving on:
+    // the daemon build would fail on a machine that had never been told which
+    // build-tools to install - F-Droid's, for one, which installs only what the
+    // Gradle build asks for plus what its metadata names. Stating it here makes
+    // AGP install the version build.sh expects. Keep the two in step; build.sh
+    // takes BUILD_TOOLS from the environment, so it can be told otherwise.
+    buildToolsVersion = "36.0.0"
+
     defaultConfig {
         applicationId = "com.jemcik.jemrec"
         minSdk = 31

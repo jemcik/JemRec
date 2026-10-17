@@ -12,9 +12,22 @@ right path for your phone as you go.
 
 ## Installing
 
-Download the APK from the project's **Releases** page and open it. Android asks
-whether to allow installing from whatever you opened it with — a browser, or a
-file manager — and that permission is granted per app, not once for the phone.
+**The easy way is F-Droid**: install the F-Droid client, search for JemRec, and
+updates arrive like any other app's. The listing is at
+`f-droid.org/packages/com.jemcik.jemrec`. None of the rest of this section
+applies — F-Droid is an installer the phone already trusts once you have
+allowed it.
+
+**Or download the APK** from the project's **Releases** page and open it.
+Android asks whether to allow installing from whatever you opened it with — a
+browser, or a file manager — and that permission is granted per app, not once
+for the phone.
+
+Either way you get the same file. F-Droid builds each release on their own
+machine, checks the result against the APK on the Releases page byte for byte,
+and publishes this project's signed APK rather than one of their own — so
+whichever way you installed it, the other can update it in place, with no
+uninstall and no pairing again.
 
 **Play Protect may object, and what it takes differs by phone.** It warns about
 apps it has not seen before, which is every app that is not on Google Play, so

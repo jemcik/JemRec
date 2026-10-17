@@ -16,6 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 
 REPO = "https://github.com/jemcik/JemRec"
+FDROID = "https://f-droid.org/packages/com.jemcik.jemrec/"
 TAGLINE = "A call recorder for unrooted Android."
 
 # THE THEME HAS THREE STATES, NOT TWO, and the palette is written twice because
@@ -399,10 +400,20 @@ SETUP = [
           "not, and JemRec names the right path for your phone as you go."),
 
     ("h2", "Installing"),
-    ("p", "Download the APK from the project's **Releases** page and open it. "
-          "Android asks whether to allow installing from whatever you opened it "
-          "with — a browser, or a file manager — and that permission is granted "
-          "per app, not once for the phone."),
+    ("p", "**The easy way is F-Droid**: install the F-Droid client, search for "
+          "JemRec, and updates arrive like any other app's. The listing is at "
+          "`f-droid.org/packages/com.jemcik.jemrec`. None of the rest of this "
+          "section applies — F-Droid is an installer the phone already trusts "
+          "once you have allowed it."),
+    ("p", "**Or download the APK** from the project's **Releases** page and open "
+          "it. Android asks whether to allow installing from whatever you opened "
+          "it with — a browser, or a file manager — and that permission is "
+          "granted per app, not once for the phone."),
+    ("p", "Either way you get the same file. F-Droid builds each release on "
+          "their own machine, checks the result against the APK on the Releases "
+          "page byte for byte, and publishes this project's signed APK rather "
+          "than one of their own — so whichever way you installed it, the other "
+          "can update it in place, with no uninstall and no pairing again."),
     ("p", "**Play Protect may object, and what it takes differs by phone.** It "
           "warns about apps it has not seen before, which is every app that is "
           "not on Google Play, so this is not a judgement about JemRec. Three "
@@ -828,13 +839,17 @@ INDEX_BODY = f"""
      &mdash; the phone pairs with its own Wireless debugging and sets itself up.</p>
 
   <div class="cta">
-    <a class="btn" href="{REPO}/releases">Download the APK</a>
+    <a class="btn" href="{FDROID}">Get it on F-Droid</a>
+    <a class="btn ghost" href="{REPO}/releases">Download the APK</a>
     <a class="btn ghost" href="{REPO}">Source on GitHub</a>
   </div>
   <p class="muted">Android 12 or newer. Not on Google Play, and never will be.
+     The two downloads above are the same file &mdash; F-Droid builds each
+     release itself, checks it against the APK here byte for byte, and serves
+     this project's signed one &mdash; so either can update the other in place.
      Setting it up takes about three minutes and no computer &mdash;
-     <a href="setup.html">here is how</a>. Play Protect sometimes objects to
-     installing an app it has not seen before;
+     <a href="setup.html">here is how</a>. Play Protect sometimes objects to an
+     APK it has not seen before, which is one reason to prefer F-Droid;
      <a href="setup.html#installing">the manual says what to do</a>.</p>
 
   <div class="note info">

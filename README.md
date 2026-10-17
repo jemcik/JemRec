@@ -9,13 +9,14 @@
 One APK. No root, no Shizuku, no companion app, no computer — the phone sets
 itself up.
 
-[**Website**](https://jemcik.github.io/JemRec/) · [Privacy policy](https://jemcik.github.io/JemRec/privacy-policy.html) · [Releases](https://github.com/jemcik/JemRec/releases)
+[**Website**](https://jemcik.github.io/JemRec/) · [F-Droid](https://f-droid.org/packages/com.jemcik.jemrec/) · [Privacy policy](https://jemcik.github.io/JemRec/privacy-policy.html) · [Releases](https://github.com/jemcik/JemRec/releases)
 
+[![F-Droid](https://img.shields.io/f-droid/v/com.jemcik.jemrec)](https://f-droid.org/packages/com.jemcik.jemrec/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-55-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-78-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="19%" alt="The recordings list">
 <img src="docs/screenshots/home-dark.png" width="19%" alt="The recordings list, dark">
@@ -32,11 +33,23 @@ itself up.
 
 ## Install
 
-Download the APK from [Releases](https://github.com/jemcik/JemRec/releases) and
-open it. Android will ask whether to allow installing from your browser or file
-manager; that is the sideload prompt, and it is the only way this app is
-distributed. Every release is signed with the project key, so one release
-upgrades the previous one in place.
+**From F-Droid**, which is the easy way:
+[f-droid.org/packages/com.jemcik.jemrec](https://f-droid.org/packages/com.jemcik.jemrec/).
+Install the F-Droid client, search for JemRec, and updates arrive like any other
+app's. Nothing below about sideloading applies — F-Droid is an installer the
+phone already trusts once you have allowed it.
+
+**Or download the APK** from [Releases](https://github.com/jemcik/JemRec/releases)
+and open it. Android will ask whether to allow installing from your browser or
+file manager; that is the sideload prompt, and the rest of this section is about
+getting past it.
+
+The two are the same file. F-Droid builds each tag on their own machine, checks
+the result against the APK here byte for byte, and publishes **this** project's
+signed APK rather than one of their own — so whichever way you installed, the
+other can update it in place, with no uninstall and no pairing again. Verified
+on 0.8: what F-Droid serves is byte-identical to `jemrec-0.8.apk` on the
+releases page, down to the signature.
 
 **Play Protect may get in the way, and what it takes differs by phone.** It
 warns about apps it has not seen before, which is every app that is not on
@@ -52,13 +65,14 @@ If you want to check what you downloaded rather than trust it, every release
 is signed with the same certificate and the release workflow prints its digest
 on each run:
 
-    apksigner verify --print-certs jemrec-0.2.apk
+    apksigner verify --print-certs jemrec-0.8.apk
     SHA-256: 50aeab3630f0198ea3845db51413b1ad29582f78240fa2df6fe55ba8537afdf8
 
 **It is not on Google Play and never will be.** Play removed call recorders in
 2022 by forbidding the Accessibility API for recording, and no policy change
 since has re-opened the door. That is a distribution decision, not a technical
-one — the app itself never needed Play.
+one — the app itself never needed Play, and F-Droid asks only that a build be
+free software and reproducible from its source, which this one is.
 
 **Recording calls is your responsibility.** Consent law differs by country and
 sometimes by state: one party, all parties, or a spoken notice. This app records
@@ -195,17 +209,27 @@ No `RECORD_AUDIO`. This app never opens an audio device — the shell-side proce
 does the capturing — and a call recorder that asks for the microphone anyway is
 asking for something it does not use.
 
+This is the whole list, in the order F-Droid's listing page shows it, because a
+permission a call recorder does not explain is one its user has to guess at:
+
 | Permission | Why |
 | --- | --- |
 | `INTERNET` | Not about the internet: Android requires it for any TCP socket, including one to `127.0.0.1`. |
+| `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing. |
 | `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
+| `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional, offered once. The only way to label a recording with who the call was with. |
+| `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
+| `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
 
 Three more (`READ_PHONE_STATE` and two storage permissions) are actively
 **removed** from the manifest, because the ADB library's own manifest would
-otherwise pull them in.
+otherwise pull them in. One more that cannot be removed and means nothing:
+`com.jemcik.jemrec.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, which AndroidX
+defines for this app alone when it registers a receiver as not-exported.
 
 ### What stays switched on
 
@@ -310,7 +334,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-55 JVM unit tests, no device needed:
+78 JVM unit tests, no device needed:
 
     ./gradlew :app:testDebugUnitTest
 
@@ -327,17 +351,23 @@ A pre-push hook runs the tests and lint before anything leaves the machine:
 
 Bump the version in a pull request, tag the merge, and CI does the rest:
 
-    # gradle.properties: jemrecVersionName=0.3, jemrecVersionCode=300
-    # fastlane/metadata/android/en-US/changelogs/300.txt: what changed
+    # gradle.properties: jemrecVersionName=0.9, jemrecVersionCode=900
+    # fastlane/metadata/android/en-US/changelogs/900.txt: what changed
     # ...merged to main as a PR, like everything else; main takes no direct push
-    git checkout main && git pull && git tag 0.3 && git push origin 0.3
+    git checkout main && git pull && git tag 0.9 && git push origin 0.9
 
 The version lives in `gradle.properties` and nowhere else, because that is
 where F-Droid's update checker reads it from at each tag. The workflow refuses
 a tag that disagrees with it, or a `versionCode` that is not
 `MAJOR*10000 + MINOR*100 + PATCH`, then builds a release APK signed with the
 project key held in repository secrets, refuses to publish anything
-`apksigner` cannot verify, and attaches `jemrec-0.3.apk` to the release.
+`apksigner` cannot verify, and attaches `jemrec-0.9.apk` to the release.
+
+F-Droid takes it from there without being asked: its update checker reads
+`gradle.properties` at each new tag, adds a build entry, and publishes once its
+own build of that commit matches the APK attached here. Which means a release's
+APK has to stay on the releases page until F-Droid has built that version —
+delete it sooner and the check has nothing to compare against.
 
 The tag has to point at a commit **on main**, because that commit is what
 F-Droid builds and what the APK's own version-control stamp names. A tag
