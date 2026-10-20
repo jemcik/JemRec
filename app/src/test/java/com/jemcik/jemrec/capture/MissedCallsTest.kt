@@ -23,7 +23,8 @@ class MissedCallsTest {
         reported: Set<Long> = emptySet(),
         pending: List<Recorded> = emptyList(),
         now: Long = this.now,
-    ) = MissedCalls.unrecorded(calls, Ledger(recordings, reported), pending, covered, now)
+        skipped: List<Recorded> = emptyList(),
+    ) = MissedCalls.unrecorded(calls, Ledger(recordings, reported, skipped), pending, covered, now)
 
     @Test fun aCallWithNoRecordingIsMissed() {
         assertEquals(listOf(logged()), missed(listOf(logged())))
@@ -38,6 +39,11 @@ class MissedCallsTest {
         // The ledger is written at save time, so a deleted file is not a gap.
         val ledgerOnly = listOf(Recorded(call + 5_000, true, 115))
         assertTrue(missed(listOf(logged()), ledgerOnly).isEmpty())
+    }
+
+    @Test fun aCallTheRulesLeftOutIsNotMissed() {
+        val skipped = listOf(Recorded(call + 5_000, true, 115))
+        assertTrue(missed(listOf(logged()), skipped = skipped).isEmpty())
     }
 
     @Test fun aRecordingTheOtherWayRoundDoesNotCount() {

@@ -16,13 +16,14 @@ itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-122-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-155-success)](#tests)
 
-<img src="docs/screenshots/home.png" width="19%" alt="The recordings list">
-<img src="docs/screenshots/home-dark.png" width="19%" alt="The recordings list, dark">
-<img src="docs/screenshots/settings.png" width="19%" alt="Settings">
-<img src="docs/screenshots/selftest.png" width="19%" alt="The self-test">
-<img src="docs/screenshots/selftest-dark.png" width="19%" alt="The self-test, dark">
+<img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
+<img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
+<img src="docs/screenshots/home-dark.png" width="16%" alt="The recordings list, dark">
+<img src="docs/screenshots/settings.png" width="16%" alt="Settings">
+<img src="docs/screenshots/selftest.png" width="16%" alt="The self-test">
+<img src="docs/screenshots/selftest-dark.png" width="16%" alt="The self-test, dark">
 
 </div>
 
@@ -207,6 +208,59 @@ You can point the app somewhere else.
 A Quick Settings tile turns recording on and off without opening the app. It
 is the same switch as the one in the app's header.
 
+### Whose calls to keep
+
+Settings can narrow down which calls are kept: your contacts - all, all but
+some, only some, or none - and, separately, other numbers: ones not in your
+contacts, and hidden ones. Nothing is narrowed until you choose.
+
+Who a call is with is known only once it has ended. The call-state callback
+carries no number, by design; only the dialer is told. So every call is
+recorded, and as it ends JemRec reads the call log: a call your choice leaves
+out is deleted from the recorder there and then, before it is ever saved. If
+the call log does not say who it was, the recording is kept - it can be
+deleted later, and a lost one cannot be made again. In ask-first mode a call
+you tap Record on is always kept. This needs the call-log and contacts
+permissions, to tell who a call was with.
+
+### File names
+
+- **Date and time**, the default - `20261020_165705_out.ogg`.
+- **With the caller** - `20261020_165705_out_Priya Raman.ogg`.
+- **For Honor's Phone app** - `Priya Raman@+447700900123_20261020165705.ogg`,
+  in `Sounds/CallRecord`: the name and folder Honor's own recorder uses.
+  Honor's Phone app then shows a play button on the call in its history.
+  Offered only on a phone that has that app. Tested on an Honor: the time
+  may be anywhere inside the call, the number has to be the call's, and the
+  part before the `@` is not read at all.
+
+The caller comes from the call log as the call is saved. Without it, or for a
+call the log does not have, a recording is named by date and time. A name is
+given once and never changed. Google's Phone app has no equivalent: it keeps
+its own recordings in a database of its own, and nothing in it is open to
+another app.
+
+### The Calls tab
+
+Beside Recordings, a Calls tab shows the phone's call log. A recorded call has
+the play mark and plays on a tap, like the Recordings tab. A call without a
+recording says why, where JemRec knows:
+
+- **In Recently deleted**, or **Recording deleted** - recorded, then deleted.
+  The second is known for a week.
+- **Left out by your rules** - a call *Whose calls to keep* left out. Also
+  known for a week.
+- **Too short** - under five seconds.
+- **Recording was off**, or **Ask first, not recorded** - from a record of the
+  switch and the mode that JemRec keeps from 0.12 on.
+- **Not recorded**, in red - recording was on and automatic, and still nothing
+  was saved. This is the one to worry about. Said only for the last week:
+  past that, a recording deleted or a call left out looks exactly the same.
+- **No recording** - from before that record began, with no guess at why.
+
+Missed, declined and blocked calls are marked as such. The tab needs call-log
+access, the same optional permission that names callers in the list.
+
 ### Keeping, deleting and cleaning up
 
 - **Keep** - the bookmark on each row marks a recording to keep. A Kept chip
@@ -216,8 +270,9 @@ is the same switch as the one in the app's header.
   then, and is then removed for good. In the standard Recordings folder that
   is Android's own trash, so other apps stop seeing the file at once. In a
   folder you chose, the file is renamed the way Android's trash names it
-  (`.trashed-<expiry>-<name>`, hidden from most file managers), and JemRec
-  removes it when the 30 days are up.
+  (`.trashed-<expiry>-<name>`, hidden from most file managers, with any `@`
+  written `%40` so Honor's Phone app stops offering it), and JemRec removes
+  it when the 30 days are up.
 - **Auto-delete** - off until you choose. It removes recordings older than 30
   days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30
   seconds - wrong numbers, hang-ups. A short call is caught as it is saved,
@@ -273,7 +328,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
-| `READ_CALL_LOG`, `READ_CONTACTS` | Optional, offered once. The only way to label a recording with who the call was with, and for the call log, to notice a call that went unrecorded. |
+| `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
 | `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
 
@@ -388,14 +443,15 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-122 JVM unit tests, no device needed:
+155 JVM unit tests, no device needed:
 
     ./gradlew :app:testDebugUnitTest
 
 They cover the parts where a mistake is silent: the list's filtering (shared by
 select-all, so a wrong answer is a wrong bulk delete), the daemon's wire format,
 the setup state machine and every regression its comments describe, the Opus
-header, the call-log match, and the home screen's selection logic.
+header, the call-log match, the home screen's selection logic, and every file
+name read back in every format (a misread name is a recording dated wrong).
 
 A pre-push hook runs the tests and lint before anything leaves the machine:
 

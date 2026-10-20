@@ -53,9 +53,18 @@ object Trash {
 
     // --- names, for the two places that trash by renaming -------------------
 
-    /** The trashed name of [name], expiring at [expiresAtMillis]. */
+    /**
+     * The trashed name of [name], expiring at [expiresAtMillis].
+     *
+     * With no @ in it. Honor's Phone app plays any file in its folder whose
+     * name holds "@<number>_<time>" - tested: a leading dot does not stop
+     * it, and nor does anything after the time - so a recording deleted from
+     * there (FileNames.Format.HONOR) would stay playable from the call
+     * history for its 30 days here. The @ is written %40, and % as %25 so
+     * that reads back unchanged; names from before this had neither.
+     */
     internal fun nameFor(name: String, expiresAtMillis: Long): String =
-        "$PREFIX${expiresAtMillis / 1000}-$name"
+        "$PREFIX${expiresAtMillis / 1000}-${name.replace("%", "%25").replace("@", "%40")}"
 
     /** The original name and expiry of a trashed name, or null if it is not one. */
     internal fun parse(trashedName: String): Pair<String, Long>? {
@@ -63,8 +72,10 @@ object Trash {
         val rest = trashedName.removePrefix(PREFIX)
         val seconds = rest.substringBefore('-', "").toLongOrNull() ?: return null
         val name = rest.substringAfter('-', "").takeIf { it.isNotEmpty() } ?: return null
-        return name to seconds * 1000
+        return ESCAPED.replace(name) { if (it.value == "%40") "@" else "%" } to seconds * 1000
     }
+
+    private val ESCAPED = Regex("%40|%25")
 
     fun isTrashedName(name: String): Boolean = parse(name) != null
 
@@ -159,11 +170,7 @@ object Trash {
         val found = (fromMediaStore(context) + fromChosenFolder(context) + fromAppStorage(context))
             .distinctBy { it.name }
             .sortedBy { it.expiresAtMillis }
-        val callers = CallLogLookup.labelsFor(context, found)
-        return found.map { recording ->
-            val caller = callers[recording.name] ?: return@map recording
-            recording.copy(caller = caller.label, callerPhoto = caller.photo, number = caller.number)
-        }
+        return Recordings.withCallers(context, found)
     }
 
     private fun fromMediaStore(context: Context): List<Recording> = runCatching {

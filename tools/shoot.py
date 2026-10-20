@@ -35,10 +35,11 @@ PKG = "com.jemcik.jemrec"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "screenshots"
 # The F-Droid listing. fastlane orders screenshots by file name, so these are
-# numbered; the same five shots the README shows, at full resolution.
+# numbered; the same six shots the README shows, at full resolution.
 LISTING = ROOT / "fastlane" / "metadata" / "android" / "en-US" / "images" / "phoneScreenshots"
 LISTING_ORDER = (
     ("light", "home"),
+    ("light", "calls"),
     ("light", "settings"),
     ("light", "selftest"),
     ("dark", "home"),
@@ -118,8 +119,12 @@ def grab(path: pathlib.Path) -> None:
     print(f"    {path.relative_to(ROOT)}  {len(png) // 1024} kB")
 
 
-def centre(label: str):
-    """Where the node carrying this text or description is, or None."""
+def centre(label: str, exact: bool = False):
+    """Where the node carrying this text or description is, or None.
+
+    By substring unless `exact`: the Calls tab has to be asked for exactly,
+    or the favourites chip - "Only calls with favourite contacts" - answers.
+    """
     shell("uiautomator dump /sdcard/ui.xml")
     xml = shell("cat /sdcard/ui.xml")
     # Node by node: one regex over the whole dump lets a node's empty text=""
@@ -130,14 +135,14 @@ def centre(label: str):
         if not box:
             continue
         labels = [l for l in re.findall(r'(?:text|content-desc)="([^"]*)"', node) if l]
-        if any(label.lower() in l.lower() for l in labels):
+        if any(label.lower() == l.lower() if exact else label.lower() in l.lower() for l in labels):
             x1, y1, x2, y2 = map(int, box.groups())
             return (x1 + x2) // 2, (y1 + y2) // 2
     return None
 
 
-def tap(label: str, what: str) -> bool:
-    point = centre(label)
+def tap(label: str, what: str, exact: bool = False) -> bool:
+    point = centre(label, exact)
     if not point:
         print(f"    !! could not find {what} ({label!r})")
         return False
@@ -156,6 +161,21 @@ def shoot(theme: str) -> None:
 
     into = OUT / theme
     grab(into / "home.png")
+
+    # The Calls tab, with the invented call log behind the invented list.
+    # Checked, not assumed: once the tap landed while the header was still
+    # settling, missed the tab, and calls.png was the Recordings tab again.
+    # The calls list has no time chips and the recordings list does.
+    for _ in range(3):
+        if not tap("Calls", "the calls tab", exact=True):
+            break
+        time.sleep(1)
+        if not centre("This week"):
+            grab(into / "calls.png")
+            tap("Recordings", "the recordings tab", exact=True)
+            break
+    else:
+        print("    !! the calls tab never opened; calls.png is unchanged")
 
     if not tap("Settings", "the settings gear"):
         return
@@ -183,7 +203,7 @@ def thumbnails() -> None:
     from PIL import Image
 
     for theme in THEMES:
-        for name in ("home", "settings", "selftest"):
+        for name in ("home", "calls", "settings", "selftest"):
             source = OUT / theme / f"{name}.png"
             if not source.exists():
                 continue

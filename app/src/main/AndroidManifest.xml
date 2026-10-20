@@ -163,6 +163,12 @@
         <package android:name="com.letv.android.letvsafe" />
         <package android:name="com.asus.mobilemanager" />
         <package android:name="com.meizu.safe" />
+        <!--
+          Honor's Phone app, which plays recordings named its way from
+          Sounds/CallRecord: the file-name choice for it is offered only
+          where it is installed. See FileNames.
+        -->
+        <package android:name="com.hihonor.contacts" />
     </queries>
 
     <application

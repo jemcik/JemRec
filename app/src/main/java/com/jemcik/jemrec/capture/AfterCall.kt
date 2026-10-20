@@ -25,11 +25,13 @@ import kotlinx.coroutines.launch
  *
  * The question people ask of a call recorder right after hanging up is "did
  * it get that?", and before this the only way to answer it was to open the
- * app and look. No dialer lets another app put a play button in its call
- * history - Google Phone has no extension point for it at all - so this is the
- * next best place: one silent notification with the call's name and length, and
- * Play, Share and Delete on it. It copies what Google's own recorder does with
- * the player it shows for the last call.
+ * app and look. Google Phone keeps its own recordings in a database of its
+ * own and has no way in for another app's - checked in its APK: the screen
+ * that plays them and the call history behind it are not exported - so this
+ * is the next best place: one silent notification with the call's name and
+ * length, and Play, Share and Delete on it. It copies what Google's own
+ * recorder does with the player it shows for the last call. (Honor's Phone
+ * app is the exception, and has its own file names - see FileNames.)
  *
  * Visible but silent: DEFAULT importance, so it puts an icon in the status bar
  * and sits with the other notifications, with its sound and vibration taken

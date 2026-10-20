@@ -964,46 +964,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                         // this one" - it was tried, and it did. The chevron
                         // stops playback and folds the row back.
                         if (!state.selecting && isCurrent && state.durationMs > 0) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Slider(
-                                    value = state.positionMs.toFloat()
-                                        .coerceIn(0f, state.durationMs.toFloat()),
-                                    onValueChange = { vm.seekTo(it.toInt()) },
-                                    valueRange = 0f..state.durationMs.toFloat(),
-                                    modifier = Modifier.weight(1f),
-                                )
-                                IconButton(onClick = { haptics.tap(); vm.stopPlaying() }) {
-                                    Icon(
-                                        Icons.Filled.KeyboardArrowUp,
-                                        contentDescription = "Collapse player",
-                                        tint = MaterialTheme.colorScheme.secondary,
-                                    )
-                                }
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    // The end label sits under the slider's end,
-                                    // not under the chevron.
-                                    .padding(start = 16.dp, end = 52.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(
-                                    clock(state.positionMs),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    clock(state.durationMs),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                            PlayerControls(state, vm)
                         }
 
                     }
@@ -1030,6 +991,56 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
  * caller just as well at this size, and keep the app to the one permission it
  * actually asked for.
  */
+/**
+ * The player under whichever recording is loaded: a scrubber, its times, and
+ * the chevron that folds it away. Shared by the Recordings and Calls tabs, so
+ * a recording plays the same from either.
+ */
+@Composable
+internal fun PlayerControls(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Slider(
+            value = state.positionMs.toFloat()
+                .coerceIn(0f, state.durationMs.toFloat()),
+            onValueChange = { vm.seekTo(it.toInt()) },
+            valueRange = 0f..state.durationMs.toFloat(),
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = { haptics.tap(); vm.stopPlaying() }) {
+            Icon(
+                Icons.Filled.KeyboardArrowUp,
+                contentDescription = "Collapse player",
+                tint = MaterialTheme.colorScheme.secondary,
+            )
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // The end label sits under the slider's end,
+            // not under the chevron.
+            .padding(start = 16.dp, end = 52.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            clock(state.positionMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            clock(state.durationMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /** One preset filter chip.
  *
  *  Selected chips wear `secondary`, not the default `secondaryContainer`: on the
@@ -1210,11 +1221,15 @@ private fun initialsOf(caller: String?): String? {
  * wanted for who the call was with.
  */
 @Composable
-private fun DirectionArrow(incoming: Boolean) {
+internal fun DirectionArrow(
+    incoming: Boolean,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    description: String = if (incoming) "Incoming" else "Outgoing",
+) {
     Icon(
         Icons.Filled.ArrowForward,
-        contentDescription = if (incoming) "Incoming" else "Outgoing",
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        contentDescription = description,
+        tint = tint,
         modifier = Modifier
             .size(14.dp)
             .rotate(if (incoming) 135f else -45f),
@@ -1229,7 +1244,7 @@ private fun DirectionArrow(incoming: Boolean) {
  * a poor trade.
  */
 @Composable
-private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier, size: Dp = 24.dp) {
+internal fun PauseGlyph(tint: Color, modifier: Modifier = Modifier, size: Dp = 24.dp) {
     Row(
         modifier = modifier.size(size),
         horizontalArrangement = Arrangement.spacedBy(size / 6, Alignment.CenterHorizontally),

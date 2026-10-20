@@ -41,6 +41,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.Tab
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.activity.compose.LocalActivity
@@ -348,6 +350,28 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             }
                         },
                     )
+                    // Recordings | Calls. Primary tabs, under the app bar, as
+                    // Material 3 puts them; not on the other screens, which
+                    // are reached from here and not part of it. Their own
+                    // divider is dropped - the header rule below already is
+                    // one, and the busy line rides on it.
+                    if (!offHome) {
+                        PrimaryTabRow(
+                            selectedTabIndex = state.homeTab.ordinal,
+                            divider = {},
+                        ) {
+                            Tab(
+                                selected = state.homeTab == HomeTab.RECORDINGS,
+                                onClick = { haptics.tap(); vm.showTab(HomeTab.RECORDINGS) },
+                                text = { Text("Recordings") },
+                            )
+                            Tab(
+                                selected = state.homeTab == HomeTab.CALLS,
+                                onClick = { haptics.tap(); vm.showTab(HomeTab.CALLS) },
+                                text = { Text("Calls") },
+                            )
+                        }
+                    }
                     HeaderRule(active = state.busy)
                 }
             }
@@ -359,7 +383,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         // takes the padding and fills the area itself. Setup and Settings are
         // short, static content, so they keep the plain page scroll.
         if (ready && !offHome) {
-            HomeScreen(state, vm, modifier = Modifier.padding(padding))
+            if (state.homeTab == HomeTab.CALLS) {
+                CallsScreen(state, vm, modifier = Modifier.padding(padding))
+            } else {
+                HomeScreen(state, vm, modifier = Modifier.padding(padding))
+            }
         } else if (inTrash) {
             // A list too, with its own scroll, for the same reason.
             TrashScreen(state, vm, modifier = Modifier.padding(padding))

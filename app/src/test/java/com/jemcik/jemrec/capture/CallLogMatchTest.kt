@@ -41,6 +41,30 @@ class CallLogMatchTest {
         assertEquals(false, matches(31))
     }
 
+    @Test fun aNameWithTheNumberIsMatchedInsideThatCall() {
+        // Honor's format: the number, and a time anywhere in the call.
+        val call = CallLogLookup.Entry(t, incoming = false, "477", number = "477", seconds = 41)
+        val other = CallLogLookup.Entry(t + 20 * second, incoming = true, "someone else", number = "+100", seconds = 60)
+        val entries = listOf(call, other)
+        assertEquals(call, CallLogLookup.withNumber(entries, "477", t + 30 * second))
+        assertNull(CallLogLookup.withNumber(entries, "478", t + 30 * second))
+        assertNull(CallLogLookup.withNumber(entries, "477", t + 10 * 60 * second))
+    }
+
+    @Test fun theCallBeforeIsNeverTakenForOneTheLogHasNotWrittenYet() {
+        // Mum at t - 90 s was recorded (the ledger has it). At t the next call
+        // is saved before its own entry reaches the log: the only entry in the
+        // window is Mum's, and it is hers, not this call's.
+        val mum = CallLogLookup.Entry(t - 90 * second, incoming = false, "Mum", number = "+1", seconds = 60)
+        val earlier = listOf(CallLedger.Recorded(t - 89 * second, incoming = false, seconds = 61))
+        assertNull(CallLogLookup.unclaimed(listOf(mum), t, incoming = false, earlier))
+        // Once the log has it, this call's entry is found.
+        val boss = CallLogLookup.Entry(t, incoming = false, "Boss", number = "+2", seconds = 30)
+        assertEquals(boss, CallLogLookup.unclaimed(listOf(mum, boss), t, incoming = false, earlier))
+        // And without a ledger entry for Mum, the old answer stands.
+        assertEquals(mum, CallLogLookup.unclaimed(listOf(mum), t, incoming = false, emptyList()))
+    }
+
     @Test fun nothingInTheWindowMeansNoLabel() {
         assertNull(CallLogLookup.closest(emptyList(), t, incoming = true))
     }

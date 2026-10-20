@@ -192,6 +192,42 @@ The prompt stays up for about a minute rather than the few seconds an ordinary
 notification gets, and if you miss it, it waits in the shade for the rest of
 the call. On a locked screen you get the same question full screen.
 
+## Whose calls to keep
+
+**Whose calls to keep**, in Settings, narrows down which calls are kept. **Your
+contacts**: all of them, all but some, only some, or none — for the last three
+you pick the contacts. **Other numbers**, a switch of its own: numbers not in
+your contacts, and hidden ones. Until you change either, every call is kept.
+
+Who a call was with is only known once it has ended, from the call log. So
+every call is still recorded, and one your choice leaves out is deleted the
+moment it ends, before it is saved anywhere. If the call log does not say who
+it was, the recording is kept. In ask-first mode, a call you tap Record on is
+always kept. The Calls tab marks a call that was left out.
+
+It needs permission to read the call log and your contacts, to tell who a call
+was with; the card asks for it if you have not given it.
+
+## File names
+
+**File names**, in Settings, decides what a new recording is called. Recordings
+you already have keep their names.
+
+- **Date and time**, the default: `20261020_165705_out.ogg` — when the call
+  began, and which way it went.
+- **With the caller**: `20261020_165705_out_Priya Raman.ogg` — easier to find
+  in a file manager or on a computer.
+- **For Honor's Phone app**, on a phone that has it: `Priya
+  Raman@+447700900123_20261020165705.ogg`, the name Honor's own recorder uses.
+  Saved in `Sounds/CallRecord` — the card has a button that opens the folder
+  picker right there; tap **Use this folder** and **Allow** — Honor's Phone app
+  then shows a play button on the call in its history.
+
+The caller comes from the call log as the call is saved; without it, a
+recording is named by date and time. Google's Phone app has nothing like
+Honor's: it keeps its own recordings to itself, and no other app can add one to
+its call history.
+
 ## Playing, sharing and deleting
 
 Tap a recording to play it inside the app; a scrubber appears under the row,
@@ -225,6 +261,21 @@ than the app's — so if you want them gone, delete them **before** you
 uninstall. Recently deleted ones in the standard folder are still emptied by
 Android on time. In a folder you chose, they stay behind as hidden files,
 because removing them is JemRec's job.
+
+## The Calls tab
+
+The **Calls** tab, beside Recordings, is your phone's call log. A call that was
+recorded has the ▶ beside its length and plays on a tap. A call that was not
+says why, where JemRec knows: **In Recently deleted**, **Recording deleted**,
+**Left out by your rules**, **Too short**, **Recording was off**, **Ask first,
+not recorded**. **Not recorded**, in red, means recording was on and automatic
+and nothing was saved — run the self-test. JemRec remembers deleted and left-
+out calls for a week, so it says this only for the last week. **No recording**
+is an older call, or one from before JemRec kept track, with no guess at why.
+Missed, declined and blocked calls are marked as such.
+
+It needs permission to read the call log, the same optional permission that
+puts names on recordings; the tab asks for it if you have not given it.
 
 ## Turning JemRec off
 

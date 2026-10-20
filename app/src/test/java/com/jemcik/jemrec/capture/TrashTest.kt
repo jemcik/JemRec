@@ -29,6 +29,16 @@ class TrashTest {
         assertEquals(odd, Trash.parse(Trash.nameFor(odd, expires))?.first)
     }
 
+    @Test fun anHonorNameLosesItsAtInTheTrashAndGetsItBack() {
+        // Honor's Phone app plays any name with "@<number>_<time>" in it,
+        // dot or no dot: a trashed one must not have it.
+        val honor = "Priya Shah@+447700900123_20261020165705.ogg"
+        val trashed = Trash.nameFor(honor, expires)
+        assertFalse(trashed.contains('@'))
+        assertEquals(honor to expires, Trash.parse(trashed))
+        assertEquals("50%@x.ogg", Trash.parse(Trash.nameFor("50%@x.ogg", expires))?.first)
+    }
+
     @Test fun somethingThatOnlyLooksTrashedIsNot() {
         assertNull(Trash.parse(".trashed-soon-$name"))
         assertNull(Trash.parse(".trashed-1795000000-"))

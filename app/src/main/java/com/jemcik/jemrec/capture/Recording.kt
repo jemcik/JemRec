@@ -63,14 +63,15 @@ data class Recording(
     /** Set only for a recording in the trash: when it goes for good. */
     val expiresAtMillis: Long? = null,
 ) {
-    /** When the call was, parsed from the name (yyyyMMdd_HHmmss...). Drives the
-     *  Today / This week presets; null if the name is not one of ours. Parsed
-     *  once per instance: the filter asks every row at every keystroke. */
-    val startedAtMillis: Long? by lazy {
-        runCatching {
-            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name.take(15))?.time
-        }.getOrNull()
-    }
+    /** When the call was, read from the name in any of its formats (see
+     *  FileNames.parse). Drives the Today / This week presets; null if the
+     *  name is not one of ours. Parsed once per instance: the filter asks
+     *  every row at every keystroke. */
+    val startedAtMillis: Long? get() = parsedName?.startedAt
+
+    /** What the name says - time, and for some formats direction, caller and
+     *  number. Read once: the list asks it of every row more than once. */
+    internal val parsedName: FileNames.Parsed? by lazy { FileNames.parse(name) }
 
     /** Whoever the call was with takes the headline when it is known, so the
      *  time steps down into the subtitle rather than being dropped. */
@@ -146,22 +147,48 @@ internal object Recordings {
         val kept = KeepMarks.all(context)
         val found = (fromMediaStore(context) + fromChosenFolder(context) + fromAppStorage(context))
             .distinctBy { it.name }
-            .sortedByDescending { it.name }
+            // By when the call was, not by name: a name can start with the
+            // caller now (FileNames.Format.HONOR).
+            .sortedWith(compareByDescending<Recording> { it.startedAtMillis ?: 0L }.thenByDescending { it.name })
             .map { if (it.name in kept) it.copy(kept = true) else it }
-        if (!withCallers) return found
-        // Looked up afterwards, in one query for the whole list, and only if
-        // the user has allowed it. Ungranted this returns nothing and every
-        // recording simply keeps its time as its headline.
-        val callers = CallLogLookup.labelsFor(context, found)
-        return if (callers.isEmpty()) found
-        else found.map { recording ->
+        if (!withCallers) return withDirections(context, found, emptyMap())
+        return withCallers(context, found)
+    }
+
+    /**
+     * Who each call was with. Looked up in one query for the whole list, and
+     * only if the user has allowed it; ungranted, a name with the caller in
+     * it (FileNames) still says who, and anything else keeps its time as its
+     * headline.
+     */
+    internal fun withCallers(context: Context, recordings: List<Recording>): List<Recording> {
+        val callers = CallLogLookup.labelsFor(context, recordings)
+        val named = recordings.map { recording ->
             val caller = callers[recording.name]
+            val fromName = recording.parsedName
             recording.copy(
-                caller = caller?.label,
+                caller = caller?.label ?: fromName?.caller ?: fromName?.number,
                 callerPhoto = caller?.photo,
-                number = caller?.number,
+                number = caller?.number ?: fromName?.number,
                 callerFavorite = caller?.favorite ?: false,
             )
+        }
+        return withDirections(context, named, callers)
+    }
+
+    /** Which way each call went, for the names that do not say: as the saver
+     *  noted it, else as the call log has it. */
+    private fun withDirections(
+        context: Context,
+        recordings: List<Recording>,
+        callers: Map<String, CallLogLookup.Caller>,
+    ): List<Recording> {
+        if (recordings.none { it.parsedName != null && it.parsedName?.incoming == null }) return recordings
+        val noted = FileNames.directions(context)
+        return recordings.map { recording ->
+            if (recording.parsedName?.incoming != null) return@map recording
+            val incoming = noted[recording.name] ?: callers[recording.name]?.incoming ?: return@map recording
+            recording.copy(incoming = incoming)
         }
     }
 
@@ -176,7 +203,7 @@ internal object Recordings {
         name = name,
         uri = uri,
         whenLabel = whenLabel(whenMillis),
-        incoming = RecordingStore.isIncoming(name),
+        incoming = FileNames.parse(name)?.incoming ?: RecordingStore.isIncoming(name),
         durationLabel = duration(durationMillis),
         sizeLabel = size(sizeBytes),
         durationMillis = durationMillis.coerceAtLeast(0),
@@ -192,10 +219,8 @@ internal object Recordings {
         whenMillis: Long = startOf(name),
     ) = describe(name, uri, sizeBytes, durationOf(context, uri), whenMillis)
 
-    /** When the call started, from the name (yyyyMMdd_HHmmss...), or 0. */
-    private fun startOf(name: String): Long = runCatching {
-        SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name.take(15))?.time
-    }.getOrNull() ?: 0L
+    /** When the call started, from the name, or 0. */
+    private fun startOf(name: String): Long = FileNames.parse(name)?.startedAt ?: 0L
 
     /** One file in the folder the user picked. */
     internal class Document(val name: String, val uri: Uri, val sizeBytes: Long, val modifiedMillis: Long)
@@ -293,7 +318,7 @@ internal object Recordings {
 
     /** "Today 16:53" reads better than a date for the common case, which is a
      *  call from the last few minutes. */
-    private fun whenLabel(millis: Long): String {
+    internal fun whenLabel(millis: Long): String {
         val stamp = Date(millis)
         val day = SimpleDateFormat("yyyyMMdd", Locale.US)
         val time = SimpleDateFormat("HH:mm", Locale.US).format(stamp)

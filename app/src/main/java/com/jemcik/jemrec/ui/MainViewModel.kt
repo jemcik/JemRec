@@ -15,6 +15,9 @@ import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.MissedCalls
 import kotlinx.coroutines.flow.first
 import com.jemcik.jemrec.capture.AudioAccess
+import com.jemcik.jemrec.capture.CallHistory
+import com.jemcik.jemrec.capture.CallRules
+import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
@@ -69,6 +72,15 @@ private const val LOG_LIMIT = 8_000
  * has.
  */
 enum class Screen { HOME, SETTINGS, TRASH }
+
+/**
+ * The two tabs of the home screen: the recordings, and the calls.
+ *
+ * Tabs, not a bottom bar: Material 3 says not to use a navigation bar for
+ * fewer than three destinations, and to put primary tabs under the app bar
+ * (m3.material.io, Navigation bar and Tabs guidelines).
+ */
+enum class HomeTab { RECORDINGS, CALLS }
 
 data class UiState(
     val step: SetupStep = SetupStep.CHECKING,
@@ -166,9 +178,26 @@ data class UiState(
     val keptOnly: Boolean = false,
     /** What is in Recently deleted, soonest to go first. See Trash. */
     val trashed: List<Recording> = emptyList(),
+    /** Which tab of the home screen is showing. */
+    val homeTab: HomeTab = HomeTab.RECORDINGS,
+    /** The call log, matched to recordings. Read only while the Calls tab is
+     *  showing - it is a query and a contacts lookup per number. */
+    val calls: List<CallHistory.Call> = emptyList(),
     /** Auto-delete's two rules, 0 for off. See Retention. */
     val autoDeleteAfterDays: Int = 0,
     val autoDeleteShorterThan: Int = 0,
+    /** Whose calls to keep - see CallRules - and the contacts chosen for it. */
+    val ruleContacts: CallRules.Contacts = CallRules.Contacts.ALL,
+    val ruleOtherNumbers: Boolean = true,
+    val ruleChosen: List<CallRules.Chosen> = emptyList(),
+    /** Whether the contacts may be read: the rules need them to tell who is who. */
+    val canReadContacts: Boolean = false,
+    /** How new recordings are named. See FileNames. */
+    val fileNames: FileNames.Format = FileNames.Format.DATE,
+    /** This phone has Honor's Phone app, so its format is offered. */
+    val honorDialer: Boolean = false,
+    /** Recordings are going to the folder Honor's Phone app plays them from. */
+    val inHonorFolder: Boolean = false,
     /** Whether the "tap a photo to select" hint has been shown its course - it
      *  retires the first time the user actually enters selection. */
     val selectHintSeen: Boolean = true,
@@ -247,6 +276,14 @@ class MainViewModel @JvmOverloads constructor(
     fun showHome() = _state.update { it.copy(screen = Screen.HOME) }
 
     fun showTrash() = _state.update { it.copy(screen = Screen.TRASH) }
+
+    /** Switch tabs. Leaving Recordings ends a selection, which only means
+     *  something there; arriving at Calls reads the call log. */
+    fun showTab(tab: HomeTab) {
+        if (_state.value.homeTab == tab) return
+        _state.update { it.copy(homeTab = tab, selecting = false, selected = emptySet()) }
+        if (tab == HomeTab.CALLS) refresh()
+    }
 
     fun askReset() = _state.update { it.copy(confirmingReset = true) }
 
@@ -731,16 +768,62 @@ class MainViewModel @JvmOverloads constructor(
     }
 
 
+    /** Whose calls to keep. Applied to calls from now on; see CallRules. */
+    fun setRuleContacts(contacts: CallRules.Contacts) {
+        CallRules.setContacts(getApplication(), contacts)
+        _state.update { it.copy(ruleContacts = contacts) }
+        // The chosen contacts are read only for the choices that list them.
+        refresh()
+    }
+
+    fun setRuleOtherNumbers(on: Boolean) {
+        CallRules.setOtherNumbers(getApplication(), on)
+        _state.update { it.copy(ruleOtherNumbers = on) }
+    }
+
+    /**
+     * The contact the picker returned, added to the rules' list.
+     *
+     * NOT through launchAction. Coming back from the picker resumes the
+     * screen, and the resume's own setup check holds the busy flag - which
+     * launchAction answers by dropping the call. Measured on an emulator:
+     * the contact was picked, and nothing was added.
+     */
+    fun addRuleContact(contact: Uri) {
+        viewModelScope.launch {
+            val added = withContext(Dispatchers.IO) { CallRules.add(getApplication(), contact) }
+            if (!added) say("could not add that contact")
+            refreshNow()
+        }
+    }
+
+    fun removeRuleContact(key: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { CallRules.remove(getApplication(), key) }
+            refreshNow()
+        }
+    }
+
+    /** How new recordings are named. Ones already saved keep their names. */
+    fun setFileNames(format: FileNames.Format) {
+        FileNames.setFormat(getApplication(), format)
+        _state.update { it.copy(fileNames = format) }
+    }
+
     fun useDefaultFolder() = launchAction("use default folder") {
         RecordingStore.clearTree(getApplication())
         say("recordings will go to the standard Recordings folder")
         refresh()
     }
 
-    fun onFolderChosen(uri: Uri) = launchAction("choose folder") {
-        RecordingStore.setTree(getApplication(), uri)
-        say("recordings will be saved to the folder you chose")
-        refresh()
+    /** Not through launchAction, for the same reason as addRuleContact: the
+     *  picker's answer arrives as the screen resumes, while its check runs. */
+    fun onFolderChosen(uri: Uri) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { RecordingStore.setTree(getApplication(), uri) }
+            say("recordings will be saved to the folder you chose")
+            refreshNow()
+        }
     }
 
     /**
@@ -764,6 +847,8 @@ class MainViewModel @JvmOverloads constructor(
         // dialer's touches with it. An unresponsive phone right after a call is
         // about the worst thing this app could do.
         val snapshot = withContext(Dispatchers.IO) {
+            val recordings = Recordings.list(app)
+            val trashed = if (Recordings.override != null) emptyList() else Trash.list(app)
             Snapshot(
                 // CONFIRMED, because this reading decides whether to revive.
                 //
@@ -796,10 +881,34 @@ class MainViewModel @JvmOverloads constructor(
                 canReadAudio = AudioAccess.granted(app),
                 offerCallLog = CallLogLookup.anythingLeftToOffer(app) &&
                     !CallLogLookup.bannerDismissed(app),
-                recordings = Recordings.list(app),
-                trashed = if (Recordings.override != null) emptyList() else Trash.list(app),
+                recordings = recordings,
+                trashed = trashed,
+                // Only while the tab is up: it is the call log and a contacts
+                // lookup per number, and nobody is looking at it otherwise.
+                // Null when not read, so this refresh leaves alone a list a
+                // later one has read already.
+                calls = if (_state.value.homeTab == HomeTab.CALLS) {
+                    CallHistory.load(app, recordings, trashed)
+                } else {
+                    null
+                },
                 autoDeleteAfterDays = Retention.maxAgeDays(app),
                 autoDeleteShorterThan = Retention.minSeconds(app),
+                ruleContacts = CallRules.contacts(app),
+                ruleOtherNumbers = CallRules.otherNumbers(app),
+                // A contacts query or two each, so only when Settings shows them.
+                ruleChosen = if (
+                    CallLogLookup.photosGranted(app) &&
+                    CallRules.contacts(app).let { it == CallRules.Contacts.ALL_BUT || it == CallRules.Contacts.ONLY }
+                ) {
+                    CallRules.chosen(app)
+                } else {
+                    emptyList()
+                },
+                canReadContacts = CallLogLookup.photosGranted(app),
+                fileNames = FileNames.format(app),
+                honorDialer = FileNames.honorDialer(app),
+                inHonorFolder = FileNames.inHonorFolder(app),
                 selectHintSeen = Prefs.of(app).getBoolean("select_hint_seen", false),
             )
         }
@@ -823,8 +932,16 @@ class MainViewModel @JvmOverloads constructor(
                 offerCallLog = snapshot.offerCallLog,
                 recordings = snapshot.recordings,
                 trashed = snapshot.trashed,
+                calls = snapshot.calls ?: it.calls,
                 autoDeleteAfterDays = snapshot.autoDeleteAfterDays,
                 autoDeleteShorterThan = snapshot.autoDeleteShorterThan,
+                ruleContacts = snapshot.ruleContacts,
+                ruleOtherNumbers = snapshot.ruleOtherNumbers,
+                ruleChosen = snapshot.ruleChosen,
+                canReadContacts = snapshot.canReadContacts,
+                fileNames = snapshot.fileNames,
+                honorDialer = snapshot.honorDialer,
+                inHonorFolder = snapshot.inHonorFolder,
                 selectHintSeen = snapshot.selectHintSeen,
                 // A name that is no longer in the list cannot be selected. It
                 // would still be counted by the toolbar, and the count is what
@@ -854,8 +971,16 @@ class MainViewModel @JvmOverloads constructor(
         val offerCallLog: Boolean,
         val recordings: List<Recording>,
         val trashed: List<Recording>,
+        val calls: List<CallHistory.Call>?,
         val autoDeleteAfterDays: Int,
         val autoDeleteShorterThan: Int,
+        val ruleContacts: CallRules.Contacts,
+        val ruleOtherNumbers: Boolean,
+        val ruleChosen: List<CallRules.Chosen>,
+        val canReadContacts: Boolean,
+        val fileNames: FileNames.Format,
+        val honorDialer: Boolean,
+        val inHonorFolder: Boolean,
         val selectHintSeen: Boolean,
     )
 

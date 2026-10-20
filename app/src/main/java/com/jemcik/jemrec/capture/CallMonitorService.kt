@@ -282,6 +282,9 @@ class CallMonitorService : Service() {
                 Log.i(TAG, "monitor: $recfile was collected already")
             RecordingSaver.Outcome.Busy ->
                 Log.i(TAG, "monitor: $recfile is being saved by the reconcile")
+            // The user's rules on whose calls to keep left this one out.
+            RecordingSaver.Outcome.Skipped ->
+                Log.i(TAG, "monitor: $recfile was left out by the rules")
             RecordingSaver.Outcome.Empty ->
                 reportNotRecorded(
                     "No call audio came through. Some phones do not allow calls to be recorded.",

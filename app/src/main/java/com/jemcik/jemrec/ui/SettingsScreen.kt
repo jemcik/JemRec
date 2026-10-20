@@ -16,12 +16,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,9 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.R
 import com.jemcik.jemrec.capture.CallLogLookup
+import com.jemcik.jemrec.capture.CallRules
+import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.Retention
 import com.jemcik.jemrec.capture.Trash
 
@@ -146,6 +153,11 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                 )
             }
         }
+
+        WhoseCallsToKeep(
+            state, vm,
+            allow = { callLogPermission.launch(CallLogLookup.PERMISSIONS) },
+        )
 
         // The notification that follows each call. Its switch is only about
         // the everyday one: a recording that came out silent is reported
@@ -276,6 +288,12 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                 }
             }
         }
+
+        FileNamesCard(
+            state, vm,
+            allow = { callLogPermission.launch(CallLogLookup.PERMISSIONS) },
+            chooseHonorFolder = { folderPicker.launch(FileNames.honorFolderUri) },
+        )
 
         // Both rules off until chosen. Nothing they remove is gone: it waits
         // in Recently deleted, said here so nobody picks a rule fearing it.
@@ -426,6 +444,234 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
 }
 
 /**
+ * Whose calls to keep (see CallRules): which contacts, and other numbers.
+ *
+ * Both questions need to know who a call was with, which only the call log
+ * and the contacts can say - so without them the card says what it would do
+ * and offers the permission, rather than showing switches that cannot work.
+ */
+@Composable
+private fun WhoseCallsToKeep(state: UiState, vm: MainViewModel, allow: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    val contactPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickContact()
+    ) { uri -> if (uri != null) vm.addRuleContact(uri) }
+
+    Card {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Whose calls to keep", style = MaterialTheme.typography.titleMedium)
+            if (!state.canReadCallLog || !state.canReadContacts) {
+                Text(
+                    "Every call is kept. To leave some out - keep only your " +
+                        "contacts' calls, say, or everyone's but a few people's - JemRec " +
+                        "needs to read your call log and contacts, to tell who a call " +
+                        "was with.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FilledTonalButton(
+                    onClick = { haptics.tap(); allow() },
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Allow") }
+                return@Column
+            }
+
+            Text("Your contacts", style = MaterialTheme.typography.labelLarge)
+            Choices(
+                choices = CallRules.Contacts.entries,
+                selected = state.ruleContacts,
+                label = { contacts ->
+                    when (contacts) {
+                        CallRules.Contacts.ALL -> "All"
+                        CallRules.Contacts.ALL_BUT -> "All but…"
+                        CallRules.Contacts.ONLY -> "Only…"
+                        CallRules.Contacts.NONE -> "None"
+                    }
+                },
+                enabled = !state.busy,
+                onChoose = { haptics.tap(); vm.setRuleContacts(it) },
+            )
+            if (state.ruleContacts == CallRules.Contacts.ALL_BUT || state.ruleContacts == CallRules.Contacts.ONLY) {
+                if (state.ruleChosen.isEmpty()) {
+                    Text(
+                        if (state.ruleContacts == CallRules.Contacts.ALL_BUT) {
+                            "Add the contacts whose calls to leave out."
+                        } else {
+                            "Add the contacts whose calls to record."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                state.ruleChosen.forEach { chosen ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CallerAvatar(caller = chosen.name, photo = chosen.photo)
+                        Text(
+                            chosen.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(
+                            onClick = { haptics.tap(); vm.removeRuleContact(chosen.key) },
+                            enabled = !state.busy,
+                        ) { Icon(Icons.Filled.Close, contentDescription = "Remove ${chosen.name}") }
+                    }
+                }
+                FilledTonalButton(
+                    onClick = { haptics.tap(); contactPicker.launch(null) },
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Add a contact") }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Other numbers", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        "Numbers not in your contacts, and hidden ones.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.ruleOtherNumbers,
+                    onCheckedChange = { haptics.toggle(it); vm.setRuleOtherNumbers(it) },
+                )
+            }
+
+            val nothing = !state.ruleOtherNumbers && when (state.ruleContacts) {
+                CallRules.Contacts.NONE -> true
+                CallRules.Contacts.ONLY -> state.ruleChosen.isEmpty()
+                else -> false
+            }
+            if (nothing) {
+                Text(
+                    "As set, no call will be kept.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Text(
+                "Who a call was with is only known once it ends, from the call log. So " +
+                    "every call is recorded, and one left out here is deleted as it " +
+                    "ends, before it is saved. If the call log does not say who it was, " +
+                    "the recording is kept." +
+                    if (state.automatic) "" else {
+                        " In ask-first mode, a call you tap Record on is always kept."
+                    },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * How new recordings are named (see FileNames), with an example of each so
+ * nobody has to imagine it. The Honor format only on a phone with Honor's
+ * Phone app, and with the one folder that app looks in a tap away.
+ */
+@Composable
+private fun FileNamesCard(
+    state: UiState,
+    vm: MainViewModel,
+    allow: () -> Unit,
+    chooseHonorFolder: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    val formats = FileNames.Format.entries.filter {
+        it != FileNames.Format.HONOR || state.honorDialer || state.fileNames == FileNames.Format.HONOR
+    }
+    Card {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("File names", style = MaterialTheme.typography.titleMedium)
+            Choices(
+                choices = formats,
+                selected = state.fileNames,
+                label = { format ->
+                    when (format) {
+                        FileNames.Format.DATE -> "Date and time"
+                        FileNames.Format.DATE_AND_CALLER -> "With the caller"
+                        FileNames.Format.HONOR -> "For Honor's Phone app"
+                    }
+                },
+                enabled = !state.busy,
+                onChoose = { haptics.tap(); vm.setFileNames(it) },
+            )
+            Text(
+                when (state.fileNames) {
+                    FileNames.Format.DATE -> "20261020_165705_out.ogg"
+                    FileNames.Format.DATE_AND_CALLER -> "20261020_165705_out_Priya Raman.ogg"
+                    FileNames.Format.HONOR -> "Priya Raman@+447700900123_20261020165705.ogg"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                when (state.fileNames) {
+                    FileNames.Format.DATE ->
+                        "When the call began, and which way it went."
+                    FileNames.Format.DATE_AND_CALLER ->
+                        "The same, then the contact's name or the number - easier to " +
+                            "find in a file manager or on a computer."
+                    FileNames.Format.HONOR ->
+                        "The name Honor's own recorder uses. Honor's Phone app then " +
+                            "shows a play button on the call in its history - as long " +
+                            "as the recordings are in ${FileNames.HONOR_FOLDER}."
+                } + " New recordings only: the ones you have keep their names.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (state.fileNames != FileNames.Format.DATE && !state.canReadCallLog) {
+                Text(
+                    "Needs your call log, to know who each call was with. Until then, " +
+                        "recordings are named by date and time.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                FilledTonalButton(
+                    onClick = { haptics.tap(); allow() },
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Allow") }
+            }
+            if (state.fileNames == FileNames.Format.HONOR && !state.inHonorFolder) {
+                Text(
+                    "Recordings are not going to ${FileNames.HONOR_FOLDER} yet. Choose " +
+                        "it, then tap Use this folder and Allow.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                FilledTonalButton(
+                    onClick = { haptics.tap(); chooseHonorFolder() },
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Save to ${FileNames.HONOR_FOLDER}") }
+            }
+        }
+    }
+}
+
+/**
  * Mutually exclusive choices, as chips that wrap.
  *
  * Not segmented buttons, which were tried: five segments in a phone-width
@@ -433,12 +679,12 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
  * room their words need and move to a second line when they run out of it.
  */
 @Composable
-private fun Choices(
-    choices: List<Int>,
-    selected: Int,
-    label: (Int) -> String,
+private fun <T> Choices(
+    choices: List<T>,
+    selected: T,
+    label: (T) -> String,
     enabled: Boolean,
-    onChoose: (Int) -> Unit,
+    onChoose: (T) -> Unit,
 ) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),

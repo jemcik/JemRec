@@ -6,6 +6,7 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.util.Log
+import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.capture.Recordings
 import java.text.SimpleDateFormat
@@ -62,6 +63,42 @@ internal object DemoRecordings {
 
     fun install(on: Boolean) {
         Recordings.override = if (on) { context -> recordings(context) } else null
+        CallHistory.override = if (on) { context -> calls(context) } else null
+    }
+
+    /**
+     * The Calls tab's invented log: every invented recording as the call it
+     * came from, and a few calls that were not recorded, one of each reason
+     * worth showing. Nobody here is real, the same as the recordings.
+     */
+    fun calls(context: Context): List<CallHistory.Call> {
+        val now = System.currentTimeMillis()
+        val recorded = recordings(context).zip(CALLS) { recording, call ->
+            CallHistory.Call(
+                // The log dates a call from when it started ringing; the
+                // recording, from when it was answered.
+                at = now - call.minutesAgo * 60_000 - 8_000,
+                seconds = call.seconds,
+                kind = if (call.incoming) CallHistory.Kind.INCOMING else CallHistory.Kind.OUTGOING,
+                label = call.caller ?: call.number ?: "Unknown number",
+                number = call.number,
+                photo = recording.callerPhoto,
+                favorite = call.favorite,
+                recording = recording,
+                status = CallHistory.Status.RECORDED,
+            )
+        }
+        fun unrecorded(minutesAgo: Long, kind: CallHistory.Kind, label: String, seconds: Int, status: CallHistory.Status) =
+            CallHistory.Call(now - minutesAgo * 60_000, seconds, kind, label, label, status = status)
+        val others = listOf(
+            unrecorded(52, CallHistory.Kind.MISSED, "+44 20 7946 0321", 0, CallHistory.Status.NOT_CONNECTED),
+            unrecorded(2 * 60 + 10, CallHistory.Kind.OUTGOING, "Priya Raman", 0, CallHistory.Status.NOT_CONNECTED),
+            unrecorded(24 * 60 + 2 * 60, CallHistory.Kind.INCOMING, "Hana Sato", 192, CallHistory.Status.RECORDING_OFF),
+            unrecorded(2 * 24 * 60 + 15, CallHistory.Kind.INCOMING, "Dr. Lena Vogel", 312, CallHistory.Status.SKIPPED),
+            unrecorded(3 * 24 * 60 + 40, CallHistory.Kind.INCOMING, "+1 202 555 0147", 58, CallHistory.Status.IN_TRASH),
+            unrecorded(5 * 24 * 60 + 9 * 60, CallHistory.Kind.DECLINED, "+1 202 555 0147", 0, CallHistory.Status.NOT_CONNECTED),
+        )
+        return (recorded + others).sortedByDescending { it.at }
     }
 
     /**

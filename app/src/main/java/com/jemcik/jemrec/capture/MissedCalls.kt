@@ -65,6 +65,8 @@ internal object MissedCalls {
      *  under other rules and are not this check's business. */
     fun coverageChanged(context: Context) {
         Prefs.of(context).edit().putLong(KEY_COVERED_SINCE, System.currentTimeMillis()).apply()
+        // The Calls tab's record of it, for saying why a call went unrecorded.
+        CoverageHistory.note(context)
     }
 
     private fun coveredSince(context: Context): Long {
@@ -118,7 +120,8 @@ internal object MissedCalls {
         coveredSince: Long,
         now: Long,
     ): List<CallLogLookup.LoggedCall> {
-        val known = ledger.recordings + pending
+        // A call the rules left out was recorded and thrown away on purpose.
+        val known = ledger.recordings + ledger.skipped + pending
         return calls.filter { call ->
             call.at > coveredSince &&
                 call.seconds >= MIN_SECONDS &&

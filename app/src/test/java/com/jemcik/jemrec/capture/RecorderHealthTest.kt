@@ -75,6 +75,12 @@ class CallLedgerTest {
         assertEquals(setOf(1_791_545_000_000L), ledger.reported)
     }
 
+    @Test fun skippedCallsAreKeptApartFromRecordings() {
+        val ledger = CallLedger.parse(setOf("s:1791544738000:in:95", CallLedger.encodeRecording(Recorded(5, false, 1))))
+        assertEquals(listOf(Recorded(1_791_544_738_000L, true, 95)), ledger.skipped)
+        assertEquals(listOf(Recorded(5, false, 1)), ledger.recordings)
+    }
+
     @Test fun unreadableEntriesAreDropped() {
         val ledger = CallLedger.parse(setOf("r:nope:in:5", "x:1", "c:", "r:1:in"))
         assertTrue(ledger.recordings.isEmpty())

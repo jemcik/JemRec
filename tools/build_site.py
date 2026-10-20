@@ -570,6 +570,41 @@ SETUP = [
           "for the rest of the call. On a locked screen you get the same question "
           "full screen."),
 
+    ("h2", "Whose calls to keep"),
+    ("p", "**Whose calls to keep**, in Settings, narrows down which calls are "
+          "kept. **Your contacts**: all of them, all but some, only some, or "
+          "none — for the last three you pick the contacts. **Other numbers**, a "
+          "switch of its own: numbers not in your contacts, and hidden ones. "
+          "Until you change either, every call is kept."),
+    ("p", "Who a call was with is only known once it has ended, from the call "
+          "log. So every call is still recorded, and one your choice leaves out "
+          "is deleted the moment it ends, before it is saved anywhere. If the "
+          "call log does not say who it was, the recording is kept. In ask-first "
+          "mode, a call you tap Record on is always kept. The Calls tab marks a "
+          "call that was left out."),
+    ("p", "It needs permission to read the call log and your contacts, to tell "
+          "who a call was with; the card asks for it if you have not given it."),
+
+    ("h2", "File names"),
+    ("p", "**File names**, in Settings, decides what a new recording is called. "
+          "Recordings you already have keep their names."),
+    ("ul", [
+        "**Date and time**, the default: `20261020_165705_out.ogg` — when the "
+        "call began, and which way it went.",
+        "**With the caller**: `20261020_165705_out_Priya Raman.ogg` — easier to "
+        "find in a file manager or on a computer.",
+        "**For Honor's Phone app**, on a phone that has it: "
+        "`Priya Raman@+447700900123_20261020165705.ogg`, the name Honor's own "
+        "recorder uses. Saved in `Sounds/CallRecord` — the card has a button "
+        "that opens the folder picker right there; tap **Use this folder** and "
+        "**Allow** — Honor's Phone app then shows a play button on the call in "
+        "its history.",
+    ]),
+    ("p", "The caller comes from the call log as the call is saved; without it, "
+          "a recording is named by date and time. Google's Phone app has nothing "
+          "like Honor's: it keeps its own recordings to itself, and no other app "
+          "can add one to its call history."),
+
     ("h2", "Playing, sharing and deleting"),
     ("p", "Tap a recording to play it inside the app; a scrubber appears under "
           "the row, and the chevron beside it folds the player away. The share "
@@ -598,6 +633,21 @@ SETUP = [
           "you uninstall. Recently deleted ones in the standard folder are still "
           "emptied by Android on time. In a folder you chose, they stay behind as "
           "hidden files, because removing them is JemRec's job."),
+
+    ("h2", "The Calls tab"),
+    ("p", "The **Calls** tab, beside Recordings, is your phone's call log. A call "
+          "that was recorded has the ▶ beside its length and plays on a tap. A call "
+          "that was not says why, where JemRec knows: **In Recently deleted**, "
+          "**Recording deleted**, **Left out by your rules**, **Too short**, "
+          "**Recording was off**, **Ask first, not recorded**. **Not recorded**, "
+          "in red, means recording was on and automatic and nothing was saved — "
+          "run the self-test. JemRec remembers deleted and left-out calls for a "
+          "week, so it says this only for the last week. **No recording** is an "
+          "older call, or one from before JemRec kept track, with no guess at "
+          "why. Missed, declined and blocked calls are marked as such."),
+    ("p", "It needs permission to read the call log, the same optional permission "
+          "that puts names on recordings; the tab asks for it if you have not "
+          "given it."),
 
     ("h2", "Turning JemRec off"),
     ("p", "The switch in the header is the on/off control for the whole app. Off "
@@ -905,6 +955,7 @@ def page(title: str, description: str, body: str, here: str) -> str:
 # setting and showing only one of them would hide half of what was drawn.
 SHOTS = "\n    ".join([
     shot("screenshots/home.png", "screenshots/light/home.png", "The recordings list"),
+    shot("screenshots/calls.png", "screenshots/light/calls.png", "The calls tab"),
     shot("screenshots/home-dark.png", "screenshots/dark/home.png", "The recordings list, dark"),
     shot("screenshots/settings.png", "screenshots/light/settings.png", "Settings"),
     shot("screenshots/selftest-dark.png", "screenshots/dark/selftest.png", "The self-test"),
@@ -1007,6 +1058,18 @@ INDEX_BODY = f"""
      and with call log
      access, an answered call that has no recording is reported once.</p>
 
+  <h3>Every call, recorded or not</h3>
+  <p>A Calls tab shows the phone's call log with a play mark on each recorded
+     call, and, on one that was not recorded, why: recording was off, it was too
+     short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
+     it.</p>
+
+  <h3>Only the calls you want</h3>
+  <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
+     everyone&rsquo;s but a few people&rsquo;s. Name files by date, or with the
+     caller in them &mdash; and on an Honor, the way Honor&rsquo;s own Phone app
+     looks for them, so its call history gets a play button.</p>
+
   <h3>Nothing is deleted by accident</h3>
   <p>Delete moves a recording to Recently deleted, where it can be restored for
      30 days. Auto-delete, off until you choose it, removes recordings past an
@@ -1065,15 +1128,25 @@ PRIVACY_BODY = f"""
             folder you chose, it waits as a hidden file that JemRec removes.</td></tr>
     <tr><td>Contact names and photos</td>
         <td>Read from the phone&rsquo;s own call log and contacts, only if you
-            allow it, to label a recording and to notice a call that was not
+            allow it, to label a recording, to show the Calls tab, to keep or
+            leave out a call by who it was with, and to notice a call that was not
             recorded. Names and numbers are not copied or stored; the lookup
-            happens each time it is needed.</td></tr>
+            happens each time it is needed. Two choices change that, and only
+            when you make them: a file name with the caller in it puts their name
+            or number in the recording&rsquo;s file name, and for those JemRec
+            keeps which way each call went, by file name, in its private storage;
+            and the contacts you pick under Whose calls to keep are stored there
+            as your contacts app&rsquo;s own links to them.</td></tr>
     <tr><td>Call times</td>
         <td>When each recorded call started, which way it went and how long it
-            lasted, and the time of any call the app told you was not recorded.
+            lasted, the time of any call the app told you was not recorded, and
+            of any call your choice of whose calls to keep left out.
             No names, no numbers. Kept in the app&rsquo;s private storage for seven
             days, so the missed-call check never reports a call twice or takes a
-            recording you deleted for a call that was missed.</td></tr>
+            recording you deleted for a call that was missed. Also when recording
+            was switched on or off or changed mode, so the Calls tab can say why a
+            call was not recorded: times and the setting only, the last 300
+            changes.</td></tr>
     <tr><td>Notifications</td>
         <td>Only if you ask JemRec to hide Android&rsquo;s debugging notification.
             It then has notification access, and looks only at notifications from
@@ -1082,8 +1155,8 @@ PRIVACY_BODY = f"""
     <tr><td>Settings</td>
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
             ask before each call, whether to show each call when it ends, where to
-            save, the auto-delete rules, which recordings you marked to keep (by
-            file name), and random tokens the app uses to talk to its own recorder
+            save, how to name files, whose calls to keep, the auto-delete rules,
+            which recordings you marked to keep (by file name), and random tokens the app uses to talk to its own recorder
             and to its own notifications.</td></tr>
   </table>
 

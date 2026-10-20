@@ -93,6 +93,10 @@ object CallLogLookup {
         val incoming: Boolean,
         val label: String,
         val number: String?,
+        /** How long the call lasted; 0 for one nobody answered. */
+        val seconds: Int = 0,
+        /** The name the log cached for it, if any. */
+        val name: String? = null,
     )
 
     /** What is known about the other end of a call. */
@@ -102,13 +106,25 @@ object CallLogLookup {
         val number: String? = null,
         /** The contact this call was with is starred in the address book. */
         val favorite: Boolean = false,
+        /** Which way the call went, as the log has it - for a recording whose
+         *  name does not say (see FileNames.parse). */
+        val incoming: Boolean? = null,
     )
 
     /** What the contacts provider knows about a number: a name, a photo, and
      *  whether the contact is a favourite. Looked up together, cached per number.
      *  The name matters because the call log does not always cache one even for a
      *  saved contact, and a bare number under a photo reads as a stranger. */
-    private data class Contact(val name: String?, val photo: Uri?, val starred: Boolean)
+    internal data class Contact(
+        val name: String?,
+        val photo: Uri?,
+        val starred: Boolean,
+        /** The contact's id, for the rules on whose calls to keep (CallRules). */
+        val id: Long? = null,
+        /** The lookup itself failed, so "not in the contacts" is not known -
+         *  which the rules must not take for a stranger. */
+        val failed: Boolean = false,
+    )
 
     /**
      * A caller label per recording name, for the ones that can be matched.
@@ -123,7 +139,7 @@ object CallLogLookup {
         // The Recording already knows when it was and which way it went; this
         // used to parse the name again for both, with its own copy of the rules.
         val times = recordings.mapNotNull { r ->
-            r.startedAtMillis?.let { at -> Triple(r.name, at, r.incoming) }
+            r.startedAtMillis?.let { at -> Triple(r, at, r.incoming) }
         }
         if (times.isEmpty()) return emptyMap()
 
@@ -139,8 +155,12 @@ object CallLogLookup {
         // One lookup per distinct number rather than per recording: several
         // calls with the same person is the normal case, not the exception.
         val contacts = mutableMapOf<String, Contact>()
-        times.forEach { (name, at, incoming) ->
-            val match = closest(entries, at, incoming)
+        times.forEach { (recording, at, incoming) ->
+            val name = recording.name
+            // A name with the number in it (Honor's format) is matched on that
+            // number, whichever way the call went - its name does not say.
+            val number = recording.parsedName?.number
+            val match = if (number != null) withNumber(entries, number, at) else closest(entries, at, incoming)
             if (match != null) {
                 val contact = contactFor(context, match.number, contacts)
                 out[name] = Caller(
@@ -150,6 +170,7 @@ object CallLogLookup {
                     contact.photo,
                     match.number,
                     contact.starred,
+                    match.incoming,
                 )
             }
         }
@@ -162,19 +183,34 @@ object CallLogLookup {
             CallLog.Calls.TYPE,
             CallLog.Calls.NUMBER,
             CallLog.Calls.CACHED_NAME,
+            CallLog.Calls.DURATION,
         )
         val out = mutableListOf<Entry>()
         context.contentResolver.query(
             CallLog.Calls.CONTENT_URI,
             projection,
-            "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.DATE} <= ?",
-            arrayOf(from.toString(), to.toString()),
+            // Never a call that did not go off-hook here: a recording cannot
+            // be one. Every type but INCOMING used to count as outgoing, so a
+            // missed call just before a call-back could name the call-back.
+            // The types are listed out rather than kept in, so a vendor's own
+            // type for an answered call is not lost.
+            "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.DATE} <= ? AND " +
+                "${CallLog.Calls.TYPE} NOT IN (?, ?, ?, ?, ?)",
+            arrayOf(
+                from.toString(), to.toString(),
+                CallLog.Calls.MISSED_TYPE.toString(),
+                CallLog.Calls.VOICEMAIL_TYPE.toString(),
+                CallLog.Calls.REJECTED_TYPE.toString(),
+                CallLog.Calls.BLOCKED_TYPE.toString(),
+                CallLog.Calls.ANSWERED_EXTERNALLY_TYPE.toString(),
+            ),
             "${CallLog.Calls.DATE} DESC",
         )?.use { cursor ->
             val dateCol = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
             val typeCol = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
             val numberCol = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
             val nameCol = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
+            val durationCol = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
             while (cursor.moveToNext()) {
                 val type = cursor.getInt(typeCol)
                 val name = cursor.getString(nameCol)?.takeIf { it.isNotBlank() }
@@ -188,6 +224,8 @@ object CallLogLookup {
                     incoming = type == CallLog.Calls.INCOMING_TYPE,
                     label = label,
                     number = number,
+                    seconds = cursor.getInt(durationCol),
+                    name = name,
                 )
             }
         }
@@ -237,7 +275,7 @@ object CallLogLookup {
      * numbers - which is also better than comparing strings, since the same
      * person appears in a call log with and without a country code.
      */
-    private fun contactFor(
+    internal fun contactFor(
         context: Context,
         number: String?,
         cache: MutableMap<String, Contact>,
@@ -258,6 +296,7 @@ object CallLogLookup {
                         // the list can mark a call as being with a favourite
                         // contact - the same star the dialer shows.
                         ContactsContract.PhoneLookup.STARRED,
+                        ContactsContract.PhoneLookup._ID,
                     ),
                     null, null, null,
                 )?.use { cursor ->
@@ -265,17 +304,16 @@ object CallLogLookup {
                         val name = cursor.getString(0)?.takeIf { it.isNotBlank() }
                         val photo = cursor.getString(1)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
                         val starred = cursor.getInt(2) != 0
-                        Contact(name, photo, starred)
+                        Contact(name, photo, starred, cursor.getLong(3))
                     } else {
                         Contact(null, null, false)
                     }
                 } ?: Contact(null, null, false)
-            }.onFailure { Log.w(TAG, "contacts: lookup failed", it) }.getOrDefault(Contact(null, null, false))
+            }.onFailure { Log.w(TAG, "contacts: lookup failed", it) }
+                .getOrDefault(Contact(null, null, false, failed = true))
         }
     }
 
-    /** Recordings are named yyyyMMdd_HHmmss_in|out.ogg, which is the only
-     *  timestamp available for one made before this feature existed. */
     /**
      * Closest entry of the same direction inside the window. Direction matters:
      * two calls a minute apart are common, and one of them being the wrong way
@@ -287,6 +325,66 @@ object CallLogLookup {
         entries
             .filter { it.incoming == incoming && sameCall(it.at, at) }
             .minByOrNull { kotlin.math.abs(it.at - at) }
+
+    /**
+     * The call with [number] that a recording starting at [at] fell inside:
+     * from the log's date to its end, the way Honor's Phone app matches its
+     * own recordings (see FileNames.build). Compared digit for digit, as
+     * FileNames.digits wrote the number into the name.
+     */
+    internal fun withNumber(entries: List<Entry>, number: String, at: Long): Entry? {
+        val wanted = FileNames.digits(number) ?: return null
+        return entries
+            .filter { FileNames.digits(it.number) == wanted }
+            .filter { at in (it.at - AFTER_MS)..(it.at + it.seconds * 1000L + AFTER_MS) }
+            .minByOrNull { kotlin.math.abs(it.at - at) }
+    }
+
+    /**
+     * The log's entry for a call whose recording began at [startMillis], for
+     * the saver to name it and apply the rules by (see RecordingSaver). Null
+     * if the log does not have it - yet: it is written as the call ends, so
+     * the saver asks again for a few seconds. [others] are the starts of the
+     * recordings already made (CallLedger), whose calls this cannot be.
+     * Blocking.
+     */
+    internal fun callFor(
+        context: Context,
+        startMillis: Long,
+        incoming: Boolean,
+        others: List<CallLedger.Recorded>,
+    ): Entry? {
+        if (!granted(context)) return null
+        // Back twice the window: the calls the other recordings claim can be
+        // a window before them.
+        val entries = runCatching { query(context, startMillis - 2 * BEFORE_MS, startMillis + AFTER_MS) }
+            .onFailure { Log.w(TAG, "call log: could not read", it) }
+            .getOrDefault(emptyList())
+        return unclaimed(entries, startMillis, incoming, others)
+    }
+
+    /**
+     * Closest entry for a recording at [at], leaving out the entries that are
+     * other recordings' calls. Pure.
+     *
+     * Asked right after a hang-up, the log may not have this call yet, and
+     * then the closest entry inside the window is the call BEFORE it - up to
+     * three minutes earlier. Naming this call after that one, or keeping or
+     * deleting it by that one's rule, is the mistake: so an entry another
+     * recording's start matches better is not this call's, and with nothing
+     * else in the window the answer is "not yet".
+     */
+    internal fun unclaimed(
+        entries: List<Entry>,
+        at: Long,
+        incoming: Boolean,
+        others: List<CallLedger.Recorded>,
+    ): Entry? {
+        val claimed = others
+            .filter { it.startMillis != at }
+            .mapNotNullTo(HashSet()) { closest(entries, it.startMillis, it.incoming) }
+        return closest(entries.filterNot { it in claimed }, at, incoming)
+    }
 
     /** A call as the missed-call check needs it. */
     internal data class LoggedCall(
