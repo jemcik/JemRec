@@ -998,7 +998,9 @@ SHOTS = "\n    ".join(
 INDEX_BODY = f"""
   <h1>{TAGLINE}</h1>
   <p class="lead">One APK. No root, no Shizuku, no companion app, and no computer
-     &mdash; the phone pairs with its own Wireless debugging and sets itself up.</p>
+     &mdash; the phone pairs with its own Wireless debugging and sets itself up.
+     It records phone calls, and WhatsApp, Telegram and Viber calls, both
+     sides.</p>
 
   <div class="cta">
     <a class="btn" href="{FDROID}">Get it on F-Droid</a>
@@ -1082,6 +1084,12 @@ INDEX_BODY = f"""
      app says plainly that it cannot record rather than looking healthy, and
      after two minutes a notification says it too.</p>
 
+  <h3>WhatsApp, Telegram and Viber calls too</h3>
+  <p>Messenger calls, both sides, each app switched on separately &mdash; and
+     the caller&rsquo;s name, if you let JemRec read the app&rsquo;s call
+     notification. Tested with WhatsApp, Telegram and Viber; Signal takes the
+     same path and is not tested yet.</p>
+
   <h3>It tells you when something is wrong</h3>
   <p>A recorder that fails quietly is found out on the day a call was needed. So
      after each call a silent notification shows the recording, with Play, Share
@@ -1097,11 +1105,6 @@ INDEX_BODY = f"""
      call, and, on one that was not recorded, why: recording was off, it was too
      short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
      it.</p>
-
-  <h3>Messenger calls too</h3>
-  <p>WhatsApp, Telegram, Signal and Viber calls, both sides, each app switched
-     on separately &mdash; and the caller&rsquo;s name, if you let JemRec read
-     the app&rsquo;s call notification.</p>
 
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or

@@ -9,6 +9,9 @@
 One APK. No root, no Shizuku, no companion app, no computer — the phone sets
 itself up.
 
+Records phone calls and **WhatsApp, Telegram and Viber** calls, both sides —
+see [Messenger calls](#messenger-calls).
+
 [**Website**](https://jemcik.github.io/JemRec/) · [F-Droid](https://f-droid.org/packages/com.jemcik.jemrec/) · [Privacy policy](https://jemcik.github.io/JemRec/privacy-policy.html) · [Releases](https://github.com/jemcik/JemRec/releases)
 
 [![F-Droid](https://img.shields.io/f-droid/v/com.jemcik.jemrec)](https://f-droid.org/packages/com.jemcik.jemrec/)
@@ -16,7 +19,7 @@ itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-165-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-166-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
 <img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
@@ -481,7 +484,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-165 JVM unit tests, no device needed:
+166 JVM unit tests, no device needed:
 
     ./gradlew :app:testDebugUnitTest
 

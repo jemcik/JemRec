@@ -1,1 +1,1 @@
-Records phone and messenger calls, both sides, on unrooted Android
+Records phone, WhatsApp, Telegram and Viber calls, both sides, no root
