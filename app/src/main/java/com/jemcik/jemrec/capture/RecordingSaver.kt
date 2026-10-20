@@ -117,6 +117,13 @@ object RecordingSaver {
         // time rather than the time it was picked up.
         val startedAt = Date(startMillis(recfile) ?: System.currentTimeMillis())
 
+        // A messenger call: not in the phone's call log, so none of what
+        // follows applies - not the caller lookup, not the rules on whose
+        // calls to keep (the app's own switch is the rule), not the ledger
+        // the missed-call check reads.
+        val messenger = VoipApps.forRecfile(recfile)
+        if (messenger != null) return saveMessenger(context, recfile, startedAt, messenger)
+
         // Who it was with - asked only when something needs to know: the
         // rules on whose calls to keep, or a file name with the caller in it.
         // With neither, which is the default, this is skipped entirely and a
@@ -138,6 +145,37 @@ object RecordingSaver {
         }
 
         val name = FileNames.build(format, startedAt.time, incoming, call?.party)
+        return write(context, recfile, name, startedAt, incoming, ledger = true)
+    }
+
+    /** A messenger call, named for its app and - when its notification said
+     *  - its caller and direction. See VoipCallNotes. */
+    private suspend fun saveMessenger(
+        context: Context,
+        recfile: String,
+        startedAt: Date,
+        app: VoipApps.App,
+    ): Outcome {
+        val note = VoipCallNotes.find(context, app.pkg, startedAt.time)
+        val format = FileNames.format(context)
+        val name = FileNames.buildVoip(format, startedAt.time, note?.incoming, app.tag, note?.name)
+        val outcome = write(context, recfile, name, startedAt, note?.incoming ?: false, ledger = false)
+        if (outcome is Outcome.Saved && note?.name != null && format == FileNames.Format.DATE) {
+            FileNames.noteCaller(context, name, note.name)
+        }
+        return outcome
+    }
+
+    /** Fetch the daemon's file and mux it into [name]. [ledger]: note it for
+     *  the missed-call check - phone calls only. */
+    private suspend fun write(
+        context: Context,
+        recfile: String,
+        name: String,
+        startedAt: Date,
+        incoming: Boolean,
+        ledger: Boolean,
+    ): Outcome {
         val target = RecordingStore.open(context, name)
             ?: return Outcome.Failed("There was nowhere to save it.")
 
@@ -194,10 +232,12 @@ object RecordingSaver {
                 Log.i(TAG, "save: wrote %d packets, %.1fs -> %s".format(written, seconds, name))
                 target.close()
                 CaptureDaemon.deleteRecording(context, recfile)
-                FileNames.noteDirection(context, name, incoming)
-                // Before anyone can delete it: see CallLedger for why the
-                // missed-call check asks this and not the disk.
-                CallLedger.noteRecording(context, startedAt.time, incoming, seconds.toInt())
+                if (ledger) {
+                    FileNames.noteDirection(context, name, incoming)
+                    // Before anyone can delete it: see CallLedger for why the
+                    // missed-call check asks this and not the disk.
+                    CallLedger.noteRecording(context, startedAt.time, incoming, seconds.toInt())
+                }
                 _saved.tryEmit(name)
                 Outcome.Saved(name, seconds, target.uri, target.filePath)
             }
@@ -208,7 +248,7 @@ object RecordingSaver {
                 CaptureDaemon.deleteRecording(context, recfile)
                 // Reported to the user as "Call not recorded" already; the
                 // missed-call check must not say it a second time.
-                CallLedger.noteRecording(context, startedAt.time, incoming, 0)
+                if (ledger) CallLedger.noteRecording(context, startedAt.time, incoming, 0)
                 Outcome.Empty
             }
             else -> {

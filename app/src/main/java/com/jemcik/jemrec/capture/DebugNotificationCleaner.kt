@@ -54,6 +54,11 @@ import com.jemcik.jemrec.Prefs
  * Granting alone does not bind the service on this ROM, so apply() toggles the
  * component's enabled state to force the bind.
  *
+ * A SECOND JOB, ALSO ONLY ON A YES: caller names for messenger calls (see
+ * VoipCallNotes). When the user turns that on, the same listener notes the
+ * call notifications of the messengers whose calls are recorded - who, when,
+ * which way - and nothing else. It stays bound while either job wants it.
+ *
  * WHAT IT WILL AND WILL NOT TOUCH
  *
  * Only notifications posted by the system package that are the debugging
@@ -75,7 +80,12 @@ class DebugNotificationCleaner : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        sbn?.let { hideIfDebug(it) }
+        sbn ?: return
+        hideIfDebug(sbn)
+        sbn.notification?.let { n ->
+            runCatching { VoipCallNotes.observe(this, sbn.packageName, sbn.postTime, n) }
+                .onFailure { Log.w(TAG, "voip-notes: could not read a call notification", it) }
+        }
     }
 
     private fun hideIfDebug(sbn: StatusBarNotification) {
@@ -201,14 +211,19 @@ class DebugNotificationCleaner : NotificationListenerService() {
             runCatching {
                 val cn = component(context)
                 val pm = context.packageManager
-                if (hiding(context)) {
+                // Nothing hidden that the user did not ask to hide, whatever
+                // the other job wants.
+                if (!hiding(context)) connected?.restore()
+                // Caller names only while some messenger is recorded: with none,
+                // there is nothing to name, and nothing should be read.
+                val namingCalls = VoipCallNotes.enabled(context) && VoipApps.enabled(context).isNotEmpty()
+                if (hiding(context) || namingCalls) {
                     pm.setComponentEnabledSetting(
                         cn, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
                     pm.setComponentEnabledSetting(
                         cn, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
                     requestRebind(cn)
                 } else {
-                    connected?.restore()
                     pm.setComponentEnabledSetting(
                         cn, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
                 }

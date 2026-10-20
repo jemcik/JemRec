@@ -113,6 +113,9 @@ object CaptureDaemon {
     private const val COMMAND_LIST = 'L'.code.toByte()
     private const val COMMAND_START = 'S'.code.toByte()
     private const val COMMAND_WATCH = 'W'.code.toByte()
+    /** The messenger apps whose calls to record - see VoipApps and the
+     *  daemon's Voip. A daemon older than this hangs up on it. */
+    private const val COMMAND_SET_VOIP = 'V'.code.toByte()
 
     /**
      * How long a BUSY is given to come true. A daemon really recording a call
@@ -500,9 +503,28 @@ object CaptureDaemon {
     }
 
     /** Push the current recorder switch + automatic/on-demand choice to the
-     *  daemon as its recording mode. Best-effort. */
+     *  daemon as its recording mode, and the messenger apps with it.
+     *  Best-effort. */
     suspend fun pushMode(context: Context) {
         setDaemonMode(context, currentMode(context))
+        setVoipApps(context)
+    }
+
+    /**
+     * Tell the daemon which messenger apps' calls to record. It arms its
+     * audio policy with the first and disarms with the last; see Voip in the
+     * daemon. Best-effort, like the mode: a daemon too old to know the command
+     * hangs up, records no messenger calls, and is replaced at the next revive
+     * because its build no longer matches this app's.
+     */
+    suspend fun setVoipApps(context: Context): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            open(context, COMMAND_SET_VOIP, nameFrame(VoipApps.wire(context)), readMs = 1_500).use { socket ->
+                val reply = socket.getInputStream().bufferedReader().readLine()
+                Log.i(TAG, "voip: daemon says $reply")
+                reply?.startsWith("VOIP ") == true
+            }
+        }.getOrDefault(false)
     }
 
     /** The mode the daemon should be in right now, from the app's settings. */
@@ -930,6 +952,7 @@ object CaptureDaemon {
             exec(
                 "mv -f $LOG_PATH $LOG_PATH.1 2>/dev/null; " +
                     "JEMREC_TOKEN=${token(context)} JEMREC_MODE=${currentMode(context)} " +
+                    "JEMREC_VOIP=${VoipApps.wire(context)} " +
                     "CLASSPATH=$DEVICE_PATH setsid nohup " +
                     "app_process / $MAIN_CLASS $PORT < /dev/null > $LOG_PATH 2>&1 &"
             )

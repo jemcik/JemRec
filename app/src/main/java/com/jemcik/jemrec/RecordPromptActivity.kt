@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.CallMonitorService
+import com.jemcik.jemrec.capture.RecordPrompt
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 
 /**
@@ -56,6 +57,7 @@ class RecordPromptActivity : ComponentActivity() {
         setShowWhenLocked(true)
 
         val incoming = intent?.getBooleanExtra(CallMonitorService.EXTRA_INCOMING, false) == true
+        val app = intent?.getStringExtra(CallMonitorService.EXTRA_APP)
 
         setContent {
             JemRecTheme {
@@ -74,8 +76,7 @@ class RecordPromptActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.headlineSmall,
                             )
                             Text(
-                                if (incoming) "Incoming call in progress."
-                                else "Outgoing call in progress.",
+                                RecordPrompt.callText(incoming, app),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

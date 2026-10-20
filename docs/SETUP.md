@@ -228,6 +228,32 @@ recording is named by date and time. Google's Phone app has nothing like
 Honor's: it keeps its own recordings to itself, and no other app can add one to
 its call history.
 
+## Messenger calls
+
+**Messenger calls**, in Settings, records WhatsApp, Telegram, Signal and Viber
+calls too — both sides, the other person on the left channel and you on the
+right. Each app has its own switch, and all are off until you turn one on. The
+ones installed on your phone are listed.
+
+An app can refuse to let its calls be recorded, and Android honours that;
+JemRec does not try to get round it. Your side comes from the microphone
+without the call app's echo cancellation, so on speakerphone the other person
+is heard on your side as well. JemRec never takes the microphone from the call:
+if Android ever silences the app's own, JemRec lets go of its own at once.
+
+These calls are not in the phone's call log, so their recordings are in
+Recordings, marked with the app, and not in the Calls tab. Whose calls to keep
+does not apply to them — the app's switch is the rule.
+
+**Show who called** reads the caller's name, and whether the call rang first,
+from the app's own call notification — the only place it is said. That needs
+notification access, which Android grants to all notifications; JemRec keeps
+only that from the call notifications of the apps you switched on. It is
+granted over JemRec's own ADB session, so turning it on needs Wi-Fi, once.
+
+Tested on an Honor with Viber, Telegram and WhatsApp, both directions. Signal
+takes the same path and has not been tested yet.
+
 ## Playing, sharing and deleting
 
 Tap a recording to play it inside the app; a scrubber appears under the row,

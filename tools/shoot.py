@@ -186,7 +186,7 @@ def shoot(theme: str) -> None:
     # test, and let the screen's own auto-scroll bring the answer into view.
     # Until the button is on screen, not a fixed distance: one swipe stopped
     # being enough the day Settings gained a card.
-    for _ in range(5):
+    for _ in range(12):
         shell("input swipe 628 2000 628 900 400")
         time.sleep(1)
         if centre("Self-test"):

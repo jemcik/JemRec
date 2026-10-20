@@ -114,6 +114,10 @@ object CallHistory {
     ): List<Call> {
         val calls = logged.sortedByDescending { it.at }
         val connectable = calls.filter { it.kind == Kind.INCOMING || it.kind == Kind.OUTGOING }
+        // Messenger calls are not in the call log; their recordings belong to
+        // none of these calls, however close in time.
+        @Suppress("NAME_SHADOWING") val recordings = recordings.filter { it.parsedName?.app == null }
+        @Suppress("NAME_SHADOWING") val trashed = trashed.filter { it.parsedName?.app == null }
         val recorded = assign(recordings, connectable)
         val binned = assign(trashed, connectable)
         return calls.map { call ->

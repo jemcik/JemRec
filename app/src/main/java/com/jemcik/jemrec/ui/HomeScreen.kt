@@ -862,7 +862,19 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
-                                    DirectionArrow(recording.incoming)
+                                    // No arrow where the direction is not known
+                                    // (a messenger call whose app did not say).
+                                    if (recording.directionKnown) DirectionArrow(recording.incoming)
+                                    // A messenger call says which app - unless
+                                    // the headline already does ("Viber call").
+                                    recording.app?.takeIf { recording.caller != "$it call" }?.let { app ->
+                                        Text(
+                                            "$app ·",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                        )
+                                    }
                                     // When, and how long. With no caller the
                                     // headline already is the date, so just the
                                     // length here. The date gives way first when

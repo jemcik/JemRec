@@ -159,6 +159,8 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
             allow = { callLogPermission.launch(CallLogLookup.PERMISSIONS) },
         )
 
+        MessengerCalls(state, vm)
+
         // The notification that follows each call. Its switch is only about
         // the everyday one: a recording that came out silent is reported
         // either way, because that is the news nobody should miss.
@@ -578,6 +580,93 @@ private fun WhoseCallsToKeep(state: UiState, vm: MainViewModel, allow: () -> Uni
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * Messenger calls (see VoipApps): one switch per supported app that is
+ * installed, all off until turned on, and caller names from their call
+ * notifications - which needs notification access, said plainly.
+ */
+@Composable
+private fun MessengerCalls(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    Card {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Messenger calls", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Record calls in these apps too, both sides, the way phone calls are. " +
+                    "Each is off until you turn it on. An app can refuse to let its " +
+                    "calls be recorded, and Android honours that.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (state.voipInstalled.isEmpty()) {
+                Text(
+                    "None of WhatsApp, Telegram, Signal or Viber is on this phone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
+            state.voipInstalled.forEach { app ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(app.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = app.pkg in state.voipEnabled,
+                        onCheckedChange = { haptics.toggle(it); vm.setVoipApp(app.pkg, it) },
+                    )
+                }
+            }
+            if (state.voipEnabled.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("Show who called", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "These calls are not in the phone's call log; only the app's " +
+                                "own call notification says who it was. Reading it takes " +
+                                "notification access, which Android grants to all " +
+                                "notifications - JemRec keeps just the caller's name, " +
+                                "from these apps' call notifications.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.voipNames,
+                        enabled = !state.busy,
+                        onCheckedChange = { haptics.toggle(it); vm.setVoipNames(it) },
+                    )
+                }
+                if (state.voipNamesProblem) {
+                    Text(
+                        "Could not turn this on: it needs Wi-Fi. Try again on Wi-Fi.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Text(
+                    "Their recordings are in Recordings, marked with the app. Whose calls " +
+                        "to keep does not apply to them: the switch for each app is the rule.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

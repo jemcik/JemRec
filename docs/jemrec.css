@@ -117,9 +117,15 @@ a  { color: var(--accent); }
 .btn.ghost { background: var(--raise); color: var(--accent); border-color: var(--line); }
 .btn:hover { filter: brightness(1.06); }
 
+/* Four columns, or two on a phone - never three. The gallery is eight shots,
+   one row per theme, and auto-fit's three-column widths left a lone shot on
+   a row of its own (it did, with five). */
 .shots {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  display: grid; grid-template-columns: repeat(4, 1fr);
   gap: .8rem; margin: 2.2rem 0 .6rem;
+}
+@media (max-width: 40rem) {
+  .shots { grid-template-columns: repeat(2, 1fr); }
 }
 .shot {
   padding: 0; border: 1px solid var(--line); border-radius: 14px;

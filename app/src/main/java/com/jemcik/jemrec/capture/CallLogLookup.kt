@@ -138,7 +138,9 @@ object CallLogLookup {
 
         // The Recording already knows when it was and which way it went; this
         // used to parse the name again for both, with its own copy of the rules.
-        val times = recordings.mapNotNull { r ->
+        // Not a messenger call: it is never in the phone's call log, and a
+        // phone call at about the same time is somebody else.
+        val times = recordings.filter { it.parsedName?.app == null }.mapNotNull { r ->
             r.startedAtMillis?.let { at -> Triple(r, at, r.incoming) }
         }
         if (times.isEmpty()) return emptyMap()

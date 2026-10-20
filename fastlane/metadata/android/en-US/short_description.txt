@@ -1,1 +1,1 @@
-Call recorder for unrooted Android: both sides, no root, no companion app
+Records phone and messenger calls, both sides, on unrooted Android

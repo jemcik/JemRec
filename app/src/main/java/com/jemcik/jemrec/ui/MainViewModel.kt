@@ -18,6 +18,8 @@ import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.CallRules
 import com.jemcik.jemrec.capture.FileNames
+import com.jemcik.jemrec.capture.VoipApps
+import com.jemcik.jemrec.capture.VoipCallNotes
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
@@ -194,6 +196,14 @@ data class UiState(
     val canReadContacts: Boolean = false,
     /** How new recordings are named. See FileNames. */
     val fileNames: FileNames.Format = FileNames.Format.DATE,
+    /** Messenger calls: the supported apps installed here, the ones switched
+     *  on, and whether caller names are read from their notifications. */
+    val voipInstalled: List<VoipApps.App> = emptyList(),
+    val voipEnabled: Set<String> = emptySet(),
+    val voipNames: Boolean = false,
+    /** Turning caller names on could not grant notification access, which
+     *  takes an ADB session and so Wi-Fi. */
+    val voipNamesProblem: Boolean = false,
     /** This phone has Honor's Phone app, so its format is offered. */
     val honorDialer: Boolean = false,
     /** Recordings are going to the folder Honor's Phone app plays them from. */
@@ -804,6 +814,34 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
+    /** Record [pkg]'s calls, or stop; the daemon is told at once. */
+    fun setVoipApp(pkg: String, on: Boolean) {
+        val app = getApplication<Application>()
+        VoipApps.setEnabled(app, pkg, on)
+        _state.update { it.copy(voipEnabled = VoipApps.enabled(app)) }
+        // The last one off stops the caller-name listener; the first one on
+        // starts it again, if names were asked for.
+        DebugNotificationCleaner.apply(app)
+        viewModelScope.launch {
+            if (!CaptureDaemon.setVoipApps(app)) {
+                say("the recorder will pick up the messenger apps when it next restarts")
+            }
+        }
+    }
+
+    /** Caller names for messenger calls, from their call notifications. Needs
+     *  notification access, granted over ADB like the debugging one. */
+    fun setVoipNames(on: Boolean) = launchAction("messenger caller names") {
+        val app = getApplication<Application>()
+        if (on && !DebugNotificationCleaner.accessGranted(app) && !Setup.grantNotificationAccess(app)) {
+            _state.update { it.copy(voipNamesProblem = true) }
+            return@launchAction
+        }
+        VoipCallNotes.setEnabled(app, on)
+        DebugNotificationCleaner.apply(app)
+        _state.update { it.copy(voipNames = on, voipNamesProblem = false) }
+    }
+
     /** How new recordings are named. Ones already saved keep their names. */
     fun setFileNames(format: FileNames.Format) {
         FileNames.setFormat(getApplication(), format)
@@ -906,6 +944,9 @@ class MainViewModel @JvmOverloads constructor(
                     emptyList()
                 },
                 canReadContacts = CallLogLookup.photosGranted(app),
+                voipInstalled = VoipApps.installed(app),
+                voipEnabled = VoipApps.enabled(app),
+                voipNames = VoipCallNotes.enabled(app),
                 fileNames = FileNames.format(app),
                 honorDialer = FileNames.honorDialer(app),
                 inHonorFolder = FileNames.inHonorFolder(app),
@@ -939,6 +980,9 @@ class MainViewModel @JvmOverloads constructor(
                 ruleOtherNumbers = snapshot.ruleOtherNumbers,
                 ruleChosen = snapshot.ruleChosen,
                 canReadContacts = snapshot.canReadContacts,
+                voipInstalled = snapshot.voipInstalled,
+                voipEnabled = snapshot.voipEnabled,
+                voipNames = snapshot.voipNames,
                 fileNames = snapshot.fileNames,
                 honorDialer = snapshot.honorDialer,
                 inHonorFolder = snapshot.inHonorFolder,
@@ -978,6 +1022,9 @@ class MainViewModel @JvmOverloads constructor(
         val ruleOtherNumbers: Boolean,
         val ruleChosen: List<CallRules.Chosen>,
         val canReadContacts: Boolean,
+        val voipInstalled: List<VoipApps.App>,
+        val voipEnabled: Set<String>,
+        val voipNames: Boolean,
         val fileNames: FileNames.Format,
         val honorDialer: Boolean,
         val inHonorFolder: Boolean,

@@ -44,6 +44,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -215,6 +216,7 @@ public final class Main {
             shield.start();
 
             startCallWatcher(token);
+            startVoipWatcher(token);
 
             // The main thread loops instead of blocking in accept(), so the
             // fake ActivityThread's handler has a thread to run on. The
@@ -1006,6 +1008,54 @@ public final class Main {
      */
     private static final int COMMAND_QUIT = 'Q';
 
+    /**
+     * The messenger apps whose calls to record - see Voip. In the environment
+     * at spawn (VOIP_ENV) and sent again whenever the user changes them, the
+     * same way the recording mode is. Empty, the default, records none and
+     * watches nothing.
+     */
+    private static final int COMMAND_SET_VOIP = 'V';
+    private static final String VOIP_ENV = "JEMREC_VOIP";
+    /** In a messenger call's rec-file name, before the app: jemrec_rec_<ms>_voip-<app>.dat */
+    private static final String VOIP_TAG = "_voip-";
+
+    /** The messenger app of the call in progress; null for a phone call or none. */
+    private static volatile String callVoipApp;
+
+    /** For Voip.configure from a session thread: set once the watcher starts. */
+    private static Handler voipHandler;
+    private static AudioManager voipAudio;
+
+    private static final Voip.Listener VOIP_LISTENER = new Voip.Listener() {
+        @Override
+        public void onVoipCallStart(String app) {
+            onCallStart(false, app);
+        }
+
+        @Override
+        public void onVoipCallEnd() {
+            Main.onVoipCallEnd();
+        }
+    };
+
+    /** Messenger calls: armed from the environment, if it names any apps. */
+    private static void startVoipWatcher(String token) {
+        if (token == null || token.isEmpty()) {
+            return;
+        }
+        voipHandler = new Handler(Looper.getMainLooper());
+        voipAudio = (AudioManager) FakeContext.get().getSystemService(Context.AUDIO_SERVICE);
+        configureVoip(Voip.parse(System.getenv(VOIP_ENV)));
+    }
+
+    private static void configureVoip(Set<String> apps) {
+        if (voipHandler == null || voipAudio == null) {
+            Ln.w("voip: no watcher (no token), ignoring the app list");
+            return;
+        }
+        Voip.configure(apps, voipHandler, voipAudio, VOIP_LISTENER);
+    }
+
     /** Reading the command must not be able to hang the accept loop forever. */
     private static final int COMMAND_TIMEOUT_MS = 5000;
 
@@ -1022,29 +1072,37 @@ public final class Main {
         final String name;
         final boolean incoming;
         final long startedAt;
+        /** The messenger whose call this is, or null for a phone call. */
+        final String app;
         private final File file;
         private final FileOutputStream out;
         private final AsyncProcessor recorder;
 
-        private RecordingSession(String name, boolean incoming, long startedAt, File file,
+        private RecordingSession(String name, boolean incoming, long startedAt, String app, File file,
                                  FileOutputStream out, AsyncProcessor recorder) {
             this.name = name;
             this.incoming = incoming;
+            this.app = app;
             this.startedAt = startedAt;
             this.file = file;
             this.out = out;
             this.recorder = recorder;
         }
 
-        static RecordingSession start(boolean incoming) throws Exception {
+        static RecordingSession start(boolean incoming, String app) throws Exception {
             // in/out is baked into the name so an orphan collected after a
             // reboot - when the daemon no longer remembers the call - still
-            // knows which it was.
+            // knows which it was. A messenger call carries its app instead:
+            // which way it went is not known here.
             long startedAt = System.currentTimeMillis();
-            String name = REC_PREFIX + startedAt + (incoming ? "_in" : "_out") + REC_SUFFIX;
+            String name = REC_PREFIX + startedAt
+                    + (app != null ? VOIP_TAG + app : incoming ? "_in" : "_out") + REC_SUFFIX;
+            AudioCapture capture = app != null ? Voip.newCapture() : new AudioDirectCapture(AUDIO_SOURCE);
+            if (capture == null) {
+                throw new IllegalStateException("messenger calls are not armed");
+            }
             File file = new File(REC_DIR, name);
             FileOutputStream out = new FileOutputStream(file);
-            AudioCapture capture = new AudioDirectCapture(AUDIO_SOURCE);
             // Fails fast and loudly on a device whose HAL will not give us this
             // source, rather than writing a silent or one-sided file.
             capture.checkCompatibility();
@@ -1056,7 +1114,7 @@ public final class Main {
                 }
             });
             Ln.i("recording: started -> " + name);
-            return new RecordingSession(name, incoming, startedAt, file, out, recorder);
+            return new RecordingSession(name, incoming, startedAt, app, file, out, recorder);
         }
 
         void stop() {
@@ -1075,13 +1133,13 @@ public final class Main {
 
     /** Start capturing the current call to a file. Returns its name, or null if
      *  it could not start or one is already running. Does NOT wake the app. */
-    private static synchronized String beginRecording(boolean incoming) {
+    private static synchronized String beginRecording(boolean incoming, String app) {
         if (activeRecording != null) {
             Ln.w("recording: a call is already being recorded");
             return activeRecording.name;
         }
         try {
-            activeRecording = RecordingSession.start(incoming);
+            activeRecording = RecordingSession.start(incoming, app);
         } catch (Throwable t) {
             Ln.e("recording: could not start", t);
             activeRecording = null;
@@ -1112,22 +1170,38 @@ public final class Main {
     /** Off-hook handling, by mode: automatic records at once; on-demand asks
      *  first and records nothing until the yes comes back as COMMAND_START. */
     private static void onCallStart(boolean incoming) {
+        onCallStart(incoming, null);
+    }
+
+    /**
+     * A call starting - a phone call ([app] null), or a messenger call in
+     * [app]. One at a time: a phone call during a messenger call, or the other
+     * way round, leaves the first one's recording running and is not recorded
+     * itself, and neither one's end can stop the other's recording.
+     */
+    private static void onCallStart(boolean incoming, String app) {
         synchronized (Main.class) {
+            if (callActive && (app != null || callVoipApp != null)) {
+                Ln.w("recording: a " + (app != null ? "messenger" : "phone") + " call started during "
+                        + (callVoipApp != null ? "a messenger call" : "a phone call") + "; not recording it");
+                return;
+            }
             callActive = true;
             callIncoming = incoming;
+            callVoipApp = app;
         }
         switch (recordingMode) {
             case MODE_AUTOMATIC:
-                String name = beginRecording(incoming);
+                String name = beginRecording(incoming, app);
                 if (name != null) {
                     // The app shows a "recording" notification; no audio needed.
-                    wake(ACTION_CALL_STARTED, incoming, name);
+                    wake(ACTION_CALL_STARTED, incoming, name, app);
                 }
                 break;
             case MODE_ON_DEMAND:
                 // Nothing is captured yet. Ask; an empty rec-file says "prompt".
                 Ln.i("recording: on-demand, asking before recording");
-                wake(ACTION_CALL_STARTED, incoming, "");
+                wake(ACTION_CALL_STARTED, incoming, "", app);
                 break;
             default:
                 Ln.i("recording: switched off, not recording this call");
@@ -1148,14 +1222,31 @@ public final class Main {
         // truncated file, and a truncated file reads as a complete one.
         activeRecording = null;
         // Now the file is complete and at rest, tell the app to come and get it.
-        wake(ACTION_CALL_ENDED, rec.incoming, rec.name);
+        wake(ACTION_CALL_ENDED, rec.incoming, rec.name, rec.app);
     }
 
     /** Call end handling. A recording that ran is finished and handed over; an
      *  on-demand call that was never said yes to just tells the app to clear its
      *  prompt, with nothing to fetch. */
     private static void onCallEnd() {
+        if (callVoipApp != null) {
+            Ln.i("callwatch: a phone call ended during a messenger call; that recording carries on");
+            return;
+        }
+        endCall();
+    }
+
+    /** A messenger call's end. Only ends a messenger call. */
+    private static void onVoipCallEnd() {
+        if (callVoipApp == null) {
+            return;
+        }
+        endCall();
+    }
+
+    private static void endCall() {
         boolean wasRecording;
+        String app;
         // Under the same lock as an on-demand start, so a Record tap landing as
         // the call ends either starts before the end - and is stopped here - or
         // finds the call over and is refused. Between the two, a recording
@@ -1163,13 +1254,15 @@ public final class Main {
         // happened, and the next one is a whole call away.
         synchronized (Main.class) {
             callActive = false;
+            app = callVoipApp;
+            callVoipApp = null;
             wasRecording = activeRecording != null;
             if (wasRecording) {
                 stopRecording();
             }
         }
         if (!wasRecording && recordingMode != MODE_OFF) {
-            wake(ACTION_CALL_ENDED, callIncoming, "");
+            wake(ACTION_CALL_ENDED, callIncoming, "", app);
         }
     }
 
@@ -1187,17 +1280,24 @@ public final class Main {
     private static final long WAKE_RETRY_MS = 2000L;
 
     /** Off the main thread: `am` takes a moment, and the looper must not wait for it. */
-    private static void wake(String action, boolean incoming, String recfile) {
+    private static void wake(String action, boolean incoming, String recfile, String app) {
+        java.util.List<String> command = new java.util.ArrayList<>(java.util.Arrays.asList(
+                "am", "start-foreground-service",
+                "-n", APP_SERVICE,
+                "-a", action,
+                "--es", "token", appToken,
+                "--es", "recfile", recfile == null ? "" : recfile,
+                "--ez", "incoming", String.valueOf(incoming)));
+        if (app != null) {
+            // A messenger call: which one, for the app's notification.
+            command.add("--es");
+            command.add("app");
+            command.add(app);
+        }
         new Thread(() -> {
             for (int attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
                 try {
-                    Process process = new ProcessBuilder(
-                            "am", "start-foreground-service",
-                            "-n", APP_SERVICE,
-                            "-a", action,
-                            "--es", "token", appToken,
-                            "--es", "recfile", recfile == null ? "" : recfile,
-                            "--ez", "incoming", String.valueOf(incoming))
+                    Process process = new ProcessBuilder(command)
                             .redirectErrorStream(true)
                             .start();
                     String said = slurp(process);
@@ -1354,7 +1454,7 @@ public final class Main {
             // Locked against onCallEnd - see there.
             synchronized (Main.class) {
                 if (callActive && recordingMode != MODE_OFF) {
-                    name = beginRecording(callIncoming);
+                    name = beginRecording(callIncoming, callVoipApp);
                 }
             }
             if (name != null) {
@@ -1363,6 +1463,15 @@ public final class Main {
                 Ln.w("session: on-demand start refused (no call in progress, or it could not start)");
             }
             client.getOutputStream().write(((name != null ? name : "") + "\n").getBytes("UTF-8"));
+            client.getOutputStream().flush();
+            return;
+        }
+        if (command == COMMAND_SET_VOIP) {
+            // The messenger apps whose calls to record, comma-separated.
+            Set<String> apps = Voip.parse(readName(client));
+            configureVoip(apps);
+            client.getOutputStream().write(("VOIP " + Voip.apps().size() + " "
+                    + (Voip.armed() ? "armed" : "off") + "\n").getBytes(StandardCharsets.UTF_8));
             client.getOutputStream().flush();
             return;
         }
@@ -1427,7 +1536,9 @@ public final class Main {
                 + " lastevent=" + lastCallEventAt
                 + " offhooks=" + offHooks.get()
                 + " lastoffhook=" + lastOffHookAt
-                + " recording=" + (rec == null ? 0 : rec.startedAt);
+                + " recording=" + (rec == null ? 0 : rec.startedAt)
+                + " voip=" + Voip.apps().size()
+                + " voiparmed=" + (Voip.armed() ? 1 : 0);
     }
 
     /**

@@ -73,6 +73,13 @@ data class Recording(
      *  number. Read once: the list asks it of every row more than once. */
     internal val parsedName: FileNames.Parsed? by lazy { FileNames.parse(name) }
 
+    /** The messenger a call was in - "Viber" - or null for a phone call. */
+    val app: String? get() = parsedName?.app?.let(VoipApps::labelForTag)
+
+    /** Whether [incoming] is known. A messenger call whose app did not say
+     *  which way it went shows no arrow rather than a guessed one. */
+    val directionKnown: Boolean get() = parsedName?.let { it.app == null || it.incoming != null } ?: true
+
     /** Whoever the call was with takes the headline when it is known, so the
      *  time steps down into the subtitle rather than being dropped. */
     val title: String get() = caller ?: whenLabel
@@ -163,11 +170,16 @@ internal object Recordings {
      */
     internal fun withCallers(context: Context, recordings: List<Recording>): List<Recording> {
         val callers = CallLogLookup.labelsFor(context, recordings)
+        val noted = if (recordings.any { it.parsedName?.app != null }) FileNames.callers(context) else emptyMap()
         val named = recordings.map { recording ->
             val caller = callers[recording.name]
             val fromName = recording.parsedName
+            // A messenger call is never in the call log: who it was comes
+            // from its name, or from what was noted when it was saved, or it
+            // is simply that app's call.
+            val messenger = recording.app?.let { app -> noted[recording.name] ?: "$app call" }
             recording.copy(
-                caller = caller?.label ?: fromName?.caller ?: fromName?.number,
+                caller = caller?.label ?: fromName?.caller ?: fromName?.number ?: messenger,
                 callerPhoto = caller?.photo,
                 number = caller?.number ?: fromName?.number,
                 callerFavorite = caller?.favorite ?: false,

@@ -47,7 +47,14 @@ object RecordPrompt {
     private const val KEY_TICKET = "prompt_ticket"
     private val random = SecureRandom()
 
-    fun show(context: Context, incoming: Boolean) {
+    /** What the prompt says about the call. A messenger call is named by
+     *  its app: the daemon cannot tell which way one went, so incoming is
+     *  always false for those and would say "outgoing" of every one. */
+    internal fun callText(incoming: Boolean, app: String?): String =
+        app?.let { "${VoipApps.byPackage(it)?.label ?: "Messenger"} call in progress." }
+            ?: if (incoming) "Incoming call in progress." else "Outgoing call in progress."
+
+    fun show(context: Context, incoming: Boolean, app: String? = null) {
         val ticket = mintTicket(context)
         val manager = context.getSystemService(NotificationManager::class.java)
         runCatching { manager.deleteNotificationChannel(LEGACY_CHANNEL_ID) }
@@ -73,9 +80,7 @@ object RecordPrompt {
 
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setContentTitle("Record this call?")
-            .setContentText(
-                if (incoming) "Incoming call in progress." else "Outgoing call in progress."
-            )
+            .setContentText(callText(incoming, app))
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setCategory(Notification.CATEGORY_EVENT)
             // The banner otherwise vanishes after about five seconds, which is
@@ -84,7 +89,7 @@ object RecordPrompt {
             // is the one supported lever: SystemUI leaves a heads-up backed by
             // one on screen far longer. On a locked phone it opens the activity
             // properly, which is the case with no shade to pull down.
-            .setFullScreenIntent(fullScreen(context, incoming, ticket), true)
+            .setFullScreenIntent(fullScreen(context, incoming, ticket, app), true)
             .addAction(action(context, "Record", CallMonitorService.ACTION_RECORD_NOW, incoming, ticket))
             .addAction(action(context, "Not now", CallMonitorService.ACTION_DECLINE, incoming, ticket))
             // Deliberately dismissable: swiping it away is a perfectly clear
@@ -98,12 +103,13 @@ object RecordPrompt {
         Log.i(TAG, "prompt: asking whether to record this call")
     }
 
-    private fun fullScreen(context: Context, incoming: Boolean, ticket: String): PendingIntent =
+    private fun fullScreen(context: Context, incoming: Boolean, ticket: String, app: String?): PendingIntent =
         PendingIntent.getActivity(
             context,
             1,
             Intent(context, RecordPromptActivity::class.java)
                 .putExtra(CallMonitorService.EXTRA_INCOMING, incoming)
+                .putExtra(CallMonitorService.EXTRA_APP, app)
                 .putExtra(CallMonitorService.EXTRA_TICKET, ticket)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,

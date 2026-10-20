@@ -4,7 +4,7 @@
 
 # JemRec
 
-**A call recorder for unrooted Android.**
+**A call recorder for unrooted Android — phone and messenger calls.**
 
 One APK. No root, no Shizuku, no companion app, no computer — the phone sets
 itself up.
@@ -16,7 +16,7 @@ itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-155-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-165-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
 <img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
@@ -240,6 +240,41 @@ given once and never changed. Google's Phone app has no equivalent: it keeps
 its own recordings in a database of its own, and nothing in it is open to
 another app.
 
+### Messenger calls
+
+WhatsApp, Telegram, Signal and Viber calls can be recorded too, both sides,
+each app switched on separately in Settings. Nothing is recorded from any of
+them until you do.
+
+The daemon asks Android for a copy of every app's voice-call audio - an audio
+policy, under the `CAPTURE_VOICE_COMMUNICATION_OUTPUT` permission the shell
+already holds - while the call still plays in your ear. Your side comes from
+the microphone, opened so that it never takes the microphone from the call app;
+if Android ever reports the call app's own capture silenced while JemRec
+records, JemRec drops its microphone at once. A call is the phone's audio in
+"communication" mode with a switched-on app both playing call audio and
+capturing - so a voice message played at the ear is not one. The other person
+is on the left channel, you on the right.
+
+- **An app can refuse.** Android lets an app mark its audio as not capturable,
+  and honours that whatever the recorder holds. JemRec does not try to get
+  round it.
+- **Not in the call log.** Android's call log has no messenger calls, so their
+  recordings are in Recordings, marked with the app, and not in the Calls tab.
+  *Whose calls to keep* does not apply to them: the app's switch is the rule.
+- **Who called.** Only the app's own call notification says. *Show who
+  called* reads it, with notification access, which Android grants to all
+  notifications. JemRec keeps the caller's name, the time and whether the call
+  rang first - from the call notifications of the apps switched on, for the
+  last 30 calls - and nothing else.
+- **Speakerphone.** Your side is the plain microphone, without the call app's
+  echo cancellation, so on speakerphone the other person is on your side too.
+
+Tested on an Honor (MagicOS 11, Android 17) with Viber, Telegram and WhatsApp,
+both directions: both sides recorded, the caller named, and the other person
+heard the call throughout. Signal takes the same path and has not been tested
+yet.
+
 ### The Calls tab
 
 Beside Recordings, a Calls tab shows the phone's call log. A recorded call has
@@ -357,7 +392,10 @@ the above before you switch anything on, then asks whether JemRec should hide
 that notification. Only on a yes does it get notification access, and it then
 snoozes nothing but Android's own debugging notifications, matched by their
 system ID, or by the word "debugging" on a ROM that numbers them differently.
-Settings can change the answer at any time.
+Settings can change the answer at any time. The same access serves one other,
+separate choice: *Show who called* for messenger calls (see Messenger calls),
+which notes the caller's name from the switched-on messengers' call
+notifications and reads nothing else.
 
 To switch debugging off for good, uninstall JemRec first. If the recorder is
 running, it notices the uninstall within a few minutes, turns both switches off
@@ -443,7 +481,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-155 JVM unit tests, no device needed:
+165 JVM unit tests, no device needed:
 
     ./gradlew :app:testDebugUnitTest
 

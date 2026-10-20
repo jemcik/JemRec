@@ -58,6 +58,13 @@
             keeps which way each call went, by file name, in its private storage;
             and the contacts you pick under Whose calls to keep are stored there
             as your contacts app&rsquo;s own links to them.</td></tr>
+    <tr><td>Messenger callers</td>
+        <td>Only if you turn on Show who called for messenger calls: from the
+            call notifications of the messengers whose calls you record, the
+            caller&rsquo;s name, the time, and whether the call rang first, for
+            the last 30 calls, in the app&rsquo;s private storage. A recording
+            named by date alone keeps its caller&rsquo;s name there too, by file
+            name; one named with the caller has it in the file name.</td></tr>
     <tr><td>Call times</td>
         <td>When each recorded call started, which way it went and how long it
             lasted, the time of any call the app told you was not recorded, and
@@ -69,14 +76,18 @@
             call was not recorded: times and the setting only, the last 300
             changes.</td></tr>
     <tr><td>Notifications</td>
-        <td>Only if you ask JemRec to hide Android&rsquo;s debugging notification.
-            It then has notification access, and looks only at notifications from
-            Android itself, to find that one. It keeps the IDs of the ones it hid,
-            so it can bring them back. Nothing else is read or kept.</td></tr>
+        <td>Only if you ask JemRec to hide Android&rsquo;s debugging notification,
+            or turn on Show who called for messenger calls. It then has
+            notification access. For the first it looks only at notifications
+            from Android itself, to find that one, and keeps the IDs of the ones
+            it hid, so it can bring them back. For the second it looks only at
+            the call notifications of the messengers you switched on (see
+            Messenger callers). Nothing else is read or kept.</td></tr>
     <tr><td>Settings</td>
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
             ask before each call, whether to show each call when it ends, where to
-            save, how to name files, whose calls to keep, the auto-delete rules,
+            save, how to name files, whose calls to keep, which messengers&rsquo;
+            calls to record, the auto-delete rules,
             which recordings you marked to keep (by file name), and random tokens the app uses to talk to its own recorder
             and to its own notifications.</td></tr>
   </table>

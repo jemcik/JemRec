@@ -137,6 +137,7 @@ class CallMonitorService : Service() {
                     ACTION_CALL_STARTED -> onCallStarted(
                         intent.getStringExtra(EXTRA_RECFILE),
                         intent.getBooleanExtra(EXTRA_INCOMING, false),
+                        intent.getStringExtra(EXTRA_APP),
                     )
                     ACTION_CALL_ENDED -> onCallEnded(
                         intent.getStringExtra(EXTRA_RECFILE),
@@ -202,7 +203,7 @@ class CallMonitorService : Service() {
         super.onDestroy()
     }
 
-    private fun onCallStarted(recfile: String?, incoming: Boolean) {
+    private fun onCallStarted(recfile: String?, incoming: Boolean, app: String?) {
         callInProgress = true
         if (recfile.isNullOrBlank()) {
             // ON-DEMAND. The daemon is recording NOTHING yet. Ask, right at the
@@ -211,7 +212,7 @@ class CallMonitorService : Service() {
             // all - the whole point of asking first.
             recordingNow = false
             Log.i(TAG, "monitor: off-hook (${if (incoming) "incoming" else "outgoing"}), asking whether to record")
-            RecordPrompt.show(this, incoming)
+            RecordPrompt.show(this, incoming, app)
         } else {
             // AUTOMATIC. The daemon is already recording this call to disk; this
             // just shows it. It never touches the audio.
@@ -440,6 +441,8 @@ class CallMonitorService : Service() {
         /** The prompt's one-time ticket, which its answer must carry. */
         const val EXTRA_TICKET = "ticket"
         const val EXTRA_INCOMING = "incoming"
+        /** A messenger call's package, from the daemon's wake; absent for a phone call. */
+        const val EXTRA_APP = "app"
         const val EXTRA_RECFILE = "recfile"
 
         /** Sent by the shell-side daemon when it sees a call begin or end. */

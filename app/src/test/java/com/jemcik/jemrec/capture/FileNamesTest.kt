@@ -67,11 +67,41 @@ class FileNamesTest {
         assertNull(FileNames.parse("20261020_165705_input.ogg")?.incoming)
     }
 
+    @Test fun aMessengerCallCarriesItsApp() {
+        assertEquals("20261020_165705_in_viber.ogg", FileNames.buildVoip(Format.DATE, at, true, "viber", "Priya Raman"))
+        assertEquals("20261020_165705_viber.ogg", FileNames.buildVoip(Format.DATE, at, null, "viber", null))
+        assertEquals(
+            "20261020_165705_out_whatsapp_Priya Raman.ogg",
+            FileNames.buildVoip(Format.DATE_AND_CALLER, at, false, "whatsapp", "Priya Raman"),
+        )
+        // Honor's format has nothing to match a messenger call to: the caller form.
+        assertEquals(
+            "20261020_165705_in_viber_Priya Raman.ogg",
+            FileNames.buildVoip(Format.HONOR, at, true, "viber", "Priya Raman"),
+        )
+    }
+
+    @Test fun aMessengerCallReadsBack() {
+        val full = FileNames.parse("20261020_165705_out_whatsapp_Priya Raman.ogg")!!
+        assertEquals(at, full.startedAt)
+        assertEquals(false, full.incoming)
+        assertEquals("whatsapp", full.app)
+        assertEquals("Priya Raman", full.caller)
+        val bare = FileNames.parse("20261020_165705_viber.ogg")!!
+        assertNull(bare.incoming)
+        assertEquals("viber", bare.app)
+        assertNull(bare.caller)
+        // A phone call with a caller is still a phone call.
+        assertNull(FileNames.parse("20261020_165705_in_Priya Raman.ogg")?.app)
+    }
+
     @Test fun nothingInANameCanBreakAFolderOrTheFormat() {
         assertEquals("a b c d", FileNames.clean("a/b:c*d"))
         // @ is what Honor's format splits on; % is what the trash escapes with.
         assertEquals("Bob Work 100", FileNames.clean("Bob@Work 100%"))
         assertEquals("hidden", FileNames.clean("..hidden"))
+        // An underscore separates a name's parts: a caller cannot carry one.
+        assertEquals("viber support", FileNames.clean("viber_support"))
         assertNull(FileNames.clean("  /  "))
         assertEquals(60, FileNames.clean("x".repeat(200))!!.length)
     }

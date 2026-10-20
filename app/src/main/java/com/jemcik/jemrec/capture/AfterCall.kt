@@ -143,9 +143,11 @@ internal object AfterCall {
         show(context, Call(saved.name, saved.uri, saved.filePath, saved.seconds, incoming, startMillis, caller, verdict))
     }
 
+    /** Who, the way the list would say it: the call log for a phone call,
+     *  the name or the notes for a messenger call ("Viber call" at least). */
     private fun callerFor(context: Context, saved: RecordingSaver.Outcome.Saved, incoming: Boolean): String? {
         val probe = Recording(saved.name, saved.uri, "", incoming, "", "")
-        return CallLogLookup.labelsFor(context, listOf(probe))[saved.name]?.label
+        return Recordings.withCallers(context, listOf(probe)).firstOrNull()?.caller
     }
 
     /** Posts it, unless the user has the everyday one switched off. Whether

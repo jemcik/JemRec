@@ -121,6 +121,21 @@ class CallHistoryTest {
         assertEquals(outgoing, result.recording)
     }
 
+    @Test fun aMessengerRecordingIsNoPhoneCallsRecording() {
+        // A Viber call five seconds after the log's outgoing call: somebody
+        // else entirely, however close in time.
+        val viber = Recording(
+            name = "20261020_165705_out_viber.ogg".let { n ->
+                java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                    .format(java.util.Date(t + 5_000)) + n.drop(15)
+            },
+            uri = uri, whenLabel = "", incoming = false, durationLabel = "", sizeLabel = "",
+            durationMillis = 120_000,
+        )
+        val result = classify(listOf(call(t, Kind.OUTGOING)), recordings = listOf(viber)).single()
+        assertNull(result.recording)
+    }
+
     @Test fun theCallLogsTypesMapToKinds() {
         assertEquals(Kind.INCOMING, CallHistory.kindOf(CallLog.Calls.INCOMING_TYPE))
         assertEquals(Kind.OUTGOING, CallHistory.kindOf(CallLog.Calls.OUTGOING_TYPE))

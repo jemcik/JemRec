@@ -30,6 +30,14 @@ import java.util.Locale
  * afterwards: everything that remembers a recording - the keep mark, Recently
  * deleted, a link from a notification - remembers it by name.
  *
+ * MESSENGER CALLS (VoipApps) carry the app instead of a number:
+ * 20261020_203501_in_viber.ogg, with the caller after it in the formats that
+ * name one - 20261020_203501_in_viber_Priya Raman.ogg - and no direction when
+ * it is not known. Honor's format does not apply: its dialer has no messenger
+ * calls to match. In the date format the caller is noted here by name instead
+ * ([noteCaller]), since nothing else can say it: messenger calls are not in
+ * the phone's call log.
+ *
  * READING A NAME BACK
  *
  * The list, auto-delete and the Calls tab all need a recording's start time,
@@ -44,6 +52,7 @@ object FileNames {
 
     private const val KEY = "file_names"
     private const val KEY_DIRECTIONS = "name_directions"
+    private const val KEY_CALLERS = "name_callers"
     private const val KEEP_DIRECTIONS = 2000
 
     /** Honor's Phone app, which plays recordings it finds in [HONOR_FOLDER]. */
@@ -106,8 +115,10 @@ object FileNames {
     /**
      * A name made safe for any folder: no characters a file system refuses,
      * no @ (Honor's format splits on it), no % (Recently deleted escapes the
-     * @ with it - see Trash.nameFor), no leading dot (that hides a file), and
-     * not so long that the name hits the 255-byte limit.
+     * @ with it - see Trash.nameFor), no _ (it separates a name's parts, and
+     * a caller "viber_support" would read back as a Viber call), no leading
+     * dot (that hides a file), and not so long that the name hits the
+     * 255-byte limit.
      */
     internal fun clean(name: String?): String? =
         name?.map { c -> if (c in FORBIDDEN || c.isISOControl()) ' ' else c }
@@ -120,7 +131,7 @@ object FileNames {
             ?.trim()
             ?.ifEmpty { null }
 
-    private const val FORBIDDEN = "/\\:*?\"<>|@%"
+    private const val FORBIDDEN = "/\\:*?\"<>|@%_"
     private const val LONGEST = 60
 
     /** At most [LONGEST] characters, never cutting an emoji's surrogate pair
@@ -146,7 +157,21 @@ object FileNames {
         val incoming: Boolean?,
         val caller: String? = null,
         val number: String? = null,
+        /** A messenger call's app, by tag (VoipApps); null for a phone call. */
+        val app: String? = null,
     )
+
+    /** A messenger call's name. Pure. */
+    internal fun buildVoip(format: Format, startedAt: Long, incoming: Boolean?, tag: String, caller: String?): String {
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(startedAt))
+        val direction = when (incoming) {
+            true -> "_in"
+            false -> "_out"
+            null -> ""
+        }
+        val who = if (format == Format.DATE) null else clean(caller)
+        return "$stamp${direction}_$tag${who?.let { "_$it" } ?: ""}.${RecordingStore.EXTENSION}"
+    }
 
     private val HONOR_NAME = Regex("""^(.*)@(\+?\d+)_(\d{14})\.\w+$""")
 
@@ -161,18 +186,21 @@ object FileNames {
         val at = runCatching {
             SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name.take(15))?.time
         }.getOrNull() ?: return null
-        val rest = name.drop(15)
+        // "_in_viber_Priya Raman" from "..._in_viber_Priya Raman.ogg": an
+        // optional direction, an optional messenger, an optional caller.
+        var rest = name.drop(15).substringBeforeLast('.').removePrefix("_")
         val incoming = when {
-            rest.startsWith("_in.") || rest.startsWith("_in_") -> true
-            rest.startsWith("_out.") || rest.startsWith("_out_") -> false
+            rest == "in" || rest.startsWith("in_") -> true
+            rest == "out" || rest.startsWith("out_") -> false
             else -> null
         }
-        val caller = when (incoming) {
-            true -> rest.removePrefix("_in")
-            false -> rest.removePrefix("_out")
-            null -> null
-        }?.takeIf { it.startsWith("_") }?.drop(1)?.substringBeforeLast('.')?.trim()?.ifEmpty { null }
-        return Parsed(at, incoming, caller)
+        if (incoming != null) rest = rest.removePrefix(if (incoming) "in" else "out").removePrefix("_")
+        val app = rest.substringBefore('_').takeIf { it in VoipApps.TAGS }
+        if (app != null) rest = rest.removePrefix(app).removePrefix("_")
+        // A caller only where the name has said what it is; anything else
+        // after the time is a name that is not one of ours.
+        val caller = rest.trim().ifEmpty { null }?.takeIf { incoming != null || app != null }
+        return Parsed(at, incoming, caller, app = app)
     }
 
     private fun honorStamp() = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply { isLenient = false }
@@ -197,6 +225,27 @@ object FileNames {
         }
         prefs.edit().putStringSet(KEY_DIRECTIONS, kept).apply()
     }
+
+    /** A messenger call's caller, by the recording's name, when the name
+     *  itself does not carry it (the date format). */
+    @Synchronized
+    fun noteCaller(context: Context, name: String, caller: String) {
+        val prefs = Prefs.of(context)
+        val entries = (prefs.getStringSet(KEY_CALLERS, emptySet()) ?: emptySet()).toMutableSet()
+        entries.removeAll { it.substringBefore('\u0000') == name }
+        entries += "$name\u0000$caller"
+        val kept = if (entries.size <= KEEP_DIRECTIONS) {
+            entries
+        } else {
+            entries.sortedByDescending { parse(it.substringBefore('\u0000'))?.startedAt ?: 0L }.take(KEEP_DIRECTIONS).toSet()
+        }
+        prefs.edit().putStringSet(KEY_CALLERS, kept).apply()
+    }
+
+    /** Every caller noted, by name. */
+    fun callers(context: Context): Map<String, String> =
+        (Prefs.of(context).getStringSet(KEY_CALLERS, emptySet()) ?: emptySet())
+            .associate { it.substringBefore('\u0000') to it.substringAfter('\u0000') }
 
     /** Every direction noted, by name: true for incoming. */
     fun directions(context: Context): Map<String, Boolean> =

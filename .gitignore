@@ -45,3 +45,7 @@ __pycache__/
 
 # Claude Code local state
 .claude/
+
+# The VoIP probe (shellserver/probe): a test tool, built by hand, never shipped
+/shellserver/probe/build/
+/shellserver/probe/voip-probe.jar

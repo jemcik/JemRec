@@ -73,7 +73,8 @@ internal object DemoRecordings {
      */
     fun calls(context: Context): List<CallHistory.Call> {
         val now = System.currentTimeMillis()
-        val recorded = recordings(context).zip(CALLS) { recording, call ->
+        // A messenger call is not in the phone's call log, so not here either.
+        val recorded = recordings(context).zip(CALLS).filter { (_, call) -> call.app == null }.map { (recording, call) ->
             CallHistory.Call(
                 // The log dates a call from when it started ringing; the
                 // recording, from when it was answered.
@@ -117,13 +118,15 @@ internal object DemoRecordings {
         val bytes: Long,
         val favorite: Boolean = false,
         val photo: String? = null,
+        /** A messenger call's app tag (VoipApps), or null for a phone call. */
+        val app: String? = null,
     )
 
     private val CALLS = listOf(
         Call(14, true, "Olivia Bennett", "+442079460958", 252, 1_992_294,
             favorite = true, photo = "demo_face_1"),
         Call(3 * 60 + 20, false, "Marcus Chen", "+14155550136", 725, 5_663_129,
-            photo = "demo_face_2"),
+            photo = "demo_face_2", app = "whatsapp"),
         Call(6 * 60 + 5, true, "+44 7700 900461", "+447700900461", 47, 360_448),
         Call(26 * 60, false, "Priya Raman", "+919820098200", 158, 1_258_291),
         Call(2 * 24 * 60 + 3 * 60, true, "Daniel Okafor", "+2348031234567", 2462, 18_664_653),
@@ -141,7 +144,7 @@ internal object DemoRecordings {
                 // parses both back out of them - so the demo has to use the same
                 // format or the Today and This week chips filter it all away.
                 name = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(at) +
-                    (if (call.incoming) "_in" else "_out") + ".ogg",
+                    (if (call.incoming) "_in" else "_out") + (call.app?.let { "_$it" } ?: "") + ".ogg",
                 uri = Uri.parse("jemrec-demo://call/${call.minutesAgo}"),
                 whenLabel = whenLabel(at),
                 incoming = call.incoming,

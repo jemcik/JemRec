@@ -17,7 +17,7 @@ DOCS = ROOT / "docs"
 
 REPO = "https://github.com/jemcik/JemRec"
 FDROID = "https://f-droid.org/packages/com.jemcik.jemrec/"
-TAGLINE = "A call recorder for unrooted Android."
+TAGLINE = "A call recorder for unrooted Android — phone and messenger calls."
 
 # THE THEME HAS THREE STATES, NOT TWO, and the palette is written twice because
 # of it:
@@ -143,9 +143,15 @@ a  { color: var(--accent); }
 .btn.ghost { background: var(--raise); color: var(--accent); border-color: var(--line); }
 .btn:hover { filter: brightness(1.06); }
 
+/* Four columns, or two on a phone - never three. The gallery is eight shots,
+   one row per theme, and auto-fit's three-column widths left a lone shot on
+   a row of its own (it did, with five). */
 .shots {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  display: grid; grid-template-columns: repeat(4, 1fr);
   gap: .8rem; margin: 2.2rem 0 .6rem;
+}
+@media (max-width: 40rem) {
+  .shots { grid-template-columns: repeat(2, 1fr); }
 }
 .shot {
   padding: 0; border: 1px solid var(--line); border-radius: 14px;
@@ -605,6 +611,29 @@ SETUP = [
           "like Honor's: it keeps its own recordings to itself, and no other app "
           "can add one to its call history."),
 
+    ("h2", "Messenger calls"),
+    ("p", "**Messenger calls**, in Settings, records WhatsApp, Telegram, Signal "
+          "and Viber calls too — both sides, the other person on the left channel "
+          "and you on the right. Each app has its own switch, and all are off "
+          "until you turn one on. The ones installed on your phone are listed."),
+    ("p", "An app can refuse to let its calls be recorded, and Android honours "
+          "that; JemRec does not try to get round it. Your side comes from the "
+          "microphone without the call app's echo cancellation, so on "
+          "speakerphone the other person is heard on your side as well. JemRec "
+          "never takes the microphone from the call: if Android ever silences "
+          "the app's own, JemRec lets go of its own at once."),
+    ("p", "These calls are not in the phone's call log, so their recordings are "
+          "in Recordings, marked with the app, and not in the Calls tab. Whose "
+          "calls to keep does not apply to them — the app's switch is the rule."),
+    ("p", "**Show who called** reads the caller's name, and whether the call rang "
+          "first, from the app's own call notification — the only place it is "
+          "said. That needs notification access, which Android grants to all "
+          "notifications; JemRec keeps only that from the call notifications of "
+          "the apps you switched on. It is granted over JemRec's own ADB "
+          "session, so turning it on needs Wi-Fi, once."),
+    ("p", "Tested on an Honor with Viber, Telegram and WhatsApp, both directions. "
+          "Signal takes the same path and has not been tested yet."),
+
     ("h2", "Playing, sharing and deleting"),
     ("p", "Tap a recording to play it inside the app; a scrubber appears under "
           "the row, and the chevron beside it folds the player away. The share "
@@ -952,14 +981,19 @@ def page(title: str, description: str, body: str, here: str) -> str:
 
 
 # Both themes on the page at once, deliberately: the app follows the system
-# setting and showing only one of them would hide half of what was drawn.
-SHOTS = "\n    ".join([
-    shot("screenshots/home.png", "screenshots/light/home.png", "The recordings list"),
-    shot("screenshots/calls.png", "screenshots/light/calls.png", "The calls tab"),
-    shot("screenshots/home-dark.png", "screenshots/dark/home.png", "The recordings list, dark"),
-    shot("screenshots/settings.png", "screenshots/light/settings.png", "Settings"),
-    shot("screenshots/selftest-dark.png", "screenshots/dark/selftest.png", "The self-test"),
-])
+# setting and showing only one of them would hide half of what was drawn. The
+# same four screens in each, a row per theme - eight, so the rows are full at
+# four columns and at two (see .shots).
+SCREENS = [
+    ("home", "The recordings list"),
+    ("calls", "The calls tab"),
+    ("settings", "Settings"),
+    ("selftest", "The self-test"),
+]
+SHOTS = "\n    ".join(
+    [shot(f"screenshots/{name}.png", f"screenshots/light/{name}.png", alt) for name, alt in SCREENS]
+    + [shot(f"screenshots/{name}-dark.png", f"screenshots/dark/{name}.png", f"{alt}, dark") for name, alt in SCREENS]
+)
 
 INDEX_BODY = f"""
   <h1>{TAGLINE}</h1>
@@ -1064,6 +1098,11 @@ INDEX_BODY = f"""
      short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
      it.</p>
 
+  <h3>Messenger calls too</h3>
+  <p>WhatsApp, Telegram, Signal and Viber calls, both sides, each app switched
+     on separately &mdash; and the caller&rsquo;s name, if you let JemRec read
+     the app&rsquo;s call notification.</p>
+
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
      everyone&rsquo;s but a few people&rsquo;s. Name files by date, or with the
@@ -1137,6 +1176,13 @@ PRIVACY_BODY = f"""
             keeps which way each call went, by file name, in its private storage;
             and the contacts you pick under Whose calls to keep are stored there
             as your contacts app&rsquo;s own links to them.</td></tr>
+    <tr><td>Messenger callers</td>
+        <td>Only if you turn on Show who called for messenger calls: from the
+            call notifications of the messengers whose calls you record, the
+            caller&rsquo;s name, the time, and whether the call rang first, for
+            the last 30 calls, in the app&rsquo;s private storage. A recording
+            named by date alone keeps its caller&rsquo;s name there too, by file
+            name; one named with the caller has it in the file name.</td></tr>
     <tr><td>Call times</td>
         <td>When each recorded call started, which way it went and how long it
             lasted, the time of any call the app told you was not recorded, and
@@ -1148,14 +1194,18 @@ PRIVACY_BODY = f"""
             call was not recorded: times and the setting only, the last 300
             changes.</td></tr>
     <tr><td>Notifications</td>
-        <td>Only if you ask JemRec to hide Android&rsquo;s debugging notification.
-            It then has notification access, and looks only at notifications from
-            Android itself, to find that one. It keeps the IDs of the ones it hid,
-            so it can bring them back. Nothing else is read or kept.</td></tr>
+        <td>Only if you ask JemRec to hide Android&rsquo;s debugging notification,
+            or turn on Show who called for messenger calls. It then has
+            notification access. For the first it looks only at notifications
+            from Android itself, to find that one, and keeps the IDs of the ones
+            it hid, so it can bring them back. For the second it looks only at
+            the call notifications of the messengers you switched on (see
+            Messenger callers). Nothing else is read or kept.</td></tr>
     <tr><td>Settings</td>
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
             ask before each call, whether to show each call when it ends, where to
-            save, how to name files, whose calls to keep, the auto-delete rules,
+            save, how to name files, whose calls to keep, which messengers&rsquo;
+            calls to record, the auto-delete rules,
             which recordings you marked to keep (by file name), and random tokens the app uses to talk to its own recorder
             and to its own notifications.</td></tr>
   </table>

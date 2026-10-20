@@ -94,7 +94,8 @@ internal object MissedCalls {
         val pending = CaptureDaemon.listPendingOrNull(context) ?: return
         val now = System.currentTimeMillis()
         val calls = CallLogLookup.answeredCallsSince(context, maxOf(covered, now - CallLedger.KEEP_MS))
-        val pendingStarts = pending.mapNotNull { name ->
+        // A messenger call's file is no phone call's recording.
+        val pendingStarts = pending.filter { VoipApps.forRecfile(it) == null }.mapNotNull { name ->
             RecordingSaver.startMillis(name)?.let { CallLedger.Recorded(it, RecordingStore.isIncoming(name), -1) }
         }
         val missed = unrecorded(calls, CallLedger.read(context), pendingStarts, covered, now)
