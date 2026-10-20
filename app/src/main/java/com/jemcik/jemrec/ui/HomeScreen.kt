@@ -4,6 +4,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -88,6 +93,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
@@ -97,6 +103,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.RecordingFilter
+import com.jemcik.jemrec.capture.Trash
 import com.jemcik.jemrec.capture.filterRecordings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -142,9 +149,13 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                 // glanced at; a number in the sentence you are agreeing to is
                 // read - and this is the last point at which it can be read.
                 Text(
-                    (if (count == 1) "It will be deleted permanently"
-                    else "All $count of them will be deleted permanently") +
-                        " and cannot be recovered."
+                    if (count == 1) {
+                        "It goes to Recently deleted, in Settings, where it can be " +
+                            "restored for ${Trash.DAYS} days."
+                    } else {
+                        "All $count of them go to Recently deleted, in Settings, where " +
+                            "they can be restored for ${Trash.DAYS} days."
+                    }
                 )
             },
             confirmButton = {
@@ -233,7 +244,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
         ActivityResultContracts.RequestMultiplePermissions()
     ) { vm.onCallLogResult() }
 
-    val filtered = filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly)
+    val filtered = filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly)
     val shown = filtered.take(state.visibleCount)
 
     // Endless scroll instead of a "Show more" button. Everything is already in
@@ -367,6 +378,22 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                         // deletes nothing is a question mark on a toolbar whose
                         // whole job is to be unambiguous.
                         if (state.selected.isNotEmpty()) {
+                            // Keep marks them all, or - when every one is
+                            // kept already - takes the mark off them all. The
+                            // icon says which: the one tapping will leave.
+                            val allKept = state.recordings
+                                .filter { it.name in state.selected }
+                                .all { it.kept }
+                            IconButton(
+                                onClick = { haptics.tap(); vm.keepSelected() },
+                                modifier = Modifier.offset(x = 12.dp),
+                            ) {
+                                Icon(
+                                    if (allKept) KeepIcons.NotKept else KeepIcons.Kept,
+                                    contentDescription = if (allKept) "Stop keeping selected" else "Keep selected",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                             IconButton(
                                 onClick = { haptics.tap(); vm.askDeleteSelected() },
                                 modifier = Modifier.offset(x = 12.dp),
@@ -386,81 +413,115 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                 // last chip unfolds the field below them on demand. Hidden while
                 // selecting, where the header is a selection toolbar instead.
                 if (!state.selecting && state.recordings.isNotEmpty()) {
-                    Row(
-                        // The same band the selection toolbar wears, so the header
-                        // is one strip in both modes and switching moves nothing.
-                        modifier = headerBand,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // No "All" chip: all IS the resting state, the one where
-                        // none of these is picked. A chip for it would be the
-                        // only one always selectable and never meaningfully off,
-                        // and tapping the active chip again already falls back to
-                        // all - so the empty row says "everything" on its own.
-                        PresetChip(state.filter == RecordingFilter.TODAY, "Today") {
-                            haptics.tap(); vm.setFilter(RecordingFilter.TODAY)
-                        }
-                        PresetChip(state.filter == RecordingFilter.THIS_WEEK, "This week") {
-                            haptics.tap(); vm.setFilter(RecordingFilter.THIS_WEEK)
-                        }
-                        // A toggle on its own axis, not one of the mutually
-                        // exclusive time presets: it narrows to starred contacts
-                        // on top of whatever time range is chosen, and leaves the
-                        // time chips alone.
-                        FilterChip(
-                            selected = state.favoritesOnly,
-                            onClick = { haptics.tap(); vm.toggleFavorites() },
-                            shape = CircleShape,
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.secondary,
-                            ),
-                            label = {
-                                Icon(
-                                    Icons.Filled.Star,
-                                    contentDescription = "Only calls with favourite contacts",
-                                    // Gold on the band; a DEEPER gold once
-                                    // selected, where the pill turns pale in dark
-                                    // theme and the bright gold washed into it.
-                                    tint = if (state.favoritesOnly) {
-                                        JemRecColors.favoriteSelected
-                                    } else {
-                                        JemRecColors.favorite
+                    BoxWithConstraints(Modifier.fillMaxWidth().height(HeaderRowHeight)) {
+                        Row(
+                            // The same band the selection toolbar wears, so the header
+                            // is one strip in both modes and switching moves nothing.
+                            // Scrolled sideways when the chips outgrow the screen - a
+                            // fifth, Kept, appears once something is kept - and still
+                            // centred whenever they fit: at least as wide as the band.
+                            modifier = Modifier
+                                .horizontalScroll(rememberScrollState())
+                                .widthIn(min = maxWidth)
+                                .fillMaxHeight()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // No "All" chip: all IS the resting state, the one where
+                            // none of these is picked. A chip for it would be the
+                            // only one always selectable and never meaningfully off,
+                            // and tapping the active chip again already falls back to
+                            // all - so the empty row says "everything" on its own.
+                            PresetChip(state.filter == RecordingFilter.TODAY, "Today") {
+                                haptics.tap(); vm.setFilter(RecordingFilter.TODAY)
+                            }
+                            PresetChip(state.filter == RecordingFilter.THIS_WEEK, "This week") {
+                                haptics.tap(); vm.setFilter(RecordingFilter.THIS_WEEK)
+                            }
+                            // A toggle on its own axis, not one of the mutually
+                            // exclusive time presets: it narrows to starred contacts
+                            // on top of whatever time range is chosen, and leaves the
+                            // time chips alone.
+                            FilterChip(
+                                selected = state.favoritesOnly,
+                                onClick = { haptics.tap(); vm.toggleFavorites() },
+                                shape = CircleShape,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondary,
+                                ),
+                                label = {
+                                    Icon(
+                                        Icons.Filled.Star,
+                                        contentDescription = "Only calls with favourite contacts",
+                                        // Gold on the band; a DEEPER gold once
+                                        // selected, where the pill turns pale in dark
+                                        // theme and the bright gold washed into it.
+                                        tint = if (state.favoritesOnly) {
+                                            JemRecColors.favoriteSelected
+                                        } else {
+                                            JemRecColors.favorite
+                                        },
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                },
+                            )
+                            // Kept: recordings marked to keep. Shown only once
+                            // something is, so the bar does not offer an empty
+                            // filter to everyone who has never kept anything.
+                            if (state.keptOnly || state.recordings.any { it.kept }) {
+                                FilterChip(
+                                    selected = state.keptOnly,
+                                    onClick = { haptics.tap(); vm.toggleKeptOnly() },
+                                    shape = CircleShape,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.secondary,
+                                    ),
+                                    label = {
+                                        Icon(
+                                            KeepIcons.Kept,
+                                            contentDescription = "Only recordings marked to keep",
+                                            tint = if (state.keptOnly) {
+                                                MaterialTheme.colorScheme.onSecondary
+                                            } else {
+                                                MaterialTheme.colorScheme.primary
+                                            },
+                                            modifier = Modifier.size(18.dp),
+                                        )
                                     },
-                                    modifier = Modifier.size(18.dp),
                                 )
-                            },
-                        )
-                        // The fold-out. A filter chip in looks, a disclosure in
-                        // job: selected while the field is open, so the icon
-                        // reads as "search is showing" rather than a filter that
-                        // is on.
-                        FilterChip(
-                            selected = state.searchOpen,
-                            onClick = { haptics.tap(); vm.toggleSearch() },
-                            shape = CircleShape,
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.secondary,
-                            ),
-                            label = {
-                                Icon(
-                                    Icons.Filled.Search,
-                                    contentDescription = "Search recordings",
-                                    // An icon-only chip label does not inherit a
-                                    // visible content colour the way a text label
-                                    // does - untinted it came out invisible - so
-                                    // the tint is set for each state: onSecondary
-                                    // on the bright selected pill, onSurfaceVariant
-                                    // on the band.
-                                    tint = if (state.searchOpen) {
-                                        MaterialTheme.colorScheme.onSecondary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            },
-                        )
+                            }
+                            // The fold-out. A filter chip in looks, a disclosure in
+                            // job: selected while the field is open, so the icon
+                            // reads as "search is showing" rather than a filter that
+                            // is on.
+                            FilterChip(
+                                selected = state.searchOpen,
+                                onClick = { haptics.tap(); vm.toggleSearch() },
+                                shape = CircleShape,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondary,
+                                ),
+                                label = {
+                                    Icon(
+                                        Icons.Filled.Search,
+                                        contentDescription = "Search recordings",
+                                        // An icon-only chip label does not inherit a
+                                        // visible content colour the way a text label
+                                        // does - untinted it came out invisible - so
+                                        // the tint is set for each state: onSecondary
+                                        // on the bright selected pill, onSurfaceVariant
+                                        // on the band.
+                                        tint = if (state.searchOpen) {
+                                            MaterialTheme.colorScheme.onSecondary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
                 // The search field is deliberately NOT gated on !selecting: it
@@ -640,7 +701,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        if (state.favoritesOnly) {
+                        if (state.keptOnly) {
+                            "No kept recordings match."
+                        } else if (state.favoritesOnly) {
                             "No starred recordings match."
                         } else {
                             "No recordings match your search or filter."
@@ -660,7 +723,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
             if (!state.selectHintSeen && !state.selecting) {
                 item {
                     Text(
-                        "Tap a photo to select",
+                        "Tap a call to play it, or its photo to select",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
@@ -688,6 +751,16 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                 // reserves no interactive size, so without this
                                 // the rows visibly shrank on entering selection.
                                 .heightIn(min = 64.dp)
+                                // The row that is playing is tinted, so which
+                                // one is loaded reads at a glance now that no
+                                // big glyph at the leading edge says it.
+                                .background(
+                                    if (isCurrent && !state.selecting) {
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                )
                                 // The whole row is the target, not just the
                                 // text. What the tap MEANS depends on the mode:
                                 // normally it plays, and while selecting it
@@ -696,6 +769,8 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                 // starting selection rather than used for a
                                 // menu.
                                 .combinedClickable(
+                                    onClickLabel = if (state.selecting) "Select" else "Play",
+                                    onLongClickLabel = if (state.selecting) "Select" else "Start selecting",
                                     onClick = {
                                         if (state.selecting) {
                                             // In selection mode a tap anywhere on
@@ -736,30 +811,6 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            // The leading slot keeps the play glyph in selection
-                            // mode too, so rows keep their shape. Selection shows
-                            // on the photo itself - it flips to a tick - so
-                            // nothing here has to change to a checkbox and then
-                            // explain why the play arrow left.
-                            if (isCurrent && state.playing) {
-                                PauseGlyph(
-                                    tint = JemRecColors.play,
-                                    modifier = Modifier.offset(x = GLYPH_INSET),
-                                )
-                            } else {
-                                // Nudged out by the amount of transparent margin
-                                // Material draws inside the play triangle. The
-                                // icon BOX was already flush with the header, but
-                                // a box is not what anyone sees - the triangle
-                                // sat visibly right of "Recordings" while being
-                                // technically aligned with it.
-                                Icon(
-                                    Icons.Filled.PlayArrow,
-                                    contentDescription = "Play",
-                                    tint = JemRecColors.play,
-                                    modifier = Modifier.offset(x = GLYPH_INSET),
-                                )
-                            }
                             // Tapping the photo picks the row - the Gmail /
                             // Photos gesture. The photo FLIPS to a tick rather
                             // than a checkbox blinking in beside it, so the
@@ -812,19 +863,45 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
                                     DirectionArrow(recording.incoming)
-                                    Text(
-                                        // When, and how long. With no caller the
-                                        // headline already is the date, so just
-                                        // the length here.
-                                        if (recording.caller != null) {
-                                            "${recording.whenLabel} · ${recording.durationLabel}"
+                                    // When, and how long. With no caller the
+                                    // headline already is the date, so just the
+                                    // length here. The date gives way first when
+                                    // space is short; the length never does.
+                                    if (recording.caller != null) {
+                                        Text(
+                                            "${recording.whenLabel} ·",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false),
+                                        )
+                                    }
+                                    // THE PLAY AFFORDANCE, ON THE LENGTH. A big
+                                    // triangle led every row, and cost 32dp of the
+                                    // name for something the row tap already does.
+                                    // A small one beside the duration says "this
+                                    // plays, for this long", the way a voice
+                                    // message does, and turns to pause on the row
+                                    // that is playing. Not while selecting, where
+                                    // a tap selects.
+                                    if (!state.selecting) {
+                                        if (isCurrent && state.playing) {
+                                            PauseGlyph(tint = JemRecColors.play, size = 14.dp)
                                         } else {
-                                            recording.durationLabel
-                                        },
+                                            Icon(
+                                                Icons.Filled.PlayArrow,
+                                                contentDescription = null,
+                                                tint = JemRecColors.play,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        recording.durationLabel,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
@@ -836,19 +913,38 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                             // selection toolbar now, where reaching it takes a
                             // deliberate step.
                             if (!state.selecting) {
-                                IconButton(
-                                    onClick = { haptics.tap(); vm.share(recording) },
-                                    modifier = Modifier.offset(x = 12.dp),
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Share,
-                                        contentDescription = "Share",
-                                        // Match the avatar circle rather than
-                                        // defaulting to near-black: the share
-                                        // control belongs with the row's other
-                                        // furniture, not shouting over it.
-                                        tint = MaterialTheme.colorScheme.secondary,
-                                    )
+                                // Keep and Share side by side with no gap, as
+                                // one group against the edge.
+                                Row(Modifier.offset(x = 12.dp)) {
+                                    // Keep is the mark itself: filled when the
+                                    // recording is kept, so the row shows its
+                                    // state and the tap changes it, in one place.
+                                    IconButton(onClick = { haptics.tap(); vm.toggleKept(recording) }) {
+                                        Icon(
+                                            if (recording.kept) KeepIcons.Kept else KeepIcons.NotKept,
+                                            contentDescription = if (recording.kept) {
+                                                "Kept - tap to stop keeping"
+                                            } else {
+                                                "Keep: never auto-delete"
+                                            },
+                                            tint = if (recording.kept) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.secondary
+                                            },
+                                        )
+                                    }
+                                    IconButton(onClick = { haptics.tap(); vm.share(recording) }) {
+                                        Icon(
+                                            Icons.Filled.Share,
+                                            contentDescription = "Share",
+                                            // Match the avatar circle rather than
+                                            // defaulting to near-black: the share
+                                            // control belongs with the row's other
+                                            // furniture, not shouting over it.
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1020,7 +1116,7 @@ private fun SelectableAvatar(
 }
 
 @Composable
-private fun CallerAvatar(caller: String?, photo: Uri?) {
+internal fun CallerAvatar(caller: String?, photo: Uri?) {
     val initials = initialsOf(caller)
     val bitmap = rememberContactPhoto(photo)
     // A SOLID circle, not a tonal container. secondaryContainer is a pale blue
@@ -1133,32 +1229,23 @@ private fun DirectionArrow(incoming: Boolean) {
  * a poor trade.
  */
 @Composable
-private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier) {
+private fun PauseGlyph(tint: Color, modifier: Modifier = Modifier, size: Dp = 24.dp) {
     Row(
-        modifier = modifier.size(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier.size(size),
+        horizontalArrangement = Arrangement.spacedBy(size / 6, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         repeat(2) {
             Box(
                 Modifier
-                    .width(6.dp)
-                    .height(18.dp)
-                    .background(tint, RoundedCornerShape(2.dp))
+                    .width(size / 4)
+                    .height(size * 0.75f)
+                    .background(tint, RoundedCornerShape(size / 12))
             )
         }
     }
 }
 
-/**
- * How far the play triangle is drawn inside its own icon box.
- *
- * Material icons are 24dp boxes with the artwork inset, and the inset is not
- * the same on every glyph - which is why aligning the boxes leaves the shapes
- * looking ragged. Measured against this list rather than derived, because the
- * only thing that matters is whether it looks right next to "Recordings".
- */
-private val GLYPH_INSET = (-5).dp
 
 /**
  * One height for the pinned header's top row, whichever it is.

@@ -67,6 +67,10 @@ class RecorderKeepAlive(
             runCatching { MissedCalls.check(applicationContext) }
                 .onFailure { Log.w(TAG, "keepalive: missed-call check failed", it) }
         }
+        // Auto-delete and the trash's expiry, once a day at most. Needs no
+        // recorder, so it runs either way.
+        runCatching { Retention.runIfDue(applicationContext) }
+            .onFailure { Log.w(TAG, "keepalive: auto-delete failed", it) }
         // retry(), not failure(): failure is terminal for a one-off, and a
         // daemon that could not be revived now - almost always no Wi-Fi - is
         // exactly the thing worth trying again shortly with backoff.

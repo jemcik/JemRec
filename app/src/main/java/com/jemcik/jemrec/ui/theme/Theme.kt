@@ -215,7 +215,8 @@ object JemRecColors {
         @Composable get() = if (isSystemInDarkTheme()) Color(0xFF7A5900) else Color(0xFFF9A825)
 
     /**
-     * Deletes a recording, permanently.
+     * Deletes a recording - to Recently deleted, since the trash; still the
+     * destructive colour.
      *
      * Just the scheme's `error` now that error is the icon's coral rather than
      * Material's crimson - so delete, the record mark and the destructive button

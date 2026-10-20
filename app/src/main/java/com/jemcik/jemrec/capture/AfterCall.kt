@@ -129,6 +129,9 @@ internal object AfterCall {
      * it decodes the file - so callers are on a background thread.
      */
     fun saved(context: Context, saved: RecordingSaver.Outcome.Saved, incoming: Boolean, startMillis: Long) {
+        // Both save paths come through here, so this is where a call under
+        // the user's short-call rule is caught: to the trash, and not a word.
+        if (Retention.dropIfTooShort(context, saved)) return
         if (System.currentTimeMillis() - startMillis - (saved.seconds * 1000).toLong() > FRESH_MS) {
             Log.i(TAG, "aftercall: ${saved.name} is from a while ago, not announcing it")
             return
@@ -200,7 +203,8 @@ internal object AfterCall {
     /** The second tap: the notification turns into the question. */
     fun askDelete(context: Context, call: Call) {
         ensureChannels(context)
-        val text = "Delete the recording of this call? This cannot be undone."
+        val text = "Delete the recording of this call? It goes to Recently deleted, where it " +
+            "can be restored for ${Trash.DAYS} days."
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_delete)
             .setContentTitle(call.caller ?: if (call.incoming) "Incoming call" else "Outgoing call")
@@ -218,7 +222,7 @@ internal object AfterCall {
     }
 
     fun delete(context: Context, call: Call) {
-        val result = Recordings.deleteAt(context, call.uri, call.filePath)
+        val result = Trash.trash(context, call.uri, call.filePath, call.name)
         Log.i(TAG, "aftercall: delete ${call.name} -> ${result.javaClass.simpleName}")
         when (result) {
             is DeleteResult.Deleted -> {

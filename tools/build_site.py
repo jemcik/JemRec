@@ -577,13 +577,27 @@ SETUP = [
           "anywhere."),
     ("p", "To delete, tap a contact's photo or long-press a row to start "
           "selecting, tick what you want, and use the bin in the toolbar. It asks "
-          "first and tells you how many. Deleting is permanent."),
+          "first and tells you how many."),
+    ("p", "**Deleting is not immediate.** A deleted recording goes to **Recently "
+          "deleted**, at the bottom of Settings, waits there 30 days, and can be "
+          "restored until then. After that it is gone for good. In the standard "
+          "Recordings folder this is Android's own trash, so other apps stop "
+          "seeing the file at once."),
+    ("p", "**Keep what matters.** The bookmark on each row marks a recording to "
+          "keep: auto-delete never touches it, and the bookmark chip above the "
+          "list shows only kept recordings. To mark several, select them and "
+          "use the bookmark in the toolbar."),
     ("p", "The notification after each call has the same three buttons. Play and "
           "Share open JemRec at that recording; Delete asks first, in the "
           "notification itself, and **Keep** puts it back."),
+    ("p", "If a recording was made before JemRec was reinstalled, Android asks "
+          "before JemRec may move it to the trash, in a dialog of its own. That "
+          "is Android checking who owns the file, not JemRec asking twice."),
     ("p", "Recordings are kept when JemRec is uninstalled, because they are yours "
           "rather than the app's — so if you want them gone, delete them **before** "
-          "you uninstall."),
+          "you uninstall. Recently deleted ones in the standard folder are still "
+          "emptied by Android on time. In a folder you chose, they stay behind as "
+          "hidden files, because removing them is JemRec's job."),
 
     ("h2", "Turning JemRec off"),
     ("p", "The switch in the header is the on/off control for the whole app. Off "
@@ -591,6 +605,10 @@ SETUP = [
           "and your pairing are untouched, and the recorder itself keeps running "
           "in the background doing nothing — which is what makes turning it back "
           "on instant, anywhere, with no network."),
+    ("p", "The same switch is a **Quick Settings tile**, so you can flip it "
+          "without opening the app. Settings has a button that adds it, on "
+          "Android 13 and later; on 12, edit the Quick Settings panel and drag "
+          "JemRec in. On a locked phone the tile asks for your unlock first."),
 
     ("h2", "After a restart"),
     ("p", "A reboot kills the recorder, and building it again takes a few seconds "
@@ -660,6 +678,14 @@ SETUP = [
         "**Show each call when it ends** — the silent notification after every "
         "recorded call. Off hides it; a recording that came out silent is "
         "reported either way.",
+        "**Quick Settings tile** — adds the on/off tile to the Quick Settings "
+        "panel.",
+        "**Auto-delete** — off until you choose. Removes recordings older than "
+        "30 days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30 "
+        "seconds. Kept recordings are never touched, and whatever it removes "
+        "waits in Recently deleted.",
+        "**Recently deleted** — what has been deleted in the last 30 days, with "
+        "**Restore** for each.",
         "**Show who called** — labels each recording with the contact's name and "
         "photo, or the number when they are not in your contacts, and lets JemRec "
         "tell you if a call went by unrecorded. Optional, and asked for in the app "
@@ -981,6 +1007,14 @@ INDEX_BODY = f"""
      and with call log
      access, an answered call that has no recording is reported once.</p>
 
+  <h3>Nothing is deleted by accident</h3>
+  <p>Delete moves a recording to Recently deleted, where it can be restored for
+     30 days. Auto-delete, off until you choose it, removes recordings past an
+     age you pick and calls too short to have been a conversation, into the same
+     place. A bookmark marks a recording to keep, and nothing removes a kept one.
+     A Quick Settings tile turns recording on and off without opening the
+     app.</p>
+
   <h2>What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never opens an audio device &mdash; the
      shell-side process does the capturing &mdash; and a call recorder that asks
@@ -1025,7 +1059,10 @@ PRIVACY_BODY = f"""
     <tr><th>Data</th><th>Where it lives</th></tr>
     <tr><td>Call recordings</td>
         <td>The phone&rsquo;s <code>Recordings/JemRec</code> folder, or a folder you
-            choose. Yours to play, share, move or delete like any other file.</td></tr>
+            choose. Yours to play, share, move or delete like any other file. One
+            deleted in JemRec waits 30 days in Recently deleted, then is removed:
+            in the standard folder, Android&rsquo;s own trash does that; in a
+            folder you chose, it waits as a hidden file that JemRec removes.</td></tr>
     <tr><td>Contact names and photos</td>
         <td>Read from the phone&rsquo;s own call log and contacts, only if you
             allow it, to label a recording and to notice a call that was not
@@ -1045,8 +1082,9 @@ PRIVACY_BODY = f"""
     <tr><td>Settings</td>
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
             ask before each call, whether to show each call when it ends, where to
-            save, and random tokens the app uses to talk to its own recorder and to
-            its own notifications.</td></tr>
+            save, the auto-delete rules, which recordings you marked to keep (by
+            file name), and random tokens the app uses to talk to its own recorder
+            and to its own notifications.</td></tr>
   </table>
 
   <h2>Network use</h2>

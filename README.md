@@ -16,7 +16,7 @@ itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-111-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-122-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="19%" alt="The recordings list">
 <img src="docs/screenshots/home-dark.png" width="19%" alt="The recordings list, dark">
@@ -204,6 +204,31 @@ Recordings are Opus in an Ogg container, in the phone's standard
 `Recordings/JemRec` folder, where any file manager or music app can open them.
 You can point the app somewhere else.
 
+A Quick Settings tile turns recording on and off without opening the app. It
+is the same switch as the one in the app's header.
+
+### Keeping, deleting and cleaning up
+
+- **Keep** - the bookmark on each row marks a recording to keep. A Kept chip
+  shows only those, and auto-delete never touches them.
+- **Delete goes to Recently deleted** - from the list or from the notification
+  after a call. A deleted recording waits 30 days, can be restored until
+  then, and is then removed for good. In the standard Recordings folder that
+  is Android's own trash, so other apps stop seeing the file at once. In a
+  folder you chose, the file is renamed the way Android's trash names it
+  (`.trashed-<expiry>-<name>`, hidden from most file managers), and JemRec
+  removes it when the 30 days are up.
+- **Auto-delete** - off until you choose. It removes recordings older than 30
+  days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30
+  seconds - wrong numbers, hang-ups. A short call is caught as it is saved,
+  so it never gets a notification. What auto-delete removes goes to Recently
+  deleted like anything else.
+- **Recordings Android does not count as JemRec's** - typically ones made
+  before a reinstall. Android asks before JemRec may move them, in its own
+  dialog. Deleting them from the list, or changing an auto-delete rule, shows
+  that dialog. The daily auto-delete pass has nobody to ask, so it leaves them
+  alone.
+
 ### After the call, and when something is wrong
 
 A recorder that stops recording without saying so is worse than none: you find
@@ -363,7 +388,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-111 JVM unit tests, no device needed:
+122 JVM unit tests, no device needed:
 
     ./gradlew :app:testDebugUnitTest
 

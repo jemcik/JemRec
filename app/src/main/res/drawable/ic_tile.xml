@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Quick Settings tile's icon: the launcher icon's five bars, alone, at
+  tile size. The same paths as ic_launcher_monochrome.xml, scaled from its
+  108-unit canvas so the bars fill a 24dp square with a small margin. The
+  tile is tinted by the system, so only the shape matters.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <group
+        android:scaleX="0.3333"
+        android:scaleY="0.3333"
+        android:translateX="-6"
+        android:translateY="-6">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M24,49a4,4 0 0 1 8,0v10a4,4 0 0 1 -8,0z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M36,40a4,4 0 0 1 8,0v28a4,4 0 0 1 -8,0z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M64,40a4,4 0 0 1 8,0v28a4,4 0 0 1 -8,0z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M76,49a4,4 0 0 1 8,0v10a4,4 0 0 1 -8,0z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M49,32a5,5 0 0 1 10,0v44a5,5 0 0 1 -10,0z" />
+    </group>
+</vector>

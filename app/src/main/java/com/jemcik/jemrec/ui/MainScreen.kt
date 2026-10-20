@@ -171,14 +171,22 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     val ready = state.step == SetupStep.READY
     val inSettings = ready && state.screen == Screen.SETTINGS
-    val selecting = ready && !inSettings && state.selecting
+    // Recently deleted is reached from Settings, and goes back there.
+    val inTrash = ready && state.screen == Screen.TRASH
+    val offHome = inSettings || inTrash
+    val selecting = ready && !offHome && state.selecting
 
     // Back unwinds one layer at a time, innermost first: out of selection, then
-    // out of settings, then out of the app. Selection has to come first - Back
-    // is how Android users leave a selection, and dropping them to the home
-    // screen instead would lose the picking they had just done.
-    BackHandler(enabled = selecting || inSettings) {
-        if (selecting) vm.clearSelection() else vm.showHome()
+    // out of the trash, then out of settings, then out of the app. Selection
+    // has to come first - Back is how Android users leave a selection, and
+    // dropping them to the home screen instead would lose the picking they had
+    // just done.
+    BackHandler(enabled = selecting || offHome) {
+        when {
+            selecting -> vm.clearSelection()
+            inTrash -> vm.showSettings()
+            else -> vm.showHome()
+        }
     }
 
     Scaffold(
@@ -201,8 +209,8 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             // the row.
                             Column {
                                 Text(
-                                    if (inSettings) {
-                                        "Settings"
+                                    if (offHome) {
+                                        if (inTrash) "Recently deleted" else "Settings"
                                     } else {
                                         when {
                                             !state.enabled -> "Off"
@@ -241,7 +249,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                     // does on every row - and says "good to go"
                                     // where the accent blue only said "accent".
                                     color = when {
-                                        inSettings -> MaterialTheme.colorScheme.onSurface
+                                        offHome -> MaterialTheme.colorScheme.onSurface
                                         !state.enabled || state.starting ->
                                             MaterialTheme.colorScheme.onSurfaceVariant
                                         state.daemonRunning -> JemRecColors.play
@@ -254,7 +262,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                 // tap. Only when it is actually ready: under
                                 // "Off", "Starting" or "Cannot record" it would
                                 // either be moot or contradict the line above.
-                                if (!inSettings && state.enabled && state.daemonRunning) {
+                                if (!offHome && state.enabled && state.daemonRunning) {
                                     Text(
                                         if (state.automatic) "Recording every call"
                                         else "Asks before each call",
@@ -269,7 +277,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                 // the moment it returns - re-arming Wireless
                                 // debugging itself - so this is one instruction
                                 // and a wait, not a fault to act on.
-                                if (!inSettings && state.enabled && !state.starting &&
+                                if (!offHome && state.enabled && !state.starting &&
                                     !state.daemonRunning
                                 ) {
                                     // Except on a Wi-Fi Android has not allowed
@@ -306,8 +314,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             }
                         },
                         navigationIcon = {
-                            if (inSettings) {
-                                IconButton(onClick = { haptics.tap(); vm.showHome() }) {
+                            if (offHome) {
+                                IconButton(onClick = {
+                                    haptics.tap()
+                                    if (inTrash) vm.showSettings() else vm.showHome()
+                                }) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowBack,
                                         contentDescription = "Back",
@@ -316,7 +327,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             }
                         },
                         actions = {
-                            if (!inSettings) {
+                            if (!offHome) {
                                 // Red when on, matching the record capsule in
                                 // the launcher icon - so the thing that means
                                 // "recording" is one colour everywhere the user
@@ -347,8 +358,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         // scrolls inside each other is both a crash and the wrong behaviour. It
         // takes the padding and fills the area itself. Setup and Settings are
         // short, static content, so they keep the plain page scroll.
-        if (ready && !inSettings) {
+        if (ready && !offHome) {
             HomeScreen(state, vm, modifier = Modifier.padding(padding))
+        } else if (inTrash) {
+            // A list too, with its own scroll, for the same reason.
+            TrashScreen(state, vm, modifier = Modifier.padding(padding))
         } else {
             val scrollState = rememberScrollState()
             // A self-test's result lands in the log card at the very bottom of

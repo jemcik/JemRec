@@ -4,11 +4,13 @@ import java.util.Calendar
 
 /** The time presets shown as chips above the list: All / Today / This week.
  *  These are mutually exclusive - a recording is in one time range - and pick
- *  the WHEN. Favourites is a separate axis (WHO) and rides its own toggle. */
+ *  the WHEN. Favourites (WHO) and Kept (marked to keep) are separate axes,
+ *  each on its own toggle. */
 enum class RecordingFilter { ALL, TODAY, THIS_WEEK }
 
 /**
- * Apply the search text, the time preset, and the favourites toggle to a list.
+ * Apply the search text, the time preset, and the favourites and kept toggles
+ * to a list.
  *
  * The time preset and favourites are different questions - WHEN a call was and
  * WHO it was with - so they combine rather than compete: favouritesOnly ANDs on
@@ -24,6 +26,7 @@ fun filterRecordings(
     query: String,
     filter: RecordingFilter,
     favoritesOnly: Boolean,
+    keptOnly: Boolean = false,
 ): List<Recording> {
     val q = query.trim()
     val now = System.currentTimeMillis()
@@ -34,11 +37,12 @@ fun filterRecordings(
             RecordingFilter.THIS_WEEK -> r.startedAtMillis?.let { withinDays(it, now, 7) } ?: false
         }
         val passesFavorite = !favoritesOnly || r.callerFavorite
+        val passesKept = !keptOnly || r.kept
         val passesQuery = q.isEmpty() ||
             r.caller?.contains(q, ignoreCase = true) == true ||
             r.number?.contains(q) == true ||
             r.whenLabel.contains(q, ignoreCase = true)
-        passesTime && passesFavorite && passesQuery
+        passesTime && passesFavorite && passesKept && passesQuery
     }
 }
 

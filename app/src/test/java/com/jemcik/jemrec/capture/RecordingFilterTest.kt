@@ -102,3 +102,29 @@ class RecordingFilterTest {
         assertEquals("Today 16:53 · 1:02", known.subtitle)
     }
 }
+
+/** The Kept toggle: its own axis, like favourites. */
+class KeptFilterTest {
+
+    private val uri: Uri = Mockito.mock(Uri::class.java)
+
+    private fun rec(name: String, kept: Boolean, favorite: Boolean = false) = Recording(
+        name = name, uri = uri, whenLabel = "7 Sep, 16:53", incoming = true,
+        durationLabel = "1:02", sizeLabel = "339 KB", callerFavorite = favorite, kept = kept,
+    )
+
+    @Test fun keptOnlyShowsOnlyKept() {
+        val list = listOf(rec("a", kept = true), rec("b", kept = false))
+        assertEquals(listOf("a"), filterRecordings(list, "", RecordingFilter.ALL, false, keptOnly = true).map { it.name })
+        assertEquals(listOf("a", "b"), filterRecordings(list, "", RecordingFilter.ALL, false, keptOnly = false).map { it.name })
+    }
+
+    @Test fun keptAndFavouritesNarrowTogether() {
+        val list = listOf(
+            rec("both", kept = true, favorite = true),
+            rec("kept", kept = true),
+            rec("favourite", kept = false, favorite = true),
+        )
+        assertEquals(listOf("both"), filterRecordings(list, "", RecordingFilter.ALL, true, keptOnly = true).map { it.name })
+    }
+}

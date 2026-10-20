@@ -200,15 +200,31 @@ original file or a converted copy that plays anywhere.
 
 To delete, tap a contact's photo or long-press a row to start selecting, tick
 what you want, and use the bin in the toolbar. It asks first and tells you how
-many. Deleting is permanent.
+many.
+
+**Deleting is not immediate.** A deleted recording goes to **Recently
+deleted**, at the bottom of Settings, waits there 30 days, and can be restored
+until then. After that it is gone for good. In the standard Recordings folder
+this is Android's own trash, so other apps stop seeing the file at once.
+
+**Keep what matters.** The bookmark on each row marks a recording to keep:
+auto-delete never touches it, and the bookmark chip above the list shows only
+kept recordings. To mark several, select them and use the bookmark in the
+toolbar.
 
 The notification after each call has the same three buttons. Play and Share
 open JemRec at that recording; Delete asks first, in the notification itself,
 and **Keep** puts it back.
 
+If a recording was made before JemRec was reinstalled, Android asks before
+JemRec may move it to the trash, in a dialog of its own. That is Android
+checking who owns the file, not JemRec asking twice.
+
 Recordings are kept when JemRec is uninstalled, because they are yours rather
 than the app's — so if you want them gone, delete them **before** you
-uninstall.
+uninstall. Recently deleted ones in the standard folder are still emptied by
+Android on time. In a folder you chose, they stay behind as hidden files,
+because removing them is JemRec's job.
 
 ## Turning JemRec off
 
@@ -217,6 +233,11 @@ call is recorded and no notification appears. Your recordings and your pairing
 are untouched, and the recorder itself keeps running in the background doing
 nothing — which is what makes turning it back on instant, anywhere, with no
 network.
+
+The same switch is a **Quick Settings tile**, so you can flip it without
+opening the app. Settings has a button that adds it, on Android 13 and later;
+on 12, edit the Quick Settings panel and drag JemRec in. On a locked phone the
+tile asks for your unlock first.
 
 ## After a restart
 
@@ -283,6 +304,13 @@ And when the app is closed, in notifications:
 - **Show each call when it ends** — the silent notification after every
   recorded call. Off hides it; a recording that came out silent is reported
   either way.
+- **Quick Settings tile** — adds the on/off tile to the Quick Settings panel.
+- **Auto-delete** — off until you choose. Removes recordings older than 30
+  days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30
+  seconds. Kept recordings are never touched, and whatever it removes waits in
+  Recently deleted.
+- **Recently deleted** — what has been deleted in the last 30 days, with
+  **Restore** for each.
 - **Show who called** — labels each recording with the contact's name and
   photo, or the number when they are not in your contacts, and lets JemRec tell
   you if a call went by unrecorded. Optional, and asked for in the app rather

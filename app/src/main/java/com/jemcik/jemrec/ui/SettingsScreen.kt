@@ -1,9 +1,18 @@
 package com.jemcik.jemrec.ui
 
+import android.app.StatusBarManager
+import android.content.ComponentName
+import android.content.Context
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.annotation.RequiresApi
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,6 +21,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,7 +32,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import com.jemcik.jemrec.R
 import com.jemcik.jemrec.capture.CallLogLookup
+import com.jemcik.jemrec.capture.Retention
+import com.jemcik.jemrec.capture.Trash
 
 /**
  * The things that are not the answer to "would a call be recorded right now".
@@ -31,7 +44,9 @@ import com.jemcik.jemrec.capture.CallLogLookup
  * have: settings are where you change how the app behaves, not where you act
  * on its contents. A person wanting to delete a recording goes to the list of
  * recordings, because that is where the recordings are - so selection and
- * deletion live there now.
+ * deletion live there now. Recently deleted is reached from here, beside the
+ * auto-delete rules that fill it, because it is somewhere you go now and
+ * then to take something back - not part of the list you use every day.
  */
 @Composable
 fun SettingsScreen(state: UiState, vm: MainViewModel) {
@@ -161,11 +176,40 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
             }
         }
 
+        // The tile is the same switch as the one in the header. Android 13
+        // and later can add it for the user; before that, all this card can do
+        // is say where it is.
+        val context = LocalContext.current
+        Card {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Quick Settings tile", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Turn recording on and off from the Quick Settings panel, without " +
+                        "opening JemRec. " +
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            "Or edit the panel and drag JemRec into place."
+                        } else {
+                            "Edit the panel and drag JemRec into place."
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    FilledTonalButton(
+                        onClick = { haptics.tap(); addTile(context) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Add the tile") }
+                }
+            }
+        }
+
         // ONLY WHERE THERE IS SOMETHING TO OPEN. On a phone with no launch
         // manager this card would be an offer to fix something that is not
         // broken, which is worse than saying nothing - so AutoStart answers
         // whether the screen exists before the card is drawn at all.
-        val context = LocalContext.current
         if (remember { AutoStart.available(context) }) {
             Card {
                 Column(
@@ -230,6 +274,70 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                         ) { Text("Use default") }
                     }
                 }
+            }
+        }
+
+        // Both rules off until chosen. Nothing they remove is gone: it waits
+        // in Recently deleted, said here so nobody picks a rule fearing it.
+        Card {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Auto-delete", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Recordings you mark to keep are never removed. Anything removed " +
+                        "waits in Recently deleted for ${Trash.DAYS} days first.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("Recordings older than", style = MaterialTheme.typography.labelLarge)
+                Choices(
+                    choices = Retention.AGE_CHOICES,
+                    selected = state.autoDeleteAfterDays,
+                    label = { days ->
+                        when (days) {
+                            0 -> "Never"
+                            180 -> "6 months"
+                            365 -> "1 year"
+                            else -> "$days days"
+                        }
+                    },
+                    enabled = !state.busy,
+                    onChoose = { haptics.tap(); vm.setAutoDelete(afterDays = it) },
+                )
+                Text("Calls shorter than", style = MaterialTheme.typography.labelLarge)
+                Choices(
+                    choices = Retention.SHORT_CHOICES,
+                    selected = state.autoDeleteShorterThan,
+                    label = { seconds -> if (seconds == 0) "Off" else "$seconds s" },
+                    enabled = !state.busy,
+                    onChoose = { haptics.tap(); vm.setAutoDelete(shorterThan = it) },
+                )
+            }
+        }
+
+        Card {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Recently deleted", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    when (val count = state.trashed.size) {
+                        0 -> "Empty. Deleted recordings wait here for ${Trash.DAYS} days, " +
+                            "and can be restored until then."
+                        1 -> "1 recording, which can be restored until its ${Trash.DAYS} days are up."
+                        else -> "$count recordings, which can be restored until their " +
+                            "${Trash.DAYS} days are up."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FilledTonalButton(
+                    onClick = { haptics.tap(); vm.showTrash() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Open") }
             }
         }
 
@@ -315,4 +423,48 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
         }
 
     }
+}
+
+/**
+ * Mutually exclusive choices, as chips that wrap.
+ *
+ * Not segmented buttons, which were tried: five segments in a phone-width
+ * card left about 60dp each, and "Never" came out as "Neve". Chips take the
+ * room their words need and move to a second line when they run out of it.
+ */
+@Composable
+private fun Choices(
+    choices: List<Int>,
+    selected: Int,
+    label: (Int) -> String,
+    enabled: Boolean,
+    onChoose: (Int) -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        choices.forEach { value ->
+            FilterChip(
+                selected = value == selected,
+                onClick = { if (value != selected) onChoose(value) },
+                label = { Text(label(value)) },
+                enabled = enabled,
+                shape = CircleShape,
+            )
+        }
+    }
+}
+
+/** Android 13 and later: ask the system to add the tile, in its own dialog. */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private fun addTile(context: Context) {
+    runCatching {
+        context.getSystemService(StatusBarManager::class.java).requestAddTileService(
+            ComponentName(context, RecorderTile::class.java),
+            "JemRec",
+            Icon.createWithResource(context, R.drawable.ic_tile),
+            context.mainExecutor,
+        ) { result -> Log.i("JemRec", "tile: add request answered $result") }
+    }.onFailure { Log.w("JemRec", "tile: could not ask to add it", it) }
 }

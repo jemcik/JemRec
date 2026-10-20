@@ -34,6 +34,9 @@ import com.jemcik.jemrec.capture.filterRecordings
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.RecordingPlayer
 import com.jemcik.jemrec.capture.RecordingStore
+import com.jemcik.jemrec.capture.Trash
+import com.jemcik.jemrec.capture.Retention
+import com.jemcik.jemrec.capture.KeepMarks
 import com.jemcik.jemrec.capture.SelfTest
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,13 +61,14 @@ private const val PAGE = 20
 private const val LOG_LIMIT = 8_000
 
 /**
- * Which of the two screens is showing.
+ * Which screen is showing.
  *
- * Two, and no navigation library. The whole app is a status page and a place to
- * put the things that are not it, and pulling in a nav graph to express "or the
- * other one" would be more machinery than the problem has.
+ * Three, and no navigation library. The whole app is a status page, a place to
+ * put the things that are not it, and the trash reached from there; a nav graph
+ * to express "or one of the others" would be more machinery than the problem
+ * has.
  */
-enum class Screen { HOME, SETTINGS }
+enum class Screen { HOME, SETTINGS, TRASH }
 
 data class UiState(
     val step: SetupStep = SetupStep.CHECKING,
@@ -158,6 +162,13 @@ data class UiState(
      *  calls with starred contacts ANDs with whatever time range is chosen,
      *  rather than replacing it. */
     val favoritesOnly: Boolean = false,
+    /** Only recordings marked to keep. Its own axis too, like favourites. */
+    val keptOnly: Boolean = false,
+    /** What is in Recently deleted, soonest to go first. See Trash. */
+    val trashed: List<Recording> = emptyList(),
+    /** Auto-delete's two rules, 0 for off. See Retention. */
+    val autoDeleteAfterDays: Int = 0,
+    val autoDeleteShorterThan: Int = 0,
     /** Whether the "tap a photo to select" hint has been shown its course - it
      *  retires the first time the user actually enters selection. */
     val selectHintSeen: Boolean = true,
@@ -208,6 +219,12 @@ class MainViewModel @JvmOverloads constructor(
     private val _state = MutableStateFlow(initial)
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    /** The switch can be flipped from the Quick Settings tile while this
+     *  screen is up, without the screen ever pausing. See RecorderSwitch.observe. */
+    private val stopWatchingSwitch = RecorderSwitch.observe(app) { on ->
+        _state.update { it.copy(enabled = on) }
+    }
+
     /**
      * Prove the recording chain end to end, without ringing anyone.
      *
@@ -228,6 +245,8 @@ class MainViewModel @JvmOverloads constructor(
     fun showSettings() = _state.update { it.copy(screen = Screen.SETTINGS) }
 
     fun showHome() = _state.update { it.copy(screen = Screen.HOME) }
+
+    fun showTrash() = _state.update { it.copy(screen = Screen.TRASH) }
 
     fun askReset() = _state.update { it.copy(confirmingReset = true) }
 
@@ -502,6 +521,8 @@ class MainViewModel @JvmOverloads constructor(
      * Wi-Fi - and stranded an "off" in the field until the next network.
      */
     fun setEnabled(on: Boolean) {
+        // Saved at once, outside the action below: that is skipped while
+        // another one runs, and the switch must not be.
         RecorderSwitch.set(getApplication(), on)
         // `starting` matters as much as `enabled` here. The switch flips at
         // once, but the recorder takes a couple of seconds to come up, and in
@@ -511,27 +532,8 @@ class MainViewModel @JvmOverloads constructor(
         // operation in progress is how people learn to ignore errors.
         _state.update { it.copy(enabled = on, starting = on) }
         launchAction(if (on) "turn on" else "turn off") {
-            if (on) {
-                // revive() connects, starts the daemon and stands the ADB
-                // session back down - the whole bring-up in one call, shared
-                // with boot and the keep-alive job. Then arm that job so the
-                // daemon is kept alive without a permanent service. When the
-                // daemon is already up - the usual case, since "off" leaves it
-                // running - revive() no-ops over loopback and needs no Wi-Fi, so
-                // turning recording back on is instant anywhere.
-                CaptureDaemon.revive(getApplication())
-                RecorderKeepAlive.schedule(getApplication())
-                NetworkRevive.arm(getApplication())
-                // Tell the daemon how to record now (automatic vs ask-first).
-                pushDaemonMode()
-            } else {
-                // SOFT OFF. Leave the daemon running and its keep-alive/Wi-Fi
-                // revival armed - killing it here used to be a field trap (a
-                // rebuild needs Wi-Fi). The daemon's life is tied to setup, not
-                // this switch. Tell it to capture nothing.
-                CaptureDaemon.setDaemonMode(getApplication(), CaptureDaemon.MODE_OFF)
-                CallMonitorService.stop(getApplication())
-            }
+            // Shared with the Quick Settings tile. See RecorderSwitch.turn.
+            RecorderSwitch.turn(getApplication(), on)
             // Ask what the world looks like rather than assuming. Called
             // directly, not via refreshSetup(), because that is a launchAction
             // and one will not start while this one is running.
@@ -656,7 +658,7 @@ class MainViewModel @JvmOverloads constructor(
         // can no longer see. Widening the query keeps everything, as it should.
         val next = if (current.selecting) {
             val stillShown = filterRecordings(
-                current.recordings, query, current.filter, current.favoritesOnly,
+                current.recordings, query, current.filter, current.favoritesOnly, current.keptOnly,
             ).map { it.name }.toSet()
             current.selected intersect stillShown
         } else {
@@ -684,6 +686,49 @@ class MainViewModel @JvmOverloads constructor(
      *  turning it on narrows to starred contacts on TOP of the time range,
      *  turning it off widens back. It never disturbs the time chips. */
     fun toggleFavorites() = _state.update { it.copy(favoritesOnly = !it.favoritesOnly) }
+
+    fun toggleKeptOnly() = _state.update { it.copy(keptOnly = !it.keptOnly) }
+
+    /** Mark one recording to keep, or take the mark off. Kept recordings are
+     *  never auto-deleted. */
+    fun toggleKept(recording: Recording) {
+        KeepMarks.set(getApplication(), listOf(recording.name), !recording.kept)
+        refresh()
+    }
+
+    /** The selection toolbar's keep: marks every picked recording, or - when
+     *  all of them are kept already - takes the mark off them all. */
+    fun keepSelected() {
+        val current = _state.value
+        val picked = current.recordings.filter { it.name in current.selected }
+        if (picked.isEmpty()) return
+        KeepMarks.set(getApplication(), picked.map { it.name }, kept = !picked.all { it.kept })
+        _state.update { it.copy(selecting = false, selected = emptySet()) }
+        refresh()
+    }
+
+    /** Back out of the trash, as it was. */
+    fun restore(recording: Recording) = launchAction("restore") {
+        when (val result = withContext(Dispatchers.IO) { Trash.restore(getApplication(), recording) }) {
+            is DeleteResult.Deleted -> say("restored ${recording.name}")
+            is DeleteResult.NeedsConsent -> _state.update { it.copy(deleteConsent = result.request) }
+            is DeleteResult.Failed -> say("could not restore ${recording.name}: ${result.error.message}")
+        }
+        refreshNow()
+    }
+
+    /** One of auto-delete's two rules changed: saved, and applied at once. */
+    fun setAutoDelete(afterDays: Int? = null, shorterThan: Int? = null) = launchAction("auto-delete") {
+        val app = getApplication<Application>()
+        afterDays?.let { Retention.setMaxAgeDays(app, it) }
+        shorterThan?.let { Retention.setMinSeconds(app, it) }
+        val result = withContext(Dispatchers.IO) { Retention.run(app) }
+        if (result.deleted > 0) say("auto-delete moved ${result.deleted} recording(s) to Recently deleted")
+        // Recordings Android wants confirmed are asked about now, while the
+        // user is here; the daily pass cannot ask.
+        result.needsConsent?.let { request -> _state.update { it.copy(deleteConsent = request) } }
+        refreshNow()
+    }
 
 
     fun useDefaultFolder() = launchAction("use default folder") {
@@ -752,6 +797,9 @@ class MainViewModel @JvmOverloads constructor(
                 offerCallLog = CallLogLookup.anythingLeftToOffer(app) &&
                     !CallLogLookup.bannerDismissed(app),
                 recordings = Recordings.list(app),
+                trashed = if (Recordings.override != null) emptyList() else Trash.list(app),
+                autoDeleteAfterDays = Retention.maxAgeDays(app),
+                autoDeleteShorterThan = Retention.minSeconds(app),
                 selectHintSeen = Prefs.of(app).getBoolean("select_hint_seen", false),
             )
         }
@@ -774,6 +822,9 @@ class MainViewModel @JvmOverloads constructor(
                 canReadAudio = snapshot.canReadAudio,
                 offerCallLog = snapshot.offerCallLog,
                 recordings = snapshot.recordings,
+                trashed = snapshot.trashed,
+                autoDeleteAfterDays = snapshot.autoDeleteAfterDays,
+                autoDeleteShorterThan = snapshot.autoDeleteShorterThan,
                 selectHintSeen = snapshot.selectHintSeen,
                 // A name that is no longer in the list cannot be selected. It
                 // would still be counted by the toolbar, and the count is what
@@ -802,6 +853,9 @@ class MainViewModel @JvmOverloads constructor(
         val canReadAudio: Boolean,
         val offerCallLog: Boolean,
         val recordings: List<Recording>,
+        val trashed: List<Recording>,
+        val autoDeleteAfterDays: Int,
+        val autoDeleteShorterThan: Int,
         val selectHintSeen: Boolean,
     )
 
@@ -897,6 +951,7 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     override fun onCleared() {
+        stopWatchingSwitch()
         ticker?.cancel()
         player.release()
         super.onCleared()
@@ -1044,7 +1099,7 @@ class MainViewModel @JvmOverloads constructor(
         // "All visible" means all that pass the search and preset - the same
         // rows the list is showing - not every recording on disk.
         val visible = filterRecordings(
-            current.recordings, current.query, current.filter, current.favoritesOnly,
+            current.recordings, current.query, current.filter, current.favoritesOnly, current.keptOnly,
         ).take(current.visibleCount)
         current.copy(selected = visible.map { it.name }.toSet())
     }
@@ -1060,7 +1115,8 @@ class MainViewModel @JvmOverloads constructor(
     fun cancelDeleteSelected() = _state.update { it.copy(confirmingDeleteSelected = false) }
 
     /**
-     * Delete what is selected.
+     * Delete what is selected - to Recently deleted, where it can be restored
+     * for 30 days (see Trash).
      *
      * Selection mode ends whether or not every deletion succeeded. Leaving the
      * user in a toolbar showing a count that no longer means anything is worse
@@ -1075,9 +1131,18 @@ class MainViewModel @JvmOverloads constructor(
             if (current.playingName in current.selected) stopPlayback()
 
             val result = withContext(Dispatchers.IO) {
-                Recordings.deleteAll(getApplication(), doomed)
+                Trash.trashAll(getApplication(), doomed)
             }
-            say("deleted ${result.deleted}, could not delete ${result.failed}")
+            // Whatever Android wants confirmed is not moved yet - its own
+            // dialog comes next - so it is counted as asked, not as failed.
+            val asked = doomed.size - result.deleted - result.failed
+            say(
+                listOfNotNull(
+                    "moved ${result.deleted} to Recently deleted".takeIf { result.deleted > 0 },
+                    "asking Android about $asked".takeIf { result.needsConsent != null && asked > 0 },
+                    "could not move ${result.failed}".takeIf { result.failed > 0 },
+                ).joinToString(", "),
+            )
             result.needsConsent?.let { request ->
                 _state.update { it.copy(deleteConsent = request) }
             }

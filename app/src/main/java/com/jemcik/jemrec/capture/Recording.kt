@@ -10,8 +10,6 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
-import java.io.File
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -57,6 +55,13 @@ data class Recording(
     /** The call was with a contact starred as a favourite in the address book.
      *  Shown as a small star and filtered by the Favourites chip. */
     val callerFavorite: Boolean = false,
+    /** How long the call was, in milliseconds; 0 when it could not be read.
+     *  [durationLabel] is what is shown; this is what auto-delete compares. */
+    val durationMillis: Long = 0,
+    /** Marked to keep: never auto-deleted. See KeepMarks. */
+    val kept: Boolean = false,
+    /** Set only for a recording in the trash: when it goes for good. */
+    val expiresAtMillis: Long? = null,
 ) {
     /** When the call was, parsed from the name (yyyyMMdd_HHmmss...). Drives the
      *  Today / This week presets; null if the name is not one of ours. Parsed
@@ -80,17 +85,7 @@ data class Recording(
         }
 }
 
-/**
- * What happened when we tried to delete a recording.
- *
- * NeedsConsent is the interesting one. MediaStore lets an app delete media it
- * owns, and ownership is recorded per package - so it normally just works. When
- * it does not, the platform does not want a bare failure either: it hands back
- * a request the user can approve in a system dialog. Throwing that away and
- * reporting "could not delete" would leave someone unable to remove their own
- * recording from inside the app that made it.
- */
-/** The outcome of removing a whole list of them at once. */
+/** The outcome of moving a whole list of them to the trash at once. */
 data class BulkDeleteResult(
     val deleted: Int,
     val failed: Int,
@@ -99,6 +94,17 @@ data class BulkDeleteResult(
     val needsConsent: IntentSender?,
 )
 
+/**
+ * What happened when we tried to move a recording to the trash, or back out of
+ * it (see Trash).
+ *
+ * NeedsConsent is the interesting one. MediaStore lets an app trash media it
+ * owns, and ownership is recorded per package - so it normally just works. When
+ * it does not, the platform does not want a bare failure either: it hands back
+ * a request the user can approve in a system dialog. Throwing that away and
+ * reporting "could not delete" would leave someone unable to remove their own
+ * recording from inside the app that made it.
+ */
 sealed interface DeleteResult {
     data object Deleted : DeleteResult
     data class NeedsConsent(val request: IntentSender) : DeleteResult
@@ -135,11 +141,14 @@ internal object Recordings {
      * Listing only the current default would make a user's earlier calls
      * silently vanish from the app.
      */
-    fun list(context: Context): List<Recording> {
+    fun list(context: Context, withCallers: Boolean = true): List<Recording> {
         override?.let { return it(context) }
+        val kept = KeepMarks.all(context)
         val found = (fromMediaStore(context) + fromChosenFolder(context) + fromAppStorage(context))
             .distinctBy { it.name }
             .sortedByDescending { it.name }
+            .map { if (it.name in kept) it.copy(kept = true) else it }
+        if (!withCallers) return found
         // Looked up afterwards, in one query for the whole list, and only if
         // the user has allowed it. Ungranted this returns nothing and every
         // recording simply keeps its time as its headline.
@@ -155,6 +164,72 @@ internal object Recordings {
             )
         }
     }
+
+    /** A recording as the list shows it, from what its source knows. */
+    internal fun describe(
+        name: String,
+        uri: Uri,
+        sizeBytes: Long,
+        durationMillis: Long,
+        whenMillis: Long = startOf(name),
+    ) = Recording(
+        name = name,
+        uri = uri,
+        whenLabel = whenLabel(whenMillis),
+        incoming = RecordingStore.isIncoming(name),
+        durationLabel = duration(durationMillis),
+        sizeLabel = size(sizeBytes),
+        durationMillis = durationMillis.coerceAtLeast(0),
+    )
+
+    /** The same, for a source that does not know the duration: the file is
+     *  opened to ask. */
+    internal fun describe(
+        context: Context,
+        name: String,
+        uri: Uri,
+        sizeBytes: Long,
+        whenMillis: Long = startOf(name),
+    ) = describe(name, uri, sizeBytes, durationOf(context, uri), whenMillis)
+
+    /** When the call started, from the name (yyyyMMdd_HHmmss...), or 0. */
+    private fun startOf(name: String): Long = runCatching {
+        SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name.take(15))?.time
+    }.getOrNull() ?: 0L
+
+    /** One file in the folder the user picked. */
+    internal class Document(val name: String, val uri: Uri, val sizeBytes: Long, val modifiedMillis: Long)
+
+    /** Every recording-shaped file in the folder the user picked, trashed or not. */
+    internal fun chosenFolderDocuments(context: Context): List<Document> = runCatching {
+        val tree = RecordingStore.treeUri(context) ?: return emptyList()
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(
+            tree, DocumentsContract.getTreeDocumentId(tree),
+        )
+        val out = mutableListOf<Document>()
+        context.contentResolver.query(
+            children,
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            ),
+            null, null, null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(1) ?: continue
+                if (!name.endsWith(".${RecordingStore.EXTENSION}")) continue
+                out += Document(
+                    name,
+                    DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0)),
+                    cursor.getLong(2),
+                    cursor.getLong(3),
+                )
+            }
+        }
+        out
+    }.onFailure { Log.w(TAG, "recordings: chosen folder query failed", it) }.getOrDefault(emptyList())
 
     /** The default location. MediaStore knows the duration already, which
      *  saves opening every file just to ask how long it is. */
@@ -182,161 +257,39 @@ internal object Recordings {
             val durCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             while (cursor.moveToNext()) {
                 val name = cursor.getString(nameCol) ?: continue
-                out += Recording(
+                out += describe(
                     name = name,
                     uri = ContentUris.withAppendedId(collection, cursor.getLong(idCol)),
+                    sizeBytes = cursor.getLong(sizeCol),
+                    durationMillis = cursor.getLong(durCol),
                     // DATE_MODIFIED is in SECONDS, not milliseconds. Treating
                     // it as millis dates every recording to January 1970.
-                    whenLabel = whenLabel(cursor.getLong(dateCol) * 1000),
-                    incoming = RecordingStore.isIncoming(name),
-                    durationLabel = duration(cursor.getLong(durCol)),
-                    sizeLabel = size(cursor.getLong(sizeCol)),
+                    whenMillis = cursor.getLong(dateCol) * 1000,
                 )
             }
         }
         out
     }.onFailure { Log.w(TAG, "recordings: MediaStore query failed", it) }.getOrDefault(emptyList())
 
-    private fun fromChosenFolder(context: Context): List<Recording> = runCatching {
-        val tree = RecordingStore.treeUri(context) ?: return emptyList()
-        val children = DocumentsContract.buildChildDocumentsUriUsingTree(
-            tree, DocumentsContract.getTreeDocumentId(tree),
-        )
-        val out = mutableListOf<Recording>()
-        context.contentResolver.query(
-            children,
-            arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_SIZE,
-                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-            ),
-            null, null, null,
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val name = cursor.getString(1) ?: continue
-                if (!name.endsWith(".${RecordingStore.EXTENSION}")) continue
-                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0))
-                out += Recording(
-                    name = name,
-                    uri = uri,
-                    whenLabel = whenLabel(cursor.getLong(3)),
-                    incoming = RecordingStore.isIncoming(name),
-                    durationLabel = durationOf(context, uri),
-                    sizeLabel = size(cursor.getLong(2)),
-                )
-            }
-        }
-        out
-    }.onFailure { Log.w(TAG, "recordings: chosen folder query failed", it) }.getOrDefault(emptyList())
+    /** The folder the user picked, less what is in the trash there. */
+    private fun fromChosenFolder(context: Context): List<Recording> =
+        chosenFolderDocuments(context)
+            .filterNot { Trash.isTrashedName(it.name) }
+            .map { describe(context, it.name, it.uri, it.sizeBytes, whenMillis = it.modifiedMillis) }
 
     /** Recordings made before the standard folder became the default. */
     private fun fromAppStorage(context: Context): List<Recording> =
         RecordingStore.listAppStorage(context)
-            .filter { it.isFile && it.length() > 0 }
+            .filter { it.isFile && it.length() > 0 && !Trash.isTrashedName(it.name) }
             .mapNotNull { file ->
                 runCatching {
                     val uri = FileProvider.getUriForFile(
                         context, "${context.packageName}.recordings", file,
                     )
-                    Recording(
-                        name = file.name,
-                        uri = uri,
-                        whenLabel = whenLabel(file.lastModified()),
-                        incoming = RecordingStore.isIncoming(file.name),
-                        durationLabel = durationOf(context, uri),
-                        sizeLabel = size(file.length()),
-                        filePath = file.absolutePath,
-                    )
+                    describe(context, file.name, uri, file.length(), whenMillis = file.lastModified())
+                        .copy(filePath = file.absolutePath)
                 }.getOrNull()
             }
-
-    /**
-     * Remove a recording, wherever it happens to live.
-     *
-     * Three storage locations means three different ways to delete, and none of
-     * them generalises: a MediaStore row is deleted through the resolver, a
-     * document in a folder the user picked through DocumentsContract, and an
-     * app-storage file by deleting the file. Sending the wrong one at the wrong
-     * uri fails quietly, which for a delete button is the worst outcome - the
-     * user believes the recording of their call is gone and it is not.
-     *
-     * Deleting is the one destructive thing this app can do, so it reports what
-     * actually happened rather than returning Unit and hoping.
-     */
-    fun delete(context: Context, recording: Recording): DeleteResult =
-        deleteAt(context, recording.uri, recording.filePath)
-
-    /** The same, for a caller that has the location but not the list's row -
-     *  the after-call notification's Delete. */
-    fun deleteAt(context: Context, uri: Uri, filePath: String?): DeleteResult {
-        filePath?.let { path ->
-            val file = File(path)
-            // Already gone counts as deleted. The user asked for it to not be
-            // there, and it is not there.
-            return if (!file.exists() || file.delete()) DeleteResult.Deleted
-            else DeleteResult.Failed(IOException("could not delete $path"))
-        }
-
-        return if (uri.authority == MediaStore.AUTHORITY) {
-            deleteFromMediaStore(context, uri)
-        } else {
-            deleteDocument(context, uri)
-        }
-    }
-
-    /**
-     * Remove all of these, for the "delete my recordings too" half of uninstall.
-     *
-     * Deliberately NOT a loop of confirmation dialogs. Anything MediaStore
-     * refuses is gathered into one request the user approves once - being asked
-     * forty times is how people start tapping Allow without reading.
-     */
-    fun deleteAll(context: Context, recordings: List<Recording>): BulkDeleteResult {
-        var deleted = 0
-        var failed = 0
-        val disputed = mutableListOf<Uri>()
-        recordings.forEach { recording ->
-            when (val result = delete(context, recording)) {
-                is DeleteResult.Deleted -> deleted++
-                // Its single-uri request is discarded; they are batched below.
-                is DeleteResult.NeedsConsent -> disputed += recording.uri
-                is DeleteResult.Failed -> {
-                    failed++
-                    Log.w(TAG, "recordings: could not delete ${recording.name}", result.error)
-                }
-            }
-        }
-        val consent = if (disputed.isEmpty()) null else runCatching {
-            MediaStore.createDeleteRequest(context.contentResolver, disputed).intentSender
-        }.getOrNull()
-        return BulkDeleteResult(deleted, failed, consent)
-    }
-
-    private fun deleteFromMediaStore(context: Context, uri: Uri): DeleteResult = try {
-        val rows = context.contentResolver.delete(uri, null, null)
-        if (rows > 0) DeleteResult.Deleted
-        else DeleteResult.Failed(IOException("MediaStore deleted no rows for $uri"))
-    } catch (e: SecurityException) {
-        // We are not the owner as far as MediaStore is concerned. The user
-        // still is, and can say so in a system dialog.
-        Log.i(TAG, "recordings: need the user's consent to delete $uri")
-        runCatching {
-            DeleteResult.NeedsConsent(
-                MediaStore.createDeleteRequest(context.contentResolver, listOf(uri)).intentSender
-            ) as DeleteResult
-        }.getOrElse { DeleteResult.Failed(e) }
-    } catch (t: Throwable) {
-        DeleteResult.Failed(t)
-    }
-
-    private fun deleteDocument(context: Context, uri: Uri): DeleteResult = runCatching {
-        if (DocumentsContract.deleteDocument(context.contentResolver, uri)) {
-            DeleteResult.Deleted
-        } else {
-            DeleteResult.Failed(IOException("the folder refused to delete $uri")) as DeleteResult
-        }
-    }.getOrElse { DeleteResult.Failed(it) }
 
     /** "Today 16:53" reads better than a date for the common case, which is a
      *  call from the last few minutes. */
@@ -357,20 +310,18 @@ internal object Recordings {
         return "%d:%02d".format(total / 60, total % 60)
     }
 
-    /** For sources that do not already know the duration. Opens the file, so
-     *  callers must be off the main thread - and they are. */
-    private fun durationOf(context: Context, uri: Uri): String = try {
+    /** For sources that do not already know the duration, in milliseconds.
+     *  Opens the file, so callers must be off the main thread - and they are. */
+    private fun durationOf(context: Context, uri: Uri): Long = try {
         MediaMetadataRetriever().use { retriever ->
             retriever.setDataSource(context, uri)
-            duration(
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                    ?.toLongOrNull() ?: 0L
-            )
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
         }
     } catch (t: Throwable) {
         // A recording whose duration cannot be read still plays, and is still
-        // worth listing. "--:--" beats hiding it.
-        "--:--"
+        // worth listing: it shows "--:--" rather than being hidden.
+        0L
     }
 
     private fun size(bytes: Long): String = when {
