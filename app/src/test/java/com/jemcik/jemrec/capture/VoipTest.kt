@@ -62,6 +62,15 @@ class VoipTest {
         assertEquals("Priya Raman", VoipCallNotes.pick(notes, viber, start)?.name)
     }
 
+    @Test fun aRepostIsARepeatButTheNextCallIsNot() {
+        val first = Note(viber, start, "Priya Raman", null)
+        assertEquals(true, VoipCallNotes.isRepeat(listOf(first), first.copy(at = start + 10 * second)))
+        // The same person called again four minutes later: a call of its own.
+        assertEquals(false, VoipCallNotes.isRepeat(listOf(first), first.copy(at = start + 4 * 60 * second)))
+        // A ring is news even straight after the last note.
+        assertEquals(false, VoipCallNotes.isRepeat(listOf(first), first.copy(at = start + 5 * second, incoming = true)))
+    }
+
     @Test fun anAppsOwnNameIsNoCaller() {
         assertNull(VoipCallNotes.clean("Viber", "Viber"))
         // Telegram's title during an outgoing call; the caller is in the text.

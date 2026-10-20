@@ -41,7 +41,7 @@ internal object VoipCallNotes {
     private const val TAG = "JemRec"
     private const val KEY_ON = "voip_names"
     private const val KEY_NOTES = "voip_call_notes"
-    private const val KEEP = 30
+    private const val KEEP = 60
 
     /** How far before a recording's start its call's notifications can be:
      *  the ring of an incoming call, the dialling of an outgoing one. */
@@ -50,8 +50,13 @@ internal object VoipCallNotes {
     /** How long before a call starts its ringing can be: a ring earlier than
      *  this was a different call's. */
     private const val RING_MS = 90 * 1000L
-    /** An unchanged repeat of a note within this long adds nothing. */
-    private const val SAME_NOTE_MS = 10 * 60 * 1000L
+    /**
+     * An unchanged repeat of a note within this long adds nothing. Short:
+     * it is there for the re-posts of one call's notification, and ten
+     * minutes, which this was, swallowed the next call with the same person
+     * whole - it was saved with no name and no direction (measured).
+     */
+    private const val SAME_NOTE_MS = 2 * 60 * 1000L
 
     data class Note(val pkg: String, val at: Long, val name: String?, val incoming: Boolean?)
 
@@ -115,6 +120,12 @@ internal object VoipCallNotes {
      */
     fun find(context: Context, pkg: String, start: Long): Note? = pick(read(context), pkg, start)
 
+    /** Whether [note] only repeats its app's latest note. Pure. */
+    internal fun isRepeat(existing: List<Note>, note: Note): Boolean {
+        val last = existing.filter { it.pkg == note.pkg }.maxByOrNull { it.at } ?: return false
+        return last.name == note.name && last.incoming == note.incoming && note.at - last.at in 0..SAME_NOTE_MS
+    }
+
     /** Pure, for the tests. */
     internal fun pick(notes: List<Note>, pkg: String, start: Long): Note? {
         val near = notes.filter { it.pkg == pkg && it.at in (start - BEFORE_MS)..(start + AFTER_MS) }
@@ -135,10 +146,7 @@ internal object VoipCallNotes {
     @Synchronized
     private fun remember(context: Context, note: Note) {
         val existing = read(context)
-        val last = existing.filter { it.pkg == note.pkg }.maxByOrNull { it.at }
-        if (last != null && last.name == note.name && last.incoming == note.incoming &&
-            note.at - last.at in 0..SAME_NOTE_MS
-        ) return
+        if (isRepeat(existing, note)) return
         val notes = (existing + note).sortedBy { it.at }.takeLast(KEEP)
         Prefs.of(context).edit().putStringSet(KEY_NOTES, notes.map(::encode).toSet()).apply()
     }
