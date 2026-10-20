@@ -374,19 +374,22 @@ A pre-push hook runs the tests and lint before anything leaves the machine:
 
 ## Releases
 
-Bump the version in a pull request, tag the merge, and CI does the rest:
+To release, bump the version in a pull request and merge it. Nobody types a
+tag:
 
     # gradle.properties: jemrecVersionName=0.9, jemrecVersionCode=900
     # fastlane/metadata/android/en-US/changelogs/900.txt: what changed
     # ...merged to main as a PR, like everything else; main takes no direct push
-    git checkout main && git pull && git tag 0.9 && git push origin 0.9
 
 The version lives in `gradle.properties` and nowhere else, because that is
-where F-Droid's update checker reads it from at each tag. The workflow refuses
-a tag that disagrees with it, or a `versionCode` that is not
-`MAJOR*10000 + MINOR*100 + PATCH`, then builds a release APK signed with the
-project key held in repository secrets, refuses to publish anything
-`apksigner` cannot verify, and attaches `jemrec-0.9.apk` to the release.
+where F-Droid's update checker reads it at each tag. When a merge to main
+changes that file to a version not yet released, the release workflow:
+
+- refuses a `versionCode` that is not `MAJOR*10000 + MINOR*100 + PATCH`;
+- refuses a release with no changelog;
+- builds a release APK signed with the project key held in repository secrets;
+- refuses to publish anything `apksigner` cannot verify;
+- tags that same merge commit and attaches `jemrec-0.9.apk` to the release.
 
 F-Droid takes it from there without being asked: its update checker reads
 `gradle.properties` at each new tag, adds a build entry, and publishes once its
@@ -395,9 +398,21 @@ APK has to stay on the releases page until F-Droid has built that version —
 delete it sooner and the check has nothing to compare against.
 
 The tag has to point at a commit **on main**, because that commit is what
-F-Droid builds and what the APK's own version-control stamp names. A tag
-pushed alongside a rejected push of main goes up anyway, pointing at a commit
-nothing else can see - which is how this paragraph came to be written.
+F-Droid builds and what the APK's own version-control stamp names. Tags used to
+be pushed by hand, and that went wrong twice:
+
+- One went up with a push of main that was refused, so it pointed at a commit
+  nothing else could see.
+- One was pushed before the bump's pull request had merged, so it pointed at
+  the previous version.
+
+A tag made from main's own merge can be neither.
+
+A tag pushed by hand still builds, for a re-run or an emergency. It is refused
+unless it is on main and `gradle.properties` at its commit says the same
+version. A tag pushed too early, whose commit says an older version, does not
+block the release: the merge that brings that version moves the tag onto
+itself and says so in a warning.
 
 The signing key is the thing that makes an upgrade possible: an APK signed with
 a different certificate cannot install over an earlier one, whatever its version
