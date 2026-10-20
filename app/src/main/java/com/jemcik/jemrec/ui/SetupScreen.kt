@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import com.jemcik.jemrec.capture.GlobalSettings
 
 /**
  * Setup, as three things the user does by hand and nothing else.
@@ -243,6 +244,24 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                     Button(onClick = { haptics.tap(); Setup.openAboutPhone(context) }) {
                         Text("About phone")
                     }
+                    // Android 17 on some phones will not tell apps whether
+                    // Developer options are on, so "it notices on its own"
+                    // cannot happen until Wireless debugging is on as well.
+                    // The user knows; let them say so. If they are wrong, the
+                    // next card's first step is opening Developer options,
+                    // and that is where they find out.
+                    if (state.developerOptionsHidden) {
+                        Text(
+                            "This phone does not tell JemRec whether Developer " +
+                                "options are on. If they are, carry on.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(
+                            onClick = { haptics.tap(); vm.confirmDeveloperOptions() },
+                            enabled = !state.busy,
+                        ) { Text("They are on already") }
+                    }
                 }
             }
 
@@ -266,7 +285,8 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                     Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    val bothOn = state.usbDebuggingOn && state.wirelessDebuggingOn
+                    val bothOn = state.usbDebugging != GlobalSettings.Reading.OFF &&
+                        state.wirelessDebuggingOn
                     Text(
                         if (bothOn) "Pair with this phone" else "Turn on debugging and pair",
                         style = MaterialTheme.typography.titleMedium,
@@ -319,8 +339,8 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                                         "device with pairing code. Leave the code window open."
                                 )
                             } else {
-                                add(developerOptionsStep(skin))
-                                add(debuggingSwitchesStep(state.usbDebuggingOn, state.wirelessDebuggingOn))
+                                add(developerOptionsStep(skin, mayBeOff = state.developerOptionsHidden))
+                                add(debuggingSwitchesStep(state.usbDebugging, state.wirelessDebuggingOn))
                                 add(
                                     "Open Wireless debugging and tap Pair device with " +
                                         "pairing code. Leave the code window open."
@@ -381,12 +401,12 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                             "once. You will not pair again.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    if (!state.usbDebuggingOn || !state.wirelessDebuggingOn) {
+                    if (state.usbDebugging == GlobalSettings.Reading.OFF || !state.wirelessDebuggingOn) {
                         val skin = DeviceSkin.current()
                         Steps(
-                            developerOptionsStep(skin),
+                            developerOptionsStep(skin, mayBeOff = state.developerOptionsHidden),
                             debuggingSwitchesStep(
-                                state.usbDebuggingOn, state.wirelessDebuggingOn,
+                                state.usbDebugging, state.wirelessDebuggingOn,
                                 mayLookOn = true,
                             ),
                             "Stay on that screen a few seconds so JemRec connects, " +
@@ -408,8 +428,14 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                         // Keep trying in the background for a while rather than
                         // taking a single shot.
                         Text(
-                            "Both switches are on, but JemRec could not reach this " +
-                                "phone just now. Tap Try again.",
+                            if (state.usbDebugging == GlobalSettings.Reading.UNKNOWN) {
+                                "Wireless debugging is on, but JemRec could not reach " +
+                                    "this phone just now. Check that USB debugging is on " +
+                                    "too, then tap Try again."
+                            } else {
+                                "Both switches are on, but JemRec could not reach this " +
+                                    "phone just now. Tap Try again."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         FilledTonalButton(
@@ -472,9 +498,18 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
  * DeviceSkin now recognises a custom ROM, but the wording should survive the
  * next phone that fools it.
  */
-private fun developerOptionsStep(skin: DeviceSkin): String =
+/**
+ * mayBeOff: the phone hides whether Developer options are on (see
+ * Setup.developerOptions), so the user may have said "they are on already"
+ * when they are not. Then this step is where they find out, and it says what
+ * to do about it rather than sending them looking for a screen that is not
+ * there.
+ */
+private fun developerOptionsStep(skin: DeviceSkin, mayBeOff: Boolean = false): String =
     "Tap Open settings below and search for Developer options - usually " +
-        "${skin.developerOptionsHint}."
+        "${skin.developerOptionsHint}." +
+        if (mayBeOff) " Not there? Turn them on first: About phone, then tap Build " +
+            "number seven times." else ""
 
 /**
  * The two debugging switches as ONE step. Both must be on - Wireless debugging
@@ -487,17 +522,26 @@ private fun developerOptionsStep(skin: DeviceSkin): String =
  *
  * mayLookOn: on the reconnect card the phone can SHOW a switch on that is not
  * (measured on this Honor), so the step says to flip it off and on.
+ *
+ * Where Android 17 hides USB debugging from the app (UNKNOWN), the step asks
+ * for it without claiming to know which way it is.
  */
 private fun debuggingSwitchesStep(
-    usbOn: Boolean,
+    usb: GlobalSettings.Reading,
     wirelessOn: Boolean,
     mayLookOn: Boolean = false,
 ): String = buildString {
+    val usbOff = usb == GlobalSettings.Reading.OFF
+    val usbUnknown = usb == GlobalSettings.Reading.UNKNOWN
     append(
         when {
-            !usbOn && !wirelessOn ->
+            usbOff && !wirelessOn ->
                 "Turn on USB debugging and Wireless debugging - both, in any order. No cable needed."
-            !usbOn -> "Turn on USB debugging too - Wireless debugging is already on. No cable needed."
+            usbOff -> "Turn on USB debugging too - Wireless debugging is already on. No cable needed."
+            usbUnknown && !wirelessOn ->
+                "Turn on Wireless debugging, and USB debugging if it is not on yet - in any " +
+                    "order. No cable needed."
+            usbUnknown -> "Check that USB debugging is on too - Wireless debugging is. No cable needed."
             else -> "Turn on Wireless debugging too - USB debugging is already on."
         }
     )

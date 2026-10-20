@@ -99,14 +99,45 @@ object Setup {
     private const val TAG = "JemRec"
     private const val KEY_COMPLETE = "setup_complete"
     private const val KEY_PAIRED = "setup_paired"
+    private const val KEY_DEV_OPTIONS_CONFIRMED = "setup_dev_options_confirmed"
     private const val PERMISSION = android.Manifest.permission.WRITE_SECURE_SETTINGS
 
     fun hasSecureSettings(context: Context): Boolean =
         context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED
 
-    /** Whether the Wireless debugging screen exists to send anyone to. */
+    /**
+     * Whether the Wireless debugging screen exists to send anyone to.
+     *
+     * Where Android 17 hides the setting (see GlobalSettings), the app cannot
+     * see Developer options go on, and the step that asks for them would
+     * never end. Two ways out of it: Wireless debugging is still readable and
+     * cannot be on without Developer options, and the user can say they are
+     * on already (see [confirmDeveloperOptions]).
+     */
+    fun developerOptions(context: Context): GlobalSettings.Reading {
+        if (wirelessDebuggingOn(context)) return GlobalSettings.Reading.ON
+        val read = GlobalSettings.read(context, GlobalSettings.DEVELOPMENT_SETTINGS_ENABLED)
+        return if (read == GlobalSettings.Reading.UNKNOWN &&
+            Prefs.of(context).getBoolean(KEY_DEV_OPTIONS_CONFIRMED, false)
+        ) GlobalSettings.Reading.ON else read
+    }
+
     fun developerOptionsOn(context: Context): Boolean =
-        GlobalSettings.isOn(context, GlobalSettings.DEVELOPMENT_SETTINGS_ENABLED)
+        developerOptions(context) == GlobalSettings.Reading.ON
+
+    /** The phone will not say whether Developer options are on, whatever the
+     *  user has told us - so the cards keep a way back for a wrong answer. */
+    fun developerOptionsHidden(context: Context): Boolean =
+        !wirelessDebuggingOn(context) &&
+            GlobalSettings.read(context, GlobalSettings.DEVELOPMENT_SETTINGS_ENABLED) ==
+            GlobalSettings.Reading.UNKNOWN
+
+    /** The user's word that Developer options are on, for a phone that will
+     *  not say. Taken from the Developer options card; dropped by reset(). */
+    fun confirmDeveloperOptions(context: Context) {
+        Log.i(TAG, "setup: Developer options are on, the user says")
+        Prefs.of(context).edit().putBoolean(KEY_DEV_OPTIONS_CONFIRMED, true).apply()
+    }
 
     /**
      * Setup has run all the way through at least once.
@@ -279,9 +310,12 @@ object Setup {
      * off, and connects the moment both are on. The reason for the auto-off
      * is not in the log - this ROM emits no AdbService lines unless a
      * computer is attached.
+     *
+     * UNKNOWN where Android 17 hides it (see GlobalSettings). Nothing may wait
+     * on it then: it would wait for ever.
      */
-    fun usbDebuggingOn(context: Context): Boolean =
-        GlobalSettings.isOn(context, GlobalSettings.ADB_ENABLED)
+    fun usbDebugging(context: Context): GlobalSettings.Reading =
+        GlobalSettings.read(context, GlobalSettings.ADB_ENABLED)
 
     /**
      * About phone, where Build number is, for turning Developer options on.
@@ -633,7 +667,7 @@ object Setup {
         DebugNotificationCleaner.forget(context)
         // Or the very next launch reads a flag from the setup being undone.
         Prefs.of(context)
-            .edit().remove(KEY_COMPLETE).remove(KEY_PAIRED).apply()
+            .edit().remove(KEY_COMPLETE).remove(KEY_PAIRED).remove(KEY_DEV_OPTIONS_CONFIRMED).apply()
 
         if (hasSecureSettings(context) &&
             GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)

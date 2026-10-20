@@ -24,6 +24,27 @@ class RecorderHealthTest {
         )
     }
 
+    @Test fun onWifiWithDebuggingOnAndNothingAdvertisedTheWifiIsNotAllowed() {
+        // Android 17 emulator: is_trusted_network=false, tls_port=0.
+        assertEquals(
+            Problem.NETWORK_NOT_ALLOWED,
+            RecorderHealth.diagnose(onWifi = true, refusedInARow = 0, unadvertised = true),
+        )
+    }
+
+    @Test fun offWifiNothingIsAdvertisedAnywaySoThatSaysNothing() {
+        assertEquals(Problem.NEEDS_WIFI, RecorderHealth.diagnose(onWifi = false, refusedInARow = 0, unadvertised = true))
+    }
+
+    @Test fun anAdbdThatAdvertisesAndRefusesIsAboutThePairingNotTheWifi() {
+        // A refusal needs an advertisement first, so the two do not meet in
+        // one revive; across revives, the refusals win.
+        assertEquals(
+            Problem.CANNOT_CONNECT,
+            RecorderHealth.diagnose(onWifi = true, refusedInARow = RecorderHealth.REFUSALS_FOR_PAIRING, unadvertised = true),
+        )
+    }
+
     @Test fun aRecorderBackWithinTheGraceIsNeverAnnounced() {
         // A reboot on Wi-Fi: down for seconds, then up.
         assertFalse(RecorderHealth.shouldAlert(since + RecorderHealth.GRACE_MS - 1, since, null, Problem.CANNOT_START))

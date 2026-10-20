@@ -192,7 +192,17 @@ dependencies {
     // HiddenApiBypass and a blanket addHiddenApiExemptions("L"). Bundling
     // Conscrypt is better here: no hidden-API exemptions at all, and no
     // exposure to Android 17 tightening them further.
-    implementation("org.conscrypt:conscrypt-android:2.5.3")
+    //
+    // 2.7.0, not 2.5.3: 2.5.3's libconscrypt_jni.so ends its RELRO segment on
+    // a 4 KB boundary inside a page it shares with writable data, so on a
+    // phone with 16 KB pages Android refused to load it normally and ran the
+    // whole app in page-size compat mode, with a warning dialog at launch
+    // (measured on the Android 17 QPR2 emulator). 2.7.0 ends it on 16 KB.
+    // The dialog also named libspake2.so and libandroidx.graphics.path.so;
+    // both keep RELRO in a segment of their own, which the check accepts,
+    // and with this alone the app was no longer put in compat mode
+    // (pageSizeCompat 256 before, 0 after, in `dumpsys package`).
+    implementation("org.conscrypt:conscrypt-android:2.7.0")
 
     implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     implementation("androidx.compose.material3:material3")

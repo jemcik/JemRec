@@ -206,6 +206,53 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "bootstrap", text + "\n---\n" + CaptureDaemon.readLog())
                     }
 
+                    // What THIS process reads for the settings setup decides
+                    // by, to set against `settings get global` from a shell.
+                    // Android 17's docs say adb_enabled and
+                    // development_settings_enabled "always return 0 for all
+                    // third-party apps"; this is how to see it, and whether
+                    // adb_wifi_enabled went the same way. With --es write <name>
+                    // --ei value <0|1> it writes first, to see whether writes
+                    // still land.
+                    "settings" -> {
+                        val resolver = appContext.contentResolver
+                        val write = intent.getStringExtra("write")
+                        val wrote = write?.let { name ->
+                            val value = intent.getIntExtra("value", 1)
+                            runCatching { Settings.Global.putInt(resolver, name, value) }
+                                .fold({ "putInt $name=$value accepted=$it" }, { "putInt $name FAILED: ${it.javaClass.simpleName}: ${it.message}" })
+                        }
+                        val reads = listOf(
+                            "adb_enabled", "adb_wifi_enabled", "development_settings_enabled",
+                            // A control nobody would hide.
+                            "airplane_mode_on",
+                        ).joinToString("\n") { name ->
+                            val raw = runCatching { Settings.Global.getString(resolver, name) }
+                                .getOrElse { "threw ${it.javaClass.simpleName}" }
+                            "$name=$raw"
+                        }
+                        val about = "sdk=${android.os.Build.VERSION.SDK_INT}" +
+                            (if (android.os.Build.VERSION.SDK_INT >= 36) " sdkFull=${android.os.Build.VERSION.SDK_INT_FULL}" else "") +
+                            " target=${appContext.applicationInfo.targetSdkVersion}" +
+                            " secureSettings=${com.jemcik.jemrec.ui.Setup.hasSecureSettings(appContext)}"
+                        val concluded = "app concludes: usb=${com.jemcik.jemrec.ui.Setup.usbDebugging(appContext)}" +
+                            " wireless=${com.jemcik.jemrec.ui.Setup.wirelessDebuggingOn(appContext)}" +
+                            " devOptions=${com.jemcik.jemrec.ui.Setup.developerOptions(appContext)}" +
+                            " actAsHidden=${com.jemcik.jemrec.capture.GlobalSettings.actAsHidden}"
+                        report(appContext, "settings", listOfNotNull(about, wrote, reads, concluded).joinToString("\n"))
+                    }
+
+                    // Act like a Pixel on Android 17 that hides USB debugging
+                    // and Developer options from apps: --ez on true|false.
+                    // Kept across restarts; see DemoProvider.
+                    "hidesettings" -> {
+                        val on = intent.getBooleanExtra("on", true)
+                        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                            .edit().putBoolean(HIDE_SETTINGS_KEY, on).apply()
+                        com.jemcik.jemrec.capture.GlobalSettings.actAsHidden = on
+                        report(appContext, "hidesettings", "acting as if hidden: $on")
+                    }
+
                     "daemon" -> report(
                         appContext, "daemon",
                         if (CaptureDaemon.isRunning(appContext)) "running" else "not running",

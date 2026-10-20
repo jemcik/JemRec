@@ -16,7 +16,7 @@ itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-104-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-111-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="19%" alt="The recordings list">
 <img src="docs/screenshots/home-dark.png" width="19%" alt="The recordings list, dark">
@@ -219,8 +219,10 @@ out on the day you need the call. So JemRec says so, in four notifications.
   with both voices audible had one channel all but silent - the other carried
   the whole call.
 - **The recorder is down** - after two minutes, with the reason: it needs a few
-  seconds of Wi-Fi, or it cannot connect and the pairing is probably gone (with
-  *Pair again*), or it could not start. It goes away when the recorder is back.
+  seconds of Wi-Fi, or Android has not allowed Wireless debugging on this Wi-Fi
+  (with *Allow this Wi-Fi*), or it cannot connect and the pairing is probably
+  gone (with *Pair again*), or it could not start. It goes away when the
+  recorder is back.
 - **A call was not recorded** - in automatic mode, with call-log access, the
   call log is held against what was recorded, and an answered call with nothing
   to show for it is reported once. Recordings you delete do not count as missed:
@@ -288,6 +290,8 @@ A few things by hand, once, and the app watches for each:
 1. **Answer one question.** Whether JemRec should hide Android's debugging
    notification, after it has told you what stays switched on.
 2. **Turn on Developer options** — About phone, tap Build number seven times.
+   Where Android 17 hides them from apps (Pixels from the September 2026
+   update), JemRec cannot see this happen: tap *They are on already*.
 3. **Turn on USB debugging and Wireless debugging**, in any order. No cable is
    needed; USB debugging is what keeps Wireless debugging from switching itself
    off.
@@ -359,7 +363,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-104 JVM unit tests, no device needed:
+111 JVM unit tests, no device needed:
 
     ./gradlew :app:testDebugUnitTest
 

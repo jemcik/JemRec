@@ -94,6 +94,13 @@ jobs:
             echo "$so: $(unzip -p "$APK" "$so" | shasum -a 256 | cut -c1-64)"
           done
 
+      # Every native library in the APK comes prebuilt from a dependency, so
+      # a version bump alone can put the whole app in 16 KB page-size compat
+      # mode, with a warning dialog on any phone that uses 16 KB pages. That
+      # is how Conscrypt 2.5.3 did it. See the script for what it checks.
+      - name: Check the native libraries suit 16 KB pages
+        run: python3 tools/check_16k_pages.py app/build/outputs/apk/release/app-release-unsigned.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v5
         with:

@@ -468,6 +468,11 @@ SETUP = [
         "Enter your PIN or pattern if asked.",
     ]),
     ("p", "You should see *You are now a developer*."),
+    ("p", "JemRec moves on by itself once it sees them on. Some phones on "
+          "Android 17, Pixels from the September 2026 update among them, no "
+          "longer tell apps whether Developer options are on, so JemRec cannot "
+          "see it. There the card has a **They are on already** button: tap it "
+          "once they are."),
 
     ("h2", "Step 3 — Turn on both debugging switches"),
     ("p", "**Be on Wi-Fi before you start this.** Wireless debugging only stays "
@@ -625,6 +630,9 @@ SETUP = [
         ["**Recording call**", "In the notification, during a call."],
         ["**Cannot record, needs Wi-Fi**", "Join any Wi-Fi and it resumes on its "
          "own. Usually a reboot, or a long stretch away from a network."],
+        ["**Cannot record, tap to allow this Wi-Fi**", "You are on a Wi-Fi network "
+         "Android has not allowed Wireless debugging on. Tap the line, tick "
+         "**Always allow on this network** and tap **Allow**."],
         ["**Starting…**", "Rebuilding the recorder. A few seconds."],
         ["**Off**", "You turned the switch off."],
     ])),
@@ -637,8 +645,9 @@ SETUP = [
          "calls over at all. Run the self-test."],
         ["**JemRec is not recording calls**", "The recorder has been down for two "
          "minutes. The notification says why: it needs a few seconds of Wi-Fi, "
-         "or it cannot connect (with **Pair again**), or it could not start. It "
-         "goes away by itself when the recorder is back."],
+         "or this Wi-Fi is not allowed for Wireless debugging (with **Allow "
+         "this Wi-Fi**), or it cannot connect (with **Pair again**), or it could "
+         "not start. It goes away by itself when the recorder is back."],
         ["**A call was not recorded**", "An answered call in your call log has no "
          "recording. Only in Record every call mode, and only with call log "
          "access. Run the self-test."],
@@ -681,6 +690,13 @@ SETUP = [
     ("p", "**It says it cannot record.** Join any Wi-Fi and leave it a few "
           "seconds; the app rebuilds its recorder without being asked. If you "
           "would rather not wait, Settings → Diagnostics → **Start recorder**."),
+    ("p", "**Android asks to allow wireless debugging on this network.** That "
+          "is JemRec restarting the recorder after a reboot, on a Wi-Fi network "
+          "you have not used it on before. Tick **Always allow on this network** "
+          "and tap **Allow**: Android lets Wireless debugging work only on "
+          "networks you allowed, and JemRec needs it for a few seconds. If you "
+          "tapped Cancel, the notification and the app's header offer to ask "
+          "again."),
     ("p", "**Recordings have only your voice.** Your phone's audio hardware does "
           "not expose the other side to apps. Nothing in any app can change that, "
           "and the self-test will tell you plainly."),
@@ -960,7 +976,9 @@ INDEX_BODY = f"""
      after each call a silent notification shows the recording, with Play, Share
      and Delete; every recording is measured once it is saved, and one that came
      out silent is reported; a recorder that is down says why, with
-     <strong>Pair again</strong> when the pairing is gone; and with call log
+     <strong>Pair again</strong> when the pairing is gone and
+     <strong>Allow this Wi-Fi</strong> when Android has not allowed the network;
+     and with call log
      access, an answered call that has no recording is reported once.</p>
 
   <h2>What it asks for, and what it does not</h2>

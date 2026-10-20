@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.capture.GlobalSettings
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -181,24 +182,38 @@ class PairingService : Service() {
     private suspend fun waitAndConnect(app: Context): Boolean {
         val deadline = SystemClock.elapsedRealtime() + WAIT_MS
         while (SystemClock.elapsedRealtime() < deadline) {
-            val usb = Setup.usbDebuggingOn(app)
+            // UNKNOWN where Android 17 hides USB debugging: never waited on,
+            // only mentioned, because the reading would never change.
+            val usb = Setup.usbDebugging(app)
+            val usbOff = usb == GlobalSettings.Reading.OFF
             val wd = Setup.wirelessDebuggingOn(app)
             when {
-                !usb && !wd -> say(
+                usbOff && !wd -> say(
                     "Paired! In Developer options turn on USB debugging and " +
                         "Wireless debugging - any order. I connect the moment both are on."
                 )
-                !usb -> say(
+                usbOff -> say(
                     "Paired! USB debugging switched itself off - turn it on again " +
                         "(a couple of rows above Wireless debugging). I connect the " +
                         "moment it is on."
+                )
+                !wd && usb == GlobalSettings.Reading.UNKNOWN -> say(
+                    "Paired! Wireless debugging is off - turn it on again, and USB " +
+                        "debugging too if it is not on. I connect the moment it is on."
                 )
                 !wd -> say(
                     "Paired! Wireless debugging switched itself off - turn it on " +
                         "again. I connect the moment it is on."
                 )
                 else -> {
-                    say("Paired. Connecting…")
+                    say(
+                        if (usb == GlobalSettings.Reading.UNKNOWN) {
+                            "Paired. Connecting… If this takes long, check that USB " +
+                                "debugging is on too."
+                        } else {
+                            "Paired. Connecting…"
+                        }
+                    )
                     if (AdbTransport.autoConnect(app, timeoutMs = 5_000).isSuccess) return true
                 }
             }

@@ -179,7 +179,7 @@ object AdbTransport {
                     Log.w(TAG, "autoConnect: mDNS port $discovered did not accept us")
                     lastConnect = ConnectOutcome.REFUSED
                 } else {
-                    Log.i(TAG, "autoConnect: no mDNS advertisement (expected with Wi-Fi off)")
+                    Log.i(TAG, "autoConnect: no mDNS advertisement (Wi-Fi off, Wireless debugging off, or not allowed on this Wi-Fi)")
                     lastConnect = ConnectOutcome.NOT_FOUND
                 }
 

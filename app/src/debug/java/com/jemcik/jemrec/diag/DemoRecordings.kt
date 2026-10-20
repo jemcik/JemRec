@@ -40,6 +40,9 @@ import java.util.Locale
  * reinstalls the override at process start, which is what lets the script
  * force-stop the app between themes.
  */
+/** The diag preference behind GlobalSettings.actAsHidden. */
+internal const val HIDE_SETTINGS_KEY = "act_as_hidden_settings"
+
 internal object DemoRecordings {
 
     private const val TAG = "JemRec"
@@ -150,6 +153,15 @@ class DemoProvider : ContentProvider() {
         if (DemoRecordings.isOn(context)) {
             DemoRecordings.install(true)
             Log.i("JemRec", "demo: invented recordings restored at start-up")
+        }
+        // Act like a Pixel that hides USB debugging and Developer options
+        // from apps, on a phone or emulator that does not. Set with the
+        // `hidesettings` diag op, or by writing the preference with run-as.
+        if (context.getSharedPreferences("jemrec_diag", Context.MODE_PRIVATE)
+                .getBoolean(HIDE_SETTINGS_KEY, false)
+        ) {
+            com.jemcik.jemrec.capture.GlobalSettings.actAsHidden = true
+            Log.i("JemRec", "diag: acting as if Android hid adb_enabled and development_settings_enabled")
         }
         // The after-call audio check's numbers, kept where `run-as` can read
         // them: on MagicOS 11 the app's own log lines are not readable.

@@ -9,7 +9,7 @@ import java.security.SecureRandom
 
 /**
  * A notification's way into a particular place in the app: play this
- * recording, share it, run the self-test, pair again.
+ * recording, share it, run the self-test, pair again, allow this Wi-Fi.
  *
  * GUARDED, BECAUSE THE DOOR IS OPEN
  *
@@ -27,7 +27,7 @@ import java.security.SecureRandom
  */
 object DeepLink {
 
-    enum class Kind { PLAY, SHARE, SELF_TEST, PAIR_AGAIN }
+    enum class Kind { PLAY, SHARE, SELF_TEST, PAIR_AGAIN, ALLOW_WIFI }
 
     data class Link(val kind: Kind, val name: String?)
 

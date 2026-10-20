@@ -475,6 +475,30 @@ object CaptureDaemon {
         return ok
     }
 
+    /**
+     * Put Android's "Allow wireless debugging on this network?" back on
+     * screen, for a Wi-Fi it has not allowed (see RecorderHealth).
+     *
+     * SystemUI asks when Wireless debugging is switched ON on such a network,
+     * not while it stays on, so it is switched off and on again. Measured on
+     * the Android 17 QPR2 emulator: the question appeared within a second of
+     * the second write, and after Always allow and Allow, the next revive
+     * found adbd advertising and the recorder came back. Called from the
+     * activity, so the question lands over JemRec, and the screen's
+     * re-check when it closes is what revives the recorder.
+     *
+     * False if the setting could not be written, which leaves the user to do
+     * it by hand in Settings.
+     */
+    suspend fun askToAllowNetwork(context: Context): Boolean {
+        Log.i(TAG, "daemon: asking Android to allow Wireless debugging on this Wi-Fi")
+        if (!GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)) return false
+        // Long enough for the off to land as its own change; the user is
+        // looking at the screen, waiting for the question.
+        delay(1_000)
+        return GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, true)
+    }
+
     /** Push the current recorder switch + automatic/on-demand choice to the
      *  daemon as its recording mode. Best-effort. */
     suspend fun pushMode(context: Context) {
@@ -522,10 +546,18 @@ object CaptureDaemon {
      * Proven on device: no cable, adb_enabled=1, Wi-Fi off - a real call
      * recorded while adbd and the daemon kept their PIDs across the outage.
      * Idempotent; needs WRITE_SECURE_SETTINGS, granted once at setup.
+     *
+     * Where Android 17 hides the setting, it is written every time, since
+     * there is no telling whether it drifted. That costs nothing: on the 37.2
+     * emulator, writing the 1 that was already there left adbd's PID as it
+     * was, and so the daemon too. Logged only when the setting was known to
+     * be off, or every revive would claim to have switched it on.
      */
     private fun armShield(context: Context) {
-        if (!GlobalSettings.isOn(context, GlobalSettings.ADB_ENABLED) &&
-            GlobalSettings.set(context, GlobalSettings.ADB_ENABLED, true)
+        val now = GlobalSettings.read(context, GlobalSettings.ADB_ENABLED)
+        if (now != GlobalSettings.Reading.ON &&
+            GlobalSettings.set(context, GlobalSettings.ADB_ENABLED, true) &&
+            now == GlobalSettings.Reading.OFF
         ) {
             Log.i(TAG, "daemon: enabled USB debugging as the off-Wi-Fi shield")
         }

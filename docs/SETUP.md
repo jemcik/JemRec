@@ -83,6 +83,11 @@ Skip this if Developer options are already on.
 
 You should see *You are now a developer*.
 
+JemRec moves on by itself once it sees them on. Some phones on Android 17,
+Pixels from the September 2026 update among them, no longer tell apps whether
+Developer options are on, so JemRec cannot see it. There the card has a **They
+are on already** button: tap it once they are.
+
 ## Step 3 — Turn on both debugging switches
 
 **Be on Wi-Fi before you start this.** Wireless debugging only stays on while
@@ -258,6 +263,7 @@ The header is the honest indicator:
 | **Ready to record** | A call would be recorded right now. |
 | **Recording call** | In the notification, during a call. |
 | **Cannot record, needs Wi-Fi** | Join any Wi-Fi and it resumes on its own. Usually a reboot, or a long stretch away from a network. |
+| **Cannot record, tap to allow this Wi-Fi** | You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick **Always allow on this network** and tap **Allow**. |
 | **Starting…** | Rebuilding the recorder. A few seconds. |
 | **Off** | You turned the switch off. |
 
@@ -267,7 +273,7 @@ And when the app is closed, in notifications:
 |---|---|
 | The caller's name, **Recorded** | After every recorded call, silently, with Play, Share and Delete. Can be switched off in Settings. |
 | **Last call recorded, but silent** | The file has the right length and no sound in it. Usually Wi-Fi calling, or a phone that does not hand calls over at all. Run the self-test. |
-| **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back. |
+| **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with **Allow this Wi-Fi**), or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back. |
 | **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test. |
 
 ## Settings
@@ -308,6 +314,13 @@ second time.
 **It says it cannot record.** Join any Wi-Fi and leave it a few seconds; the
 app rebuilds its recorder without being asked. If you would rather not wait,
 Settings → Diagnostics → **Start recorder**.
+
+**Android asks to allow wireless debugging on this network.** That is JemRec
+restarting the recorder after a reboot, on a Wi-Fi network you have not used it
+on before. Tick **Always allow on this network** and tap **Allow**: Android
+lets Wireless debugging work only on networks you allowed, and JemRec needs it
+for a few seconds. If you tapped Cancel, the notification and the app's header
+offer to ask again.
 
 **Recordings have only your voice.** Your phone's audio hardware does not
 expose the other side to apps. Nothing in any app can change that, and the

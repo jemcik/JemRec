@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -271,17 +272,36 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                 if (!inSettings && state.enabled && !state.starting &&
                                     !state.daemonRunning
                                 ) {
-                                    Text(
-                                        // Every fact in one short line: the cause,
-                                        // that any network will do, and that there
-                                        // is nothing else to do. The longer version
-                                        // wrapped under the title.
-                                        "Join any Wi-Fi - it resumes on its own",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        autoSize = SUBTITLE_AUTO_SIZE,
-                                    )
+                                    // Except on a Wi-Fi Android has not allowed
+                                    // Wireless debugging on (see RecorderHealth):
+                                    // the user is on Wi-Fi already, and the one
+                                    // thing that helps is Android's question,
+                                    // which the tap puts back on screen.
+                                    if (state.networkNotAllowed) {
+                                        Text(
+                                            "Tap to allow this Wi-Fi",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            autoSize = SUBTITLE_AUTO_SIZE,
+                                            modifier = Modifier.clickable(enabled = !state.busy) {
+                                                haptics.tap()
+                                                vm.allowThisWifi()
+                                            },
+                                        )
+                                    } else {
+                                        Text(
+                                            // Every fact in one short line: the cause,
+                                            // that any network will do, and that there
+                                            // is nothing else to do. The longer version
+                                            // wrapped under the title.
+                                            "Join any Wi-Fi - it resumes on its own",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            autoSize = SUBTITLE_AUTO_SIZE,
+                                        )
+                                    }
                                 }
                             }
                         },

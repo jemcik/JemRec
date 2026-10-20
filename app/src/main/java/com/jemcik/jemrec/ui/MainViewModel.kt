@@ -18,7 +18,9 @@ import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
+import com.jemcik.jemrec.capture.GlobalSettings
 import com.jemcik.jemrec.capture.NetworkRevive
+import com.jemcik.jemrec.capture.RecorderHealth
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.DeleteResult
 import com.jemcik.jemrec.capture.Recording
@@ -90,10 +92,23 @@ data class UiState(
     val wirelessDebuggingOn: Boolean = true,
     /**
      * Whether USB debugging is on. On this phone Wireless debugging only stays
-     * on when this is, so setup asks for it first - see Setup.usbDebuggingOn.
-     * Defaults true so a not-yet-read state never accuses.
+     * on when this is, so setup asks for it first - see Setup.usbDebugging.
+     * UNKNOWN where Android 17 hides it; the cards then mention it instead of
+     * waiting for it. Defaults ON so a not-yet-read state never accuses.
      */
-    val usbDebuggingOn: Boolean = true,
+    val usbDebugging: GlobalSettings.Reading = GlobalSettings.Reading.ON,
+    /**
+     * This phone hides whether Developer options are on (see GlobalSettings),
+     * so their card offers "They are on already" rather than waiting for a
+     * setting it will never see change.
+     */
+    val developerOptionsHidden: Boolean = false,
+    /**
+     * The recorder is down because Android has not allowed Wireless debugging
+     * on this Wi-Fi (see RecorderHealth), so the header offers to ask again
+     * instead of telling someone already on Wi-Fi to join one.
+     */
+    val networkNotAllowed: Boolean = false,
     /**
      * Whether JemRec's notifications are off, or the pairing channel muted, so
      * the pairing code would have nowhere to appear. Only read on the pairing
@@ -237,6 +252,24 @@ class MainViewModel @JvmOverloads constructor(
 
     /** Work out which setup step we are on, and refresh everything else too. */
     fun refreshSetup() = launchAction("check setup") { recheckSetup() }
+
+    /**
+     * Ask Android, again, to allow Wireless debugging on this Wi-Fi: its
+     * question comes up over this screen, and closing it resumes the screen,
+     * whose re-check revives the recorder. See CaptureDaemon.askToAllowNetwork.
+     */
+    fun allowThisWifi() = launchAction("allow this Wi-Fi") {
+        if (!CaptureDaemon.askToAllowNetwork(getApplication())) {
+            say("could not switch Wireless debugging - open it in Developer options and allow this network")
+        }
+    }
+
+    /** "They are on already", from the Developer options card on a phone that
+     *  hides them. See Setup.developerOptions. */
+    fun confirmDeveloperOptions() = launchAction("check setup") {
+        Setup.confirmDeveloperOptions(getApplication())
+        recheckSetup()
+    }
 
     /**
      * Work out where setup stands and act on it.
@@ -600,6 +633,11 @@ class MainViewModel @JvmOverloads constructor(
                     _state.first { !it.busy }
                     selfTest()
                 }
+                DeepLink.Kind.ALLOW_WIFI -> {
+                    _state.update { it.copy(screen = Screen.HOME) }
+                    _state.first { !it.busy }
+                    allowThisWifi()
+                }
                 DeepLink.Kind.PAIR_AGAIN -> {
                     Setup.forgetPairing(app)
                     _state.update { it.copy(screen = Screen.HOME) }
@@ -698,7 +736,10 @@ class MainViewModel @JvmOverloads constructor(
                 // header needs to know whether the ADB channel is even open
                 // before it tells the user to wait for Wi-Fi.
                 wirelessDebuggingOn = Setup.wirelessDebuggingOn(app),
-                usbDebuggingOn = Setup.usbDebuggingOn(app),
+                usbDebugging = Setup.usbDebugging(app),
+                developerOptionsHidden = Setup.developerOptionsHidden(app),
+                networkNotAllowed =
+                    RecorderHealth.cause(app) == RecorderHealth.Problem.NETWORK_NOT_ALLOWED,
                 pairingNotificationsBlocked = PairingNotification.blocked(app),
                 folder = RecordingStore.describe(app),
                 usingDefaultFolder = RecordingStore.treeUri(app) == null,
@@ -719,7 +760,9 @@ class MainViewModel @JvmOverloads constructor(
             it.copy(
                 daemonRunning = snapshot.daemonRunning,
                 wirelessDebuggingOn = snapshot.wirelessDebuggingOn,
-                usbDebuggingOn = snapshot.usbDebuggingOn,
+                usbDebugging = snapshot.usbDebugging,
+                developerOptionsHidden = snapshot.developerOptionsHidden,
+                networkNotAllowed = snapshot.networkNotAllowed,
                 pairingNotificationsBlocked = snapshot.pairingNotificationsBlocked,
                 folder = snapshot.folder,
                 usingDefaultFolder = snapshot.usingDefaultFolder,
@@ -745,7 +788,9 @@ class MainViewModel @JvmOverloads constructor(
     private data class Snapshot(
         val daemonRunning: Boolean,
         val wirelessDebuggingOn: Boolean,
-        val usbDebuggingOn: Boolean,
+        val usbDebugging: GlobalSettings.Reading,
+        val developerOptionsHidden: Boolean,
+        val networkNotAllowed: Boolean,
         val pairingNotificationsBlocked: Boolean,
         val folder: String,
         val usingDefaultFolder: Boolean,
