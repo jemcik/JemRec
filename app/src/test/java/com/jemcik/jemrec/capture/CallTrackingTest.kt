@@ -68,7 +68,10 @@ class CallTrackingTest {
     @Test fun anEndBeforeTheAnswerCutsNothing() {
         // A clock that jumped back mid-call: keep the call rather than lose it.
         val odd = call(t, incoming = true, t + 5 * s, ended = t + 2 * s)
-        val segments = CallTracking.segments(t + 5 * s, CallTracking.callsIn(listOf(odd), t + 5 * s, incoming = true))
+        // Not taken as the recording's call at all - saved whole, as before...
+        assertTrue(CallTracking.callsIn(listOf(odd), t + 5 * s, incoming = true).isEmpty())
+        // ...and the cut itself never cuts a stretch away to nothing.
+        val segments = CallTracking.segments(t + 5 * s, listOf(odd))
         assertEquals(0L, segments.single().second.first)
         assertEquals(Long.MAX_VALUE, segments.single().second.last + 1)
     }
@@ -81,11 +84,28 @@ class CallTrackingTest {
         assertEquals(listOf(b, a), CallTracking.callsIn(listOf(a, b), t + 10 * s, incoming = true))
     }
 
+    @Test fun anIncomingCallTheDaemonCalledOutgoingIsStillFound() {
+        // The call before - outgoing, never answered - ended at 9.8 s; the
+        // next one rang inside the daemon's end check, which then forgot the
+        // ring: its recording (answered at 14 s) came out labelled outgoing.
+        val before = call(t + 7_800, incoming = false, ended = t + 9_800)
+        val rang = call(t + 11 * s, incoming = true, t + 13_950, ended = t + 20 * s)
+        val start = t + 13_970
+        assertEquals(listOf(rang), CallTracking.callsIn(listOf(before, rang), start, incoming = false))
+    }
+
+    @Test fun aCallThatEndedBeforeTheRecordingIsNotItsOwn() {
+        // Ended a second before this recording began: the call before, not
+        // this one - which would otherwise be deleted as never answered.
+        val before = call(t, incoming = false, ended = t + 9 * s)
+        assertTrue(CallTracking.callsIn(listOf(before), t + 10 * s, incoming = false).isEmpty())
+    }
+
     @Test fun anotherCallLongBeforeIsNotThisOne() {
         val earlier = call(t - 10 * 60 * s, incoming = false, t - 9 * 60 * s, ended = t - 8 * 60 * s)
         assertTrue(CallTracking.callsIn(listOf(earlier), t, incoming = false).isEmpty())
-        // Nor one the other way round.
-        val other = call(t, incoming = true, t + s, ended = t + 30 * s)
+        // Nor one the other way round that went off-hook seconds away.
+        val other = call(t, incoming = true, t + 5 * s, ended = t + 30 * s)
         assertTrue(CallTracking.callsIn(listOf(other), t + 50, incoming = false).isEmpty())
     }
 

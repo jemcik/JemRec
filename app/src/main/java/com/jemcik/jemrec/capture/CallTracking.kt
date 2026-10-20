@@ -2,6 +2,7 @@ package com.jemcik.jemrec.capture
 
 import android.content.Context
 import com.jemcik.jemrec.Prefs
+import kotlin.math.abs
 
 /**
  * Exact call tracking: Telecom's own account of each phone call, kept so a
@@ -111,6 +112,9 @@ object CallTracking {
     private const val BEFORE_MS = 3 * 60 * 1000L
     /** The daemon starts at off-hook, a beat after Telecom's own record. */
     private const val SLACK_MS = 3_000L
+    /** How close to the recording's start a call of the other direction must
+     *  have gone off-hook to be its own. Measured: 4 to 66 ms. */
+    private const val OFF_HOOK_MS = 1_000L
 
     /**
      * The calls a recording that began at [start] holds: the one that went
@@ -119,16 +123,27 @@ object CallTracking {
      * Empty when Telecom told us nothing, and the recording is then saved as
      * it always was.
      *
+     * The direction is the daemon's, from whether the phone rang first, and
+     * can be wrong; Telecom's is not. So when no call of that direction fits,
+     * the one that went off-hook as the recording started is taken whichever
+     * way it went - its name and the ledger then say what Telecom said.
+     *
      * Also empty for a call Telecom has said neither was answered nor ended:
      * its account is incomplete - a missed callback, or the end not noted yet
      * - and a recording is deleted as unanswered only on Telecom's word. A
      * lost recording cannot be made again.
      */
     internal fun callsIn(all: List<Tracked>, start: Long, incoming: Boolean): List<Tracked> {
-        val own = all
+        // Not one that had ended before the recording began: that is the
+        // call before, and taking it for this one deletes this one as
+        // unanswered when the call before was never answered.
+        val candidates = all.filter { it.endedAt == 0L || it.endedAt >= start }
+        val own = candidates
             .filter { it.incoming == incoming && it.id in (start - BEFORE_MS)..(start + SLACK_MS) }
-            .filter { it.endedAt == 0L || it.endedAt >= start - SLACK_MS }
             .maxByOrNull { it.id }
+            ?: candidates
+                .filter { it.incoming != incoming && offHookAt(it)?.let { at -> abs(at - start) <= OFF_HOOK_MS } == true }
+                .maxByOrNull { it.id }
             ?: return emptyList()
         if (!own.answered && own.endedAt == 0L) return emptyList()
         val end = if (own.endedAt == 0L) Long.MAX_VALUE else own.endedAt
@@ -171,6 +186,11 @@ object CallTracking {
         }
         return out
     }
+
+    /** When a call went off-hook, which is when the daemon starts recording
+     *  it: an incoming call at its answer, an outgoing one as it is dialled. */
+    private fun offHookAt(call: Tracked): Long? =
+        if (call.incoming) call.activations.firstOrNull() else call.id
 
     private fun packetAt(start: Long, at: Long): Long = ((at - start).coerceAtLeast(0)) / PACKET_MS
 }

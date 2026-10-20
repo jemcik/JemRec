@@ -72,11 +72,19 @@ object VoipApps {
      * want of this and MODIFY_AUDIO_ROUTING. Without it nothing is offered,
      * and nothing is switched on whatever is stored.
      *
-     * A permission the shell has does not change while this process runs.
+     * A permission the shell has does not change while this process runs, so
+     * an answer is kept. A failure to ask is not an answer: it counts as yes,
+     * as before 0.14, and is asked again next time - a "no" would disarm a
+     * daemon that records messenger calls perfectly well.
      */
-    fun supported(context: Context): Boolean = supportedHere ?: runCatching {
-        context.packageManager.checkPermission(CAPTURE_CALL_AUDIO, SHELL) == PackageManager.PERMISSION_GRANTED
-    }.getOrDefault(false).also { supportedHere = it }
+    fun supported(context: Context): Boolean {
+        supportedHere?.let { return it }
+        val granted = runCatching {
+            context.packageManager.checkPermission(CAPTURE_CALL_AUDIO, SHELL) == PackageManager.PERMISSION_GRANTED
+        }.getOrNull() ?: return true
+        supportedHere = granted
+        return granted
+    }
 
     @Volatile private var supportedHere: Boolean? = null
     private const val CAPTURE_CALL_AUDIO = "android.permission.CAPTURE_VOICE_COMMUNICATION_OUTPUT"

@@ -1,11 +1,13 @@
 package com.jemcik.jemrec.capture
 
+import android.content.Context
 import android.telecom.Call
 import android.telecom.InCallService
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -44,25 +46,24 @@ class CallTracker : InCallService() {
         call.unregisterCallback(callback)
         val id = call.details.creationTimeMillis
         wasActive -= id
-        if (!CallTracking.enabled(this)) {
-            leftOut -= id
-            return
+        val wasLeftOut = leftOut.remove(id)
+        if (wasLeftOut) {
+            // A left-out call that rang and was never answered never went
+            // off-hook, so the daemon's skip is still waiting for it - and
+            // would take the next call, one the rules keep, instead. Taken
+            // back whether or not tracking is still on.
+            skips.trySend(applicationContext to false)
         }
+        if (!CallTracking.enabled(this)) return
         val ended = System.currentTimeMillis()
         CallTracking.update(this, id) { old ->
             val base = old ?: track(call)
             base.copy(endedAt = base.endedAt.takeIf { it > 0 } ?: ended)
         }
         Log.i(TAG, "calltrack: call ended")
-        if (id in leftOut) {
-            leftOut -= id
+        if (wasLeftOut) {
             val tracked = CallTracking.calls(this).firstOrNull { it.id == id }
             CallLedger.noteSkipped(this, id, tracked?.incoming ?: true, tracked?.seconds ?: 0)
-            // A left-out call that rang and was never answered never went
-            // off-hook, so the daemon's skip is still waiting for it - and
-            // would take the next call, one the rules keep, instead.
-            val context = applicationContext
-            scope.launch { CaptureDaemon.skipCall(context, skip = false) }
         }
         if (calls.isEmpty()) collectSoon()
     }
@@ -114,23 +115,27 @@ class CallTracker : InCallService() {
      * and only in automatic mode, where the rules apply. And only with the
      * call log and the contacts, as everywhere else that decides who a call
      * was with: without them a call is kept.
+     *
+     * Not either straight after another call: the daemon records on for the
+     * two seconds it takes to be sure a call is over, and a call that goes
+     * off-hook in them joins that recording. A skip would then stop it - the
+     * kept call's audio with it - where the saver splits the two instead.
      */
     private fun decideEarly(call: Call) {
         val context = applicationContext
         if (calls.size > 1) return
+        val id = call.details.creationTimeMillis
+        val now = System.currentTimeMillis()
+        if (CallTracking.calls(context).any { it.id != id && it.endedAt > now - RECENT_END_MS }) return
         if (!CallRules.active(context)) return
         if (!CallLogLookup.granted(context) || !CallLogLookup.photosGranted(context)) return
         if (!RecorderSwitch.isOn(context) || RecordingMode.of(context) != RecordingMode.AUTOMATIC) return
         val number = call.details.handle?.schemeSpecificPart
         val contact = CallLogLookup.contactFor(context, number, mutableMapOf())
         if (contact.failed || CallRules.keeps(context, contact.id)) return
-        leftOut += call.details.creationTimeMillis
+        leftOut += id
         Log.i(TAG, "calltrack: the rules leave this call out; telling the recorder")
-        scope.launch {
-            if (!CaptureDaemon.skipCall(context, skip = true)) {
-                Log.w(TAG, "calltrack: the recorder did not take the skip; the saver will delete it instead")
-            }
-        }
+        skips.trySend(context to true)
     }
 
     /**
@@ -151,8 +156,28 @@ class CallTracker : InCallService() {
         const val TAG = "JemRec"
         const val COLLECT_AFTER_MS = 5_000L
 
+        /** Another call ended this recently: no skip (see decideEarly).
+         *  Past the daemon's 2 s end check, with room to spare. */
+        const val RECENT_END_MS = 10_000L
+
         /** Not tied to the service: Telecom unbinds it the moment the last
          *  call goes, and the collection after it must still run. */
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /**
+         * Skips (true) and their take-backs (false), to the daemon one at a
+         * time and in the order they were decided. Launched separately, the
+         * take-back of a call hung up at once could land first - and leave the
+         * skip armed for the next call, one the rules keep.
+         */
+        val skips = Channel<Pair<Context, Boolean>>(Channel.UNLIMITED).also { channel ->
+            scope.launch {
+                for ((context, skip) in channel) {
+                    if (!CaptureDaemon.skipCall(context, skip) && skip) {
+                        Log.w(TAG, "calltrack: the recorder did not take the skip; the saver will delete it instead")
+                    }
+                }
+            }
+        }
     }
 }

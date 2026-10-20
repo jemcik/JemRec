@@ -431,6 +431,12 @@ public final class Main {
                 }
                 return;
             }
+            // The ring was this call's, and this is its end: forget it now,
+            // not when the end is confirmed. The next call can ring inside
+            // those two seconds - and the confirmation then cleared ITS ring,
+            // and an incoming call was recorded as outgoing (emulator,
+            // 2026-10-21: the saver then took the call before for it).
+            sawRinging = false;
             cancelPendingIdle();
             scheduleEndConfirm();
         }
@@ -464,7 +470,6 @@ public final class Main {
                     return;
                 }
                 inCall = false;
-                sawRinging = false;
                 Ln.i("callwatch: end confirmed (audio mode left in-call)");
                 onCallEnd();
             };
