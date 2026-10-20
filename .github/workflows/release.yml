@@ -1,5 +1,7 @@
-# Attaches a signed APK to a GitHub Release, whether the release was made by
-# pushing a version tag or by pressing "Create a new release" in the web UI.
+# Publishes a GitHub Release with a signed APK attached. Normally that happens
+# when a merge to main brings a version not yet released: this workflow then
+# makes the tag itself. A version tag pushed by hand, or a release made with
+# "Create a new release" in the web UI, gets the same treatment.
 #
 # Releases exist here because workflow ARTIFACTS require a signed-in GitHub
 # account to download, while release assets do not - so this is the one that
@@ -21,15 +23,22 @@ name: release
 
 on:
   push:
-    # Both styles. The convention here is a bare "0.2", but a "v0.2" that
-    # silently did nothing would be a worse outcome than accepting both.
+    # A version lives in gradle.properties, so only a merge that touches that
+    # file can bring a new one. GitHub ignores path filters on tag pushes, so
+    # this filter does not stop the tags below from running.
+    branches: [main]
+    paths: [gradle.properties]
+    # Accept both tag styles. The convention here is a bare "0.2", but a "v0.2"
+    # that silently did nothing would be worse than accepting both.
     tags: ['v[0-9]*', '[0-9]*']
   release:
     types: [published]
 
-# Creating a release from the web UI fires BOTH of the above - it pushes the tag
-# and publishes the release - so two runs can start for the same tag. Queue them
-# instead of cancelling; the publish step is idempotent either way.
+# Creating a release from the web UI fires both the tag push and the release
+# event, so two runs can start for the same tag. They are queued, not
+# cancelled, and the publish step is safe to run twice. The tag that this
+# workflow pushes or moves itself starts no run, because GitHub does not start
+# workflows from GITHUB_TOKEN pushes.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -38,10 +47,97 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # WHICH VERSION TO RELEASE, IF ANY, AND FROM WHICH COMMIT.
+  #
+  # A merge to main is released from its own commit when the version in its
+  # gradle.properties is not released yet. The publish step makes the tag,
+  # and only once the APK exists. Nobody types a tag.
+  #
+  # Hand-made tags went wrong twice. One went up with a push of main that was
+  # refused, so it named a commit nothing else could see. One (0.9) went up
+  # before the bump's pull request merged, so it named the version before. A
+  # tag made from main's own push can be neither.
+  #
+  # A tag pushed by hand still builds, for a re-run or an emergency, but only
+  # from a commit on main. That commit is the one F-Droid builds and the one
+  # the APK's version-control stamp names.
+  decide:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.decide.outputs.tag }}
+      sha: ${{ steps.decide.outputs.sha }}
+    steps:
+      # Full history and every tag. merge-base and reading gradle.properties
+      # at a tag both need more than the single commit fetched by default.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # "Already released" means a release that has its APK, not just a tag.
+      # A tag can exist without a release when a run failed after the tag was
+      # made or moved, and "Re-run all jobs" has to finish that release rather
+      # than skip it.
+      - id: decide
+        name: Decide what to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version_at() { git show "$1:gradle.properties" | sed -n 's/^jemrecVersionName=//p'; }
+          released() {
+            local names
+            names=$(gh release view "$1" --json assets --jq '.assets[].name' 2>/dev/null) || return 1
+            grep -qxF "jemrec-${1#v}.apk" <<<"$names"
+          }
+
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            TAG="$GITHUB_REF_NAME"
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::Tag '$TAG' is on $GITHUB_SHA, which is not on main. Delete it (git push origin :refs/tags/$TAG). Merging the version bump to main releases it."
+              exit 1
+            fi
+            # Whether the tag matches gradle.properties is checked by the release job.
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TAG=$(version_at HEAD)
+          if released "$TAG"; then
+            echo "$TAG is already released. Nothing to do: this merge changed gradle.properties but not the version."
+            exit 0
+          fi
+          SHA="$GITHUB_SHA"
+          if TAGGED=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}"); then
+            if [ "$(version_at "$TAGGED")" = "$TAG" ]; then
+              # Tagged at the right version but never published, so a release
+              # run failed. Finish it from the commit the tag names, because
+              # that commit is what F-Droid will build.
+              SHA="$TAGGED"
+            else
+              # The tag names a commit at another version, so it was pushed
+              # before the bump merged. The release job refuses such a tag,
+              # so it can never be a release. It would otherwise block this
+              # one, so move it to this merge, the commit that makes it true.
+              echo "::warning::Tag '$TAG' was on $TAGGED, where gradle.properties says $(version_at "$TAGGED"). Moving it to $GITHUB_SHA, the merge that brings $TAG."
+              git push --force origin "$GITHUB_SHA:refs/tags/$TAG"
+            fi
+          fi
+          echo "$TAG has no release yet. Releasing it from $SHA."
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: decide
+    if: needs.decide.outputs.tag != ''
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.decide.outputs.tag }}
+      SHA: ${{ needs.decide.outputs.sha }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
 
       # 21, and exactly 21, because the daemon's bytecode depends on the javac
       # major that compiled it - see shellserver/build.sh, which refuses any
@@ -75,19 +171,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # The version is READ from gradle.properties and CHECKED against the tag,
-      # not derived from the tag. gradle.properties is what F-Droid's update
-      # checker reads at each tag, so it has to be right in the commit the tag
-      # points at - and a tag that disagrees with it means the bump was
-      # forgotten, which is the moment to stop, not to paper over. The
-      # versionCode formula is enforced here for the same reason: it is what
-      # keeps installs upgradeable, so a hand-typed code that breaks it must
-      # not reach a release.
+      # not derived from the tag. F-Droid's update checker reads
+      # gradle.properties at each tag, so it must be right in the commit the
+      # tag points at. A hand-made tag that disagrees with it means the bump
+      # was forgotten, or has not merged yet. Either way this is where to stop,
+      # not to paper over it. A merge's own version passes the name check by
+      # construction, but not the rest. The versionCode formula is enforced
+      # because it keeps installs upgradeable, so a hand-typed code that breaks
+      # it must not reach a release. A changelog is required because without
+      # one F-Droid shows the update with nothing to say about it.
       - name: Check the tag against gradle.properties
         # Explicitly bash: this reads BASH_REMATCH, which zsh does not set, so
         # the same lines silently compare against versionCode 0 there.
         shell: bash
         run: |
-          TAG="$GITHUB_REF_NAME"
           VERSION="${TAG#v}"
           if [[ ! "$VERSION" =~ ^([0-9]+)\.([0-9]+)(\.([0-9]+))?$ ]]; then
             echo "::error::Tag '$TAG' is not MAJOR.MINOR[.PATCH]. Tag as 0.2, v0.2, 0.2.1 or v0.2.1."
@@ -101,11 +198,16 @@ jobs:
           NAME=$(sed -n 's/^jemrecVersionName=//p' gradle.properties)
           CODE=$(sed -n 's/^jemrecVersionCode=//p' gradle.properties)
           if [ "$NAME" != "$VERSION" ]; then
-            echo "::error::Tag '$TAG' but gradle.properties says jemrecVersionName=$NAME. Bump gradle.properties, commit, and tag that commit."
+            echo "::error::Tag '$TAG' but gradle.properties at its commit says jemrecVersionName=$NAME. If the version bump has not merged yet, nothing needs doing: merging it moves this tag onto the merge and releases it."
             exit 1
           fi
           if [ "$CODE" != "$EXPECTED_CODE" ]; then
             echo "::error::gradle.properties says jemrecVersionCode=$CODE but $VERSION is MAJOR*10000 + MINOR*100 + PATCH = $EXPECTED_CODE."
+            exit 1
+          fi
+          CHANGELOG="fastlane/metadata/android/en-US/changelogs/$CODE.txt"
+          if [ ! -s "$CHANGELOG" ]; then
+            echo "::error::$CHANGELOG is missing or empty. F-Droid shows it as this release's notes."
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -160,11 +262,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="$GITHUB_REF_NAME"
-          # The release may already exist - the normal case when it was made
-          # with the web UI's "Create a new release" button - which is why this
-          # creates only when missing rather than unconditionally.
+          # The release may already exist, which is the normal case when it was
+          # made with the web UI's "Create a new release" button. So this
+          # creates one only when it is missing. For a merge, this is also where
+          # the tag is made, on the commit just built. --target is ignored when
+          # the tag already exists.
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" \
+            --target "$SHA" \
             --title "$TAG" \
             --generate-notes \
             --notes "Requires Android 12 (API 31) or newer. Signed with the project release key, so it installs over any earlier release of the same lineage."
