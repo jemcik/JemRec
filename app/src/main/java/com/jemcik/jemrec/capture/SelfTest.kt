@@ -222,6 +222,9 @@ object SelfTest {
             }
         }
 
+        messengerCalls(context, watch, lines)?.let { return it }
+        callTracking(context, watch, lines)?.let { return it }
+
         when {
             !CallLogLookup.granted(context) ->
                 lines += "missed:    not checked (no call log access)"
@@ -242,6 +245,78 @@ object SelfTest {
                 }
             }
         }
+        return null
+    }
+
+    /**
+     * Messenger calls (VoipApps): switched on here, armed in the daemon? A
+     * daemon that was never told, or whose audio policy Android refused,
+     * records no messenger call and says nothing about it - the one failure
+     * of messenger calls that would otherwise be silent. One push puts a
+     * daemon that missed the list right, as for the mode.
+     */
+    private suspend fun messengerCalls(context: Context, watch: CaptureDaemon.Watch, lines: MutableList<String>): String? {
+        if (!VoipApps.supported(context)) {
+            lines += "messenger: not possible - Android here does not let the recorder copy call audio"
+            return null
+        }
+        val enabled = VoipApps.enabled(context)
+        if (enabled.isEmpty()) {
+            lines += "messenger: none switched on"
+            return null
+        }
+        val labels = enabled.mapNotNull { VoipApps.byPackage(it)?.label }.joinToString(", ")
+        if (watch.voipApps == null) {
+            return "this recorder is too old to record messenger calls. $RESTART"
+        }
+        if (watch.voipApps != enabled.size || !watch.voipArmed) {
+            val fixed = CaptureDaemon.setVoipApps(context) &&
+                CaptureDaemon.watch(context)?.let { it.voipApps == enabled.size && it.voipArmed } == true
+            if (!fixed) {
+                return "messenger calls are switched on for $labels, but the recorder is not ready " +
+                    "to record them. $RESTART"
+            }
+            lines += "messenger: armed for $labels (corrected)"
+        } else {
+            lines += "messenger: armed for $labels"
+        }
+        if (VoipCallNotes.enabled(context)) {
+            if (!DebugNotificationCleaner.accessGranted(context)) {
+                return "Show who called is on, but JemRec no longer has notification access, so " +
+                    "messenger callers will not be named. Turn Show who called off and on again on Wi-Fi."
+            }
+            lines += "names:     from the apps' call notifications"
+        }
+        return null
+    }
+
+    /**
+     * Exact call tracking (CallTracking): on here, allowed by the daemon, and
+     * in force for this app? Off is simply said; a daemon that has not allowed
+     * it is told again.
+     */
+    private suspend fun callTracking(context: Context, watch: CaptureDaemon.Watch, lines: MutableList<String>): String? {
+        if (!CallTracking.enabled(context)) {
+            lines += "tracking:  off"
+            return null
+        }
+        if (watch.tracking == null) {
+            lines += "tracking:  not yet - the recorder is older than this app"
+            return null
+        }
+        val corrected = !watch.tracking && CaptureDaemon.setTracking(context)
+        if (!watch.tracking && !corrected) {
+            return "exact call tracking is on, but the recorder could not allow it. $RESTART"
+        }
+        val inForce = runCatching {
+            context.getSystemService(android.app.AppOpsManager::class.java).unsafeCheckOpNoThrow(
+                "android:manage_ongoing_calls", android.os.Process.myUid(), context.packageName,
+            ) == android.app.AppOpsManager.MODE_ALLOWED
+        }.getOrDefault(false)
+        if (!inForce) {
+            return "exact call tracking is on, but Android has not allowed it for JemRec. $RESTART"
+        }
+        lines += "tracking:  on" + if (corrected) " (corrected)" else ""
         return null
     }
 

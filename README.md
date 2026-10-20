@@ -10,7 +10,7 @@ One APK. No root, no Shizuku, no companion app, no computer — the phone sets
 itself up.
 
 Records phone calls and **WhatsApp, Telegram and Viber** calls, both sides —
-see [Messenger calls](#messenger-calls).
+messenger calls on Android 14 or newer; see [Messenger calls](#messenger-calls).
 
 [**Website**](https://jemcik.github.io/JemRec/) · [F-Droid](https://f-droid.org/packages/com.jemcik.jemrec/) · [Privacy policy](https://jemcik.github.io/JemRec/privacy-policy.html) · [Releases](https://github.com/jemcik/JemRec/releases)
 
@@ -19,7 +19,7 @@ see [Messenger calls](#messenger-calls).
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-167-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-177-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
 <img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
@@ -211,18 +211,59 @@ You can point the app somewhere else.
 A Quick Settings tile turns recording on and off without opening the app. It
 is the same switch as the one in the app's header.
 
+### Exact call tracking
+
+The daemon starts at off-hook, and an outgoing call goes off-hook as it is
+dialled - so its recording began with the ringing, and a call nobody answered
+was saved as a recording of ringing. Android knows exactly when each call is
+answered, but tells only the dialer and apps holding `MANAGE_ONGOING_CALLS`, a
+permission no app can ask the user for. The shell can allow it, so the daemon
+does, for JemRec alone, and Android then tells JemRec, as it happens, which
+way each phone call went, when it was answered, and when it ended. With that:
+
+- **A recording starts at the answer.** An outgoing call's ringing is cut, and
+  a call nobody answered is not saved at all.
+- **Call waiting gives one recording per call**, each from where it was
+  answered; while one is on hold, its stretch goes to the other.
+- **Whose calls to keep decides before recording** - see below.
+- **The end of a call reaches the app directly**, a second way to collect the
+  recording beside the daemon's own.
+
+JemRec only reads. The permission would let an app answer, hold and end calls;
+JemRec's service does none of that and shows no screen. It is on unless you
+turn it off in Settings (*Exact call tracking*). Off, the daemon takes the
+permission back and JemRec works exactly as it did before 0.14. JemRec keeps
+what Android said about the last 40 calls - when each began, was answered and
+ended, which way it went, and the number only with the call-log permission.
+
+Measured on an Honor (MagicOS 11, Android 17): an outgoing call answered 3.6
+seconds after dialling had 3.6 seconds of ringing at the start of its
+recording. Allowing the permission for the app's package was not enough there;
+Android bound nothing until it was allowed for the app's user ID, which is how
+the daemon allows it. With tracking, on the same phone: an outgoing call that
+rang for 45 seconds was saved as its 14 seconds of conversation, matching
+Android's answer and end to a twentieth of a second; one nobody answered was
+not saved; a number the rules left out was stopped a quarter of a second after
+dialling and deleted; and all of it held after a restart. Call waiting has not
+been tried on a phone yet.
+
 ### Whose calls to keep
 
 Settings can narrow down which calls are kept: your contacts - all, all but
 some, only some, or none - and, separately, other numbers: ones not in your
 contacts, and hidden ones. Nothing is narrowed until you choose.
 
-Who a call is with is known only once it has ended. The call-state callback
-carries no number, by design; only the dialer is told. So every call is
-recorded, and as it ends JemRec reads the call log: a call your choice leaves
-out is deleted from the recorder there and then, before it is ever saved. If
-the call log does not say who it was, the recording is kept - it can be
-deleted later, and a lost one cannot be made again. In ask-first mode a call
+With exact call tracking, JemRec knows who a call is with while it still rings
+or is being dialled, and a call your choice leaves out is not recorded at all.
+With a second call already up, the shared recording is split instead, and only
+the calls your choice keeps are saved.
+
+Without it, who a call is with is known only once it has ended: the call-state
+callback carries no number, by design. So every call is recorded, and as it
+ends JemRec reads the call log: a call your choice leaves out is deleted from
+the recorder there and then, before it is ever saved. Either way, if JemRec
+cannot tell who it was, the recording is kept - it can be deleted later, and a
+lost one cannot be made again. In ask-first mode a call
 you tap Record on is always kept. This needs the call-log and contacts
 permissions, to tell who a call was with.
 
@@ -237,8 +278,10 @@ permissions, to tell who a call was with.
   may be anywhere inside the call, the number has to be the call's, and the
   part before the `@` is not read at all.
 
-The caller comes from the call log as the call is saved. Without it, or for a
-call the log does not have, a recording is named by date and time. A name is
+The caller comes from the number Android gave exact call tracking, or else
+from the call log as the call is saved - either way, only with the call-log
+permission. Without it, or for a call neither knows, a recording is named by
+date and time. A name is
 given once and never changed. Google's Phone app has no equivalent: it keeps
 its own recordings in a database of its own, and nothing in it is open to
 another app.
@@ -248,6 +291,20 @@ another app.
 WhatsApp, Telegram, Signal and Viber calls can be recorded too, both sides,
 each app switched on separately in Settings. Nothing is recorded from any of
 them until you do.
+
+**Android 14 or newer.** Copying another app's call audio takes
+`CAPTURE_VOICE_COMMUNICATION_OUTPUT`, and stock Android gives the shell that
+permission only from Android 14 (AOSP `packages/Shell/AndroidManifest.xml`: not
+in 12, 12L or 13). Without it, Android's audio service refuses the copy
+(`AudioService`), and its audio engine leaves call audio out of any copy made
+without it (`AudioPolicyMix`). JemRec asks Android whether the shell holds the
+permission rather than going by the version, so a build that grants it earlier
+gets messenger calls; anywhere else, Settings says why there are none. 0.13
+offered the switches on Android 12 and 13, where they recorded nothing.
+Measured on emulators, 2026-10-20: on Android 12 and on Android 13, Android
+refused the copy ("Audio capture for voice communication requires
+CAPTURE_VOICE_COMMUNICATION_OUTPUT system permission"); on Android 17 it was
+registered, and on the Honor (Android 17) the calls were recorded.
 
 The daemon asks Android for a copy of every app's voice-call audio - an audio
 policy, under the `CAPTURE_VOICE_COMMUNICATION_OUTPUT` permission the shell
@@ -367,6 +424,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
+| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. JemRec never acts on a call. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
 | `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
 
@@ -430,7 +488,8 @@ The long version, with what to do when a step misbehaves, is the manual:
 
 ## Requirements
 
-- **Android 12 (API 31) or newer.**
+- **Android 12 (API 31) or newer** — and for messenger calls, Android 14 or
+  newer (see [Messenger calls](#messenger-calls)).
 - **Developer options and Wireless debugging** — present on every Android phone,
   though the menu they live in differs by make. The app names the right path for
   your phone.
@@ -484,7 +543,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-167 JVM unit tests, no device needed:
+177 JVM unit tests, no device needed:
 
     ./gradlew :app:testDebugUnitTest
 

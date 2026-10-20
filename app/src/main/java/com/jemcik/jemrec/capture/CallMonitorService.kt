@@ -286,6 +286,9 @@ class CallMonitorService : Service() {
             // The user's rules on whose calls to keep left this one out.
             RecordingSaver.Outcome.Skipped ->
                 Log.i(TAG, "monitor: $recfile was left out by the rules")
+            // Only ringing: nobody answered.
+            RecordingSaver.Outcome.NotAnswered ->
+                Log.i(TAG, "monitor: $recfile was never answered")
             RecordingSaver.Outcome.Empty ->
                 reportNotRecorded(
                     "No call audio came through. Some phones do not allow calls to be recorded.",

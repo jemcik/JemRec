@@ -106,9 +106,17 @@
     <li><strong>Off</strong>: when a call starts a notification appears with <strong>Record</strong> and <strong>Not now</strong>. Nothing is captured until you tap Record, so the opening seconds of that call are not saved. That is the honest cost of being asked, and it is why the switch is on by default.</li>
   </ul>
   <p>The prompt stays up for about a minute rather than the few seconds an ordinary notification gets, and if you miss it, it waits in the shade for the rest of the call. On a locked screen you get the same question full screen.</p>
+  <h2 id="exact-call-tracking">Exact call tracking</h2>
+  <p><strong>Exact call tracking</strong>, in Settings, is on unless you turn it off. With it, Android tells JemRec when each phone call is answered and when it ends, and so:</p>
+  <ul>
+    <li>A recording starts when the call is answered. An outgoing call's ringing is not in it, and a call nobody answered is not saved at all.</li>
+    <li>With call waiting, each call gets its own recording.</li>
+    <li>Whose calls to keep decides before anything is recorded.</li>
+  </ul>
+  <p>JemRec only reads this. It never answers, holds or ends a call, and shows no screen of its own during one. Turned off, JemRec records from the moment the phone goes off-hook, as it did before 0.14.</p>
   <h2 id="whose-calls-to-keep">Whose calls to keep</h2>
   <p><strong>Whose calls to keep</strong>, in Settings, narrows down which calls are kept. <strong>Your contacts</strong>: all of them, all but some, only some, or none — for the last three you pick the contacts. <strong>Other numbers</strong>, a switch of its own: numbers not in your contacts, and hidden ones. Until you change either, every call is kept.</p>
-  <p>Who a call was with is only known once it has ended, from the call log. So every call is still recorded, and one your choice leaves out is deleted the moment it ends, before it is saved anywhere. If the call log does not say who it was, the recording is kept. In ask-first mode, a call you tap Record on is always kept. The Calls tab marks a call that was left out.</p>
+  <p>With exact call tracking, JemRec knows who a call is with while it still rings, and a call your choice leaves out is not recorded at all. Without it, who a call was with is only known once it has ended, from the call log: every call is recorded, and one your choice leaves out is deleted the moment it ends, before it is saved anywhere. Either way, if JemRec cannot tell who it was, the recording is kept. In ask-first mode, a call you tap Record on is always kept. The Calls tab marks a call that was left out.</p>
   <p>It needs permission to read the call log and your contacts, to tell who a call was with; the card asks for it if you have not given it.</p>
   <h2 id="file-names">File names</h2>
   <p><strong>File names</strong>, in Settings, decides what a new recording is called. Recordings you already have keep their names.</p>
@@ -117,9 +125,10 @@
     <li><strong>With the caller</strong>: <code>20261020_165705_out_Priya Raman.ogg</code> — easier to find in a file manager or on a computer.</li>
     <li><strong>For Honor's Phone app</strong>, on a phone that has it: <code>Priya Raman@+447700900123_20261020165705.ogg</code>, the name Honor's own recorder uses. Saved in <code>Sounds/CallRecord</code> — the card has a button that opens the folder picker right there; tap <strong>Use this folder</strong> and <strong>Allow</strong> — Honor's Phone app then shows a play button on the call in its history.</li>
   </ul>
-  <p>The caller comes from the call log as the call is saved; without it, a recording is named by date and time. Google's Phone app has nothing like Honor's: it keeps its own recordings to itself, and no other app can add one to its call history.</p>
+  <p>The caller comes from exact call tracking or the call log, with permission to read the call log; without it, a recording is named by date and time. Google's Phone app has nothing like Honor's: it keeps its own recordings to itself, and no other app can add one to its call history.</p>
   <h2 id="messenger-calls">Messenger calls</h2>
   <p><strong>Messenger calls</strong>, in Settings, records WhatsApp, Telegram, Signal and Viber calls too — both sides, the other person on the left channel and you on the right. Each app has its own switch, and all are off until you turn one on. The ones installed on your phone are listed.</p>
+  <p>It needs <strong>Android 14 or newer</strong>. Before it, Android does not let the recorder copy another app's call audio, and Settings says so instead of offering switches that would record nothing.</p>
   <p>An app can refuse to let its calls be recorded, and Android honours that; JemRec does not try to get round it. Your side comes from the microphone without the call app's echo cancellation, so on speakerphone the other person is heard on your side as well. JemRec never takes the microphone from the call: if Android ever silences the app's own, JemRec lets go of its own at once.</p>
   <p>These calls are not in the phone's call log, so their recordings are in Recordings, marked with the app, and not in the Calls tab. Whose calls to keep does not apply to them — the app's switch is the rule.</p>
   <p><strong>Show who called</strong> reads the caller's name, and whether the call rang first, from the app's own call notification — the only place it is said. That needs notification access, which Android grants to all notifications; JemRec keeps only that from the call notifications of the apps you switched on. It is granted over JemRec's own ADB session, so turning it on needs Wi-Fi, once.</p>

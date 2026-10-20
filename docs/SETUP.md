@@ -192,6 +192,20 @@ The prompt stays up for about a minute rather than the few seconds an ordinary
 notification gets, and if you miss it, it waits in the shade for the rest of
 the call. On a locked screen you get the same question full screen.
 
+## Exact call tracking
+
+**Exact call tracking**, in Settings, is on unless you turn it off. With it,
+Android tells JemRec when each phone call is answered and when it ends, and so:
+
+- A recording starts when the call is answered. An outgoing call's ringing is
+  not in it, and a call nobody answered is not saved at all.
+- With call waiting, each call gets its own recording.
+- Whose calls to keep decides before anything is recorded.
+
+JemRec only reads this. It never answers, holds or ends a call, and shows no
+screen of its own during one. Turned off, JemRec records from the moment the
+phone goes off-hook, as it did before 0.14.
+
 ## Whose calls to keep
 
 **Whose calls to keep**, in Settings, narrows down which calls are kept. **Your
@@ -199,11 +213,13 @@ contacts**: all of them, all but some, only some, or none — for the last three
 you pick the contacts. **Other numbers**, a switch of its own: numbers not in
 your contacts, and hidden ones. Until you change either, every call is kept.
 
-Who a call was with is only known once it has ended, from the call log. So
-every call is still recorded, and one your choice leaves out is deleted the
-moment it ends, before it is saved anywhere. If the call log does not say who
-it was, the recording is kept. In ask-first mode, a call you tap Record on is
-always kept. The Calls tab marks a call that was left out.
+With exact call tracking, JemRec knows who a call is with while it still rings,
+and a call your choice leaves out is not recorded at all. Without it, who a
+call was with is only known once it has ended, from the call log: every call is
+recorded, and one your choice leaves out is deleted the moment it ends, before
+it is saved anywhere. Either way, if JemRec cannot tell who it was, the
+recording is kept. In ask-first mode, a call you tap Record on is always kept.
+The Calls tab marks a call that was left out.
 
 It needs permission to read the call log and your contacts, to tell who a call
 was with; the card asks for it if you have not given it.
@@ -223,10 +239,10 @@ you already have keep their names.
   picker right there; tap **Use this folder** and **Allow** — Honor's Phone app
   then shows a play button on the call in its history.
 
-The caller comes from the call log as the call is saved; without it, a
-recording is named by date and time. Google's Phone app has nothing like
-Honor's: it keeps its own recordings to itself, and no other app can add one to
-its call history.
+The caller comes from exact call tracking or the call log, with permission to
+read the call log; without it, a recording is named by date and time. Google's
+Phone app has nothing like Honor's: it keeps its own recordings to itself, and
+no other app can add one to its call history.
 
 ## Messenger calls
 
@@ -234,6 +250,10 @@ its call history.
 calls too — both sides, the other person on the left channel and you on the
 right. Each app has its own switch, and all are off until you turn one on. The
 ones installed on your phone are listed.
+
+It needs **Android 14 or newer**. Before it, Android does not let the recorder
+copy another app's call audio, and Settings says so instead of offering
+switches that would record nothing.
 
 An app can refuse to let its calls be recorded, and Android honours that;
 JemRec does not try to get round it. Your side comes from the microphone

@@ -35,8 +35,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ModalBottomSheet
 import android.graphics.BitmapFactory
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -236,13 +234,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
         )
     }
 
-    val audioPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { vm.onAudioAccessResult() }
+    val audioPermission = rememberPermissionRequest { vm.onAudioAccessResult() }
 
-    val callLogPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { vm.onCallLogResult() }
+    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
     val filtered = filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly)
     val shown = filtered.take(state.visibleCount)

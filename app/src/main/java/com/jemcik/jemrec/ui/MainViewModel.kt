@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.CallRules
+import com.jemcik.jemrec.capture.CallTracking
 import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.VoipApps
 import com.jemcik.jemrec.capture.VoipCallNotes
@@ -196,9 +197,13 @@ data class UiState(
     val canReadContacts: Boolean = false,
     /** How new recordings are named. See FileNames. */
     val fileNames: FileNames.Format = FileNames.Format.DATE,
+    /** Exact call tracking - see CallTracking. On unless turned off. */
+    val callTracking: Boolean = true,
     /** Messenger calls: the supported apps installed here, the ones switched
      *  on, and whether caller names are read from their notifications. */
     val voipInstalled: List<VoipApps.App> = emptyList(),
+    /** Whether messenger calls can be recorded here at all (VoipApps.supported). */
+    val voipSupported: Boolean = true,
     val voipEnabled: Set<String> = emptySet(),
     val voipNames: Boolean = false,
     /** Turning caller names on could not grant notification access, which
@@ -814,6 +819,18 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
+    /** Exact call tracking on or off; the daemon allows or withdraws it at once. */
+    fun setCallTracking(on: Boolean) {
+        val app = getApplication<Application>()
+        CallTracking.setEnabled(app, on)
+        _state.update { it.copy(callTracking = on) }
+        viewModelScope.launch {
+            if (!CaptureDaemon.setTracking(app)) {
+                say("the recorder will pick up exact call tracking when it next restarts")
+            }
+        }
+    }
+
     /** Record [pkg]'s calls, or stop; the daemon is told at once. */
     fun setVoipApp(pkg: String, on: Boolean) {
         val app = getApplication<Application>()
@@ -944,7 +961,9 @@ class MainViewModel @JvmOverloads constructor(
                     emptyList()
                 },
                 canReadContacts = CallLogLookup.photosGranted(app),
+                callTracking = CallTracking.enabled(app),
                 voipInstalled = VoipApps.installed(app),
+                voipSupported = VoipApps.supported(app),
                 voipEnabled = VoipApps.enabled(app),
                 voipNames = VoipCallNotes.enabled(app),
                 fileNames = FileNames.format(app),
@@ -980,7 +999,9 @@ class MainViewModel @JvmOverloads constructor(
                 ruleOtherNumbers = snapshot.ruleOtherNumbers,
                 ruleChosen = snapshot.ruleChosen,
                 canReadContacts = snapshot.canReadContacts,
+                callTracking = snapshot.callTracking,
                 voipInstalled = snapshot.voipInstalled,
+                voipSupported = snapshot.voipSupported,
                 voipEnabled = snapshot.voipEnabled,
                 voipNames = snapshot.voipNames,
                 fileNames = snapshot.fileNames,
@@ -1022,7 +1043,9 @@ class MainViewModel @JvmOverloads constructor(
         val ruleOtherNumbers: Boolean,
         val ruleChosen: List<CallRules.Chosen>,
         val canReadContacts: Boolean,
+        val callTracking: Boolean,
         val voipInstalled: List<VoipApps.App>,
+        val voipSupported: Boolean,
         val voipEnabled: Set<String>,
         val voipNames: Boolean,
         val fileNames: FileNames.Format,

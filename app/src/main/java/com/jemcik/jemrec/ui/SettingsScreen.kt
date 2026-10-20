@@ -84,9 +84,7 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
         )
     }
 
-    val callLogPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { vm.onCallLogResult() }
+    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
@@ -150,6 +148,36 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                 Switch(
                     checked = state.automatic,
                     onCheckedChange = { haptics.toggle(it); vm.setAutomatic(it) },
+                )
+            }
+        }
+
+        // Telecom's own account of each call. Its switch is on unless turned
+        // off, and off is exactly how JemRec worked before it. See CallTracking.
+        Card {
+            Row(
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Exact call tracking", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Android tells JemRec when each phone call is answered and when it " +
+                            "ends. A recording then starts at the answer, without the ringing; " +
+                            "a call nobody answered is not kept; and call waiting gives one " +
+                            "recording per call. JemRec only reads this - it never answers, " +
+                            "holds or ends a call.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.callTracking,
+                    onCheckedChange = { haptics.toggle(it); vm.setCallTracking(it) },
                 )
             }
         }
@@ -598,6 +626,16 @@ private fun MessengerCalls(state: UiState, vm: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Messenger calls", style = MaterialTheme.typography.titleMedium)
+            if (!state.voipSupported) {
+                Text(
+                    "WhatsApp, Telegram, Signal and Viber calls cannot be recorded on this " +
+                        "phone: its Android does not let the recorder copy another app's call " +
+                        "audio. Android allows it from version 14.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
             Text(
                 "Record calls in these apps too, both sides, the way phone calls are. " +
                     "Each is off until you turn it on. An app can refuse to let its " +

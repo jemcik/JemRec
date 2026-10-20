@@ -1,7 +1,5 @@
 package com.jemcik.jemrec.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,9 +50,7 @@ import com.jemcik.jemrec.ui.theme.JemRecColors
 @Composable
 fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
-    val callLogPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { vm.onCallLogResult() }
+    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
     // The tab is the call log; without it there is nothing to show but the
     // reason, and the way to change it.

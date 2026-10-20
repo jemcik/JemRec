@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import android.content.pm.PackageManager
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -55,19 +56,48 @@ object VoipApps {
     /** "Viber", for a name's tag. */
     fun labelForTag(tag: String?): String? = (KNOWN + OTHER).firstOrNull { it.tag == tag }?.label
 
+    /**
+     * Whether messenger calls can be recorded on this phone at all: whether
+     * the shell - the daemon's user - holds CAPTURE_VOICE_COMMUNICATION_OUTPUT.
+     * The daemon copies call audio through an audio policy, and Android's audio
+     * service refuses one that captures voice communication without it
+     * (AudioService); nor does its audio engine copy call audio into a policy
+     * registered without it (AudioPolicyMix). Stock Android gives the shell
+     * that permission from Android 14 on (AOSP frameworks/base,
+     * packages/Shell/AndroidManifest.xml: not in 12, 12L or 13). Asked of
+     * Android rather than read off the version, so a build that grants it
+     * earlier gets messenger calls - and one that does not gets no switches
+     * that would record nothing, which 0.13 offered on Android 12 and 13.
+     * Measured on Android 12's emulator, 2026-10-20: the policy refused, for
+     * want of this and MODIFY_AUDIO_ROUTING. Without it nothing is offered,
+     * and nothing is switched on whatever is stored.
+     *
+     * A permission the shell has does not change while this process runs.
+     */
+    fun supported(context: Context): Boolean = supportedHere ?: runCatching {
+        context.packageManager.checkPermission(CAPTURE_CALL_AUDIO, SHELL) == PackageManager.PERMISSION_GRANTED
+    }.getOrDefault(false).also { supportedHere = it }
+
+    @Volatile private var supportedHere: Boolean? = null
+    private const val CAPTURE_CALL_AUDIO = "android.permission.CAPTURE_VOICE_COMMUNICATION_OUTPUT"
+    private const val SHELL = "com.android.shell"
+
     /** The known apps installed on this phone, in the list's order. */
     fun installed(context: Context): List<App> = KNOWN.filter { app ->
         runCatching { context.packageManager.getPackageInfo(app.pkg, 0); true }.getOrDefault(false)
     }
 
-    /** The packages switched on. Only known ones, whatever is stored. */
-    fun enabled(context: Context): Set<String> =
-        (Prefs.of(context).getStringSet(KEY, emptySet()) ?: emptySet())
+    /** The packages switched on. Only known ones, whatever is stored, and
+     *  none where messenger calls cannot work ([supported]). */
+    fun enabled(context: Context): Set<String> {
+        if (!supported(context)) return emptySet()
+        return (Prefs.of(context).getStringSet(KEY, emptySet()) ?: emptySet())
             .filter { pkg -> KNOWN.any { it.pkg == pkg } }
             .toSet()
+    }
 
     fun setEnabled(context: Context, pkg: String, on: Boolean) {
-        if (KNOWN.none { it.pkg == pkg }) return
+        if (!supported(context) || KNOWN.none { it.pkg == pkg }) return
         val now = enabled(context).toMutableSet()
         if (on) now += pkg else now -= pkg
         Prefs.of(context).edit().putStringSet(KEY, now).apply()

@@ -198,6 +198,7 @@ public final class Main {
             String token = System.getenv(TOKEN_ENV);
             appToken = token == null ? "" : token;
             recordingMode = modeFromEnvironment(System.getenv(MODE_ENV));
+            trackingOn = "1".equals(System.getenv(TRACK_ENV));
 
             final int bound = port;
             listenPort = bound;
@@ -217,6 +218,10 @@ public final class Main {
 
             startCallWatcher(token);
             startVoipWatcher(token);
+            // Off the main thread: it runs `cmd appops`, which takes a moment.
+            Thread tracking = new Thread(Main::applyTracking, "jemrec-tracking");
+            tracking.setDaemon(true);
+            tracking.start();
 
             // The main thread loops instead of blocking in accept(), so the
             // fake ActivityThread's handler has a thread to run on. The
@@ -679,7 +684,11 @@ public final class Main {
         int tick = 0;
         // Check FIRST, then sleep: the state at spawn is itself a data point.
         while (true) {
-            checkShield(tick++ % HEARTBEAT_EVERY == 0 ? "heartbeat" : null);
+            boolean heartbeat = tick++ % HEARTBEAT_EVERY == 0;
+            checkShield(heartbeat ? "heartbeat" : null);
+            if (heartbeat) {
+                ensureTracking();
+            }
             sleep(SHIELD_CHECK_INTERVAL_MS);
         }
     }
@@ -1038,6 +1047,92 @@ public final class Main {
         }
     };
 
+    /**
+     * EXACT CALL TRACKING. Telecom binds the app's in-call service
+     * (CallTracker) for every phone call once MANAGE_ONGOING_CALLS is allowed
+     * for the app's UID - allowing it for the package alone was not enough on
+     * an Honor (measured: Telecom checked the op and bound nothing). Only
+     * shell can allow it, so this process does: at start, when the app says
+     * (COMMAND_SET_TRACKING), and again at each heartbeat in case the system
+     * took it back - some ROMs revert it. Off withdraws it, and nothing is
+     * bound.
+     */
+    private static final int COMMAND_SET_TRACKING = 'T';
+    private static final String TRACK_ENV = "JEMREC_TRACK";
+    private static volatile boolean trackingOn;
+
+    /**
+     * The rules on whose calls to keep said no to a phone call while it was
+     * still ringing or being dialled (the app's CallTracker knows the number
+     * by then): do not record it. A recording that started a moment ago for
+     * it - dialling takes the phone off-hook at once - is stopped and deleted.
+     */
+    private static final int COMMAND_SKIP = 'K';
+    /** A skip is for the call starting now, not for one an hour later. */
+    private static final long SKIP_VALID_MS = 60_000L;
+    private static final long SKIP_CURRENT_MS = 8_000L;
+    private static volatile long skipUntil;
+
+    /** One applyTracking at a time - the start-up thread's and the app's 'T'
+     *  can overlap - so the last to run applies what trackingOn says by then,
+     *  not what it said before the other ran. Not Main.class: that is held
+     *  at call start and end, and these take a moment. */
+    private static final Object TRACKING_LOCK = new Object();
+
+    private static void applyTracking() {
+        synchronized (TRACKING_LOCK) {
+            String mode = trackingOn ? "allow" : "default";
+            runQuietly("cmd", "appops", "set", "--uid", APP_PACKAGE, "MANAGE_ONGOING_CALLS", mode);
+            runQuietly("cmd", "appops", "set", APP_PACKAGE, "MANAGE_ONGOING_CALLS", mode);
+            Ln.i("tracking: " + (trackingOn ? "on - Telecom may bind the app's call service" : "off"));
+        }
+    }
+
+    /** At each heartbeat: still allowed, if it should be? */
+    private static void ensureTracking() {
+        if (!trackingOn) {
+            return;
+        }
+        String now = runQuietly("cmd", "appops", "get", "--uid", APP_PACKAGE, "MANAGE_ONGOING_CALLS");
+        if (!uidAllowed(now)) {
+            Ln.w("tracking: the permission had been withdrawn (" + now + "); allowing it again");
+            applyTracking();
+        }
+    }
+
+    /**
+     * Whether `cmd appops get --uid` says the UID is allowed: its own line,
+     * "Uid mode: MANAGE_ONGOING_CALLS: allow". The package's line follows it
+     * and says "allow" too when only the package is allowed - which is not
+     * enough (see above), so "allow" anywhere in the output proves nothing.
+     */
+    static boolean uidAllowed(String said) {
+        if (said == null) {
+            return false;
+        }
+        // slurp joins lines with " | ".
+        for (String line : said.split("[|\n]")) {
+            String l = line.trim();
+            if (l.startsWith("Uid mode:") && l.endsWith(": allow")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Run a command, return what it printed, or null if it could not run. */
+    private static String runQuietly(String... command) {
+        try {
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String said = slurp(process);
+            process.waitFor();
+            return said;
+        } catch (Throwable t) {
+            Ln.w("could not run " + String.join(" ", command) + ": " + t);
+            return null;
+        }
+    }
+
     /** Messenger calls: armed from the environment, if it names any apps. */
     private static void startVoipWatcher(String token) {
         if (token == null || token.isEmpty()) {
@@ -1189,6 +1284,11 @@ public final class Main {
             callActive = true;
             callIncoming = incoming;
             callVoipApp = app;
+            if (app == null && skipUntil > System.currentTimeMillis()) {
+                skipUntil = 0;
+                Ln.i("recording: the rules leave this call out; not recording it");
+                return;
+            }
         }
         switch (recordingMode) {
             case MODE_AUTOMATIC:
@@ -1466,6 +1566,42 @@ public final class Main {
             client.getOutputStream().flush();
             return;
         }
+        if (command == COMMAND_SET_TRACKING) {
+            int value = client.getInputStream().read();
+            trackingOn = value == 1;
+            applyTracking();
+            client.getOutputStream().write(("TRACK " + (trackingOn ? "on" : "off") + "\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            client.getOutputStream().flush();
+            return;
+        }
+        if (command == COMMAND_SKIP) {
+            int value = client.getInputStream().read();
+            String what;
+            synchronized (Main.class) {
+                RecordingSession rec = activeRecording;
+                if (value != 1) {
+                    skipUntil = 0;
+                    what = "cancelled";
+                } else if (rec != null && rec.app == null
+                        && System.currentTimeMillis() - rec.startedAt < SKIP_CURRENT_MS) {
+                    // Dialling went off-hook before the app could say: stop
+                    // it now, and leave nothing behind.
+                    rec.stop();
+                    activeRecording = null;
+                    boolean gone = new File(REC_DIR, rec.name).delete();
+                    Ln.i("recording: the rules leave this call out; stopped and deleted " + rec.name + " -> " + gone);
+                    wake(ACTION_CALL_ENDED, rec.incoming, "", null);
+                    what = "current";
+                } else {
+                    skipUntil = System.currentTimeMillis() + SKIP_VALID_MS;
+                    what = "next";
+                }
+            }
+            client.getOutputStream().write(("SKIP " + what + "\n").getBytes(StandardCharsets.UTF_8));
+            client.getOutputStream().flush();
+            return;
+        }
         if (command == COMMAND_SET_VOIP) {
             // The messenger apps whose calls to record, comma-separated.
             Set<String> apps = Voip.parse(readName(client));
@@ -1538,7 +1674,8 @@ public final class Main {
                 + " lastoffhook=" + lastOffHookAt
                 + " recording=" + (rec == null ? 0 : rec.startedAt)
                 + " voip=" + Voip.apps().size()
-                + " voiparmed=" + (Voip.armed() ? 1 : 0);
+                + " voiparmed=" + (Voip.armed() ? 1 : 0)
+                + " tracking=" + (trackingOn ? 1 : 0);
     }
 
     /**

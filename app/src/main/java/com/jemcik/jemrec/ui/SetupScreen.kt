@@ -1,7 +1,5 @@
 package com.jemcik.jemrec.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -62,9 +60,7 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
     // Whatever the user chooses, re-derive the step from what is actually
     // granted rather than from the result callback - "denied" and "denied
     // permanently" need different words, and only the real state knows.
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { vm.refreshSetup() }
+    val permissionLauncher = rememberPermissionRequest { vm.refreshSetup() }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 

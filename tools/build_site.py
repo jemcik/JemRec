@@ -576,16 +576,32 @@ SETUP = [
           "for the rest of the call. On a locked screen you get the same question "
           "full screen."),
 
+    ("h2", "Exact call tracking"),
+    ("p", "**Exact call tracking**, in Settings, is on unless you turn it off. "
+          "With it, Android tells JemRec when each phone call is answered and "
+          "when it ends, and so:"),
+    ("ul", [
+        "A recording starts when the call is answered. An outgoing call's "
+        "ringing is not in it, and a call nobody answered is not saved at all.",
+        "With call waiting, each call gets its own recording.",
+        "Whose calls to keep decides before anything is recorded.",
+    ]),
+    ("p", "JemRec only reads this. It never answers, holds or ends a call, and "
+          "shows no screen of its own during one. Turned off, JemRec records "
+          "from the moment the phone goes off-hook, as it did before 0.14."),
+
     ("h2", "Whose calls to keep"),
     ("p", "**Whose calls to keep**, in Settings, narrows down which calls are "
           "kept. **Your contacts**: all of them, all but some, only some, or "
           "none — for the last three you pick the contacts. **Other numbers**, a "
           "switch of its own: numbers not in your contacts, and hidden ones. "
           "Until you change either, every call is kept."),
-    ("p", "Who a call was with is only known once it has ended, from the call "
-          "log. So every call is still recorded, and one your choice leaves out "
-          "is deleted the moment it ends, before it is saved anywhere. If the "
-          "call log does not say who it was, the recording is kept. In ask-first "
+    ("p", "With exact call tracking, JemRec knows who a call is with while it "
+          "still rings, and a call your choice leaves out is not recorded at "
+          "all. Without it, who a call was with is only known once it has ended, "
+          "from the call log: every call is recorded, and one your choice leaves "
+          "out is deleted the moment it ends, before it is saved anywhere. "
+          "Either way, if JemRec cannot tell who it was, the recording is kept. In ask-first "
           "mode, a call you tap Record on is always kept. The Calls tab marks a "
           "call that was left out."),
     ("p", "It needs permission to read the call log and your contacts, to tell "
@@ -606,8 +622,9 @@ SETUP = [
         "**Allow** — Honor's Phone app then shows a play button on the call in "
         "its history.",
     ]),
-    ("p", "The caller comes from the call log as the call is saved; without it, "
-          "a recording is named by date and time. Google's Phone app has nothing "
+    ("p", "The caller comes from exact call tracking or the call log, with "
+          "permission to read the call log; without it, a recording is named by "
+          "date and time. Google's Phone app has nothing "
           "like Honor's: it keeps its own recordings to itself, and no other app "
           "can add one to its call history."),
 
@@ -616,6 +633,9 @@ SETUP = [
           "and Viber calls too — both sides, the other person on the left channel "
           "and you on the right. Each app has its own switch, and all are off "
           "until you turn one on. The ones installed on your phone are listed."),
+    ("p", "It needs **Android 14 or newer**. Before it, Android does not let the "
+          "recorder copy another app's call audio, and Settings says so instead "
+          "of offering switches that would record nothing."),
     ("p", "An app can refuse to let its calls be recorded, and Android honours "
           "that; JemRec does not try to get round it. Your side comes from the "
           "microphone without the call app's echo cancellation, so on "
@@ -1000,7 +1020,7 @@ INDEX_BODY = f"""
   <p class="lead">One APK. No root, no Shizuku, no companion app, and no computer
      &mdash; the phone pairs with its own Wireless debugging and sets itself up.
      It records phone calls, and WhatsApp, Telegram and Viber calls, both
-     sides.</p>
+     sides &mdash; messenger calls on Android 14 or newer.</p>
 
   <div class="cta">
     <a class="btn" href="{FDROID}">Get it on F-Droid</a>
@@ -1088,7 +1108,8 @@ INDEX_BODY = f"""
   <p>Messenger calls, both sides, each app switched on separately &mdash; and
      the caller&rsquo;s name, if you let JemRec read the app&rsquo;s call
      notification. Tested with WhatsApp, Telegram and Viber; Signal takes the
-     same path and is not tested yet.</p>
+     same path and is not tested yet. Android allows this from version 14; on
+     an older one, Settings says so.</p>
 
   <h3>It tells you when something is wrong</h3>
   <p>A recorder that fails quietly is found out on the day a call was needed. So
@@ -1105,6 +1126,12 @@ INDEX_BODY = f"""
      call, and, on one that was not recorded, why: recording was off, it was too
      short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
      it.</p>
+
+  <h3>Cut to the call</h3>
+  <p>A recording starts when the call is answered, not when you dial: no
+     ringing at the start, and a call nobody picked up is not kept. With call
+     waiting, each call gets a recording of its own. Android tells JemRec when
+     each call is answered; JemRec only listens, and never touches a call.</p>
 
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
@@ -1126,7 +1153,10 @@ INDEX_BODY = f"""
      for the microphone anyway is asking for something it does not use. Reading
      your call log and contacts is optional, offered once, and is used for two
      things only: labelling a recording with who the call was with, and noticing
-     a call that went unrecorded.</p>
+     a call that went unrecorded. Knowing when a call is answered takes one more
+     permission, one Android does not let apps ask for: JemRec&rsquo;s recorder
+     allows it, and turning off Exact call tracking in Settings takes it
+     back.</p>
 
   <div class="note">
     <p><strong>Recording calls is your responsibility.</strong> Consent law
@@ -1178,7 +1208,15 @@ PRIVACY_BODY = f"""
             or number in the recording&rsquo;s file name, and for those JemRec
             keeps which way each call went, by file name, in its private storage;
             and the contacts you pick under Whose calls to keep are stored there
-            as your contacts app&rsquo;s own links to them.</td></tr>
+            as your contacts app&rsquo;s own links to them. Exact call tracking,
+            below, keeps numbers too.</td></tr>
+    <tr><td>Call tracking</td>
+        <td>While Exact call tracking is on, which it is unless you turn it off:
+            for the last 40 phone calls, when each began, was answered and
+            ended, and which way it went &mdash; and its number, only if you
+            allowed JemRec to read the call log, which has it anyway. In the
+            app&rsquo;s private storage, to cut each recording to its call and
+            name it. Turning tracking off deletes it.</td></tr>
     <tr><td>Messenger callers</td>
         <td>Only if you turn on Show who called for messenger calls: from the
             call notifications of the messengers whose calls you record, the

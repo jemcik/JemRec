@@ -33,6 +33,13 @@
         tools:ignore="ProtectedPermissions" />
 
     <!--
+      Telecom's own account of each call, through CallTracker. An app-op
+      permission: declared here, allowed by the daemon as shell.
+    -->
+    <uses-permission android:name="android.permission.MANAGE_ONGOING_CALLS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!--
       Permissions this app does not want and never asked for. Removed, not
       merely unused.
 
@@ -179,6 +186,11 @@
         <package android:name="org.thunderdog.challegram" />
         <package android:name="org.thoughtcrime.securesms" />
         <package android:name="com.viber.voip" />
+        <!--
+          The shell, whose permissions decide whether messenger calls can be
+          recorded at all: see VoipApps.supported.
+        -->
+        <package android:name="com.android.shell" />
     </queries>
 
     <application
@@ -330,6 +342,23 @@
           notification access - given over ADB during setup, not through the
           Settings switch a side-loaded app cannot reach. See the service class.
         -->
+        <!--
+          Telecom binds this, a non-UI in-call service, for the length of each
+          call once MANAGE_ONGOING_CALLS is allowed. Exported only to Telecom:
+          BIND_INCALL_SERVICE is a system permission.
+        -->
+        <service
+            android:name=".capture.CallTracker"
+            android:exported="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_UI"
+                android:value="false" />
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".capture.DebugNotificationCleaner"
             android:exported="false"

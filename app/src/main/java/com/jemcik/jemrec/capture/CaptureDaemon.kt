@@ -116,6 +116,12 @@ object CaptureDaemon {
     /** The messenger apps whose calls to record - see VoipApps and the
      *  daemon's Voip. A daemon older than this hangs up on it. */
     private const val COMMAND_SET_VOIP = 'V'.code.toByte()
+    /** Exact call tracking on or off (CallTracking): the daemon allows or
+     *  withdraws MANAGE_ONGOING_CALLS for this app's uid. */
+    private const val COMMAND_SET_TRACKING = 'T'.code.toByte()
+    /** Leave out the phone call ringing or being dialled - the rules said so
+     *  before it was recorded (CallTracker). 1 skips, 0 takes it back. */
+    private const val COMMAND_SKIP = 'K'.code.toByte()
 
     /**
      * How long a BUSY is given to come true. A daemon really recording a call
@@ -508,6 +514,28 @@ object CaptureDaemon {
     suspend fun pushMode(context: Context) {
         setDaemonMode(context, currentMode(context))
         setVoipApps(context)
+        setTracking(context)
+    }
+
+    /** Tell the daemon whether exact call tracking is on; it allows or
+     *  withdraws the permission Telecom checks. Best-effort, like the mode. */
+    suspend fun setTracking(context: Context): Boolean = withContext(Dispatchers.IO) {
+        val on = CallTracking.enabled(context)
+        runCatching {
+            open(context, COMMAND_SET_TRACKING, byteArrayOf(if (on) 1 else 0), readMs = 3_000).use { socket ->
+                socket.getInputStream().bufferedReader().readLine()?.startsWith("TRACK ") == true
+            }
+        }.getOrDefault(false)
+    }
+
+    /** Ask the daemon not to record the phone call starting now. Whether it
+     *  understood: an older one hangs up, and the saver deletes it after. */
+    suspend fun skipCall(context: Context, skip: Boolean): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            open(context, COMMAND_SKIP, byteArrayOf(if (skip) 1 else 0), readMs = 1_500).use { socket ->
+                socket.getInputStream().bufferedReader().readLine()?.startsWith("SKIP ") == true
+            }
+        }.getOrDefault(false)
     }
 
     /**
@@ -953,6 +981,7 @@ object CaptureDaemon {
                 "mv -f $LOG_PATH $LOG_PATH.1 2>/dev/null; " +
                     "JEMREC_TOKEN=${token(context)} JEMREC_MODE=${currentMode(context)} " +
                     "JEMREC_VOIP=${VoipApps.wire(context)} " +
+                    "JEMREC_TRACK=${if (CallTracking.enabled(context)) 1 else 0} " +
                     "CLASSPATH=$DEVICE_PATH setsid nohup " +
                     "app_process / $MAIN_CLASS $PORT < /dev/null > $LOG_PATH 2>&1 &"
             )
@@ -1085,6 +1114,12 @@ object CaptureDaemon {
         val lastOffHook: Long,
         /** When the recording in progress started, or 0 if there is none. */
         val recordingSince: Long,
+        /** How many messenger apps it was told to record, and whether its
+         *  audio policy is registered; null from a daemon too old to say. */
+        val voipApps: Int? = null,
+        val voipArmed: Boolean = false,
+        /** Whether it has exact call tracking allowed; null if it cannot say. */
+        val tracking: Boolean? = null,
     )
 
     /** "WATCH 1 since=... watching=1 looper=ok ..."; null for anything else,
@@ -1106,6 +1141,9 @@ object CaptureDaemon {
             offHooks = int("offhooks") ?: return null,
             lastOffHook = long("lastoffhook") ?: return null,
             recordingSince = long("recording") ?: return null,
+            voipApps = int("voip"),
+            voipArmed = fields["voiparmed"] == "1",
+            tracking = fields["tracking"]?.let { it == "1" },
         )
     }
 

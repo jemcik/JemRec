@@ -16,6 +16,7 @@ import android.media.AudioRecord;
 import android.media.AudioRecordingConfiguration;
 import android.media.MediaCodec;
 import android.media.MediaRecorder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.SystemClock;
 
@@ -75,7 +76,7 @@ final class Voip {
     }
 
     private static final int SAMPLE_RATE = AudioConfig.SAMPLE_RATE;
-    /** How often a call is looked for, and its end, while any app is on. */
+    /** How often a call is looked for, and its end, while one may be up. */
     private static final long POLL_MS = 500L;
     /** The mode has to stay out of a call this long for the call to be over. */
     private static final long END_CONFIRM_MS = 1500L;
@@ -134,8 +135,9 @@ final class Voip {
                 }
             }
             if (watch == null && policy != null) {
-                watch = new Watch(handler, audio, listener);
-                handler.post(watch);
+                Watch started = new Watch(handler, audio, listener);
+                watch = started;
+                handler.post(started::start);
             }
         } else if (current == null) {
             if (watch != null) {
@@ -146,7 +148,7 @@ final class Voip {
                 // or there would be a capture - still has to end, or the daemon
                 // would go on believing it is in one and refuse every phone
                 // call after it.
-                handler.post(gone::endNow);
+                handler.post(gone::stop);
             }
             if (policy != null) {
                 policy.unregister();
@@ -189,8 +191,14 @@ final class Voip {
             Class<?> ruleClass = Class.forName("android.media.audiopolicy.AudioMixingRule");
             Class<?> ruleBuilderClass = Class.forName("android.media.audiopolicy.AudioMixingRule$Builder");
             Object ruleBuilder = ruleBuilderClass.getConstructor().newInstance();
-            ruleBuilderClass.getMethod("setTargetMixRole", int.class)
-                    .invoke(ruleBuilder, ruleClass.getField("MIX_ROLE_PLAYERS").getInt(null));
+            // Android 13 and later only; before it, the role follows from the
+            // first rule - a usage rule makes a mix of players, which is what
+            // this is. On Android 12 asking for the method threw before Android
+            // was even asked.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ruleBuilderClass.getMethod("setTargetMixRole", int.class)
+                        .invoke(ruleBuilder, ruleClass.getField("MIX_ROLE_PLAYERS").getInt(null));
+            }
             AudioAttributes voice = new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build();
             ruleBuilderClass.getMethod("addMixRule", int.class, Object.class)
@@ -216,7 +224,12 @@ final class Voip {
             register.setAccessible(true);
             int result = (int) register.invoke(null, policy);
             if (result != 0) {
-                throw new IllegalStateException("registerAudioPolicyStatic returned " + result);
+                // Android's reason is in its own log (AudioService). Where the
+                // shell lacks CAPTURE_VOICE_COMMUNICATION_OUTPUT - stock Android
+                // before 14 - this is always the answer; the app checks for that
+                // permission first (VoipApps.supported) and does not ask.
+                throw new IllegalStateException("registerAudioPolicyStatic returned " + result
+                        + " - Android refused to let the shell copy call audio");
             }
             Ln.i("voip: audio policy registered, copying voice-call playback");
             return new Policy(policy, mix, policyClass, mixClass);
@@ -240,10 +253,27 @@ final class Voip {
 
     // --- spotting a call -------------------------------------------------------------
 
+    /**
+     * Spots a messenger call, and its end. Android says when the audio mode
+     * changes, and only while it is "communication" - or a call is still being
+     * followed - is anything polled. Asking for the mode twice a second, as
+     * this did first, was a log line every time in system_server
+     * ("AS.AudioService: getMode mode = 0") and another in this process on
+     * MagicOS: on an Honor (2026-10-20) the daemon's own lines were gone from
+     * the 256 KiB log buffer within a minute, before anyone could read why a
+     * call went wrong. Polling stays the fallback where the callback cannot be
+     * had. Everything here runs on [handler]'s thread.
+     */
     static final class Watch implements Runnable {
         private final Handler handler;
         private final AudioManager audio;
         private final Listener listener;
+        /** The mode as Android last said; read once at the start. */
+        private int mode;
+        /** Null when Android would not take it: then the mode is polled. */
+        private AudioManager.OnModeChangedListener modeChanges;
+        /** A tick is posted, so a mode change does not start a second loop. */
+        private boolean ticking;
         private String active;
         private long leftAt;
         /** The app last reported as calling but not switched on, so it is
@@ -254,6 +284,44 @@ final class Voip {
             this.handler = handler;
             this.audio = audio;
             this.listener = listener;
+        }
+
+        void start() {
+            try {
+                AudioManager.OnModeChangedListener changes = changed -> {
+                    mode = changed;
+                    wake();
+                };
+                audio.addOnModeChangedListener(handler::post, changes);
+                modeChanges = changes;
+                Ln.i("voip: watching for a call (told of audio mode changes)");
+            } catch (Throwable t) {
+                Ln.w("voip: no audio mode callback; polling the mode instead: " + t);
+            }
+            // After registering, not before: a change in between would
+            // otherwise never be heard, and nothing would poll for it.
+            mode = audio.getMode();
+            wake();
+        }
+
+        /** Stopped watching: the call is over as far as this goes. */
+        void stop() {
+            if (modeChanges != null) {
+                try {
+                    audio.removeOnModeChangedListener(modeChanges);
+                } catch (Throwable t) {
+                    Ln.w("voip: could not drop the audio mode callback: " + t);
+                }
+                modeChanges = null;
+            }
+            endNow();
+        }
+
+        private void wake() {
+            if (!ticking && watch == this) {
+                ticking = true;
+                handler.post(this);
+            }
         }
 
         /** Stopped watching mid-call: the call is over as far as this goes. */
@@ -267,18 +335,23 @@ final class Voip {
 
         @Override
         public void run() {
+            ticking = false;
             try {
                 tick();
             } catch (Throwable t) {
                 Ln.w("voip: watch tick failed: " + t);
             }
-            if (watch == this) {
+            boolean callPossible = active != null || mode == AudioManager.MODE_IN_COMMUNICATION;
+            if (watch == this && (modeChanges == null || callPossible)) {
+                ticking = true;
                 handler.postDelayed(this, POLL_MS);
             }
         }
 
         private void tick() {
-            int mode = audio.getMode();
+            if (modeChanges == null) {
+                mode = audio.getMode();
+            }
             boolean inCommunication = mode == AudioManager.MODE_IN_COMMUNICATION;
             if (active == null) {
                 if (!inCommunication) {

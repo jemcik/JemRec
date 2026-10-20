@@ -32,7 +32,7 @@
   <p class="lead">One APK. No root, no Shizuku, no companion app, and no computer
      &mdash; the phone pairs with its own Wireless debugging and sets itself up.
      It records phone calls, and WhatsApp, Telegram and Viber calls, both
-     sides.</p>
+     sides &mdash; messenger calls on Android 14 or newer.</p>
 
   <div class="cta">
     <a class="btn" href="https://f-droid.org/packages/com.jemcik.jemrec/">Get it on F-Droid</a>
@@ -127,7 +127,8 @@
   <p>Messenger calls, both sides, each app switched on separately &mdash; and
      the caller&rsquo;s name, if you let JemRec read the app&rsquo;s call
      notification. Tested with WhatsApp, Telegram and Viber; Signal takes the
-     same path and is not tested yet.</p>
+     same path and is not tested yet. Android allows this from version 14; on
+     an older one, Settings says so.</p>
 
   <h3>It tells you when something is wrong</h3>
   <p>A recorder that fails quietly is found out on the day a call was needed. So
@@ -144,6 +145,12 @@
      call, and, on one that was not recorded, why: recording was off, it was too
      short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
      it.</p>
+
+  <h3>Cut to the call</h3>
+  <p>A recording starts when the call is answered, not when you dial: no
+     ringing at the start, and a call nobody picked up is not kept. With call
+     waiting, each call gets a recording of its own. Android tells JemRec when
+     each call is answered; JemRec only listens, and never touches a call.</p>
 
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
@@ -165,7 +172,10 @@
      for the microphone anyway is asking for something it does not use. Reading
      your call log and contacts is optional, offered once, and is used for two
      things only: labelling a recording with who the call was with, and noticing
-     a call that went unrecorded.</p>
+     a call that went unrecorded. Knowing when a call is answered takes one more
+     permission, one Android does not let apps ask for: JemRec&rsquo;s recorder
+     allows it, and turning off Exact call tracking in Settings takes it
+     back.</p>
 
   <div class="note">
     <p><strong>Recording calls is your responsibility.</strong> Consent law
