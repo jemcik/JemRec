@@ -114,14 +114,24 @@
      network &mdash; when the phone lets the app start in the background at boot
      to arm them. Where it does not, nothing is armed and nothing begins, which
      is why the manual says to open the app once after a restart. Either way the
-     app says plainly that it cannot record rather than looking healthy.</p>
+     app says plainly that it cannot record rather than looking healthy, and
+     after two minutes a notification says it too.</p>
+
+  <h3>It tells you when something is wrong</h3>
+  <p>A recorder that fails quietly is found out on the day a call was needed. So
+     after each call a silent notification shows the recording, with Play, Share
+     and Delete; every recording is measured once it is saved, and one that came
+     out silent is reported; a recorder that is down says why, with
+     <strong>Pair again</strong> when the pairing is gone; and with call log
+     access, an answered call that has no recording is reported once.</p>
 
   <h2>What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never opens an audio device &mdash; the
      shell-side process does the capturing &mdash; and a call recorder that asks
      for the microphone anyway is asking for something it does not use. Reading
-     your call log and contacts is optional, offered once, and only labels a
-     recording with who the call was with.</p>
+     your call log and contacts is optional, offered once, and is used for two
+     things only: labelling a recording with who the call was with, and noticing
+     a call that went unrecorded.</p>
 
   <div class="note">
     <p><strong>Recording calls is your responsibility.</strong> Consent law

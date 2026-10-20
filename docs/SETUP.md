@@ -147,14 +147,17 @@ header says **Ready to record**.
 
 There is no permanent notification. The app is dormant between calls — the
 recorder is a separate process that does the watching — so a notification
-appears only for the length of a call.
+appears for the length of a call, and one more when it ends, with the recording
+on it.
 
 ## Step 6 — Test it
 
 Call someone and talk for twenty seconds, with both of you speaking.
 
 - During the call a notification says **Recording call**.
-- After you hang up, open JemRec. The recording is at the top of the list.
+- When you hang up, a notification shows who the call was with and how long it
+  was, with **Play**, **Share** and **Delete**. The recording is also at the
+  top of JemRec's list.
 
 Files are named like `20260907_150909_out.ogg` — date, time, and `in` or `out`
 for the direction. They are ordinary Ogg Opus files that any player can open.
@@ -194,6 +197,10 @@ To delete, tap a contact's photo or long-press a row to start selecting, tick
 what you want, and use the bin in the toolbar. It asks first and tells you how
 many. Deleting is permanent.
 
+The notification after each call has the same three buttons. Play and Share
+open JemRec at that recording; Delete asks first, in the notification itself,
+and **Keep** puts it back.
+
 Recordings are kept when JemRec is uninstalled, because they are yours rather
 than the app's — so if you want them gone, delete them **before** you
 uninstall.
@@ -209,8 +216,9 @@ network.
 ## After a restart
 
 A reboot kills the recorder, and building it again takes a few seconds of Wi-
-Fi. Until that has happened, calls are not recorded and the header says so.
-Whether it happens without you comes down to one setting on your phone.
+Fi. Until that has happened, calls are not recorded and the header says so —
+and if it lasts more than two minutes, a notification does too. Whether it
+happens without you comes down to one setting on your phone.
 
 ### Allow JemRec to start automatically
 
@@ -253,15 +261,27 @@ The header is the honest indicator:
 | **Starting…** | Rebuilding the recorder. A few seconds. |
 | **Off** | You turned the switch off. |
 
+And when the app is closed, in notifications:
+
+| It says | Meaning |
+|---|---|
+| The caller's name, **Recorded** | After every recorded call, silently, with Play, Share and Delete. Can be switched off in Settings. |
+| **Last call recorded, but silent** | The file has the right length and no sound in it. Usually Wi-Fi calling, or a phone that does not hand calls over at all. Run the self-test. |
+| **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back. |
+| **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test. |
+
 ## Settings
 
 - **Record every call** — record everything, or be asked each time.
 - **Saving to** — which folder recordings go in, with a Change button.
+- **Show each call when it ends** — the silent notification after every
+  recorded call. Off hides it; a recording that came out silent is reported
+  either way.
 - **Show who called** — labels each recording with the contact's name and
-  photo, or the number when they are not in your contacts. Optional, and asked
-  for in the app rather than at install, because it needs your call log and
-  contacts. Say no and everything still works, with the time as each
-  recording's headline.
+  photo, or the number when they are not in your contacts, and lets JemRec tell
+  you if a call went by unrecorded. Optional, and asked for in the app rather
+  than at install, because it needs your call log and contacts. Say no and
+  everything still works, with the time as each recording's headline.
 - **Hide the debugging notification** — the answer to the question in step 1,
   changeable. Debugging stays on either way; this is only about whether
   Android's notification saying so is shown. Turning it on after setup needs
@@ -292,6 +312,16 @@ Settings → Diagnostics → **Start recorder**.
 **Recordings have only your voice.** Your phone's audio hardware does not
 expose the other side to apps. Nothing in any app can change that, and the
 self-test will tell you plainly.
+
+**A notification says JemRec cannot connect.** The phone has most likely
+forgotten its pairing — Wireless debugging → Paired devices no longer lists
+JemRec. Tap **Pair again** on the notification: it opens the pairing step, and
+a fresh code puts everything back. If the pairing was fine after all, JemRec
+reconnects without asking for a code.
+
+**A notification says a call was not recorded.** Tap **Self-test**. It says
+whether the recorder is running and hearing calls; a recorder that was down at
+the time is the usual answer.
 
 ## Uninstalling
 

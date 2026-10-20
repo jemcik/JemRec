@@ -154,21 +154,33 @@ object AdbTransport {
      */
     suspend fun autoConnect(context: Context, timeoutMs: Long = 5_000): Result<Unit> =
         withContext(Dispatchers.IO) {
+            lastConnect = ConnectOutcome.NONE
             runCatching {
                 val mgr = manager(context)
                 if (mgr.isConnected) {
                     Log.i(TAG, "autoConnect: already connected")
+                    lastConnect = ConnectOutcome.CONNECTED
                     return@runCatching
                 }
 
                 val discovered = discoverPort(context, AdbMdns.SERVICE_TYPE_TLS_CONNECT, timeoutMs)
                 if (discovered != null) {
                     Log.i(TAG, "autoConnect: mDNS found connect port $discovered")
-                    // See connect() above: false is ambiguous, isConnected is not.
-                    if (mgr.connect(LOOPBACK, discovered) || mgr.isConnected) return@runCatching
+                    // See connect() above: false is ambiguous, isConnected is
+                    // not. A throw here is adbd turning us away at the TLS
+                    // handshake - which is what a forgotten pairing looks like.
+                    val accepted = runCatching { mgr.connect(LOOPBACK, discovered) }
+                        .onFailure { Log.w(TAG, "autoConnect: port $discovered refused us - ${it.message}") }
+                        .getOrDefault(false) || mgr.isConnected
+                    if (accepted) {
+                        lastConnect = ConnectOutcome.CONNECTED
+                        return@runCatching
+                    }
                     Log.w(TAG, "autoConnect: mDNS port $discovered did not accept us")
+                    lastConnect = ConnectOutcome.REFUSED
                 } else {
                     Log.i(TAG, "autoConnect: no mDNS advertisement (expected with Wi-Fi off)")
+                    lastConnect = ConnectOutcome.NOT_FOUND
                 }
 
                 Log.i(TAG, "autoConnect: trying fixed port $LEGACY_TCP_PORT")
@@ -176,8 +188,27 @@ object AdbTransport {
                 check(ok || mgr.isConnected) {
                     "no adbd found by mDNS, and nothing listening on $LEGACY_TCP_PORT"
                 }
+                lastConnect = ConnectOutcome.CONNECTED
             }
         }
+
+    /**
+     * How the last autoConnect went, for the recorder-down alert (see
+     * RecorderHealth): an adbd that advertises itself and then turns us away
+     * is telling us something different from one that is not there at all.
+     * NONE until an attempt this process has made says otherwise.
+     */
+    enum class ConnectOutcome { NONE, CONNECTED, NOT_FOUND, REFUSED }
+
+    @Volatile
+    var lastConnect: ConnectOutcome = ConnectOutcome.NONE
+        private set
+
+    /** A revive starts a fresh reading, so one that never got as far as
+     *  connecting does not inherit the last one's. */
+    fun forgetLastConnect() {
+        lastConnect = ConnectOutcome.NONE
+    }
 
     /**
      * Browse mDNS for one of adbd's advertised services and return its port.

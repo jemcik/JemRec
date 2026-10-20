@@ -264,8 +264,13 @@ internal object Recordings {
      * Deleting is the one destructive thing this app can do, so it reports what
      * actually happened rather than returning Unit and hoping.
      */
-    fun delete(context: Context, recording: Recording): DeleteResult {
-        recording.filePath?.let { path ->
+    fun delete(context: Context, recording: Recording): DeleteResult =
+        deleteAt(context, recording.uri, recording.filePath)
+
+    /** The same, for a caller that has the location but not the list's row -
+     *  the after-call notification's Delete. */
+    fun deleteAt(context: Context, uri: Uri, filePath: String?): DeleteResult {
+        filePath?.let { path ->
             val file = File(path)
             // Already gone counts as deleted. The user asked for it to not be
             // there, and it is not there.
@@ -273,10 +278,10 @@ internal object Recordings {
             else DeleteResult.Failed(IOException("could not delete $path"))
         }
 
-        return if (recording.uri.authority == MediaStore.AUTHORITY) {
-            deleteFromMediaStore(context, recording.uri)
+        return if (uri.authority == MediaStore.AUTHORITY) {
+            deleteFromMediaStore(context, uri)
         } else {
-            deleteDocument(context, recording.uri)
+            deleteDocument(context, uri)
         }
     }
 

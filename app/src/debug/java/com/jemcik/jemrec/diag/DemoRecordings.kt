@@ -151,6 +151,12 @@ class DemoProvider : ContentProvider() {
             DemoRecordings.install(true)
             Log.i("JemRec", "demo: invented recordings restored at start-up")
         }
+        // The after-call audio check's numbers, kept where `run-as` can read
+        // them: on MagicOS 11 the app's own log lines are not readable.
+        val measurements = java.io.File(context.filesDir, "audiocheck.log")
+        com.jemcik.jemrec.capture.AudioCheck.onMeasured = { line ->
+            measurements.appendText("${java.util.Date()} $line\n")
+        }
         return true
     }
 

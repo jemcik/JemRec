@@ -9,6 +9,7 @@ import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.jemcik.jemrec.Prefs
 import java.io.File
 import java.text.SimpleDateFormat
@@ -63,6 +64,12 @@ object RecordingStore {
     class Target(
         val name: String,
         val descriptor: ParcelFileDescriptor,
+        /** Where the finished recording can be read back from - by the
+         *  after-call check, which decodes it, and by the notification's Play,
+         *  Share and Delete. */
+        val uri: Uri,
+        /** Set for app-storage files only, which are deleted as files. */
+        val filePath: String? = null,
         private val onFinish: () -> Unit,
         private val onAbandon: () -> Unit,
     ) : AutoCloseable {
@@ -142,7 +149,7 @@ object RecordingStore {
             // finalises, and a write-only descriptor cannot.
             val pfd = context.contentResolver.openFileDescriptor(doc, "rw")
                 ?: error("openFileDescriptor returned null")
-            Target(name, pfd, onFinish = {}, onAbandon = {
+            Target(name, pfd, doc, onFinish = {}, onAbandon = {
                 DocumentsContract.deleteDocument(context.contentResolver, doc)
             })
         }.onFailure {
@@ -167,6 +174,7 @@ object RecordingStore {
         Target(
             name = name,
             descriptor = pfd,
+            uri = uri,
             onFinish = {
                 resolver.update(
                     uri,
@@ -187,7 +195,14 @@ object RecordingStore {
             file,
             ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE,
         )
-        Target(name, pfd, onFinish = {}, onAbandon = { file.delete() })
+        Target(
+            name,
+            pfd,
+            FileProvider.getUriForFile(context, "${context.packageName}.recordings", file),
+            filePath = file.absolutePath,
+            onFinish = {},
+            onAbandon = { file.delete() },
+        )
     }.onFailure {
         Log.e(TAG, "store: nowhere at all to write a recording", it)
     }.getOrNull()

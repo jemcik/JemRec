@@ -9,7 +9,11 @@ import com.jemcik.jemrec.adb.AdbTransport
 import android.content.Intent
 import android.content.IntentSender
 import android.net.Uri
+import com.jemcik.jemrec.DeepLink
+import com.jemcik.jemrec.capture.AfterCall
 import com.jemcik.jemrec.capture.CallMonitorService
+import com.jemcik.jemrec.capture.MissedCalls
+import kotlinx.coroutines.flow.first
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
@@ -103,6 +107,8 @@ data class UiState(
     val automatic: Boolean = true,
     /** Whether the user chose to hide Android's debugging notification. */
     val debugNotificationHidden: Boolean = false,
+    /** Whether a notification with Play, Share and Delete follows each call. */
+    val afterCallNotice: Boolean = true,
     /**
      * Turning the hiding on from Settings could not grant notification access,
      * which takes an ADB session and so Wi-Fi. Shown under the switch until the
@@ -545,6 +551,65 @@ class MainViewModel @JvmOverloads constructor(
         if (_state.value.step != SetupStep.READY) recheckSetup()
     }
 
+    /** The Settings switch for the notification that follows each call.
+     *  Problems are still reported with it off - see AfterCall. */
+    fun setAfterCallNotice(on: Boolean) {
+        AfterCall.setEnabled(getApplication(), on)
+        _state.update { it.copy(afterCallNotice = on) }
+    }
+
+    /**
+     * A notification's button brought the user here: play that call, share
+     * it, run the self-test, or pair again.
+     *
+     * Each waits until nothing else is running, because opening the app from
+     * a notification is also a resume, and the resume's own setup check holds
+     * the busy flag - which would otherwise swallow the self-test or the
+     * re-pair the user just asked for.
+     */
+    fun open(link: DeepLink.Link) {
+        DeepLink.consumed()
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            when (link.kind) {
+                DeepLink.Kind.PLAY, DeepLink.Kind.SHARE -> {
+                    refreshNow()
+                    val recording = _state.value.recordings.firstOrNull { it.name == link.name }
+                    if (recording == null) {
+                        say("that recording is no longer there")
+                        return@launch
+                    }
+                    // Its row has to be on screen for its player to be, so
+                    // whatever was narrowing the list goes.
+                    _state.update {
+                        it.copy(
+                            screen = Screen.HOME, query = "", searchOpen = false,
+                            filter = RecordingFilter.ALL, favoritesOnly = false,
+                            selecting = false, selected = emptySet(),
+                        )
+                    }
+                    if (link.kind == DeepLink.Kind.SHARE) {
+                        share(recording)
+                    } else if (_state.value.playingName != recording.name || !_state.value.playing) {
+                        play(recording)
+                    }
+                }
+                DeepLink.Kind.SELF_TEST -> {
+                    MissedCalls.dismiss(app)
+                    showSettings()
+                    _state.first { !it.busy }
+                    selfTest()
+                }
+                DeepLink.Kind.PAIR_AGAIN -> {
+                    Setup.forgetPairing(app)
+                    _state.update { it.copy(screen = Screen.HOME) }
+                    _state.first { !it.busy }
+                    refreshSetup()
+                }
+            }
+        }
+    }
+
     fun setQuery(query: String) = _state.update { current ->
         // Searching stays live during selection now, so a query can narrow the
         // list out from under picked rows. Any selection that no longer matches
@@ -639,6 +704,7 @@ class MainViewModel @JvmOverloads constructor(
                 usingDefaultFolder = RecordingStore.treeUri(app) == null,
                 automatic = RecordingMode.of(app) == RecordingMode.AUTOMATIC,
                 debugNotificationHidden = DebugNotificationCleaner.hiding(app),
+                afterCallNotice = AfterCall.enabled(app),
                 enabled = RecorderSwitch.isOn(app),
                 canReadCallLog = CallLogLookup.granted(app),
                 canReadAudio = AudioAccess.granted(app),
@@ -659,6 +725,7 @@ class MainViewModel @JvmOverloads constructor(
                 usingDefaultFolder = snapshot.usingDefaultFolder,
                 automatic = snapshot.automatic,
                 debugNotificationHidden = snapshot.debugNotificationHidden,
+                afterCallNotice = snapshot.afterCallNotice,
                 enabled = snapshot.enabled,
                 canReadCallLog = snapshot.canReadCallLog,
                 canReadAudio = snapshot.canReadAudio,
@@ -684,6 +751,7 @@ class MainViewModel @JvmOverloads constructor(
         val usingDefaultFolder: Boolean,
         val automatic: Boolean,
         val debugNotificationHidden: Boolean,
+        val afterCallNotice: Boolean,
         val enabled: Boolean,
         val canReadCallLog: Boolean,
         val canReadAudio: Boolean,

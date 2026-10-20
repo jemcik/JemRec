@@ -32,6 +32,8 @@ enum class RecordingMode {
         fun set(context: Context, mode: RecordingMode) {
             Prefs.of(context)
                 .edit().putString(KEY, mode.name).apply()
+            // Calls before this were made under the other rule.
+            MissedCalls.coverageChanged(context)
         }
     }
 }

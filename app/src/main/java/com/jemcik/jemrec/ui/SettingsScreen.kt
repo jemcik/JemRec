@@ -80,9 +80,10 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                     Text("Show who called", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "Label each recording with the contact's name and photo, or the " +
-                            "number if they are not in your contacts. Needs permission " +
-                            "to read your call log for the name and your contacts for " +
-                            "the photo, and applies to recordings you already have.",
+                            "number if they are not in your contacts, and be told if a " +
+                            "call ever goes by unrecorded. Needs permission to read your " +
+                            "call log for the name and that check, and your contacts for " +
+                            "the photo. Applies to recordings you already have.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -127,6 +128,35 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                 Switch(
                     checked = state.automatic,
                     onCheckedChange = { haptics.toggle(it); vm.setAutomatic(it) },
+                )
+            }
+        }
+
+        // The notification that follows each call. Its switch is only about
+        // the everyday one: a recording that came out silent is reported
+        // either way, because that is the news nobody should miss.
+        Card {
+            Row(
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Show each call when it ends", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "A silent notification after every recorded call, with Play, Share " +
+                            "and Delete. A recording that came out silent is reported " +
+                            "either way.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = state.afterCallNotice,
+                    onCheckedChange = { haptics.toggle(it); vm.setAfterCallNotice(it) },
                 )
             }
         }

@@ -51,6 +51,10 @@ class RecorderKeepAlive(
             return Result.success()
         }
         val alive = CaptureDaemon.revive(applicationContext)
+        // Off Wi-Fi is exactly when the Wi-Fi watch must be armed, and the
+        // one place it reliably can be: armed on Wi-Fi it fires at once and
+        // the system drops it. See NetworkRevive.
+        if (!NetworkRevive.onWifi(applicationContext)) NetworkRevive.arm(applicationContext)
         if (alive) {
             // Collect anything the daemon still holds - normally nothing, but a
             // crash or a reboot between hang-up and the fetch can strand a
@@ -58,6 +62,10 @@ class RecorderKeepAlive(
             // no-ops when there is nothing pending.
             runCatching { RecordingSaver.reconcile(applicationContext) }
                 .onFailure { Log.w(TAG, "keepalive: reconcile failed", it) }
+            // After the reconcile, so a call it has just saved is not one this
+            // reports as missed.
+            runCatching { MissedCalls.check(applicationContext) }
+                .onFailure { Log.w(TAG, "keepalive: missed-call check failed", it) }
         }
         // retry(), not failure(): failure is terminal for a one-off, and a
         // daemon that could not be revived now - almost always no Wi-Fi - is

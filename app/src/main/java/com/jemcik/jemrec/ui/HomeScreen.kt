@@ -282,8 +282,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                 "and photo, or the number if they are not in your " +
                                 "contacts. That means permission to read your call log, " +
                                 "which holds the name, and your contacts, which hold " +
-                                "the photo.\n\nNothing else changes, and you can say no " +
-                                "to either.",
+                                "the photo. The call log also lets JemRec tell you if a " +
+                                "call ever goes by unrecorded.\n\nNothing else changes, " +
+                                "and you can say no to either.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

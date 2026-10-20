@@ -32,10 +32,22 @@ class MainActivity : ComponentActivity() {
         // rebind the listener if the ROM dropped it. See apply().
         DebugNotificationCleaner.apply(this)
 
+        // A notification's button - play this call, run the self-test. Only
+        // on a fresh start: a recreated activity carries the same intent, and
+        // rotating the phone must not play the call again.
+        if (savedInstanceState == null) DeepLink.offer(this, intent)
+
         setContent {
             JemRecTheme {
                 MainScreen()
             }
         }
+    }
+
+    /** The app was already open when a notification's button was tapped. */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        DeepLink.offer(this, intent)
     }
 }

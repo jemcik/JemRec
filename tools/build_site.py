@@ -526,13 +526,16 @@ SETUP = [
           "When it is done the header says **Ready to record**."),
     ("p", "There is no permanent notification. The app is dormant between calls "
           "— the recorder is a separate process that does the watching — so a "
-          "notification appears only for the length of a call."),
+          "notification appears for the length of a call, and one more when it "
+          "ends, with the recording on it."),
 
     ("h2", "Step 6 — Test it"),
     ("p", "Call someone and talk for twenty seconds, with both of you speaking."),
     ("ul", [
         "During the call a notification says **Recording call**.",
-        "After you hang up, open JemRec. The recording is at the top of the list.",
+        "When you hang up, a notification shows who the call was with and how "
+        "long it was, with **Play**, **Share** and **Delete**. The recording is "
+        "also at the top of JemRec's list.",
     ]),
     ("p", "Files are named like `20260907_150909_out.ogg` — date, time, and `in` "
           "or `out` for the direction. They are ordinary Ogg Opus files that any "
@@ -570,6 +573,9 @@ SETUP = [
     ("p", "To delete, tap a contact's photo or long-press a row to start "
           "selecting, tick what you want, and use the bin in the toolbar. It asks "
           "first and tells you how many. Deleting is permanent."),
+    ("p", "The notification after each call has the same three buttons. Play and "
+          "Share open JemRec at that recording; Delete asks first, in the "
+          "notification itself, and **Keep** puts it back."),
     ("p", "Recordings are kept when JemRec is uninstalled, because they are yours "
           "rather than the app's — so if you want them gone, delete them **before** "
           "you uninstall."),
@@ -584,8 +590,9 @@ SETUP = [
     ("h2", "After a restart"),
     ("p", "A reboot kills the recorder, and building it again takes a few seconds "
           "of Wi-Fi. Until that has happened, calls are not recorded and the "
-          "header says so. Whether it happens without you comes down to one "
-          "setting on your phone."),
+          "header says so — and if it lasts more than two minutes, a notification "
+          "does too. Whether it happens without you comes down to one setting on "
+          "your phone."),
     ("h3", "Allow JemRec to start automatically"),
     ("p", "This is the fix, and it is worth doing once. JemRec's own Settings has "
           "a **Survive a restart** card with a button that opens the right screen "
@@ -621,16 +628,35 @@ SETUP = [
         ["**Starting…**", "Rebuilding the recorder. A few seconds."],
         ["**Off**", "You turned the switch off."],
     ])),
+    ("p", "And when the app is closed, in notifications:"),
+    ("table", (["It says", "Meaning"], [
+        ["The caller's name, **Recorded**", "After every recorded call, silently, "
+         "with Play, Share and Delete. Can be switched off in Settings."],
+        ["**Last call recorded, but silent**", "The file has the right length and "
+         "no sound in it. Usually Wi-Fi calling, or a phone that does not hand "
+         "calls over at all. Run the self-test."],
+        ["**JemRec is not recording calls**", "The recorder has been down for two "
+         "minutes. The notification says why: it needs a few seconds of Wi-Fi, "
+         "or it cannot connect (with **Pair again**), or it could not start. It "
+         "goes away by itself when the recorder is back."],
+        ["**A call was not recorded**", "An answered call in your call log has no "
+         "recording. Only in Record every call mode, and only with call log "
+         "access. Run the self-test."],
+    ])),
 
     ("h2", "Settings"),
     ("ul", [
         "**Record every call** — record everything, or be asked each time.",
         "**Saving to** — which folder recordings go in, with a Change button.",
+        "**Show each call when it ends** — the silent notification after every "
+        "recorded call. Off hides it; a recording that came out silent is "
+        "reported either way.",
         "**Show who called** — labels each recording with the contact's name and "
-        "photo, or the number when they are not in your contacts. Optional, and "
-        "asked for in the app rather than at install, because it needs your call "
-        "log and contacts. Say no and everything still works, with the time as "
-        "each recording's headline.",
+        "photo, or the number when they are not in your contacts, and lets JemRec "
+        "tell you if a call went by unrecorded. Optional, and asked for in the app "
+        "rather than at install, because it needs your call log and contacts. Say "
+        "no and everything still works, with the time as each recording's "
+        "headline.",
         "**Hide the debugging notification** — the answer to the question in "
         "step 1, changeable. Debugging stays on either way; this is only about "
         "whether Android's notification saying so is shown. Turning it on after "
@@ -658,6 +684,15 @@ SETUP = [
     ("p", "**Recordings have only your voice.** Your phone's audio hardware does "
           "not expose the other side to apps. Nothing in any app can change that, "
           "and the self-test will tell you plainly."),
+    ("p", "**A notification says JemRec cannot connect.** The phone has most "
+          "likely forgotten its pairing — Wireless debugging → Paired devices no "
+          "longer lists JemRec. Tap **Pair again** on the notification: it opens "
+          "the pairing step, and a fresh code puts everything back. If the "
+          "pairing was fine after all, JemRec reconnects without asking for a "
+          "code."),
+    ("p", "**A notification says a call was not recorded.** Tap **Self-test**. It "
+          "says whether the recorder is running and hearing calls; a recorder "
+          "that was down at the time is the usual answer."),
 
     ("h2", "Uninstalling"),
     ("p", "Uninstall it however you like — long-press the icon, or Settings → "
@@ -917,14 +952,24 @@ INDEX_BODY = f"""
      network &mdash; when the phone lets the app start in the background at boot
      to arm them. Where it does not, nothing is armed and nothing begins, which
      is why the manual says to open the app once after a restart. Either way the
-     app says plainly that it cannot record rather than looking healthy.</p>
+     app says plainly that it cannot record rather than looking healthy, and
+     after two minutes a notification says it too.</p>
+
+  <h3>It tells you when something is wrong</h3>
+  <p>A recorder that fails quietly is found out on the day a call was needed. So
+     after each call a silent notification shows the recording, with Play, Share
+     and Delete; every recording is measured once it is saved, and one that came
+     out silent is reported; a recorder that is down says why, with
+     <strong>Pair again</strong> when the pairing is gone; and with call log
+     access, an answered call that has no recording is reported once.</p>
 
   <h2>What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never opens an audio device &mdash; the
      shell-side process does the capturing &mdash; and a call recorder that asks
      for the microphone anyway is asking for something it does not use. Reading
-     your call log and contacts is optional, offered once, and only labels a
-     recording with who the call was with.</p>
+     your call log and contacts is optional, offered once, and is used for two
+     things only: labelling a recording with who the call was with, and noticing
+     a call that went unrecorded.</p>
 
   <div class="note">
     <p><strong>Recording calls is your responsibility.</strong> Consent law
@@ -950,7 +995,7 @@ PRIVACY_BODY = f"""
   <h1>Privacy policy</h1>
   <p class="lead">JemRec has no servers, no accounts, and no analytics. Nothing it
      records or reads ever leaves your phone.</p>
-  <p class="muted">Last updated: September 2026.</p>
+  <p class="muted">Last updated: October 2026.</p>
 
   <h2>What it collects</h2>
   <p><strong>Nothing is sent anywhere.</strong> There is no backend to send it to.
@@ -965,8 +1010,15 @@ PRIVACY_BODY = f"""
             choose. Yours to play, share, move or delete like any other file.</td></tr>
     <tr><td>Contact names and photos</td>
         <td>Read from the phone&rsquo;s own call log and contacts, only if you
-            allow it, and only to label a recording. Nothing is copied or stored;
-            the lookup happens each time the list is shown.</td></tr>
+            allow it, to label a recording and to notice a call that was not
+            recorded. Names and numbers are not copied or stored; the lookup
+            happens each time it is needed.</td></tr>
+    <tr><td>Call times</td>
+        <td>When each recorded call started, which way it went and how long it
+            lasted, and the time of any call the app told you was not recorded.
+            No names, no numbers. Kept in the app&rsquo;s private storage for seven
+            days, so the missed-call check never reports a call twice or takes a
+            recording you deleted for a call that was missed.</td></tr>
     <tr><td>Notifications</td>
         <td>Only if you ask JemRec to hide Android&rsquo;s debugging notification.
             It then has notification access, and looks only at notifications from
@@ -974,8 +1026,9 @@ PRIVACY_BODY = f"""
             so it can bring them back. Nothing else is read or kept.</td></tr>
     <tr><td>Settings</td>
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
-            ask before each call, where to save, and a random token the app uses to
-            talk to its own recorder.</td></tr>
+            ask before each call, whether to show each call when it ends, where to
+            save, and random tokens the app uses to talk to its own recorder and to
+            its own notifications.</td></tr>
   </table>
 
   <h2>Network use</h2>

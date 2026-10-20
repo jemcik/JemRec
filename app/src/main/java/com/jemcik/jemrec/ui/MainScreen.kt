@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.RecordingSaver
 import com.jemcik.jemrec.ui.theme.JemRecColors
@@ -107,6 +108,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             vm.refresh()
         }
     }
+
+    // A notification's button - play this call, share it, run the self-test,
+    // pair again. The activity hands the link over; this acts on it once.
+    val link by DeepLink.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(link) { link?.let(vm::open) }
 
     // The recorder coming back is the other change that happens out of sight:
     // the keep-alive revives it when Wi-Fi returns, and the header kept saying

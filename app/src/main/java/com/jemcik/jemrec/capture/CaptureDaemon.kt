@@ -389,7 +389,12 @@ object CaptureDaemon {
      * an ADB session and an ADB session needs Wi-Fi.
      */
     suspend fun revive(context: Context): Boolean = withContext(Dispatchers.IO) {
-        lifecycle.withLock { reviveLocked(context) }
+        AdbTransport.forgetLastConnect()
+        val alive = lifecycle.withLock { reviveLocked(context) }
+        // Every revive is a reading of whether the recorder is up, and the
+        // one place the user hears about it when it is not. See RecorderHealth.
+        RecorderHealth.onRevive(context, alive)
+        alive
     }
 
     private suspend fun reviveLocked(context: Context): Boolean {
@@ -951,14 +956,18 @@ object CaptureDaemon {
      * asks for this on startup to collect anything a crash or a reboot left
      * behind between hang-up and the fetch.
      */
-    suspend fun listPending(context: Context): List<String> = withContext(Dispatchers.IO) {
+    suspend fun listPending(context: Context): List<String> = listPendingOrNull(context) ?: emptyList()
+
+    /** The same, but null when the daemon could not be asked - which the
+     *  missed-call check must not mistake for "nothing pending". */
+    suspend fun listPendingOrNull(context: Context): List<String>? = withContext(Dispatchers.IO) {
         runCatching {
             open(context, COMMAND_LIST).use { socket ->
                 socket.getInputStream().bufferedReader().readLines()
                     .map { it.trim() }
                     .filter { it.isNotEmpty() }
             }
-        }.getOrDefault(emptyList())
+        }.getOrNull()
     }
 
     /** Delete a recording from the daemon's scratch area once it is saved. */

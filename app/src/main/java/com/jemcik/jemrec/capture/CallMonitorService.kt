@@ -261,8 +261,21 @@ class CallMonitorService : Service() {
      */
     private suspend fun saveAndReport(recfile: String, incoming: Boolean) {
         when (val outcome = RecordingSaver.save(this, recfile, incoming)) {
-            is RecordingSaver.Outcome.Saved ->
+            is RecordingSaver.Outcome.Saved -> {
                 Log.i(TAG, "monitor: saved ${outcome.name}")
+                // While this service still holds the foreground: the check
+                // decodes the file, and a dormant app might not get the time.
+                runCatching {
+                    AfterCall.saved(
+                        this, outcome, incoming,
+                        RecordingSaver.startMillis(recfile) ?: System.currentTimeMillis(),
+                    )
+                }.onFailure { Log.w(TAG, "monitor: after-call notice failed", it) }
+                // And while the daemon is plainly reachable, whether any
+                // earlier call went by unrecorded.
+                runCatching { MissedCalls.check(this) }
+                    .onFailure { Log.w(TAG, "monitor: missed-call check failed", it) }
+            }
             // The reconcile got there first, or has it now. Either way the
             // recording is being kept, and this is not a failure to report.
             RecordingSaver.Outcome.Gone ->
@@ -414,7 +427,7 @@ class CallMonitorService : Service() {
         private val LEGACY_CHANNEL_IDS =
             listOf("jemrec.monitor", "jemrec.ask", "jemrec.pairing")
         private const val NOTIFICATION_ID = 1
-        private const val PROBLEM_CHANNEL_ID = "jemrec.problem.v1"
+        private const val PROBLEM_CHANNEL_ID = AfterCall.PROBLEM_CHANNEL_ID
         private const val PROBLEM_NOTIFICATION_ID = 31
         const val ACTION_STOP = "com.jemcik.jemrec.STOP_MONITOR"
 

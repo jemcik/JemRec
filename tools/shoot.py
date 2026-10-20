@@ -164,8 +164,13 @@ def shoot(theme: str) -> None:
     # Diagnostics sits below the settings cards on a tall phone, and the report
     # panel appears under the buttons - so scroll to the bottom first, run the
     # test, and let the screen's own auto-scroll bring the answer into view.
-    shell("input swipe 628 2000 628 900 400")
-    time.sleep(1)
+    # Until the button is on screen, not a fixed distance: one swipe stopped
+    # being enough the day Settings gained a card.
+    for _ in range(5):
+        shell("input swipe 628 2000 628 900 400")
+        time.sleep(1)
+        if centre("Self-test"):
+            break
     if tap("Self-test", "the self-test button"):
         time.sleep(6)
         grab(into / "selftest.png")

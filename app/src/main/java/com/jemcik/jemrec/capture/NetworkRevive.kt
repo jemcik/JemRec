@@ -38,6 +38,20 @@ import android.util.Log
  * every app open, next to the job it complements. Re-registering the same
  * PendingIntent just replaces the old registration, so arming is idempotent.
  * Off disarms it: a switched-off recorder should watch for nothing.
+ *
+ * AND IT IS ONE-SHOT, WHICH IS WHY THE KEEP-ALIVE ARMS IT TOO
+ *
+ * The system sends the PendingIntent the first time a matching network is
+ * available - at once, if one already is - and five seconds after sending it
+ * RELEASES the registration ("so the receiving client has an opportunity to
+ * put in its own request", ConnectivityService). Seen on the emulator, every
+ * time: REGISTER, "Sending PendingIntent", "Finished sending", RELEASE five
+ * seconds later. Armed on app open - which is nearly always on Wi-Fi - it
+ * fired for the Wi-Fi it was already on and was gone long before the phone
+ * left that network, so the Wi-Fi return it exists for never woke anything.
+ * It only ever worked armed off Wi-Fi, which boot away from home happened to
+ * do. So the keep-alive job arms it whenever it runs off Wi-Fi: the one state
+ * in which the watch has something to wait for.
  */
 object NetworkRevive {
 

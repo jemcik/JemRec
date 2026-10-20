@@ -58,8 +58,13 @@ object CallLogLookup {
     )
 
     /** Ringing can be long. Being answered cannot happen before dialling. */
-    private const val BEFORE_MS = 3 * 60 * 1000L
-    private const val AFTER_MS = 30 * 1000L
+    internal const val BEFORE_MS = 3 * 60 * 1000L
+    internal const val AFTER_MS = 30 * 1000L
+
+    /** Whether a call the log dates at [callAt] can be the one a recording
+     *  started at [recordingAt] belongs to. The same window labels the list. */
+    internal fun sameCall(callAt: Long, recordingAt: Long): Boolean =
+        callAt in (recordingAt - BEFORE_MS)..(recordingAt + AFTER_MS)
 
     /** Names work on the call log alone. */
     fun granted(context: Context): Boolean =
@@ -280,6 +285,53 @@ object CallLogLookup {
      */
     internal fun closest(entries: List<Entry>, at: Long, incoming: Boolean): Entry? =
         entries
-            .filter { it.incoming == incoming && it.at in (at - BEFORE_MS)..(at + AFTER_MS) }
+            .filter { it.incoming == incoming && sameCall(it.at, at) }
             .minByOrNull { kotlin.math.abs(it.at - at) }
+
+    /** A call as the missed-call check needs it. */
+    internal data class LoggedCall(
+        val at: Long,
+        val seconds: Int,
+        val incoming: Boolean,
+        val label: String,
+    )
+
+    /**
+     * Every answered incoming and every outgoing call since [since], with how
+     * long it lasted - the calls that went off-hook here and so had to be
+     * recorded, if recording was on. The same two kinds callStartsSince asks
+     * for, for the same reason.
+     */
+    internal fun answeredCallsSince(context: Context, since: Long): List<LoggedCall> {
+        val out = mutableListOf<LoggedCall>()
+        context.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            arrayOf(
+                CallLog.Calls.DATE,
+                CallLog.Calls.DURATION,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.CACHED_NAME,
+            ),
+            "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.TYPE} IN (?, ?)",
+            arrayOf(
+                since.toString(),
+                CallLog.Calls.INCOMING_TYPE.toString(),
+                CallLog.Calls.OUTGOING_TYPE.toString(),
+            ),
+            "${CallLog.Calls.DATE} ASC",
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(4)?.takeIf { it.isNotBlank() }
+                val number = cursor.getString(3)?.takeIf { it.isNotBlank() }
+                out += LoggedCall(
+                    at = cursor.getLong(0),
+                    seconds = cursor.getInt(1),
+                    incoming = cursor.getInt(2) == CallLog.Calls.INCOMING_TYPE,
+                    label = name ?: number ?: "Unknown number",
+                )
+            }
+        }
+        return out
+    }
 }

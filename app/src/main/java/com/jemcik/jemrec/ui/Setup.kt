@@ -174,6 +174,22 @@ object Setup {
     }
 
     /**
+     * Pair again, from the recorder-down alert: the phone advertises Wireless
+     * debugging and turns this app away, which is what a forgotten pairing
+     * looks like (see RecorderHealth).
+     *
+     * Only the two flags that make decide() call the phone set up and paired.
+     * Nothing is revoked or switched off, unlike reset(): if the guess was
+     * wrong and the pairing is fine, decide() connects on the next look, lands
+     * on FINISHING and puts both flags back without the user typing a code.
+     * If it was right, the wizard opens on the pairing step.
+     */
+    fun forgetPairing(context: Context) {
+        Log.i(TAG, "setup: pairing again at the user's request")
+        Prefs.of(context).edit().remove(KEY_COMPLETE).remove(KEY_PAIRED).apply()
+    }
+
+    /**
      * The permissions setup cannot proceed without, which the user taps
      * "Allow" for.
      *

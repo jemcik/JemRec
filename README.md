@@ -16,7 +16,7 @@ itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-78-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-104-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="19%" alt="The recordings list">
 <img src="docs/screenshots/home-dark.png" width="19%" alt="The recordings list, dark">
@@ -190,7 +190,8 @@ broadcast — so on a phone whose ROM declines to start the app at boot, neither
 exists and the repair never begins. That is the case above, and it is why the
 manual says to open the app once after a restart rather than trusting the
 machinery. **Between the restart and that moment nothing is recorded**, which is
-why the header says so plainly rather than looking healthy.
+why the header says so plainly rather than looking healthy - and after two
+minutes of it, a notification does too.
 
 ### Recording, and being asked
 
@@ -202,6 +203,30 @@ and the cost is the few seconds before the tap.
 Recordings are Opus in an Ogg container, in the phone's standard
 `Recordings/JemRec` folder, where any file manager or music app can open them.
 You can point the app somewhere else.
+
+### After the call, and when something is wrong
+
+A recorder that stops recording without saying so is worse than none: you find
+out on the day you need the call. So JemRec says so, in four notifications.
+
+- **After each call** - who it was with and how long, with Play, Share and
+  Delete. An icon in the status bar but no sound, one at a time, and it can be
+  switched off in Settings. Delete asks first, in the notification itself.
+- **The recording came out silent** - every recording is decoded and measured
+  once it is saved. A muted capture still produces a file of the right length;
+  this is what catches it. A recording with only one side is NOT reported,
+  because it cannot be told reliably: on the phone this was built on, a call
+  with both voices audible had one channel all but silent - the other carried
+  the whole call.
+- **The recorder is down** - after two minutes, with the reason: it needs a few
+  seconds of Wi-Fi, or it cannot connect and the pairing is probably gone (with
+  *Pair again*), or it could not start. It goes away when the recorder is back.
+- **A call was not recorded** - in automatic mode, with call-log access, the
+  call log is held against what was recorded, and an answered call with nothing
+  to show for it is reported once. Recordings you delete do not count as missed:
+  the app notes each call as it saves it.
+
+None of it needs a permission the app did not already have.
 
 ### What it does not ask for
 
@@ -221,7 +246,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
-| `READ_CALL_LOG`, `READ_CONTACTS` | Optional, offered once. The only way to label a recording with who the call was with. |
+| `READ_CALL_LOG`, `READ_CONTACTS` | Optional, offered once. The only way to label a recording with who the call was with, and for the call log, to notice a call that went unrecorded. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
 | `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
 
@@ -334,7 +359,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-78 JVM unit tests, no device needed:
+104 JVM unit tests, no device needed:
 
     ./gradlew :app:testDebugUnitTest
 

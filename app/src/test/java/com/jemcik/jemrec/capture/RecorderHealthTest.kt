@@ -1,0 +1,67 @@
+package com.jemcik.jemrec.capture
+
+import com.jemcik.jemrec.capture.CallLedger.Recorded
+import com.jemcik.jemrec.capture.RecorderHealth.Problem
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** When the recorder-down alert speaks, and what it says the cause is. */
+class RecorderHealthTest {
+
+    private val since = 1_791_544_738_000L
+
+    @Test fun offWifiTheAnswerIsWifi() {
+        assertEquals(Problem.NEEDS_WIFI, RecorderHealth.diagnose(onWifi = false, refusedInARow = 5))
+    }
+
+    @Test fun anAdbdThatKeepsTurningUsAwaySuggestsTheLostPairing() {
+        assertEquals(Problem.CANNOT_START, RecorderHealth.diagnose(onWifi = true, refusedInARow = 1))
+        assertEquals(
+            Problem.CANNOT_CONNECT,
+            RecorderHealth.diagnose(onWifi = true, refusedInARow = RecorderHealth.REFUSALS_FOR_PAIRING),
+        )
+    }
+
+    @Test fun aRecorderBackWithinTheGraceIsNeverAnnounced() {
+        // A reboot on Wi-Fi: down for seconds, then up.
+        assertFalse(RecorderHealth.shouldAlert(since + RecorderHealth.GRACE_MS - 1, since, null, Problem.CANNOT_START))
+        assertTrue(RecorderHealth.shouldAlert(since + RecorderHealth.GRACE_MS, since, null, Problem.CANNOT_START))
+    }
+
+    @Test fun oneAlertPerCauseNotOneEveryRetry() {
+        val later = since + RecorderHealth.GRACE_MS * 10
+        assertFalse(RecorderHealth.shouldAlert(later, since, Problem.NEEDS_WIFI.name, Problem.NEEDS_WIFI))
+        assertTrue(RecorderHealth.shouldAlert(later, since, Problem.NEEDS_WIFI.name, Problem.CANNOT_CONNECT))
+    }
+}
+
+/** The ledger's entries survive a round trip, and rubbish does not stop it. */
+class CallLedgerTest {
+
+    @Test fun recordingsAndReportsRoundTrip() {
+        val entries = setOf(
+            CallLedger.encodeRecording(Recorded(1_791_544_738_000L, true, 95)),
+            CallLedger.encodeRecording(Recorded(1_791_544_999_000L, false, 0)),
+            "c:1791545000000",
+        )
+        val ledger = CallLedger.parse(entries)
+        assertEquals(
+            setOf(Recorded(1_791_544_738_000L, true, 95), Recorded(1_791_544_999_000L, false, 0)),
+            ledger.recordings.toSet(),
+        )
+        assertEquals(setOf(1_791_545_000_000L), ledger.reported)
+    }
+
+    @Test fun unreadableEntriesAreDropped() {
+        val ledger = CallLedger.parse(setOf("r:nope:in:5", "x:1", "c:", "r:1:in"))
+        assertTrue(ledger.recordings.isEmpty())
+        assertTrue(ledger.reported.isEmpty())
+    }
+
+    @Test fun lengthsReadTheWayTheListShowsThem() {
+        assertEquals("45 s", AfterCall.length(45.9))
+        assertEquals("3:21", AfterCall.length(201.0))
+    }
+}

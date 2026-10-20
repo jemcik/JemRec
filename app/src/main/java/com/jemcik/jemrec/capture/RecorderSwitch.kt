@@ -30,5 +30,6 @@ object RecorderSwitch {
     fun set(context: Context, on: Boolean) {
         Prefs.of(context)
             .edit().putBoolean(KEY, on).apply()
+        MissedCalls.coverageChanged(context)
     }
 }

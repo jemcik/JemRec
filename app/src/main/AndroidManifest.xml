@@ -220,6 +220,16 @@
             android:name=".capture.NetworkReviveReceiver"
             android:exported="false" />
 
+        <!--
+          The after-call notification's Delete (asked, then confirmed), Keep,
+          and the missed-call notification being cleared. Not exported: only
+          this app's own immutable PendingIntents reach it, so the recording it
+          is told to delete is one this app put in the notification.
+        -->
+        <receiver
+            android:name=".capture.AfterCallReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".capture.BootReceiver"
             android:exported="false">

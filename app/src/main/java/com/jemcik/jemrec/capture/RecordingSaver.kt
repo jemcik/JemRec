@@ -32,7 +32,13 @@ object RecordingSaver {
 
     sealed interface Outcome {
         /** Muxed and saved; the daemon copy has been deleted. */
-        data class Saved(val name: String, val seconds: Double) : Outcome
+        data class Saved(
+            val name: String,
+            val seconds: Double,
+            /** Where to read it back from, and for app storage the file. */
+            val uri: android.net.Uri,
+            val filePath: String?,
+        ) : Outcome
 
         /** The file was read in full but held no audio; deleted rather than kept. */
         data object Empty : Outcome
@@ -74,6 +80,13 @@ object RecordingSaver {
      */
     private val _saved = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val saved: SharedFlow<String> = _saved.asSharedFlow()
+
+    /** A recording appeared or went away somewhere the list cannot see -
+     *  deleted from the after-call notification, say. Same flow: the list
+     *  only needs to know to read the disk again. */
+    fun announce(name: String) {
+        _saved.tryEmit(name)
+    }
 
     /** Whether a daemon file name is for an incoming call, from its "_in." / "_out." tag. */
     fun isIncoming(recfile: String): Boolean = RecordingStore.isIncoming(recfile)
@@ -150,14 +163,20 @@ object RecordingSaver {
                 Log.i(TAG, "save: wrote %d packets, %.1fs -> %s".format(written, seconds, name))
                 target.close()
                 CaptureDaemon.deleteRecording(context, recfile)
+                // Before anyone can delete it: see CallLedger for why the
+                // missed-call check asks this and not the disk.
+                CallLedger.noteRecording(context, startedAt.time, incoming, seconds.toInt())
                 _saved.tryEmit(name)
-                Outcome.Saved(name, seconds)
+                Outcome.Saved(name, seconds, target.uri, target.filePath)
             }
             completed -> {
                 // Read the whole thing; there was simply no call audio in it.
                 Log.w(TAG, "save: no audio in $recfile, discarding")
                 target.abandon()
                 CaptureDaemon.deleteRecording(context, recfile)
+                // Reported to the user as "Call not recorded" already; the
+                // missed-call check must not say it a second time.
+                CallLedger.noteRecording(context, startedAt.time, incoming, 0)
                 Outcome.Empty
             }
             else -> {
@@ -192,7 +211,14 @@ object RecordingSaver {
         Log.i(TAG, "reconcile: ${pending.size} pending")
         for (recfile in pending) {
             when (val outcome = save(context, recfile, isIncoming(recfile))) {
-                is Outcome.Saved -> Log.i(TAG, "reconcile: saved $recfile as ${outcome.name}")
+                is Outcome.Saved -> {
+                    Log.i(TAG, "reconcile: saved $recfile as ${outcome.name}")
+                    // A hang-up whose wake never arrived is still a call that
+                    // just ended, and still worth the after-call notification.
+                    // AfterCall leaves out anything long past.
+                    runCatching { AfterCall.saved(context, outcome, isIncoming(recfile), startMillis(recfile) ?: 0L) }
+                        .onFailure { Log.w(TAG, "reconcile: after-call notice failed", it) }
+                }
                 Outcome.Empty -> Log.i(TAG, "reconcile: dropped empty $recfile")
                 Outcome.Gone -> Log.i(TAG, "reconcile: $recfile was collected meanwhile")
                 Outcome.Busy -> Log.i(TAG, "reconcile: $recfile is being saved already, leaving it")
