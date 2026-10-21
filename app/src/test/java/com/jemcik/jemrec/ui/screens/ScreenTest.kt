@@ -1,6 +1,10 @@
 package com.jemcik.jemrec.ui.screens
 
 import android.content.ComponentName
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
+import android.graphics.drawable.ShapeDrawable
+import android.graphics.drawable.shapes.OvalShape
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +23,7 @@ import com.github.takahirom.roborazzi.captureScreenRoboImage
 import com.jemcik.jemrec.ui.LocalNow
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.UiState
+import com.jemcik.jemrec.ui.forgetAppIcons
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 import org.junit.After
 import org.junit.Before
@@ -78,9 +83,30 @@ abstract class ScreenTest {
     /** A view model over [state] that only the taps reach. */
     fun viewModel(state: UiState = UiState()) = MainViewModel(RuntimeEnvironment.getApplication(), state)
 
+    /**
+     * Whether WhatsApp, Telegram and Viber are "installed", so their icons
+     * mark messenger calls as they do on a phone. A test of the rarer case -
+     * an app uninstalled since, its name in words instead - turns it off.
+     */
+    var messengersInstalled = true
+
     /** Draws [content] as the app would: its theme, its background, the fixed
      *  clock, and the text at [fontScale] times the phone's size. */
     fun show(fontScale: Float = 1f, content: @Composable () -> Unit) {
+        forgetAppIcons()
+        if (messengersInstalled) {
+            val pm = shadowOf(RuntimeEnvironment.getApplication().packageManager)
+            // A plain coloured circle each, standing in for the apps' icons -
+            // not their logos, which are theirs.
+            for ((pkg, colour) in listOf(
+                "com.whatsapp" to 0xFF25D366.toInt(),
+                "org.telegram.messenger" to 0xFF2AABEE.toInt(),
+                "com.viber.voip" to 0xFF7360F2.toInt(),
+            )) {
+                pm.installPackage(PackageInfo().apply { packageName = pkg; applicationInfo = ApplicationInfo().apply { packageName = pkg } })
+                pm.setApplicationIcon(pkg, ShapeDrawable(OvalShape()).apply { paint.color = colour })
+            }
+        }
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(

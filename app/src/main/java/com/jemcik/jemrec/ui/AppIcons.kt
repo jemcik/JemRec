@@ -42,6 +42,10 @@ internal fun packagesForTag(tag: String): List<String> = VoipApps.KNOWN.filter {
 
 private val icons = ConcurrentHashMap<String, ImageBitmap>()
 
+/** Empties the cache - for the screen tests, which share one process and
+ *  would otherwise see an app's icon after it was "uninstalled". */
+internal fun forgetAppIcons() = icons.clear()
+
 private fun iconOf(context: Context, pkg: String, px: Int): ImageBitmap? = runCatching {
     val drawable = context.packageManager.getApplicationIcon(pkg)
     Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888).also {

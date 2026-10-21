@@ -92,8 +92,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.Placeable
+import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.heading
@@ -873,10 +878,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                             )
                                         }
                                     }
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
+                                    YieldingRow(gap = 4.dp) {
                                         // No arrow where the direction is not known
                                         // (a messenger call whose app did not say).
                                         if (recording.directionKnown) DirectionArrow(recording.incoming)
@@ -900,22 +902,31 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                         }
                                         // When, and how long. With no caller the
                                         // headline already is the date, so just the
-                                        // length here. The date gives way first when
-                                        // space is short; the length never does.
-                                        // Under Today or Yesterday the heading says
-                                        // the day, so only the time.
+                                        // length here. The time gives way when space
+                                        // is short - after a messenger's name, never
+                                        // before it, and the length never does (see
+                                        // YieldingRow). Under Today or Yesterday the
+                                        // heading says the day, so only the time.
+                                        // The dot is a piece of its own, after the
+                                        // time and giving way before it: cut
+                                        // together, a time that fitted came out as
+                                        // "18:56..." - the ellipsis eating only the dot.
                                         if (recording.caller != null) {
                                             Text(
-                                                "${recording.startedAtMillis?.let { timeUnder(day, it) } ?: recording.whenLabel} ·",
+                                                recording.startedAtMillis?.let { timeUnder(day, it) } ?: recording.whenLabel,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
-                                                modifier = if (app == null || appIcon != null) {
-                                                    Modifier.weight(1f, fill = false)
-                                                } else {
-                                                    Modifier
-                                                },
+                                                modifier = Modifier.layoutId(GivesWay(order = 3)),
+                                            )
+                                            Text(
+                                                "·",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                modifier = Modifier.layoutId(GivesWay(order = 2, whole = true)),
                                             )
                                         }
                                         // THE PLAY AFFORDANCE, ON THE LENGTH. A big
@@ -946,8 +957,8 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                         )
                                         // The app in words only when its icon
                                         // cannot be had (it was uninstalled since):
-                                        // last, and the one that gives way - when
-                                        // and how long matter more than which app.
+                                        // last, and the first to give way - when and
+                                        // how long matter more than which app.
                                         if (app != null && appIcon == null) {
                                             Text(
                                                 "· $app",
@@ -955,7 +966,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false),
+                                                modifier = Modifier.layoutId(GivesWay(order = 1, atLeast = 40.dp)),
                                             )
                                         }
                                     }
@@ -1111,6 +1122,64 @@ internal fun PlayerControls(state: UiState, vm: MainViewModel) {
  */
 internal val LocalNow = staticCompositionLocalOf<() -> Long> { System::currentTimeMillis }
 
+/**
+ * Marks a child of [YieldingRow] that gives way when the row runs short of
+ * room; the lowest [order] gives way first. A [whole] one is shown whole or
+ * not at all - a dot cut in half is noise, not an ellipsis - and any one is
+ * dropped rather than squeezed into less than [atLeast], where an ellipsis
+ * would be all that is left of it.
+ */
+private data class GivesWay(val order: Int, val whole: Boolean = false, val atLeast: Dp = 0.dp)
+
+/**
+ * A line of short pieces that gives way in a set order when it runs out of
+ * room: pieces not marked [GivesWay] (the arrow, the play mark, the length)
+ * always get theirs; the marked ones share what is left, highest order first,
+ * each cut with an ellipsis or dropped when nothing is left.
+ *
+ * A Row cannot say this. Its weights split the leftover in proportion rather
+ * than in turn: weighted, the time was cut to "1..." to leave room for a
+ * messenger's name; unweighted, it took its room before the length, which came
+ * out as "12:0" - both at twice the text size, where the line cannot hold all
+ * of it.
+ */
+@Composable
+private fun YieldingRow(gap: Dp, content: @Composable () -> Unit) {
+    Layout(content) { measurables, constraints ->
+        val gapPx = gap.roundToPx()
+        val loose = constraints.copy(minWidth = 0)
+        val placeables = arrayOfNulls<Placeable>(measurables.size)
+        var room = constraints.maxWidth - gapPx * (measurables.size - 1).coerceAtLeast(0)
+        measurables.forEachIndexed { i, piece ->
+            if (piece.layoutId !is GivesWay) {
+                placeables[i] = piece.measure(loose.copy(maxWidth = Constraints.Infinity)).also { room -= it.width }
+            }
+        }
+        measurables.indices
+            .filter { measurables[it].layoutId is GivesWay }
+            .sortedByDescending { (measurables[it].layoutId as GivesWay).order }
+            .forEach { i ->
+                val piece = measurables[i]
+                val rule = piece.layoutId as GivesWay
+                val needs = if (rule.whole) piece.maxIntrinsicWidth(constraints.maxHeight) else rule.atLeast.roundToPx()
+                val fits = room > 0 && room >= needs
+                placeables[i] = piece.measure(loose.copy(maxWidth = if (fits) room.coerceAtLeast(0) else 0))
+                    .also { room -= it.width }
+            }
+        val shown = placeables.filterNotNull().filter { it.width > 0 }
+        val width = (shown.sumOf { it.width } + gapPx * (shown.size - 1).coerceAtLeast(0))
+            .coerceAtMost(constraints.maxWidth)
+        val height = shown.maxOfOrNull { it.height } ?: 0
+        layout(width, height) {
+            var x = 0
+            shown.forEach {
+                it.placeRelative(x, (height - it.height) / 2)
+                x += it.width + gapPx
+            }
+        }
+    }
+}
+
 /** A day's heading in the Recordings and Calls lists. */
 @Composable
 internal fun DayHeading(day: Day) {
@@ -1235,10 +1304,18 @@ internal fun CallerAvatar(caller: String?, photo: Uri?) {
                 modifier = Modifier.fillMaxSize(),
             )
         } else if (initials != null) {
+            // Part of the picture, sized to the circle - not body text that
+            // grows with the phone's font size. At twice the size "OB" no
+            // longer fit a 36 dp circle and spilled out of it (the screen
+            // tests' large-text screenshots showed it). The size labelLarge
+            // has at the default font size, held there.
+            val size = with(LocalDensity.current) { 14.dp.toSp() }
             Text(
                 initials,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = size, lineHeight = size),
                 color = MaterialTheme.colorScheme.onSecondary,
+                maxLines = 1,
+                softWrap = false,
             )
         } else {
             Icon(

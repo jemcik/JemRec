@@ -18,7 +18,6 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -387,7 +386,9 @@ internal fun <T> ConnectedChoices(
                         color = content,
                         maxLines = 1,
                         softWrap = false,
-                        autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 14.sp),
+                        // A floor in dp: an sp one doubled at twice the text
+                        // size and "All but" came out as "All b".
+                        autoSize = oneLineAutoSize(min = 9.dp, max = 14.sp),
                     )
                 }
             }

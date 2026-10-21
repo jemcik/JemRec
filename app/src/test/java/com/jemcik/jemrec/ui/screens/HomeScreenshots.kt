@@ -41,6 +41,14 @@ class HomeScreenshots : ScreenTest() {
         snap("home-large-text")
     }
 
+    @Test fun messengerUninstalledLargeText() {
+        // The rare case at the hardest size: the app's name in words, which
+        // gives way first - the time next, and the length never.
+        messengersInstalled = false
+        home(Fixtures.ready(), fontScale = 2f)
+        snap("home-messenger-uninstalled-large-text")
+    }
+
     @Test fun playing() {
         val olivia = Fixtures.recordings().first()
         home(Fixtures.ready().copy(playingName = olivia.name, playing = true, positionMs = 107_000, durationMs = 252_000))
@@ -80,6 +88,11 @@ class HomeScreenshots : ScreenTest() {
     @Test fun calls() {
         home(Fixtures.ready().copy(homeTab = HomeTab.CALLS))
         snap("calls")
+    }
+
+    @Test fun callsLargeText() {
+        home(Fixtures.ready().copy(homeTab = HomeTab.CALLS), fontScale = 2f)
+        snap("calls-large-text")
     }
 
     @Config(qualifiers = "+night")

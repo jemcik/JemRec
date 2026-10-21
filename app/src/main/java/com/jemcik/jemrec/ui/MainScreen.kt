@@ -62,6 +62,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -305,6 +307,8 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
 internal fun AppHeader(state: UiState, vm: MainViewModel) {
     val haptics = LocalHapticFeedback.current
     val offHome = state.screen != Screen.HOME
+    // The second line: bodySmall, stepping down a little before it would wrap.
+    val subtitleSize = oneLineAutoSize(min = 10.dp, max = 12.sp)
     // The bar and the line under it are one thing, so they live in
     // one Column. TopAppBar has no bottom border of its own.
     //
@@ -335,7 +339,11 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
                 // they cannot know without being told is whether
                 // their next call will be recorded, so that gets
                 // the row.
-                Column {
+                //
+                // Clear of the switch: the title shrinks to the room it has,
+                // and at twice the text size that room ended at the switch's
+                // edge, so the two touched.
+                Column(Modifier.padding(end = 8.dp)) {
                     Text(
                         if (offHome) {
                             when (state.screen) {
@@ -371,12 +379,12 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
                         // wording fits at the default size, and the
                         // type steps down a little for anyone
                         // running large fonts rather than wrapping
-                        // or losing letters to an ellipsis.
+                        // or losing letters to an ellipsis - down to
+                        // a floor in dp, which a larger font size does
+                        // not raise: at twice the size a 15 sp floor
+                        // was 30 dp, and the title ran under the switch.
                         maxLines = 1,
-                        autoSize = TextAutoSize.StepBased(
-                            minFontSize = 15.sp,
-                            maxFontSize = 22.sp,
-                        ),
+                        autoSize = oneLineAutoSize(min = 15.dp, max = 22.sp),
                         // A traffic light: green ready, coral cannot,
                         // grey off/starting. Green is the play colour,
                         // so "go" reads the same in the header as it
@@ -403,7 +411,7 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
-                            autoSize = SUBTITLE_AUTO_SIZE,
+                            autoSize = subtitleSize,
                         )
                     }
                     // Under the down state, what to do about it. The
@@ -425,7 +433,7 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 maxLines = 1,
-                                autoSize = SUBTITLE_AUTO_SIZE,
+                                autoSize = subtitleSize,
                                 modifier = Modifier.clickable(enabled = !state.busy) {
                                     haptics.tap()
                                     vm.allowThisWifi()
@@ -441,7 +449,7 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
-                                autoSize = SUBTITLE_AUTO_SIZE,
+                                autoSize = subtitleSize,
                             )
                         }
                     }
@@ -565,5 +573,12 @@ private fun HeaderRule(active: Boolean) {
     )
 }
 
-/** The header's second line: bodySmall, stepping down a little before it would wrap. */
-private val SUBTITLE_AUTO_SIZE = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp)
+/**
+ * Text that must stay on one line and shrinks to fit, from [max] (which grows
+ * with the phone's font size, as text should) down to [min] in dp (which does
+ * not: an sp floor doubles at twice the size, and a line that cannot shrink
+ * past it overflows - over the header's switch, out of a connected button).
+ */
+@Composable
+internal fun oneLineAutoSize(min: Dp, max: TextUnit): TextAutoSize =
+    with(LocalDensity.current) { TextAutoSize.StepBased(minFontSize = min.toSp(), maxFontSize = max) }
