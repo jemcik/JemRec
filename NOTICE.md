@@ -45,6 +45,20 @@ and marked `PATCHED:` at the site. The full licence text is in
 
 <https://github.com/Genymobile/scrcpy>
 
+## F-Droid logo - the website only
+
+`docs/fdroid-logo.svg`, on the website's "Get it on F-Droid" button, is
+F-Droid's own logo, unmodified. Copyright 2012 William Theaker, 2013 Robert
+Martinez, 2015 Andrew Nayenko. Dual licensed CC-BY-SA 3.0 Unported **OR**
+GPL-3.0-or-later; used here under **CC-BY-SA 3.0**. It is not part of the app.
+<https://gitlab.com/fdroid/artwork>
+
+## GitHub mark - the website only
+
+The GitHub mark on the website's APK button is GitHub's, as drawn in Primer
+Octicons (`mark-github`, MIT, Copyright GitHub, Inc.), used to link to GitHub
+as GitHub's logo guidelines allow. <https://github.com/primer/octicons>
+
 ## ShizuCallRecorder - reference only, no code taken
 
 `kitsumed/ShizuCallRecorder` is GPL-3.0. It is a **reference for the approach

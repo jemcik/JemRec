@@ -39,8 +39,12 @@
     // move through the set without closing it. Closing and reopening to see the
     // next of four is what makes a lightbox feel like a document viewer.
     var viewer = document.querySelector('.viewer');
-    var shots = [].slice.call(document.querySelectorAll('.shot'));
-    if (!viewer || !shots.length) return;
+    var all = [].slice.call(document.querySelectorAll('.shot'));
+    if (!viewer || !all.length) return;
+    // Each screen is on the page once per theme and the theme hides one, so the
+    // set is the ones showing, taken when the viewer opens - the theme may have
+    // changed since the last time.
+    var shots = [];
 
     var img = viewer.querySelector('img');
     var count = viewer.querySelector('.vcount');
@@ -92,9 +96,10 @@
       if (b) b.focus();
     }
 
-    viewer.classList.toggle('solo', shots.length < 2);
-    shots.forEach(function (b) {
+    all.forEach(function (b) {
       b.addEventListener('click', function () {
+        shots = all.filter(function (s) { return s.offsetParent !== null; });
+        viewer.classList.toggle('solo', shots.length < 2);
         viewer.hidden = false;
         lock(true);
         show(shots.indexOf(b));

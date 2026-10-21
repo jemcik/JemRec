@@ -16,7 +16,7 @@
   <div class="column">
     <a class="brand" href="index.html"><img src="icon.png" alt="" width="34" height="34">JemRec</a>
     <div class="bar-end">
-      <nav><a href="setup.html">Setup</a><a href="privacy-policy.html">Privacy</a><a href="https://github.com/jemcik/JemRec">GitHub</a></nav>
+      <nav><a href="how-it-works.html">How it works</a><a href="setup.html">Setup</a><a href="privacy-policy.html" class="roomy">Privacy</a><a class="roomy" href="https://github.com/jemcik/JemRec">GitHub</a></nav>
       <button class="theme" type="button" aria-label="Theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" aria-hidden="true">
@@ -26,181 +26,255 @@
     </div>
   </div>
 </header>
-<main>
+<main class="home">
 
-  <h1>A call recorder for unrooted Android — phone and messenger calls.</h1>
-  <p class="lead">One APK. No root, no Shizuku, no companion app, and no computer
-     &mdash; the phone pairs with its own Wireless debugging and sets itself up.
-     It records phone calls, and WhatsApp, Telegram and Viber calls, both
-     sides &mdash; messenger calls on Android 14 or newer.</p>
-
-  <div class="cta">
-    <a class="btn" href="https://f-droid.org/packages/com.jemcik.jemrec/">Get it on F-Droid</a>
-    <a class="btn ghost" href="https://github.com/jemcik/JemRec/releases">Download the APK</a>
-    <a class="btn ghost" href="https://github.com/jemcik/JemRec">Source on GitHub</a>
+<section class="column hero">
+  <div>
+    <span class="eyebrow">Call recorder for Android 12 and newer</span>
+    <h1>Both sides of every call. <span>No root.</span></h1>
+    <p class="lead">Phone calls, and WhatsApp, Telegram and Viber calls. No
+       computer and no second app &mdash; the phone pairs with its own Wireless
+       debugging and sets itself up.</p>
+    <div class="cta">
+      <a class="store fdroid" href="https://f-droid.org/packages/com.jemcik.jemrec/">
+        <img src="fdroid-logo.svg" alt="" width="32" height="32">
+        <span><small>Get it on</small><strong>F-Droid</strong></span>
+      </a>
+      <a class="store github" href="https://github.com/jemcik/JemRec/releases">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span><small>Get it on</small><strong>GitHub</strong></span>
+      </a>
+    </div>
+    <ul class="facts">
+      <li>Free and open source</li>
+      <li>No account, no cloud</li>
+      <li>Built and checked by F-Droid</li>
+    </ul>
   </div>
-  <p class="muted">Android 12 or newer. Not on Google Play, and never will be.
-     The two downloads above are the same file &mdash; F-Droid builds each
-     release itself, checks it against the APK here byte for byte, and serves
-     this project's signed one &mdash; so either can update the other in place.
-     Setting it up takes about three minutes and no computer &mdash;
-     <a href="setup.html">here is how</a>. Play Protect sometimes objects to an
-     APK it has not seen before, which is one reason to prefer F-Droid;
-     <a href="setup.html#installing">the manual says what to do</a>.</p>
-
-  <div class="note info">
-    <p><strong>A reboot kills the recorder, and building it again takes a few
-       seconds of Wi-Fi.</strong> Allow JemRec to start automatically in your
-       phone's battery settings and it does that by itself &mdash; measured on an
-       Honor, ten seconds after Wi-Fi came back, with the app never opened.
-       Without that permission the phone will not start the app at boot at all,
-       and you open it once instead.
-       <a href="setup.html#after-a-restart">The manual has both measurements</a>.
-       Wi-Fi rebuilds the recorder; it is never needed to use it.</p>
+  <div class="phones">
+    <div class="phone back"><img class="light-only" src="screenshots/calls.png" srcset="screenshots/calls.png 420w, screenshots/light/calls.png 1256w" sizes="232px" alt="The calls tab" width="420" height="939" loading="lazy"><img class="dark-only" src="screenshots/calls-dark.png" srcset="screenshots/calls-dark.png 420w, screenshots/dark/calls.png 1256w" sizes="232px" alt="The calls tab" width="420" height="939" loading="lazy"></div>
+    <div class="phone front"><img class="light-only" src="screenshots/home.png" srcset="screenshots/home.png 420w, screenshots/light/home.png 1256w" sizes="272px" alt="The recordings list" width="420" height="939" loading="lazy"><img class="dark-only" src="screenshots/home-dark.png" srcset="screenshots/home-dark.png 420w, screenshots/dark/home.png 1256w" sizes="272px" alt="The recordings list" width="420" height="939" loading="lazy"></div>
   </div>
+</section>
 
-  <div class="shots">
-    <button class="shot" type="button" data-full="screenshots/light/home.png" aria-label="The recordings list"><img src="screenshots/home.png" alt="The recordings list" loading="lazy"></button>
-    <button class="shot" type="button" data-full="screenshots/light/calls.png" aria-label="The calls tab"><img src="screenshots/calls.png" alt="The calls tab" loading="lazy"></button>
-    <button class="shot" type="button" data-full="screenshots/light/settings.png" aria-label="Settings"><img src="screenshots/settings.png" alt="Settings" loading="lazy"></button>
-    <button class="shot" type="button" data-full="screenshots/light/selftest.png" aria-label="The self-test"><img src="screenshots/selftest.png" alt="The self-test" loading="lazy"></button>
-    <button class="shot" type="button" data-full="screenshots/dark/home.png" aria-label="The recordings list, dark"><img src="screenshots/home-dark.png" alt="The recordings list, dark" loading="lazy"></button>
-    <button class="shot" type="button" data-full="screenshots/dark/calls.png" aria-label="The calls tab, dark"><img src="screenshots/calls-dark.png" alt="The calls tab, dark" loading="lazy"></button>
-    <button class="shot" type="button" data-full="screenshots/dark/settings.png" aria-label="Settings, dark"><img src="screenshots/settings-dark.png" alt="Settings, dark" loading="lazy"></button>
-    <button class="shot" type="button" data-full="screenshots/dark/selftest.png" aria-label="The self-test, dark"><img src="screenshots/selftest-dark.png" alt="The self-test, dark" loading="lazy"></button>
+<section class="column" id="why">
+  <h2>Why JemRec</h2>
+  <p class="intro">Android stopped letting apps record calls years ago. JemRec
+     records them anyway, both sides, without asking you to root your phone.</p>
+  <div class="cards">
+    <div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h7A2.5 2.5 0 0 1 15 6.5v4a2.5 2.5 0 0 1-2.5 2.5H8l-3.5 3v-3A2.5 2.5 0 0 1 3 10.5Z"/><path d="M18 8h.5A2.5 2.5 0 0 1 21 10.5v4a2.5 2.5 0 0 1-2.5 2.5v3L15 17h-3a2.5 2.5 0 0 1-2.4-1.8"/></svg></div><h3>Both sides of every call</h3><p>Phone calls, and WhatsApp, Telegram and Viber calls on Android 14 or newer.</p></div><div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 5.5h2"/><path d="m9.5 12.5 2 2 3.5-4"/></svg></div><h3>No root, no computer, no second app</h3><p>The phone pairs with its own Wireless debugging and sets itself up, once, in a few minutes.</p></div><div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/></svg></div><h3>Nothing leaves your phone</h3><p>No account, no cloud, no analytics. The only network JemRec uses is the phone talking to itself.</p></div><div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></svg></div><h3>It tells you when something is wrong</h3><p>A recording that came out silent, a recorder that is down, a call that went by unrecorded &mdash; each gets a notification, so you do not find out on the day you need the call.</p></div><div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></div><h3>Your rules</h3><p>Record every call or be asked first, keep only some people&rsquo;s calls, and let old or very short recordings clear themselves away.</p></div><div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5.5l-3 13"/></svg></div><h3>Free, open and verifiable</h3><p>Apache-2.0, and F-Droid rebuilds every release from this source and checks it matches, byte for byte.</p></div>
   </div>
-  <p class="muted">Tap any of them to look properly. The people in them do not
-     exist: a screenshot of a call recorder is a screenshot of someone&rsquo;s
-     calls, so the list is filled with invented ones. Everything above the list
-     is real.</p>
+</section>
 
-  <h2>How it works</h2>
-
-  <p>Android&rsquo;s <code>voice-call</code> audio source carries both sides of a
-     call, and reading it needs permissions no ordinary app can hold &mdash; but
-     the shell user, the one an ADB session runs as, holds them. Getting shell
-     privilege normally means a computer, or root, or a second app you keep
-     alive. JemRec needs none of them, because the phone can be its own
-     computer.</p>
-
-  <h3>The phone is both ADB host and ADB device</h3>
-  <p>The app embeds an ADB client and pairs, over <code>127.0.0.1</code>, with
-     the phone&rsquo;s own Wireless debugging &mdash; the same six-digit pairing a
-     laptop does, with both ends on the same handset. Nothing leaves the phone.</p>
-
-  <h3>ADB is a bootstrap, not a transport</h3>
-  <p>That session lasts seconds. In it the app grants itself one settings
-     permission and launches a small daemon from a jar it carries inside the APK,
-     then closes the session. A process started from an ADB shell outlives the
-     connection, which is the whole trick: with Wi-Fi off there is no ADB at all,
-     so anything that needed it when a call arrived would simply not record.</p>
-
-  <h3>The daemon records; the app collects</h3>
-  <p>The daemon watches the call state and writes the call to a file. The app is
-     never on the audio path. That split was forced by measurement: when the app
-     handled live audio, the phone&rsquo;s process manager froze it while the
-     dialer was in front and a 77-second call arrived as 14. Afterwards the app
-     fetches the finished file at whatever pace the system allows, and a freeze
-     there costs a slower copy rather than a lost second.</p>
-
-  <h3>The socket is authenticated both ways</h3>
-  <p>The daemon listens on loopback, which every process on the phone shares, so
-     each connection proves itself with an HMAC exchange over a token that never
-     crosses the socket. The daemon proves itself first &mdash; anything can bind
-     that port while the daemon is down, and a scheme that sent the token as a
-     password would hand it over.</p>
-
-  <h3>It keeps itself alive</h3>
-  <p>Losing Wi-Fi restarts the ADB daemon and kills what it spawned, so the
-     recorder keeps one debugging switch on to survive it, and minds that switch
-     itself. That is what lets a call be recorded in a field with no network.</p>
-  <p>A reboot is the one thing it cannot survive, because starting the recorder
-     is the single operation that needs ADB. A scheduled job and a system-held
-     Wi-Fi watcher rebuild it without you within seconds of the phone joining a
-     network &mdash; when the phone lets the app start in the background at boot
-     to arm them. Where it does not, nothing is armed and nothing begins, which
-     is why the manual says to open the app once after a restart. Either way the
-     app says plainly that it cannot record rather than looking healthy, and
-     after two minutes a notification says it too.</p>
-
-  <h3>WhatsApp, Telegram and Viber calls too</h3>
-  <p>Messenger calls, both sides, each app switched on separately &mdash; and
-     the caller&rsquo;s name, if you let JemRec read the app&rsquo;s call
-     notification. Tested with WhatsApp, Telegram and Viber; Signal takes the
-     same path and is not tested yet. Android allows this from version 14; on
-     an older one, Settings says so.</p>
-
-  <h3>It tells you when something is wrong</h3>
-  <p>A recorder that fails quietly is found out on the day a call was needed. So
-     after each call a silent notification shows the recording, with Play, Share
-     and Delete; every recording is measured once it is saved, and one that came
-     out silent is reported; a recorder that is down says why, with
-     <strong>Pair again</strong> when the pairing is gone and
-     <strong>Allow this Wi-Fi</strong> when Android has not allowed the network;
-     and with call log
-     access, an answered call that has no recording is reported once.</p>
-
-  <h3>Every call, recorded or not</h3>
-  <p>A Calls tab shows the phone's call log with a play mark on each recorded
-     call, and, on one that was not recorded, why: recording was off, it was too
-     short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
-     it.</p>
-
-  <h3>Cut to the call</h3>
-  <p>A recording starts when the call is answered, not when you dial: no
-     ringing at the start, and a call nobody picked up is not kept. With call
-     waiting, each call gets a recording of its own. Android tells JemRec when
-     each call is answered; JemRec only listens, and never touches a call.</p>
-
-  <h3>Only the calls you want</h3>
-  <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
-     everyone&rsquo;s but a few people&rsquo;s. Name files by date, or with the
-     caller in them &mdash; and on an Honor, the way Honor&rsquo;s own Phone app
-     looks for them, so its call history gets a play button.</p>
-
-  <h3>Nothing is deleted by accident</h3>
-  <p>Delete moves a recording to Recently deleted, where it can be restored for
-     30 days. Auto-delete, off until you choose it, removes recordings past an
-     age you pick and calls too short to have been a conversation, into the same
-     place. A bookmark marks a recording to keep, and nothing removes a kept one.
-     A Quick Settings tile turns recording on and off without opening the
-     app.</p>
-
-  <h2>What it asks for, and what it does not</h2>
-  <p>No microphone permission. The app never opens an audio device &mdash; the
-     shell-side process does the capturing &mdash; and a call recorder that asks
-     for the microphone anyway is asking for something it does not use. Reading
-     your call log and contacts is optional, offered once, and is used for two
-     things only: labelling a recording with who the call was with, and noticing
-     a call that went unrecorded. Knowing when a call is answered takes one more
-     permission, one Android does not let apps ask for: JemRec&rsquo;s recorder
-     allows it, and turning off Exact call tracking in Settings takes it
-     back.</p>
-
+<section class="column" id="get-started">
+  <h2>Get started</h2>
+  <p class="intro">About three minutes, on the phone, once.</p>
+  <ol class="steps">
+    <li><h3>Install it</h3><p>From F-Droid, or the APK from the Releases page &mdash; the same signed file either way, so each can update the other.</p><a class="more" href="setup.html#installing">Trouble installing? &rarr;</a></li><li><h3>Follow the setup</h3><p>JemRec walks you through it and watches for each step: Developer options, USB and Wireless debugging (no cable needed), and pairing &mdash; the phone pairs with itself. Type the six-digit code into JemRec&rsquo;s <em>notification</em>, not the app.</p><a class="more" href="setup.html#step-1-open-jemrec-and-allow-notifications">The setup, step by step &rarr;</a></li><li><h3>Let it start by itself</h3><p>A restart stops the recorder. Allow auto-start (Settings &rarr; <em>Survive a restart</em>) and it is back seconds after Wi-Fi returns; without it, open JemRec once.</p><a class="more" href="setup.html#after-a-restart">After a restart &rarr;</a></li>
+  </ol>
+  <p class="after-steps">Then run <strong>Settings &rarr; Diagnostics &rarr;
+     Self-test</strong>: it answers, in about a second, whether your phone hands
+     over both sides of a call. <a href="setup.html">The full manual</a> says
+     what to do when a step misbehaves.</p>
   <div class="note">
     <p><strong>Recording calls is your responsibility.</strong> Consent law
        differs by country and sometimes by state: one party, all parties, or a
-       spoken notice. This app records what you tell it to and warns nobody on
+       spoken notice. JemRec records what you tell it to and warns nobody on
        your behalf.</p>
   </div>
+</section>
 
+<section class="column" id="screens">
+  <h2>A look around</h2>
+  <p class="intro">Tap one to see it properly.</p>
+  <div class="gallery">
+    <figure>
+      <button class="shot light-only" type="button" data-full="screenshots/light/home.png" aria-label="Recordings"><img src="screenshots/home.png" alt="Recordings" loading="lazy" width="420" height="939"></button>
+      <button class="shot dark-only" type="button" data-full="screenshots/dark/home.png" aria-label="Recordings, dark"><img src="screenshots/home-dark.png" alt="Recordings, dark" loading="lazy" width="420" height="939"></button>
+      <figcaption><strong>Recordings</strong><span>By day, with who each call was with.</span></figcaption>
+    </figure>
+    <figure>
+      <button class="shot light-only" type="button" data-full="screenshots/light/calls.png" aria-label="Calls"><img src="screenshots/calls.png" alt="Calls" loading="lazy" width="420" height="939"></button>
+      <button class="shot dark-only" type="button" data-full="screenshots/dark/calls.png" aria-label="Calls, dark"><img src="screenshots/calls-dark.png" alt="Calls, dark" loading="lazy" width="420" height="939"></button>
+      <figcaption><strong>Calls</strong><span>Your call log, each call with its recording &mdash; or why there is none.</span></figcaption>
+    </figure>
+    <figure>
+      <button class="shot light-only" type="button" data-full="screenshots/light/settings.png" aria-label="Settings"><img src="screenshots/settings.png" alt="Settings" loading="lazy" width="420" height="939"></button>
+      <button class="shot dark-only" type="button" data-full="screenshots/dark/settings.png" aria-label="Settings, dark"><img src="screenshots/settings-dark.png" alt="Settings, dark" loading="lazy" width="420" height="939"></button>
+      <figcaption><strong>Settings</strong><span>Every choice at a glance, each one a tap away.</span></figcaption>
+    </figure>
+    <figure>
+      <button class="shot light-only" type="button" data-full="screenshots/light/selftest.png" aria-label="Self-test"><img src="screenshots/selftest.png" alt="Self-test" loading="lazy" width="420" height="939"></button>
+      <button class="shot dark-only" type="button" data-full="screenshots/dark/selftest.png" aria-label="Self-test, dark"><img src="screenshots/selftest-dark.png" alt="Self-test, dark" loading="lazy" width="420" height="939"></button>
+      <figcaption><strong>Self-test</strong><span>Whether your phone hands over both sides, in a second.</span></figcaption>
+    </figure>
+  </div>
+  <p class="gallery-note">The app follows your phone&rsquo;s theme, and these
+     follow the page&rsquo;s &mdash; the button at the top switches it. The
+     people in them do not exist: a screenshot of a call recorder is a
+     screenshot of someone&rsquo;s calls, so the list is filled with invented
+     ones. Everything else is real.</p>
+</section>
+
+<section class="column" id="features">
+  <h2>What you can do</h2>
+  <p class="intro">Each of these has its section in the manual.</p>
+  <div class="tiles">
+    <a class="tile" href="setup.html#choosing-when-to-record"><strong>Record every call, or be asked</strong><span>Automatic mode records every call; ask-first records nothing until you tap Record. A Quick Settings tile turns recording on and off.</span><em>More &rarr;</em></a><a class="tile" href="setup.html#exact-call-tracking"><strong>Start at the answer</strong><span>Exact call tracking cuts the ringing, skips calls nobody answered, and splits call waiting into one recording per call.</span><em>More &rarr;</em></a><a class="tile" href="setup.html#whose-calls-to-keep"><strong>Keep only the calls you want</strong><span>All your contacts, all but some, only some, or none &mdash; and other numbers on their own switch.</span><em>More &rarr;</em></a><a class="tile" href="setup.html#messenger-calls"><strong>Messenger calls</strong><span>WhatsApp, Telegram and Viber, both sides, each switched on separately, with the caller&rsquo;s name from the app&rsquo;s notification. Android 14+.</span><em>More &rarr;</em></a><a class="tile" href="setup.html#the-calls-tab"><strong>See every call</strong><span>The Calls tab is your call log, each call with its recording &mdash; or, if there is none, why.</span><em>More &rarr;</em></a><a class="tile" href="setup.html#file-names"><strong>Name files your way</strong><span>By date and time, with the caller, or the way Honor&rsquo;s Phone app plays them from its call history.</span><em>More &rarr;</em></a><a class="tile" href="setup.html#playing-sharing-and-deleting"><strong>Keep, delete, clean up</strong><span>A keep mark, a 30-day Recently deleted, and auto-delete for old or very short recordings.</span><em>More &rarr;</em></a><a class="tile" href="setup.html#what-the-app-tells-you"><strong>Hear about problems</strong><span>A notification after each call, and one when a recording is silent, the recorder is down, or a call went unrecorded.</span><em>More &rarr;</em></a>
+  </div>
+  <p class="tiles-note">Recordings are Opus files in the phone&rsquo;s standard
+     <code>Recordings/JemRec</code> folder, where any file manager or music app
+     can open them &mdash; or in a folder you choose.</p>
+</section>
+
+<section class="column" id="how">
+  <div class="how">
+    <div>
+      <h2>How it works</h2>
+      <p>Android&rsquo;s <code>voice-call</code> audio source carries both sides
+         of a call, but only system-level identities may read it &mdash; and
+         the one an ADB session runs as, the <strong>shell</strong>, is among
+         them. Getting a shell normally takes a computer, root, or a helper app
+         like Shizuku. JemRec makes the phone its own computer:</p>
+      <ol class="numbered">
+        <li><strong>The app pairs with the phone&rsquo;s own Wireless
+            debugging</strong> &mdash; the same pairing a laptop does, with both
+            ends on the same handset.</li>
+        <li><strong>For a few seconds, it uses that session to start a small
+            recorder</strong> that runs as the shell, then closes it. The
+            recorder outlives the session.</li>
+        <li><strong>The recorder watches the calls and writes each one to a
+            file</strong> itself, so a phone that freezes background apps cannot
+            cut a recording short.</li>
+        <li><strong>The app collects the finished file</strong> over a socket on
+            which the recorder and the app each prove who they are.</li>
+      </ol>
+      <p>Wi-Fi is needed only to start the recorder &mdash; after a reboot, say
+         &mdash; never to record.</p>
+      <a class="more" href="how-it-works.html">The design, and the measurements
+         behind each decision &rarr;</a>
+    </div>
+    <svg class="diagram" viewBox="0 0 540 430" role="img" aria-labelledby="dg-title">
+    <title id="dg-title">The app pairs with the phone&rsquo;s own Wireless debugging,
+      which starts a recorder running as the shell; the recorder writes each
+      call to a file, and the app collects it.</title>
+    <defs><marker id="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="7" markerHeight="7" orient="auto"><path class="dg-head" d="M0 0L10 5L0 10z"/></marker></defs>
+    <rect class="dg-phone" x="6" y="6" width="528" height="418" rx="40"/>
+    <text class="dg-sub" x="270" y="46">Your phone &mdash; nothing leaves it</text>
+    <rect class="dg-node key" x="28" y="78" width="196" height="78" rx="16"/><text class="dg-title" x="126" y="112">JemRec app</text><text class="dg-sub" x="126" y="136">pairs, then collects</text>
+    <rect class="dg-node " x="316" y="78" width="196" height="78" rx="16"/><text class="dg-title" x="414" y="112">Wireless debugging</text><text class="dg-sub" x="414" y="136">Android&rsquo;s own</text>
+    <rect class="dg-node " x="316" y="300" width="196" height="78" rx="16"/><text class="dg-title" x="414" y="334">Recorder</text><text class="dg-sub" x="414" y="358">runs as the shell</text>
+    <rect class="dg-node file" x="28" y="300" width="196" height="78" rx="16"/><text class="dg-title" x="126" y="334">Recording</text><text class="dg-sub" x="126" y="358">an Opus file</text>
+    <path class="dg-line" d="M224 117H311" marker-end="url(#dg-arrow)"/>
+    <path class="dg-line" d="M414 156V295" marker-end="url(#dg-arrow)"/>
+    <path class="dg-line" d="M316 339H229" marker-end="url(#dg-arrow)"/>
+    <path class="dg-line" d="M126 300V161" marker-end="url(#dg-arrow)"/>
+    <circle class="dg-num" cx="266" cy="117" r="14"/><text class="dg-num-text" x="266" y="117">1</text><circle class="dg-num" cx="414" cy="226" r="14"/><text class="dg-num-text" x="414" y="226">2</text><circle class="dg-num" cx="272" cy="339" r="14"/><text class="dg-num-text" x="272" y="339">3</text><circle class="dg-num" cx="126" cy="230" r="14"/><text class="dg-num-text" x="126" y="230">4</text>
+    <text class="dg-label" x="266" y="152" text-anchor="middle">pairs</text>
+    <text class="dg-label" x="436" y="231">starts it</text>
+    <text class="dg-label" x="272" y="374" text-anchor="middle">records</text>
+    <text class="dg-label" x="148" y="235">collects</text>
+    <text class="dg-sub" x="270" y="216">all over</text>
+    <text class="dg-sub" x="270" y="238">127.0.0.1</text>
+  </svg>
+  </div>
+</section>
+
+<section class="column" id="phones">
   <h2>Will it work on your phone?</h2>
-  <p>One thing cannot be worked around: whether your phone&rsquo;s audio hardware
-     hands over the call at all. Some give both sides, some give one, some give
-     silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
-     <strong>Self-test</strong> &mdash; by opening a real capture down the same
-     path a call takes and telling you what came out.</p>
-  <p class="muted">Both sides of the call have been recorded on three phones,
-     across three very different Android builds: an Honor Magic&nbsp;8 Pro on
-     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20 on One&nbsp;UI, and a OnePlus on
-     LineageOS&nbsp;23. Three is not a compatibility list, which is what the
-     self-test is for.</p>
+  <p class="intro">Developer options and Wireless debugging are on every Android
+     phone, though the menu they live in differs by make; JemRec names the right
+     path for yours.</p>
+  <div class="works">
+    <h3 class="versions">What it records, by Android version</h3>
+    <h3 class="tested">Both sides recorded on three very different phones</h3>
+    <div class="table-card versions">
+      <table>
+        <tr><th></th><th>Phone calls</th><th>Messenger calls</th></tr>
+        <tr><td><strong>Android 12 and 13</strong></td>
+            <td><span class="yes" aria-label="Yes">&#10003;</span></td>
+            <td><span class="no" aria-hidden="true">&ndash;</span>Android does not allow it</td></tr>
+        <tr><td><strong>Android 14 and newer</strong></td>
+            <td><span class="yes" aria-label="Yes">&#10003;</span></td>
+            <td><span class="yes" aria-hidden="true">&#10003;</span>WhatsApp, Telegram, Viber</td></tr>
+      </table>
+    </div>
+    <ul class="table-card devices tested">
+      <li>Honor Magic 8 Pro<span>MagicOS 10, Android 16 &mdash; the phone it was developed on</span></li>
+      <li>Samsung Galaxy S20<span>One UI</span></li>
+      <li>OnePlus<span>LineageOS 23</span></li>
+    </ul>
+  </div>
+  <p class="muted works-note">Signal takes the same path as the other messengers
+     and has not been tested yet.</p>
+  <div class="note info">
+    <p><strong>Three is not a compatibility list.</strong> The one thing nobody
+       can promise for a phone they have not held is its audio hardware: some
+       hand over both sides of the call, some one, some silence. The
+       <strong>Self-test</strong> answers it on yours in about a second.</p>
+  </div>
+</section>
+
+<section class="band" id="privacy">
+  <div class="column">
+    <h2>Privacy and permissions</h2>
+    <p class="intro">JemRec has no servers, no accounts and no analytics: what it
+       records stays on your phone.</p>
+    <div class="cards four">
+      <div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M3.5 3.5l17 17"/></svg></div><h3>No microphone permission</h3><p>The app never opens an audio device; the recorder does the capturing.</p></div><div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18.5h10.5a3.5 3.5 0 0 0 .6-7A6 6 0 0 0 6.6 9.6 4.5 4.5 0 0 0 7 18.5Z"/><path d="M3.5 3.5l17 17"/></svg></div><h3>Nothing leaves the phone</h3><p>No account, no server, no analytics, and nothing is collected about you.</p></div><div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg></div><h3>Calls and contacts only if you allow them</h3><p>To name callers, keep calls by who they were with, and notice a call that went unrecorded. Everything works without them.</p></div><div class="card"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 5.8V11c0 4.4 2.9 8.3 7 9.8 4.1-1.5 7-5.4 7-9.8V5.8Z"/><path d="m9.3 12 1.9 1.9 3.6-3.8"/></svg></div><h3>Debugging stays on while JemRec is installed</h3><p>The recorder needs it. A computer you have paired can connect over the same Wi-Fi, so now and then check <em>Wireless debugging &rarr; Paired devices</em>.</p></div>
+    </div>
+    <div class="links">
+      <a class="more" href="privacy-policy.html">Privacy policy &rarr;</a>
+      <a class="more" href="how-it-works.html#permissions">Every permission, and why &rarr;</a>
+      <a class="more" href="https://github.com/jemcik/JemRec/blob/main/docs/ARCHITECTURE.md#what-stays-switched-on">What stays switched on &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<section class="column faq" id="faq">
+  <div>
+    <h2>Questions</h2>
+    <p class="intro">Something else? Ask on
+       <a href="https://github.com/jemcik/JemRec/issues">GitHub</a>.</p>
+  </div>
+  <div>
+    <details><summary>Does it really record both sides?</summary><div><p>Yes, where the phone&rsquo;s audio hardware hands both sides over &mdash; which it did on every phone above. The Self-test tells you for yours in about a second. On speakerphone, a messenger call&rsquo;s other person is heard on your side too: your side is the plain microphone, without the call app&rsquo;s echo cancellation.</p></div></details><details><summary>Why does it need Wi-Fi?</summary><div><p>Only to <em>start</em> the recorder: that is the one step that needs Wireless debugging, which Android runs over Wi-Fi. Once started, the recorder carries on with Wi-Fi off, on mobile data, anywhere. A reboot stops it, and the next few seconds of Wi-Fi bring it back by themselves (see <a href="#get-started">Get started</a>, step 3). Until then nothing is recorded &mdash; the header says so, and after two minutes a notification does too.</p></div></details><details><summary>Why isn&rsquo;t it on Google Play?</summary><div><p>Play removed call recorders in 2022 by forbidding the Accessibility API for recording, and no policy change since has re-opened the door. That is a distribution decision, not a technical one &mdash; the app itself never needed Play, and F-Droid asks only that a build be free software and reproducible from its source, which this one is. It never will be on Play.</p></div></details><details><summary>Is recording calls legal?</summary><div><p>It depends on where you and the other person are: some places need one party&rsquo;s consent, some everyone&rsquo;s, some a spoken notice. That is your responsibility; JemRec records what you tell it to and warns nobody on your behalf.</p></div></details><details><summary>Where are my recordings, and what happens to them if I uninstall?</summary><div><p>In the phone&rsquo;s standard <code>Recordings/JemRec</code> folder (or the folder you chose), as Opus files any music app can play; Share can also convert one to <code>.m4a</code> for iPhones and Macs. They are yours rather than the app&rsquo;s, so they stay when JemRec is uninstalled &mdash; delete them first if you want them gone. Deleted ones wait in Recently deleted for 30 days.</p></div></details><details><summary>How do I turn debugging off for good?</summary><div><p>Uninstall JemRec first. If the recorder is running, it notices the uninstall within a few minutes, turns both debugging switches off and exits; either way, once JemRec is gone nothing turns them back on.</p></div></details>
+  </div>
+</section>
+
+<section class="column closing">
+  <img src="icon.png" alt="" width="72" height="72">
+  <h2>Try it on your phone</h2>
+  <p class="intro">Free, no account, about three minutes to set up &mdash; and
+     the Self-test tells you in a second whether your phone hands over both
+     sides.</p>
+  <div class="cta">
+      <a class="store fdroid" href="https://f-droid.org/packages/com.jemcik.jemrec/">
+        <img src="fdroid-logo.svg" alt="" width="32" height="32">
+        <span><small>Get it on</small><strong>F-Droid</strong></span>
+      </a>
+      <a class="store github" href="https://github.com/jemcik/JemRec/releases">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span><small>Get it on</small><strong>GitHub</strong></span>
+      </a>
+    </div>
+</section>
 
 </main>
 <footer>
   <div class="column">
-    <p>JemRec is free software under the Apache&nbsp;2.0 licence.
-       <a href="https://github.com/jemcik/JemRec">Source on GitHub</a>.</p>
+    <nav>
+      <a href="how-it-works.html">How it works</a>
+      <a href="setup.html">Setup</a>
+      <a href="privacy-policy.html">Privacy policy</a>
+      <a href="https://github.com/jemcik/JemRec/releases">Releases</a>
+      <a href="https://github.com/jemcik/JemRec">Source on GitHub</a>
+    </nav>
+    <p>JemRec is free software under the Apache&nbsp;2.0 licence.</p>
+    <p class="credit">The F-Droid logo is by William Theaker, Robert Martinez and
+       Andrew Nayenko, under
+       <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC&nbsp;BY-SA&nbsp;3.0</a>.</p>
   </div>
 </footer>
 <div class="viewer" hidden tabindex="-1" role="dialog" aria-modal="true"

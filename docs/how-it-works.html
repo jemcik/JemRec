@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JemRec · How it works</title>
+<meta name="description" content="How JemRec records both sides of a call without root: the phone is its own ADB host, and a recorder running as the shell does the rest.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="icon.png">
+<script>(function(){try{var v=localStorage.getItem('jemrec-theme');if(v&&v!=='system')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+<link rel="stylesheet" href="jemrec.css">
+<script src="jemrec.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <div class="column">
+    <a class="brand" href="index.html"><img src="icon.png" alt="" width="34" height="34">JemRec</a>
+    <div class="bar-end">
+      <nav><a href="index.html">Home</a><a href="setup.html">Setup</a><a href="privacy-policy.html" class="roomy">Privacy</a><a class="roomy" href="https://github.com/jemcik/JemRec">GitHub</a></nav>
+      <button class="theme" type="button" aria-label="Theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+        </svg><span class="theme-name">System</span>
+      </button>
+    </div>
+  </div>
+</header>
+<main>
+
+  <h1>How JemRec works</h1>
+  <p class="lead">Android&rsquo;s <code>voice-call</code> audio source carries both sides of a
+     call, and reading it needs permissions no ordinary app can hold &mdash; but
+     the shell user, the one an ADB session runs as, holds them. Getting shell
+     privilege normally means a computer, or root, or a second app you keep
+     alive. JemRec needs none of them, because the phone can be its own
+     computer.</p>
+
+  <svg class="diagram" viewBox="0 0 540 430" role="img" aria-labelledby="dg-title">
+    <title id="dg-title">The app pairs with the phone&rsquo;s own Wireless debugging,
+      which starts a recorder running as the shell; the recorder writes each
+      call to a file, and the app collects it.</title>
+    <defs><marker id="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="7" markerHeight="7" orient="auto"><path class="dg-head" d="M0 0L10 5L0 10z"/></marker></defs>
+    <rect class="dg-phone" x="6" y="6" width="528" height="418" rx="40"/>
+    <text class="dg-sub" x="270" y="46">Your phone &mdash; nothing leaves it</text>
+    <rect class="dg-node key" x="28" y="78" width="196" height="78" rx="16"/><text class="dg-title" x="126" y="112">JemRec app</text><text class="dg-sub" x="126" y="136">pairs, then collects</text>
+    <rect class="dg-node " x="316" y="78" width="196" height="78" rx="16"/><text class="dg-title" x="414" y="112">Wireless debugging</text><text class="dg-sub" x="414" y="136">Android&rsquo;s own</text>
+    <rect class="dg-node " x="316" y="300" width="196" height="78" rx="16"/><text class="dg-title" x="414" y="334">Recorder</text><text class="dg-sub" x="414" y="358">runs as the shell</text>
+    <rect class="dg-node file" x="28" y="300" width="196" height="78" rx="16"/><text class="dg-title" x="126" y="334">Recording</text><text class="dg-sub" x="126" y="358">an Opus file</text>
+    <path class="dg-line" d="M224 117H311" marker-end="url(#dg-arrow)"/>
+    <path class="dg-line" d="M414 156V295" marker-end="url(#dg-arrow)"/>
+    <path class="dg-line" d="M316 339H229" marker-end="url(#dg-arrow)"/>
+    <path class="dg-line" d="M126 300V161" marker-end="url(#dg-arrow)"/>
+    <circle class="dg-num" cx="266" cy="117" r="14"/><text class="dg-num-text" x="266" y="117">1</text><circle class="dg-num" cx="414" cy="226" r="14"/><text class="dg-num-text" x="414" y="226">2</text><circle class="dg-num" cx="272" cy="339" r="14"/><text class="dg-num-text" x="272" y="339">3</text><circle class="dg-num" cx="126" cy="230" r="14"/><text class="dg-num-text" x="126" y="230">4</text>
+    <text class="dg-label" x="266" y="152" text-anchor="middle">pairs</text>
+    <text class="dg-label" x="436" y="231">starts it</text>
+    <text class="dg-label" x="272" y="374" text-anchor="middle">records</text>
+    <text class="dg-label" x="148" y="235">collects</text>
+    <text class="dg-sub" x="270" y="216">all over</text>
+    <text class="dg-sub" x="270" y="238">127.0.0.1</text>
+  </svg>
+  <p class="muted">The whole design, with the measurement behind each decision,
+     is in <a href="https://github.com/jemcik/JemRec/blob/main/docs/ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>
+
+  <h2 id="design">The design</h2>
+
+  <h3>The phone is both ADB host and ADB device</h3>
+  <p>The app embeds an ADB client and pairs, over <code>127.0.0.1</code>, with
+     the phone&rsquo;s own Wireless debugging &mdash; the same six-digit pairing a
+     laptop does, with both ends on the same handset. Nothing leaves the phone.</p>
+
+  <h3>ADB is a bootstrap, not a transport</h3>
+  <p>That session lasts seconds. In it the app grants itself one settings
+     permission and launches a small daemon from a jar it carries inside the APK,
+     then closes the session. A process started from an ADB shell outlives the
+     connection, which is the whole trick: with Wi-Fi off there is no ADB at all,
+     so anything that needed it when a call arrived would simply not record.</p>
+
+  <h3>The daemon records; the app collects</h3>
+  <p>The daemon watches the call state and writes the call to a file. The app is
+     never on the audio path. That split was forced by measurement: when the app
+     handled live audio, the phone&rsquo;s process manager froze it while the
+     dialer was in front and a 77-second call arrived as 14. Afterwards the app
+     fetches the finished file at whatever pace the system allows, and a freeze
+     there costs a slower copy rather than a lost second.</p>
+
+  <h3>The socket is authenticated both ways</h3>
+  <p>The daemon listens on loopback, which every process on the phone shares, so
+     each connection proves itself with an HMAC exchange over a token that never
+     crosses the socket. The daemon proves itself first &mdash; anything can bind
+     that port while the daemon is down, and a scheme that sent the token as a
+     password would hand it over.</p>
+
+  <h3>It keeps itself alive</h3>
+  <p>Losing Wi-Fi restarts the ADB daemon and kills what it spawned, so the
+     recorder keeps one debugging switch on to survive it, and minds that switch
+     itself. That is what lets a call be recorded in a field with no network.</p>
+  <p>A reboot is the one thing it cannot survive, because starting the recorder
+     is the single operation that needs ADB. A scheduled job and a system-held
+     Wi-Fi watcher rebuild it without you within seconds of the phone joining a
+     network &mdash; when the phone lets the app start in the background at boot
+     to arm them. Where it does not, nothing is armed and nothing begins, which
+     is why the manual says to open the app once after a restart. Either way the
+     app says plainly that it cannot record rather than looking healthy, and
+     after two minutes a notification says it too.</p>
+
+  <h2 id="what-it-does">What it does</h2>
+
+  <h3>WhatsApp, Telegram and Viber calls too</h3>
+  <p>Messenger calls, both sides, each app switched on separately &mdash; and
+     the caller&rsquo;s name, if you let JemRec read the app&rsquo;s call
+     notification. Tested with WhatsApp, Telegram and Viber; Signal takes the
+     same path and is not tested yet. Android allows this from version 14; on
+     an older one, Settings says so.</p>
+
+  <h3>It tells you when something is wrong</h3>
+  <p>A recorder that fails quietly is found out on the day a call was needed. So
+     after each call a silent notification shows the recording, with Play, Share
+     and Delete; every recording is measured once it is saved, and one that came
+     out silent is reported; a recorder that is down says why, with
+     <strong>Pair again</strong> when the pairing is gone and
+     <strong>Allow this Wi-Fi</strong> when Android has not allowed the network;
+     and with call log
+     access, an answered call that has no recording is reported once.</p>
+
+  <h3>Every call, recorded or not</h3>
+  <p>A Calls tab shows the phone's call log with a play mark on each recorded
+     call, and, on one that was not recorded, why: recording was off, it was too
+     short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
+     it.</p>
+
+  <h3>Cut to the call</h3>
+  <p>A recording starts when the call is answered, not when you dial: no
+     ringing at the start, and a call nobody picked up is not kept. With call
+     waiting, each call gets a recording of its own. Android tells JemRec when
+     each call is answered; JemRec only listens, and never touches a call.</p>
+
+  <h3>Only the calls you want</h3>
+  <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
+     everyone&rsquo;s but a few people&rsquo;s. Name files by date, or with the
+     caller in them &mdash; and on an Honor, the way Honor&rsquo;s own Phone app
+     looks for them, so its call history gets a play button.</p>
+
+  <h3>Nothing is deleted by accident</h3>
+  <p>Delete moves a recording to Recently deleted, where it can be restored for
+     30 days. Auto-delete, off until you choose it, removes recordings past an
+     age you pick and calls too short to have been a conversation, into the same
+     place. A bookmark marks a recording to keep, and nothing removes a kept one.
+     A Quick Settings tile turns recording on and off without opening the
+     app.</p>
+
+  <h2 id="permissions">What it asks for, and what it does not</h2>
+  <p>No microphone permission. The app never opens an audio device &mdash; the
+     shell-side process does the capturing &mdash; and a call recorder that asks
+     for the microphone anyway is asking for something it does not use. Reading
+     your call log and contacts is optional, offered once, and is used for two
+     things only: labelling a recording with who the call was with, and noticing
+     a call that went unrecorded. Knowing when a call is answered takes one more
+     permission, one Android does not let apps ask for: JemRec&rsquo;s recorder
+     allows it, and turning off Exact call tracking in Settings takes it
+     back.</p>
+  <p>Every permission, in the order F-Droid&rsquo;s listing page shows them,
+     because a permission a call recorder does not explain is one its user has
+     to guess at:</p>
+  <table>
+    <tr><th>Permission</th><th>Why</th></tr>
+    <tr><td><code>INTERNET</code></td><td>Not about the internet: Android requires it for any TCP socket, including one to <code>127.0.0.1</code>.</td></tr>
+    <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing.</td></tr>
+    <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it.</td></tr>
+    <tr><td><code>POST_NOTIFICATIONS</code></td><td>The recording notice, the ask-first prompt, the pairing code box.</td></tr>
+    <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
+    <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>
+    <tr><td><code>READ_MEDIA_AUDIO</code></td><td>To list recordings made before a reinstall. Refusing it only hides those.</td></tr>
+    <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
+    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. JemRec never acts on a call.</td></tr>
+    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
+    <tr><td><code>WAKE_LOCK</code></td><td>Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work.</td></tr>
+  </table>
+
+  <div class="note">
+    <p><strong>Recording calls is your responsibility.</strong> Consent law
+       differs by country and sometimes by state: one party, all parties, or a
+       spoken notice. This app records what you tell it to and warns nobody on
+       your behalf.</p>
+  </div>
+
+  <h2>Will it work on your phone?</h2>
+  <p>One thing cannot be worked around: whether your phone&rsquo;s audio hardware
+     hands over the call at all. Some give both sides, some give one, some give
+     silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
+     <strong>Self-test</strong> &mdash; by opening a real capture down the same
+     path a call takes and telling you what came out.</p>
+  <p class="muted">Both sides of the call have been recorded on three phones,
+     across three very different Android builds: an Honor Magic&nbsp;8 Pro on
+     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20 on One&nbsp;UI, and a OnePlus on
+     LineageOS&nbsp;23. Three is not a compatibility list, which is what the
+     self-test is for.</p>
+
+</main>
+<footer>
+  <div class="column">
+    <nav>
+      <a href="how-it-works.html">How it works</a>
+      <a href="setup.html">Setup</a>
+      <a href="privacy-policy.html">Privacy policy</a>
+      <a href="https://github.com/jemcik/JemRec/releases">Releases</a>
+      <a href="https://github.com/jemcik/JemRec">Source on GitHub</a>
+    </nav>
+    <p>JemRec is free software under the Apache&nbsp;2.0 licence.</p>
+    <p class="credit">The F-Droid logo is by William Theaker, Robert Martinez and
+       Andrew Nayenko, under
+       <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC&nbsp;BY-SA&nbsp;3.0</a>.</p>
+  </div>
+</footer>
+<div class="viewer" hidden tabindex="-1" role="dialog" aria-modal="true"
+     aria-label="Screenshot">
+  <button class="vnav prev" type="button" aria-label="Previous">&lsaquo;</button>
+  <img alt="">
+  <button class="vnav next" type="button" aria-label="Next">&rsaquo;</button>
+  <span class="vcount"></span>
+</div>
+</body>
+</html>

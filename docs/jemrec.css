@@ -18,6 +18,7 @@
   --play:     #14713C;
   --code-bg:  #E7ECF3;
   --wrap:     44rem;
+  --wide:     70rem;
   --body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -48,7 +49,9 @@
 }
 
 * { box-sizing: border-box; }
-html { font-size: 17px; scroll-behavior: smooth; }
+/* scroll-padding: the header is sticky, so a jump to a heading - a feature
+   tile into the manual, say - would otherwise put the heading under it. */
+html { font-size: 17px; scroll-behavior: smooth; scroll-padding-top: 5rem; }
 body {
   margin: 0;
   font-family: var(--body);
@@ -60,15 +63,17 @@ body {
 
 /* The RULE spans the window; the CONTENT does not. A sticky bar whose border
    stops short of the edges reads as a floating card rather than a header, so
-   the bar stays full width and everything inside it sits in the same column as
-   the prose - same max-width, same side padding, so the wordmark starts exactly
-   where the headline does. */
+   the bar stays full width and everything inside it sits in a column.
+   The column is the home page's width on every page, not the prose's: the
+   home page is laid out wide, and a wordmark that jumped sideways between
+   pages would look like a different site. The manual's prose keeps its own
+   narrower measure underneath. */
 .bar {
   padding: .9rem 0;
   border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--surface); z-index: 5;
 }
-.column { max-width: var(--wrap); margin: 0 auto; padding: 0 1.4rem; }
+.column { max-width: var(--wide); margin: 0 auto; padding: 0 1.4rem; }
 .bar .column {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
 }
@@ -96,6 +101,8 @@ body {
   .theme .theme-name { display: none; }
   .bar nav a { margin-left: .85rem; }
   .bar-end { gap: .6rem; }
+  /* Then the links the footer also carries. */
+  .bar nav a.roomy { display: none; }
 }
 
 main { max-width: var(--wrap); margin: 0 auto; padding: 2.6rem 1.4rem 5rem; }
@@ -109,37 +116,17 @@ a  { color: var(--accent); }
 .muted { color: var(--ink-mid); font-size: .93rem; }
 
 .cta { display: flex; flex-wrap: wrap; gap: .7rem; margin: 1.6rem 0 .6rem; }
-.btn {
-  display: inline-block; padding: .62rem 1.15rem; border-radius: 999px;
-  background: var(--accent); color: var(--surface); text-decoration: none;
-  font-weight: 600; font-size: .96rem; border: 1px solid transparent;
-}
-.btn.ghost { background: var(--raise); color: var(--accent); border-color: var(--line); }
-.btn:hover { filter: brightness(1.06); }
-
-/* Four columns, or two on a phone - never three. The gallery is eight shots,
-   one row per theme, and auto-fit's three-column widths left a lone shot on
-   a row of its own (it did, with five). */
-.shots {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: .8rem; margin: 2.2rem 0 .6rem;
-}
-@media (max-width: 40rem) {
-  .shots { grid-template-columns: repeat(2, 1fr); }
-}
-.shot {
-  padding: 0; border: 1px solid var(--line); border-radius: 14px;
-  background: var(--raise); cursor: zoom-in; overflow: hidden; display: block;
-}
-.shot img { width: 100%; height: auto; display: block; }
-.shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 pre {
   background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
   padding: .8rem 1rem; overflow-x: auto; font-size: .86rem; line-height: 1.5;
 }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
-p code, li code { background: var(--code-bg); padding: .1rem .32rem; border-radius: 5px; }
+p code, li code, td code { background: var(--code-bg); padding: .1rem .32rem; border-radius: 5px; }
+/* FOREGROUND_SERVICE_SPECIAL_USE is wider than a phone's table column. Only
+   there: "anywhere" also lets the column shrink, and on a wide screen it did,
+   breaking every name in two. */
+@media (max-width: 38rem) { td code { overflow-wrap: anywhere; } }
 
 table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .94rem; }
 th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--line);
@@ -161,6 +148,344 @@ footer {
   color: var(--ink-mid); font-size: .9rem; text-align: center;
 }
 footer a { color: var(--ink-mid); }
+footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem 1.4rem; }
+footer .credit { font-size: .8rem; margin-top: -.3rem; }
+
+/* ── the home page ── */
+
+/* LOOKED AT, NOT READ. The manual and the policy are prose, and keep a 44rem
+   measure because longer lines are hard to read. The home page is a phone
+   beside a headline and rows of cards, and in 44rem every row became a column,
+   so it is a run of full-width sections, each with its content in the wide
+   column - which also lets a section's background reach the window's edges. */
+main.home { max-width: none; padding: 0 0 2rem; }
+/* A section's id is on the section, and its heading is a padding below that:
+   the negative margin takes most of the padding back, so a jump lands with the
+   heading just under the header rather than a screen-fifth below it. */
+.home section { padding-top: 5.5rem; scroll-margin-top: -4rem; }
+@media (max-width: 38rem) { .home section { padding-top: 4rem; } }
+/* Balanced, so a headline never ends on one word of its own - "Both sides of
+   every" over a lone "call." looked like a mistake. */
+.home h1, .home h2 { text-wrap: balance; }
+.home h2 {
+  font-size: clamp(1.6rem, 3.2vw, 2.15rem); line-height: 1.18;
+  letter-spacing: -.025em; margin: 0 0 .6rem;
+}
+.home h3 { font-size: 1.05rem; line-height: 1.35; margin: 0 0 .35rem; }
+.intro { color: var(--ink-mid); font-size: 1.08rem; max-width: 40rem; margin: 0 0 2.2rem; }
+.home .note { max-width: 46rem; margin-top: 2rem; }
+.more { font-weight: 600; text-decoration: none; }
+.more:hover { text-decoration: underline; }
+
+.hero {
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+  gap: 2.5rem 3rem; align-items: center; padding-top: 3.4rem;
+}
+.eyebrow {
+  display: inline-block; font-size: .86rem; font-weight: 600; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  padding: .28rem .8rem; border-radius: 999px;
+}
+.hero h1 {
+  font-size: clamp(2.35rem, 5.4vw, 3.75rem); line-height: 1.04;
+  letter-spacing: -.035em; margin: 1.1rem 0 1.2rem;
+}
+.hero h1 span { display: block; color: var(--accent); }
+.hero .lead { font-size: 1.17rem; max-width: 33rem; margin: 0; }
+.hero .cta { align-items: center; margin: 2rem 0 0; }
+.facts {
+  list-style: none; padding: 0; margin: 1.5rem 0 0;
+  display: flex; flex-wrap: wrap; gap: .35rem 1.3rem;
+  color: var(--ink-mid); font-size: .92rem;
+}
+.facts li::before { content: "\2713"; color: var(--play); font-weight: 700; margin-right: .45rem; }
+
+/* Store-badge shaped. The logo is a copy in docs/, not a link to F-Droid's
+   site: this page fetches nothing from anywhere else (the privacy policy says
+   so). F-Droid's blue is F-Droid's own (#1976D2, from the logo) and stays
+   that blue in both themes, as a brand colour does; the GitHub one takes the
+   page's colours, so it reads as the second choice in either. */
+.store {
+  display: inline-flex; align-items: center; gap: .7rem;
+  padding: .55rem 1.25rem .55rem .85rem; border-radius: 14px;
+  border: 1px solid transparent; text-decoration: none;
+  transition: background-color .15s, border-color .15s;
+}
+.store img, .store svg { width: 32px; height: 32px; flex: none; }
+.store small {
+  display: block; font-size: .68rem; letter-spacing: .08em;
+  text-transform: uppercase; opacity: .85; line-height: 1.2;
+}
+.store strong { display: block; font-size: 1.2rem; line-height: 1.15; }
+.store.fdroid {
+  background: #1976D2; color: #fff;
+  box-shadow: 0 10px 22px -12px rgba(25, 118, 210, .9);
+}
+.store.fdroid:hover { background: #1565C0; }
+/* On a white tile: the logo's robot has a body in F-Droid's own blue, and on a
+   button of that same blue only its green head showed. */
+.store.fdroid img { width: 38px; height: 38px; padding: 4px; border-radius: 10px; background: #fff; }
+.store.github { background: var(--raise); color: var(--ink); border-color: var(--line); }
+.store.github svg { width: 28px; height: 28px; margin: 2px; }
+.store.github:hover { border-color: var(--ink-mid); }
+/* Side by side on a phone too: two buttons stacked read as two unrelated
+   things, and at full size the pair is a few pixels too wide for 375px. */
+@media (max-width: 26rem) {
+  .store { gap: .5rem; padding: .5rem .85rem .5rem .6rem; }
+  .store.fdroid img { width: 34px; height: 34px; padding: 3px; }
+  .store.github svg { width: 24px; height: 24px; }
+  .store strong { font-size: 1.08rem; }
+}
+
+/* Two phones, the second behind and to the side, on a soft glow of the accent.
+   The frame is drawn, not photographed: a dark bezel and a shadow are enough
+   to read as a phone, and they look right on both themes. */
+/* A group of fixed width, centred, whatever the column: spread across the
+   one-column layout of a mid-width window, the back phone drifted to the far
+   edge, away from the front one, and its tilt was cut off by that edge. */
+.phones {
+  position: relative; display: flex; justify-content: center; isolation: isolate;
+  width: 100%; max-width: 28rem; margin: 0 auto; padding: 1rem 0 1.5rem;
+}
+.phones::before {
+  content: ""; position: absolute; z-index: -2; inset: 4% 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 28%, transparent), transparent);
+}
+.phone {
+  width: min(272px, 64%); padding: 8px; border-radius: 40px; background: #0D0F12;
+  box-shadow: 0 0 0 1px var(--line), 0 34px 60px -26px rgba(10, 20, 40, .6);
+}
+/* The page's colour behind a screen still loading, not the bezel's black slab. */
+.phone img { display: block; width: 100%; height: auto; border-radius: 32px; background: var(--surface); }
+.phones .front { margin-right: 24%; transform: rotate(-2deg); }
+/* Tilted 5 degrees, a phone this tall sticks out ~20px past its own box at the
+   side and ~10px at the top, and on a phone the group clips at its edges - so
+   6% in from the right rather than 2%, and not pinned to the top. */
+.phones .back {
+  position: absolute; z-index: -1; top: 1rem; right: 6%;
+  width: min(232px, 54%); transform: rotate(5deg);
+}
+@media (max-width: 54rem) {
+  .hero { grid-template-columns: minmax(0, 1fr); padding-top: 1.6rem; gap: 1.5rem; }
+  /* Tighter on a phone, so the app shows on the first screen and is not
+     below a screen of words. */
+  .hero h1 { margin: .8rem 0 .9rem; }
+  .hero .lead { font-size: 1.05rem; }
+  .hero .cta { margin-top: 1.4rem; gap: .6rem; }
+  .facts { margin-top: 1.1rem; font-size: .88rem; gap: .25rem 1rem; }
+  /* Under the buttons on a phone, so the app is on the first screen - but
+     only its top: a whole phone is taller than the window, and the fade says
+     there is more without a screen of scrolling past it. */
+  .phones {
+    max-height: 26rem; overflow: hidden; padding-bottom: 0;
+    -webkit-mask-image: linear-gradient(#000 65%, transparent);
+            mask-image: linear-gradient(#000 65%, transparent);
+  }
+}
+
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.card {
+  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
+  padding: 1.35rem 1.35rem 1.25rem;
+}
+.card p { margin: 0; color: var(--ink-mid); font-size: .96rem; }
+.icon {
+  width: 44px; height: 44px; border-radius: 13px; margin-bottom: 1rem;
+  display: grid; place-items: center; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.icon svg { width: 23px; height: 23px; }
+@media (max-width: 62rem) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 38rem) { .cards { grid-template-columns: minmax(0, 1fr); } }
+
+.steps {
+  list-style: none; padding: 0; margin: 0; counter-reset: step;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem;
+}
+.steps li {
+  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
+  padding: 1.35rem; display: flex; flex-direction: column;
+}
+.steps li::before {
+  counter-increment: step; content: counter(step);
+  width: 2.2rem; height: 2.2rem; border-radius: 50%; margin-bottom: 1rem;
+  display: grid; place-items: center; font-weight: 700;
+  background: var(--accent); color: var(--surface);
+}
+.steps p { margin: 0 0 .9rem; color: var(--ink-mid); font-size: .96rem; flex: 1; }
+.after-steps { margin: 1.4rem 0 0; color: var(--ink-mid); max-width: 46rem; }
+@media (max-width: 54rem) { .steps { grid-template-columns: minmax(0, 1fr); } }
+
+/* A row of four, or on a phone a strip that scrolls sideways and stops on each
+   one - four phones stacked would be four screens of scrolling. */
+.gallery { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.6rem; }
+.gallery figure { margin: 0; text-align: center; }
+.gallery figcaption { margin-top: 1rem; }
+.gallery figcaption strong { display: block; }
+.gallery figcaption span { color: var(--ink-mid); font-size: .92rem; }
+.shot {
+  display: block; width: 100%; padding: 6px; border: 0; border-radius: 30px;
+  background: #0D0F12; cursor: zoom-in;
+  box-shadow: 0 0 0 1px var(--line), 0 22px 40px -26px rgba(10, 20, 40, .55);
+  transition: transform .2s;
+}
+.shot img { display: block; width: 100%; height: auto; border-radius: 24px; }
+.shot:hover { transform: translateY(-3px); }
+.shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.gallery-note { color: var(--ink-mid); font-size: .92rem; margin: 1.6rem 0 0; max-width: 46rem; }
+@media (max-width: 54rem) {
+  .gallery {
+    display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+    gap: 1rem; margin: 0 -1.4rem; padding: .4rem 1.4rem 1rem;
+    scroll-padding: 0 1.4rem;
+  }
+  .gallery figure { flex: 0 0 min(62%, 15rem); scroll-snap-align: start; }
+}
+
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.tile {
+  display: flex; flex-direction: column; padding: 1.15rem 1.2rem;
+  background: var(--raise); border: 1px solid var(--line); border-radius: 16px;
+  color: var(--ink); text-decoration: none;
+  transition: border-color .15s, transform .15s;
+}
+.tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+.tile span { color: var(--ink-mid); font-size: .93rem; margin-top: .4rem; flex: 1; }
+.tile em { font-style: normal; font-weight: 600; font-size: .88rem; color: var(--accent); margin-top: .9rem; }
+.tiles-note { color: var(--ink-mid); margin: 1.4rem 0 0; }
+@media (max-width: 62rem) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 38rem) { .tiles { grid-template-columns: minmax(0, 1fr); } }
+
+.how { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem 3.5rem; align-items: center; }
+@media (max-width: 54rem) { .how { grid-template-columns: minmax(0, 1fr); } }
+.numbered { list-style: none; padding: 0; margin: 0; counter-reset: n; }
+.numbered li { position: relative; padding-left: 2.7rem; margin: 0 0 1.1rem; }
+.numbered li::before {
+  counter-increment: n; content: counter(n);
+  position: absolute; left: 0; top: .1rem; width: 1.8rem; height: 1.8rem;
+  border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: .88rem; background: var(--accent); color: var(--surface);
+}
+
+/* The diagram's colours are the page's, so it changes theme with it. */
+.diagram { display: block; width: 100%; max-width: 540px; height: auto; margin: 1.6rem auto; }
+.dg-phone { fill: var(--raise); stroke: var(--line); stroke-width: 2; }
+.dg-node { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.dg-node.key { stroke: var(--accent); stroke-width: 2; }
+.dg-node.file { stroke: var(--play); stroke-width: 2; }
+.dg-title { fill: var(--ink); font: 600 18px var(--body); text-anchor: middle; }
+.dg-sub { fill: var(--ink-mid); font: 15px var(--body); text-anchor: middle; }
+.dg-label { fill: var(--ink-mid); font: 15px var(--body); }
+.dg-line { stroke: var(--ink-mid); stroke-width: 2; fill: none; }
+.dg-head { fill: var(--ink-mid); }
+.dg-num { fill: var(--accent); }
+.dg-num-text { fill: var(--surface); font: 700 15px var(--body); text-anchor: middle; dominant-baseline: central; }
+
+/* TWO CARDS THAT LINE UP. The headings are a row of their own, sitting on its
+   bottom edge, so a heading that wraps does not push its card below the other;
+   the cards are the next row and stretch to one height, and each holds three
+   equal rows, so the table's rules and the phones' rules meet across the gap.
+   It was a table beside a heading and a stack of cards, and neither the tops
+   nor the bottoms agreed. On a phone each heading goes back above its card. */
+.works {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: .9rem 2.5rem;
+}
+.works h3 { align-self: end; margin: 0; }
+/* One row height for both cards, so the rules meet; the table gets the wider
+   column, because at half the width its words wrapped. */
+.works table { height: 100%; }
+.works th, .works td { height: 4.75rem; vertical-align: middle; padding-left: .9rem; padding-right: .9rem; }
+.works .devices li { min-height: 4.75rem; }
+.works-note { margin: 1rem 0 0; }
+/* Stacked well before a phone: below this the table, at its share of the
+   width, wraps every label onto two lines. */
+@media (max-width: 68rem) {
+  .works { grid-template-columns: minmax(0, 1fr); }
+  h3.versions { order: 1; }
+  .table-card.versions { order: 2; }
+  h3.tested { order: 3; margin-top: 1.4rem; }
+  .devices.tested { order: 4; }
+}
+.table-card {
+  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
+  overflow: hidden;
+}
+.table-card table { margin: 0; }
+.table-card th, .table-card td { padding: .95rem 1.1rem; }
+.table-card tr:last-child td { border-bottom: 0; }
+@media (max-width: 38rem) {
+  .table-card table { font-size: .88rem; }
+  .table-card th, .table-card td { padding: .8rem .65rem; }
+}
+.yes, .no {
+  display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem;
+  border-radius: 50%; font-weight: 700; margin-right: .45rem; vertical-align: middle;
+}
+.yes { color: var(--play); background: color-mix(in srgb, var(--play) 15%, transparent); }
+.no { color: var(--ink-mid); background: color-mix(in srgb, var(--ink-mid) 12%, transparent); }
+.devices { list-style: none; padding: 0; margin: 0; display: grid; grid-template-rows: repeat(3, 1fr); }
+.devices li {
+  padding: .75rem 1.1rem; font-weight: 600; border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.devices li:last-child { border-bottom: 0; }
+.devices li span { font-weight: 400; color: var(--ink-mid); font-size: .9rem; }
+
+.band {
+  margin-top: 5.5rem; padding-bottom: 4rem;
+  background: var(--raise); border-block: 1px solid var(--line);
+}
+.band .card { background: var(--surface); }
+.band .links { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: 1.8rem 0 0; }
+.cards.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 62rem) { .cards.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 38rem) { .cards.four { grid-template-columns: minmax(0, 1fr); } }
+
+.faq { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.6fr); gap: 1rem 3.5rem; align-items: start; }
+@media (max-width: 54rem) { .faq { grid-template-columns: minmax(0, 1fr); } }
+.faq details { border-bottom: 1px solid var(--line); }
+.faq details:first-child { border-top: 1px solid var(--line); }
+.faq summary {
+  list-style: none; cursor: pointer; position: relative;
+  padding: 1.05rem 2.4rem 1.05rem 0; font-weight: 600;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: ""; position: absolute; right: .4rem; top: 50%;
+  width: .55rem; height: .55rem;
+  border-right: 2px solid var(--ink-mid); border-bottom: 2px solid var(--ink-mid);
+  transform: translateY(-70%) rotate(45deg); transition: transform .2s;
+}
+.faq details[open] summary::after { transform: translateY(-25%) rotate(-135deg); }
+.faq summary:hover { color: var(--accent); }
+.faq details > div { padding: 0 0 1.1rem; color: var(--ink-mid); }
+.faq details > div p { margin: 0 0 .6rem; }
+
+.closing { text-align: center; }
+/* The app icon only - the child combinator keeps this off the F-Droid logo
+   inside the button below it, which it once turned into a block of its own. */
+.closing > img { display: block; margin: 0 auto 1.1rem; border-radius: 22%; }
+.closing .intro { margin-left: auto; margin-right: auto; }
+.closing .cta { justify-content: center; align-items: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .shot, .tile, .faq summary::after { transition: none; }
+  .shot:hover, .tile:hover { transform: none; }
+}
+
+/* EACH SCREEN IS ON THE PAGE TWICE, once per theme, and the page's theme
+   decides which shows - the three states again, as with the palette. Both are
+   loading="lazy", which is what keeps the hidden one from being fetched. The
+   :root makes these outrank the rules that set an image's display. */
+:root .dark-only { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .light-only { display: none; }
+  :root:not([data-theme="light"]) .dark-only { display: block; }
+}
+:root[data-theme="dark"] .light-only { display: none; }
+:root[data-theme="dark"] .dark-only { display: block; }
 
 /* ── the screenshot viewer ── */
 
