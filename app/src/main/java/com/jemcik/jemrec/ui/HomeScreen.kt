@@ -46,6 +46,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -664,10 +666,12 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                     // is owed the reason rather than left to conclude the app
                     // threw their calls away.
                     if (!state.canReadAudio) {
+                        // Conditional: on a first install there is nothing from
+                        // before, and saying there is would be false.
                         Text(
-                            "Calls recorded before JemRec was reinstalled are still " +
-                                "on this phone. It needs permission to read audio to " +
-                                "show them.",
+                            "If JemRec was installed on this phone before, the calls " +
+                                "it recorded then are still here. Allow access to audio " +
+                                "files to show them.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -1012,10 +1016,18 @@ internal fun PlayerControls(state: UiState, vm: MainViewModel) {
             .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Where the finger is, while it drags: the player's own position,
+        // ticking in every 300 ms, snapped the thumb back under it. Sought
+        // once, on letting go.
+        var dragging by remember { mutableStateOf<Float?>(null) }
         Slider(
-            value = state.positionMs.toFloat()
+            value = (dragging ?: state.positionMs.toFloat())
                 .coerceIn(0f, state.durationMs.toFloat()),
-            onValueChange = { vm.seekTo(it.toInt()) },
+            onValueChange = { dragging = it },
+            onValueChangeFinished = {
+                dragging?.let { vm.seekTo(it.toInt()) }
+                dragging = null
+            },
             valueRange = 0f..state.durationMs.toFloat(),
             modifier = Modifier.weight(1f),
         )

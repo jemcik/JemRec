@@ -50,10 +50,15 @@ class RecordingPlayer(private val context: Context) {
      * Tapping the row that is currently playing should stop it - anything else
      * means there is no way to stop a recording except letting it finish.
      */
-    fun toggle(uri: Uri, onFinished: () -> Unit) {
+    /** Whether it is now playing, or paused at the user's tap: false is a
+     *  recording that would not play, for the screen to say so. */
+    fun toggle(uri: Uri, onFinished: () -> Unit): Boolean {
         if (current == uri && player != null) {
-            if (isPlaying) pause() else resume()
-            return
+            if (isPlaying) {
+                pause()
+                return true
+            }
+            return resume()
         }
         release()
         runCatching {
@@ -84,6 +89,7 @@ class RecordingPlayer(private val context: Context) {
             Log.e(TAG, "player: could not play $uri", it)
             release()
         }
+        return isPlaying
     }
 
     fun pause() {
@@ -91,9 +97,11 @@ class RecordingPlayer(private val context: Context) {
         isPlaying = false
     }
 
-    private fun resume() {
-        runCatching { player?.start() }
-        isPlaying = true
+    /** After an error the player will not start again: playing only if it
+     *  did, rather than a pause icon and a running clock over silence. */
+    private fun resume(): Boolean {
+        isPlaying = player != null && runCatching { player?.start() }.isSuccess
+        return isPlaying
     }
 
     fun seekTo(ms: Int) {

@@ -14,6 +14,9 @@ import com.jemcik.jemrec.capture.AfterCall
 import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.MissedCalls
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.CallRules
@@ -98,6 +101,9 @@ data class UiState(
      * nothing happened, with the permissions still granted.
      */
     val resetDone: Boolean = false,
+    /** A self-test's result just arrived (its time), for Settings to scroll
+     *  down to; 0 once it has. */
+    val selfTestShown: Long = 0L,
     /** Setup's last step failed, and why: shown with a Try again. */
     val finishFailed: String? = null,
     val busy: Boolean = false,
@@ -262,8 +268,17 @@ class MainViewModel @JvmOverloads constructor(
     initial: UiState = UiState(),
 ) : AndroidViewModel(app) {
 
-    private val _state = MutableStateFlow(initial)
+    // Whether messenger calls can work here is known at once (a cached
+    // permission check): the Settings card must not show their switches'
+    // text for a moment on a phone where they cannot work.
+    private val _state = MutableStateFlow(initial.copy(voipSupported = VoipApps.supported(app)))
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** Failures of something the user just did, for a snackbar where they are:
+     *  the log at the bottom of Settings is no place to learn that a share
+     *  or a delete did not work. */
+    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val notices: SharedFlow<String> = _notices.asSharedFlow()
 
     /** The switch can be flipped from the Quick Settings tile while this
      *  screen is up, without the screen ever pausing. See RecorderSwitch.observe. */
@@ -286,7 +301,12 @@ class MainViewModel @JvmOverloads constructor(
         // test runs and then swaps in, with no empty gap.
         _state.update { it.copy(log = "") }
         say(result.report.trimEnd())
+        // For Settings to scroll down to it - this, not every log line.
+        _state.update { it.copy(selfTestShown = System.currentTimeMillis()) }
     }
+
+    /** Settings scrolled to the self-test's result; not again on returning. */
+    fun selfTestSeen() = _state.update { it.copy(selfTestShown = 0L) }
 
     fun showSettings() = _state.update { it.copy(screen = Screen.SETTINGS) }
 
@@ -678,7 +698,7 @@ class MainViewModel @JvmOverloads constructor(
                     refreshNow()
                     val recording = _state.value.recordings.firstOrNull { it.name == link.name }
                     if (recording == null) {
-                        say("that recording is no longer there")
+                        tell("that recording is no longer there")
                         return@launch
                     }
                     // Its row has to be on screen for its player to be, so
@@ -816,7 +836,7 @@ class MainViewModel @JvmOverloads constructor(
     fun addRuleContact(contact: Uri) {
         viewModelScope.launch {
             val added = withContext(Dispatchers.IO) { CallRules.add(getApplication(), contact) }
-            if (!added) say("could not add that contact")
+            if (!added) tell("could not add that contact")
             refreshNow()
         }
     }
@@ -1133,7 +1153,11 @@ class MainViewModel @JvmOverloads constructor(
      * recording of a private call to whichever app claimed the intent.
      */
     fun play(recording: Recording) {
-        player.toggle(recording.uri) { onPlaybackFinished() }
+        if (!player.toggle(recording.uri) { onPlaybackFinished() }) {
+            tell("could not play that recording")
+            stopPlayback()
+            return
+        }
         startTicker(recording)
     }
 
@@ -1229,7 +1253,7 @@ class MainViewModel @JvmOverloads constructor(
             }
             _state.update { it.copy(converting = false) }
             if (m4a == null) {
-                say("could not prepare that recording to share")
+                tell("could not prepare that recording to share")
                 return@launch
             }
             val uri = FileProvider.getUriForFile(app, "${app.packageName}.recordings", m4a)
@@ -1261,7 +1285,7 @@ class MainViewModel @JvmOverloads constructor(
         val chooser = Intent.createChooser(intent, "Share recording")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { app.startActivity(chooser) }
-            .onFailure { say("could not share that recording") }
+            .onFailure { tell("could not share that recording") }
     }
 
     /** Delete share copies older than a few hours. A share in flight is minutes
@@ -1377,13 +1401,12 @@ class MainViewModel @JvmOverloads constructor(
             // Whatever Android wants confirmed is not moved yet - its own
             // dialog comes next - so it is counted as asked, not as failed.
             val asked = doomed.size - result.deleted - result.failed
-            say(
-                listOfNotNull(
-                    "moved ${result.deleted} to Recently deleted".takeIf { result.deleted > 0 },
-                    "asking Android about $asked".takeIf { result.needsConsent != null && asked > 0 },
-                    "could not move ${result.failed}".takeIf { result.failed > 0 },
-                ).joinToString(", "),
-            )
+            val summary = listOfNotNull(
+                "moved ${result.deleted} to Recently deleted".takeIf { result.deleted > 0 },
+                "asking Android about $asked".takeIf { result.needsConsent != null && asked > 0 },
+                "could not move ${result.failed}".takeIf { result.failed > 0 },
+            ).joinToString(", ")
+            if (result.failed > 0) tell(summary) else say(summary)
             result.needsConsent?.let { request ->
                 _state.update { it.copy(deleteConsent = request) }
             }
@@ -1394,6 +1417,13 @@ class MainViewModel @JvmOverloads constructor(
 
     /** Named `say` rather than `append` on purpose: inside a buildString block
      *  an `append` member would be shadowed by StringBuilder.append. */
+    /** As say, and in a snackbar too: for a failure of something the user
+     *  did just now. */
+    private fun tell(text: String) {
+        say(text)
+        _notices.tryEmit(text.replaceFirstChar { it.uppercase() })
+    }
+
     private fun say(text: String) {
         val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         // NEWEST FIRST. Appending put the answer at the bottom of a log that

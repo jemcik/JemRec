@@ -38,6 +38,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -48,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -192,7 +195,13 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         }
     }
 
+    val snackbars = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        vm.notices.collect { snackbars.showSnackbar(it) }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbars) },
         topBar = {
             // No bar during setup. There is nothing to configure yet and no
             // second screen to reach, so a gear there would be a dead end.
@@ -398,8 +407,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             // Diagnostics - below the fold, so the user pressed the button and
             // saw nothing move. When the log changes in Settings, run the scroll
             // to the end, so the answer is on screen instead of under a thumb.
-            LaunchedEffect(state.log) {
-                if (inSettings && state.log.isNotEmpty()) {
+            LaunchedEffect(state.selfTestShown) {
+                // A self-test's result only: any other log line - a switch
+                // flipped with the recorder down, a folder chosen - jumped the
+                // page to the bottom, away from what the user was doing.
+                if (inSettings && state.selfTestShown > 0L) {
                     // The log card is added/grown in this same frame and only
                     // measured after it, so the scroll range does not yet include
                     // it - reading maxValue now gives the OLD bottom, and the
@@ -408,6 +420,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                     withFrameNanos {}
                     withFrameNanos {}
                     scrollState.animateScrollTo(scrollState.maxValue)
+                    vm.selfTestSeen()
                 }
             }
             Column(
