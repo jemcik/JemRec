@@ -454,11 +454,20 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                         CircularProgressIndicator()
                         Text("Almost done", style = MaterialTheme.typography.titleMedium)
                     }
-                    Text(
-                        "Paired. JemRec is starting the recorder now. This takes a " +
-                            "few seconds, and there is nothing left for you to do.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    val failed = state.finishFailed
+                    if (failed == null) {
+                        Text(
+                            "Paired. JemRec is starting the recorder now. This takes a " +
+                                "few seconds, and there is nothing left for you to do.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    } else {
+                        Text(
+                            "Paired, but starting the recorder did not work: $failed",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = vm::retryFinish, enabled = !state.busy) { Text("Try again") }
+                    }
                 }
             }
 

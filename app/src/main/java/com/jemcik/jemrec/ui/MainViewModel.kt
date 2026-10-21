@@ -98,6 +98,8 @@ data class UiState(
      * nothing happened, with the permissions still granted.
      */
     val resetDone: Boolean = false,
+    /** Setup's last step failed, and why: shown with a Try again. */
+    val finishFailed: String? = null,
     val busy: Boolean = false,
     val connected: Boolean = false,
     val daemonRunning: Boolean = false,
@@ -505,12 +507,20 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     private suspend fun finishSetupInternal() {
-        _state.update { it.copy(step = SetupStep.FINISHING) }
+        _state.update { it.copy(step = SetupStep.FINISHING, finishFailed = null) }
         Setup.finish(getApplication())
             .onSuccess { say("recorder started") }
-            .onFailure { say("could not finish setup: ${it.message}") }
+            .onFailure {
+                say("could not finish setup: ${it.message}")
+                // The step is FINISHING again, and its spinner says there is
+                // nothing left to do: with a Try again it is not a dead end.
+                _state.update { s -> s.copy(finishFailed = it.message ?: "something went wrong") }
+            }
         _state.update { it.copy(step = Setup.currentStep(getApplication())) }
     }
+
+    /** The last step of setup, again, after it failed. */
+    fun retryFinish() = launchAction("finish setup") { finishSetupInternal() }
 
     /**
      * Start the shell-side daemon from the jar bundled in this APK.
@@ -1012,7 +1022,7 @@ class MainViewModel @JvmOverloads constructor(
                 // would still be counted by the toolbar, and the count is what
                 // the user reads before confirming a deletion.
                 selected = it.selected intersect snapshot.recordings.map { r -> r.name }.toSet(),
-                connected = AdbTransport.isConnected,
+                connected = AdbTransport.lastKnownConnected,
             )
         }
     }
@@ -1068,7 +1078,7 @@ class MainViewModel @JvmOverloads constructor(
                 Log.w("JemRec", "$label failed", t)
                 say("$label failed: ${t.javaClass.simpleName}: ${t.message}")
             } finally {
-                _state.update { it.copy(busy = false, connected = AdbTransport.isConnected) }
+                _state.update { it.copy(busy = false, connected = AdbTransport.lastKnownConnected) }
             }
         }
     }

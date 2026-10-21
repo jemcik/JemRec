@@ -33,6 +33,10 @@ private class JemAdbConnectionManager(context: Context) : AbsAdbConnectionManage
 
     init {
         setApi(Build.VERSION.SDK_INT)
+        // The library's default is to wait forever - in connect, holding its
+        // lock, which every other call (isConnected too) then waits on. A peer
+        // that accepts and never answers stalled every revive after it.
+        setTimeout(10, TimeUnit.SECONDS)
     }
 
     override fun getPrivateKey(): PrivateKey = identity.privateKey
@@ -95,10 +99,20 @@ object AdbTransport {
             manager ?: JemAdbConnectionManager(context.applicationContext).also { manager = it }
         }
 
+    /**
+     * The last answer isConnected gave, without asking again - for the main
+     * thread, which must not wait on the library's lock: a connect holds it
+     * for as long as it takes.
+     */
+    @Volatile
+    var lastKnownConnected: Boolean = false
+        private set
+
     val isConnected: Boolean
         get() = try {
-            manager?.isConnected == true
+            (manager?.isConnected == true).also { lastKnownConnected = it }
         } catch (t: Throwable) {
+            lastKnownConnected = false
             false
         }
 
@@ -267,21 +281,26 @@ object AdbTransport {
 
             mutex.withLock {
                 runCatching {
-                    val session = shell ?: ShellSession(mgr.openStream(SHELL_SERVICE))
-                        .also { shell = it }
+                    // Watching from before the stream is opened: opening one
+                    // can hang too, and then only closing the whole
+                    // connection lets it go.
+                    var session: ShellSession? = shell
                     val watchdog = launch {
                         kotlinx.coroutines.delay(timeoutMs)
-                        Log.w(TAG, "exec: '$command' timed out after ${timeoutMs}ms")
-                        runCatching { session.close() }
+                        // The command's first word only: the daemon's launch
+                        // line carries its token.
+                        Log.w(TAG, "exec: '${command.substringBefore(' ')} ...' timed out after ${timeoutMs}ms")
+                        session?.let { runCatching { it.close() } } ?: runCatching { mgr.close() }
                         shell = null
                     }
+                    session = session ?: ShellSession(mgr.openStream(SHELL_SERVICE)).also { shell = it }
                     try {
-                        session.run(command)
+                        session!!.run(command)
                     } catch (t: Throwable) {
                         // A desynchronised session stays desynchronised, and a
                         // half-read one would mis-attribute the next command's
                         // output. Drop it; the next call opens a fresh one.
-                        runCatching { session.close() }
+                        runCatching { session?.close() }
                         shell = null
                         throw t
                     } finally {
@@ -430,6 +449,7 @@ object AdbTransport {
         shell = null
         runCatching { manager?.close() }
         manager = null
+        lastKnownConnected = false
         Unit
     }
 }

@@ -18,6 +18,8 @@ import com.jemcik.jemrec.capture.GlobalSettings
 import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.RecordingStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * What still has to happen before this phone can record a call.
@@ -412,7 +414,10 @@ object Setup {
      * and needs no code - so "already set up" must not be mistaken for "needs
      * pairing" just because this process is new.
      */
-    suspend fun currentStep(context: Context): SetupStep = decide(LiveProbe(context))
+    /** Off the main thread: the probes read settings, ping the recorder,
+     *  and ask the ADB library, whose lock a connect can hold for seconds. */
+    suspend fun currentStep(context: Context): SetupStep =
+        withContext(Dispatchers.IO) { decide(LiveProbe(context)) }
 
     internal suspend fun decide(world: Probe): SetupStep {
         // Asked first. The rest of setup is pointless without these, and
@@ -549,6 +554,14 @@ object Setup {
                 "pm grant ${context.packageName} $PERMISSION && echo granted"
             ).getOrElse { "failed: ${it.message}" }
             Log.i(TAG, "setup: grant -> $out")
+            // Without it, nothing turns Wireless debugging back on after a
+            // restart, and the recorder never comes back - so setup is not
+            // done. On Xiaomi phones the grant needs a switch of its own.
+            check(out.contains("granted")) {
+                "Android would not let JemRec change debugging settings. On a Xiaomi or " +
+                    "Redmi phone, turn on \"USB debugging (Security settings)\" in Developer " +
+                    "options, then try again."
+            }
         }
 
         // Granted the same way and at the same moment as the permission above,
@@ -675,7 +688,16 @@ object Setup {
             Log.i(TAG, "reset: Wireless debugging turned off")
         }
 
-        revokeRuntimePermissions(context)
+        // Ends this process: the permissions are handed back on its end. Where
+        // nothing is handed back, it is ended all the same - the ADB library
+        // keeps the old key for the whole process, and pairing again in it
+        // would present the forgotten one.
+        if (!revokeRuntimePermissions(context)) {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+                { android.os.Process.killProcess(android.os.Process.myPid()) },
+                RESET_EXIT_DELAY_MS,
+            )
+        }
         Log.i(TAG, "reset: done, setup starts again from step 1")
     }
 
@@ -688,18 +710,24 @@ object Setup {
      * app is no longer in front of the user - which is why the caller closes
      * the activity rather than leaving it sitting there looking unchanged.
      */
-    private fun revokeRuntimePermissions(context: Context) {
+    /** Whether the process will be ended for it (permissions handed back on
+     *  its end). */
+    private fun revokeRuntimePermissions(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             // Below Android 13 there is no way for an app to hand a runtime
             // permission back. Everything else in the reset still applies.
             Log.w(TAG, "reset: cannot revoke permissions before Android 13")
-            return
+            return false
         }
         val granted = RUNTIME_PERMISSIONS.filter {
             context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
         }
-        if (granted.isEmpty()) return
-        runCatching { context.revokeSelfPermissionsOnKill(granted) }
+        if (granted.isEmpty()) return false
+        return runCatching { context.revokeSelfPermissionsOnKill(granted) }
             .onFailure { Log.w(TAG, "reset: could not revoke permissions", it) }
+            .isSuccess
     }
+
+    /** Long enough for the screen to close first. */
+    private const val RESET_EXIT_DELAY_MS = 1_500L
 }
