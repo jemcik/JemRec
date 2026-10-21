@@ -120,12 +120,22 @@ class OpusOggWriter(
      * the muxer has to be stopped, not merely abandoned.
      */
     override fun close() {
+        finish()
+    }
+
+    /**
+     * Finalise the file, and say whether it worked. A muxer that could not
+     * finish - the storage filled up, typically - leaves a file no player can
+     * open; the saver must then keep the daemon's copy, not delete it as
+     * saved.
+     */
+    fun finish(): Boolean {
         if (!started) {
             runCatching { muxer.release() }
-            return
+            return true
         }
         started = false
-        try {
+        return try {
             if (packets > 0) {
                 muxer.stop()
             } else {
@@ -134,8 +144,10 @@ class OpusOggWriter(
                 // exception and a zero-byte one.
                 Log.w(TAG, "ogg: no packets written, nothing to finalise")
             }
+            true
         } catch (t: Throwable) {
             Log.e(TAG, "ogg: could not finalise", t)
+            false
         } finally {
             runCatching { muxer.release() }
         }

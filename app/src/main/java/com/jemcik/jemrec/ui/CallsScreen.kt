@@ -221,6 +221,7 @@ private fun statusWords(call: CallHistory.Call): String = when (call.status) {
     Status.DELETED -> "Recording deleted"
     Status.SKIPPED -> "Left out by your rules"
     Status.TOO_SHORT -> "Too short"
+    Status.PENDING -> "Recorded, not saved yet"
     Status.RECORDING_OFF -> "Recording was off"
     Status.ASK_FIRST -> "Ask first, not recorded"
     Status.NOT_RECORDED -> "Not recorded"

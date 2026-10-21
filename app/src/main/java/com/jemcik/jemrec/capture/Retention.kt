@@ -59,6 +59,10 @@ object Retention {
         minSeconds: Int,
     ): List<Recording> = recordings.filter { r ->
         if (r.kept) return@filter false
+        // JemRec's own recordings only. The chosen folder can be a shared
+        // one - Download, Music - and a ringtone or a voice note there is
+        // short too; its name is not a recording's, so it is left alone.
+        if (r.parsedName == null) return@filter false
         val old = maxAgeDays > 0 &&
             r.startedAtMillis?.let { now - it > maxAgeDays * DAY_MS } == true
         val short = minSeconds > 0 && r.durationMillis in 1 until minSeconds * 1000L
@@ -94,6 +98,8 @@ object Retention {
         val doomed = select(Recordings.list(context, withCallers = false), now, maxAge, minSeconds)
         if (doomed.isEmpty()) return BulkDeleteResult(0, 0, null)
         val result = Trash.trashAll(context, doomed)
+        // An open list has these on screen still; it reads the disk again.
+        if (result.deleted > 0) RecordingSaver.announce("retention")
         Log.i(
             TAG,
             "retention: ${doomed.size} due (older than $maxAge days / under ${minSeconds}s): " +
@@ -114,7 +120,7 @@ object Retention {
         val min = minSeconds(context)
         if (min == 0 || saved.seconds <= 0 || saved.seconds >= min) return false
         val result = Trash.trash(context, saved.uri, saved.filePath, saved.name)
-        Log.i(TAG, "retention: ${saved.name} is %.1fs, under ${min}s -> ${result.javaClass.simpleName}".format(saved.seconds))
+        Log.i(TAG, "retention: ${FileNames.forLog(saved.name)} is %.1fs, under ${min}s -> ${result.javaClass.simpleName}".format(saved.seconds))
         if (result !is DeleteResult.Deleted) return false
         // The list refreshed when the save was announced, a moment ago, and
         // showed it; this has it look again.

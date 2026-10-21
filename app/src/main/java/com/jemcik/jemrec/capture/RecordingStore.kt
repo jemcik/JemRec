@@ -82,8 +82,16 @@ object RecordingStore {
 
         /** Publish it, so other apps can finally see it. */
         override fun close() {
-            runCatching { descriptor.close() }
-            runCatching { onFinish() }
+            publish()
+        }
+
+        /** Publish it, and say whether that worked: a descriptor that would
+         *  not close (its last bytes not written) or a pending row that would
+         *  not be made visible is no saved recording. */
+        fun publish(): Boolean {
+            val closed = runCatching { descriptor.close() }.isSuccess
+            val finished = runCatching { onFinish() }.isSuccess
+            return closed && finished
         }
     }
 

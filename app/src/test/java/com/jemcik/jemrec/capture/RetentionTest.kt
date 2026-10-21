@@ -50,4 +50,12 @@ class RetentionTest {
         val unmeasured = rec(daysAgo = 1, seconds = 0)
         assertTrue(select(listOf(undated, unmeasured), maxAgeDays = 30, minSeconds = 30).isEmpty())
     }
+
+    @Test fun aShortFileThatIsNotOneOfOursIsLeftAlone() {
+        // The chosen folder can be a shared one: a 3-second voice note or a
+        // ringtone there is short too, and none of auto-delete's business.
+        val foreign = rec(daysAgo = 1, seconds = 3, name = "voice-note.ogg")
+        val ours = rec(daysAgo = 1, seconds = 3)
+        assertEquals(listOf(ours), select(listOf(foreign, ours), minSeconds = 10))
+    }
 }

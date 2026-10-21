@@ -135,7 +135,7 @@ internal object AfterCall {
         // the user's short-call rule is caught: to the trash, and not a word.
         if (Retention.dropIfTooShort(context, saved)) return
         if (System.currentTimeMillis() - startMillis - (saved.seconds * 1000).toLong() > FRESH_MS) {
-            Log.i(TAG, "aftercall: ${saved.name} is from a while ago, not announcing it")
+            Log.i(TAG, "aftercall: ${FileNames.forLog(saved.name)} is from a while ago, not announcing it")
             return
         }
         val verdict = AudioCheck.check(context, saved.uri)
@@ -200,7 +200,7 @@ internal object AfterCall {
             }
         }
         post(context, builder.build())
-        Log.i(TAG, "aftercall: posted for ${call.name} (${call.verdict})")
+        Log.i(TAG, "aftercall: posted for ${FileNames.forLog(call.name)} (${call.verdict})")
         return true
     }
 
@@ -227,7 +227,7 @@ internal object AfterCall {
 
     fun delete(context: Context, call: Call) {
         val result = Trash.trash(context, call.uri, call.filePath, call.name)
-        Log.i(TAG, "aftercall: delete ${call.name} -> ${result.javaClass.simpleName}")
+        Log.i(TAG, "aftercall: delete ${FileNames.forLog(call.name)} -> ${result.javaClass.simpleName}")
         when (result) {
             is DeleteResult.Deleted -> {
                 RecordingSaver.announce(call.name)

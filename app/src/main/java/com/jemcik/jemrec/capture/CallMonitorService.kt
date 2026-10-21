@@ -55,6 +55,7 @@ import java.util.Date
 class CallMonitorService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
     private var recording: Job? = null
 
     /**
@@ -240,7 +241,7 @@ class CallMonitorService : Service() {
             Log.i(TAG, "monitor: recorder is off, discarding $recfile")
             recording = scope.launch {
                 CaptureDaemon.deleteRecording(this@CallMonitorService, recfile)
-                stopSelf()
+                doneWith(coroutineContext[Job])
             }
             return
         }
@@ -249,9 +250,19 @@ class CallMonitorService : Service() {
         // to. Either way the decision is made; fetch and save it.
         recording = scope.launch {
             saveAndReport(recfile, incoming)
-            Log.i(TAG, "monitor: recording handled, stopping service")
-            stopSelf()
+            Log.i(TAG, "monitor: recording handled")
+            doneWith(coroutineContext[Job])
         }
+    }
+
+    /**
+     * A save is done: stand down - unless another call has started since, or
+     * its save is now the one running. A plain stopSelf here ended the service
+     * under the next call: its notification went, and its save was cancelled
+     * half way, when the user redialled within this save's few seconds.
+     */
+    private fun doneWith(job: Job?) {
+        if (recording === job && !callInProgress) stopSelf()
     }
 
     /**
@@ -263,15 +274,13 @@ class CallMonitorService : Service() {
     private suspend fun saveAndReport(recfile: String, incoming: Boolean) {
         when (val outcome = RecordingSaver.save(this, recfile, incoming)) {
             is RecordingSaver.Outcome.Saved -> {
-                Log.i(TAG, "monitor: saved ${outcome.name}")
+                Log.i(TAG, "monitor: saved $recfile")
                 // While this service still holds the foreground: the check
                 // decodes the file, and a dormant app might not get the time.
-                runCatching {
-                    AfterCall.saved(
-                        this, outcome, incoming,
-                        RecordingSaver.startMillis(recfile) ?: System.currentTimeMillis(),
-                    )
-                }.onFailure { Log.w(TAG, "monitor: after-call notice failed", it) }
+                // The saved part's own call - with call waiting, the last of
+                // them - not the recording's.
+                runCatching { AfterCall.saved(this, outcome, outcome.incoming, outcome.startMillis) }
+                    .onFailure { Log.w(TAG, "monitor: after-call notice failed", it) }
                 // And while the daemon is plainly reachable, whether any
                 // earlier call went by unrecorded.
                 runCatching { MissedCalls.check(this) }
@@ -289,10 +298,15 @@ class CallMonitorService : Service() {
             // Only ringing: nobody answered.
             RecordingSaver.Outcome.NotAnswered ->
                 Log.i(TAG, "monitor: $recfile was never answered")
-            RecordingSaver.Outcome.Empty ->
+            RecordingSaver.Outcome.Empty -> {
                 reportNotRecorded(
                     "No call audio came through. Some phones do not allow calls to be recorded.",
                 )
+                // Told now, so the missed-call check must not say it again.
+                // Here, where the telling is: a recording collected later
+                // is left to that check.
+                RecordingSaver.startMillis(recfile)?.let { CallLedger.noteRecording(this, it, incoming, 0) }
+            }
             is RecordingSaver.Outcome.Failed ->
                 reportNotRecorded(outcome.reason)
         }

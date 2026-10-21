@@ -40,6 +40,9 @@ object CallHistory {
 
     enum class Status {
         RECORDED, IN_TRASH, DELETED, SKIPPED, TOO_SHORT, RECORDING_OFF, ASK_FIRST, NOT_RECORDED, NO_RECORDING,
+        /** Recorded, and still on the recorder: not collected yet (a reboot
+         *  off Wi-Fi, a wake that did not land). Not a failure. */
+        PENDING,
         /** Missed, declined, blocked, voicemail, or an outgoing call nobody answered. */
         NOT_CONNECTED,
     }
@@ -70,10 +73,17 @@ object CallHistory {
     var override: ((Context) -> List<Call>)? = null
 
     /** Every call the log holds, newest first, matched. Blocking: call off the main thread. */
-    fun load(context: Context, recordings: List<Recording>, trashed: List<Recording>): List<Call> {
+    suspend fun load(context: Context, recordings: List<Recording>, trashed: List<Recording>): List<Call> {
         override?.let { return it(context) }
         if (!CallLogLookup.granted(context)) return emptyList()
         CoverageHistory.start(context)
+        // The daemon's files not collected yet: their calls were recorded.
+        // Without them, each read as "Not recorded", in red.
+        val pending = CaptureDaemon.listPendingOrNull(context).orEmpty()
+            .filter { VoipApps.forRecfile(it) == null }
+            .mapNotNull { name ->
+                RecordingSaver.startMillis(name)?.let { CallLedger.Recorded(it, RecordingStore.isIncoming(name), -1) }
+            }
         val logged = runCatching { query(context) }
             .onFailure { Log.w(TAG, "calls: could not read the call log", it) }
             .getOrDefault(emptyList())
@@ -84,6 +94,7 @@ object CallHistory {
             ledger = CallLedger.read(context),
             history = CoverageHistory.read(context),
             now = System.currentTimeMillis(),
+            pending = pending,
         )
         // Names and photos from the contacts provider, one lookup per number.
         val contacts = mutableMapOf<String, CallLogLookup.Contact>()
@@ -111,6 +122,7 @@ object CallHistory {
         ledger: CallLedger.Ledger,
         history: List<Pair<Long, CoverageHistory.State>>,
         now: Long,
+        pending: List<CallLedger.Recorded> = emptyList(),
     ): List<Call> {
         val calls = logged.sortedByDescending { it.at }
         val connectable = calls.filter { it.kind == Kind.INCOMING || it.kind == Kind.OUTGOING }
@@ -129,6 +141,7 @@ object CallHistory {
                 !canHaveOne -> Status.NOT_CONNECTED
                 call.kind == Kind.OUTGOING && call.seconds == 0 -> Status.NOT_CONNECTED
                 binned[call] != null || during(trashed, call.at) != null -> Status.IN_TRASH
+                pending.any { accounts(it, call, incoming) } -> Status.PENDING
                 ledger.skipped.any { accounts(it, call, incoming) } -> Status.SKIPPED
                 ledger.recordings.any { accounts(it, call, incoming) } -> Status.DELETED
                 call.seconds < MissedCalls.MIN_SECONDS -> Status.TOO_SHORT

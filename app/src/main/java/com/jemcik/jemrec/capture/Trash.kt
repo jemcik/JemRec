@@ -110,7 +110,7 @@ object Trash {
                 is DeleteResult.NeedsConsent -> disputed += recording.uri
                 is DeleteResult.Failed -> {
                     failed++
-                    Log.w(TAG, "trash: could not trash ${recording.name}", result.error)
+                    Log.w(TAG, "trash: could not trash ${FileNames.forLog(recording.name)}", result.error)
                 }
             }
         }

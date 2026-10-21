@@ -54,7 +54,13 @@ class CallTracker : InCallService() {
             // back whether or not tracking is still on.
             skips.trySend(applicationContext to false)
         }
-        if (!CallTracking.enabled(this)) return
+        if (!CallTracking.enabled(this)) {
+            // Switched off mid-call: nothing more is kept - but a call left
+            // out on purpose is still noted as such, or the missed-call check
+            // reports it, and the Calls tab marks it red.
+            if (wasLeftOut) CallLedger.noteSkipped(this, id, call.details.callDirection == Call.Details.DIRECTION_INCOMING, 0)
+            return
+        }
         val ended = System.currentTimeMillis()
         CallTracking.update(this, id) { old ->
             val base = old ?: track(call)

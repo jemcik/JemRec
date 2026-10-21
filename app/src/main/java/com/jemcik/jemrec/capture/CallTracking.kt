@@ -68,8 +68,17 @@ object CallTracking {
 
     // --- the record -------------------------------------------------------------
 
-    fun calls(context: Context): List<Tracked> =
-        (Prefs.of(context).getStringSet(KEY_CALLS, emptySet()) ?: emptySet()).mapNotNull(::decode)
+    fun calls(context: Context): List<Tracked> {
+        val calls = (Prefs.of(context).getStringSet(KEY_CALLS, emptySet()) ?: emptySet()).mapNotNull(::decode)
+        // Numbers are kept only with the call-log permission (the privacy
+        // policy says so): taken back, they go.
+        if (calls.any { it.number != null } && !CallLogLookup.granted(context)) {
+            val stripped = calls.map { it.copy(number = null) }
+            Prefs.of(context).edit().putStringSet(KEY_CALLS, stripped.map(::encode).toSet()).apply()
+            return stripped
+        }
+        return calls
+    }
 
     /** Change one call's entry, creating it if new. */
     @Synchronized

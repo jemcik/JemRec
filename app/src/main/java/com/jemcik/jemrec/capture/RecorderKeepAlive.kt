@@ -97,11 +97,15 @@ class RecorderKeepAlive(
         }
 
         /** Right now, once - for boot and app-open, so the daemon does not wait
-         *  out a 15-minute period to come back after a reboot. */
+         *  out a 15-minute period to come back after a reboot. KEEP, not
+         *  REPLACE: every open and resume kicks, and replacing cancelled a
+         *  run mid-way - a reconcile between saving a call and deleting the
+         *  daemon's copy, or a revive between stopping a daemon and starting
+         *  the next. One already running does the same job. */
         fun kickNow(context: Context) {
             val work = OneTimeWorkRequestBuilder<RecorderKeepAlive>().build()
             WorkManager.getInstance(context).enqueueUniqueWork(
-                IMMEDIATE, ExistingWorkPolicy.REPLACE, work,
+                IMMEDIATE, ExistingWorkPolicy.KEEP, work,
             )
         }
 

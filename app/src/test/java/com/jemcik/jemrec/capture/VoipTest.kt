@@ -40,6 +40,17 @@ class VoipTest {
         assertEquals(false, VoipCallNotes.pick(notes, viber, start)?.incoming)
     }
 
+    @Test fun aMissedRingThenACallPlacedToSomeoneElseIsOutgoing() {
+        // Alice rang a minute ago, unanswered; the user then called Bob.
+        val notes = listOf(
+            Note(viber, start - 60 * second, "Alice", true),
+            Note(viber, start + 2 * second, "Bob", null),
+        )
+        val call = VoipCallNotes.pick(notes, viber, start)!!
+        assertEquals(false, call.incoming)
+        assertEquals("Bob", call.name)
+    }
+
     @Test fun aCallThatNeverRangWasPlacedByTheUser() {
         val notes = listOf(Note(viber, start - 2 * second, "Priya Raman", null))
         assertEquals(false, VoipCallNotes.pick(notes, viber, start)?.incoming)

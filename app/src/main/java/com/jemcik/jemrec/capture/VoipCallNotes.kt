@@ -130,10 +130,21 @@ internal object VoipCallNotes {
     internal fun pick(notes: List<Note>, pkg: String, start: Long): Note? {
         val near = notes.filter { it.pkg == pkg && it.at in (start - BEFORE_MS)..(start + AFTER_MS) }
         if (near.isEmpty()) return null
-        val name = near.filter { it.name != null }.minByOrNull { kotlin.math.abs(it.at - start) }?.name
-        val rang = near.any { it.incoming == true && it.at in (start - RING_MS)..start }
+        val ring = near.filter { it.incoming == true && it.at in (start - RING_MS)..start }.maxByOrNull { it.at }
+        // The call's own notification, from its ring on: the name it gives
+        // is this call's.
+        val since = ring?.at ?: (start - BEFORE_MS)
+        val callName = near.filter { it.incoming != true && it.name != null && it.at >= since }
+            .minByOrNull { kotlin.math.abs(it.at - start) }?.name
+        // A ring is this call's - unless the call's own notification names
+        // someone else: a ring from one person, missed, then a call placed to
+        // another within the minute and a half, is the user's own call.
+        val rang = ring != null && (callName == null || ring.name == null || ring.name == callName)
+        val name = callName
+            ?: ring?.name?.takeIf { rang }
+            ?: near.filter { it.name != null && it.incoming != true }.minByOrNull { kotlin.math.abs(it.at - start) }?.name
         // A call with notifications and no ring before it was placed by the user.
-        return Note(pkg, start, name, if (rang) true else false)
+        return Note(pkg, start, name, rang)
     }
 
     /**

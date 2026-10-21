@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -39,6 +40,10 @@ object RecordingSaver {
             /** Where to read it back from, and for app storage the file. */
             val uri: android.net.Uri,
             val filePath: String?,
+            /** Its call's direction and start, as Telecom or the call log had
+             *  them: for call waiting, not the recording's own call's. */
+            val incoming: Boolean,
+            val startMillis: Long,
         ) : Outcome
 
         /** The file was read in full but held no audio; deleted rather than kept. */
@@ -132,6 +137,14 @@ object RecordingSaver {
         // rules on whose calls to keep, or a file name with the caller in it.
         // With neither, which is the default, this is skipped entirely and a
         // call is saved exactly as it always was.
+        // Saved once already, and the daemon's copy outlived it - a delete
+        // that did not get through. Not again: the second would be "(1)".
+        if (CallLedger.read(context).recordings.any { it.startMillis == startedAt.time }) {
+            Log.i(TAG, "save: $recfile was saved before; deleting the daemon's copy")
+            CaptureDaemon.deleteRecording(context, recfile)
+            return Outcome.Gone
+        }
+
         val format = FileNames.format(context)
         val ruled = CallRules.active(context) && rulesApply(context, startedAt.time)
 
@@ -142,6 +155,16 @@ object RecordingSaver {
             CallTracking.callsIn(CallTracking.calls(context), startedAt.time, incoming)
         } else {
             emptyList()
+        }
+        // Switched off during the call: the hang-up drops such a recording
+        // (CallMonitorService), and so does this, when the hang-up's wake did
+        // not land - the two must agree. Telecom says when the call ended.
+        val ended = tracked.firstOrNull()?.endedAt?.takeIf { it > 0 }
+        if (ended != null && CoverageHistory.stateAt(CoverageHistory.read(context), ended) == CoverageHistory.State.OFF) {
+            Log.i(TAG, "save: recording was switched off during $recfile; discarding it")
+            CaptureDaemon.deleteRecording(context, recfile)
+            _saved.tryEmit(recfile)
+            return Outcome.Skipped
         }
         // The daemon's other files are calls too: one whose save failed is
         // not in the ledger yet, and its call-log entry must not be taken for
@@ -272,7 +295,20 @@ object RecordingSaver {
         var gone = false
         var nowhere = false
         try {
-            AudioStream(socket).use { stream ->
+            val stream = try {
+                AudioStream(socket)
+            } catch (e: java.io.EOFException) {
+                // Nothing at all, not even a codec id: a file the daemon
+                // created and never wrote to (it could not start capturing).
+                // An empty recording, not a transfer to retry for a week.
+                runCatching { socket.close() }
+                null
+            } catch (t: Throwable) {
+                runCatching { socket.close() }
+                throw t
+            }
+            if (stream == null) completed = true
+            stream?.use { stream ->
                 if (stream.codecId == GONE) {
                     gone = true
                 } else {
@@ -295,8 +331,15 @@ object RecordingSaver {
                                     nowhere = true
                                     null
                                 } else {
-                                    Open(part, target, OpusOggWriter(target.descriptor.fileDescriptor, config.data))
-                                        .also { open[part] = it }
+                                    // A writer that cannot be made must not
+                                    // leave its target open behind it.
+                                    val writer = try {
+                                        OpusOggWriter(target.descriptor.fileDescriptor, config.data)
+                                    } catch (t: Throwable) {
+                                        target.abandon()
+                                        throw t
+                                    }
+                                    Open(part, target, writer).also { open[part] = it }
                                 }
                             } ?: break
                             into.writer.write(packet.data, packet.pts)
@@ -311,7 +354,10 @@ object RecordingSaver {
         }
 
         val written = open.values.map { it to (it.writer.packets to it.writer.durationSeconds) }
-        open.values.forEach { runCatching { it.writer.close() } }
+        // Every file finished before any is published: one that would not
+        // finish is unplayable, and the daemon's copy is then the only good
+        // one - kept for a retry, not deleted as saved.
+        val finished = open.values.map { runCatching { it.writer.finish() }.getOrDefault(false) }.all { it }
         val anything = written.any { (_, counts) -> counts.first > 0L }
 
         return when {
@@ -324,16 +370,33 @@ object RecordingSaver {
                 open.values.forEach { it.target.abandon() }
                 Outcome.Failed("There was nowhere to save it.")
             }
-            completed && anything -> {
+            completed && anything && !finished -> {
+                Log.e(TAG, "save: a file from $recfile could not be finished; keeping the daemon's copy")
+                open.values.forEach { it.target.abandon() }
+                Outcome.Failed("The recording could not be written. Is the storage full?")
+            }
+            completed && anything -> withContext(NonCancellable) {
+                // From the first publish to the daemon's delete, one piece: a
+                // cancellation between them left a saved recording on the
+                // daemon too, and the next reconcile saved it again as "(1)".
                 var last: Outcome.Saved? = null
+                var unpublished = false
                 for ((o, counts) in written) {
                     val (packets, seconds) = counts
                     if (packets == 0L) {
                         o.target.abandon()
                         continue
                     }
-                    Log.i(TAG, "save: wrote %d packets, %.1fs -> %s".format(packets, seconds, o.part.name))
-                    o.target.close()
+                    if (!o.target.publish()) {
+                        Log.e(TAG, "save: a file from $recfile could not be published")
+                        o.target.abandon()
+                        unpublished = true
+                        continue
+                    }
+                    // The recording's daemon name, not its own: with the
+                    // caller in it, a file name is a name and a number, and
+                    // logcat is no place for those.
+                    Log.i(TAG, "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile))
                     if (ledger) {
                         FileNames.noteDirection(context, o.part.name, o.part.incoming)
                         // Before anyone can delete it: see CallLedger for why the
@@ -341,20 +404,28 @@ object RecordingSaver {
                         CallLedger.noteRecording(context, o.part.startMillis, o.part.incoming, seconds.toInt())
                     }
                     _saved.tryEmit(o.part.name)
-                    last = Outcome.Saved(o.part.name, seconds, o.target.uri, o.target.filePath)
+                    last = Outcome.Saved(o.part.name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis)
                 }
-                CaptureDaemon.deleteRecording(context, recfile)
-                last!!
+                when {
+                    last == null -> return@withContext Outcome.Failed("The recording could not be written.")
+                    // A part that would not publish: the daemon's copy stays,
+                    // so its audio is not lost - a duplicate later is better.
+                    unpublished -> Log.w(TAG, "save: keeping $recfile on the daemon; a part of it was not saved")
+                    !CaptureDaemon.deleteRecording(context, recfile) ->
+                        // Saved, and noted in the ledger; the next collection
+                        // finds it there and only deletes it (saveClaimed).
+                        Log.w(TAG, "save: could not delete $recfile from the daemon; it goes next time")
+                }
+                last
             }
             completed -> {
                 // Read the whole thing; there was simply no call audio in it.
+                // Noted in the ledger only where the user is told
+                // (CallMonitorService): collected later, it is the missed-call
+                // check that says so.
                 Log.w(TAG, "save: no audio in $recfile, discarding")
                 open.values.forEach { it.target.abandon() }
                 CaptureDaemon.deleteRecording(context, recfile)
-                // Reported to the user as "Call not recorded" already; the
-                // missed-call check must not say it a second time.
-                val first = parts.first()
-                if (ledger) CallLedger.noteRecording(context, first.startMillis, first.incoming, 0)
                 Outcome.Empty
             }
             else -> {
@@ -406,13 +477,15 @@ object RecordingSaver {
         if (pending.isEmpty()) return
         Log.i(TAG, "reconcile: ${pending.size} pending")
         for (recfile in pending) {
-            when (val outcome = save(context, recfile, isIncoming(recfile), justEnded = false)) {
+            val outcome = save(context, recfile, isIncoming(recfile), justEnded = false)
+            if (outcome !is Outcome.Failed && outcome != Outcome.Busy) failingSince(context, recfile, clear = true)
+            when (outcome) {
                 is Outcome.Saved -> {
-                    Log.i(TAG, "reconcile: saved $recfile as ${outcome.name}")
+                    Log.i(TAG, "reconcile: saved $recfile")
                     // A hang-up whose wake never arrived is still a call that
                     // just ended, and still worth the after-call notification.
                     // AfterCall leaves out anything long past.
-                    runCatching { AfterCall.saved(context, outcome, isIncoming(recfile), startMillis(recfile) ?: 0L) }
+                    runCatching { AfterCall.saved(context, outcome, outcome.incoming, outcome.startMillis) }
                         .onFailure { Log.w(TAG, "reconcile: after-call notice failed", it) }
                 }
                 Outcome.Empty -> Log.i(TAG, "reconcile: dropped empty $recfile")
@@ -420,9 +493,14 @@ object RecordingSaver {
                 Outcome.Busy -> Log.i(TAG, "reconcile: $recfile is being saved already, leaving it")
                 Outcome.Skipped -> Log.i(TAG, "reconcile: $recfile was a call the rules leave out")
                 Outcome.NotAnswered -> Log.i(TAG, "reconcile: $recfile was never answered")
-                is Outcome.Failed -> if (ageMs(recfile) > GIVE_UP_MS) {
+                // A week of failing, from the first failure - not from the
+                // call: a file stranded on the daemon for a week (a reboot,
+                // no Wi-Fi to bring the recorder back) is not given up on its
+                // first try.
+                is Outcome.Failed -> if (System.currentTimeMillis() - failingSince(context, recfile) > GIVE_UP_MS) {
                     Log.w(TAG, "reconcile: giving up on $recfile (${outcome.reason})")
                     CaptureDaemon.deleteRecording(context, recfile)
+                    failingSince(context, recfile, clear = true)
                 } else {
                     Log.w(TAG, "reconcile: left $recfile for later (${outcome.reason})")
                 }
@@ -430,13 +508,27 @@ object RecordingSaver {
         }
     }
 
+    private const val KEY_FAILING = "save_failing"
+
+    /** When saving [recfile] first failed (noted now, if this is the first);
+     *  [clear] forgets it. Kept in the preferences as "recfile|millis". */
+    @Synchronized
+    private fun failingSince(context: Context, recfile: String, clear: Boolean = false): Long {
+        val prefs = com.jemcik.jemrec.Prefs.of(context)
+        val all = prefs.getStringSet(KEY_FAILING, emptySet()).orEmpty()
+        val mine = all.firstOrNull { it.substringBefore('|') == recfile }
+        if (clear) {
+            if (mine != null) prefs.edit().putStringSet(KEY_FAILING, all - mine).apply()
+            return 0L
+        }
+        mine?.substringAfter('|')?.toLongOrNull()?.let { return it }
+        val now = System.currentTimeMillis()
+        prefs.edit().putStringSet(KEY_FAILING, all + "$recfile|$now").apply()
+        return now
+    }
+
     /** The call's start time, from the millis in jemrec_rec_<millis>_<in|out>.dat. */
     internal fun startMillis(recfile: String): Long? =
         recfile.substringAfter("jemrec_rec_", "").substringBefore('_', "").toLongOrNull()
 
-    /** Age of the file, or 0 (treated as fresh) if the name cannot be parsed. */
-    private fun ageMs(recfile: String): Long {
-        val millis = startMillis(recfile) ?: return 0
-        return System.currentTimeMillis() - millis
-    }
 }

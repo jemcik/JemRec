@@ -151,6 +151,15 @@ object FileNames {
     }
 
     /** What a name says about its call. */
+    /**
+     * A recording's name as a log line may show it: its date and time, never
+     * the caller. With the caller in it, a file name is a person's name and
+     * number - not for logcat, which bug reports and anything with shell
+     * access can read.
+     */
+    internal fun forLog(name: String): String =
+        parse(name)?.let { "%1\$tY%1\$tm%1\$td_%1\$tH%1\$tM%1\$tS".format(it.startedAt) } ?: "a recording"
+
     internal data class Parsed(
         val startedAt: Long,
         /** Null for Honor's format, which does not say. */
