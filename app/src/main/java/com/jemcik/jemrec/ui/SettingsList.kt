@@ -34,15 +34,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -77,11 +76,13 @@ internal fun groupShape(index: Int, count: Int): Shape = RoundedCornerShape(
     bottomEnd = if (index == count - 1) OUTER else INNER,
 )
 
-/** Collects a group's rows, so each can be drawn knowing where it sits. */
+/** Collects a group's rows, so each can be drawn knowing where it sits.
+ *  A row of a list that changes (a chosen contact) gives a [key], so removing
+ *  one does not hand its remembered state - its photo - to the next. */
 internal class SettingsGroupScope {
-    val rows = mutableListOf<@Composable (Shape) -> Unit>()
-    fun row(content: @Composable (shape: Shape) -> Unit) {
-        rows += content
+    val rows = mutableListOf<Pair<Any?, @Composable (Shape) -> Unit>>()
+    fun row(key: Any? = null, content: @Composable (shape: Shape) -> Unit) {
+        rows += key to content
     }
 }
 
@@ -104,7 +105,9 @@ internal fun SettingsGroup(title: String? = null, build: SettingsGroupScope.() -
     Column {
         if (title != null) SettingsHeading(title)
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            rows.forEachIndexed { index, row -> row(groupShape(index, rows.size)) }
+            rows.forEachIndexed { index, (rowKey, row) ->
+                key(rowKey ?: index) { row(groupShape(index, rows.size)) }
+            }
         }
     }
 }
@@ -113,7 +116,8 @@ internal fun SettingsGroup(title: String? = null, build: SettingsGroupScope.() -
  * One setting: an icon, its name, and what it is set to now.
  *
  * Tappable when [onClick] is given - it then opens what changes it - and with
- * whatever [trailing] holds at the end.
+ * whatever [trailing] holds at the end. Not [enabled], it is faded as
+ * Material's disabled list items are, so a tap that does nothing is expected.
  */
 @Composable
 internal fun SettingsRow(
@@ -125,7 +129,7 @@ internal fun SettingsRow(
     titleColor: Color = MaterialTheme.colorScheme.onSurface,
     iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: (() -> Unit)? = null,
-    onClickLabel: String? = null,
+    enabled: Boolean = true,
     rowModifier: Modifier = Modifier,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -137,7 +141,7 @@ internal fun SettingsRow(
                 .fillMaxWidth()
                 .then(
                     if (onClick != null) {
-                        Modifier.clickable(onClickLabel = onClickLabel) { haptics.tap(); onClick() }
+                        Modifier.clickable(enabled = enabled) { haptics.tap(); onClick() }
                     } else {
                         Modifier
                     },
@@ -148,12 +152,15 @@ internal fun SettingsRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // The trailing control is left alone: a switch has disabled
+            // colours of its own.
+            val faded = Modifier.alpha(if (enabled) 1f else 0.38f)
             if (leading != null) {
-                leading()
+                Box(faded) { leading() }
             } else if (icon != null) {
-                Icon(icon, contentDescription = null, tint = iconTint)
+                Icon(icon, contentDescription = null, tint = iconTint, modifier = faded)
             }
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f).then(faded)) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, color = titleColor)
                 if (summary != null) {
                     Text(summary, style = MaterialTheme.typography.bodyMedium, color = summaryColor)
@@ -188,6 +195,7 @@ internal fun SwitchRow(
         summary = summary,
         icon = icon,
         summaryColor = summaryColor,
+        enabled = enabled,
         leading = leading,
         rowModifier = Modifier.toggleable(
             value = checked,
@@ -353,15 +361,16 @@ internal fun <T> ConnectedChoices(
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp)
+                    // Faded while it cannot be used, as Material's disabled
+                    // controls are, so a tap that does nothing is expected -
+                    // the button and its label both, so first in the chain.
+                    .alpha(if (enabled) 1f else 0.38f)
                     .clip(RoundedCornerShape(topStart = start, bottomStart = start, topEnd = end, bottomEnd = end))
                     .background(container)
                     .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) {
                         haptics.tap()
                         if (!isSelected) onChoose(value)
                     }
-                    // Faded while it cannot be used, as Material's disabled
-                    // controls are, so a tap that does nothing is expected.
-                    .alpha(if (enabled) 1f else 0.38f)
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -413,16 +422,5 @@ internal object SettingsIcons {
 
     val Restore = icon("Restore", "M14,12c0,-1.1 -0.9,-2 -2,-2s-2,0.9 -2,2 0.9,2 2,2 2,-0.9 2,-2zM12,3c-4.97,0 -9,4.03 -9,9H0l4,4 4,-4H5c0,-3.87 3.13,-7 7,-7s7,3.13 7,7 -3.13,7 -7,7c-1.51,0 -2.91,-0.49 -4.06,-1.3l-1.42,1.44C8.04,20.3 9.94,21 12,21c4.97,0 9,-4.03 9,-9s-4.03,-9 -9,-9z")
 
-    private fun icon(name: String, path: String): ImageVector =
-        ImageVector.Builder(
-            name = name,
-            defaultWidth = 24.dp,
-            defaultHeight = 24.dp,
-            viewportWidth = 24f,
-            viewportHeight = 24f,
-        ).addPath(
-            pathData = PathParser().parsePathString(path).toNodes(),
-            // Tinted by whoever draws it; black is only the mask.
-            fill = SolidColor(Color.Black),
-        ).build()
+    private fun icon(name: String, path: String): ImageVector = pathIcon(name, path)
 }

@@ -402,6 +402,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             }
         },
     ) { padding ->
+        // Settings keeps its place while a screen opened from it is up -
+        // Recently deleted included, which is drawn by a different branch
+        // below, so this lives above them all - and Back lands where the tap
+        // was. Each of those screens starts at its own top.
+        val settingsScroll = rememberScrollState()
         // The home screen is its own scrolling list (a LazyColumn with a pinned
         // header), so it must NOT be nested in a vertical scroll - two vertical
         // scrolls inside each other is both a crash and the wrong behaviour. It
@@ -417,10 +422,6 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             // A list too, with its own scroll, for the same reason.
             TrashScreen(state, vm, modifier = Modifier.padding(padding))
         } else {
-            // Settings keeps its place while a screen opened from it is up, so
-            // Back lands where the tap was; each of those screens starts at
-            // its own top.
-            val settingsScroll = rememberScrollState()
             val subScroll = key(state.screen) { rememberScrollState() }
             val scrollState = if (state.screen == Screen.SETTINGS || !ready) settingsScroll else subScroll
             // A self-test's result lands in the log at the very bottom of

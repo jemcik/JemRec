@@ -320,8 +320,6 @@ class MainViewModel @JvmOverloads constructor(
 
     fun showSettings() = _state.update { it.copy(screen = Screen.SETTINGS) }
 
-    fun showHome() = _state.update { it.copy(screen = Screen.HOME) }
-
     fun showTrash() = _state.update { it.copy(screen = Screen.TRASH) }
 
     fun showScreen(screen: Screen) = _state.update { it.copy(screen = screen) }

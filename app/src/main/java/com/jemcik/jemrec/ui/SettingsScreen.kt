@@ -87,7 +87,9 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
     var dialog by rememberSaveable { mutableStateOf<SettingsDialog?>(null) }
-    val autoStart = remember { AutoStart.available(context) }
+    // Asked once: both mean resolving a dozen activities through the
+    // package manager, and Settings recomposes on every state change.
+    val autoStart = remember { if (AutoStart.available(context)) AutoStart.label(context) else null }
 
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -169,7 +171,7 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                     Text("Show who called", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "Each recording labelled with the contact's name and photo, or " +
-                            "the number, and word if a call ever goes by unrecorded. " +
+                            "the number, and a warning if a call ever goes by unrecorded. " +
                             "Needs your call log and contacts. Applies to recordings " +
                             "you already have.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -379,11 +381,11 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
             // manager this row would be an offer to fix something that is not
             // broken, which is worse than saying nothing - so AutoStart answers
             // whether the screen exists before the row is drawn at all.
-            if (autoStart) {
+            if (autoStart != null) {
                 row { shape ->
                     SettingsRow(
                         title = "Survive a restart",
-                        summary = "Allow JemRec in ${AutoStart.label(context)}, so it can " +
+                        summary = "Allow JemRec in $autoStart, so it can " +
                             "start again by itself after a reboot",
                         icon = Icons.Filled.Refresh,
                         onClick = { AutoStart.open(context) },
@@ -415,7 +417,8 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                     titleColor = MaterialTheme.colorScheme.error,
                     iconTint = MaterialTheme.colorScheme.error,
                     icon = SettingsIcons.Restore,
-                    onClick = if (state.busy) null else vm::askReset,
+                    onClick = vm::askReset,
+                    enabled = !state.busy,
                     shape = shape,
                 )
             }
@@ -434,9 +437,11 @@ private fun ageChoice(days: Int): String = when (days) {
     else -> "$days days"
 }
 
+/** A format's name - the same words in the dialog and on the row, so the row
+ *  shows the option that was picked. */
 private fun fileNamesLabel(format: FileNames.Format): String = when (format) {
     FileNames.Format.DATE -> "Date and time"
-    FileNames.Format.DATE_AND_CALLER -> "Date, time and the caller"
+    FileNames.Format.DATE_AND_CALLER -> "With the caller"
     FileNames.Format.HONOR -> "For Honor's Phone app"
 }
 
@@ -587,13 +592,7 @@ private fun FileNamesDialog(
         title = "File names",
         choices = formats,
         selected = state.fileNames,
-        label = { format ->
-            when (format) {
-                FileNames.Format.DATE -> "Date and time"
-                FileNames.Format.DATE_AND_CALLER -> "With the caller"
-                FileNames.Format.HONOR -> "For Honor's Phone app"
-            }
-        },
+        label = ::fileNamesLabel,
         detail = { format ->
             when (format) {
                 FileNames.Format.DATE -> "20261020_165705_out.ogg"
@@ -721,7 +720,7 @@ fun WhoseCallsScreen(state: UiState, vm: MainViewModel) {
             )
             SettingsGroup {
                 state.ruleChosen.forEach { chosen ->
-                    row { shape ->
+                    row(key = chosen.key) { shape ->
                         SettingsRow(
                             title = chosen.name,
                             shape = shape,
@@ -743,7 +742,8 @@ fun WhoseCallsScreen(state: UiState, vm: MainViewModel) {
                         titleColor = MaterialTheme.colorScheme.primary,
                         iconTint = MaterialTheme.colorScheme.primary,
                         icon = Icons.Filled.Person,
-                        onClick = if (state.busy) null else ({ contactPicker.launch(null) }),
+                        onClick = { contactPicker.launch(null) },
+                        enabled = !state.busy,
                         shape = shape,
                     )
                 }
@@ -843,7 +843,7 @@ fun MessengerCallsScreen(state: UiState, vm: MainViewModel) {
             "Both sides are recorded, the way phone calls are. Each app is off until " +
                 "you turn it on. An app can refuse to let its calls be recorded, and " +
                 "Android honours that. Their recordings are in Recordings, marked with " +
-                "the app; Whose calls to keep does not apply to them - the switch for " +
+                "the app's icon; Whose calls to keep does not apply to them - the switch for " +
                 "each app is the rule.",
             "These calls are not in the phone's call log; only the app's own call " +
                 "notification says who it was. Reading it takes notification access, " +

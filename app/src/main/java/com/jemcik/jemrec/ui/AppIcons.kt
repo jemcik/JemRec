@@ -21,21 +21,18 @@ import java.util.concurrent.ConcurrentHashMap
  * Read off the main thread and kept for the life of the process: a list row
  * is composed again each time it scrolls back into view, and asking the
  * package manager and drawing the icon every time is work a scroll should
- * not wait on. A miss is kept too, so an uninstalled app is not asked about
- * again on every row.
+ * not wait on. A miss is not kept: an app installed later shows its icon the
+ * next time the row is drawn.
  */
 @Composable
 internal fun rememberAppIcon(packages: List<String>, size: Dp): ImageBitmap? {
     val context = LocalContext.current
     val px = (size.value * context.resources.displayMetrics.density).toInt()
     val key = "${packages.joinToString(",")}@$px"
-    return produceState(initialValue = icons[key]?.bitmap, key) {
-        if (!icons.containsKey(key)) {
-            icons[key] = Cached(withContext(Dispatchers.IO) {
-                packages.firstNotNullOfOrNull { iconOf(context, it, px) }
-            })
-        }
-        value = icons[key]?.bitmap
+    return produceState(initialValue = icons[key], key) {
+        value = icons[key] ?: withContext(Dispatchers.IO) {
+            packages.firstNotNullOfOrNull { iconOf(context, it, px) }
+        }?.also { icons[key] = it }
     }.value
 }
 
@@ -43,10 +40,7 @@ internal fun rememberAppIcon(packages: List<String>, size: Dp): ImageBitmap? {
  *  "whatsapp" is WhatsApp or WhatsApp Business, whichever is installed. */
 internal fun packagesForTag(tag: String): List<String> = VoipApps.KNOWN.filter { it.tag == tag }.map { it.pkg }
 
-/** A looked-up icon, or a looked-up absence of one. */
-private class Cached(val bitmap: ImageBitmap?)
-
-private val icons = ConcurrentHashMap<String, Cached>()
+private val icons = ConcurrentHashMap<String, ImageBitmap>()
 
 private fun iconOf(context: Context, pkg: String, px: Int): ImageBitmap? = runCatching {
     val drawable = context.packageManager.getApplicationIcon(pkg)

@@ -23,9 +23,11 @@ class DaySectionsTest {
         assertEquals(Day.EARLIER, dayOf(at(19, 23, 59), now))
     }
 
-    @Test fun unknownIsEarlierAndTheFutureIsToday() {
-        // A name that is not one of ours has no time; the list sorts it last.
-        assertEquals(Day.EARLIER, dayOf(null, now))
+    @Test fun unknownIsOtherAndTheFutureIsToday() {
+        // A name that is not one of ours has no time; the list sorts it last,
+        // under a heading of its own - not "Earlier", which its row's file
+        // date ("Today 16:02") could contradict.
+        assertEquals(Day.OTHER, dayOf(null, now))
         // A clock set back after a call: still today, not dropped under Earlier.
         assertEquals(Day.TODAY, dayOf(at(22, 9), now))
     }
@@ -33,8 +35,8 @@ class DaySectionsTest {
     @Test fun runsKeepTheListsOrder() {
         val times = listOf(at(21, 0, 10), at(20, 18), at(20, 9), at(12, 11), null)
         val runs = byDay(times, now) { it }
-        assertEquals(listOf(Day.TODAY, Day.YESTERDAY, Day.EARLIER), runs.map { it.first })
-        assertEquals(listOf(1, 2, 2), runs.map { it.second.size })
+        assertEquals(listOf(Day.TODAY, Day.YESTERDAY, Day.EARLIER, Day.OTHER), runs.map { it.first })
+        assertEquals(listOf(1, 2, 1, 1), runs.map { it.second.size })
         // Nothing is lost or reordered.
         assertEquals(times, runs.flatMap { it.second })
     }
@@ -49,6 +51,9 @@ class DaySectionsTest {
             assertEquals("18:00", timeUnder(Day.YESTERDAY, at(20, 18)))
             // Under Earlier the date is the only place the day is said.
             assertEquals("12 Oct, 11:00", timeUnder(Day.EARLIER, at(12, 11)))
+            // The cached formatters follow a change of language.
+            Locale.setDefault(Locale.GERMANY)
+            assertEquals(true, timeUnder(Day.EARLIER, at(12, 11)).startsWith("12 Okt"))
         } finally {
             Locale.setDefault(before)
         }

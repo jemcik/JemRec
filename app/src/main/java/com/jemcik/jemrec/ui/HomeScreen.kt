@@ -242,11 +242,15 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
 
     val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
-    val filtered = filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly)
-    val shown = filtered.take(state.visibleCount)
-    // Grouped once per list and per day, not on every recomposition: the
-    // player's position ticks recompose this screen three times a second.
+    // Filtered, cut and grouped once per change of what they depend on - and
+    // per day, which Today and the headings both read - not on every
+    // recomposition: the player's position ticks recompose this screen three
+    // times a second.
     val today = dayStamp(System.currentTimeMillis())
+    val filtered = remember(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly, today) {
+        filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly)
+    }
+    val shown = remember(filtered, state.visibleCount) { filtered.take(state.visibleCount) }
     val days = remember(shown, today) { byDay(shown, System.currentTimeMillis()) { it.startedAtMillis } }
 
     // Endless scroll instead of a "Show more" button. Everything is already in
