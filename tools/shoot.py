@@ -14,6 +14,11 @@ call. Writing the preference file directly through `run-as` always works, needs
 no token, and the provider installs the override at the next process start -
 which the script forces anyway, between themes.
 
+WHY THE SELECT TIP IS BROUGHT BACK. The Recordings tab opens with a tip until
+it is dismissed, and it is the first thing a new user sees - so it belongs in
+the shots. The phone they are shot on has usually dismissed it long ago, so
+the flag is cleared for the shots and put back as it was afterwards.
+
 Taps are located by TEXT from the view hierarchy rather than by coordinates, so
 this survives a layout change.
 
@@ -87,6 +92,31 @@ def demo(on: bool) -> None:
         input="\n".join(lines) + "\n", text=True, check=True,
     )
     print(f"  invented recordings: {'on' if on else 'off'}")
+
+
+TIP = "select_hint_seen"
+
+
+def tip_dismissed() -> bool:
+    prefs = shell(f"run-as {PKG} cat shared_prefs/jemrec.xml")
+    return f'name="{TIP}" value="true"' in prefs
+
+
+def dismiss_tip(on: bool) -> None:
+    """Flip the select tip's flag in place, with the app stopped.
+
+    In place, not rewritten like the diag file: this one holds every setting
+    the phone's owner has made. A flag that was never written needs nothing -
+    absent means the tip shows.
+    """
+    old, new = ("false", "true") if on else ("true", "false")
+    shell(f"am force-stop {PKG}")
+    shell(
+        f"run-as {PKG} sed -i "
+        f"'s/name=\"{TIP}\" value=\"{old}\"/name=\"{TIP}\" value=\"{new}\"/' "
+        "shared_prefs/jemrec.xml"
+    )
+    print(f"  select tip: {'dismissed' if on else 'showing'}")
 
 
 def status_bar(clean: bool) -> None:
@@ -243,6 +273,9 @@ if __name__ == "__main__":
 
     only = sys.argv[1:] or list(THEMES)
     demo(True)
+    dismissed = tip_dismissed()
+    if dismissed:
+        dismiss_tip(False)
     status_bar(True)
     try:
         for theme in only:
@@ -253,6 +286,8 @@ if __name__ == "__main__":
         # Leave the phone as its owner keeps it.
         shell("cmd uimode night yes")
         shell(f"am force-stop {PKG}")
+        if dismissed:
+            dismiss_tip(True)
     thumbnails()
     listing()
     print("done")
