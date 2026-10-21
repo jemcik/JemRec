@@ -18,6 +18,9 @@ DOCS = ROOT / "docs"
 
 REPO = "https://github.com/jemcik/JemRec"
 FDROID = "https://f-droid.org/packages/com.jemcik.jemrec/"
+# The one way to support the project: a Ukrainian service, because the ones
+# better known abroad (PayPal, Buy Me a Coffee) do not pay out to Ukraine.
+DONATE = "https://donatello.to/jemcik"
 TAGLINE = "A call recorder for unrooted Android — phone and messenger calls."
 
 # THE THEME HAS THREE STATES, NOT TWO, and the palette is written twice because
@@ -120,15 +123,35 @@ body {
   padding: .2rem .66rem; cursor: pointer;
 }
 .theme:hover { color: var(--accent); border-color: var(--accent); }
+/* In the bar, so it is on every page and stays in view - a link at the foot of
+   the page was found by nobody. The theme button's shape, in the record red,
+   which on this site means the one thing to notice. */
+.support-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .92rem; font-weight: 600; text-decoration: none; color: var(--record);
+  background: color-mix(in srgb, var(--record) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--record) 35%, transparent);
+  border-radius: 999px; padding: .2rem .75rem;
+  transition: background-color .15s;
+}
+.support-btn:hover { background: color-mix(in srgb, var(--record) 18%, transparent); }
+/* One height for the pair: once their words are hidden, the theme button holds
+   a 14px icon and the heart a line of text, and they came out 23px and 33px. */
+.theme, .support-btn { min-height: 2rem; justify-content: center; }
 .theme svg { width: 14px; height: 14px; }
-/* The word goes before the button does. Below this the wordmark, three links and
-   a labelled button do not fit on one line, and a masthead that wraps to two
-   looks broken rather than responsive. */
-@media (max-width: 32rem) {
-  .theme .theme-name { display: none; }
+/* The words go before the buttons do, then the links before the words would
+   wrap: a masthead on two lines looks broken rather than responsive. First the
+   two pills lose their labels, then the bar keeps only Setup (below). */
+@media (max-width: 46rem) {
+  .theme .theme-name, .support-btn .support-name { display: none; }
+  .support-btn { padding: .2rem .62rem; }
+}
+@media (max-width: 36rem) {
   .bar nav a { margin-left: .85rem; }
   .bar-end { gap: .6rem; }
-  /* Then the links the footer also carries. */
+  /* Then every link but Setup, the one a phone's reader came for: the footer
+     carries them all, and the wordmark goes home. With the Support heart in
+     the bar there was no room for more without it wrapping to two lines. */
   .bar nav a.roomy { display: none; }
 }
 
@@ -150,6 +173,9 @@ pre {
 }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
 p code, li code, td code { background: var(--code-bg); padding: .1rem .32rem; border-radius: 5px; }
+/* The manual quotes a 64-character signing digest and a whole Honor file name
+   inline; unbroken, either one made the page wider than a phone. */
+p code, li code { overflow-wrap: anywhere; }
 /* FOREGROUND_SERVICE_SPECIAL_USE is wider than a phone's table column. Only
    there: "anywhere" also lets the column shrink, and on a wide screen it did,
    breaking every name in two. */
@@ -495,6 +521,10 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .closing > img { display: block; margin: 0 auto 1.1rem; border-radius: 22%; }
 .closing .intro { margin-left: auto; margin-right: auto; }
 .closing .cta { justify-content: center; align-items: center; }
+/* Under the install buttons and smaller than them: getting the app comes
+   first, and asking for money should never compete with it. */
+.support { margin: 1.8rem auto 0; max-width: 34rem; color: var(--ink-mid); font-size: .95rem; }
+.support span { color: var(--record); margin-right: .2rem; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -1340,7 +1370,8 @@ def page(title: str, description: str, body: str, here: str, home: bool = False)
   <div class="column">
     <a class="brand" href="index.html"><img src="icon.png" alt="" width="34" height="34">JemRec</a>
     <div class="bar-end">
-      <nav>{nav("index.html", "Home")}{nav("how-it-works.html", "How it works")}{nav("setup.html", "Setup")}{nav("privacy-policy.html", "Privacy", roomy=True)}<a class="roomy" href="{REPO}">GitHub</a></nav>
+      <nav>{nav("index.html", "Home", roomy=True)}{nav("how-it-works.html", "How it works", roomy=True)}{nav("setup.html", "Setup")}{nav("privacy-policy.html", "Privacy", roomy=True)}<a class="roomy" href="{REPO}">GitHub</a></nav>
+      <a class="support-btn" href="{DONATE}" aria-label="Support JemRec on Donatello"><span aria-hidden="true">&#9829;</span><span class="support-name">Support</span></a>
       {THEME_BUTTON}
     </div>
   </div>
@@ -1356,6 +1387,7 @@ def page(title: str, description: str, body: str, here: str, home: bool = False)
       <a href="privacy-policy.html">Privacy policy</a>
       <a href="{REPO}/releases">Releases</a>
       <a href="{REPO}">Source on GitHub</a>
+      <a href="{DONATE}">Support JemRec</a>
     </nav>
     <p>JemRec is free software under the Apache&nbsp;2.0 licence.</p>
     <p class="credit">The F-Droid logo is by William Theaker, Robert Martinez and
@@ -1814,6 +1846,9 @@ INDEX_BODY = f"""
      the Self-test tells you in a second whether your phone hands over both
      sides.</p>
   {STORES}
+  <p class="support" id="support"><span aria-hidden="true">&#9829;</span> JemRec is
+     free: no ads, no account, nothing collected. If it has been useful to you,
+     <a href="{DONATE}">support its development on Donatello</a>.</p>
 </section>
 """
 
@@ -2049,7 +2084,9 @@ PRIVACY_BODY = f"""
   <h2>This website</h2>
   <p>Static files served by GitHub Pages, with no analytics, no cookies, and no
      fonts or scripts fetched from anywhere else. The one thing it stores is
-     whether you chose light or dark, in your own browser, where it stays.</p>
+     whether you chose light or dark, in your own browser, where it stays. The
+     Support link leads to Donatello, a separate service with its own privacy
+     policy; nothing about a donation reaches the app.</p>
 
   <h2>The microphone</h2>
   <p>The app holds no microphone permission and opens no audio device. Calls are

@@ -11,7 +11,7 @@ the phone sets itself up.
 
 <a href="https://f-droid.org/packages/com.jemcik.jemrec/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="72"></a>
 
-[**Website**](https://jemcik.github.io/JemRec/) · [Manual](https://jemcik.github.io/JemRec/setup.html) · [Releases](https://github.com/jemcik/JemRec/releases) · [Privacy policy](https://jemcik.github.io/JemRec/privacy-policy.html)
+[**Website**](https://jemcik.github.io/JemRec/) · [Manual](https://jemcik.github.io/JemRec/setup.html) · [Releases](https://github.com/jemcik/JemRec/releases) · [Privacy policy](https://jemcik.github.io/JemRec/privacy-policy.html) · [Support](#support-jemrec)
 
 [![F-Droid](https://img.shields.io/f-droid/v/com.jemcik.jemrec)](https://f-droid.org/packages/com.jemcik.jemrec/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -318,6 +318,12 @@ within a few minutes, turns both debugging switches off and exits; either way,
 once JemRec is gone nothing turns them back on.
 
 </details>
+
+## Support JemRec
+
+JemRec is free: no ads, no account, and nothing collected about you. If it has
+been useful to you, you can support its development on
+**[Donatello](https://donatello.to/jemcik)**.
 
 ## For developers
 
