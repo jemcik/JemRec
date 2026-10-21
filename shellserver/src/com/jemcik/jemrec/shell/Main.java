@@ -97,7 +97,7 @@ public final class Main {
     /**
      * Both directions of the call. This is the whole point of the project, and
      * whether it actually carries the far end is a property of the device's
-     * audio HAL rather than of this code. See the README's 30-second check.
+     * audio HAL rather than of this code. The app's self-test checks it.
      */
     private static final AudioSource AUDIO_SOURCE = AudioSource.VOICE_CALL;
 

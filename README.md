@@ -6,54 +6,81 @@
 
 **A call recorder for unrooted Android — phone and messenger calls.**
 
-One APK. No root, no Shizuku, no companion app, no computer — the phone sets
-itself up.
+Both sides of the call. No root, no computer, no second app —<br>
+the phone sets itself up.
 
-Records phone calls and **WhatsApp, Telegram and Viber** calls, both sides —
-messenger calls on Android 14 or newer; see [Messenger calls](#messenger-calls).
+<a href="https://f-droid.org/packages/com.jemcik.jemrec/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="72"></a>
 
-[**Website**](https://jemcik.github.io/JemRec/) · [F-Droid](https://f-droid.org/packages/com.jemcik.jemrec/) · [Privacy policy](https://jemcik.github.io/JemRec/privacy-policy.html) · [Releases](https://github.com/jemcik/JemRec/releases)
+[**Website**](https://jemcik.github.io/JemRec/) · [Manual](https://jemcik.github.io/JemRec/setup.html) · [Releases](https://github.com/jemcik/JemRec/releases) · [Privacy policy](https://jemcik.github.io/JemRec/privacy-policy.html)
 
 [![F-Droid](https://img.shields.io/f-droid/v/com.jemcik.jemrec)](https://f-droid.org/packages/com.jemcik.jemrec/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
+[![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-265-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-265-success)](docs/DEVELOPMENT.md#tests)
 
-<img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
-<img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
-<img src="docs/screenshots/home-dark.png" width="16%" alt="The recordings list, dark">
-<img src="docs/screenshots/settings.png" width="16%" alt="Settings">
-<img src="docs/screenshots/selftest.png" width="16%" alt="The self-test">
-<img src="docs/screenshots/selftest-dark.png" width="16%" alt="The self-test, dark">
+<img src="docs/screenshots/home.png" width="24%" alt="The recordings list">
+<img src="docs/screenshots/calls.png" width="24%" alt="The calls tab">
+<img src="docs/screenshots/settings.png" width="24%" alt="Settings">
+<img src="docs/screenshots/home-dark.png" width="24%" alt="The recordings list, dark">
+
+<sub>The people in these screenshots do not exist: a screenshot of a call recorder is a screenshot of someone's calls, so the debug build invents them. Everything else is real.</sub>
 
 </div>
 
-> [!NOTE]
-> The people in those screenshots do not exist. A screenshot of a call recorder
-> is a screenshot of someone's calls, so the debug build fills the list with
-> invented ones. Everything above the list is real.
+## Why JemRec
 
-## Install
+- **Both sides of every call.** Phone calls, and WhatsApp, Telegram and Viber
+  calls on Android 14 or newer.
+- **No root, no computer, no second app.** The phone pairs with its own
+  Wireless debugging and sets itself up, once, in a few minutes.
+- **Nothing leaves your phone.** No account, no cloud, no analytics. The only
+  network JemRec uses is the phone talking to itself.
+- **It tells you when something is wrong.** A recording that came out silent,
+  a recorder that is down, a call that went by unrecorded - each gets a
+  notification, so you do not find out on the day you need the call.
+- **Your rules.** Record every call or be asked first, keep only some people's
+  calls, and let old or very short recordings clear themselves away.
+- **Free, open and verifiable.** Apache-2.0, and F-Droid rebuilds every release
+  from this source and checks it matches, byte for byte.
 
-**From F-Droid**, which is the easy way:
-[f-droid.org/packages/com.jemcik.jemrec](https://f-droid.org/packages/com.jemcik.jemrec/).
-Install the F-Droid client, search for JemRec, and updates arrive like any other
-app's. Nothing below about sideloading applies — F-Droid is an installer the
-phone already trusts once you have allowed it.
+## Get started
 
-**Or download the APK** from [Releases](https://github.com/jemcik/JemRec/releases)
-and open it. Android will ask whether to allow installing from your browser or
-file manager; that is the sideload prompt, and the rest of this section is about
-getting past it.
+1. **Install it** from [F-Droid](https://f-droid.org/packages/com.jemcik.jemrec/),
+   or download the APK from [Releases](https://github.com/jemcik/JemRec/releases).
+2. **Follow the setup.** JemRec walks you through it and watches for each step:
+   one question (whether to hide Android's debugging notification), Developer
+   options, USB and Wireless debugging (no cable needed), and pairing - the
+   phone pairs with itself. Type the six-digit code into JemRec's
+   *notification*, not the app: leaving Settings closes the code window. Once;
+   the pairing survives restarts.
+3. **Let it start by itself after a restart:** Settings → *Survive a restart*,
+   on phones that keep such a list.
 
-The two are the same file. F-Droid builds each tag on their own machine, checks
-the result against the APK here byte for byte, and publishes **this** project's
-signed APK rather than one of their own — so whichever way you installed, the
-other can update it in place, with no uninstall and no pairing again. Verified
-on 0.8: what F-Droid serves is byte-identical to `jemrec-0.8.apk` on the
-releases page, down to the signature.
+Then run **Settings → Diagnostics → Self-test**. It answers, in about a second,
+whether your phone hands over both sides of a call.
+
+The full manual, with what to do when a step misbehaves:
+[on the web](https://jemcik.github.io/JemRec/setup.html) or
+[in this repository](docs/SETUP.md).
+
+<details>
+<summary><b>Trouble installing?</b> Play Protect, sideloading, and checking the APK</summary>
+
+<br>
+
+**F-Droid is the easy way:** install the F-Droid client, search for JemRec, and
+updates arrive like any other app's. F-Droid is an installer the phone already
+trusts once you have allowed it, so nothing below applies.
+
+**The APK from Releases** asks whether to allow installing from your browser or
+file manager; that is the sideload prompt. The two are the same file: F-Droid
+builds each tag on their own machine, checks the result against the APK here
+byte for byte, and publishes **this** project's signed APK rather than one of
+their own - so whichever way you installed, the other can update it in place,
+with no uninstall and no pairing again. Verified on 0.8: what F-Droid serves is
+byte-identical to `jemrec-0.8.apk` on the releases page, down to the signature.
 
 **Play Protect may get in the way, and what it takes differs by phone.** It
 warns about apps it has not seen before, which is every app that is not on
@@ -65,358 +92,137 @@ Play, so this is not a judgement about JemRec. Three phones, three outcomes:
 | Galaxy S20 | Refused. Turning Play Protect off long enough to install, then back on, worked. It is in the Play Store under your profile picture → Play Protect → Settings. |
 | LineageOS | Refused from the browser. Opening the same file from the **Files** app installed it. Each app that can install needs *Install unknown apps* granted to it separately, and not every one of them is allowed to. |
 
-If you want to check what you downloaded rather than trust it, every release
-is signed with the same certificate and the release workflow prints its digest
-on each run:
+**To check what you downloaded** rather than trust it: every release is signed
+with the same certificate, and the release workflow prints its digest on each
+run:
 
     apksigner verify --print-certs jemrec-0.8.apk
     SHA-256: 50aeab3630f0198ea3845db51413b1ad29582f78240fa2df6fe55ba8537afdf8
 
-**It is not on Google Play and never will be.** Play removed call recorders in
-2022 by forbidding the Accessibility API for recording, and no policy change
-since has re-opened the door. That is a distribution decision, not a technical
-one — the app itself never needed Play, and F-Droid asks only that a build be
-free software and reproducible from its source, which this one is.
+</details>
 
-**Recording calls is your responsibility.** Consent law differs by country and
-sometimes by state: one party, all parties, or a spoken notice. This app records
-what you tell it to and warns nobody on your behalf.
+<details>
+<summary><b>Why "start by itself" matters</b> after a restart</summary>
+
+<br>
+
+A reboot kills the recorder, and building it again takes a few seconds of
+Wi-Fi. With auto-start allowed (on an Honor: Settings → Battery → App launch →
+JemRec → *Manage manually*, with *Auto-launch* on), the recorder was back
+**ten seconds** after Wi-Fi came on, with the app never opened. Without it,
+the phone declined to start the app at boot and nothing came back by itself -
+**opening JemRec once** had it recording sixteen seconds later. That is the
+fallback, and it always works.
+
+Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
+recording carries on with Wi-Fi off, on mobile data, anywhere. The measurements
+are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
+
+</details>
 
 > [!IMPORTANT]
-> **A reboot kills the recorder, and building it again takes a few seconds of
-> Wi-Fi.** Whether that happens without you comes down to one phone setting.
->
-> **Allow JemRec to start automatically.** JemRec's Settings has a *Survive a
-> restart* row that opens the right screen on your phone; on an Honor
-> that is Settings → Battery → App launch → JemRec → *Manage manually*, with
-> *Auto-launch* on. Measured on that phone: the app started at boot, and the
-> recorder was back **ten seconds** after Wi-Fi came on, with the app never
-> opened.
->
-> **Without it, nothing happens by itself.** Same phone, auto-launch off: the
-> system declined to start the app for the boot broadcast — `don't meet
-> cpuload`, in its own log — so neither the scheduled job nor the Wi-Fi watcher
-> was ever armed, and seven minutes after Wi-Fi returned nothing had come back.
-> **Opening JemRec once** had it recording sixteen seconds later. That is the
-> fallback, and it always works.
->
-> Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
-> recording carries on with Wi-Fi off, on mobile data, anywhere.
+> **Recording calls is your responsibility.** Consent law differs by country and
+> sometimes by state: one party, all parties, or a spoken notice. JemRec records
+> what you tell it to and warns nobody on your behalf.
+
+## What you can do
+
+| | |
+| --- | --- |
+| **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record. A Quick Settings tile turns recording on and off. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
+| **Start at the answer** | Exact call tracking cuts the ringing, skips calls nobody answered, and splits call waiting into one recording per call. → [more](docs/ARCHITECTURE.md#exact-call-tracking) |
+| **Keep only the calls you want** | All your contacts, all but some, only some, or none - and other numbers on their own switch. → [more](docs/ARCHITECTURE.md#whose-calls-to-keep) |
+| **Messenger calls** | WhatsApp, Telegram and Viber, both sides, each switched on separately, with the caller's name from the app's notification. Android 14+. → [more](docs/ARCHITECTURE.md#messenger-calls) |
+| **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
+| **Name files your way** | By date and time, with the caller, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
+| **Keep, delete, clean up** | A keep mark, a 30-day Recently deleted, and auto-delete for old or very short recordings. → [more](docs/ARCHITECTURE.md#keeping-deleting-and-cleaning-up) |
+| **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, or a call went unrecorded. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
+
+Recordings are Opus files in the phone's standard `Recordings/JemRec` folder,
+where any file manager or music app can open them - or in a folder you choose.
 
 ## How it works
 
-The whole design follows from one fact and one obstacle.
+Android's `voice-call` audio source carries both sides of a call, but only
+system-level identities may read it - and the one an ADB session runs as, the
+**shell**, is among them. Getting a shell normally takes a computer, root, or a
+helper app like Shizuku. JemRec makes the phone its own computer:
 
-**The fact.** Android's `voice-call` audio source carries both sides of a call,
-and reading it needs `CAPTURE_AUDIO_OUTPUT` and
-`CAPTURE_VOICE_COMMUNICATION_OUTPUT` — signature-level permissions no ordinary
-app can hold. But `com.android.shell`, the UID an ADB session runs as, holds
-them both.
-
-**The obstacle.** Getting shell privilege normally means a computer, or root, or
-a second app like Shizuku that you keep alive. JemRec needs none of them,
-because the phone can be its own computer.
-
-### The phone is both ADB host and ADB device
-
-The app embeds an ADB client. It pairs, over `127.0.0.1`, with the phone's own
-Wireless debugging — the same SPAKE2 pairing a laptop does, with the six-digit
-code, except both ends are on the same handset. Nothing leaves the phone, and no
-network is involved beyond the loopback interface.
-
-### ADB is a bootstrap, not a transport
-
-The session exists for a few seconds. In it the app runs `pm grant` to give
-*itself* `WRITE_SECURE_SETTINGS`, allow-lists a notification listener if you
-asked it to hide Android's debugging notification, and launches a small Java
-daemon with `app_process` from a jar it carries as an asset. Then it closes the
-session. The *session* is short; the debugging switches stay on — see
-[What stays switched on](#what-stays-switched-on).
-
-That matters because ADB is not there when you need it. With Wi-Fi off, `adbd`
-tears its listener down completely, and the shell UID may not pin a port — so
-anything that needed ADB at the moment a call arrives would simply not record.
-A process spawned from an ADB shell, on the other hand, **outlives the
-connection**. Start it once; talk to it forever over a loopback socket that
-needs no network at all.
-
-### The daemon records; the app collects
-
-The daemon watches the call state itself and writes the call to a file. The app
-is not on the audio path at all.
-
-That split was forced by measurement. When the app muxed the live audio, this
-phone's process manager froze it while the dialer was in front, its socket
-reader stalled, and the tail of every call was lost: a 76.7-second call arrived
-as 14 to 44 seconds. The daemon runs as shell, outside app management, and is
-never frozen. Afterwards the app fetches the finished file at whatever pace the
-system allows — a freeze there costs a slower copy, never a lost second.
-
-### The socket is authenticated in both directions
-
-Loopback is shared by every process on the phone, so the daemon's port would
-otherwise let any app fetch a recording, delete one, or open a live capture of
-the call in progress. Each connection now proves itself with an HMAC exchange
-over a token the app generated and handed to the daemon in its environment:
-
-```
-app    ->  'A' + client nonce
-daemon ->  daemon nonce + HMAC(token, "jemrec-daemon" | nonces)
-app    ->  HMAC(token, "jemrec-client" | nonces) + command
+```mermaid
+flowchart LR
+    subgraph phone["Your phone - nothing leaves it"]
+        direction LR
+        app["JemRec app"]
+        adb["Wireless debugging<br/>(adbd)"]
+        rec["Recorder<br/>runs as the shell"]
+        file[("Recording<br/>Opus file")]
+        app -- "① pairs over 127.0.0.1" --> adb
+        adb -- "② starts it" --> rec
+        rec -- "③ records both sides" --> file
+        app -- "④ collects it,<br/>authenticated" --> rec
+    end
 ```
 
-The daemon proves itself **first**, because anything can bind that port while
-the daemon is down and a scheme that sent the token as a password would hand it
-over. The token never crosses the socket, and both nonces are fresh, so nothing
-can be replayed. A bare ping needs no handshake and answers with the protocol
-version and the daemon's build hash — which is how the app spots a daemon left
-behind by an older install, and replaces it.
+1. **The app pairs with the phone's own Wireless debugging** - the same pairing
+   a laptop does, with both ends on the same handset.
+2. **For a few seconds, it uses that session to start a small recorder** that
+   runs as the shell, then closes it. The recorder outlives the session.
+3. **The recorder watches the calls and writes each one to a file** itself, so
+   a phone that freezes background apps cannot cut a recording short.
+4. **The app collects the finished file** over a socket on which the recorder
+   and the app each prove who they are.
 
-### Staying alive without Wi-Fi
+Wi-Fi is needed only to start the recorder - after a reboot, say - never to
+record. **[The full design, and the measurements behind each decision →](docs/ARCHITECTURE.md)**
 
-Losing Wi-Fi restarts `adbd`, and the restart kills everything `adbd` spawned —
-including the recorder. The counter is one setting: with USB debugging enabled
-(the setting, no cable involved) the framework keeps `adbd` alive through the
-loss of the wireless transport. The daemon minds that switch itself, every ten
-seconds, because this phone turns it off on its own.
+## Phones and Android versions
 
-Proven on the device: no cable, Wi-Fi off, a real call recorded while `adbd` and
-the daemon kept their process IDs across the outage.
+| | Phone calls | Messenger calls |
+| --- | :---: | :---: |
+| **Android 12 and 13** | ✓ | — Android does not allow it |
+| **Android 14 and newer** | ✓ | ✓ WhatsApp, Telegram, Viber |
 
-When the daemon does die — a reboot kills it outright, and the system reclaims
-it eventually — it has to be started again, and starting it is the one operation
-that needs ADB and therefore Wi-Fi. A scheduled job and a system-held Wi-Fi
-watcher do it without you: the app is woken when a network appears, rebuilds the
-recorder in a few seconds, and stands the ADB session back down.
+Signal takes the same path as the other messengers and has not been tested yet.
+Developer options and Wireless debugging are on every Android phone, though the
+menu they live in differs by make; JemRec names the right path for yours.
 
-Both of those have to survive a reboot, and both are armed by the boot
-broadcast — so on a phone whose ROM declines to start the app at boot, neither
-exists and the repair never begins. That is the case above, and it is why the
-manual says to open the app once after a restart rather than trusting the
-machinery. **Between the restart and that moment nothing is recorded**, which is
-why the header says so plainly rather than looking healthy - and after two
-minutes of it, a notification does too.
+**Both sides of the call** have been recorded on three phones, across three very
+different Android builds:
 
-### Recording, and being asked
+| Phone | Build |
+| --- | --- |
+| Honor Magic 8 Pro (BKQ-N49) | MagicOS 10, Android 16 — the phone it was developed on |
+| Samsung Galaxy S20 | One UI |
+| OnePlus | LineageOS 23 |
 
-Automatic mode records every call from the moment it goes off-hook. Ask-first
-mode records **nothing** until you tap Record on the start-of-call notification,
-so a declined call is never written to disk — the setting means what it says,
-and the cost is the few seconds before the tap.
+Three is not a compatibility list. The one thing nobody can promise for a phone
+they have not held is its audio hardware: some hand over both sides of the call,
+some one, some silence. The **Self-test** answers it on yours in about a second:
+it opens a real capture over the same path a call takes and tells you what came
+out of it.
 
-Recordings are Opus in an Ogg container, in the phone's standard
-`Recordings/JemRec` folder, where any file manager or music app can open them.
-You can point the app somewhere else.
+## Privacy and permissions
 
-A Quick Settings tile turns recording on and off without opening the app. It
-is the same switch as the one in the app's header.
+- **No microphone permission.** The app never opens an audio device; the
+  recorder does the capturing.
+- **Nothing leaves the phone**, and nothing is collected about you.
+- **Calls and contacts only if you allow them** - to name callers, keep calls
+  by who they were with, and notice a call that went unrecorded. Everything
+  works without them.
+- **Debugging stays on while JemRec is installed**, because the recorder needs
+  it. A computer you have paired with the phone can connect to it over the
+  same Wi-Fi, and one you have authorised before over a cable; an unpaired one
+  cannot. Now and then, check *Wireless debugging →
+  Paired devices* and remove anything you do not recognise.
+  → [What stays switched on](docs/ARCHITECTURE.md#what-stays-switched-on)
 
-### Exact call tracking
+<details>
+<summary><b>Every permission, and why</b></summary>
 
-The daemon starts at off-hook, and an outgoing call goes off-hook as it is
-dialled - so its recording began with the ringing, and a call nobody answered
-was saved as a recording of ringing. Android knows exactly when each call is
-answered, but tells only the dialer and apps holding `MANAGE_ONGOING_CALLS`, a
-permission no app can ask the user for. The shell can allow it, so the daemon
-does, for JemRec alone, and Android then tells JemRec, as it happens, which
-way each phone call went, when it was answered, and when it ended. With that:
+<br>
 
-- **A recording starts at the answer.** An outgoing call's ringing is cut, and
-  a call nobody answered is not saved at all.
-- **Call waiting gives one recording per call**, each from where it was
-  answered; while one is on hold, its stretch goes to the other.
-- **Whose calls to keep decides before recording** - see below.
-- **The end of a call reaches the app directly**, a second way to collect the
-  recording beside the daemon's own.
-
-JemRec only reads. The permission would let an app answer, hold and end calls;
-JemRec's service does none of that and shows no screen. It is on unless you
-turn it off in Settings (*Exact call tracking*). Off, the daemon takes the
-permission back and JemRec works exactly as it did before 0.14. JemRec keeps
-what Android said about the last 40 calls - when each began, was answered and
-ended, which way it went, and the number only with the call-log permission.
-
-Measured on an Honor (MagicOS 11, Android 17): an outgoing call answered 3.6
-seconds after dialling had 3.6 seconds of ringing at the start of its
-recording. Allowing the permission for the app's package was not enough there;
-Android bound nothing until it was allowed for the app's user ID, which is how
-the daemon allows it. With tracking, on the same phone: an outgoing call that
-rang for 45 seconds was saved as its 14 seconds of conversation, matching
-Android's answer and end to a twentieth of a second; one nobody answered was
-not saved; a number the rules left out was stopped a quarter of a second after
-dialling and deleted; and all of it held after a restart. Call waiting has not
-been tried on a phone yet.
-
-### Whose calls to keep
-
-Settings can narrow down which calls are kept: your contacts - all, all but
-some, only some, or none - and, separately, other numbers: ones not in your
-contacts, and hidden ones. Nothing is narrowed until you choose.
-
-With exact call tracking, JemRec knows who a call is with while it still rings
-or is being dialled, and a call your choice leaves out is not recorded at all.
-With a second call already up, the shared recording is split instead, and only
-the calls your choice keeps are saved.
-
-Without it, who a call is with is known only once it has ended: the call-state
-callback carries no number, by design. So every call is recorded, and as it
-ends JemRec reads the call log: a call your choice leaves out is deleted from
-the recorder there and then, before it is ever saved. Either way, if JemRec
-cannot tell who it was, the recording is kept - it can be deleted later, and a
-lost one cannot be made again. In ask-first mode a call
-you tap Record on is always kept. This needs the call-log and contacts
-permissions, to tell who a call was with.
-
-### File names
-
-- **Date and time**, the default - `20261020_165705_out.ogg`.
-- **With the caller** - `20261020_165705_out_Priya Raman.ogg`.
-- **For Honor's Phone app** - `Priya Raman@+447700900123_20261020165705.ogg`,
-  in `Sounds/CallRecord`: the name and folder Honor's own recorder uses.
-  Honor's Phone app then shows a play button on the call in its history.
-  Offered only on a phone that has that app. Tested on an Honor: the time
-  may be anywhere inside the call, the number has to be the call's, and the
-  part before the `@` is not read at all.
-
-The caller comes from the number Android gave exact call tracking, or else
-from the call log as the call is saved - either way, only with the call-log
-permission. Without it, or for a call neither knows, a recording is named by
-date and time. A name is
-given once and never changed. Google's Phone app has no equivalent: it keeps
-its own recordings in a database of its own, and nothing in it is open to
-another app.
-
-### Messenger calls
-
-WhatsApp, Telegram, Signal and Viber calls can be recorded too, both sides,
-each app switched on separately in Settings. Nothing is recorded from any of
-them until you do.
-
-**Android 14 or newer.** Copying another app's call audio takes
-`CAPTURE_VOICE_COMMUNICATION_OUTPUT`, and stock Android gives the shell that
-permission only from Android 14 (AOSP `packages/Shell/AndroidManifest.xml`: not
-in 12, 12L or 13). Without it, Android's audio service refuses the copy
-(`AudioService`), and its audio engine leaves call audio out of any copy made
-without it (`AudioPolicyMix`). JemRec asks Android whether the shell holds the
-permission rather than going by the version, so a build that grants it earlier
-gets messenger calls; anywhere else, Settings says why there are none. 0.13
-offered the switches on Android 12 and 13, where they recorded nothing.
-Measured on emulators, 2026-10-20: on Android 12 and on Android 13, Android
-refused the copy ("Audio capture for voice communication requires
-CAPTURE_VOICE_COMMUNICATION_OUTPUT system permission"); on Android 17 it was
-registered, and on the Honor (Android 17) the calls were recorded.
-
-The daemon asks Android for a copy of every app's voice-call audio - an audio
-policy, under the `CAPTURE_VOICE_COMMUNICATION_OUTPUT` permission the shell
-already holds - while the call still plays in your ear. Your side comes from
-the microphone, opened so that it never takes the microphone from the call app;
-if Android ever reports the call app's own capture silenced while JemRec
-records, JemRec drops its microphone at once. A call is the phone's audio in
-"communication" mode with a switched-on app both playing call audio and
-capturing - so a voice message played at the ear is not one. The other person
-is on the left channel, you on the right.
-
-- **An app can refuse.** Android lets an app mark its audio as not capturable,
-  and honours that whatever the recorder holds. JemRec does not try to get
-  round it.
-- **Not in the call log.** Android's call log has no messenger calls, so their
-  recordings are in Recordings, marked with the app's icon, and not in the Calls tab.
-  *Whose calls to keep* does not apply to them: the app's switch is the rule.
-- **Who called.** Only the app's own call notification says. *Show who
-  called* reads it, with notification access, which Android grants to all
-  notifications. JemRec keeps the caller's name, the time and whether the call
-  rang first - from the call notifications of the apps switched on, for the
-  last 30 calls - and nothing else.
-- **Speakerphone.** Your side is the plain microphone, without the call app's
-  echo cancellation, so on speakerphone the other person is on your side too.
-
-Tested on an Honor (MagicOS 11, Android 17) with Viber, Telegram and WhatsApp,
-both directions: both sides recorded, the caller named, and the other person
-heard the call throughout. Signal takes the same path and has not been tested
-yet.
-
-### The Calls tab
-
-Beside Recordings, a Calls tab shows the phone's call log, under the same
-Today, Yesterday and Earlier headings as the recordings. A recorded call has
-the play mark and plays on a tap, like the Recordings tab. A call without a
-recording says why, where JemRec knows:
-
-- **In Recently deleted**, or **Recording deleted** - recorded, then deleted.
-  The second is known for a week.
-- **Left out by your rules** - a call *Whose calls to keep* left out. Also
-  known for a week.
-- **Too short** - under five seconds.
-- **Recorded, not saved yet** - still on the recorder, collected when it can
-  be: after a restart, the next Wi-Fi; after a hang-up whose hand-over did not
-  land, the next pass.
-- **Recording was off**, or **Ask first, not recorded** - from a record of the
-  switch and the mode that JemRec keeps from 0.12 on.
-- **Not recorded**, in red - recording was on and automatic, and still nothing
-  was saved. This is the one to worry about. Said only for the last week:
-  past that, a recording deleted or a call left out looks exactly the same.
-- **No recording** - from before that record began, with no guess at why.
-
-Missed, declined and blocked calls are marked as such. The tab needs call-log
-access, the same optional permission that names callers in the list.
-
-### Keeping, deleting and cleaning up
-
-- **Keep** - the bookmark on each row marks a recording to keep. A Kept chip
-  shows only those, and auto-delete never touches them.
-- **Delete goes to Recently deleted** - from the list or from the notification
-  after a call. A deleted recording waits 30 days, can be restored until
-  then, and is then removed for good. In the standard Recordings folder that
-  is Android's own trash, so other apps stop seeing the file at once. In a
-  folder you chose, the file is renamed the way Android's trash names it
-  (`.trashed-<expiry>-<name>`, hidden from most file managers, with any `@`
-  written `%40` so Honor's Phone app stops offering it), and JemRec removes
-  it when the 30 days are up.
-- **Auto-delete** - off until you choose. It removes recordings older than 30
-  days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30
-  seconds - wrong numbers, hang-ups. A short call is caught as it is saved,
-  so it never gets a notification. What auto-delete removes goes to Recently
-  deleted like anything else.
-- **Recordings Android does not count as JemRec's** - typically ones made
-  before a reinstall. Android asks before JemRec may move them, in its own
-  dialog. Deleting them from the list, or changing an auto-delete rule, shows
-  that dialog. The daily auto-delete pass has nobody to ask, so it leaves them
-  alone.
-
-### After the call, and when something is wrong
-
-A recorder that stops recording without saying so is worse than none: you find
-out on the day you need the call. So JemRec says so, in four notifications.
-
-- **After each call** - who it was with and how long, with Play, Share and
-  Delete. An icon in the status bar but no sound, one at a time, and it can be
-  switched off in Settings. Delete asks first, in the notification itself.
-- **The recording came out silent** - every recording is decoded and measured
-  once it is saved. A muted capture still produces a file of the right length;
-  this is what catches it. A recording with only one side is NOT reported,
-  because it cannot be told reliably: on the phone this was built on, a call
-  with both voices audible had one channel all but silent - the other carried
-  the whole call.
-- **The recorder is down** - after two minutes, with the reason: it needs a few
-  seconds of Wi-Fi, or Android has not allowed Wireless debugging on this Wi-Fi
-  (with *Allow this Wi-Fi*), or it cannot connect and the pairing is probably
-  gone (with *Pair again*), or it could not start. It goes away when the
-  recorder is back.
-- **A call was not recorded** - in automatic mode, with call-log access, the
-  call log is held against what was recorded, and an answered call with nothing
-  to show for it is reported once. Recordings you delete do not count as missed:
-  the app notes each call as it saves it.
-
-None of it needs a permission the app did not already have.
-
-### What it does not ask for
-
-No `RECORD_AUDIO`. This app never opens an audio device — the shell-side process
-does the capturing — and a call recorder that asks for the microphone anyway is
-asking for something it does not use.
-
-This is the whole list, in the order F-Droid's listing page shows it, because a
-permission a call recorder does not explain is one its user has to guess at:
+In the order F-Droid's listing page shows them, because a permission a call
+recorder does not explain is one its user has to guess at:
 
 | Permission | Why |
 | --- | --- |
@@ -432,234 +238,105 @@ permission a call recorder does not explain is one its user has to guess at:
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
 | `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
 
-Three more (`READ_PHONE_STATE` and two storage permissions) are actively
-**removed** from the manifest, because the ADB library's own manifest would
-otherwise pull them in. One more that cannot be removed and means nothing:
-`com.jemcik.jemrec.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, which AndroidX
-defines for this app alone when it registers a receiver as not-exported.
+What is left out, and why, is in
+[How JemRec works](docs/ARCHITECTURE.md#what-it-does-not-ask-for).
 
-### What stays switched on
+</details>
 
-**USB debugging and Wireless debugging stay on for as long as JemRec is
-installed.** Turning Wireless debugging off restarts `adbd`, which kills the
-recorder, and USB debugging is what keeps `adbd` alive when Wi-Fi drops. So the
-daemon puts USB debugging back on within ten seconds if it goes off, and the app
-turns Wireless debugging back on the next time it rebuilds the recorder.
+## FAQ
 
-What that means for the phone: while debugging is on, a computer that has been
-paired with it can open an ADB shell on it from the same Wi-Fi, and one you have
-authorised before can do the same over a cable. An unpaired computer cannot.
-Check *Wireless debugging → Paired devices* now and then and remove anything you
-do not recognise.
+<details>
+<summary><b>Does it really record both sides?</b></summary>
 
-Android shows a notification for as long as debugging is on. Setup says all of
-the above before you switch anything on, then asks whether JemRec should hide
-that notification. Only on a yes does it get notification access, and it then
-snoozes nothing but Android's own debugging notifications, matched by their
-system ID, or by the word "debugging" on a ROM that numbers them differently.
-Settings can change the answer at any time. The same access serves one other,
-separate choice: *Show who called* for messenger calls (see Messenger calls),
-which notes the caller's name from the switched-on messengers' call
-notifications and reads nothing else.
+<br>
 
-To switch debugging off for good, uninstall JemRec first. If the recorder is
-running, it notices the uninstall within a few minutes, turns both switches off
-and exits; either way, once JemRec is gone nothing turns them back on.
+Yes, where the phone's audio hardware hands both sides over - which it did on
+every phone above. The Self-test tells you for yours in about a second. On
+speakerphone, a messenger call's other person is heard on your side too: your
+side is the plain microphone, without the call app's echo cancellation.
 
-## Setup
+</details>
 
-A few things by hand, once, and the app watches for each:
+<details>
+<summary><b>Why does it need Wi-Fi?</b></summary>
 
-1. **Answer one question.** Whether JemRec should hide Android's debugging
-   notification, after it has told you what stays switched on.
-2. **Turn on Developer options** — About phone, tap Build number seven times.
-   Where Android 17 hides them from apps (Pixels from the September 2026
-   update), JemRec cannot see this happen: tap *They are on already*.
-3. **Turn on USB debugging and Wireless debugging**, in any order. No cable is
-   needed; USB debugging is what keeps Wireless debugging from switching itself
-   off.
-4. **Pair.** Open Wireless debugging, tap *Pair device with pairing code*, and
-   type the six digits into JemRec's notification — not back in the app, because
-   leaving the Settings screen closes the code window.
+<br>
 
-Everything after that is automatic. The pairing itself survives reboots — the
-phone remembers it and you never type a code again — but the recorder does not,
-so see the note above about Wi-Fi after a restart.
+Only to *start* the recorder: that is the one step that needs Wireless
+debugging, which Android runs over Wi-Fi. Once started, the recorder carries on
+with Wi-Fi off, on mobile data, anywhere. A reboot stops it, and the next few
+seconds of Wi-Fi bring it back by themselves (see
+[Get started](#get-started), step 3). Until then nothing is recorded - the
+header says so, and after two minutes a notification does too.
 
-The long version, with what to do when a step misbehaves, is the manual:
-[on the web](https://jemcik.github.io/JemRec/setup.html) or
-[in this repository](docs/SETUP.md). They are one document rendered twice.
+</details>
 
-## Requirements
+<details>
+<summary><b>Why isn't it on Google Play?</b></summary>
 
-- **Android 12 (API 31) or newer** — and for messenger calls, Android 14 or
-  newer (see [Messenger calls](#messenger-calls)).
-- **Developer options and Wireless debugging** — present on every Android phone,
-  though the menu they live in differs by make. The app names the right path for
-  your phone.
-- **A phone whose audio HAL hands over `voice-call`.** This is the one thing
-  that cannot be worked around, and it varies by manufacturer. Some phones give
-  both sides of the call, some give one, some give silence.
+<br>
 
-**Both sides of the call** have been recorded on three phones, across three very
-different Android builds:
+Play removed call recorders in 2022 by forbidding the Accessibility API for
+recording, and no policy change since has re-opened the door. That is a
+distribution decision, not a technical one - the app itself never needed Play,
+and F-Droid asks only that a build be free software and reproducible from its
+source, which this one is. It never will be on Play.
 
-| Phone | Build |
+</details>
+
+<details>
+<summary><b>Is recording calls legal?</b></summary>
+
+<br>
+
+It depends on where you and the other person are: some places need one party's
+consent, some everyone's, some a spoken notice. That is your responsibility;
+JemRec records what you tell it to and warns nobody on your behalf.
+
+</details>
+
+<details>
+<summary><b>Where are my recordings, and what happens to them if I uninstall?</b></summary>
+
+<br>
+
+In the phone's standard `Recordings/JemRec` folder (or the folder you chose),
+as Opus files any music app can play; Share can also convert one to `.m4a` for
+iPhones and Macs. They are yours rather than the app's, so they stay when
+JemRec is uninstalled - delete them first if you want them gone. Deleted ones
+wait in Recently deleted for 30 days.
+
+</details>
+
+<details>
+<summary><b>How do I turn debugging off for good?</b></summary>
+
+<br>
+
+Uninstall JemRec first. If the recorder is running, it notices the uninstall
+within a few minutes, turns both debugging switches off and exits; either way,
+once JemRec is gone nothing turns them back on.
+
+</details>
+
+## For developers
+
+Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
+SDK with platforms 37 and 36 and build-tools 36.0.0:
+
+    ./gradlew assembleDebug     # build
+    ./gradlew test              # 265 tests, screenshots of the screens included
+
+| | |
 | --- | --- |
-| Honor Magic 8 Pro (BKQ-N49) | MagicOS 10, Android 16 — the phone it was developed on |
-| Samsung Galaxy S20 | One UI |
-| OnePlus | LineageOS 23 |
+| [How JemRec works](docs/ARCHITECTURE.md) | The design, the measurements behind it, every feature in depth, and every permission. |
+| [Developing JemRec](docs/DEVELOPMENT.md) | Building, the tests (logic, screenshots, emulator checks), and how a release reaches F-Droid. |
+| [SETUP.md](docs/SETUP.md) | The end-user manual: every step, and what to do when one misbehaves. Generated by `tools/build_site.py` along with [the same page on the site](https://jemcik.github.io/JemRec/setup.html) - edit it there, or the two drift. |
+| [ADB-NOTES.md](docs/ADB-NOTES.md) | Four undocumented behaviours of the ADB library, each measured, each of which cost a day. |
+| [fastlane/metadata](fastlane/metadata/android/en-US) | The F-Droid listing: description, changelogs, icon and screenshots, written by `tools/render_icon.py` and `tools/shoot.py` alongside the README's. |
 
-Three is not a compatibility list, and the HAL is the part nobody can promise
-for a phone they have not held. Settings → Diagnostics → **Self-test** answers
-it on yours in about a second: it opens a real capture over the same path a
-call takes and tells you what came out of it.
-
-## Build
-
-Needs **JDK 21** - that major, not "or newer" - and an Android SDK with:
-
-    platforms;android-37       the app's compileSdk
-    platforms;android-36       what the shell daemon links against
-    build-tools;36.0.0         d8, for dexing the daemon
-
-Then:
-
-    ./gradlew assembleDebug
-
-The daemon is not a Gradle module. `shellserver/build.sh` compiles it against the
-platform the *device* runs, with its `@hide` internals intact, and Gradle runs
-that script as part of every build and packages the jar as an app asset.
-
-The release build is shrunk with R8 and the debug build is not. Measured on
-0.4, the unshrunk APK was 38 MB of which this app's own code was 0.2 MB; the
-rest was libraries shipped whole, and a third of it was nothing but their
-class, method and field names. Shrunk, it is under 7 MB. Names are kept -
-[app/proguard-rules.pro](app/proguard-rules.pro) says why, and lists the two
-things R8 must not remove and the two references it must not warn about,
-which is the whole file.
-
-The JDK major is exact because the daemon's bytes depend on it: measured, JDK 17
-and JDK 21 turn the same sources into dex files 264 bytes apart, and an APK that
-differs by machine is one F-Droid cannot reproduce. 21 is what F-Droid's build
-server runs, so 21 is what CI installs and what `build.sh` insists on -
-`JEMREC_JAVA_HOME` points it at one if the default is something else.
-
-## Tests
-
-265 JVM tests, no device needed - 255 for the app and 10 for the daemon:
-
-    ./gradlew test
-
-They cover the parts where a mistake is silent: the list's filtering (shared by
-select-all, so a wrong answer is a wrong bulk delete), the daemon's wire format,
-the setup state machine and every regression its comments describe, the Opus
-header, the call-log match, the home screen's selection logic, the lists' day
-headings (just after midnight, "an hour ago" is yesterday), what each Settings
-row says a setting is set to, and every file name read back in every format (a
-misread name is a recording dated wrong).
-
-**The screens are tested too**, on the JVM, under Robolectric: the real
-composables drawn from a state the test sets up - recording, switched off,
-unable to record, playing, selecting, empty, a permission missing, a rule
-that keeps nothing, a phone too old for messenger calls, the dialogs - in
-light and dark, and at twice the text size. Each is compared with a PNG in
-`app/src/test/screenshots`; a screen that comes out different fails the
-build, and `app/build/outputs/roborazzi` then holds the reference, what was
-drawn, and the difference side by side. A few more tests check what the
-screens do rather than how they look: Back from each screen of Settings,
-Settings keeping its place, what a screen reader is told about the choices
-and switches, a disabled row ignoring taps. The people on the screens do not
-exist, the clock is fixed, and so are the language and time zone, so the same
-state draws the same pixels on any machine on any day.
-
-After a change to a screen that was meant, draw the references again, look at
-every PNG that changed before committing it, and commit them with the change:
-
-    ./gradlew testDebugUnitTest --tests '*.ui.screens.*' -PrecordScreens=true
-
-Two of the logic tests hold the parts where 0.14 went wrong:
-- **What becomes of a recording** (`SavePlan`): which calls it holds, who
-  each was with, what each file is called, which the rules leave out. A call
-  can be known two ways - from Telecom (exact call tracking) or from the call
-  log - and the tests hold both to the same file name for the same call. In
-  0.14 they disagreed, and a number in no contact lost its caller-ID name
-  ([#30](https://github.com/jemcik/JemRec/issues/30)).
-- **The daemon's call states** (`CallStates`, in `shellserver/tests`): which
-  way a call went and when it ended, from telephony's events. A call that
-  rang within two seconds of the call before was recorded as outgoing.
-
-Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.16):
-
-    python3 tools/emulator_checks.py --serial emulator-5554
-
-It installs the debug build, sets JemRec up from nothing and places simulated
-calls: the ringing cut, an unanswered call not kept, an incoming call kept to
-the second, a stranger skipped before recording, two calls in quick
-succession, a caller-ID name, and the self-test. It refuses to run on anything
-but an emulator, and needs a `google_apis` image.
-
-A pre-push hook runs the tests and lint before anything leaves the machine:
-
-    git config core.hooksPath tools/hooks
-
-## Releases
-
-To release, bump the version in a pull request and merge it. Nobody types a
-tag:
-
-    # gradle.properties: jemrecVersionName=0.9, jemrecVersionCode=900
-    # fastlane/metadata/android/en-US/changelogs/900.txt: what changed
-    # ...merged to main as a PR, like everything else; main takes no direct push
-
-The version lives in `gradle.properties` and nowhere else, because that is
-where F-Droid's update checker reads it at each tag. When a merge to main
-changes that file to a version not yet released, the release workflow:
-
-- refuses a `versionCode` that is not `MAJOR*10000 + MINOR*100 + PATCH`;
-- refuses a release with no changelog;
-- builds a release APK signed with the project key held in repository secrets;
-- refuses to publish anything `apksigner` cannot verify;
-- tags that same merge commit and attaches `jemrec-0.9.apk` to the release.
-
-F-Droid takes it from there without being asked: its update checker reads
-`gradle.properties` at each new tag, adds a build entry, and publishes once its
-own build of that commit matches the APK attached here. Which means a release's
-APK has to stay on the releases page until F-Droid has built that version —
-delete it sooner and the check has nothing to compare against.
-
-The tag has to point at a commit **on main**, because that commit is what
-F-Droid builds and what the APK's own version-control stamp names. Tags used to
-be pushed by hand, and that went wrong twice:
-
-- One went up with a push of main that was refused, so it pointed at a commit
-  nothing else could see.
-- One was pushed before the bump's pull request had merged, so it pointed at
-  the previous version.
-
-A tag made from main's own merge can be neither.
-
-A tag pushed by hand still builds, for a re-run or an emergency. It is refused
-unless it is on main and `gradle.properties` at its commit says the same
-version. A tag pushed too early, whose commit says an older version, does not
-block the release: the merge that brings that version moves the tag onto
-itself and says so in a warning.
-
-The signing key is the thing that makes an upgrade possible: an APK signed with
-a different certificate cannot install over an earlier one, whatever its version
-number. It lives outside this repository and always has — see `.gitignore`,
-which has refused signing material since before any existed.
-
-**The build is reproducible**, and that is what lets F-Droid carry the same
-key: F-Droid builds each tag on its own machine, checks the result against the
-APK on the release page byte for byte, and publishes the release APK, signed
-here, when they match. Three things used to differ, each found by building a
-tag on a second machine and diffing against the release: the daemon jar's
-`zip` step stamped in the build's wall-clock time (`d8` now writes the jar,
-with the epoch); AGP stripped the native libraries only where an NDK happened
-to be installed (they are now packaged as shipped); and `javac` 17 and 21 do
-not agree on the daemon's bytecode (the major is now pinned and checked).
+Everything else that would have gone in a document is in the code, beside the
+thing it explains, with the measurement it came from.
 
 ## Licence
 
@@ -667,17 +344,3 @@ Apache-2.0. See [LICENSE](LICENSE), and [NOTICE.md](NOTICE.md) for what is
 vendored and under what terms — chiefly an audio-only fork of
 [scrcpy](https://github.com/Genymobile/scrcpy)'s server in `shellserver/`, whose
 every modification is listed in [shellserver/PATCHES.md](shellserver/PATCHES.md).
-
-## Docs
-
-| | |
-| --- | --- |
-| [SETUP.md](docs/SETUP.md) | The end-user manual: every step, and what to do when one of them misbehaves. Generated by `tools/build_site.py` along with [the same page on the site](https://jemcik.github.io/JemRec/setup.html) — edit it there, or the two drift, which is exactly how the last copy came to describe a permission the app no longer asks for. |
-| [ADB-NOTES.md](docs/ADB-NOTES.md) | Four undocumented behaviours of the ADB library, each measured, each of which cost a day. |
-| [fastlane/metadata](fastlane/metadata/android/en-US) | The F-Droid listing: description, per-version changelogs, icon and screenshots. The icon and screenshots are written by `tools/render_icon.py` and `tools/shoot.py` alongside the README's, so the store shows the app the README shows. |
-
-Everything else that would have gone in a document is in the code, beside the
-thing it explains: why the timestamps are counted rather than read, why an idle
-call state is not believed the first time, why the daemon polls a setting
-instead of observing it. Each of those comments records the measurement it came
-from, because the reason is the part that stops someone undoing it.

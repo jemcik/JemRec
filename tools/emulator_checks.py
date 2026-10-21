@@ -19,7 +19,7 @@ through the real app and daemon, checking what each one leaves behind:
 Every call is the emulator's own simulation - nothing leaves the machine -
 and the script refuses to touch anything that is not an emulator. It needs a
 google_apis image (adb root, for the caller-id check). Run it on each Android
-version a release claims; see README, Tests.
+version a release claims; see docs/DEVELOPMENT.md, Tests.
 
 Exit status: 0 if every check passed.
 """
