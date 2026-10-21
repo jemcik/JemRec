@@ -1,5 +1,7 @@
 package com.jemcik.jemrec.ui
 
+import com.jemcik.jemrec.Prefs
+import android.content.Context
 import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
@@ -31,14 +33,34 @@ import kotlinx.coroutines.launch
  */
 class RecorderTile : TileService() {
 
-    private companion object {
+    companion object {
         /** Outlives the tile: Android unbinds it as soon as the panel closes,
          *  and a switch half-turned when that happened would leave the daemon
          *  recording under a switch that says off. */
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        private const val KEY_ADDED = "qs_tile_added"
+
+        /**
+         * Whether the tile is in the Quick Settings panel, as far as Android
+         * has said - it has no way to ask. Told by the tile's own callbacks
+         * (added, removed, and listening, which only a tile in the panel
+         * does, so one added before this was kept is found the first time the
+         * panel opens), and by the answer to a request to add it.
+         */
+        fun isAdded(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ADDED, false)
+
+        fun setAdded(context: Context, added: Boolean) {
+            Prefs.of(context).edit().putBoolean(KEY_ADDED, added).apply()
+        }
     }
 
+    override fun onTileAdded() = setAdded(this, true)
+
+    override fun onTileRemoved() = setAdded(this, false)
+
     override fun onStartListening() {
+        setAdded(this, true)
         show(RecorderSwitch.isOn(this))
     }
 

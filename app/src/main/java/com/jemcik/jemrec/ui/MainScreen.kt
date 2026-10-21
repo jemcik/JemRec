@@ -66,6 +66,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -101,6 +103,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         vm.refreshSetup()
         onPauseOrDispose { }
     }
+
+    // Out of sight, the player's controls are too: a recording does not go on
+    // playing with the app in the background, where nothing could stop it.
+    // See MainViewModel.pausePlayback.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.pausePlayback() }
 
     // A recording saved while this screen is up - by the per-call service
     // seconds after a hang-up, or by the keep-alive's reconcile right after an

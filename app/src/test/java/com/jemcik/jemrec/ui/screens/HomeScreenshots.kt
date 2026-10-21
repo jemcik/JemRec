@@ -36,6 +36,11 @@ class HomeScreenshots : ScreenTest() {
         snap("home-dark")
     }
 
+    @Test fun withTheSelectionTip() {
+        home(Fixtures.ready().copy(selectHintSeen = false))
+        snap("home-tip")
+    }
+
     @Test fun recordingsLargeText() {
         home(Fixtures.ready(), fontScale = 2f)
         snap("home-large-text")

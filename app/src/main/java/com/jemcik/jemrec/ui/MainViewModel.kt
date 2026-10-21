@@ -1,5 +1,8 @@
 package com.jemcik.jemrec.ui
 
+import androidx.annotation.RequiresApi
+import android.os.Build
+import android.app.StatusBarManager
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -234,6 +237,9 @@ data class UiState(
     /** Whether the "tap a photo to select" hint has been shown its course - it
      *  retires the first time the user actually enters selection. */
     val selectHintSeen: Boolean = true,
+    /** The Quick Settings tile is in the panel, as far as Android has said
+     *  (see RecorderTile.isAdded). */
+    val tileAdded: Boolean = false,
     /**
      * How many of them the list is currently showing.
      *
@@ -318,11 +324,20 @@ class MainViewModel @JvmOverloads constructor(
     /** Diagnostics scrolled to the self-test's result; not again on returning. */
     fun selfTestSeen() = _state.update { it.copy(selfTestShown = 0L) }
 
-    fun showSettings() = _state.update { it.copy(screen = Screen.SETTINGS) }
+    fun showSettings() {
+        pausePlayback()
+        _state.update { it.copy(screen = Screen.SETTINGS) }
+    }
 
-    fun showTrash() = _state.update { it.copy(screen = Screen.TRASH) }
+    fun showTrash() {
+        pausePlayback()
+        _state.update { it.copy(screen = Screen.TRASH) }
+    }
 
-    fun showScreen(screen: Screen) = _state.update { it.copy(screen = screen) }
+    fun showScreen(screen: Screen) {
+        if (screen != Screen.HOME) pausePlayback()
+        _state.update { it.copy(screen = screen) }
+    }
 
     /** One step back: a screen reached from Settings returns to it. */
     fun back() = _state.update { it.copy(screen = it.screen.up) }
@@ -331,6 +346,7 @@ class MainViewModel @JvmOverloads constructor(
      *  something there; arriving at Calls reads the call log. */
     fun showTab(tab: HomeTab) {
         if (_state.value.homeTab == tab) return
+        pausePlayback()
         _state.update { it.copy(homeTab = tab, selecting = false, selected = emptySet()) }
         if (tab == HomeTab.CALLS) refresh()
     }
@@ -1018,6 +1034,7 @@ class MainViewModel @JvmOverloads constructor(
                 honorDialer = FileNames.honorDialer(app),
                 inHonorFolder = FileNames.inHonorFolder(app),
                 selectHintSeen = Prefs.of(app).getBoolean("select_hint_seen", false),
+                tileAdded = RecorderTile.isAdded(app),
             )
         }
 
@@ -1058,6 +1075,7 @@ class MainViewModel @JvmOverloads constructor(
                 honorDialer = snapshot.honorDialer,
                 inHonorFolder = snapshot.inHonorFolder,
                 selectHintSeen = snapshot.selectHintSeen,
+                tileAdded = snapshot.tileAdded,
                 connected = AdbTransport.lastKnownConnected,
             ).let { next ->
                 // A name that is no longer shown cannot stay selected. It would
@@ -1108,6 +1126,7 @@ class MainViewModel @JvmOverloads constructor(
         val honorDialer: Boolean,
         val inHonorFolder: Boolean,
         val selectHintSeen: Boolean,
+        val tileAdded: Boolean,
     )
 
     /**
@@ -1215,6 +1234,45 @@ class MainViewModel @JvmOverloads constructor(
 
     /** The chevron on the scrubber: stop, and fold the row back. */
     fun stopPlaying() = stopPlayback()
+
+    /**
+     * Pause, keeping the place, whenever the player's controls leave the
+     * screen: another tab, Settings, the app in the background.
+     *
+     * The scrubber under the row is the only control there is, so a recording
+     * that went on playing without it went on with nothing on screen able to
+     * stop it - from a pocket, once the app was closed, a private call out
+     * loud. Android's way to play on in the background is a media session in
+     * a service, with the system's controls; JemRec has none, so it does not
+     * play on. Coming back, the row is still open where it was, and the play
+     * mark resumes it.
+     */
+    fun pausePlayback() {
+        if (player.isPlaying) player.pause()
+        ticker?.cancel()
+        _state.update { if (it.playing) it.copy(playing = false) else it }
+    }
+
+    /**
+     * Android's answer to "add the tile": added, already there, or declined.
+     * The answer is what Android knows, so it settles what the Settings row
+     * says - and "already there" is said back, so a tap is never met with
+     * nothing, which is what an added tile's row did before.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    fun onTileAddAnswer(result: Int) {
+        val added = when (result) {
+            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED,
+            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> true
+            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> false
+            else -> return
+        }
+        RecorderTile.setAdded(getApplication(), added)
+        _state.update { it.copy(tileAdded = added) }
+        if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) {
+            tell("it is in your Quick Settings panel already")
+        }
+    }
 
     private fun stopPlayback() {
         ticker?.cancel()
@@ -1350,6 +1408,12 @@ class MainViewModel @JvmOverloads constructor(
             rememberSelectHintSeen()
             it.copy(selecting = true, selected = setOf(recording.name), selectHintSeen = true)
         }
+    }
+
+    /** The tip's x: it is not shown again. */
+    fun dismissSelectHint() {
+        rememberSelectHintSeen()
+        _state.update { it.copy(selectHintSeen = true) }
     }
 
     /** The tap-a-photo hint has done its job once selection has been used. */

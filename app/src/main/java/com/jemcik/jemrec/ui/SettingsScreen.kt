@@ -332,18 +332,23 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
             }
             // The tile is the same switch as the one in the header. Android 13
             // and later can add it for the user; before that, all this row can
-            // do is say where it is.
+            // do is say where it is. Once it is in the panel the row says so -
+            // it used to go on offering to add it, and a tap then met nothing,
+            // because Android answers a tile already added without a word. The
+            // row stays tappable: if the tile was taken out since, Android asks
+            // again; if not, its answer is said back.
             row { shape ->
                 SettingsRow(
                     title = "Quick Settings tile",
-                    summary = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        "Turn recording on and off from the panel. Tap to add it."
-                    } else {
-                        "Edit the Quick Settings panel and drag JemRec into place"
+                    summary = when {
+                        state.tileAdded -> "In your Quick Settings panel"
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                            "Turn recording on and off from the panel. Tap to add it."
+                        else -> "Edit the Quick Settings panel and drag JemRec into place"
                     },
                     icon = SettingsIcons.Tile,
                     onClick = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        { addTile(context) }
+                        { addTile(context, vm::onTileAddAnswer) }
                     } else {
                         null
                     },
@@ -965,15 +970,19 @@ fun DiagnosticsScreen(state: UiState, vm: MainViewModel) {
     }
 }
 
-/** Android 13 and later: ask the system to add the tile, in its own dialog. */
+/** Android 13 and later: ask the system to add the tile, in its own dialog,
+ *  and hand its answer to [answered]. */
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private fun addTile(context: Context) {
+private fun addTile(context: Context, answered: (Int) -> Unit) {
     runCatching {
         context.getSystemService(StatusBarManager::class.java).requestAddTileService(
             ComponentName(context, RecorderTile::class.java),
             "JemRec",
             Icon.createWithResource(context, R.drawable.ic_tile),
             context.mainExecutor,
-        ) { result -> Log.i("JemRec", "tile: add request answered $result") }
+        ) { result ->
+            Log.i("JemRec", "tile: add request answered $result")
+            answered(result)
+        }
     }.onFailure { Log.w("JemRec", "tile: could not ask to add it", it) }
 }

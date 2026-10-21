@@ -15,17 +15,20 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.ChoiceDialog
 import com.jemcik.jemrec.ui.ConnectedChoices
+import com.jemcik.jemrec.ui.HomeTab
 import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.SettingsRow
 import com.jemcik.jemrec.ui.SwitchRow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -100,6 +103,48 @@ class BehaviourTest : ScreenTest() {
             AppScaffold(state, vm)
         }
         assertEquals(0L, vm.state.value.selfTestShown)
+    }
+
+    @Test fun theTipGoesAtItsX() {
+        val vm = viewModel(Fixtures.ready().copy(selectHintSeen = false))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        compose.onNodeWithText("Tap a photo, or press and hold a call, to select recordings").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Dismiss tip").performClick()
+        compose.waitForIdle()
+        assertTrue(vm.state.value.selectHintSeen)
+        compose.onAllNodesWithText("Tap a photo, or press and hold a call, to select recordings").assertCountEquals(0)
+    }
+
+    @Test fun playbackPausesWhenItsControlsLeaveTheScreen() {
+        // The scrubber under the row is the only control; another tab or
+        // Settings takes it off the screen, so the playing stops there too -
+        // paused, with its place kept.
+        val playing = Fixtures.ready().copy(
+            homeTab = HomeTab.CALLS, playingName = Fixtures.recordings().first().name,
+            playing = true, positionMs = 60_000, durationMs = 252_000,
+        )
+        viewModel(playing).let { vm ->
+            vm.showTab(HomeTab.RECORDINGS)
+            assertFalse("another tab", vm.state.value.playing)
+            assertEquals("its place kept", 60_000, vm.state.value.positionMs)
+            assertEquals(playing.playingName, vm.state.value.playingName)
+        }
+        viewModel(playing).let { vm ->
+            vm.showSettings()
+            assertFalse("Settings", vm.state.value.playing)
+        }
+        viewModel(playing).let { vm ->
+            vm.showTrash()
+            assertFalse("Recently deleted", vm.state.value.playing)
+        }
+    }
+
+    @Test fun theTileRowSaysWhenTheTileIsInThePanel() {
+        show { AppScaffold(Fixtures.ready().copy(screen = Screen.SETTINGS, tileAdded = true), viewModel()) }
+        compose.onNodeWithText("In your Quick Settings panel").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun connectedButtonsTellAScreenReaderWhichIsChosen() {

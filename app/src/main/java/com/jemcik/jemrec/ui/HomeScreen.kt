@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -42,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
@@ -734,22 +736,20 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                 }
             }
         } else {
-            // A one-time nudge toward the way in that has no button any more.
-            // The title and its "Select" are gone; selection now starts by
-            // tapping a photo, and nothing on screen says so until you try. It
-            // clears itself the first time selection is entered (by photo or by
-            // long-press), so a returning user never sees it.
+            // A one-time nudge toward the way in that has no button: selection
+            // starts by tapping a photo or pressing and holding a row, and
+            // nothing on screen says so until you try. It goes the first time
+            // selection is used, or at its x.
+            //
+            // A TIP, NOT A CAPTION. It was a line of grey text above the list,
+            // which read as a label a developer forgot - and half of it said
+            // what every row's play mark already shows. Now it says only the
+            // part that cannot be seen, in a card that is plainly a tip and
+            // plainly dismissable. The Calls tab has none: its rows show the
+            // play mark too, and selection does not exist there.
             if (!state.selectHintSeen && !state.selecting) {
-                item {
-                    Text(
-                        "Tap a call to play it, or its photo to select",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                            .padding(top = 12.dp, bottom = 4.dp),
-                    )
+                item(key = "tip", contentType = "tip") {
+                    SelectTip(onDismiss = { haptics.tap(); vm.dismissSelectHint() })
                 }
             }
             // Under Today, Yesterday and Earlier, as a phone's call history
@@ -1113,6 +1113,32 @@ internal fun PlayerControls(state: UiState, vm: MainViewModel) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** The tip over the recordings: how selection starts, with an x to put it away. */
+@Composable
+private fun SelectTip(onDismiss: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(20.dp))
+            Text(
+                "Tap a photo, or press and hold a call, to select recordings",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Filled.Close, contentDescription = "Dismiss tip")
+            }
+        }
     }
 }
 
