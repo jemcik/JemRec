@@ -81,6 +81,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -246,12 +247,13 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
     // per day, which Today and the headings both read - not on every
     // recomposition: the player's position ticks recompose this screen three
     // times a second.
-    val today = dayStamp(System.currentTimeMillis())
+    val now = LocalNow.current
+    val today = dayStamp(now())
     val filtered = remember(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly, today) {
         filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly)
     }
     val shown = remember(filtered, state.visibleCount) { filtered.take(state.visibleCount) }
-    val days = remember(shown, today) { byDay(shown, System.currentTimeMillis()) { it.startedAtMillis } }
+    val days = remember(shown, today) { byDay(shown, now()) { it.startedAtMillis } }
 
     // Endless scroll instead of a "Show more" button. Everything is already in
     // memory - the list, the durations, the caller lookups - so a button gating
@@ -1102,6 +1104,12 @@ internal fun PlayerControls(state: UiState, vm: MainViewModel) {
         )
     }
 }
+
+/**
+ * What time it is, for the lists' day headings. The clock, except in the
+ * screen tests, which fix it so a screenshot of "Today" is the same tomorrow.
+ */
+internal val LocalNow = staticCompositionLocalOf<() -> Long> { System::currentTimeMillis }
 
 /** A day's heading in the Recordings and Calls lists. */
 @Composable

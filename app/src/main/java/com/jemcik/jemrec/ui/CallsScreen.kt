@@ -80,9 +80,10 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
     }
 
     // Grouped once per call log and per day, not on every recomposition.
-    val today = dayStamp(System.currentTimeMillis())
+    val now = LocalNow.current
+    val today = dayStamp(now())
     val days = remember(state.calls, today) {
-        byDay(state.calls.withIndex().toList(), System.currentTimeMillis()) { it.value.at }
+        byDay(state.calls.withIndex().toList(), now()) { it.value.at }
     }
 
     LazyColumn(

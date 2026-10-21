@@ -19,7 +19,7 @@ messenger calls on Android 14 or newer; see [Messenger calls](#messenger-calls).
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-230-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-263-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
 <img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
@@ -547,7 +547,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-230 JVM unit tests, no device needed - 220 for the app and 10 for the daemon:
+263 JVM tests, no device needed - 253 for the app and 10 for the daemon:
 
     ./gradlew test
 
@@ -559,7 +559,26 @@ headings (just after midnight, "an hour ago" is yesterday), what each Settings
 row says a setting is set to, and every file name read back in every format (a
 misread name is a recording dated wrong).
 
-Two of them hold the parts where 0.14 went wrong:
+**The screens are tested too**, on the JVM, under Robolectric: the real
+composables drawn from a state the test sets up - recording, switched off,
+unable to record, playing, selecting, empty, a permission missing, a rule
+that keeps nothing, a phone too old for messenger calls, the dialogs - in
+light and dark, and at twice the text size. Each is compared with a PNG in
+`app/src/test/screenshots`; a screen that comes out different fails the
+build, and `app/build/outputs/roborazzi` then holds the reference, what was
+drawn, and the difference side by side. A few more tests check what the
+screens do rather than how they look: Back from each screen of Settings,
+Settings keeping its place, what a screen reader is told about the choices
+and switches, a disabled row ignoring taps. The people on the screens do not
+exist, the clock is fixed, and so are the language and time zone, so the same
+state draws the same pixels on any machine on any day.
+
+After a change to a screen that was meant, draw the references again, look at
+every PNG that changed before committing it, and commit them with the change:
+
+    ./gradlew testDebugUnitTest --tests '*.ui.screens.*' -PrecordScreens=true
+
+Two of the logic tests hold the parts where 0.14 went wrong:
 - **What becomes of a recording** (`SavePlan`): which calls it holds, who
   each was with, what each file is called, which the rules leave out. A call
   can be known two ways - from Telecom (exact call tracking) or from the call

@@ -145,6 +145,21 @@ android {
         // JVM. With this they return defaults instead, so pure logic that
         // happens to log a line (Setup.currentStep) is testable off-device.
         unitTests.isReturnDefaultValues = true
+        // The screen tests (app/src/test/.../ui/screens) draw the real
+        // composables under Robolectric, which needs the app's resources.
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { test ->
+            // Screenshots are compared against the PNGs committed under
+            // app/src/test/screenshots, and a difference fails the build.
+            // `./gradlew testDebugUnitTest -PrecordScreens=true` writes them
+            // anew instead - after a change to a screen that was meant.
+            val record = project.findProperty("recordScreens") == "true"
+            test.systemProperty("roborazzi.test.record", record.toString())
+            test.systemProperty("roborazzi.test.verify", (!record).toString())
+            // Robolectric's Android 16 sets up a file descriptor through a
+            // JDK internal that Java 21 keeps closed unless asked.
+            test.jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
+        }
     }
 }
 
@@ -228,6 +243,16 @@ dependencies {
     // inline mock maker in Mockito 5 mocks abstract classes without extra
     // setup. Nothing else in the tests needs a framework.
     testImplementation("org.mockito:mockito-core:5.14.2")
+
+    // The screen tests: Robolectric runs the real Compose UI on the JVM, and
+    // Roborazzi turns what it draws into a PNG to compare. Test-only, so the
+    // release APK - and F-Droid's reproducible build of it - is untouched;
+    // no Gradle plugin either, so a release build resolves nothing new.
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.76.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.76.0")
+    testImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
 }
 
 kotlin {
