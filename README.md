@@ -19,7 +19,7 @@ messenger calls on Android 14 or newer; see [Messenger calls](#messenger-calls).
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-219-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-230-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
 <img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
@@ -87,7 +87,7 @@ what you tell it to and warns nobody on your behalf.
 > Wi-Fi.** Whether that happens without you comes down to one phone setting.
 >
 > **Allow JemRec to start automatically.** JemRec's Settings has a *Survive a
-> restart* card whose button opens the right screen on your phone; on an Honor
+> restart* row that opens the right screen on your phone; on an Honor
 > that is Settings → Battery → App launch → JemRec → *Manage manually*, with
 > *Auto-launch* on. Measured on that phone: the app started at boot, and the
 > recorder was back **ten seconds** after Wi-Fi came on, with the app never
@@ -320,7 +320,7 @@ is on the left channel, you on the right.
   and honours that whatever the recorder holds. JemRec does not try to get
   round it.
 - **Not in the call log.** Android's call log has no messenger calls, so their
-  recordings are in Recordings, marked with the app, and not in the Calls tab.
+  recordings are in Recordings, marked with the app's icon, and not in the Calls tab.
   *Whose calls to keep* does not apply to them: the app's switch is the rule.
 - **Who called.** Only the app's own call notification says. *Show who
   called* reads it, with notification access, which Android grants to all
@@ -337,7 +337,8 @@ yet.
 
 ### The Calls tab
 
-Beside Recordings, a Calls tab shows the phone's call log. A recorded call has
+Beside Recordings, a Calls tab shows the phone's call log, under the same
+Today, Yesterday and Earlier headings as the recordings. A recorded call has
 the play mark and plays on a tap, like the Recordings tab. A call without a
 recording says why, where JemRec knows:
 
@@ -546,15 +547,17 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-219 JVM unit tests, no device needed - 209 for the app and 10 for the daemon:
+230 JVM unit tests, no device needed - 220 for the app and 10 for the daemon:
 
     ./gradlew test
 
 They cover the parts where a mistake is silent: the list's filtering (shared by
 select-all, so a wrong answer is a wrong bulk delete), the daemon's wire format,
 the setup state machine and every regression its comments describe, the Opus
-header, the call-log match, the home screen's selection logic, and every file
-name read back in every format (a misread name is a recording dated wrong).
+header, the call-log match, the home screen's selection logic, the lists' day
+headings (just after midnight, "an hour ago" is yesterday), what each Settings
+row says a setting is set to, and every file name read back in every format (a
+misread name is a recording dated wrong).
 
 Two of them hold the parts where 0.14 went wrong:
 - **What becomes of a recording** (`SavePlan`): which calls it holds, who
@@ -568,7 +571,7 @@ Two of them hold the parts where 0.14 went wrong:
   rang within two seconds of the call before was recorded as outgoing.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.15):
+emulator, for each Android version it claims (12, 13 and 17 for 0.16):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 

@@ -605,7 +605,7 @@ SETUP = [
           "mode, a call you tap Record on is always kept. The Calls tab marks a "
           "call that was left out."),
     ("p", "It needs permission to read the call log and your contacts, to tell "
-          "who a call was with; the card asks for it if you have not given it."),
+          "who a call was with; its screen asks for it if you have not given it."),
 
     ("h2", "File names"),
     ("p", "**File names**, in Settings, decides what a new recording is called. "
@@ -617,8 +617,8 @@ SETUP = [
         "find in a file manager or on a computer.",
         "**For Honor's Phone app**, on a phone that has it: "
         "`Priya Raman@+447700900123_20261020165705.ogg`, the name Honor's own "
-        "recorder uses. Saved in `Sounds/CallRecord` — the card has a button "
-        "that opens the folder picker right there; tap **Use this folder** and "
+        "recorder uses. Saved in `Sounds/CallRecord` — the File names dialog has "
+        "a button that opens the folder picker right there; tap **Use this folder** and "
         "**Allow** — Honor's Phone app then shows a play button on the call in "
         "its history.",
     ]),
@@ -643,7 +643,7 @@ SETUP = [
           "never takes the microphone from the call: if Android ever silences "
           "the app's own, JemRec lets go of its own at once."),
     ("p", "These calls are not in the phone's call log, so their recordings are "
-          "in Recordings, marked with the app, and not in the Calls tab. Whose "
+          "in Recordings, marked with the app's icon, and not in the Calls tab. Whose "
           "calls to keep does not apply to them — the app's switch is the rule."),
     ("p", "**Show who called** reads the caller's name, and whether the call rang "
           "first, from the app's own call notification — the only place it is "
@@ -655,7 +655,9 @@ SETUP = [
           "Signal takes the same path and has not been tested yet."),
 
     ("h2", "Playing, sharing and deleting"),
-    ("p", "Tap a recording to play it inside the app; a scrubber appears under "
+    ("p", "Recordings are listed newest first, under **Today**, **Yesterday** "
+          "and **Earlier**. "
+          "Tap a recording to play it inside the app; a scrubber appears under "
           "the row, and the chevron beside it folds the player away. The share "
           "button offers the original file or a converted copy that plays "
           "anywhere."),
@@ -663,7 +665,7 @@ SETUP = [
           "selecting, tick what you want, and use the bin in the toolbar. It asks "
           "first and tells you how many."),
     ("p", "**Deleting is not immediate.** A deleted recording goes to **Recently "
-          "deleted**, at the bottom of Settings, waits there 30 days, and can be "
+          "deleted**, in Settings, waits there 30 days, and can be "
           "restored until then. After that it is gone for good. In the standard "
           "Recordings folder this is Android's own trash, so other apps stop "
           "seeing the file at once."),
@@ -684,7 +686,8 @@ SETUP = [
           "hidden files, because removing them is JemRec's job."),
 
     ("h2", "The Calls tab"),
-    ("p", "The **Calls** tab, beside Recordings, is your phone's call log. A call "
+    ("p", "The **Calls** tab, beside Recordings, is your phone's call log, under "
+          "the same day headings. A call "
           "that was recorded has the ▶ beside its length and plays on a tap. A call "
           "that was not says why, where JemRec knows: **In Recently deleted**, "
           "**Recording deleted**, **Left out by your rules**, **Too short**, "
@@ -707,7 +710,7 @@ SETUP = [
           "in the background doing nothing — which is what makes turning it back "
           "on instant, anywhere, with no network."),
     ("p", "The same switch is a **Quick Settings tile**, so you can flip it "
-          "without opening the app. Settings has a button that adds it, on "
+          "without opening the app. Settings has a row that adds it, on "
           "Android 13 and later; on 12, edit the Quick Settings panel and drag "
           "JemRec in. On a locked phone the tile asks for your unlock first."),
 
@@ -719,12 +722,12 @@ SETUP = [
           "your phone."),
     ("h3", "Allow JemRec to start automatically"),
     ("p", "This is the fix, and it is worth doing once. JemRec's own Settings has "
-          "a **Survive a restart** card with a button that opens the right screen "
+          "a **Survive a restart** row that opens the right screen "
           "on your phone, because the list is four levels deep and called "
           "something different on every make. On an Honor it is *Settings → "
           "Battery → App launch*; find JemRec, switch it to **Manage manually** "
           "and leave **Auto-launch** on. Xiaomi calls it Autostart, OPPO and vivo "
-          "have their own. The card only appears on a phone that has such a "
+          "have their own. The row only appears on a phone that has such a "
           "list."),
     ("p", "What it buys, measured on that Honor: the app was started by the boot "
           "broadcast at 21 seconds of uptime, armed its scheduled job and asked "
@@ -773,36 +776,57 @@ SETUP = [
     ])),
 
     ("h2", "Settings"),
+    ("p", "One screen, in four groups, each row showing what it is set to now. "
+          "Until you allow it, a **Show who called** card sits at the top: it "
+          "labels each recording with the contact's name and photo, or the number "
+          "when they are not in your contacts, and lets JemRec tell you if a call "
+          "went by unrecorded. It needs your call log and contacts, and is asked "
+          "for in the app rather than at install. Say no and everything still "
+          "works, with the time as each recording's headline."),
+    ("p", "**Recording**"),
     ("ul", [
         "**Record every call** — record everything, or be asked each time.",
-        "**Saving to** — which folder recordings go in, with a Change button.",
+        "**Whose calls to keep** — your contacts (all, all but some, only some, "
+        "or none) and numbers not in your contacts. Needs Show who called.",
+        "**Messenger calls** — a switch for each supported messenger installed, "
+        "and whether to show who called from their call notifications.",
+        "**Exact call tracking** — recordings start at the answer, and calls "
+        "nobody answered are not kept.",
+    ]),
+    ("p", "**Saving**"),
+    ("ul", [
+        "**Saving to** — which folder recordings go in, and back to the default.",
+        "**File names** — date and time, with the caller, or the name Honor's "
+        "Phone app plays from its call history.",
+        "**Auto-delete old recordings** and **Auto-delete short calls** — off "
+        "until you choose. Recordings older than 30 days, 90 days, 6 months or a "
+        "year; calls shorter than 5, 10 or 30 seconds. Kept recordings are never "
+        "touched, and whatever is removed waits in Recently deleted.",
+        "**Recently deleted** — what has been deleted in the last 30 days, with "
+        "**Restore** for each.",
+    ]),
+    ("p", "**Notifications and shortcuts**"),
+    ("ul", [
         "**Show each call when it ends** — the silent notification after every "
         "recorded call. Off hides it; a recording that came out silent is "
         "reported either way.",
         "**Quick Settings tile** — adds the on/off tile to the Quick Settings "
         "panel.",
-        "**Auto-delete** — off until you choose. Removes recordings older than "
-        "30 days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30 "
-        "seconds. Kept recordings are never touched, and whatever it removes "
-        "waits in Recently deleted.",
-        "**Recently deleted** — what has been deleted in the last 30 days, with "
-        "**Restore** for each.",
-        "**Show who called** — labels each recording with the contact's name and "
-        "photo, or the number when they are not in your contacts, and lets JemRec "
-        "tell you if a call went by unrecorded. Optional, and asked for in the app "
-        "rather than at install, because it needs your call log and contacts. Say "
-        "no and everything still works, with the time as each recording's "
-        "headline.",
         "**Hide the debugging notification** — the answer to the question in "
         "step 1, changeable. Debugging stays on either way; this is only about "
         "whether Android's notification saying so is shown. Turning it on after "
         "setup needs Wi-Fi.",
-        "**Start fresh** — puts JemRec back to how it was the day you installed "
-        "it, so setup runs again from step 1. The app closes when you confirm. "
-        "**Your recordings are not deleted.**",
+    ]),
+    ("p", "**Troubleshooting**"),
+    ("ul", [
+        "**Survive a restart** — on phones that have one, opens the list of apps "
+        "allowed to start by themselves after a reboot.",
         "**Diagnostics** — whether the recorder is running, a self-test that "
         "proves a call would be recorded, and a way to start the recorder by "
         "hand. It is what a bug report wants.",
+        "**Start fresh** — puts JemRec back to how it was the day you installed "
+        "it, so setup runs again from step 1. The app closes when you confirm. "
+        "**Your recordings are not deleted.**",
     ]),
 
     ("h2", "If something goes wrong"),

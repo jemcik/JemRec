@@ -117,40 +117,40 @@
   <h2 id="whose-calls-to-keep">Whose calls to keep</h2>
   <p><strong>Whose calls to keep</strong>, in Settings, narrows down which calls are kept. <strong>Your contacts</strong>: all of them, all but some, only some, or none — for the last three you pick the contacts. <strong>Other numbers</strong>, a switch of its own: numbers not in your contacts, and hidden ones. Until you change either, every call is kept.</p>
   <p>With exact call tracking, JemRec knows who a call is with while it still rings, and a call your choice leaves out is not recorded at all. Without it, who a call was with is only known once it has ended, from the call log: every call is recorded, and one your choice leaves out is deleted the moment it ends, before it is saved anywhere. Either way, if JemRec cannot tell who it was, the recording is kept. In ask-first mode, a call you tap Record on is always kept. The Calls tab marks a call that was left out.</p>
-  <p>It needs permission to read the call log and your contacts, to tell who a call was with; the card asks for it if you have not given it.</p>
+  <p>It needs permission to read the call log and your contacts, to tell who a call was with; its screen asks for it if you have not given it.</p>
   <h2 id="file-names">File names</h2>
   <p><strong>File names</strong>, in Settings, decides what a new recording is called. Recordings you already have keep their names.</p>
   <ul>
     <li><strong>Date and time</strong>, the default: <code>20261020_165705_out.ogg</code> — when the call began, and which way it went.</li>
     <li><strong>With the caller</strong>: <code>20261020_165705_out_Priya Raman.ogg</code> — easier to find in a file manager or on a computer.</li>
-    <li><strong>For Honor's Phone app</strong>, on a phone that has it: <code>Priya Raman@+447700900123_20261020165705.ogg</code>, the name Honor's own recorder uses. Saved in <code>Sounds/CallRecord</code> — the card has a button that opens the folder picker right there; tap <strong>Use this folder</strong> and <strong>Allow</strong> — Honor's Phone app then shows a play button on the call in its history.</li>
+    <li><strong>For Honor's Phone app</strong>, on a phone that has it: <code>Priya Raman@+447700900123_20261020165705.ogg</code>, the name Honor's own recorder uses. Saved in <code>Sounds/CallRecord</code> — the File names dialog has a button that opens the folder picker right there; tap <strong>Use this folder</strong> and <strong>Allow</strong> — Honor's Phone app then shows a play button on the call in its history.</li>
   </ul>
   <p>The caller comes from exact call tracking or the call log, with permission to read the call log; without it, a recording is named by date and time. Google's Phone app has nothing like Honor's: it keeps its own recordings to itself, and no other app can add one to its call history.</p>
   <h2 id="messenger-calls">Messenger calls</h2>
   <p><strong>Messenger calls</strong>, in Settings, records WhatsApp, Telegram, Signal and Viber calls too — both sides, the other person on the left channel and you on the right. Each app has its own switch, and all are off until you turn one on. The ones installed on your phone are listed.</p>
   <p>It needs <strong>Android 14 or newer</strong>. Before it, Android does not let the recorder copy another app's call audio, and Settings says so instead of offering switches that would record nothing.</p>
   <p>An app can refuse to let its calls be recorded, and Android honours that; JemRec does not try to get round it. Your side comes from the microphone without the call app's echo cancellation, so on speakerphone the other person is heard on your side as well. JemRec never takes the microphone from the call: if Android ever silences the app's own, JemRec lets go of its own at once.</p>
-  <p>These calls are not in the phone's call log, so their recordings are in Recordings, marked with the app, and not in the Calls tab. Whose calls to keep does not apply to them — the app's switch is the rule.</p>
+  <p>These calls are not in the phone's call log, so their recordings are in Recordings, marked with the app's icon, and not in the Calls tab. Whose calls to keep does not apply to them — the app's switch is the rule.</p>
   <p><strong>Show who called</strong> reads the caller's name, and whether the call rang first, from the app's own call notification — the only place it is said. That needs notification access, which Android grants to all notifications; JemRec keeps only that from the call notifications of the apps you switched on. It is granted over JemRec's own ADB session, so turning it on needs Wi-Fi, once.</p>
   <p>Tested on an Honor with Viber, Telegram and WhatsApp, both directions. Signal takes the same path and has not been tested yet.</p>
   <h2 id="playing-sharing-and-deleting">Playing, sharing and deleting</h2>
-  <p>Tap a recording to play it inside the app; a scrubber appears under the row, and the chevron beside it folds the player away. The share button offers the original file or a converted copy that plays anywhere.</p>
+  <p>Recordings are listed newest first, under <strong>Today</strong>, <strong>Yesterday</strong> and <strong>Earlier</strong>. Tap a recording to play it inside the app; a scrubber appears under the row, and the chevron beside it folds the player away. The share button offers the original file or a converted copy that plays anywhere.</p>
   <p>To delete, tap a contact's photo or long-press a row to start selecting, tick what you want, and use the bin in the toolbar. It asks first and tells you how many.</p>
-  <p><strong>Deleting is not immediate.</strong> A deleted recording goes to <strong>Recently deleted</strong>, at the bottom of Settings, waits there 30 days, and can be restored until then. After that it is gone for good. In the standard Recordings folder this is Android's own trash, so other apps stop seeing the file at once.</p>
+  <p><strong>Deleting is not immediate.</strong> A deleted recording goes to <strong>Recently deleted</strong>, in Settings, waits there 30 days, and can be restored until then. After that it is gone for good. In the standard Recordings folder this is Android's own trash, so other apps stop seeing the file at once.</p>
   <p><strong>Keep what matters.</strong> The bookmark on each row marks a recording to keep: auto-delete never touches it, and the bookmark chip above the list shows only kept recordings. To mark several, select them and use the bookmark in the toolbar.</p>
   <p>The notification after each call has the same three buttons. Play and Share open JemRec at that recording; Delete asks first, in the notification itself, and <strong>Keep</strong> puts it back.</p>
   <p>If a recording was made before JemRec was reinstalled, Android asks before JemRec may move it to the trash, in a dialog of its own. That is Android checking who owns the file, not JemRec asking twice.</p>
   <p>Recordings are kept when JemRec is uninstalled, because they are yours rather than the app's — so if you want them gone, delete them <strong>before</strong> you uninstall. Recently deleted ones in the standard folder are still emptied by Android on time. In a folder you chose, they stay behind as hidden files, because removing them is JemRec's job.</p>
   <h2 id="the-calls-tab">The Calls tab</h2>
-  <p>The <strong>Calls</strong> tab, beside Recordings, is your phone's call log. A call that was recorded has the ▶ beside its length and plays on a tap. A call that was not says why, where JemRec knows: <strong>In Recently deleted</strong>, <strong>Recording deleted</strong>, <strong>Left out by your rules</strong>, <strong>Too short</strong>, <strong>Recorded, not saved yet</strong> (still on the recorder, collected when it can be), <strong>Recording was off</strong>, <strong>Ask first, not recorded</strong>. <strong>Not recorded</strong>, in red, means recording was on and automatic and nothing was saved — run the self-test. JemRec remembers deleted and left-out calls for a week, so it says this only for the last week. <strong>No recording</strong> is an older call, or one from before JemRec kept track, with no guess at why. Missed, declined and blocked calls are marked as such.</p>
+  <p>The <strong>Calls</strong> tab, beside Recordings, is your phone's call log, under the same day headings. A call that was recorded has the ▶ beside its length and plays on a tap. A call that was not says why, where JemRec knows: <strong>In Recently deleted</strong>, <strong>Recording deleted</strong>, <strong>Left out by your rules</strong>, <strong>Too short</strong>, <strong>Recorded, not saved yet</strong> (still on the recorder, collected when it can be), <strong>Recording was off</strong>, <strong>Ask first, not recorded</strong>. <strong>Not recorded</strong>, in red, means recording was on and automatic and nothing was saved — run the self-test. JemRec remembers deleted and left-out calls for a week, so it says this only for the last week. <strong>No recording</strong> is an older call, or one from before JemRec kept track, with no guess at why. Missed, declined and blocked calls are marked as such.</p>
   <p>It needs permission to read the call log, the same optional permission that puts names on recordings; the tab asks for it if you have not given it.</p>
   <h2 id="turning-jemrec-off">Turning JemRec off</h2>
   <p>The switch in the header is the on/off control for the whole app. Off means no call is recorded and no notification appears. Your recordings and your pairing are untouched, and the recorder itself keeps running in the background doing nothing — which is what makes turning it back on instant, anywhere, with no network.</p>
-  <p>The same switch is a <strong>Quick Settings tile</strong>, so you can flip it without opening the app. Settings has a button that adds it, on Android 13 and later; on 12, edit the Quick Settings panel and drag JemRec in. On a locked phone the tile asks for your unlock first.</p>
+  <p>The same switch is a <strong>Quick Settings tile</strong>, so you can flip it without opening the app. Settings has a row that adds it, on Android 13 and later; on 12, edit the Quick Settings panel and drag JemRec in. On a locked phone the tile asks for your unlock first.</p>
   <h2 id="after-a-restart">After a restart</h2>
   <p>A reboot kills the recorder, and building it again takes a few seconds of Wi-Fi. Until that has happened, calls are not recorded and the header says so — and if it lasts more than two minutes, a notification does too. Whether it happens without you comes down to one setting on your phone.</p>
   <h3 id="allow-jemrec-to-start-automatically">Allow JemRec to start automatically</h3>
-  <p>This is the fix, and it is worth doing once. JemRec's own Settings has a <strong>Survive a restart</strong> card with a button that opens the right screen on your phone, because the list is four levels deep and called something different on every make. On an Honor it is <em>Settings → Battery → App launch</em>; find JemRec, switch it to <strong>Manage manually</strong> and leave <strong>Auto-launch</strong> on. Xiaomi calls it Autostart, OPPO and vivo have their own. The card only appears on a phone that has such a list.</p>
+  <p>This is the fix, and it is worth doing once. JemRec's own Settings has a <strong>Survive a restart</strong> row that opens the right screen on your phone, because the list is four levels deep and called something different on every make. On an Honor it is <em>Settings → Battery → App launch</em>; find JemRec, switch it to <strong>Manage manually</strong> and leave <strong>Auto-launch</strong> on. Xiaomi calls it Autostart, OPPO and vivo have their own. The row only appears on a phone that has such a list.</p>
   <p>What it buys, measured on that Honor: the app was started by the boot broadcast at 21 seconds of uptime, armed its scheduled job and asked the system to wake it when Wi-Fi appeared, and the recorder was back <strong>ten seconds</strong> after Wi-Fi came on — with the app never opened.</p>
   <h3 id="without-it-open-jemrec-once">Without it, open JemRec once</h3>
   <p>The same phone with auto-launch off does nothing at all. The system declined to start the app for the boot broadcast — <em>don't meet cpuload</em>, in its own log — so neither the job nor the Wi-Fi watcher was ever armed, and seven minutes after Wi-Fi returned nothing had come back. Opening the app had it recording sixteen seconds later.</p>
@@ -176,17 +176,32 @@
     <tr><td><strong>A call was not recorded</strong></td><td>An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test.</td></tr>
   </table>
   <h2 id="settings">Settings</h2>
+  <p>One screen, in four groups, each row showing what it is set to now. Until you allow it, a <strong>Show who called</strong> card sits at the top: it labels each recording with the contact's name and photo, or the number when they are not in your contacts, and lets JemRec tell you if a call went by unrecorded. It needs your call log and contacts, and is asked for in the app rather than at install. Say no and everything still works, with the time as each recording's headline.</p>
+  <p><strong>Recording</strong></p>
   <ul>
     <li><strong>Record every call</strong> — record everything, or be asked each time.</li>
-    <li><strong>Saving to</strong> — which folder recordings go in, with a Change button.</li>
+    <li><strong>Whose calls to keep</strong> — your contacts (all, all but some, only some, or none) and numbers not in your contacts. Needs Show who called.</li>
+    <li><strong>Messenger calls</strong> — a switch for each supported messenger installed, and whether to show who called from their call notifications.</li>
+    <li><strong>Exact call tracking</strong> — recordings start at the answer, and calls nobody answered are not kept.</li>
+  </ul>
+  <p><strong>Saving</strong></p>
+  <ul>
+    <li><strong>Saving to</strong> — which folder recordings go in, and back to the default.</li>
+    <li><strong>File names</strong> — date and time, with the caller, or the name Honor's Phone app plays from its call history.</li>
+    <li><strong>Auto-delete old recordings</strong> and <strong>Auto-delete short calls</strong> — off until you choose. Recordings older than 30 days, 90 days, 6 months or a year; calls shorter than 5, 10 or 30 seconds. Kept recordings are never touched, and whatever is removed waits in Recently deleted.</li>
+    <li><strong>Recently deleted</strong> — what has been deleted in the last 30 days, with <strong>Restore</strong> for each.</li>
+  </ul>
+  <p><strong>Notifications and shortcuts</strong></p>
+  <ul>
     <li><strong>Show each call when it ends</strong> — the silent notification after every recorded call. Off hides it; a recording that came out silent is reported either way.</li>
     <li><strong>Quick Settings tile</strong> — adds the on/off tile to the Quick Settings panel.</li>
-    <li><strong>Auto-delete</strong> — off until you choose. Removes recordings older than 30 days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30 seconds. Kept recordings are never touched, and whatever it removes waits in Recently deleted.</li>
-    <li><strong>Recently deleted</strong> — what has been deleted in the last 30 days, with <strong>Restore</strong> for each.</li>
-    <li><strong>Show who called</strong> — labels each recording with the contact's name and photo, or the number when they are not in your contacts, and lets JemRec tell you if a call went by unrecorded. Optional, and asked for in the app rather than at install, because it needs your call log and contacts. Say no and everything still works, with the time as each recording's headline.</li>
     <li><strong>Hide the debugging notification</strong> — the answer to the question in step 1, changeable. Debugging stays on either way; this is only about whether Android's notification saying so is shown. Turning it on after setup needs Wi-Fi.</li>
-    <li><strong>Start fresh</strong> — puts JemRec back to how it was the day you installed it, so setup runs again from step 1. The app closes when you confirm. <strong>Your recordings are not deleted.</strong></li>
+  </ul>
+  <p><strong>Troubleshooting</strong></p>
+  <ul>
+    <li><strong>Survive a restart</strong> — on phones that have one, opens the list of apps allowed to start by themselves after a reboot.</li>
     <li><strong>Diagnostics</strong> — whether the recorder is running, a self-test that proves a call would be recorded, and a way to start the recorder by hand. It is what a bug report wants.</li>
+    <li><strong>Start fresh</strong> — puts JemRec back to how it was the day you installed it, so setup runs again from step 1. The app closes when you confirm. <strong>Your recordings are not deleted.</strong></li>
   </ul>
   <h2 id="if-something-goes-wrong">If something goes wrong</h2>
   <p><strong>Pairing fails every time.</strong> Almost always the dialog closed. It survives only while Settings is on screen, which is why step 4 uses the notification shade rather than switching back to the app. Reopen the dialog for a fresh code each attempt.</p>

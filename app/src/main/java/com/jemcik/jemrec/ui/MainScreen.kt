@@ -31,10 +31,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -46,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.DisposableEffect
@@ -53,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -62,7 +62,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.text.TextAutoSize
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -176,23 +175,18 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     }
 
     val ready = state.step == SetupStep.READY
-    val inSettings = ready && state.screen == Screen.SETTINGS
-    // Recently deleted is reached from Settings, and goes back there.
+    val offHome = ready && state.screen != Screen.HOME
     val inTrash = ready && state.screen == Screen.TRASH
-    val offHome = inSettings || inTrash
+    val inDiagnostics = ready && state.screen == Screen.DIAGNOSTICS
     val selecting = ready && !offHome && state.selecting
 
     // Back unwinds one layer at a time, innermost first: out of selection, then
-    // out of the trash, then out of settings, then out of the app. Selection
-    // has to come first - Back is how Android users leave a selection, and
-    // dropping them to the home screen instead would lose the picking they had
-    // just done.
+    // out of a screen reached from Settings, then out of Settings, then out of
+    // the app. Selection has to come first - Back is how Android users leave a
+    // selection, and dropping them to the home screen instead would lose the
+    // picking they had just done.
     BackHandler(enabled = selecting || offHome) {
-        when {
-            selecting -> vm.clearSelection()
-            inTrash -> vm.showSettings()
-            else -> vm.showHome()
-        }
+        if (selecting) vm.clearSelection() else vm.back()
     }
 
     val snackbars = remember { SnackbarHostState() }
@@ -208,8 +202,25 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             if (ready) {
                 // The bar and the line under it are one thing, so they live in
                 // one Column. TopAppBar has no bottom border of its own.
+                //
+                // ON HOME, THE BAR AND THE TABS ARE ONE TINTED BLOCK. Material
+                // 3 joins tabs to their app bar as a single unit, with a divider
+                // along the bottom (m3.material.io, Tabs). On the plain surface
+                // the tabs floated between the bar and the list - nothing said
+                // they belonged to either. The tint is the app bar's scrolled
+                // colour, kept on at rest: at rest is exactly when the tabs
+                // floated. The gradient rule under them is the divider.
+                val headerColor = if (offHome) {
+                    MaterialTheme.colorScheme.surface
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                }
                 Column {
                     TopAppBar(
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = headerColor,
+                            scrolledContainerColor = headerColor,
+                        ),
                         title = {
                             // THE STATE IS THE HEADLINE.
                             //
@@ -222,7 +233,13 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             Column {
                                 Text(
                                     if (offHome) {
-                                        if (inTrash) "Recently deleted" else "Settings"
+                                        when (state.screen) {
+                                            Screen.WHOSE_CALLS -> "Whose calls to keep"
+                                            Screen.MESSENGER_CALLS -> "Messenger calls"
+                                            Screen.DIAGNOSTICS -> "Diagnostics"
+                                            Screen.TRASH -> "Recently deleted"
+                                            else -> "Settings"
+                                        }
                                     } else {
                                         when {
                                             !state.enabled -> "Off"
@@ -327,10 +344,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                         },
                         navigationIcon = {
                             if (offHome) {
-                                IconButton(onClick = {
-                                    haptics.tap()
-                                    if (inTrash) vm.showSettings() else vm.showHome()
-                                }) {
+                                IconButton(onClick = { haptics.tap(); vm.back() }) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowBack,
                                         contentDescription = "Back",
@@ -368,6 +382,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                     if (!offHome) {
                         PrimaryTabRow(
                             selectedTabIndex = state.homeTab.ordinal,
+                            containerColor = headerColor,
                             divider = {},
                         ) {
                             Tab(
@@ -402,17 +417,26 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             // A list too, with its own scroll, for the same reason.
             TrashScreen(state, vm, modifier = Modifier.padding(padding))
         } else {
-            val scrollState = rememberScrollState()
-            // A self-test's result lands in the log card at the very bottom of
-            // Diagnostics - below the fold, so the user pressed the button and
-            // saw nothing move. When the log changes in Settings, run the scroll
-            // to the end, so the answer is on screen instead of under a thumb.
+            // Settings keeps its place while a screen opened from it is up, so
+            // Back lands where the tap was; each of those screens starts at
+            // its own top.
+            val settingsScroll = rememberScrollState()
+            val subScroll = key(state.screen) { rememberScrollState() }
+            val scrollState = if (state.screen == Screen.SETTINGS || !ready) settingsScroll else subScroll
+            // A self-test's result lands in the log at the very bottom of
+            // Diagnostics - below the fold on a long log, so the user pressed
+            // the button and saw nothing move. Run the scroll to the end, so
+            // the answer is on screen instead of under a thumb.
             LaunchedEffect(state.selfTestShown) {
                 // A self-test's result only: any other log line - a switch
                 // flipped with the recorder down, a folder chosen - jumped the
-                // page to the bottom, away from what the user was doing.
-                if (inSettings && state.selfTestShown > 0L) {
-                    // The log card is added/grown in this same frame and only
+                // page to the bottom, away from what the user was doing. And
+                // only one that lands on Diagnostics: a result that arrives
+                // after the user left is marked seen, not saved up to jump the
+                // page the next time Diagnostics opens.
+                if (state.selfTestShown > 0L && !inDiagnostics) vm.selfTestSeen()
+                if (inDiagnostics && state.selfTestShown > 0L) {
+                    // The log is added/grown in this same frame and only
                     // measured after it, so the scroll range does not yet include
                     // it - reading maxValue now gives the OLD bottom, and the
                     // scroll goes nowhere. Wait two frames for layout to settle,
@@ -439,110 +463,16 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
 
-                if (!ready) SetupScreen(state, vm) else SettingsScreen(state, vm)
-
-                // Diagnostics always sit at the foot of Settings - no toggle to
-                // reveal them. NOT during setup, which is kept to its own steps.
-                if (inSettings) DiagnosticsSection(state, vm)
-            }
-        }
-    }
-}
-
-/**
- * What a bug report needs, and nothing that only looks like it.
- *
- * This was the whole app while the transport was being proven, and it kept the
- * shape of that: two text fields for a pairing port and code, a Disconnect
- * button, and a line reading "ADB not connected" above all of it.
- *
- * Every one of those was misleading by the time anyone else saw it.
- *
- * "ADB NOT CONNECTED" was the worst, because it is the NORMAL state and it read
- * as a fault. ADB is a bootstrap here, not a transport: it exists to start the
- * shell-side daemon, and once that daemon is up it serves loopback and needs no
- * adbd, no mDNS and no Wi-Fi. A phone recording calls perfectly well on mobile
- * data has no ADB session and should not be told it is missing one. So the
- * panel now answers the question that matters - is the recorder running - and
- * describes the ADB session as what it is.
- *
- * THE PORT AND CODE FIELDS ARE GONE. Typing a code into the app cannot work:
- * leaving Settings closes the pairing dialog, which is what generates the code
- * and listens for it. That is exactly why pairing moved to the notification
- * shade. A control that cannot work is worse than no control, and worse still
- * in a panel people open when something is already wrong.
- *
- * What is left is what someone would actually use: the state, the things that
- * repair it, a way to see the mid-call prompt without ringing anyone, and the
- * log.
- */
-@Composable
-private fun DiagnosticsSection(state: UiState, vm: MainViewModel) {
-    val haptics = LocalHapticFeedback.current
-    // One card, like every other Settings block: the title sits inside it and
-    // the content follows, rather than a bare heading floating over three
-    // separate cards - which read as a looser, different kind of thing than the
-    // sections above it.
-    Card {
-        Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Diagnostics", style = MaterialTheme.typography.titleMedium)
-
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    if (state.daemonRunning) "Recorder running" else "Recorder not running",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (state.daemonRunning) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error,
-                )
-                Text(
-                    if (state.connected) {
-                        "ADB session open. Only needed to start the recorder."
-                    } else {
-                        "No ADB session. Normal - it is only needed to start the " +
-                            "recorder, which then runs without it."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            // Two related actions, one language: tonal buttons sharing the row
-            // at equal width, not a loud one beside a faint one.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(
-                    onClick = { haptics.tap(); vm.selfTest() },
-                    enabled = !state.busy,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Self-test") }
-                // Off when there is nothing to start: against a running recorder
-                // it short-circuits on the first ping and reports success, which
-                // is indistinguishable from doing nothing - because it is.
-                FilledTonalButton(
-                    onClick = { haptics.tap(); vm.bootstrapDaemon() },
-                    enabled = !state.busy && !state.daemonRunning,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Start recorder") }
-            }
-
-            if (state.log.isNotEmpty()) {
-                // A recessed block, not a nested card: the log is output, set
-                // apart by a darker ground the way a code block is, rather than
-                // a second card floating inside the first.
-                Text(
-                    text = state.log,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            MaterialTheme.colorScheme.surfaceContainerLowest,
-                            MaterialTheme.shapes.small,
-                        )
-                        .padding(12.dp),
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                if (!ready) {
+                    SetupScreen(state, vm)
+                } else {
+                    when (state.screen) {
+                        Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm)
+                        Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
+                        Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
+                        else -> SettingsScreen(state, vm)
+                    }
+                }
             }
         }
     }

@@ -12,17 +12,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,7 +34,6 @@ import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.CallHistory.Kind
 import com.jemcik.jemrec.capture.CallHistory.Status
 import com.jemcik.jemrec.capture.CallLogLookup
-import com.jemcik.jemrec.capture.Recordings
 import com.jemcik.jemrec.ui.theme.JemRecColors
 
 /**
@@ -80,6 +79,12 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
         return
     }
 
+    // Grouped once per call log and per day, not on every recomposition.
+    val today = dayStamp(System.currentTimeMillis())
+    val days = remember(state.calls, today) {
+        byDay(state.calls.withIndex().toList(), System.currentTimeMillis()) { it.value.at }
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 16.dp),
@@ -95,66 +100,70 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                 )
             }
         }
-        itemsIndexed(state.calls, key = { index, call -> "$index-${call.at}" }) { index, call ->
-            if (index > 0) HorizontalDivider()
-            val recording = call.recording
-            val isCurrent = recording != null && state.playingName == recording.name
-            Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 64.dp)
-                        .background(
-                            if (isCurrent) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
-                        )
-                        .then(
-                            if (recording != null) {
-                                Modifier.clickable(onClickLabel = "Play") { haptics.tap(); vm.play(recording) }
-                            } else {
-                                Modifier
-                            },
-                        )
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    CallerAvatar(caller = call.label, photo = call.photo)
-                    Column(Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                call.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
+        // Under Today, Yesterday and Earlier, as on the Recordings tab.
+        days.forEachIndexed { run, (day, rows) ->
+            item(key = "day-$run", contentType = "day") { DayHeading(day) }
+            items(rows, key = { (index, call) -> "$index-${call.at}" }, contentType = { "call" }) { (_, call) ->
+                val recording = call.recording
+                val isCurrent = recording != null && state.playingName == recording.name
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 64.dp)
+                            .background(
+                                if (isCurrent) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
                             )
-                            if (call.favorite) {
-                                Icon(
-                                    Icons.Filled.Star,
-                                    contentDescription = "Favourite contact",
-                                    tint = JemRecColors.favorite,
-                                    modifier = Modifier.size(16.dp),
+                            .then(
+                                if (recording != null) {
+                                    Modifier.clickable(onClickLabel = "Play") { haptics.tap(); vm.play(recording) }
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CallerAvatar(caller = call.label, photo = call.photo)
+                        Column(Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    call.label,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
                                 )
+                                if (call.favorite) {
+                                    Icon(
+                                        Icons.Filled.Star,
+                                        contentDescription = "Favourite contact",
+                                        tint = JemRecColors.favorite,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
                             }
+                            CallLine(call, day, playing = isCurrent && state.playing)
                         }
-                        CallLine(call, playing = isCurrent && state.playing)
                     }
+                    if (isCurrent && state.durationMs > 0) PlayerControls(state, vm)
                 }
-                if (isCurrent && state.durationMs > 0) PlayerControls(state, vm)
             }
         }
     }
 }
 
 /**
- * The second line: which way the call went, when, and either the play mark
- * with the recording's length or what became of the call.
+ * The second line: which way the call went, when (the time alone under Today
+ * and Yesterday, whose headings say the day), and either the play mark with
+ * the recording's length or what became of the call.
  */
 @Composable
-private fun CallLine(call: CallHistory.Call, playing: Boolean) {
+private fun CallLine(call: CallHistory.Call, day: Day, playing: Boolean) {
     val missed = call.kind != Kind.INCOMING && call.kind != Kind.OUTGOING
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -168,7 +177,7 @@ private fun CallLine(call: CallHistory.Call, playing: Boolean) {
             description = kindWord(call),
         )
         Text(
-            "${Recordings.whenLabel(call.at)} ·",
+            "${timeUnder(day, call.at)} ·",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

@@ -181,19 +181,20 @@ def shoot(theme: str) -> None:
         return
     grab(into / "settings.png")
 
-    # Diagnostics sits below the settings cards on a tall phone, and the report
-    # panel appears under the buttons - so scroll to the bottom first, run the
-    # test, and let the screen's own auto-scroll bring the answer into view.
-    # Until the button is on screen, not a fixed distance: one swipe stopped
-    # being enough the day Settings gained a card.
-    for _ in range(12):
+    # Diagnostics is its own screen, the last row of Settings: scroll until the
+    # row is on screen (not a fixed distance - one swipe stopped being enough
+    # the day Settings gained a card), open it, run the test, and let the
+    # screen's own auto-scroll bring the answer into view.
+    for _ in range(6):
+        if centre("Diagnostics", exact=True):
+            break
         shell("input swipe 628 2000 628 900 400")
         time.sleep(1)
-        if centre("Self-test"):
-            break
-    if tap("Self-test", "the self-test button"):
+    if tap("Diagnostics", "the diagnostics row", exact=True) and tap("Self-test", "the self-test button"):
         time.sleep(6)
         grab(into / "selftest.png")
+        shell("input keyevent KEYCODE_BACK")
+        time.sleep(1)
     shell("input keyevent KEYCODE_BACK")
     time.sleep(1)
 

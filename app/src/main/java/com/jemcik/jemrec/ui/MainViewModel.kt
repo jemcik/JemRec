@@ -72,12 +72,22 @@ private const val LOG_LIMIT = 8_000
 /**
  * Which screen is showing.
  *
- * Three, and no navigation library. The whole app is a status page, a place to
- * put the things that are not it, and the trash reached from there; a nav graph
- * to express "or one of the others" would be more machinery than the problem
- * has.
+ * No navigation library. The whole app is a status page, a place to put the
+ * things that are not it, and a few screens reached from there; a nav graph to
+ * express "or one of the others" would be more machinery than the problem has.
+ * [up] is the whole of the back stack.
  */
-enum class Screen { HOME, SETTINGS, TRASH }
+enum class Screen {
+    HOME, SETTINGS,
+    // Reached from Settings, and back to it.
+    WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH;
+
+    /** Where Back goes from here. */
+    val up: Screen get() = when (this) {
+        HOME, SETTINGS -> HOME
+        WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH -> SETTINGS
+    }
+}
 
 /**
  * The two tabs of the home screen: the recordings, and the calls.
@@ -101,8 +111,8 @@ data class UiState(
      * nothing happened, with the permissions still granted.
      */
     val resetDone: Boolean = false,
-    /** A self-test's result just arrived (its time), for Settings to scroll
-     *  down to; 0 once it has. */
+    /** A self-test's result just arrived (its time), for Diagnostics to
+     *  scroll down to; 0 once it has. */
     val selfTestShown: Long = 0L,
     /** Setup's last step failed, and why: shown with a Try again. */
     val finishFailed: String? = null,
@@ -275,8 +285,8 @@ class MainViewModel @JvmOverloads constructor(
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** Failures of something the user just did, for a snackbar where they are:
-     *  the log at the bottom of Settings is no place to learn that a share
-     *  or a delete did not work. */
+     *  the log in Diagnostics is no place to learn that a share or a delete
+     *  did not work. */
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
@@ -301,11 +311,11 @@ class MainViewModel @JvmOverloads constructor(
         // test runs and then swaps in, with no empty gap.
         _state.update { it.copy(log = "") }
         say(result.report.trimEnd())
-        // For Settings to scroll down to it - this, not every log line.
+        // For Diagnostics to scroll down to it - this, not every log line.
         _state.update { it.copy(selfTestShown = System.currentTimeMillis()) }
     }
 
-    /** Settings scrolled to the self-test's result; not again on returning. */
+    /** Diagnostics scrolled to the self-test's result; not again on returning. */
     fun selfTestSeen() = _state.update { it.copy(selfTestShown = 0L) }
 
     fun showSettings() = _state.update { it.copy(screen = Screen.SETTINGS) }
@@ -313,6 +323,11 @@ class MainViewModel @JvmOverloads constructor(
     fun showHome() = _state.update { it.copy(screen = Screen.HOME) }
 
     fun showTrash() = _state.update { it.copy(screen = Screen.TRASH) }
+
+    fun showScreen(screen: Screen) = _state.update { it.copy(screen = screen) }
+
+    /** One step back: a screen reached from Settings returns to it. */
+    fun back() = _state.update { it.copy(screen = it.screen.up) }
 
     /** Switch tabs. Leaving Recordings ends a selection, which only means
      *  something there; arriving at Calls reads the call log. */
@@ -712,7 +727,7 @@ class MainViewModel @JvmOverloads constructor(
                 }
                 DeepLink.Kind.SELF_TEST -> {
                     MissedCalls.dismiss(app)
-                    showSettings()
+                    showScreen(Screen.DIAGNOSTICS)
                     _state.first { !it.busy }
                     selfTest()
                 }
