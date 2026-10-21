@@ -356,14 +356,15 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                         // Tri-state rather than a guessed "select all" glyph:
                         // it says what tapping will do and reports what is
                         // already picked, which an icon cannot.
+                        val picked = picked(state.selected, shown.map { it.name })
                         TriStateCheckbox(
-                            state = when {
-                                state.selected.isEmpty() -> ToggleableState.Off
-                                state.selected.size >= shown.size -> ToggleableState.On
-                                else -> ToggleableState.Indeterminate
+                            state = when (picked) {
+                                Picked.NONE -> ToggleableState.Off
+                                Picked.ALL -> ToggleableState.On
+                                Picked.SOME -> ToggleableState.Indeterminate
                             },
                             onClick = {
-                                val selectingAll = state.selected.size < shown.size
+                                val selectingAll = picked != Picked.ALL
                                 haptics.toggle(selectingAll)
                                 if (selectingAll) vm.selectAllVisible() else vm.deselectAll()
                             },

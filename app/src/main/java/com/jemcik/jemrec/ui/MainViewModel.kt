@@ -316,7 +316,7 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun confirmReset() {
         _state.update { it.copy(confirmingReset = false) }
-        launchAction("start fresh") {
+        launchActionWhenFree("start fresh") {
             Setup.reset(getApplication())
                 .onSuccess { _state.update { s -> s.copy(resetDone = true) } }
                 .onFailure { say("could not reset: ${it.message}") }
@@ -594,13 +594,18 @@ class MainViewModel @JvmOverloads constructor(
         // operation in progress is how people learn to ignore errors.
         _state.update { it.copy(enabled = on, starting = on) }
         launchAction(if (on) "turn on" else "turn off") {
-            // Shared with the Quick Settings tile. See RecorderSwitch.turn.
-            RecorderSwitch.turn(getApplication(), on)
-            // Ask what the world looks like rather than assuming. Called
-            // directly, not via refreshSetup(), because that is a launchAction
-            // and one will not start while this one is running.
-            recheckSetup()
-            _state.update { it.copy(starting = false) }
+            try {
+                // Shared with the Quick Settings tile. See RecorderSwitch.turn.
+                RecorderSwitch.turn(getApplication(), on)
+                // Ask what the world looks like rather than assuming. Called
+                // directly, not via refreshSetup(), because that is a launchAction
+                // and one will not start while this one is running.
+                recheckSetup()
+            } finally {
+                // Whatever happened: "Starting..." outranks "Ready" in the
+                // header, and left set it stays there with the recorder up.
+                _state.update { it.copy(starting = false) }
+            }
         }
     }
 
@@ -634,13 +639,13 @@ class MainViewModel @JvmOverloads constructor(
      * the switch stays off and says why rather than claiming a yes it cannot
      * act on.
      */
-    fun setHideDebugNotification(hide: Boolean) = launchAction("debugging notification") {
+    fun setHideDebugNotification(hide: Boolean) = launchActionWhenFree("debugging notification") {
         val app = getApplication<Application>()
         if (hide && Setup.isComplete(app) && !DebugNotificationCleaner.accessGranted(app) &&
             !Setup.grantNotificationAccess(app)
         ) {
             _state.update { it.copy(debugNotificationProblem = true) }
-            return@launchAction
+            return@launchActionWhenFree
         }
         DebugNotificationCleaner.choose(app, hide)
         _state.update { it.copy(debugNotificationHidden = hide, debugNotificationProblem = false) }
@@ -678,13 +683,7 @@ class MainViewModel @JvmOverloads constructor(
                     }
                     // Its row has to be on screen for its player to be, so
                     // whatever was narrowing the list goes.
-                    _state.update {
-                        it.copy(
-                            screen = Screen.HOME, query = "", searchOpen = false,
-                            filter = RecordingFilter.ALL, favoritesOnly = false,
-                            selecting = false, selected = emptySet(),
-                        )
-                    }
+                    _state.update { it.revealed() }
                     if (link.kind == DeepLink.Kind.SHARE) {
                         share(recording)
                     } else if (_state.value.playingName != recording.name || !_state.value.playing) {
@@ -903,6 +902,12 @@ class MainViewModel @JvmOverloads constructor(
 
     private suspend fun refreshNow() {
         val app = getApplication<Application>()
+        // Refreshes overlap - a resume, a save announced, a keep toggled - and
+        // each reads the list, then waits on the recorder for seconds. One
+        // started earlier and finishing later must not put back a list from
+        // before the other: a recording just saved vanished until the next
+        // resume.
+        val generation = ++refreshesStarted
 
         // ALL of this is file I/O and it must not run on the main thread.
         // viewModelScope dispatches on Main, and listing recordings queries
@@ -983,6 +988,8 @@ class MainViewModel @JvmOverloads constructor(
             )
         }
 
+        if (generation < refreshApplied) return
+        refreshApplied = generation
         _state.update {
             it.copy(
                 daemonRunning = snapshot.daemonRunning,
@@ -1018,12 +1025,18 @@ class MainViewModel @JvmOverloads constructor(
                 honorDialer = snapshot.honorDialer,
                 inHonorFolder = snapshot.inHonorFolder,
                 selectHintSeen = snapshot.selectHintSeen,
-                // A name that is no longer in the list cannot be selected. It
-                // would still be counted by the toolbar, and the count is what
-                // the user reads before confirming a deletion.
-                selected = it.selected intersect snapshot.recordings.map { r -> r.name }.toSet(),
                 connected = AdbTransport.lastKnownConnected,
-            )
+            ).let { next ->
+                // A name that is no longer shown cannot stay selected. It would
+                // still be counted by the toolbar - the count the user reads
+                // before confirming a deletion - and deleted with the rest.
+                next.copy(selected = stillShown(next))
+            }
+        }
+        // Its row gone - deleted from its notification, auto-deleted - the
+        // recording stops too, rather than play on with no control on screen.
+        _state.value.playingName?.let { name ->
+            if (snapshot.recordings.none { it.name == name }) stopPlayback()
         }
     }
 
@@ -1070,21 +1083,40 @@ class MainViewModel @JvmOverloads constructor(
      */
     private fun launchAction(label: String, block: suspend () -> Unit) {
         if (_state.value.busy) return
+        viewModelScope.launch { runAction(label, block) }
+    }
+
+    /**
+     * As launchAction, but waits its turn instead of being dropped - for an
+     * action the user has already confirmed. A resume's setup check holds the
+     * busy flag for seconds (longer with the recorder down), and a delete
+     * confirmed meanwhile closed its dialog and did nothing, without a word.
+     */
+    private fun launchActionWhenFree(label: String, block: suspend () -> Unit) {
         viewModelScope.launch {
-            _state.update { it.copy(busy = true) }
-            try {
-                block()
-            } catch (t: Throwable) {
-                Log.w("JemRec", "$label failed", t)
-                say("$label failed: ${t.javaClass.simpleName}: ${t.message}")
-            } finally {
-                _state.update { it.copy(busy = false, connected = AdbTransport.lastKnownConnected) }
-            }
+            _state.first { !it.busy }
+            runAction(label, block)
+        }
+    }
+
+    private suspend fun runAction(label: String, block: suspend () -> Unit) {
+        _state.update { it.copy(busy = true) }
+        try {
+            block()
+        } catch (t: Throwable) {
+            Log.w("JemRec", "$label failed", t)
+            say("$label failed: ${t.javaClass.simpleName}: ${t.message}")
+        } finally {
+            _state.update { it.copy(busy = false, connected = AdbTransport.lastKnownConnected) }
         }
     }
 
     /** Guards against two bring-ups racing when the screen is reopened. */
     private val reviving = AtomicBoolean(false)
+
+    /** Refreshes begun, and the latest whose list is on screen. Main thread. */
+    private var refreshesStarted = 0L
+    private var refreshApplied = 0L
 
     /** The in-flight .m4a conversion, so its spinner's Cancel can stop it. */
     private var conversionJob: Job? = null
@@ -1245,6 +1277,10 @@ class MainViewModel @JvmOverloads constructor(
     fun showMore() = _state.update { it.copy(visibleCount = it.visibleCount + PAGE) }
 
     /** The system delete dialog has closed, one way or the other. */
+    /** Android's dialog is up: the request is spent. Left set, a new screen -
+     *  rotated, re-themed behind the dialog - launched it a second time. */
+    fun onDeleteConsentShown() = _state.update { it.copy(deleteConsent = null) }
+
     fun onDeleteConsentResult(granted: Boolean) {
         _state.update { it.copy(deleteConsent = null) }
         if (!granted) say("deletion cancelled")
@@ -1329,10 +1365,10 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun confirmDeleteSelected() {
         _state.update { it.copy(confirmingDeleteSelected = false) }
-        launchAction("delete recordings") {
+        launchActionWhenFree("delete recordings") {
             val current = _state.value
             val doomed = current.recordings.filter { it.name in current.selected }
-            if (doomed.isEmpty()) return@launchAction
+            if (doomed.isEmpty()) return@launchActionWhenFree
             if (current.playingName in current.selected) stopPlayback()
 
             val result = withContext(Dispatchers.IO) {

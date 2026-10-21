@@ -153,6 +153,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     LaunchedEffect(state.deleteConsent) {
         state.deleteConsent?.let {
             consentLauncher.launch(IntentSenderRequest.Builder(it).build())
+            vm.onDeleteConsentShown()
         }
     }
 
