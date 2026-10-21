@@ -124,6 +124,9 @@ object CallLogLookup {
         /** The lookup itself failed, so "not in the contacts" is not known -
          *  which the rules must not take for a stranger. */
         val failed: Boolean = false,
+        /** Every contact with this number - a shared landline, or one person
+         *  saved twice. The rules keep a call if they keep any of them. */
+        val ids: List<Long> = listOfNotNull(id),
     )
 
     /**
@@ -306,11 +309,21 @@ object CallLogLookup {
                         val name = cursor.getString(0)?.takeIf { it.isNotBlank() }
                         val photo = cursor.getString(1)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
                         val starred = cursor.getInt(2) != 0
-                        Contact(name, photo, starred, cursor.getLong(3))
+                        val first = cursor.getLong(3)
+                        // Every contact with the number, not the first the
+                        // provider happens to return: the rules on whose calls
+                        // to keep may name any of them.
+                        val ids = mutableListOf(first)
+                        while (cursor.moveToNext()) ids += cursor.getLong(3)
+                        Contact(name, photo, starred, first, ids = ids.distinct())
                     } else {
                         Contact(null, null, false)
                     }
-                } ?: Contact(null, null, false)
+                }
+                    // No cursor is the provider not answering, which is not
+                    // "no such contact": the rules must not take it for a
+                    // stranger and leave a contact's call out.
+                    ?: Contact(null, null, false, failed = true)
             }.onFailure { Log.w(TAG, "contacts: lookup failed", it) }
                 .getOrDefault(Contact(null, null, false, failed = true))
         }
@@ -366,6 +379,14 @@ object CallLogLookup {
 
     /** Android's own loose match for numbers looks at the last seven digits. */
     private const val MIN_MATCH = 7
+
+    /** Every incoming and outgoing call the log dates from [from] to [to]. */
+    internal fun entriesBetween(context: Context, from: Long, to: Long): List<Entry> {
+        if (!granted(context)) return emptyList()
+        return runCatching { query(context, from, to) }
+            .onFailure { Log.w(TAG, "call log: could not read", it) }
+            .getOrDefault(emptyList())
+    }
 
     internal fun callFor(
         context: Context,

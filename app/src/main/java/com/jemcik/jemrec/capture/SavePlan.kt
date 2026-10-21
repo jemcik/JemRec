@@ -33,12 +33,16 @@ internal object SavePlan {
          *  if the log has it yet. */
         fun logged(start: Long, incoming: Boolean): CallLogLookup.Entry?
 
+        /** Every call the log dates from [from] to [to]. */
+        fun loggedBetween(from: Long, to: Long): List<CallLogLookup.Entry>
+
         /** A second's wait for the call log to write a call down. */
         suspend fun pause()
     }
 
-    /** Who a call was with: for its file name, and for the rules. */
-    class Who(val party: FileNames.Party, val contactId: Long?, val seconds: Int)
+    /** Who a call was with: for its file name, and for the rules. [loggedAt]:
+     *  its call-log entry's date, when that is how it was known. */
+    class Who(val party: FileNames.Party, val contactIds: List<Long>, val seconds: Int, val loggedAt: Long? = null)
 
     /**
      * THE rule for who a call was with, whichever way it is known: a
@@ -47,10 +51,16 @@ internal object SavePlan {
      * at all when the contacts could not be asked, which the rules must not
      * take for a stranger.
      */
-    fun identified(number: String?, contact: CallLogLookup.Contact, loggedName: String?, seconds: Int): Who? {
+    fun identified(
+        number: String?,
+        contact: CallLogLookup.Contact,
+        loggedName: String?,
+        seconds: Int,
+        loggedAt: Long? = null,
+    ): Who? {
         if (contact.failed) return null
         val name = contact.name ?: loggedName?.takeIf { it.isNotBlank() }
-        return Who(FileNames.Party(number, name), contact.id, seconds)
+        return Who(FileNames.Party(number, name), contact.ids, seconds, loggedAt)
     }
 
     /** Who, from the call log alone - the way without exact call tracking.
@@ -59,7 +69,7 @@ internal object SavePlan {
         if (!lookups.callLogAllowed) return null
         repeat(tries) { attempt ->
             lookups.logged(start, incoming)?.let { entry ->
-                return identified(entry.number, lookups.contact(entry.number), entry.name, entry.seconds)
+                return identified(entry.number, lookups.contact(entry.number), entry.name, entry.seconds, entry.at)
             }
             if (attempt < tries - 1) lookups.pause()
         }
@@ -104,13 +114,29 @@ internal object SavePlan {
         return null
     }
 
+    /**
+     * Whether the call log has another answered call inside this recording -
+     * call waiting, with no Telecom account to cut the file by. The file then
+     * holds a call the rules may keep, so it is not left out whole: kept
+     * when unsure.
+     */
+    private fun anotherCallDuring(lookups: Lookups, startedAt: Long, who: Who): Boolean {
+        val own = who.loggedAt ?: startedAt
+        val end = startedAt + who.seconds * 1000L + WAITING_SLACK_MS
+        return lookups.loggedBetween(own, end).any { it.seconds > 0 && it.at != own }
+    }
+
+    /** Past the end the log gives a call, where the next can still be in its file. */
+    private const val WAITING_SLACK_MS = 5_000L
+
     /** The settings that bear on it. */
     class Settings(
         val format: FileNames.Format,
         /** Whether the rules on whose calls to keep get a say in this one. */
         val ruled: Boolean,
-        /** Whether the rules keep a call with this contact (null: no contact). */
-        val keeps: (Long?) -> Boolean,
+        /** Whether the rules keep a call with these contacts (none: a number
+         *  in no contact). */
+        val keeps: (List<Long>) -> Boolean,
     )
 
     /** A call the rules left out, for the ledger. */
@@ -146,7 +172,9 @@ internal object SavePlan {
         val wantWho = settings.ruled || named
         if (tracked.isEmpty()) {
             val who = if (wantWho) fromCallLog(lookups, startedAt, incoming, tries) else null
-            if (settings.ruled && who != null && !settings.keeps(who.contactId)) {
+            if (settings.ruled && who != null && !settings.keeps(who.contactIds) &&
+                !anotherCallDuring(lookups, startedAt, who)
+            ) {
                 return Decision.LeaveOut(listOf(LeftOut(startedAt, incoming, who.seconds)))
             }
             val name = FileNames.build(settings.format, startedAt, incoming, who?.party)
@@ -166,7 +194,7 @@ internal object SavePlan {
             // a call that came in during it starts where it was answered.
             val start = if (call === own) startedAt else call.answeredAt
             val who = if (wantWho) fromTelecom(lookups, call, start, named, tries) else null
-            if (settings.ruled && who != null && !settings.keeps(who.contactId)) {
+            if (settings.ruled && who != null && !settings.keeps(who.contactIds)) {
                 leftOut += LeftOut(call.id, call.incoming, call.seconds)
                 continue
             }

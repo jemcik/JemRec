@@ -115,13 +115,33 @@ object CallTracking {
     /** How close to the recording's start a call of the other direction must
      *  have gone off-hook to be its own. Measured: 4 to 66 ms. */
     private const val OFF_HOOK_MS = 1_000L
+    /** The daemon confirms a call's end this long after telephony's idle
+     *  (CallStates.END_CHECK_MS); a call that goes off-hook before then is
+     *  recorded into the same file. */
+    private const val JOIN_MS = 2_000L
 
     /**
      * The calls a recording that began at [start] holds: the one that went
-     * off-hook as it started, of its direction, and any that were answered
-     * while it ran - call waiting. The recording's own call comes first.
-     * Empty when Telecom told us nothing, and the recording is then saved as
-     * it always was.
+     * off-hook as it started, of its direction, and every call the daemon
+     * went on recording into the same file. The recording's own call comes
+     * first. Empty when Telecom told us nothing, and the recording is then
+     * saved as it always was.
+     *
+     * The daemon ends a file only when the phone has gone idle for two
+     * seconds (CallStates). So a file holds, besides its own call:
+     *   - a call answered while those were up - call waiting;
+     *   - a call that rang while they were up, answered after they ended -
+     *     the phone went from the call to ringing, never idle;
+     *   - a call that went off-hook within two seconds of their end - a
+     *     redial, after a call nobody answered.
+     * Each one joined stretches the file's end, so the chain is followed
+     * until no more join. Leaving any of them out drops its audio - or, when
+     * the own call was never answered, deletes the whole file as unanswered.
+     *
+     * The own call is the one whose off-hook - its answer, or its dialling -
+     * is closest to the start: a second call created a moment after it
+     * would otherwise be taken for it, and the call that was recorded left
+     * out.
      *
      * The direction is the daemon's, from whether the phone rang first, and
      * can be wrong; Telecom's is not. So when no call of that direction fits,
@@ -138,20 +158,37 @@ object CallTracking {
         // call before, and taking it for this one deletes this one as
         // unanswered when the call before was never answered.
         val candidates = all.filter { it.endedAt == 0L || it.endedAt >= start }
+        val closest = compareBy<Tracked>({ offHookAt(it)?.let { at -> abs(at - start) } ?: Long.MAX_VALUE }, { -it.id })
         val own = candidates
             .filter { it.incoming == incoming && it.id in (start - BEFORE_MS)..(start + SLACK_MS) }
-            .maxByOrNull { it.id }
+            .minWithOrNull(closest)
             ?: candidates
                 .filter { it.incoming != incoming && offHookAt(it)?.let { at -> abs(at - start) <= OFF_HOOK_MS } == true }
-                .maxByOrNull { it.id }
+                .minWithOrNull(closest)
             ?: return emptyList()
         if (!own.answered && own.endedAt == 0L) return emptyList()
-        val end = if (own.endedAt == 0L) Long.MAX_VALUE else own.endedAt
-        val waiting = all.filter { it !== own && it.answered && it.answeredAt in start..end }
+
+        val joined = mutableListOf(own)
+        var end = endOf(own)
+        while (true) {
+            val next = all.filter { call ->
+                call !in joined && call.answered && call.answeredAt >= start && (
+                    call.answeredAt <= end ||
+                        call.id <= end ||
+                        offHookAt(call)?.let { it <= end + JOIN_MS } == true
+                    )
+            }
+            if (next.isEmpty()) break
+            joined += next
+            end = maxOf(end, next.maxOf { endOf(it) })
+        }
         // Own first, whatever the ids: a call created earlier can still be
         // answered later, during this one.
-        return listOf(own) + waiting.sortedBy { it.id }
+        return listOf(own) + (joined - own).sortedBy { it.id }
     }
+
+    /** When a call ended, or never (still up, as far as anyone said). */
+    private fun endOf(call: Tracked): Long = if (call.endedAt == 0L) Long.MAX_VALUE else call.endedAt
 
     /**
      * Which call each packet of the recording belongs to, as packet ranges:

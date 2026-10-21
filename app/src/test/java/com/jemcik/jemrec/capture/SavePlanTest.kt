@@ -47,6 +47,9 @@ class SavePlanTest {
             return log.filter { it.incoming == incoming }.minByOrNull { abs(it.at - start) }
         }
 
+        override fun loggedBetween(from: Long, to: Long): List<CallLogLookup.Entry> =
+            log.filter { it.at in from..to }
+
         override suspend fun pause() {
             pauses++
         }
@@ -57,7 +60,7 @@ class SavePlanTest {
     private fun entry(at: Long, incoming: Boolean, number: String?, name: String? = null, seconds: Int = 17) =
         CallLogLookup.Entry(at, incoming, name ?: number ?: "", number, seconds, name)
 
-    private fun settings(format: Format = Format.DATE_AND_CALLER, ruled: Boolean = false, keeps: (Long?) -> Boolean = { true }) =
+    private fun settings(format: Format = Format.DATE_AND_CALLER, ruled: Boolean = false, keeps: (List<Long>) -> Boolean = { true }) =
         SavePlan.Settings(format, ruled, keeps)
 
     private fun decide(
@@ -173,7 +176,7 @@ class SavePlanTest {
 
     @Test fun theRulesLeaveOutTheSameCallBothWays() {
         val phone = Phone(log = listOf(entry(t, false, "3034997111", seconds = 19)))
-        val strangersOut = settings(ruled = true, keeps = { id -> id != null })
+        val strangersOut = settings(ruled = true, keeps = { ids -> ids.isNotEmpty() })
         val call = Tracked(t, false, "+13034997111", listOf(t + 60), t + 20 * s)
         val byLog = decide(phone, emptyList(), settings = strangersOut)
         val byTelecom = decide(phone, listOf(call), settings = strangersOut)
@@ -181,9 +184,36 @@ class SavePlanTest {
         assertEquals(Decision.LeaveOut(listOf(SavePlan.LeftOut(t, false, 19))), byTelecom)
     }
 
+    @Test fun withoutTrackingAWaitingCallKeepsTheFileItIsIn() {
+        // No Telecom account: a stranger's call (left out), and a contact's
+        // call waiting during it. The file cannot be cut, so it is kept whole
+        // rather than deleted with the contact's call in it.
+        val phone = Phone(
+            contacts = mapOf("+15550101" to contact("Priya Raman", 7)),
+            log = listOf(entry(t, true, "+15550199", seconds = 40), entry(t + 20 * s, true, "+15550101", seconds = 15)),
+        )
+        val strangersOut = settings(ruled = true, keeps = { ids -> ids.isNotEmpty() })
+        assertTrue(decide(phone, emptyList(), incoming = true, start = t + 2 * s, settings = strangersOut) is Decision.Save)
+        // With no call waiting, the stranger's call is left out as before.
+        val alone = Phone(log = listOf(entry(t, true, "+15550199", seconds = 40)))
+        assertTrue(decide(alone, emptyList(), incoming = true, start = t + 2 * s, settings = strangersOut) is Decision.LeaveOut)
+    }
+
     @Test fun anUnansweredCallIsNotSaved() {
         val unanswered = Tracked(t, false, "+13034997111", emptyList(), t + 30 * s)
         assertEquals(Decision.NotAnswered(t + 60, false), decide(Phone(), listOf(unanswered)))
+    }
+
+    @Test fun aRedialAfterAnUnansweredCallIsSavedNotDeleted() {
+        // The whole file was deleted as "not answered" when the first call
+        // was the only one known to be in it.
+        val first = Tracked(t, false, "+13034997111", emptyList(), t + 10 * s)
+        val redial = Tracked(t + 11 * s, false, "+13034997111", listOf(t + 15 * s), t + 30 * s)
+        val tracked = CallTracking.callsIn(listOf(first, redial), t + 60, incoming = false)
+        val decision = decide(Phone(), tracked, settings = settings(Format.DATE))
+        decision as Decision.Save
+        assertEquals(1, decision.parts.size)
+        assertEquals(t + 15 * s, decision.parts.single().startMillis)
     }
 
     @Test fun theRingingIsCutAway() {
@@ -201,7 +231,7 @@ class SavePlanTest {
         )
         val first = Tracked(t, true, "+15550101", listOf(t + 2 * s, t + 50 * s), t + 70 * s)
         val second = Tracked(t + 20 * s, true, "+15550199", listOf(t + 30 * s), t + 50 * s)
-        val strangersOut = settings(ruled = true, keeps = { id -> id != null })
+        val strangersOut = settings(ruled = true, keeps = { ids -> ids.isNotEmpty() })
         val decision = decide(phone, listOf(first, second), incoming = true, start = t + 2 * s, settings = strangersOut)
         decision as Decision.Save
         assertEquals(1, decision.parts.size)

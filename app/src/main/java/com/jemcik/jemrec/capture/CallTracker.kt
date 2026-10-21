@@ -81,7 +81,9 @@ class CallTracker : InCallService() {
                     // is to the millisecond; a return from hold from now.
                     if (base.activations.isEmpty()) {
                         base.copy(activations = listOf(call.details.connectTimeMillis.takeIf { it > 0 } ?: now))
-                    } else if (old?.let { wasActive[id] } == true) {
+                    } else if (old == null || wasActive[id] == true) {
+                        // New here, and track() already took Telecom's
+                        // connect time; or ACTIVE again with no hold between.
                         base
                     } else {
                         base.copy(activations = base.activations + now)
@@ -103,7 +105,10 @@ class CallTracker : InCallService() {
         // The number only with the call-log permission: the same consent the
         // call log needs, for the same information.
         number = if (CallLogLookup.granted(this)) call.details.handle?.schemeSpecificPart else null,
-        activations = emptyList(),
+        // Already answered, if Telecom says so: a call first seen here late -
+        // tracking switched on mid-call, a service bound mid-call - is not
+        // then taken for one nobody answered, and deleted as such.
+        activations = listOfNotNull(call.details.connectTimeMillis.takeIf { it > 0 }),
         endedAt = 0L,
     )
 
@@ -132,7 +137,7 @@ class CallTracker : InCallService() {
         if (!RecorderSwitch.isOn(context) || RecordingMode.of(context) != RecordingMode.AUTOMATIC) return
         val number = call.details.handle?.schemeSpecificPart
         val contact = CallLogLookup.contactFor(context, number, mutableMapOf())
-        if (contact.failed || CallRules.keeps(context, contact.id)) return
+        if (contact.failed || CallRules.keeps(context, contact.ids)) return
         leftOut += id
         Log.i(TAG, "calltrack: the rules leave this call out; telling the recorder")
         skips.trySend(context to true)

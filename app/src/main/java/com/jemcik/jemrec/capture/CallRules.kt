@@ -77,8 +77,28 @@ object CallRules {
             else -> false
         }
 
-    fun keeps(context: Context, contactId: Long?): Boolean =
-        keeps(contacts(context), otherNumbers(context), contactId, chosenIds(context))
+    /**
+     * Whether a call with a number belonging to [contactIds] is kept - none
+     * meaning a number in no contact, or no number. With several (a shared
+     * landline, one person saved twice), kept if any of them is. [chosen]
+     * null is the chosen contacts that could not be read: kept, rather than
+     * a contact's call left out on a failed lookup. Pure.
+     */
+    internal fun keeps(contacts: Contacts, otherNumbers: Boolean, contactIds: List<Long>, chosen: Set<Long>?): Boolean =
+        when {
+            contactIds.isEmpty() -> otherNumbers
+            contacts == Contacts.ALL -> true
+            contacts == Contacts.NONE -> false
+            chosen == null -> true
+            else -> contactIds.any { keeps(contacts, otherNumbers, it, chosen) }
+        }
+
+    fun keeps(context: Context, contactIds: List<Long>): Boolean {
+        val contacts = contacts(context)
+        // The chosen ones are only asked for when they matter.
+        val chosen = if (contacts == Contacts.ALL_BUT || contacts == Contacts.ONLY) chosenIds(context) else emptySet()
+        return keeps(contacts, otherNumbers(context), contactIds, chosen)
+    }
 
     // --- the chosen contacts -----------------------------------------------------
 
@@ -124,11 +144,19 @@ object CallRules {
     }.sortedBy { it.name.lowercase() }
 
     /** The chosen contacts' ids as the provider numbers them now: a merge or
-     *  a re-sync can change an id, and the lookup link follows it. */
-    private fun chosenIds(context: Context): Set<Long> = chosenKeys(context).mapNotNull { key ->
-        runCatching {
-            ContactsContract.Contacts.lookupContact(context.contentResolver, Uri.parse(key))
-                ?.let(ContentUris::parseId)
-        }.getOrNull()
-    }.toSet()
+     *  a re-sync can change an id, and the lookup link follows it. A contact
+     *  since deleted is simply gone; but a lookup that FAILED makes the whole
+     *  set unknown (null) - dropping that contact would leave their calls
+     *  out in "only these people". */
+    private fun chosenIds(context: Context): Set<Long>? {
+        val ids = mutableSetOf<Long>()
+        for (key in chosenKeys(context)) {
+            val id = runCatching {
+                ContactsContract.Contacts.lookupContact(context.contentResolver, Uri.parse(key))
+                    ?.let(ContentUris::parseId)
+            }.getOrElse { return null }
+            if (id != null) ids += id
+        }
+        return ids
+    }
 }

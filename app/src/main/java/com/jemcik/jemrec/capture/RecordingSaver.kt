@@ -143,9 +143,19 @@ object RecordingSaver {
         } else {
             emptyList()
         }
+        // The daemon's other files are calls too: one whose save failed is
+        // not in the ledger yet, and its call-log entry must not be taken for
+        // this one's.
+        val pending = if (ruled || format != FileNames.Format.DATE) {
+            CaptureDaemon.listPendingOrNull(context).orEmpty()
+                .filter { it != recfile && VoipApps.forRecfile(it) == null }
+                .mapNotNull { name -> startMillis(name)?.let { CallLedger.Recorded(it, RecordingStore.isIncoming(name), -1) } }
+        } else {
+            emptyList()
+        }
         val decision = SavePlan.decide(
-            lookups = PhoneLookups(context),
-            settings = SavePlan.Settings(format, ruled) { contactId -> CallRules.keeps(context, contactId) },
+            lookups = PhoneLookups(context, pending),
+            settings = SavePlan.Settings(format, ruled) { contactIds -> CallRules.keeps(context, contactIds) },
             startedAt = startedAt.time,
             incoming = incoming,
             tracked = tracked,
@@ -178,15 +188,20 @@ object RecordingSaver {
     }
 
     /** The phone behind SavePlan: the contacts and the call log. */
-    private class PhoneLookups(private val context: Context) : SavePlan.Lookups {
+    private class PhoneLookups(
+        private val context: Context,
+        private val pending: List<CallLedger.Recorded>,
+    ) : SavePlan.Lookups {
         private val contacts = mutableMapOf<String, CallLogLookup.Contact>()
 
-        /** The calls already recorded or left out, which this one is not. */
-        private val others by lazy { CallLedger.read(context).let { it.recordings + it.skipped } }
+        /** The calls already recorded or left out, or still on the daemon,
+         *  which this one is not. */
+        private val others by lazy { CallLedger.read(context).let { it.recordings + it.skipped } + pending }
 
         override val callLogAllowed: Boolean get() = CallLogLookup.granted(context)
         override fun contact(number: String?) = CallLogLookup.contactFor(context, number, contacts)
         override fun logged(start: Long, incoming: Boolean) = CallLogLookup.callFor(context, start, incoming, others)
+        override fun loggedBetween(from: Long, to: Long) = CallLogLookup.entriesBetween(context, from, to)
         override suspend fun pause() = delay(1_000)
     }
 

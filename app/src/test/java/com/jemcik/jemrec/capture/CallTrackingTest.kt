@@ -101,6 +101,46 @@ class CallTrackingTest {
         assertTrue(CallTracking.callsIn(listOf(before), t + 10 * s, incoming = false).isEmpty())
     }
 
+    @Test fun aRedialAfterACallNobodyAnsweredIsInTheSameFile() {
+        // Rang out unanswered for 10 s; redialled a second later - inside the
+        // daemon's two-second end check, so the same file - and answered.
+        val first = call(t, incoming = false, ended = t + 10 * s)
+        val redial = call(t + 11 * s, incoming = false, t + 15 * s, ended = t + 30 * s)
+        val calls = CallTracking.callsIn(listOf(first, redial), t + 60, incoming = false)
+        assertEquals(listOf(first, redial), calls)
+        // The redial's conversation is kept, from its answer to its end.
+        assertEquals(listOf(redial to ((15 * s - 60) / 20 until (30 * s - 60) / 20)), CallTracking.segments(t + 60, calls))
+    }
+
+    @Test fun aWaitingCallAnsweredAfterTheFirstEndedIsInTheSameFile() {
+        // B rang during A; A hung up, B went on ringing - never idle - and
+        // was answered after A ended.
+        val a = call(t, incoming = true, t + 2 * s, ended = t + 20 * s)
+        val b = call(t + 10 * s, incoming = true, t + 25 * s, ended = t + 40 * s)
+        val start = t + 2 * s
+        val calls = CallTracking.callsIn(listOf(a, b), start, incoming = true)
+        assertEquals(listOf(a, b), calls)
+        val segments = CallTracking.segments(start, calls)
+        assertEquals(a to (0L until 900L), segments[0])
+        assertEquals(b to (1150L until 1900L), segments[1])
+    }
+
+    @Test fun aCallStartedSecondsAfterTheEndIsNotJoined() {
+        // Three seconds after: past the end check, so a file of its own.
+        val a = call(t, incoming = false, t + 2 * s, ended = t + 20 * s)
+        val later = call(t + 23 * s, incoming = false, t + 26 * s, ended = t + 40 * s)
+        assertEquals(listOf(a), CallTracking.callsIn(listOf(a, later), t + 60, incoming = false))
+    }
+
+    @Test fun theOwnCallIsTheOneThatWentOffHookAtTheStart() {
+        // A answered at 10 s, starting the recording; B rang in a second
+        // later, was never answered. B is newer, but A is the recording's.
+        val a = call(t, incoming = true, t + 10 * s, ended = t + 60 * s)
+        val b = call(t + 11 * s, incoming = true, ended = t + 15 * s)
+        val calls = CallTracking.callsIn(listOf(a, b), t + 10 * s + 40, incoming = true)
+        assertEquals(listOf(a), calls)
+    }
+
     @Test fun anotherCallLongBeforeIsNotThisOne() {
         val earlier = call(t - 10 * 60 * s, incoming = false, t - 9 * 60 * s, ended = t - 8 * 60 * s)
         assertTrue(CallTracking.callsIn(listOf(earlier), t, incoming = false).isEmpty())
