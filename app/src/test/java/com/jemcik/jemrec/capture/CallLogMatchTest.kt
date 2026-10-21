@@ -1,7 +1,9 @@
 package com.jemcik.jemrec.capture
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -67,5 +69,19 @@ class CallLogMatchTest {
 
     @Test fun nothingInTheWindowMeansNoLabel() {
         assertNull(CallLogLookup.closest(emptyList(), t, incoming = true))
+    }
+
+    @Test fun aNumberWrittenTwoWaysIsTheSameNumber() {
+        // Telecom's handle, the call log's number, and a person's writing of it
+        // (issue #30's example).
+        assertTrue(CallLogLookup.sameNumber("+13034997111", "3034997111"))
+        assertTrue(CallLogLookup.sameNumber("(303) 499-7111", "+1 303 499 7111"))
+        assertFalse(CallLogLookup.sameNumber("+13034997111", "+13034997112"))
+        // Short codes compare whole.
+        assertTrue(CallLogLookup.sameNumber("477", "477"))
+        assertFalse(CallLogLookup.sameNumber("477", "1477"))
+        // Nothing to compare is no match.
+        assertFalse(CallLogLookup.sameNumber(null, "477"))
+        assertFalse(CallLogLookup.sameNumber("", ""))
     }
 }

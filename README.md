@@ -19,7 +19,7 @@ messenger calls on Android 14 or newer; see [Messenger calls](#messenger-calls).
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-179-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-201-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
 <img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
@@ -543,15 +543,37 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-179 JVM unit tests, no device needed:
+201 JVM unit tests, no device needed - 194 for the app and 7 for the daemon:
 
-    ./gradlew :app:testDebugUnitTest
+    ./gradlew test
 
 They cover the parts where a mistake is silent: the list's filtering (shared by
 select-all, so a wrong answer is a wrong bulk delete), the daemon's wire format,
 the setup state machine and every regression its comments describe, the Opus
 header, the call-log match, the home screen's selection logic, and every file
 name read back in every format (a misread name is a recording dated wrong).
+
+Two of them hold the parts where 0.14 went wrong:
+- **What becomes of a recording** (`SavePlan`): which calls it holds, who
+  each was with, what each file is called, which the rules leave out. A call
+  can be known two ways - from Telecom (exact call tracking) or from the call
+  log - and the tests hold both to the same file name for the same call. In
+  0.14 they disagreed, and a number in no contact lost its caller-ID name
+  ([#30](https://github.com/jemcik/JemRec/issues/30)).
+- **The daemon's call states** (`CallStates`, in `shellserver/tests`): which
+  way a call went and when it ended, from telephony's events. A call that
+  rang within two seconds of the call before was recorded as outgoing.
+
+Before a release, the same calls go through the real app and daemon on an
+emulator, for each Android version it claims (12, 13 and 17 for 0.14.1):
+
+    python3 tools/emulator_checks.py --serial emulator-5554
+
+It installs the debug build, sets JemRec up from nothing and places simulated
+calls: the ringing cut, an unanswered call not kept, an incoming call kept to
+the second, a stranger skipped before recording, two calls in quick
+succession, a caller-ID name, and the self-test. It refuses to run on anything
+but an emulator, and needs a `google_apis` image.
 
 A pre-push hook runs the tests and lint before anything leaves the machine:
 

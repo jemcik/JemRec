@@ -362,15 +362,47 @@ public final class Main {
         private final TelephonyManager telephony;
         private final AudioManager audio;
         private final Handler handler;
-        private boolean sawRinging;
-        private boolean inCall;
-        private Runnable pendingIdle;
+        /** What the events mean - see CallStates; this class only feeds it. */
+        private final CallStates states;
+        private final Runnable endCheck;
 
         CallWatch(String token, TelephonyManager telephony, AudioManager audio, Handler handler) {
             this.token = token;
             this.telephony = telephony;
             this.audio = audio;
             this.handler = handler;
+            this.states = new CallStates(new CallStates.Effects() {
+                @Override
+                public void callStarted(boolean incoming) {
+                    onCallStart(incoming);
+                }
+
+                @Override
+                public void callEnded() {
+                    onCallEnd();
+                }
+
+                @Override
+                public void scheduleEndCheck(long delayMs) {
+                    handler.postDelayed(endCheck, delayMs);
+                }
+
+                @Override
+                public void cancelEndCheck() {
+                    handler.removeCallbacks(endCheck);
+                }
+
+                @Override
+                public boolean audioInCall() {
+                    return CallWatch.this.audioInCall();
+                }
+
+                @Override
+                public void log(String message) {
+                    Ln.i(message);
+                }
+            });
+            this.endCheck = states::endCheck;
         }
 
         @Override
@@ -381,99 +413,19 @@ public final class Main {
             lastCallEventAt = System.currentTimeMillis();
             switch (state) {
                 case TelephonyManager.CALL_STATE_RINGING:
-                    sawRinging = true;
-                    Ln.i("callwatch: ringing");
+                    states.ringing();
                     break;
                 case TelephonyManager.CALL_STATE_OFFHOOK:
                     offHooks.incrementAndGet();
                     lastOffHookAt = System.currentTimeMillis();
-                    cancelPendingIdle();
-                    inCall = true;
-                    Ln.i("callwatch: off-hook (" + (sawRinging ? "incoming" : "outgoing") + ")");
-                    onCallStart(sawRinging);
+                    states.offHook();
                     break;
                 case TelephonyManager.CALL_STATE_IDLE:
-                    onIdle();
+                    states.idle();
                     break;
                 default:
                     break;
             }
-        }
-
-        /**
-         * AN IDLE IS A CLAIM, NOT A FACT.
-         *
-         * Ending a recording is destructive - the app closes the socket, the
-         * encoder dies of ECONNRESET mid-frame, and whatever was left of the
-         * call is gone - so it must not be done on one unconfirmed signal.
-         *
-         * Measured on this phone: a twenty-second outgoing call recorded six
-         * seconds. The daemon's own log shows off-hook, the client connecting
-         * on VOICE_CALL, and then "idle" arriving while the call was still up,
-         * followed immediately by the encoder's ECONNRESET. The call was not
-         * over; the state said it was.
-         *
-         * So an idle before any off-hook is ignored outright - that one is just
-         * the current state being handed over at registration, which used to
-         * fire a CALL_ENDED at every daemon start. And a real idle is confirmed
-         * against the AUDIO MODE rather than the call state - see below for why.
-         */
-        private void onIdle() {
-            if (!inCall) {
-                if (sawRinging) {
-                    // It rang and was never answered - missed, or declined.
-                    // Forget the ring, or the next OUTGOING call is labelled
-                    // incoming: the flag only ever cleared when a call ended.
-                    sawRinging = false;
-                    Ln.i("callwatch: ringing ended without a call");
-                } else {
-                    Ln.i("callwatch: idle before any call, ignoring");
-                }
-                return;
-            }
-            // The ring was this call's, and this is its end: forget it now,
-            // not when the end is confirmed. The next call can ring inside
-            // those two seconds - and the confirmation then cleared ITS ring,
-            // and an incoming call was recorded as outgoing (emulator,
-            // 2026-10-21: the saver then took the call before for it).
-            sawRinging = false;
-            cancelPendingIdle();
-            scheduleEndConfirm();
-        }
-
-        /**
-         * CONFIRM THE END AGAINST THE AUDIO MODE, AND POLL - DO NOT TRUST ONE
-         * IDLE.
-         *
-         * Measured on this phone: with some dialers (Google Phone here)
-         * telephony CALL_STATE goes IDLE partway through a live call and STAYS
-         * idle - a 37s call reported idle at 11s, a 30s call at 6s - so a single
-         * re-read of getCallState() confirms an end that has not happened, and
-         * because the state never leaves idle there is no later edge to correct
-         * it. The recording was cut ~25s short, twice.
-         *
-         * Telecom, though, holds the audio mode at MODE_IN_CALL for the real
-         * length of the call: its dumpsys setMode history lines up to the second
-         * with the true spans. So the audio mode is the signal to trust, and
-         * because telephony gives no second idle edge we POLL it here rather
-         * than checking once - re-arming until telecom actually leaves in-call,
-         * then ending. A momentary idle with the audio still in-call simply
-         * keeps the recording running, which is the whole point.
-         */
-        private void scheduleEndConfirm() {
-            pendingIdle = () -> {
-                pendingIdle = null;
-                if (audioInCall()) {
-                    // Still up. Telephony won't tell us again; keep watching the
-                    // audio mode, which will.
-                    scheduleEndConfirm();
-                    return;
-                }
-                inCall = false;
-                Ln.i("callwatch: end confirmed (audio mode left in-call)");
-                onCallEnd();
-            };
-            handler.postDelayed(pendingIdle, IDLE_CONFIRM_MS);
         }
 
         /**
@@ -494,13 +446,6 @@ public final class Main {
                     || mode == AudioManager.MODE_IN_COMMUNICATION;
             Ln.i("callwatch: idle seen, audio mode=" + mode + (up ? " (still in a call)" : " (call is over)"));
             return up;
-        }
-
-        private void cancelPendingIdle() {
-            if (pendingIdle != null) {
-                handler.removeCallbacks(pendingIdle);
-                pendingIdle = null;
-            }
         }
     }
 
@@ -908,10 +853,6 @@ public final class Main {
      *  enough that it costs nothing to run forever. */
     private static final long PACKAGE_CHECK_INTERVAL_MS = 5 * 60 * 1000L;
     private static final long CONFIRM_DELAY_MS = 10 * 1000L;
-
-    /** Long enough to outlast a momentary idle, short enough not to
-     *  leave a finished call recording into silence. */
-    private static final long IDLE_CONFIRM_MS = 2000L;
 
     /** Six seconds of patience for a predecessor to let go of the port. */
     private static final int BIND_ATTEMPTS = 15;

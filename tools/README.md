@@ -13,6 +13,7 @@ an artefact checked into this repository.
 | `build_site.py` | Generates the site GitHub Pages serves - the landing page, the setup manual and the privacy policy - and `docs/SETUP.md`, which is the same manual rendered as Markdown from the same source. |
 | `pair-now.sh` | Pairs the phone with its own Wireless debugging from a USB shell, for testing setup without tapping through it. |
 | `check_16k_pages.py` | Fails when a native library in the APK would make Android run JemRec in 16 KB page-size compat mode. CI runs it on every build. Standard library only. |
+| `emulator_checks.py` | Release checks on an emulator: installs the debug build, sets JemRec up from nothing, and places simulated calls through the real app and daemon - the ringing cut, an unanswered call, an incoming call, a stranger skipped by the rules, two calls in quick succession, a caller-ID name, the self-test. PASS or FAIL for each. Refuses to touch anything but an emulator; needs a `google_apis` image. Standard library only. |
 | `capture-call.py` | Records from the daemon in raw PCM and measures each channel separately, which is how to tell "audio arrived" from "both sides of the call arrived". |
 
 The Python ones need Pillow (`python3 -m pip install pillow`); the shell ones

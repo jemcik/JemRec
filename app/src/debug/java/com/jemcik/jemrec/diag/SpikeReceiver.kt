@@ -138,6 +138,33 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "selftest", text)
                     }
 
+                    // Set one of the app's preferences, for tools/emulator_checks.py:
+                    //   --es op pref --es key file_names --es value DATE_AND_CALLER
+                    //   --es op pref --es key rules_other_numbers --ez bool false
+                    // Through the app's own SharedPreferences, because writing the
+                    // file from outside loses to a running app process, which
+                    // writes its own copy back over it (measured on Android 13).
+                    "pref" -> {
+                        val key = intent.getStringExtra("key").orEmpty()
+                        val edit = com.jemcik.jemrec.Prefs.of(appContext).edit()
+                        val text = when {
+                            key.isEmpty() -> "no key"
+                            intent.hasExtra("bool") -> {
+                                edit.putBoolean(key, intent.getBooleanExtra("bool", false)).commit()
+                                "$key = ${intent.getBooleanExtra("bool", false)}"
+                            }
+                            intent.hasExtra("value") -> {
+                                edit.putString(key, intent.getStringExtra("value")).commit()
+                                "$key = ${intent.getStringExtra("value")}"
+                            }
+                            else -> {
+                                edit.remove(key).commit()
+                                "$key removed"
+                            }
+                        }
+                        report(appContext, "pref", text)
+                    }
+
                     // Does an untrusted_app SELinux domain get to connect to
                     // an abstract socket published by the shell domain? If yes,
                     // ADB is only a bootstrap and everything after it works with

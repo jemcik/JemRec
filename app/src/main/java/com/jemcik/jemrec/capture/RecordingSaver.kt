@@ -137,90 +137,57 @@ object RecordingSaver {
 
         // Exact call tracking: Telecom's own account of the calls this
         // recording holds. Without it - switched off, or Telecom told us
-        // nothing about this one - the recording is saved as it always was.
-        if (CallTracking.enabled(context)) {
-            val tracked = CallTracking.callsIn(CallTracking.calls(context), startedAt.time, incoming)
-            if (tracked.isNotEmpty()) return saveTracked(context, recfile, startedAt, incoming, tracked, format, ruled)
-        }
-
-        val call = if (ruled || format != FileNames.Format.DATE) {
-            identify(context, startedAt.time, incoming, tries = if (justEnded) IDENTIFY_TRIES else 1)
+        // nothing about this one - the call log is the one way to know.
+        val tracked = if (CallTracking.enabled(context)) {
+            CallTracking.callsIn(CallTracking.calls(context), startedAt.time, incoming)
         } else {
-            null
+            emptyList()
         }
-        if (ruled && call != null && !CallRules.keeps(context, call.contactId)) {
-            Log.i(TAG, "save: $recfile is a call the rules leave out - deleting it unsaved")
-            CaptureDaemon.deleteRecording(context, recfile)
-            CallLedger.noteSkipped(context, startedAt.time, incoming, call.seconds)
-            // A Calls tab on screen says so now, not at the next open.
-            _saved.tryEmit(recfile)
-            return Outcome.Skipped
-        }
-
-        val name = FileNames.build(format, startedAt.time, incoming, call?.party)
-        return write(context, recfile, listOf(Part.whole(name, incoming, startedAt.time)), ledger = true)
-    }
-
-    /**
-     * A recording Telecom told us about, cut to its calls: from the answer
-     * (an outgoing call's ringing is not kept), and with call waiting one file
-     * per call (CallTracking.segments). Each call is named and judged by the
-     * rules for itself. Nothing answered, nothing saved.
-     */
-    private suspend fun saveTracked(
-        context: Context,
-        recfile: String,
-        startedAt: Date,
-        incoming: Boolean,
-        calls: List<CallTracking.Tracked>,
-        format: FileNames.Format,
-        ruled: Boolean,
-    ): Outcome {
-        val segments = CallTracking.segments(startedAt.time, calls)
-        if (segments.isEmpty()) {
-            Log.i(TAG, "save: $recfile was never answered - only ringing, not saved")
-            CaptureDaemon.deleteRecording(context, recfile)
-            CallLedger.noteRecording(context, startedAt.time, incoming, 0)
-            _saved.tryEmit(recfile)
-            return Outcome.NotAnswered
-        }
-        // CallTracking.callsIn puts the recording's own call first.
-        val own = calls.first()
-        val wantWho = ruled || format != FileNames.Format.DATE
-        val parts = mutableListOf<Part>()
-        for (call in segments.map { it.first }.distinct()) {
-            val who = if (wantWho) identifyTracked(context, call) else null
-            if (ruled && who != null && !CallRules.keeps(context, who.contactId)) {
-                Log.i(TAG, "save: a call in $recfile is one the rules leave out - not saving it")
-                CallLedger.noteSkipped(context, call.id, call.incoming, call.seconds)
-                continue
+        val decision = SavePlan.decide(
+            lookups = PhoneLookups(context),
+            settings = SavePlan.Settings(format, ruled) { contactId -> CallRules.keeps(context, contactId) },
+            startedAt = startedAt.time,
+            incoming = incoming,
+            tracked = tracked,
+            tries = if (justEnded) IDENTIFY_TRIES else 1,
+        )
+        return when (decision) {
+            is SavePlan.Decision.NotAnswered -> {
+                Log.i(TAG, "save: $recfile was never answered - only ringing, not saved")
+                CaptureDaemon.deleteRecording(context, recfile)
+                CallLedger.noteRecording(context, decision.start, decision.incoming, 0)
+                _saved.tryEmit(recfile)
+                Outcome.NotAnswered
             }
-            // The recording's own call keeps the recording's start in its
-            // name, as every name always has (and as Honor's dialer matches);
-            // a call that came in during it starts where it was answered.
-            val start = if (call === own) startedAt.time else call.answeredAt
-            parts += Part(
-                name = FileNames.build(format, start, call.incoming, who?.party),
-                incoming = call.incoming,
-                startMillis = start,
-                packets = segments.filter { it.first === call }.map { it.second },
-            )
+            is SavePlan.Decision.LeaveOut -> {
+                Log.i(TAG, "save: $recfile is a call the rules leave out - deleting it unsaved")
+                CaptureDaemon.deleteRecording(context, recfile)
+                decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
+                // A Calls tab on screen says so now, not at the next open.
+                _saved.tryEmit(recfile)
+                Outcome.Skipped
+            }
+            is SavePlan.Decision.Save -> {
+                if (decision.leftOut.isNotEmpty()) {
+                    Log.i(TAG, "save: ${decision.leftOut.size} call(s) in $recfile are ones the rules leave out")
+                }
+                decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
+                write(context, recfile, decision.parts, ledger = true)
+            }
         }
-        if (parts.isEmpty()) {
-            CaptureDaemon.deleteRecording(context, recfile)
-            _saved.tryEmit(recfile)
-            return Outcome.Skipped
-        }
-        return write(context, recfile, parts, ledger = true)
     }
 
-    /** Who a tracked call was with: Telecom's number, with the call-log
-     *  permission only - the same consent, for the same fact. */
-    private fun identifyTracked(context: Context, call: CallTracking.Tracked): Identified? {
-        if (!CallLogLookup.granted(context)) return null
-        val contact = CallLogLookup.contactFor(context, call.number, mutableMapOf())
-        if (contact.failed) return null
-        return Identified(FileNames.Party(call.number, contact.name), contact.id, call.seconds)
+    /** The phone behind SavePlan: the contacts and the call log. */
+    private class PhoneLookups(private val context: Context) : SavePlan.Lookups {
+        private val contacts = mutableMapOf<String, CallLogLookup.Contact>()
+
+        /** The calls already recorded or left out, which this one is not. */
+        private val others by lazy { CallLedger.read(context).let { it.recordings + it.skipped } }
+
+        override val callLogAllowed: Boolean get() = CallLogLookup.granted(context)
+        override fun contact(number: String?) = CallLogLookup.contactFor(context, number, contacts)
+        override fun logged(start: Long, incoming: Boolean) = CallLogLookup.callFor(context, start, incoming, others)
+        override suspend fun pause() = delay(1_000)
     }
 
     /** A messenger call, named for its app and - when its notification said
@@ -244,7 +211,7 @@ object RecordingSaver {
     /**
      * One file a daemon recording is saved into, and which of its packets -
      * 20 ms each, counted from the first - go there. Usually one part with
-     * all of them; see saveTracked for the others.
+     * all of them; see SavePlan for the others.
      */
     internal class Part(
         val name: String,
@@ -382,38 +349,9 @@ object RecordingSaver {
         }
     }
 
-    /** Who a call was with, as the saver needs it. */
-    private class Identified(val party: FileNames.Party, val contactId: Long?, val seconds: Int)
-
     /** The call log is written as a call ends, and the save can get there
      *  first: asked this many times, a second apart. */
     private const val IDENTIFY_TRIES = 8
-
-    /**
-     * Who the call was with, from the call log and the contacts. Null without
-     * the log, or if it never shows the call - and then the rules keep the
-     * recording and the name is the date's: see CallRules, KEPT WHEN UNSURE.
-     */
-    private suspend fun identify(context: Context, startMillis: Long, incoming: Boolean, tries: Int): Identified? {
-        if (!CallLogLookup.granted(context)) return null
-        // The calls already recorded, which this one is not.
-        val others = CallLedger.read(context).let { it.recordings + it.skipped }
-        repeat(tries) { attempt ->
-            CallLogLookup.callFor(context, startMillis, incoming, others)?.let { entry ->
-                val contact = CallLogLookup.contactFor(context, entry.number, mutableMapOf())
-                // Who it was is not known if the contacts could not be asked.
-                if (contact.failed) return null
-                return Identified(
-                    FileNames.Party(entry.number, contact.name ?: entry.name),
-                    contact.id,
-                    entry.seconds,
-                )
-            }
-            if (attempt < tries - 1) delay(1_000)
-        }
-        Log.w(TAG, "save: the call log has no entry for the call at $startMillis")
-        return null
-    }
 
     /**
      * Whether the rules get a say in this call. Not when it was recorded
