@@ -125,6 +125,19 @@ public class CallStatesTest {
     }
 
     @Test
+    public void whatIsUpCanBeAsked() {
+        // Main asks, when a messenger call gives way to a phone call.
+        assertFalse(states.inCall());
+        states.ringing();
+        states.offHook();
+        assertTrue(states.inCall());
+        assertTrue(states.rang());
+        states.idle();
+        checkDue();
+        assertFalse(states.inCall());
+    }
+
+    @Test
     public void aCallRingingInsideTheEndCheckIsIncoming() {
         // Measured on the emulator, 2026-10-21: an outgoing call ended, the
         // next call rang inside the two-second end check, and the check's

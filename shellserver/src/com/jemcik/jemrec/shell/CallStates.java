@@ -131,6 +131,16 @@ final class CallStates {
         effects.callEnded();
     }
 
+    /** A phone call is up: off-hook, its end not yet confirmed. */
+    boolean inCall() {
+        return inCall;
+    }
+
+    /** The call that is up rang first: it is incoming. */
+    boolean rang() {
+        return sawRinging;
+    }
+
     private void cancelEndCheck() {
         if (endCheckPending) {
             endCheckPending = false;

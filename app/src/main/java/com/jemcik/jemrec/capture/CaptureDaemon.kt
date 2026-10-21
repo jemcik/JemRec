@@ -522,7 +522,10 @@ object CaptureDaemon {
     suspend fun setTracking(context: Context): Boolean = withContext(Dispatchers.IO) {
         val on = CallTracking.enabled(context)
         runCatching {
-            open(context, COMMAND_SET_TRACKING, byteArrayOf(if (on) 1 else 0), readMs = 3_000).use { socket ->
+            // Ten seconds: the daemon runs `cmd appops` for it, twice, and may
+            // be running them for a heartbeat at the same moment (one at a
+            // time, TRACKING_LOCK) - on a slow phone, past three.
+            open(context, COMMAND_SET_TRACKING, byteArrayOf(if (on) 1 else 0), readMs = 10_000).use { socket ->
                 socket.getInputStream().bufferedReader().readLine()?.startsWith("TRACK ") == true
             }
         }.getOrDefault(false)

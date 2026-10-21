@@ -14,6 +14,7 @@ sourceSets {
         java {
             setSrcDirs(listOf("../src"))
             include("com/jemcik/jemrec/shell/CallStates.java")
+            include("com/jemcik/jemrec/shell/Checks.java")
         }
     }
     test {
