@@ -90,6 +90,18 @@ class BehaviourTest : ScreenTest() {
         compose.onNodeWithText("Start fresh").assertIsDisplayed()
     }
 
+    @Test fun aSelfTestResultThatLandsElsewhereIsNotSavedUp() {
+        // It used to be marked seen only on the screens of Settings, so one
+        // that came in while home was up waited, and jumped Diagnostics to
+        // the bottom whenever it was next opened.
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.HOME, selfTestShown = 1L))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        assertEquals(0L, vm.state.value.selfTestShown)
+    }
+
     @Test fun connectedButtonsTellAScreenReaderWhichIsChosen() {
         show {
             var chosen by remember { mutableStateOf("All") }

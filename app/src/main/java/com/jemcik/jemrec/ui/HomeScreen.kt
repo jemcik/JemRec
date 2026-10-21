@@ -1149,22 +1149,32 @@ private fun YieldingRow(gap: Dp, content: @Composable () -> Unit) {
         val gapPx = gap.roundToPx()
         val loose = constraints.copy(minWidth = 0)
         val placeables = arrayOfNulls<Placeable>(measurables.size)
-        var room = constraints.maxWidth - gapPx * (measurables.size - 1).coerceAtLeast(0)
+        var room = constraints.maxWidth
+        var shownSoFar = 0
         measurables.forEachIndexed { i, piece ->
             if (piece.layoutId !is GivesWay) {
-                placeables[i] = piece.measure(loose.copy(maxWidth = Constraints.Infinity)).also { room -= it.width }
+                placeables[i] = piece.measure(loose.copy(maxWidth = Constraints.Infinity))
+                    .also { room -= it.width + if (shownSoFar++ > 0) gapPx else 0 }
             }
         }
+        // Each piece that gives way pays for the gap beside it only when it is
+        // shown: reserving gaps for pieces then dropped took room the time
+        // could have used.
         measurables.indices
             .filter { measurables[it].layoutId is GivesWay }
             .sortedByDescending { (measurables[it].layoutId as GivesWay).order }
             .forEach { i ->
                 val piece = measurables[i]
                 val rule = piece.layoutId as GivesWay
+                val available = room - if (shownSoFar > 0) gapPx else 0
                 val needs = if (rule.whole) piece.maxIntrinsicWidth(constraints.maxHeight) else rule.atLeast.roundToPx()
-                val fits = room > 0 && room >= needs
-                placeables[i] = piece.measure(loose.copy(maxWidth = if (fits) room.coerceAtLeast(0) else 0))
-                    .also { room -= it.width }
+                val fits = available > 0 && available >= needs
+                placeables[i] = piece.measure(loose.copy(maxWidth = if (fits) available else 0)).also {
+                    if (it.width > 0) {
+                        room = available - it.width
+                        shownSoFar++
+                    }
+                }
             }
         val shown = placeables.filterNotNull().filter { it.width > 0 }
         val width = (shown.sumOf { it.width } + gapPx * (shown.size - 1).coerceAtLeast(0))

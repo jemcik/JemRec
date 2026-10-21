@@ -222,6 +222,36 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
         // below, so this lives above them all - and Back lands where the tap
         // was. Each of those screens starts at its own top.
         val settingsScroll = rememberScrollState()
+        // Above the screens below, so it runs whichever is showing: in the
+        // branch with Settings, a result that came in while home or Recently
+        // deleted was up waited, and jumped Diagnostics to the bottom when it
+        // was next opened.
+        val subScroll = key(state.screen) { rememberScrollState() }
+        val scrollState = if (state.screen == Screen.SETTINGS || !ready) settingsScroll else subScroll
+        // A self-test's result lands in the log at the very bottom of
+        // Diagnostics - below the fold on a long log, so the user pressed
+        // the button and saw nothing move. Run the scroll to the end, so
+        // the answer is on screen instead of under a thumb.
+        LaunchedEffect(state.selfTestShown) {
+            // A self-test's result only: any other log line - a switch
+            // flipped with the recorder down, a folder chosen - jumped the
+            // page to the bottom, away from what the user was doing. And
+            // only one that lands on Diagnostics: a result that arrives
+            // after the user left is marked seen, not saved up to jump the
+            // page the next time Diagnostics opens.
+            if (state.selfTestShown > 0L && !inDiagnostics) vm.selfTestSeen()
+            if (inDiagnostics && state.selfTestShown > 0L) {
+                // The log is added/grown in this same frame and only
+                // measured after it, so the scroll range does not yet include
+                // it - reading maxValue now gives the OLD bottom, and the
+                // scroll goes nowhere. Wait two frames for layout to settle,
+                // then run to the real end.
+                withFrameNanos {}
+                withFrameNanos {}
+                scrollState.animateScrollTo(scrollState.maxValue)
+                vm.selfTestSeen()
+            }
+        }
         // The home screen is its own scrolling list (a LazyColumn with a pinned
         // header), so it must NOT be nested in a vertical scroll - two vertical
         // scrolls inside each other is both a crash and the wrong behaviour. It
@@ -237,32 +267,6 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
             // A list too, with its own scroll, for the same reason.
             TrashScreen(state, vm, modifier = Modifier.padding(padding))
         } else {
-            val subScroll = key(state.screen) { rememberScrollState() }
-            val scrollState = if (state.screen == Screen.SETTINGS || !ready) settingsScroll else subScroll
-            // A self-test's result lands in the log at the very bottom of
-            // Diagnostics - below the fold on a long log, so the user pressed
-            // the button and saw nothing move. Run the scroll to the end, so
-            // the answer is on screen instead of under a thumb.
-            LaunchedEffect(state.selfTestShown) {
-                // A self-test's result only: any other log line - a switch
-                // flipped with the recorder down, a folder chosen - jumped the
-                // page to the bottom, away from what the user was doing. And
-                // only one that lands on Diagnostics: a result that arrives
-                // after the user left is marked seen, not saved up to jump the
-                // page the next time Diagnostics opens.
-                if (state.selfTestShown > 0L && !inDiagnostics) vm.selfTestSeen()
-                if (inDiagnostics && state.selfTestShown > 0L) {
-                    // The log is added/grown in this same frame and only
-                    // measured after it, so the scroll range does not yet include
-                    // it - reading maxValue now gives the OLD bottom, and the
-                    // scroll goes nowhere. Wait two frames for layout to settle,
-                    // then run to the real end.
-                    withFrameNanos {}
-                    withFrameNanos {}
-                    scrollState.animateScrollTo(scrollState.maxValue)
-                    vm.selfTestSeen()
-                }
-            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
