@@ -19,7 +19,7 @@ messenger calls on Android 14 or newer; see [Messenger calls](#messenger-calls).
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-201-success)](#tests)
+[![Tests](https://img.shields.io/badge/tests-219-success)](#tests)
 
 <img src="docs/screenshots/home.png" width="16%" alt="The recordings list">
 <img src="docs/screenshots/calls.png" width="16%" alt="The calls tab">
@@ -346,6 +346,9 @@ recording says why, where JemRec knows:
 - **Left out by your rules** - a call *Whose calls to keep* left out. Also
   known for a week.
 - **Too short** - under five seconds.
+- **Recorded, not saved yet** - still on the recorder, collected when it can
+  be: after a restart, the next Wi-Fi; after a hang-up whose hand-over did not
+  land, the next pass.
 - **Recording was off**, or **Ask first, not recorded** - from a record of the
   switch and the mode that JemRec keeps from 0.12 on.
 - **Not recorded**, in red - recording was on and automatic, and still nothing
@@ -543,7 +546,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-201 JVM unit tests, no device needed - 194 for the app and 7 for the daemon:
+219 JVM unit tests, no device needed - 209 for the app and 10 for the daemon:
 
     ./gradlew test
 
@@ -565,7 +568,7 @@ Two of them hold the parts where 0.14 went wrong:
   rang within two seconds of the call before was recorded as outgoing.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.14.1):
+emulator, for each Android version it claims (12, 13 and 17 for 0.15):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 

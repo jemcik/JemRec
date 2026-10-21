@@ -157,15 +157,22 @@ class CallTracker : InCallService() {
     private fun collectSoon() {
         val context = applicationContext
         scope.launch {
-            delay(COLLECT_AFTER_MS)
-            runCatching { RecordingSaver.reconcile(context) }
-                .onFailure { Log.w(TAG, "calltrack: collecting after the call failed", it) }
+            // Twice: the daemon ends its file only once the audio mode has
+            // left the call, which can be seconds after Telecom says so - and
+            // a file still being written is not listed. Collecting twice is
+            // harmless (RecordingSaver claims and checks).
+            for (wait in COLLECT_AFTER_MS) {
+                delay(wait)
+                runCatching { RecordingSaver.reconcile(context) }
+                    .onFailure { Log.w(TAG, "calltrack: collecting after the call failed", it) }
+            }
         }
     }
 
     private companion object {
         const val TAG = "JemRec"
-        const val COLLECT_AFTER_MS = 5_000L
+        /** Five seconds after the last call, and fifteen after that. */
+        val COLLECT_AFTER_MS = longArrayOf(5_000L, 15_000L)
 
         /** Another call ended this recently: no skip (see decideEarly).
          *  Past the daemon's 2 s end check, with room to spare. */

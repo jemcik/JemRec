@@ -313,7 +313,8 @@ because removing them is JemRec's job.
 The **Calls** tab, beside Recordings, is your phone's call log. A call that was
 recorded has the ▶ beside its length and plays on a tap. A call that was not
 says why, where JemRec knows: **In Recently deleted**, **Recording deleted**,
-**Left out by your rules**, **Too short**, **Recording was off**, **Ask first,
+**Left out by your rules**, **Too short**, **Recorded, not saved yet** (still
+on the recorder, collected when it can be), **Recording was off**, **Ask first,
 not recorded**. **Not recorded**, in red, means recording was on and automatic
 and nothing was saved — run the self-test. JemRec remembers deleted and left-
 out calls for a week, so it says this only for the last week. **No recording**

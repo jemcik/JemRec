@@ -217,10 +217,16 @@ def tracked():
     return sorted(calls)
 
 
+RECORDINGS = "/sdcard/Recordings/JemRec"
+
+
 def saved():
-    """The save line of the call just over: (packets, seconds, file name)."""
-    m = wait_log(r"save: wrote (\d+) packets, ([\d.]+)s -> (.+)", 30, "the recording to be saved")
-    return int(m.group(1)), float(m.group(2)), m.group(3).strip()
+    """The call just over, as saved: (packets, seconds, file name). The log
+    line leaves the name out (a name with the caller in it is personal), so
+    the name is the newest file in the recordings folder."""
+    m = wait_log(r"save: wrote (\d+) packets, ([\d.]+)s from \S+", 30, "the recording to be saved")
+    newest = sh(f"ls -t {RECORDINGS}/").splitlines()
+    return int(m.group(1)), float(m.group(2)), (newest[0].strip() if newest else "")
 
 
 def exact(name_part):
