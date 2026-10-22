@@ -297,6 +297,7 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                         Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm)
                         Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
                         Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
+                        Screen.ANSWERING_MACHINE -> AnsweringMachineScreen(state, vm)
                         else -> SettingsScreen(state, vm)
                     }
                 }
@@ -361,6 +362,7 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
                                 Screen.WHOSE_CALLS -> "Whose calls to keep"
                                 Screen.MESSENGER_CALLS -> "Messenger calls"
                                 Screen.DIAGNOSTICS -> "Diagnostics"
+                                Screen.ANSWERING_MACHINE -> "Answering machine"
                                 Screen.TRASH -> "Recently deleted"
                                 else -> "Settings"
                             }

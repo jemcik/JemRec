@@ -224,6 +224,7 @@ object SelfTest {
 
         messengerCalls(context, watch, lines)?.let { return it }
         callTracking(context, watch, lines)?.let { return it }
+        answeringMachine(context, watch, lines)?.let { return it }
 
         when {
             !CallLogLookup.granted(context) ->
@@ -317,6 +318,31 @@ object SelfTest {
             return "exact call tracking is on, but Android has not allowed it for JemRec. $RESTART"
         }
         lines += "tracking:  on" + if (corrected) " (corrected)" else ""
+        return null
+    }
+
+    /**
+     * The answering machine: switched on here, and does the recorder know it,
+     * and hold the greeting? A recorder that does not is given both again.
+     */
+    private suspend fun answeringMachine(context: Context, watch: CaptureDaemon.Watch, lines: MutableList<String>): String? {
+        if (!AnsweringMachine.enabled(context)) {
+            lines += "answering: off"
+            return null
+        }
+        if (watch.answer == null) {
+            lines += "answering: not yet - the recorder is older than this app"
+            return null
+        }
+        var ok = watch.answer && watch.greeting == true
+        if (!ok) {
+            CaptureDaemon.syncGreeting(context)
+            CaptureDaemon.setAnswering(context)
+            ok = CaptureDaemon.watch(context)?.let { it.answer == true && it.greeting == true } == true
+            if (!ok) return "the answering machine is on, but the recorder does not have it. $RESTART"
+        }
+        lines += "answering: on, after ${AnsweringMachine.delay(context)} s, greeting in the recorder" +
+            (EmergencyPause.pausedUntil(context)?.let { ", paused after an emergency call until ${at(it)}" } ?: "")
         return null
     }
 

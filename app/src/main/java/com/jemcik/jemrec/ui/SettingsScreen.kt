@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -213,6 +214,16 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                     },
                     icon = Icons.Filled.Person,
                     onClick = { vm.showScreen(Screen.WHOSE_CALLS) },
+                    shape = shape,
+                )
+            }
+            row { shape ->
+                val answer by vm.answer.state.collectAsState()
+                SettingsRow(
+                    title = "Answering machine",
+                    summary = answerSummary(answer),
+                    icon = SettingsIcons.Voicemail,
+                    onClick = { vm.showScreen(Screen.ANSWERING_MACHINE) },
                     shape = shape,
                 )
             }

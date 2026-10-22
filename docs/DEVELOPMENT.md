@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-270 JVM tests, no device needed - 260 for the app and 10 for the daemon:
+419 JVM tests, no device needed - 317 for the app and 102 for the daemon:
 
     ./gradlew test
 
@@ -79,16 +79,29 @@ Two of the logic tests hold the parts where 0.14 went wrong:
   way a call went and when it ended, from telephony's events. A call that
   rang within two seconds of the call before was recorded as outgoing.
 
+And one holds the answering machine, whose mistakes would be heard by
+callers: **its states** (`AnswerMachine`, in `shellserver/tests`) - nothing
+answered without a go-ahead for the ring in progress, never during another
+call, the microphone always given back, and the phone's own unmute at the
+end of a call not taken for *Talk to them*.
+
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.16):
+emulator, for each Android version it claims (12, 13 and 17 for 0.17):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 
 It installs the debug build, sets JemRec up from nothing and places simulated
 calls: the ringing cut, an unanswered call not kept, an incoming call kept to
 the second, a stranger skipped before recording, two calls in quick
-succession, a caller-ID name, and the self-test. It refuses to run on anything
-but an emulator, and needs a `google_apis` image.
+succession, a caller-ID name, the self-test, and the answering machine: a
+message taken and marked with the microphone given back, a caller who hangs
+up during the greeting, a caller the rules leave out left to ring, a phone
+call ringing over a messenger call left to ring (a stand-in call from
+`shellserver/probe`, built by the script if need be), a caller left to ring
+in the day after an emergency call (the pause set as the call tracker sets it;
+no emergency number is dialled), and, in Ask first, a call taken over: the
+message kept and the rest asked about. It refuses to run on anything but an
+emulator, and needs a `google_apis` image.
 
 A pre-push hook runs the tests and lint before anything leaves the machine:
 

@@ -20,7 +20,8 @@ import kotlinx.coroutines.launch
  * process at the front while a call is up, which is what lets the end of a
  * call be acted on here rather than only through the daemon's wake.
  *
- * It reads; it never answers, holds or ends a call. Messenger calls are not
+ * It reads; it never answers, holds or ends a call - the answering machine is
+ * the recorder's doing, on a go-ahead from here (decideAnswer). Messenger calls are not
  * here: they are self-managed, and Telecom keeps them from a service like
  * this one unless it asks, which it does not.
  */
@@ -33,18 +34,124 @@ class CallTracker : InCallService() {
     /** The calls the rules left out, so their end is noted as such. */
     private val leftOut = mutableSetOf<Long>()
 
+    /** Emergency calls under way, so their end restarts the pause. */
+    private val emergencyCalls = mutableSetOf<Long>()
+
     override fun onCallAdded(call: Call) {
         call.registerCallback(callback)
+        // Before anything else, tracking on or not: the answering machine
+        // stands down for a day after it (EmergencyPause).
+        if (EmergencyPause.isEmergency(this, call)) {
+            emergencyCalls += call.details.creationTimeMillis
+            EmergencyPause.noteCall(this)
+        }
         // Switched off, and bound all the same - the daemon could not be told
         // to withdraw the permission yet: off means off, nothing is kept.
         if (!CallTracking.enabled(this)) return
         changed(call)
-        decideEarly(call)
+        // Whose calls to keep, asked once for both: the contacts lookup is
+        // the costly part of each, and the two must judge the caller alike.
+        val number = call.details.handle?.schemeSpecificPart
+        val keeps = lazy { rulesKeep(applicationContext, number) }
+        decideEarly(call, keeps)
+        decideAnswer(call, keeps)
+    }
+
+    /** Whose calls to keep, for [number]: true if kept - or no rules - false
+     *  if left out, null when it cannot be told: no call log or contacts,
+     *  or the lookup failed. */
+    private fun rulesKeep(context: Context, number: String?): Boolean? = when {
+        !CallRules.active(context) -> true
+        !CallLogLookup.granted(context) || !CallLogLookup.photosGranted(context) -> null
+        else -> CallLogLookup.contactFor(context, number, mutableMapOf())
+            .let { if (it.failed) null else CallRules.keeps(context, it.ids) }
+    }
+
+    /**
+     * The answering machine: should the recorder answer this ringing call,
+     * and after how long? Decided here, where the caller is known while the
+     * phone rings; the recorder runs the timer, and answers nothing without
+     * this go-ahead. Off the main thread: the rules and Do Not Disturb both
+     * read the contacts.
+     */
+    private fun decideAnswer(call: Call, keeps: Lazy<Boolean?>) {
+        val context = applicationContext
+        if (!AnsweringMachine.enabled(context)) return
+        if (call.details.callDirection != Call.Details.DIRECTION_INCOMING || call.state != Call.STATE_RINGING) return
+        // Sent with the go-ahead, so one that comes too late for its own
+        // ring is never taken for the next caller's. The recorder's clock:
+        // since boot, the same in both processes, and a wall-clock step
+        // before the go-ahead lands does not move it.
+        val rangAt = android.os.SystemClock.elapsedRealtime()
+        val others = calls.size - 1
+        val handle = call.details.handle
+        val account = call.details.accountHandle?.id
+        val emergencyCallback = EmergencyPause.isCallback(call.details)
+        val telecomLast = EmergencyPause.telecomLast(call.details)
+        // Kept, so the answering machine's screen and the self-test show the
+        // pause that Telecom's record starts too.
+        EmergencyPause.noteTelecom(context, telecomLast)
+        scope.launch {
+            // The SIMs as they are now, not as the settings screen last saw
+            // them: the default can change, and a SIM come, in between.
+            CaptureDaemon.sims(context)?.let { AnswerConditions.remember(context, it) }
+            val decision = runCatching {
+                AnsweringMachine.decide(
+                    ringing(context, others, handle, account, keeps).copy(
+                        emergencyCallback = emergencyCallback,
+                        emergencyPaused = EmergencyPause.pausedUntil(context, telecomLast) != null,
+                    ),
+                )
+            }.getOrElse { AnsweringMachine.Decision.No("could not decide: ${it.javaClass.simpleName}") }
+            when (decision) {
+                is AnsweringMachine.Decision.Answer -> {
+                    Log.i(TAG, "calltrack: answering machine - answer after ${decision.delaySeconds} s")
+                    goAheads.trySend(GoAhead(context, decision.delaySeconds * 1000, rangAt))
+                }
+                is AnsweringMachine.Decision.No -> Log.i(TAG, "calltrack: answering machine - not answering: ${decision.why}")
+            }
+        }
+    }
+
+    private fun ringing(
+        context: Context,
+        others: Int,
+        handle: android.net.Uri?,
+        account: String?,
+        keeps: Lazy<Boolean?>,
+    ): AnsweringMachine.Ringing {
+        return AnsweringMachine.Ringing(
+            enabled = AnsweringMachine.enabled(context),
+            greeting = Greeting.present(context),
+            recorderOn = RecorderSwitch.isOn(context),
+            trackingOn = CallTracking.enabled(context),
+            otherCalls = others,
+            // The default SIM's, not necessarily the ringing one's: the
+            // app cannot read another SIM's without a phone permission.
+            // Unknown counts as roaming: a call is never answered on a guess.
+            roaming = runCatching {
+                context.getSystemService(android.telephony.TelephonyManager::class.java).isNetworkRoaming
+            }.getOrDefault(true),
+            rulesKeep = keeps.value,
+            dndSilences = AnswerConditions.dndSilences(context, handle),
+            delay = AnsweringMachine.delay(context),
+            dndShort = AnsweringMachine.dndShort(context),
+            simAllowed = AnswerConditions.simAllowed(context, account),
+            // Messenger calls are invisible to this service (Telecom shows it
+            // only calls it manages); the audio mode is theirs while they run.
+            otherAppCall = runCatching {
+                context.getSystemService(android.media.AudioManager::class.java).mode ==
+                    android.media.AudioManager.MODE_IN_COMMUNICATION
+            }.getOrDefault(false),
+        )
     }
 
     override fun onCallRemoved(call: Call) {
         call.unregisterCallback(callback)
         val id = call.details.creationTimeMillis
+        // The day is counted from the emergency call's end. The network can
+        // mark one only once it is up: asked again here.
+        if (emergencyCalls.remove(id) || EmergencyPause.isEmergency(this, call)) EmergencyPause.noteCall(this)
         wasActive -= id
         val wasLeftOut = leftOut.remove(id)
         if (wasLeftOut) {
@@ -98,7 +205,19 @@ class CallTracker : InCallService() {
                 else -> base
             }
         }
+        val becameActive = call.state == Call.STATE_ACTIVE && wasActive[id] != true
         wasActive[id] = call.state == Call.STATE_ACTIVE
+        // A second call answered - a waiting one, or one the user placed -
+        // while the answering machine may be taking a message on the first:
+        // the user is back, and this call is theirs. Left to the machine, the
+        // greeting would play into it, their microphone stay muted, and the
+        // message's limit hang it up. Talking takes the message over, as
+        // Talk to them does; with no message being taken the recorder
+        // ignores it.
+        if (becameActive && calls.size > 1) {
+            val context = applicationContext
+            scope.launch { CaptureDaemon.handOver(context, talk = true) }
+        }
     }
 
     /** Whether each call was active at its last change, so a repeat of
@@ -132,18 +251,15 @@ class CallTracker : InCallService() {
      * off-hook in them joins that recording. A skip would then stop it - the
      * kept call's audio with it - where the saver splits the two instead.
      */
-    private fun decideEarly(call: Call) {
+    private fun decideEarly(call: Call, keeps: Lazy<Boolean?>) {
         val context = applicationContext
         if (calls.size > 1) return
         val id = call.details.creationTimeMillis
         val now = System.currentTimeMillis()
         if (CallTracking.calls(context).any { it.id != id && it.endedAt > now - RECENT_END_MS }) return
-        if (!CallRules.active(context)) return
-        if (!CallLogLookup.granted(context) || !CallLogLookup.photosGranted(context)) return
         if (!RecorderSwitch.isOn(context) || RecordingMode.of(context) != RecordingMode.AUTOMATIC) return
-        val number = call.details.handle?.schemeSpecificPart
-        val contact = CallLogLookup.contactFor(context, number, mutableMapOf())
-        if (contact.failed || CallRules.keeps(context, contact.ids)) return
+        // Kept, no rules, or no telling: recorded.
+        if (keeps.value != false) return
         leftOut += id
         Log.i(TAG, "calltrack: the rules leave this call out; telling the recorder")
         skips.trySend(context to true)
@@ -181,6 +297,20 @@ class CallTracker : InCallService() {
         /** Not tied to the service: Telecom unbinds it the moment the last
          *  call goes, and the collection after it must still run. */
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /** A go-ahead for the answering machine: the delay, and when the
+         *  ring it is for was seen. */
+        class GoAhead(val context: Context, val delayMs: Int, val rangAt: Long)
+
+        /** Go-aheads, in order - like the skips, and on the same scope. */
+        val goAheads = Channel<GoAhead>(Channel.UNLIMITED).also { channel ->
+            scope.launch {
+                for (go in channel) {
+                    val state = CaptureDaemon.goAhead(go.context, go.delayMs, go.rangAt)
+                    Log.i(TAG, "calltrack: answering machine go-ahead -> ${state ?: "the recorder did not take it"}")
+                }
+            }
+        }
 
         /**
          * Skips (true) and their take-backs (false), to the daemon one at a

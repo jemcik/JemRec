@@ -275,6 +275,10 @@ final class Voip {
         /** A tick is posted, so a mode change does not start a second loop. */
         private boolean ticking;
         private String active;
+        /** The uid of [active]'s app, to ask whether it is still in its call. */
+        private int activeUid = -1;
+        /** The mode left "communication" while the app still talked; said once. */
+        private boolean heldOver;
         private long leftAt;
         /** The app last reported as calling but not switched on, so it is
          *  said once per call, not twice a second. */
@@ -329,6 +333,8 @@ final class Voip {
             if (active != null) {
                 Ln.i("voip: no longer watching; ending the call in " + active);
                 active = null;
+                activeUid = -1;
+                heldOver = false;
                 listener.onVoipCallEnd();
             }
         }
@@ -369,7 +375,20 @@ final class Voip {
             }
             if (inCommunication) {
                 leftAt = 0;
+                heldOver = false;
                 guard(active);
+                return;
+            }
+            boolean stillCalling = activeUid >= 0 && callingUids(audio, false).contains(activeUid);
+            if (Checks.messengerCallGoesOn(mode, stillCalling)) {
+                // A phone call ringing over it took the mode; the messenger
+                // call itself goes on, and so does its recording.
+                leftAt = 0;
+                if (!heldOver) {
+                    heldOver = true;
+                    Ln.i("voip: the audio mode left the call (" + mode + ") but " + active
+                            + " still plays and captures call audio - recording on");
+                }
                 return;
             }
             long now = SystemClock.elapsedRealtime();
@@ -378,6 +397,8 @@ final class Voip {
             } else if (now - leftAt >= END_CONFIRM_MS) {
                 Ln.i("voip: call in " + active + " ended (audio mode " + mode + ")");
                 active = null;
+                activeUid = -1;
+                heldOver = false;
                 leftAt = 0;
                 listener.onVoipCallEnd();
             }
@@ -386,26 +407,14 @@ final class Voip {
         /** An app on the list that is playing voice-call audio and capturing:
          *  a call, not a voice message. */
         private String callingApp() {
-            Set<Integer> playing = new HashSet<>();
-            for (AudioPlaybackConfiguration p : audio.getActivePlaybackConfigurations()) {
-                if (p.getAudioAttributes().getUsage() == AudioAttributes.USAGE_VOICE_COMMUNICATION) {
-                    Integer uid = uidOf(p);
-                    if (uid != null) {
-                        playing.add(uid);
-                    }
-                }
-            }
-            for (AudioRecordingConfiguration r : audio.getActiveRecordingConfigurations()) {
-                Integer uid = uidOf(r);
-                if (uid == null || uid == android.os.Process.myUid() || !playing.contains(uid)) {
-                    continue;
-                }
+            for (int uid : callingUids(audio, false)) {
                 String[] packages = FakeContext.get().getPackageManager().getPackagesForUid(uid);
                 if (packages == null) {
                     continue;
                 }
                 for (String pkg : packages) {
                     if (apps.contains(pkg)) {
+                        activeUid = uid;
                         return pkg;
                     }
                 }
@@ -442,6 +451,31 @@ final class Voip {
                 }
             }
         }
+    }
+
+    /**
+     * The apps in a call right now - any app, switched on here or not: each
+     * playing voice-call audio and capturing at once, which a call does and a
+     * voice message does not. This process too only when [withThisProcess].
+     */
+    static Set<Integer> callingUids(AudioManager audio, boolean withThisProcess) {
+        Set<Integer> playing = new HashSet<>();
+        for (AudioPlaybackConfiguration p : audio.getActivePlaybackConfigurations()) {
+            if (p.getAudioAttributes().getUsage() == AudioAttributes.USAGE_VOICE_COMMUNICATION) {
+                Integer uid = uidOf(p);
+                if (uid != null) {
+                    playing.add(uid);
+                }
+            }
+        }
+        Set<Integer> calling = new HashSet<>();
+        for (AudioRecordingConfiguration r : audio.getActiveRecordingConfigurations()) {
+            Integer uid = uidOf(r);
+            if (uid != null && (withThisProcess || uid != android.os.Process.myUid()) && playing.contains(uid)) {
+                calling.add(uid);
+            }
+        }
+        return calling;
     }
 
     /** getClientUid is a system API: by reflection, or null. */

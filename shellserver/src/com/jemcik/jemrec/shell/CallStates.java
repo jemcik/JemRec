@@ -41,6 +41,10 @@ final class CallStates {
         /** Whether telecom still holds a call's audio mode. */
         boolean audioInCall();
 
+        /** An idle came, and the call is still up after it: whatever else
+         *  took that idle for the end can think again. */
+        void callGoesOn();
+
         void log(String message);
     }
 
@@ -124,6 +128,7 @@ final class CallStates {
             // audio mode, which will.
             endCheckPending = true;
             effects.scheduleEndCheck(END_CHECK_MS);
+            effects.callGoesOn();
             return;
         }
         inCall = false;

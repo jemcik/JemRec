@@ -40,12 +40,13 @@ PKG = "com.jemcik.jemrec"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "screenshots"
 # The F-Droid listing. fastlane orders screenshots by file name, so these are
-# numbered; the same six shots the README shows, at full resolution.
+# numbered; the shots the README and the site show, at full resolution.
 LISTING = ROOT / "fastlane" / "metadata" / "android" / "en-US" / "images" / "phoneScreenshots"
 LISTING_ORDER = (
     ("light", "home"),
     ("light", "calls"),
     ("light", "settings"),
+    ("light", "answering"),
     ("light", "selftest"),
     ("dark", "home"),
     ("dark", "selftest"),
@@ -211,6 +212,13 @@ def shoot(theme: str) -> None:
         return
     grab(into / "settings.png")
 
+    # The answering machine's own screen: real, as the phone has it - the
+    # greeting's length and the test results are this phone's.
+    if tap("Answering machine", "the answering machine row", exact=True):
+        grab(into / "answering.png")
+        shell("input keyevent KEYCODE_BACK")
+        time.sleep(1)
+
     # Diagnostics is its own screen, the last row of Settings: scroll until the
     # row is on screen (not a fixed distance - one swipe stopped being enough
     # the day Settings gained a card), open it, run the test, and let the
@@ -234,7 +242,7 @@ def thumbnails() -> None:
     from PIL import Image
 
     for theme in THEMES:
-        for name in ("home", "calls", "settings", "selftest"):
+        for name in ("home", "calls", "settings", "answering", "selftest"):
             source = OUT / theme / f"{name}.png"
             if not source.exists():
                 continue

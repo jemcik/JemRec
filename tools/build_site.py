@@ -369,9 +369,9 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .after-steps { margin: 1.4rem 0 0; color: var(--ink-mid); max-width: 46rem; }
 @media (max-width: 54rem) { .steps { grid-template-columns: minmax(0, 1fr); } }
 
-/* A row of four, or on a phone a strip that scrolls sideways and stops on each
-   one - four phones stacked would be four screens of scrolling. */
-.gallery { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.6rem; }
+/* A row of five, or on a phone a strip that scrolls sideways and stops on each
+   one - five phones stacked would be five screens of scrolling. */
+.gallery { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1.4rem; }
 .gallery figure { margin: 0; text-align: center; }
 .gallery figcaption { margin-top: 1rem; }
 .gallery figcaption strong { display: block; }
@@ -403,6 +403,7 @@ main.home { max-width: none; padding: 0 0 2rem; }
   transition: border-color .15s, transform .15s;
 }
 .tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+.tile.wide { grid-column: 1 / -1; }
 .tile span { color: var(--ink-mid); font-size: .93rem; margin-top: .4rem; flex: 1; }
 .tile em { font-style: normal; font-weight: 600; font-size: .88rem; color: var(--accent); margin-top: .9rem; }
 .tiles-note { color: var(--ink-mid); margin: 1.4rem 0 0; }
@@ -947,9 +948,12 @@ SETUP = [
         "With call waiting, each call gets its own recording.",
         "Whose calls to keep decides before anything is recorded.",
     ]),
-    ("p", "JemRec only reads this. It never answers, holds or ends a call, and "
-          "shows no screen of its own during one. Turned off, JemRec records "
-          "from the moment the phone goes off-hook, as it did before 0.14."),
+    ("p", "Tracking only reads this: it never answers, holds or ends a call, and "
+          "shows no screen of its own during one. The one thing that ever "
+          "answers a call is the answering machine, below, when you switch it "
+          "on. Turned off, JemRec records from the moment the phone goes "
+          "off-hook, as it did before 0.14, and the answering machine, which "
+          "needs it, answers nothing."),
 
     ("h2", "Whose calls to keep"),
     ("p", "**Whose calls to keep**, in Settings, narrows down which calls are "
@@ -1015,6 +1019,90 @@ SETUP = [
     ("p", "Tested on an Honor with Viber, Telegram and WhatsApp, both directions. "
           "Signal takes the same path and has not been tested yet."),
 
+    ("h2", "The answering machine"),
+    ("p", "**Answering machine**, in Settings, answers the phone calls you do not "
+          "take, plays a greeting you recorded, and keeps what the caller says as "
+          "a recording. Phone calls only: not WhatsApp, Telegram or Viber calls. It is off until you turn it on, and it needs two things "
+          "first: your greeting, and the checks under *Test on this phone*."),
+    ("p", "**Your greeting.** Tap **Record**, say it, and tap **Stop** — 30 "
+          "seconds at most. JemRec trims the silence at both ends and evens the "
+          "level, because the caller hears it at full volume. Tap the row to "
+          "hear it; **Record again** replaces it. Callers hear what you said and "
+          "then a beep, nothing else."),
+    ("p", "**When it answers**"),
+    ("ul", [
+        "**Answer after** — 5 to 30 seconds of ringing. Your carrier's own "
+        "voicemail, if you have it, takes calls after its own timer, so this "
+        "has to be shorter; once you have asked your carrier (below), the row "
+        "says if its voicemail would answer first.",
+        "**With Do Not Disturb on** — after two rings, about 5 seconds, for "
+        "callers Do Not Disturb would silence. Callers it lets through ring as "
+        "usual.",
+        "**Answer on** — with two SIMs, which one: your default for calls, or "
+        "both.",
+        "**Longest message** — how long a caller can speak after the beep: 30 "
+        "seconds, 1 minute or 2 minutes. Then JemRec hangs up, and the message "
+        "is saved. Or **No limit**, which asks first: the call then lasts until "
+        "the caller hangs up or has been silent for 30 seconds, and your phone "
+        "is in it until then - a caller somewhere noisy may never count as "
+        "silent.",
+    ]),
+    ("p", "**Who it answers** is not a setting of its own: it answers only the "
+          "callers JemRec records, so **Whose calls to keep** applies to both. "
+          "It never answers while you are on another call - a phone call, a "
+          "messenger call or a meeting - while roaming, or while recording is "
+          "off, and a caller JemRec cannot identify is left to ring. It needs Exact call tracking."),
+    ("p", "**After you call an emergency number** it stands down for a day, so "
+          "an emergency service calling you back - from any number - rings until "
+          "you can pick up; a call the network marks as their callback is never "
+          "answered. The switch says until when, and **Answer again now** ends "
+          "the pause early, after a warning. iPhone does the same with its call "
+          "screening, for 24 hours."),
+    ("p", "**While it takes a message**, your microphone is muted: the caller "
+          "hears your greeting, the beep, and nothing of the room you are in. A "
+          "notification, **Taking a message**, has **Talk to them** — the "
+          "greeting stops, your microphone opens and the call is yours — and "
+          "**Hang up**. Unmuting on the call screen takes the call too, and so "
+          "does answering a second call, one waiting or one you place. A call you "
+          "take is saved as an ordinary recording, not a message, from just "
+          "before you took it - or from the caller's first words, if they spoke "
+          "first. In **Ask first** it is not: taking the call ends the message "
+          "there - what the caller said is kept as the message - and you are "
+          "asked, as at the start of any call, whether to record the rest. "
+          "Answering machines have always stopped recording when picked up."),
+    ("p", "**The message** is saved like any recording, from just before the "
+          "caller starts speaking, so it does not begin with them listening to "
+          "your greeting. It has a message icon, the **Messages** chip above "
+          "the list shows only messages, and a notification with a sound says "
+          "who left it. Auto-delete for short calls never removes one. A caller "
+          "who hangs up during the greeting without a word leaves nothing; the "
+          "Calls tab says **Hung up during the greeting**."),
+    ("p", "**Test on this phone.** No app can play sound into a call, so the "
+          "recorder does it, as the shell, and whether a phone carries it to "
+          "the caller depends on its audio hardware. These tell you:"),
+    ("ul", [
+        "**Checks** — a second, and no call: whether the recorder has what it "
+        "needs and the phone has a way to play into a call. The switch can be "
+        "turned on once they pass.",
+        "**Test call** — best, someone calls you: the next call within three "
+        "minutes is answered with a short tone and your greeting, whoever is "
+        "calling, and then you are asked whether they heard it - not in the "
+        "day after an emergency call, when that caller may be them. Or JemRec "
+        "calls a number that answers by itself, such as your carrier's "
+        "information line, and measures what it can; never an emergency "
+        "number. 2G, VoLTE and Wi-Fi Calling are kept apart, because each "
+        "takes its own path.",
+        "**Carrier voicemail** — asks your carrier when its voicemail answers, "
+        "and can make it wait the longest it allows, 30 seconds. Your "
+        "carrier's voicemail then still takes the calls JemRec does not. It is "
+        "your carrier's setting, so it stays if JemRec goes.",
+        "**Copy a report** — this phone and what the tests found, with nothing "
+        "about any call, to paste into a report on GitHub.",
+    ]),
+    ("p", "Experimental. Tested on an Honor, on 2G calls; its carrier would not "
+          "register it for VoLTE. On a phone not tried yet, the test call is how "
+          "to know."),
+
     ("h2", "Playing, sharing and deleting"),
     ("p", "Recordings are listed newest first, under **Today**, **Yesterday** "
           "and **Earlier**. "
@@ -1049,14 +1137,19 @@ SETUP = [
     ("h2", "The Calls tab"),
     ("p", "The **Calls** tab, beside Recordings, is your phone's call log, under "
           "the same day headings. A call "
-          "that was recorded has the ▶ beside its length and plays on a tap. A call "
+          "that was recorded has the ▶ beside its length and plays on a tap; one "
+          "the answering machine took says **Message**. A call "
           "that was not says why, where JemRec knows: **In Recently deleted**, "
           "**Recording deleted**, **Left out by your rules**, **Too short**, "
           "**Recorded, not saved yet** (still on the recorder, collected when it "
           "can be), "
-          "**Recording was off**, **Ask first, not recorded**. **Not recorded**, "
+          "**Recording was off**, **Ask first, not recorded**, **Hung up during "
+          "the greeting**, **Answering machine test**. **Not recorded**, "
           "in red, means recording was on and automatic and nothing was saved — "
-          "run the self-test. JemRec remembers deleted and left-out calls for a "
+          "run the self-test. **Greeting could not play**, in red too, means the "
+          "answering machine answered and hung up without taking a message - "
+          "the greeting would not play, or your microphone would not mute — run "
+          "its test call. JemRec remembers deleted and left-out calls for a "
           "week, so it says this only for the last week. **No recording** is an "
           "older call, or one from before JemRec kept track, with no guess at "
           "why. Missed, declined and blocked calls are marked as such."),
@@ -1134,6 +1227,15 @@ SETUP = [
         ["**A call was not recorded**", "An answered call in your call log has no "
          "recording. Only in Record every call mode, and only with call log "
          "access. Run the self-test."],
+        ["**Call not recorded**", "A call was recorded but could not be saved, or no "
+         "call audio came through - or the answering machine answered and could "
+         "not play your greeting, so it hung up. The notification says which; "
+         "for the greeting, run the answering machine's test call."],
+        ["**Taking a message**", "The answering machine has a caller. **Talk to "
+         "them** takes the call; **Hang up** ends it."],
+        ["**Message from** the caller", "A message, with a sound, Play, Share and "
+         "Delete. It stays until you dismiss it, whether or not each call is "
+         "shown when it ends."],
     ])),
 
     ("h2", "Settings"),
@@ -1149,6 +1251,8 @@ SETUP = [
         "**Record every call** — record everything, or be asked each time.",
         "**Whose calls to keep** — your contacts (all, all but some, only some, "
         "or none) and numbers not in your contacts. Needs Show who called.",
+        "**Answering machine** — off until you turn it on; see The answering "
+        "machine.",
         "**Messenger calls** — a switch for each supported messenger installed, "
         "and whether to show who called from their call notifications.",
         "**Exact call tracking** — recordings start at the answer, and calls "
@@ -1237,7 +1341,12 @@ SETUP = [
              "*Wireless debugging → Paired devices*; remove it there with the "
              "gear beside it. Developer options stays on if you turned it on. And "
              "Start fresh leaves the one privileged setting granted, because "
-             "handing it back would kill the app halfway through the reset."),
+             "handing it back would kill the app halfway through the reset. If "
+             "you tapped **Wait 30 seconds** under *Carrier voicemail*, your "
+             "carrier still waits 30 seconds before its voicemail answers: that "
+             "timer is your carrier's, not the phone's, and JemRec did not keep "
+             "what it was before. Ask your carrier to set it back if you want "
+             "the shorter wait."),
 
     ("h2", "Two honest warnings"),
     ("p", "**The other person is being recorded too.** Whether you may do that "
@@ -1568,6 +1677,7 @@ SCREENS = [
     ("home", "Recordings", "By day, with who each call was with."),
     ("calls", "Calls", "Your call log, each call with its recording &mdash; or why there is none."),
     ("settings", "Settings", "Every choice at a glance, each one a tap away."),
+    ("answering", "Answering machine", "Your greeting, when it answers, and a test call to prove it."),
     ("selftest", "Self-test", "Whether your phone hands over both sides, in a second."),
 ]
 
@@ -1606,11 +1716,22 @@ FEATURES = [
      "A notification after each call, and one when a recording is silent, the "
      "recorder is down, or a call went unrecorded.",
      "what-the-app-tells-you"),
+    # Across the whole grid, so the eight above stay four by two.
+    ("Answering machine",
+     "Off until you switch it on. Answers a phone call you have not taken after 5 to "
+     "30 seconds &mdash; after two rings when Do Not Disturb would silence the "
+     "caller &mdash; plays the greeting you recorded and keeps the message, by "
+     "the same rules as recording. Take the call or hang up from its "
+     "notification while they speak. It stands down for a day after you call "
+     "an emergency number. A test call tells you whether it works on your "
+     "phone.",
+     "the-answering-machine", "wide"),
 ]
 
 PRIVACY_POINTS = [
     ("mic", "No microphone permission",
-     "The app never opens an audio device; the recorder does the capturing."),
+     "The app never records; the recorder does the capturing &mdash; calls, "
+     "and your answering-machine greeting."),
     ("cloud", "Nothing leaves the phone",
      "No account, no server, no analytics, and nothing is collected about you."),
     ("person", "Calls and contacts only if you allow them",
@@ -1629,6 +1750,15 @@ FAQ = [
      "about a second. On speakerphone, a messenger call&rsquo;s other person is "
      "heard on your side too: your side is the plain microphone, without the "
      "call app&rsquo;s echo cancellation."),
+    ("Will callers hear my greeting?",
+     "On the Honor it was developed on, yes. No app can play sound into a call, "
+     "so the recorder does it as the shell, through an output Android calls "
+     "<em>in-call music</em>; not every phone has one. Before you switch the "
+     "answering machine on, its <em>Checks</em> tell you in a second whether "
+     "yours does, and a <em>Test call</em> settles it for that kind of call: "
+     "2G, VoLTE and Wi-Fi Calling differ. Your microphone is muted while the "
+     "greeting plays and the message is left, so the caller hears your greeting "
+     "and nothing of your room."),
     ("Why does it need Wi-Fi?",
      "Only to <em>start</em> the recorder: that is the one step that needs "
      "Wireless debugging, which Android runs over Wi-Fi. Once started, the "
@@ -1739,7 +1869,7 @@ INDEX_BODY = f"""
   <h2>What you can do</h2>
   <p class="intro">Each of these has its section in the manual.</p>
   <div class="tiles">
-    {"".join(f'<a class="tile" href="setup.html#{anchor}"><strong>{t}</strong><span>{text}</span><em>More &rarr;</em></a>' for t, text, anchor in FEATURES)}
+    {"".join(f'<a class="{" ".join(["tile", *wide])}" href="setup.html#{anchor}"><strong>{t}</strong><span>{text}</span><em>More &rarr;</em></a>' for t, text, anchor, *wide in FEATURES)}
   </div>
   <p class="tiles-note">Recordings are Opus files in the phone&rsquo;s standard
      <code>Recordings/JemRec</code> folder, where any file manager or music app
@@ -1797,7 +1927,7 @@ INDEX_BODY = f"""
       </table>
     </div>
     <ul class="table-card devices tested">
-      <li>Honor Magic 8 Pro<span>MagicOS 10, Android 16 &mdash; the phone it was developed on</span></li>
+      <li>Honor Magic 8 Pro<span>MagicOS 10 and 11, Android 16 and 17 &mdash; the phone it was developed on</span></li>
       <li>Samsung Galaxy S20<span>One UI</span></li>
       <li>OnePlus<span>LineageOS 23</span></li>
     </ul>
@@ -1809,6 +1939,10 @@ INDEX_BODY = f"""
        can promise for a phone they have not held is its audio hardware: some
        hand over both sides of the call, some one, some silence. The
        <strong>Self-test</strong> answers it on yours in about a second.</p>
+    <p><strong>The answering machine</strong> has been tried on the Honor, on
+       2G calls; its carrier would not register it for VoLTE. Whether a phone
+       carries a greeting to the caller is up to its audio hardware too, so the
+       answering machine has its own checks and a test call.</p>
   </div>
 </section>
 
@@ -1916,6 +2050,14 @@ HOW_BODY = f"""
      same path and is not tested yet. Android allows this from version 14; on
      an older one, Settings says so.</p>
 
+  <h3>An answering machine, if you want one</h3>
+  <p>Off until you switch it on. It answers a call you have not taken, plays
+     your own greeting with your microphone muted, and keeps the caller&rsquo;s
+     message. No app can play sound into a call, so the recorder does it, as the
+     shell, through an output Android calls in-call music. Android&rsquo;s own
+     answer on whether a phone can do that was wrong on the Honor, so a test
+     call, not a guess, says whether it works on yours.</p>
+
   <h3>It tells you when something is wrong</h3>
   <p>A recorder that fails quietly is found out on the day a call was needed. So
      after each call a silent notification shows the recording, with Play, Share
@@ -1929,14 +2071,15 @@ HOW_BODY = f"""
   <h3>Every call, recorded or not</h3>
   <p>A Calls tab shows the phone's call log with a play mark on each recorded
      call, and, on one that was not recorded, why: recording was off, it was too
-     short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
-     it.</p>
+     short, it is in Recently deleted, or &mdash; in red &mdash; the answering
+     machine could not take a message, or nothing explains it.</p>
 
   <h3>Cut to the call</h3>
   <p>A recording starts when the call is answered, not when you dial: no
      ringing at the start, and a call nobody picked up is not kept. With call
      waiting, each call gets a recording of its own. Android tells JemRec when
-     each call is answered; JemRec only listens, and never touches a call.</p>
+     each call is answered; tracking only listens. The one thing that ever
+     answers a call is the answering machine, when you switch it on.</p>
 
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
@@ -1953,8 +2096,9 @@ HOW_BODY = f"""
      app.</p>
 
   <h2 id="permissions">What it asks for, and what it does not</h2>
-  <p>No microphone permission. The app never opens an audio device &mdash; the
-     shell-side process does the capturing &mdash; and a call recorder that asks
+  <p>No microphone permission. The app never records &mdash; the shell-side
+     process does the capturing, your answering-machine greeting included
+     &mdash; and a call recorder that asks
      for the microphone anyway is asking for something it does not use. Reading
      your call log and contacts is optional, offered once, and is used for two
      things only: labelling a recording with who the call was with, and noticing
@@ -1975,7 +2119,7 @@ HOW_BODY = f"""
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>
     <tr><td><code>READ_MEDIA_AUDIO</code></td><td>To list recordings made before a reinstall. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
-    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. JemRec never acts on a call.</td></tr>
+    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
     <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
     <tr><td><code>WAKE_LOCK</code></td><td>Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work.</td></tr>
   </table>
@@ -2019,7 +2163,19 @@ PRIVACY_BODY = f"""
             choose. Yours to play, share, move or delete like any other file. One
             deleted in JemRec waits 30 days in Recently deleted, then is removed:
             in the standard folder, Android&rsquo;s own trash does that; in a
-            folder you chose, it waits as a hidden file that JemRec removes.</td></tr>
+            folder you chose, it waits as a hidden file that JemRec removes.
+            Messages the answering machine took are recordings too; which ones
+            are messages is kept by file name in the app&rsquo;s private
+            storage.</td></tr>
+    <tr><td>Your greeting</td>
+        <td>Only if you record one for the answering machine: in the app&rsquo;s
+            private storage, and a copy the recorder plays from. Deleting it in
+            the app deletes both, and so does uninstalling.</td></tr>
+    <tr><td>Answering machine tests</td>
+        <td>What its checks found about the phone, and the result of each test
+            call by call type (2G, VoLTE, Wi-Fi Calling). No numbers, no
+            names. <em>Copy a report</em> puts them on the clipboard, only when
+            you tap it.</td></tr>
     <tr><td>Contact names and photos</td>
         <td>Read from the phone&rsquo;s own call log and contacts, only if you
             allow it, to label a recording, to show the Calls tab, to keep or
@@ -2048,11 +2204,17 @@ PRIVACY_BODY = f"""
             name; one named with the caller has it in the file name.</td></tr>
     <tr><td>Call times</td>
         <td>When each recorded call started, which way it went and how long it
-            lasted, the time of any call the app told you was not recorded, and
-            of any call your choice of whose calls to keep left out.
-            No names, no numbers. Kept in the app&rsquo;s private storage for seven
-            days, so the missed-call check never reports a call twice or takes a
-            recording you deleted for a call that was missed. Also when recording
+            lasted, the time of any call the app told you was not recorded,
+            of any call your choice of whose calls to keep left out, and of any
+            call whose caller hung up during your greeting, and of the answering
+            machine&rsquo;s test calls. No names, no numbers. Kept in the
+            app&rsquo;s private storage for seven days, so the missed-call check
+            never reports a call twice or takes a recording you deleted for a
+            call that was missed. Also when you last called an emergency number
+            &mdash; noted with the answering machine on or off &mdash; and when
+            you last chose to answer again before a day had passed, so the
+            answering machine stands down for a day after such a call: the latest
+            time of each, no number, until the next. Also when recording
             was switched on or off or changed mode, so the Calls tab can say why a
             call was not recorded: times and the setting only, the last 300
             changes.</td></tr>
@@ -2068,7 +2230,8 @@ PRIVACY_BODY = f"""
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
             ask before each call, whether to show each call when it ends, where to
             save, how to name files, whose calls to keep, which messengers&rsquo;
-            calls to record, the auto-delete rules,
+            calls to record, the auto-delete rules, the answering
+            machine&rsquo;s,
             which recordings you marked to keep (by file name), and random tokens the app uses to talk to its own recorder
             and to its own notifications.</td></tr>
   </table>
@@ -2080,6 +2243,11 @@ PRIVACY_BODY = f"""
      itself: pairing with the phone&rsquo;s own Wireless debugging during setup, and
      talking to its recorder afterwards. Neither reaches your router, let alone the
      internet.</p>
+  <p>The answering machine&rsquo;s <em>Carrier voicemail</em> asks your carrier,
+     when you tap it, when its voicemail answers, and on a second tap changes
+     that. It is a request over the phone network, the same as dialling a
+     carrier code, and holds nothing but the timer. A test call to a number you
+     type is an ordinary phone call.</p>
 
   <h2>This website</h2>
   <p>Static files served by GitHub Pages, with no analytics, no cookies, and no
@@ -2089,9 +2257,14 @@ PRIVACY_BODY = f"""
      policy; nothing about a donation reaches the app.</p>
 
   <h2>The microphone</h2>
-  <p>The app holds no microphone permission and opens no audio device. Calls are
+  <p>The app holds no microphone permission and never records. Calls are
      captured by a separate shell-privileged process, which the app starts during
-     setup and which writes to a file the app collects afterwards.</p>
+     setup and which writes to a file the app collects afterwards. So is your
+     answering-machine greeting, only while you record it; the app plays it back
+     to you when you ask.</p>
+  <p>While the answering machine takes a message, the recorder mutes your
+     microphone, so the caller hears nothing of the room you are in. It gives
+     it back when the call ends or when you take the call.</p>
 
   <h2>Deleting your data</h2>
   <p>Delete individual recordings in the app, or the whole folder from any file

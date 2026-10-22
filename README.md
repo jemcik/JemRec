@@ -18,12 +18,13 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-270-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-419-success)](docs/DEVELOPMENT.md#tests)
 
-<img src="docs/screenshots/home.png" width="24%" alt="The recordings list">
-<img src="docs/screenshots/calls.png" width="24%" alt="The calls tab">
-<img src="docs/screenshots/settings.png" width="24%" alt="Settings">
-<img src="docs/screenshots/home-dark.png" width="24%" alt="The recordings list, dark">
+<img src="docs/screenshots/home.png" width="19%" alt="The recordings list">
+<img src="docs/screenshots/calls.png" width="19%" alt="The calls tab">
+<img src="docs/screenshots/settings.png" width="19%" alt="Settings">
+<img src="docs/screenshots/answering.png" width="19%" alt="The answering machine">
+<img src="docs/screenshots/home-dark.png" width="19%" alt="The recordings list, dark">
 
 <sub>The people in these screenshots do not exist: a screenshot of a call recorder is a screenshot of someone's calls, so the debug build invents them. Everything else is real.</sub>
 
@@ -137,6 +138,7 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 | **Name files your way** | By date and time, with the caller, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
 | **Keep, delete, clean up** | A keep mark, a 30-day Recently deleted, and auto-delete for old or very short recordings. → [more](docs/ARCHITECTURE.md#keeping-deleting-and-cleaning-up) |
 | **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, or a call went unrecorded. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
+| **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
 
 Recordings are Opus files in the phone's standard `Recordings/JemRec` folder,
 where any file manager or music app can open them - or in a folder you choose.
@@ -191,7 +193,7 @@ different Android builds:
 
 | Phone | Build |
 | --- | --- |
-| Honor Magic 8 Pro (BKQ-N49) | MagicOS 10, Android 16 — the phone it was developed on |
+| Honor Magic 8 Pro (BKQ-N49) | MagicOS 10 and 11, Android 16 and 17 — the phone it was developed on |
 | Samsung Galaxy S20 | One UI |
 | OnePlus | LineageOS 23 |
 
@@ -201,10 +203,15 @@ some one, some silence. The **Self-test** answers it on yours in about a second:
 it opens a real capture over the same path a call takes and tells you what came
 out of it.
 
+**The answering machine** has been tried on the Honor, on 2G calls; its carrier
+would not register it for VoLTE. Whether a phone carries a greeting to the
+caller is up to its audio hardware too - Android's own answer was wrong on the
+Honor - so the answering machine's settings hold its own checks and a test call.
+
 ## Privacy and permissions
 
-- **No microphone permission.** The app never opens an audio device; the
-  recorder does the capturing.
+- **No microphone permission.** The app never records; the recorder does the
+  capturing - calls, and your answering-machine greeting.
 - **Nothing leaves the phone**, and nothing is collected about you.
 - **Calls and contacts only if you allow them** - to name callers, keep calls
   by who they were with, and notice a call that went unrecorded. Everything
@@ -234,7 +241,7 @@ recorder does not explain is one its user has to guess at:
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
-| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. JemRec never acts on a call. |
+| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine's answering is the recorder's, as the shell. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
 | `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
 
@@ -254,6 +261,21 @@ Yes, where the phone's audio hardware hands both sides over - which it did on
 every phone above. The Self-test tells you for yours in about a second. On
 speakerphone, a messenger call's other person is heard on your side too: your
 side is the plain microphone, without the call app's echo cancellation.
+
+</details>
+
+<details>
+<summary><b>Will callers hear my greeting?</b></summary>
+
+<br>
+
+On the Honor it was developed on, yes. No app can play sound into a call, so
+the recorder does it as the shell, through an output Android calls *in-call
+music*; not every phone has one. Before you switch the answering machine on,
+its *Checks* tell you in a second whether yours does, and a *Test call*
+settles it for that kind of call: 2G, VoLTE and Wi-Fi Calling differ. Your
+microphone is muted while the greeting plays and the message is left, so the
+caller hears your greeting and nothing of your room.
 
 </details>
 
@@ -331,7 +353,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 270 tests, screenshots of the screens included
+    ./gradlew test              # 419 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

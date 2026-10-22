@@ -60,6 +60,8 @@ data class Recording(
     val durationMillis: Long = 0,
     /** Marked to keep: never auto-deleted. See KeepMarks. */
     val kept: Boolean = false,
+    /** A message the answering machine took. See MessageMarks. */
+    val message: Boolean = false,
     /** Set only for a recording in the trash: when it goes for good. */
     val expiresAtMillis: Long? = null,
 ) {
@@ -152,12 +154,14 @@ internal object Recordings {
     fun list(context: Context, withCallers: Boolean = true): List<Recording> {
         override?.let { return it(context) }
         val kept = KeepMarks.all(context)
+        val messages = MessageMarks.all(context)
         val found = (fromMediaStore(context) + fromChosenFolder(context) + fromAppStorage(context))
             .distinctBy { it.name }
             // By when the call was, not by name: a name can start with the
             // caller now (FileNames.Format.HONOR).
             .sortedWith(compareByDescending<Recording> { it.startedAtMillis ?: 0L }.thenByDescending { it.name })
             .map { if (it.name in kept) it.copy(kept = true) else it }
+            .map { if (it.name in messages) it.copy(message = true) else it }
         if (!withCallers) return withDirections(context, found, emptyMap())
         return withCallers(context, found)
     }

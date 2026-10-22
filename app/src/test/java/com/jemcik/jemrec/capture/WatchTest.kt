@@ -57,4 +57,15 @@ class WatchTest {
         assertNull(CaptureDaemon.parseWatch(line.replace("since=1791544738000 ", "")))
         assertNull(CaptureDaemon.parseWatch(line.replace("events=5", "events=five")))
     }
+
+    @Test fun theAnsweringMachineIsReportedWhenTheRecorderSaysSo() {
+        val line = "WATCH 1 since=1 watching=1 looper=ok mode=1 call=0 events=0 lastevent=0 offhooks=0 " +
+            "lastoffhook=0 recording=0 voip=0 voiparmed=0 tracking=1"
+        val old = CaptureDaemon.parseWatch(line)!!
+        assertNull(old.answer)
+        assertNull(old.greeting)
+        val now = CaptureDaemon.parseWatch("$line answer=1 greeting=0")!!
+        assertEquals(true, now.answer)
+        assertEquals(false, now.greeting)
+    }
 }

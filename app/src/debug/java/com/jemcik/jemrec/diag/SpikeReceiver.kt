@@ -127,6 +127,36 @@ class SpikeReceiver : BroadcastReceiver() {
                         )
                     }
 
+                    // The answering machine, for tools/emulator_checks.py: a
+                    // greeting from a raw 48 kHz mono PCM file the shell put
+                    // where this app can read it, the switch on, and both
+                    // handed to the recorder.
+                    //   --es op answer --es greeting /data/local/tmp/jemrec-test-greeting.pcm
+                    "answer" -> {
+                        val path = intent.getStringExtra("greeting")
+                        val text = runCatching {
+                            if (path != null) {
+                                com.jemcik.jemrec.capture.Greeting.save(appContext, java.io.File(path).readBytes())
+                            }
+                            com.jemcik.jemrec.capture.AnsweringMachine.setEnabled(appContext, intent.getBooleanExtra("on", true))
+                            // All of it: the recording mode a check set too.
+                            com.jemcik.jemrec.capture.CaptureDaemon.pushMode(appContext)
+                            val set = com.jemcik.jemrec.capture.CaptureDaemon.setAnswering(appContext)
+                            "greeting ${com.jemcik.jemrec.capture.Greeting.seconds(appContext)} s, " +
+                                "wire ${com.jemcik.jemrec.capture.AnsweringMachine.wire(appContext)}, recorder took it: $set, " +
+                                "recorder has ${com.jemcik.jemrec.capture.CaptureDaemon.greetingBytes(appContext)} bytes"
+                        }.getOrElse { "failed: $it" }
+                        report(appContext, "answer", text)
+                    }
+
+                    // Talk to them, as the "Taking a message" notification's
+                    // button does, for tools/emulator_checks.py:
+                    //   --es op talk
+                    "talk" -> {
+                        val ok = com.jemcik.jemrec.capture.CaptureDaemon.handOver(appContext, true)
+                        report(appContext, "talk", "talk to them -> $ok")
+                    }
+
                     // The same check the app's own Self-test button runs.
                     // It used to be the transport's acceptance check, which
                     // asked whether an ADB shell session existed - a question
@@ -138,9 +168,20 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "selftest", text)
                     }
 
+                    // The messenger-call answering spike (docs/VOIP-ANSWER-SPIKE.md):
+                    //   --es op voipanswer --ei after 5 --ei minutes 15
+                    "voipanswer" -> {
+                        val after = intent.getIntExtra("after", 5)
+                        val minutes = intent.getIntExtra("minutes", 5)
+                        VoipAnswerSpike.arm(appContext, after, minutes)
+                        report(appContext, "voipanswer", "armed: the next messenger call is answered after $after s, for $minutes min; see files/voip-answer.log")
+                    }
+
                     // Set one of the app's preferences, for tools/emulator_checks.py:
                     //   --es op pref --es key file_names --es value DATE_AND_CALLER
                     //   --es op pref --es key rules_other_numbers --ez bool false
+                    //   --es op pref --es key emergency_call_at --el long 1792680000000
+                    //   --es op pref --es key emergency_call_at   (no value: removed)
                     // Through the app's own SharedPreferences, because writing the
                     // file from outside loses to a running app process, which
                     // writes its own copy back over it (measured on Android 13).
@@ -152,6 +193,14 @@ class SpikeReceiver : BroadcastReceiver() {
                             intent.hasExtra("bool") -> {
                                 edit.putBoolean(key, intent.getBooleanExtra("bool", false)).commit()
                                 "$key = ${intent.getBooleanExtra("bool", false)}"
+                            }
+                            intent.hasExtra("int") -> {
+                                edit.putInt(key, intent.getIntExtra("int", 0)).commit()
+                                "$key = ${intent.getIntExtra("int", 0)}"
+                            }
+                            intent.hasExtra("long") -> {
+                                edit.putLong(key, intent.getLongExtra("long", 0L)).commit()
+                                "$key = ${intent.getLongExtra("long", 0L)}"
                             }
                             intent.hasExtra("value") -> {
                                 edit.putString(key, intent.getStringExtra("value")).commit()

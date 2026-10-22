@@ -44,6 +44,8 @@ object RecordingSaver {
              *  them: for call waiting, not the recording's own call's. */
             val incoming: Boolean,
             val startMillis: Long,
+            /** A call the answering machine took: a message. */
+            val message: Boolean = false,
         ) : Outcome
 
         /** The file was read in full but held no audio; deleted rather than kept. */
@@ -63,6 +65,14 @@ object RecordingSaver {
         /** An outgoing call nobody answered: the recording was only ringing,
          *  by Telecom's own account (CallTracking). Deleted, not saved. */
         data object NotAnswered : Outcome
+
+        /** The answering machine took the call and the caller hung up during
+         *  the greeting: nothing was said, nothing is kept. */
+        data object GreetingHangUp : Outcome
+
+        /** The answering machine took the call, could not play the greeting,
+         *  and hung up: the user must hear of it. */
+        data object GreetingFailed : Outcome
 
         /** Could not fetch or the read broke off; the daemon copy is LEFT for a
          *  later retry. */
@@ -139,10 +149,33 @@ object RecordingSaver {
         // call is saved exactly as it always was.
         // Saved once already, and the daemon's copy outlived it - a delete
         // that did not get through. Not again: the second would be "(1)".
-        if (CallLedger.read(context).recordings.any { it.startMillis == startedAt.time }) {
+        // So for a call the answering machine had and kept nothing of: told
+        // once, not at every pass while a delete does not get through.
+        if (CallLedger.read(context).accounted.any { it.startMillis == startedAt.time }) {
             Log.i(TAG, "save: $recfile was saved before; deleting the daemon's copy")
             CaptureDaemon.deleteRecording(context, recfile)
             return Outcome.Gone
+        }
+
+        // A message: the answering machine took the call. The recorder named
+        // the file with where the message starts - after the silent greeting -
+        // or "none" when the caller left before the beep, or "fail" when the
+        // greeting could not be played and the recorder hung up.
+        val messageStart = RecordingStore.messageStartMs(recfile)
+        if (messageStart != null && messageStart < 0) {
+            val failed = messageStart == RecordingStore.MESSAGE_FAILED
+            Log.i(TAG, "save: $recfile - " + if (failed) "the greeting could not be played" else "the caller hung up during the greeting; nothing to keep")
+            CaptureDaemon.deleteRecording(context, recfile)
+            // Accounted for, either way: no missed-call report on top. A
+            // failure is told by whoever collected it - the hang-up's save or
+            // the reconcile - and the Calls tab says which it was.
+            if (failed) {
+                CallLedger.noteGreetingFailed(context, startedAt.time, incoming)
+            } else {
+                CallLedger.noteGreetingHangUp(context, startedAt.time, incoming)
+            }
+            _saved.tryEmit(recfile)
+            return if (failed) Outcome.GreetingFailed else Outcome.GreetingHangUp
         }
 
         val format = FileNames.format(context)
@@ -205,7 +238,40 @@ object RecordingSaver {
                     Log.i(TAG, "save: ${decision.leftOut.size} call(s) in $recfile are ones the rules leave out")
                 }
                 decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
-                write(context, recfile, decision.parts, ledger = true)
+                // A message is saved from its start, without the silence of
+                // the caller listening to the greeting; a call the user took
+                // over, from just before they took it, or the caller's first
+                // words if earlier (AnswerMachine.takenStart) - an ordinary
+                // recording.
+                val trimFrom = messageStart ?: RecordingStore.takenStartMs(recfile)
+                // A message is the answered call's alone. A call answered
+                // during it - a waiting one, which takes the message over -
+                // has its first moments in the file, recorded before the
+                // recorder heard of it: no message, and in Ask first never
+                // asked for (Main.splitOffMessage).
+                val own = decision.parts.filter { it.startMillis == startedAt.time }
+                val kept = if (messageStart != null && own.isNotEmpty()) own else decision.parts
+                if (kept.size < decision.parts.size) {
+                    Log.i(TAG, "save: $recfile - ${decision.parts.size - kept.size} call(s) answered during the message, not kept")
+                }
+                val parts = if (trimFrom != null) {
+                    kept.map { it.from(trimFrom / CallTracking.PACKET_MS) }
+                } else {
+                    kept
+                }
+                val written = write(context, recfile, parts, ledger = true, message = messageStart != null)
+                if (messageStart != null && written == Outcome.Empty) {
+                    // Nothing from the message's start on: the sound the
+                    // recorder took for the caller came as the line went down
+                    // (measured on the Android 12 emulator, 2026-10-22). The
+                    // caller left before the beep, not a silent recording.
+                    Log.i(TAG, "save: $recfile - nothing after the message's start; the caller hung up during the greeting")
+                    CallLedger.noteGreetingHangUp(context, startedAt.time, incoming)
+                    _saved.tryEmit(recfile)
+                    Outcome.GreetingHangUp
+                } else {
+                    written
+                }
             }
         }
     }
@@ -217,9 +283,10 @@ object RecordingSaver {
     ) : SavePlan.Lookups {
         private val contacts = mutableMapOf<String, CallLogLookup.Contact>()
 
-        /** The calls already recorded or left out, or still on the daemon,
-         *  which this one is not. */
-        private val others by lazy { CallLedger.read(context).let { it.recordings + it.skipped } + pending }
+        /** The calls already accounted for, or still on the daemon, which
+         *  this one is not - a test call or a greeting hang-up included: an
+         *  entry of theirs taken for this call names it after them. */
+        private val others by lazy { CallLedger.read(context).accounted + pending }
 
         override val callLogAllowed: Boolean get() = CallLogLookup.granted(context)
         override fun contact(number: String?) = CallLogLookup.contactFor(context, number, contacts)
@@ -260,6 +327,12 @@ object RecordingSaver {
     ) {
         fun holds(index: Long): Boolean = packets.any { index in it }
 
+        /** The same part from packet [first] on. */
+        fun from(first: Long): Part = Part(
+            name, incoming, startMillis,
+            packets.mapNotNull { r -> maxOf(r.first, first).let { if (it > r.last) null else it..r.last } },
+        )
+
         companion object {
             fun whole(name: String, incoming: Boolean, startMillis: Long) =
                 Part(name, incoming, startMillis, listOf(0L until Long.MAX_VALUE))
@@ -281,6 +354,7 @@ object RecordingSaver {
         recfile: String,
         parts: List<Part>,
         ledger: Boolean,
+        message: Boolean = false,
     ): Outcome {
         val socket = try {
             CaptureDaemon.fetch(context, recfile)
@@ -403,8 +477,12 @@ object RecordingSaver {
                         // missed-call check asks this and not the disk.
                         CallLedger.noteRecording(context, o.part.startMillis, o.part.incoming, seconds.toInt())
                     }
+                    if (message) MessageMarks.mark(context, o.part.name)
                     _saved.tryEmit(o.part.name)
-                    last = Outcome.Saved(o.part.name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis)
+                    last = Outcome.Saved(
+                        o.part.name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis,
+                        message = message,
+                    )
                 }
                 when {
                     last == null -> return@withContext Outcome.Failed("The recording could not be written.")
@@ -493,6 +571,14 @@ object RecordingSaver {
                 Outcome.Busy -> Log.i(TAG, "reconcile: $recfile is being saved already, leaving it")
                 Outcome.Skipped -> Log.i(TAG, "reconcile: $recfile was a call the rules leave out")
                 Outcome.NotAnswered -> Log.i(TAG, "reconcile: $recfile was never answered")
+                Outcome.GreetingHangUp -> Log.i(TAG, "reconcile: $recfile - hung up during the greeting")
+                Outcome.GreetingFailed -> {
+                    // The hang-up's wake did not land: nobody has said so yet,
+                    // and every answered call ends this way until it is put
+                    // right.
+                    Log.w(TAG, "reconcile: $recfile - the greeting could not be played")
+                    CallMonitorService.postNotRecorded(context, CallMonitorService.GREETING_FAILED)
+                }
                 // A week of failing, from the first failure - not from the
                 // call: a file stranded on the daemon for a week (a reboot,
                 // no Wi-Fi to bring the recorder back) is not given up on its

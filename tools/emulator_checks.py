@@ -15,6 +15,21 @@ through the real app and daemon, checking what each one leaves behind:
   caller-id   a number in no contact is named as the call log names it
               (issue #30)
   self-test   PASS, with exact call tracking on
+  answering   the answering machine answers a stranger after its delay, plays
+              the greeting, and saves the message marked as one, with the
+              microphone given back at the end
+  greeting-hangup  a caller who hangs up during the greeting: only what they
+              said over it is kept (on a phone, silence leaves nothing)
+  answer-rules  with Other numbers off, a stranger's call rings on unanswered
+  answer-during-voip  a phone call ringing over a messenger or meeting call
+              rings on unanswered (a stand-in call from shellserver/probe,
+              built here if need be)
+  answer-after-emergency  a day after a call to an emergency number - the
+              pause set as the call tracker sets it, no such number dialled -
+              a caller rings on unanswered
+  answer-takeover-ask-first  in Ask first, taking over a call the machine
+              answered keeps what was said as the message, and asks before
+              recording the rest
 
 Every call is the emulator's own simulation - nothing leaves the machine -
 and the script refuses to touch anything that is not an emulator. It needs a
@@ -85,6 +100,14 @@ def set_prefs(**values):
     for name, value in values.items():
         if isinstance(value, bool):
             said = diag("pref", "--es", "key", name, "--ez", "bool", str(value).lower())
+        elif isinstance(value, int) and -2**31 <= value < 2**31:
+            said = diag("pref", "--es", "key", name, "--ei", "int", str(value))
+        elif isinstance(value, int):
+            said = diag("pref", "--es", "key", name, "--el", "long", str(value))
+        elif value is None:
+            said = diag("pref", "--es", "key", name)
+            assert f"{name} removed" in said, said
+            continue
         else:
             said = diag("pref", "--es", "key", name, "--es", "value", str(value))
         assert f"{name} = " in said, said
@@ -151,6 +174,10 @@ def set_up(apk):
     diag.token = wait_log(r"diag token: (\S+)", 20, "the diag token").group(1)
     set_prefs(setup_complete=True, hide_debug_notification=False, file_names="DATE_AND_CALLER",
               rules_other_numbers=True, call_tracking=True, recorder_enabled=True, recording_mode="AUTOMATIC")
+    # Off until a check of its own turns it on: an emulator keeps its data
+    # between boots, and a run that ended on an answering check left it on for
+    # the call-timing checks of the next.
+    diag("answer", "--ez", "on", "false")
     start_recorder()
 
 
@@ -308,6 +335,235 @@ def caller_id():
         as_root(f"pm enable {PKG}/.capture.CallMonitorService")
 
 
+GREETING = "/data/local/tmp/jemrec-test-greeting.pcm"
+
+
+def no_call_left():
+    """A check that failed half way can leave a call ringing - and every call
+    after it is then call waiting, which is never answered."""
+    adb("emu", "gsm", "cancel", STRANGER_IN)
+    wait_for(phone_idle, 10, "the phone to be idle")
+
+
+def answering_on():
+    """A three-second greeting (two tones), the answering machine on after
+    five seconds, and both given to the recorder through the app."""
+    no_call_left()
+    import math
+    import struct
+    import tempfile
+    rate = 48000
+    frames = [int(6000 * math.sin(2 * math.pi * (440 if i < rate * 1.5 else 660) * i / rate)) for i in range(rate * 3)]
+    with tempfile.NamedTemporaryFile(suffix=".pcm", delete=False) as f:
+        f.write(struct.pack("<%dh" % len(frames), *frames))
+    adb("push", f.name, GREETING, check=True)
+    sh(f"chmod 644 {GREETING}")
+    set_prefs(answer_delay_s=5)
+    said = diag("answer", "--es", "greeting", GREETING)
+    assert "recorder took it: true" in said and "wire 1," in said, said
+
+
+def mic_unmuted():
+    return "FromApi=false" in sh("dumpsys audio | grep -m1 'mic mute'")
+
+
+def answering():
+    try:
+        return _answering()
+    finally:
+        no_call_left()
+
+
+def _answering():
+    answering_on()
+    time.sleep(10)  # past CallTracker's RECENT_END_MS from the call before
+    sh("logcat -c")
+    adb("emu", "gsm", "call", STRANGER_IN)
+    wait_log(r"answer: answering", 20, "the answering machine to answer")
+    wait_log(r"answer: greeting played", 20, "the greeting to play")
+    time.sleep(3)
+    adb("emu", "gsm", "cancel", STRANGER_IN)
+    wait_log(r"save: wrote", 40, "the message to be saved")
+    wait_for(mic_unmuted, 10, "the microphone to be given back")
+    # This message's own mark: the marks outlive runs (install -r keeps the
+    # app's data), so any "_in" there could be an earlier run's.
+    _, _, name = saved()
+
+    def marked():
+        marks = adb("exec-out", f"run-as {PKG} cat {PREFS}")
+        m = re.search(r'<set name="message_recordings">(.*?)</set>', marks, re.S)
+        return bool(m) and f"<string>{name}</string>" in m.group(1)
+
+    wait_for(marked, 5, f"{name} to be marked as a message")
+    return "message saved, marked, microphone back"
+
+
+def greeting_hangup():
+    try:
+        return _greeting_hangup()
+    finally:
+        no_call_left()
+
+
+def _greeting_hangup():
+    """A caller who hangs up during the greeting. On a phone, silence then is
+    "_msgnone" and nothing is saved. The emulator's caller is never silent -
+    its call audio is a constant test signal - so here it is words said over
+    the greeting: what is checked is that only they are kept, trimmed to the
+    caller's first sound, and that the microphone comes back. On Android 12
+    the emulator's caller is heard only as the line goes down, after the
+    call - or, as the recorder now knows the call is over, not at all:
+    nothing is kept then, and that must not read as a silent call."""
+    answering_on()
+    time.sleep(10)
+    sh("logcat -c")
+    adb("emu", "gsm", "call", STRANGER_IN)
+    wait_log(r"answer: answering", 20, "the answering machine to answer")
+    time.sleep(1)
+    adb("emu", "gsm", "cancel", STRANGER_IN)
+    m = wait_log(r"save: wrote \d+ packets, ([\d.]+)s from \S+_msg(\d+)_in"
+                 r"|save: \S+ - (nothing after the message's start"
+                 r"|the caller hung up during the greeting)", 40, "the message to be saved")
+    # A message trimmed to nothing is "no audio" to the writer too, just before
+    # the saver calls it a hang-up during the greeting: only alone is it a
+    # silent call.
+    text = log()
+    assert "save: no audio in" not in text or "nothing after the message's start" in text, \
+        "a message trimmed to nothing was taken for a silent call"
+    wait_for(mic_unmuted, 10, "the microphone to be given back")
+    if m.group(3) == "the caller hung up during the greeting":
+        return "no word before the hang-up: nothing kept"
+    if m.group(1) is None:
+        return "nothing after the caller's first sound: hung up during the greeting"
+    seconds = float(m.group(1))
+    assert seconds < 2.5, f"{seconds} s kept: the greeting was not cut"
+    return f"{seconds} s kept from the caller's first sound"
+
+
+def answer_rules():
+    answering_on()
+    set_prefs(rules_other_numbers=False)
+    try:
+        time.sleep(10)
+        sh("logcat -c")
+        adb("emu", "gsm", "call", STRANGER_IN)
+        wait_log(r"answering machine - not answering: whose calls to keep", 15, "the decision not to answer")
+        time.sleep(8)
+        assert "answer: answering" not in log(), "it answered"
+        adb("emu", "gsm", "cancel", STRANGER_IN)
+        wait_for(phone_idle, 10, "the call to end")
+    finally:
+        set_prefs(rules_other_numbers=True)
+        diag("answer", "--ez", "on", "false")
+    return "rang on, unanswered"
+
+
+PROBE_JAR = "shellserver/probe/voip-probe.jar"
+PROBE_SOURCE = "shellserver/probe/com/jemcik/jemrec/probe/FakeCallProbe.java"
+FAKE_CALL_LOG = "/data/local/tmp/fakecall.txt"
+
+
+def fake_call_up():
+    """A stand-in for a messenger call, run as the shell: the audio mode at
+    MODE_IN_COMMUNICATION, call audio playing, the microphone open."""
+    import os
+    if not os.path.exists(PROBE_JAR) or os.path.getmtime(PROBE_JAR) < os.path.getmtime(PROBE_SOURCE):
+        built = subprocess.run(["bash", "shellserver/probe/build-probe.sh"], capture_output=True, text=True)
+        if built.returncode != 0:
+            raise RuntimeError("could not build the stand-in call (JDK 21? set JEMREC_JAVA_HOME):\n"
+                               + built.stdout[-800:] + built.stderr[-800:])
+    adb("push", PROBE_JAR, "/data/local/tmp/voip-probe.jar", check=True)
+    sh(f"rm -f {FAKE_CALL_LOG}")
+    sh("CLASSPATH=/data/local/tmp/voip-probe.jar setsid nohup app_process / "
+       f"com.jemcik.jemrec.probe.FakeCallProbe 60 < /dev/null > {FAKE_CALL_LOG} 2>&1 &")
+    wait_for(lambda: "mode=3" in sh(f"cat {FAKE_CALL_LOG}"), 15, "the stand-in call's audio mode")
+
+
+def fake_call_down():
+    # Its own adb shell: a pkill on one line with the launch would match it.
+    sh("pkill -f '[F]akeCallProbe'")
+
+
+def answer_during_voip():
+    answering_on()
+    try:
+        time.sleep(10)
+        fake_call_up()
+        sh("logcat -c")
+        adb("emu", "gsm", "call", STRANGER_IN)
+        wait_log(r"a messenger or meeting call is up|during a messenger or meeting call", 20,
+                 "the decision not to answer over the messenger call")
+        time.sleep(8)
+        assert "answer: answering" not in log(), "it answered over the messenger call"
+        modes = sorted(set(re.findall(r"mode=(\d)", sh(f"cat {FAKE_CALL_LOG}"))))
+    finally:
+        adb("emu", "gsm", "cancel", STRANGER_IN)
+        fake_call_down()
+        no_call_left()
+    return "rang on, unanswered (audio modes seen during it: " + ",".join(modes) + ")"
+
+
+def device_ms():
+    """The emulator's own clock, in milliseconds, as the app reads it."""
+    return int(sh("date +%s").strip()) * 1000
+
+
+def answer_after_emergency():
+    try:
+        return _answer_after_emergency()
+    finally:
+        set_prefs(emergency_call_at=None)
+        adb("emu", "gsm", "cancel", STRANGER_IN)
+        no_call_left()
+
+
+def _answer_after_emergency():
+    answering_on()
+    time.sleep(10)
+    # What CallTracker notes as an emergency call ends. Dialling 112 here is
+    # simulated too, but there is no need to.
+    set_prefs(emergency_call_at=device_ms())
+    sh("logcat -c")
+    adb("emu", "gsm", "call", STRANGER_IN)
+    wait_log(r"not answering: paused after an emergency call", 20, "the decision not to answer")
+    time.sleep(8)
+    assert "answer: answering" not in log(), "it answered within a day of an emergency call"
+    return "rang on, unanswered"
+
+
+def answer_takeover_ask_first():
+    try:
+        return _answer_takeover_ask_first()
+    finally:
+        set_prefs(recording_mode="AUTOMATIC")
+        diag("answer")  # the mode back on the recorder
+        no_call_left()
+
+
+def _answer_takeover_ask_first():
+    set_prefs(recording_mode="ON_DEMAND")
+    answering_on()
+    time.sleep(10)
+    sh("logcat -c")
+    adb("emu", "gsm", "call", STRANGER_IN)
+    wait_log(r"answer: answering", 20, "the answering machine to answer")
+    time.sleep(4)  # the emulator's caller: a few seconds of sound, on 13 and 17 (2026-10-22)
+    said = diag("talk")
+    assert "-> true" in said, said
+    m = wait_log(r"answer: the call was taken(?:; the message so far -> \S+_msg(\d+)_in"
+                 r"| before a word was left)", 15, "the message to be split off")
+    wait_log(r"asking whether to record", 15, "the Record prompt for the rest of the call")
+    time.sleep(2)
+    adb("emu", "gsm", "cancel", STRANGER_IN)
+    # Nothing recorded after the takeover without a Record tap. The log here
+    # begins at the takeover: diag clears it.
+    assert count(r"recording: started") == 0, "the call went on being recorded after it was taken"
+    if m.group(1) is None:
+        return "no word before the takeover: nothing kept, the rest asked about"
+    wait_log(r"save: wrote \d+ packets, [\d.]+s from \S+_msg\d+_in", 40, "the message to be saved")
+    return "the message kept, the rest asked about"
+
+
 def self_test():
     report = diag("selftest")
     assert "PASS" in report, report
@@ -315,7 +571,9 @@ def self_test():
     return next(l.split("] ", 1)[1] for l in report.splitlines() if "PASS" in l)
 
 
-CHECKS = [ringing, unanswered, incoming, rules, succession, caller_id, self_test]
+CHECKS = [ringing, unanswered, incoming, rules, succession, caller_id, self_test,
+          answering, greeting_hangup, answer_rules, answer_during_voip,
+          answer_after_emergency, answer_takeover_ask_first]
 
 
 def nothing_pending():
@@ -331,7 +589,7 @@ def nothing_pending():
 
 def what_happened():
     """The call lines from the daemon and the app, for a check that failed."""
-    keep = re.compile(r"callwatch|recording:|rules leave|calltrack|save:|reconcile|never answered")
+    keep = re.compile(r"callwatch|recording:|rules leave|calltrack|save:|reconcile|never answered|answer:")
     lines = [l for l in log().splitlines() if keep.search(l)]
     return "\n".join("       " + l[6:170] for l in lines[-25:])
 

@@ -65,7 +65,8 @@ object Retention {
         if (r.parsedName == null) return@filter false
         val old = maxAgeDays > 0 &&
             r.startedAtMillis?.let { now - it > maxAgeDays * DAY_MS } == true
-        val short = minSeconds > 0 && r.durationMillis in 1 until minSeconds * 1000L
+        // Not a message - see dropIfTooShort.
+        val short = !r.message && minSeconds > 0 && r.durationMillis in 1 until minSeconds * 1000L
         old || short
     }
 
@@ -111,14 +112,16 @@ object Retention {
 
     /**
      * A call just saved that is shorter than the rule allows goes straight to
-     * the trash, and the caller announces nothing. True if it did.
+     * the trash, and the caller announces nothing. True if it did. Never a
+     * message: "call me back" takes three seconds, and the silence before it
+     * is cut already - short is what a good message is.
      *
      * After the save has noted it in the call ledger, so the missed-call check
      * still counts it as recorded: it was, and the user's rule removed it.
      */
     fun dropIfTooShort(context: Context, saved: RecordingSaver.Outcome.Saved): Boolean {
         val min = minSeconds(context)
-        if (min == 0 || saved.seconds <= 0 || saved.seconds >= min) return false
+        if (saved.message || min == 0 || saved.seconds <= 0 || saved.seconds >= min) return false
         val result = Trash.trash(context, saved.uri, saved.filePath, saved.name)
         Log.i(TAG, "retention: ${FileNames.forLog(saved.name)} is %.1fs, under ${min}s -> ${result.javaClass.simpleName}".format(saved.seconds))
         if (result !is DeleteResult.Deleted) return false

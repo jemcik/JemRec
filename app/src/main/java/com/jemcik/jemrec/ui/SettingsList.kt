@@ -96,9 +96,11 @@ internal fun SettingsHeading(text: String, top: Dp = 24.dp) {
     )
 }
 
-/** Related rows as one block, under an optional heading. */
+/** Related rows as one block, under an optional heading, with an optional
+ *  [note] under them, on a tip card: something they depend on that is set
+ *  elsewhere. */
 @Composable
-internal fun SettingsGroup(title: String? = null, build: SettingsGroupScope.() -> Unit) {
+internal fun SettingsGroup(title: String? = null, note: String? = null, build: SettingsGroupScope.() -> Unit) {
     val rows = SettingsGroupScope().apply(build).rows
     if (rows.isEmpty()) return
     Column {
@@ -108,6 +110,7 @@ internal fun SettingsGroup(title: String? = null, build: SettingsGroupScope.() -
                 key(rowKey ?: index) { row(groupShape(index, rows.size)) }
             }
         }
+        if (note != null) TipCard(note, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
     }
 }
 
@@ -422,6 +425,10 @@ internal object SettingsIcons {
     val Hidden = icon("Hidden", "M12,7c2.76,0 5,2.24 5,5 0,0.65 -0.13,1.26 -0.36,1.83l2.92,2.92c1.51,-1.26 2.7,-2.89 3.43,-4.75 -1.73,-4.39 -6,-7.5 -11,-7.5 -1.4,0 -2.74,0.25 -3.98,0.7l2.16,2.16C10.74,7.13 11.35,7 12,7zM2,4.27l2.28,2.28 0.46,0.46C3.08,8.3 1.78,10.02 1,12c1.73,4.39 6,7.5 11,7.5 1.55,0 3.03,-0.3 4.38,-0.84l0.42,0.42L19.73,22 21,20.73 3.27,3 2,4.27zM7.53,9.8l1.55,1.55c-0.05,0.21 -0.08,0.43 -0.08,0.65 0,1.66 1.34,3 3,3 0.22,0 0.44,-0.03 0.65,-0.08l1.55,1.55c-0.67,0.33 -1.41,0.53 -2.2,0.53 -2.76,0 -5,-2.24 -5,-5 0,-0.79 0.2,-1.53 0.53,-2.2zM11.84,9.02l3.15,3.15 0.02,-0.16c0,-1.66 -1.34,-3 -3,-3l-0.17,0.01z")
 
     val Restore = icon("Restore", "M14,12c0,-1.1 -0.9,-2 -2,-2s-2,0.9 -2,2 0.9,2 2,2 2,-0.9 2,-2zM12,3c-4.97,0 -9,4.03 -9,9H0l4,4 4,-4H5c0,-3.87 3.13,-7 7,-7s7,3.13 7,7 -3.13,7 -7,7c-1.51,0 -2.91,-0.49 -4.06,-1.3l-1.42,1.44C8.04,20.3 9.94,21 12,21c4.97,0 9,-4.03 9,-9s-4.03,-9 -9,-9z")
+
+    val Voicemail = icon("Voicemail", "M18.5,6C15.46,6 13,8.46 13,11.5c0,1.33 0.47,2.55 1.26,3.5H9.74c0.79,-0.95 1.26,-2.17 1.26,-3.5C11,8.46 8.54,6 5.5,6S0,8.46 0,11.5 2.46,17 5.5,17h13c3.04,0 5.5,-2.46 5.5,-5.5S21.54,6 18.5,6zM5.5,15C3.57,15 2,13.43 2,11.5S3.57,8 5.5,8 9,9.57 9,11.5 7.43,15 5.5,15zM18.5,15c-1.93,0 -3.5,-1.57 -3.5,-3.5S16.57,8 18.5,8 22,9.57 22,11.5 20.43,15 18.5,15z")
+
+    val Mic = icon("Mic", "M12,14c1.66,0 2.99,-1.34 2.99,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zM17.3,11c0,3 -2.54,5.1 -5.3,5.1S6.7,14 6.7,11L5,11c0,3.41 2.72,6.23 6,6.72L11,21h2v-3.28c3.28,-0.48 6,-3.3 6,-6.72h-1.7z")
 
     private fun icon(name: String, path: String): ImageVector = pathIcon(name, path)
 }

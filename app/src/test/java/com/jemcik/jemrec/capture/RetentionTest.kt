@@ -14,10 +14,16 @@ class RetentionTest {
     private val now = 1_795_000_000_000L
     private val day = 24L * 60 * 60 * 1000
 
-    private fun rec(daysAgo: Long, seconds: Long = 60, kept: Boolean = false, name: String? = null) = Recording(
+    private fun rec(
+        daysAgo: Long,
+        seconds: Long = 60,
+        kept: Boolean = false,
+        name: String? = null,
+        message: Boolean = false,
+    ) = Recording(
         name = name ?: RecordingStore.nameFor(Date(now - daysAgo * day), true),
         uri = uri, whenLabel = "", incoming = true, durationLabel = "", sizeLabel = "",
-        durationMillis = seconds * 1000, kept = kept,
+        durationMillis = seconds * 1000, kept = kept, message = message,
     )
 
     private fun select(list: List<Recording>, maxAgeDays: Int = 0, minSeconds: Int = 0) =
@@ -42,6 +48,16 @@ class RetentionTest {
     @Test fun keptIsNeverTouchedByEitherRule() {
         val keptOldAndShort = rec(daysAgo = 400, seconds = 2, kept = true)
         assertTrue(select(listOf(keptOldAndShort), maxAgeDays = 30, minSeconds = 30).isEmpty())
+    }
+
+    @Test fun aShortMessageIsNotAShortCall() {
+        // Saved past the short-calls rule (AfterCall.saved); the daily pass
+        // must not take it a day later.
+        val message = rec(daysAgo = 1, seconds = 3, message = true)
+        assertTrue(select(listOf(message), minSeconds = 10).isEmpty())
+        // The age rule is not about length: an old message goes like any call.
+        val oldMessage = rec(daysAgo = 31, seconds = 3, message = true)
+        assertEquals(listOf(oldMessage), select(listOf(oldMessage), maxAgeDays = 30, minSeconds = 10))
     }
 
     @Test fun whatCannotBeReadIsLeftAlone() {

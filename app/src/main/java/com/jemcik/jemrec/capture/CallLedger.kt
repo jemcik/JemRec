@@ -16,7 +16,7 @@ import com.jemcik.jemrec.Prefs
  * call is saved or reported, before anyone has had the chance to delete
  * anything.
  *
- * Three kinds of entry:
+ * The kinds of entry:
  *
  *   - a RECORDING: when the daemon started it, which way the call went, and
  *     how long it ran. Written for every save, and for every call the app
@@ -27,6 +27,8 @@ import com.jemcik.jemrec.Prefs
  *   - a SKIPPED call: one the user's rules on whose calls to keep left out
  *     (see CallRules). Recorded, and deleted before it was saved, so it is
  *     not a missed call - and the Calls tab can say why it has nothing.
+ *   - the answering machine's: a call whose caller hung up during the
+ *     greeting, one whose greeting could not be played, and its test calls.
  *
  * Kept for [KEEP_MS] and no longer: the check never looks further back than
  * that, so older entries are dead weight in a preferences file that is read
@@ -45,7 +47,21 @@ internal object CallLedger {
         val recordings: List<Recorded>,
         val reported: Set<Long>,
         val skipped: List<Recorded> = emptyList(),
-    )
+        /** Answering-machine calls where the caller left before the beep. */
+        val greetingHangUps: List<Recorded> = emptyList(),
+        /** The answering machine's test calls: answered, and not the user's
+         *  to keep. */
+        val testCalls: List<Recorded> = emptyList(),
+        /** Answering-machine calls whose greeting could not be played: the
+         *  recorder hung up, and the user was told. */
+        val greetingFailures: List<Recorded> = emptyList(),
+    ) {
+        /** Every call this knows the fate of - recorded, left out, or the
+         *  answering machine's - so none is taken for a missed call, or its
+         *  call-log entry for another recording's. */
+        val accounted: List<Recorded>
+            get() = recordings + skipped + greetingHangUps + greetingFailures + testCalls
+    }
 
     fun read(context: Context): Ledger =
         parse(Prefs.of(context).getStringSet(KEY, emptySet()) ?: emptySet())
@@ -57,6 +73,21 @@ internal object CallLedger {
     /** A call the rules left out: recorded, and deleted unsaved. */
     fun noteSkipped(context: Context, startMillis: Long, incoming: Boolean, seconds: Int) =
         add(context, encodeRecording(Recorded(startMillis, incoming, seconds), kind = "s"))
+
+    /** A call the answering machine took, where the caller hung up during
+     *  the greeting: answered, recorded, and nothing kept. */
+    fun noteGreetingHangUp(context: Context, startMillis: Long, incoming: Boolean) =
+        add(context, encodeRecording(Recorded(startMillis, incoming, 0), kind = "g"))
+
+    /** A call the answering machine took and hung up on, its greeting not
+     *  playable: nothing kept. */
+    fun noteGreetingFailed(context: Context, startMillis: Long, incoming: Boolean) =
+        add(context, encodeRecording(Recorded(startMillis, incoming, 0), kind = "f"))
+
+    /** A test call of the answering machine's diagnostics: answered by the
+     *  recorder, its recording deleted. */
+    fun noteTestCall(context: Context, startMillis: Long, incoming: Boolean, seconds: Int) =
+        add(context, encodeRecording(Recorded(startMillis, incoming, seconds), kind = "t"))
 
     /** A call log entry the user has been told was not recorded. */
     fun noteReported(context: Context, callDate: Long) = add(context, "c:$callDate")
@@ -72,7 +103,10 @@ internal object CallLedger {
         prefs.edit().putStringSet(KEY, kept).apply()
     }
 
-    /** "r" for a recording, "s" for a call the rules skipped. */
+    /** "r" for a recording, "s" for a call the rules skipped, "g" for a
+     *  message call the caller left during the greeting, "f" for one whose
+     *  greeting could not be played, "t" for a test call of the answering
+     *  machine. */
     internal fun encodeRecording(r: Recorded, kind: String = "r"): String =
         "$kind:${r.startMillis}:${if (r.incoming) "in" else "out"}:${r.seconds}"
 
@@ -81,20 +115,29 @@ internal object CallLedger {
     internal fun parse(entries: Set<String>): Ledger {
         val recordings = mutableListOf<Recorded>()
         val skipped = mutableListOf<Recorded>()
+        val hungUp = mutableListOf<Recorded>()
+        val tests = mutableListOf<Recorded>()
+        val failed = mutableListOf<Recorded>()
         val reported = mutableSetOf<Long>()
         for (entry in entries) {
             val parts = entry.split(':')
             when (val kind = parts.firstOrNull()) {
-                "r", "s" -> if (parts.size == 4) {
+                "r", "s", "g", "f", "t" -> if (parts.size == 4) {
                     val start = parts[1].toLongOrNull() ?: continue
                     val seconds = parts[3].toIntOrNull() ?: continue
                     val recorded = Recorded(start, parts[2] == "in", seconds)
-                    if (kind == "r") recordings += recorded else skipped += recorded
+                    when (kind) {
+                        "r" -> recordings += recorded
+                        "s" -> skipped += recorded
+                        "g" -> hungUp += recorded
+                        "f" -> failed += recorded
+                        else -> tests += recorded
+                    }
                 }
                 "c" -> parts.getOrNull(1)?.toLongOrNull()?.let { reported += it }
             }
         }
-        return Ledger(recordings, reported, skipped)
+        return Ledger(recordings, reported, skipped, hungUp, tests, failed)
     }
 
     private fun timeOf(entry: String): Long? = entry.split(':').getOrNull(1)?.toLongOrNull()

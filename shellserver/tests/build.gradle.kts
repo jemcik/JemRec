@@ -13,6 +13,8 @@ sourceSets {
     main {
         java {
             setSrcDirs(listOf("../src"))
+            include("com/jemcik/jemrec/shell/AnswerMachine.java")
+            include("com/jemcik/jemrec/shell/AnswerSettings.java")
             include("com/jemcik/jemrec/shell/CallStates.java")
             include("com/jemcik/jemrec/shell/Checks.java")
         }

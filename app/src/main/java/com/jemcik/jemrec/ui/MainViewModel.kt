@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import com.jemcik.jemrec.capture.AnsweringMachine
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.CallRules
@@ -83,12 +84,12 @@ private const val LOG_LIMIT = 8_000
 enum class Screen {
     HOME, SETTINGS,
     // Reached from Settings, and back to it.
-    WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH;
+    WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE;
 
     /** Where Back goes from here. */
     val up: Screen get() = when (this) {
         HOME, SETTINGS -> HOME
-        WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH -> SETTINGS
+        WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE -> SETTINGS
     }
 }
 
@@ -200,6 +201,8 @@ data class UiState(
     val favoritesOnly: Boolean = false,
     /** Only recordings marked to keep. Its own axis too, like favourites. */
     val keptOnly: Boolean = false,
+    /** Only messages the answering machine took. Its own axis too. */
+    val messagesOnly: Boolean = false,
     /** What is in Recently deleted, soonest to go first. See Trash. */
     val trashed: List<Recording> = emptyList(),
     /** Which tab of the home screen is showing. */
@@ -282,6 +285,8 @@ class MainViewModel @JvmOverloads constructor(
      *  the only way recordings entered state was refreshNow(), which is
      *  device-bound, and the tests reached into the flow by reflection. */
     initial: UiState = UiState(),
+    /** The same, for the answering machine's screen. */
+    initialAnswer: AnswerUi? = null,
 ) : AndroidViewModel(app) {
 
     // Whether messenger calls can work here is known at once (a cached
@@ -289,6 +294,9 @@ class MainViewModel @JvmOverloads constructor(
     // text for a moment on a phone where they cannot work.
     private val _state = MutableStateFlow(initial.copy(voipSupported = VoipApps.supported(app)))
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** The answering machine's settings, greeting and diagnostics. */
+    val answer = AnswerController(app, viewModelScope, ::say, initialAnswer)
 
     /** Failures of something the user just did, for a snackbar where they are:
      *  the log in Diagnostics is no place to learn that a share or a delete
@@ -768,7 +776,7 @@ class MainViewModel @JvmOverloads constructor(
         // can no longer see. Widening the query keeps everything, as it should.
         val next = if (current.selecting) {
             val stillShown = filterRecordings(
-                current.recordings, query, current.filter, current.favoritesOnly, current.keptOnly,
+                current.recordings, query, current.filter, current.favoritesOnly, current.keptOnly, current.messagesOnly,
             ).map { it.name }.toSet()
             current.selected intersect stillShown
         } else {
@@ -798,6 +806,8 @@ class MainViewModel @JvmOverloads constructor(
     fun toggleFavorites() = _state.update { it.copy(favoritesOnly = !it.favoritesOnly) }
 
     fun toggleKeptOnly() = _state.update { it.copy(keptOnly = !it.keptOnly) }
+
+    fun toggleMessagesOnly() = _state.update { it.copy(messagesOnly = !it.messagesOnly) }
 
     /** Mark one recording to keep, or take the mark off. Kept recordings are
      *  never auto-deleted. */
@@ -882,6 +892,13 @@ class MainViewModel @JvmOverloads constructor(
         val app = getApplication<Application>()
         CallTracking.setEnabled(app, on)
         _state.update { it.copy(callTracking = on) }
+        // The answering machine answers on tracking's word alone: left on
+        // without it, it would say it answers and never would.
+        if (!on && AnsweringMachine.enabled(app)) {
+            answer.setEnabled(false)
+            say("the answering machine is off too: it needs exact call tracking")
+        }
+        answer.reload()
         viewModelScope.launch {
             if (!CaptureDaemon.setTracking(app)) {
                 say("the recorder will pick up exact call tracking when it next restarts")
@@ -1084,6 +1101,7 @@ class MainViewModel @JvmOverloads constructor(
                 next.copy(selected = stillShown(next))
             }
         }
+        answer.reload()
         // Its row gone - deleted from its notification, auto-deleted - the
         // recording stops too, rather than play on with no control on screen.
         _state.value.playingName?.let { name ->
@@ -1441,7 +1459,7 @@ class MainViewModel @JvmOverloads constructor(
         // "All visible" means all that pass the search and preset - the same
         // rows the list is showing - not every recording on disk.
         val visible = filterRecordings(
-            current.recordings, current.query, current.filter, current.favoritesOnly, current.keptOnly,
+            current.recordings, current.query, current.filter, current.favoritesOnly, current.keptOnly, current.messagesOnly,
         ).take(current.visibleCount)
         current.copy(selected = visible.map { it.name }.toSet())
     }

@@ -56,6 +56,39 @@ object RecordingStore {
      */
     fun isIncoming(name: String): Boolean = name.contains("_in.")
 
+    private val MESSAGE_TAG = Regex("_msg(\\d+|none|fail)_")
+    private val TAKEN_TAG = Regex("_from(\\d+)_")
+
+    /**
+     * Where a call the user took over from the answering machine starts, in
+     * a daemon file named jemrec_rec_<millis>_from<start>_in.dat: ms from its
+     * first sample. Null for any other recording. Such a call is trimmed like
+     * a message and kept as an ordinary recording.
+     */
+    fun takenStartMs(recfile: String): Long? =
+        TAKEN_TAG.find(recfile)?.groupValues?.get(1)?.toLongOrNull()
+
+    /** [messageStartMs] for a caller who hung up during the greeting. */
+    const val MESSAGE_NONE = -1L
+
+    /** [messageStartMs] for a greeting that could not be played. */
+    const val MESSAGE_FAILED = -2L
+
+    /**
+     * Where a message starts in a daemon file the answering machine named
+     * (jemrec_rec_<millis>_msg<start>_in.dat), in ms from its first sample;
+     * [MESSAGE_NONE] for "_msgnone", [MESSAGE_FAILED] for "_msgfail"; null for
+     * any other recording.
+     */
+    fun messageStartMs(recfile: String): Long? {
+        val tag = MESSAGE_TAG.find(recfile)?.groupValues?.get(1) ?: return null
+        return when (tag) {
+            "none" -> MESSAGE_NONE
+            "fail" -> MESSAGE_FAILED
+            else -> tag.toLongOrNull()
+        }
+    }
+
     private val collection: Uri
         get() = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 

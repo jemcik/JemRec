@@ -142,6 +142,47 @@ class BehaviourTest : ScreenTest() {
         }
     }
 
+    @Test fun noLimitOnAMessageIsAskedAboutFirst() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = com.jemcik.jemrec.ui.MainViewModel(
+            org.robolectric.RuntimeEnvironment.getApplication(), state,
+            com.jemcik.jemrec.ui.AnswerUi(enabled = true, greetingSeconds = 6.0, longest = 60),
+        )
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Longest message").performScrollTo().performClick()
+        compose.onNodeWithText("No limit").performClick()
+        // A warning, not the setting: Cancel leaves it as it was.
+        compose.onNodeWithText("No limit?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(60, vm.answer.state.value.longest)
+        compose.onNodeWithText("1 minute, then it hangs up").assertIsDisplayed()
+        // Asked again, and said yes to.
+        compose.onNodeWithText("Longest message").performClick()
+        compose.onNodeWithText("No limit").performClick()
+        compose.onNodeWithText("No limit").performClick()
+        assertEquals(com.jemcik.jemrec.capture.AnsweringMachine.NO_LIMIT, vm.answer.state.value.longest)
+        compose.onNodeWithText("No limit - it hangs up after 30 seconds of silence").assertIsDisplayed()
+    }
+
+    @Test fun answeringAgainAfterAnEmergencyCallIsAskedAboutFirst() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = com.jemcik.jemrec.ui.MainViewModel(
+            org.robolectric.RuntimeEnvironment.getApplication(), state,
+            com.jemcik.jemrec.ui.AnswerUi(enabled = true, greetingSeconds = 6.0, pausedUntil = Fixtures.NOW),
+        )
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Answer again now").performClick()
+        // A warning first: keeping the pause changes nothing.
+        compose.onNodeWithText("Answer calls again?").assertIsDisplayed()
+        compose.onNodeWithText("Keep paused").performClick()
+        assertEquals(Fixtures.NOW, vm.answer.state.value.pausedUntil)
+        // Asked again, and said yes to: answering again, the row gone.
+        compose.onNodeWithText("Answer again now").performClick()
+        compose.onNodeWithText("Answer again").performClick()
+        assertEquals(null, vm.answer.state.value.pausedUntil)
+        compose.onNodeWithText("Answer again now").assertDoesNotExist()
+    }
+
     @Test fun theTileRowSaysWhenTheTileIsInThePanel() {
         show { AppScaffold(Fixtures.ready().copy(screen = Screen.SETTINGS, tileAdded = true), viewModel()) }
         compose.onNodeWithText("In your Quick Settings panel").performScrollTo().assertIsDisplayed()

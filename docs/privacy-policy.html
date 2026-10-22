@@ -47,7 +47,19 @@
             choose. Yours to play, share, move or delete like any other file. One
             deleted in JemRec waits 30 days in Recently deleted, then is removed:
             in the standard folder, Android&rsquo;s own trash does that; in a
-            folder you chose, it waits as a hidden file that JemRec removes.</td></tr>
+            folder you chose, it waits as a hidden file that JemRec removes.
+            Messages the answering machine took are recordings too; which ones
+            are messages is kept by file name in the app&rsquo;s private
+            storage.</td></tr>
+    <tr><td>Your greeting</td>
+        <td>Only if you record one for the answering machine: in the app&rsquo;s
+            private storage, and a copy the recorder plays from. Deleting it in
+            the app deletes both, and so does uninstalling.</td></tr>
+    <tr><td>Answering machine tests</td>
+        <td>What its checks found about the phone, and the result of each test
+            call by call type (2G, VoLTE, Wi-Fi Calling). No numbers, no
+            names. <em>Copy a report</em> puts them on the clipboard, only when
+            you tap it.</td></tr>
     <tr><td>Contact names and photos</td>
         <td>Read from the phone&rsquo;s own call log and contacts, only if you
             allow it, to label a recording, to show the Calls tab, to keep or
@@ -76,11 +88,17 @@
             name; one named with the caller has it in the file name.</td></tr>
     <tr><td>Call times</td>
         <td>When each recorded call started, which way it went and how long it
-            lasted, the time of any call the app told you was not recorded, and
-            of any call your choice of whose calls to keep left out.
-            No names, no numbers. Kept in the app&rsquo;s private storage for seven
-            days, so the missed-call check never reports a call twice or takes a
-            recording you deleted for a call that was missed. Also when recording
+            lasted, the time of any call the app told you was not recorded,
+            of any call your choice of whose calls to keep left out, and of any
+            call whose caller hung up during your greeting, and of the answering
+            machine&rsquo;s test calls. No names, no numbers. Kept in the
+            app&rsquo;s private storage for seven days, so the missed-call check
+            never reports a call twice or takes a recording you deleted for a
+            call that was missed. Also when you last called an emergency number
+            &mdash; noted with the answering machine on or off &mdash; and when
+            you last chose to answer again before a day had passed, so the
+            answering machine stands down for a day after such a call: the latest
+            time of each, no number, until the next. Also when recording
             was switched on or off or changed mode, so the Calls tab can say why a
             call was not recorded: times and the setting only, the last 300
             changes.</td></tr>
@@ -96,7 +114,8 @@
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
             ask before each call, whether to show each call when it ends, where to
             save, how to name files, whose calls to keep, which messengers&rsquo;
-            calls to record, the auto-delete rules,
+            calls to record, the auto-delete rules, the answering
+            machine&rsquo;s,
             which recordings you marked to keep (by file name), and random tokens the app uses to talk to its own recorder
             and to its own notifications.</td></tr>
   </table>
@@ -108,6 +127,11 @@
      itself: pairing with the phone&rsquo;s own Wireless debugging during setup, and
      talking to its recorder afterwards. Neither reaches your router, let alone the
      internet.</p>
+  <p>The answering machine&rsquo;s <em>Carrier voicemail</em> asks your carrier,
+     when you tap it, when its voicemail answers, and on a second tap changes
+     that. It is a request over the phone network, the same as dialling a
+     carrier code, and holds nothing but the timer. A test call to a number you
+     type is an ordinary phone call.</p>
 
   <h2>This website</h2>
   <p>Static files served by GitHub Pages, with no analytics, no cookies, and no
@@ -117,9 +141,14 @@
      policy; nothing about a donation reaches the app.</p>
 
   <h2>The microphone</h2>
-  <p>The app holds no microphone permission and opens no audio device. Calls are
+  <p>The app holds no microphone permission and never records. Calls are
      captured by a separate shell-privileged process, which the app starts during
-     setup and which writes to a file the app collects afterwards.</p>
+     setup and which writes to a file the app collects afterwards. So is your
+     answering-machine greeting, only while you record it; the app plays it back
+     to you when you ask.</p>
+  <p>While the answering machine takes a message, the recorder mutes your
+     microphone, so the caller hears nothing of the room you are in. It gives
+     it back when the call ends or when you take the call.</p>
 
   <h2>Deleting your data</h2>
   <p>Delete individual recordings in the app, or the whole folder from any file

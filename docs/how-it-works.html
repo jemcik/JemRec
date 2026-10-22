@@ -115,6 +115,14 @@
      same path and is not tested yet. Android allows this from version 14; on
      an older one, Settings says so.</p>
 
+  <h3>An answering machine, if you want one</h3>
+  <p>Off until you switch it on. It answers a call you have not taken, plays
+     your own greeting with your microphone muted, and keeps the caller&rsquo;s
+     message. No app can play sound into a call, so the recorder does it, as the
+     shell, through an output Android calls in-call music. Android&rsquo;s own
+     answer on whether a phone can do that was wrong on the Honor, so a test
+     call, not a guess, says whether it works on yours.</p>
+
   <h3>It tells you when something is wrong</h3>
   <p>A recorder that fails quietly is found out on the day a call was needed. So
      after each call a silent notification shows the recording, with Play, Share
@@ -128,14 +136,15 @@
   <h3>Every call, recorded or not</h3>
   <p>A Calls tab shows the phone's call log with a play mark on each recorded
      call, and, on one that was not recorded, why: recording was off, it was too
-     short, it is in Recently deleted, or &mdash; in red &mdash; nothing explains
-     it.</p>
+     short, it is in Recently deleted, or &mdash; in red &mdash; the answering
+     machine could not take a message, or nothing explains it.</p>
 
   <h3>Cut to the call</h3>
   <p>A recording starts when the call is answered, not when you dial: no
      ringing at the start, and a call nobody picked up is not kept. With call
      waiting, each call gets a recording of its own. Android tells JemRec when
-     each call is answered; JemRec only listens, and never touches a call.</p>
+     each call is answered; tracking only listens. The one thing that ever
+     answers a call is the answering machine, when you switch it on.</p>
 
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
@@ -152,8 +161,9 @@
      app.</p>
 
   <h2 id="permissions">What it asks for, and what it does not</h2>
-  <p>No microphone permission. The app never opens an audio device &mdash; the
-     shell-side process does the capturing &mdash; and a call recorder that asks
+  <p>No microphone permission. The app never records &mdash; the shell-side
+     process does the capturing, your answering-machine greeting included
+     &mdash; and a call recorder that asks
      for the microphone anyway is asking for something it does not use. Reading
      your call log and contacts is optional, offered once, and is used for two
      things only: labelling a recording with who the call was with, and noticing
@@ -174,7 +184,7 @@
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>
     <tr><td><code>READ_MEDIA_AUDIO</code></td><td>To list recordings made before a reinstall. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
-    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. JemRec never acts on a call.</td></tr>
+    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
     <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
     <tr><td><code>WAKE_LOCK</code></td><td>Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work.</td></tr>
   </table>

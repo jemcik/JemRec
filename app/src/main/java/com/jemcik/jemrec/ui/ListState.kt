@@ -26,7 +26,7 @@ internal fun picked(selected: Set<String>, shown: List<String>): Picked = when {
  *  user cannot see. */
 internal fun stillShown(state: UiState): Set<String> {
     if (state.selected.isEmpty()) return state.selected
-    val shown = filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly)
+    val shown = filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly, state.messagesOnly)
         .map { it.name }.toSet()
     return state.selected intersect shown
 }
@@ -37,6 +37,6 @@ internal fun stillShown(state: UiState): Set<String> {
 internal fun UiState.revealed(): UiState = copy(
     screen = Screen.HOME, homeTab = HomeTab.RECORDINGS,
     query = "", searchOpen = false,
-    filter = RecordingFilter.ALL, favoritesOnly = false, keptOnly = false,
+    filter = RecordingFilter.ALL, favoritesOnly = false, keptOnly = false, messagesOnly = false,
     selecting = false, selected = emptySet(),
 )

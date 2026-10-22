@@ -27,6 +27,7 @@ fun filterRecordings(
     filter: RecordingFilter,
     favoritesOnly: Boolean,
     keptOnly: Boolean = false,
+    messagesOnly: Boolean = false,
 ): List<Recording> {
     val q = query.trim()
     val now = System.currentTimeMillis()
@@ -38,11 +39,12 @@ fun filterRecordings(
         }
         val passesFavorite = !favoritesOnly || r.callerFavorite
         val passesKept = !keptOnly || r.kept
+        val passesMessage = !messagesOnly || r.message
         val passesQuery = q.isEmpty() ||
             r.caller?.contains(q, ignoreCase = true) == true ||
             r.number?.contains(q) == true ||
             r.whenLabel.contains(q, ignoreCase = true)
-        passesTime && passesFavorite && passesKept && passesQuery
+        passesTime && passesFavorite && passesKept && passesMessage && passesQuery
     }
 }
 

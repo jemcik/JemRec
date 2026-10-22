@@ -339,9 +339,9 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .after-steps { margin: 1.4rem 0 0; color: var(--ink-mid); max-width: 46rem; }
 @media (max-width: 54rem) { .steps { grid-template-columns: minmax(0, 1fr); } }
 
-/* A row of four, or on a phone a strip that scrolls sideways and stops on each
-   one - four phones stacked would be four screens of scrolling. */
-.gallery { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.6rem; }
+/* A row of five, or on a phone a strip that scrolls sideways and stops on each
+   one - five phones stacked would be five screens of scrolling. */
+.gallery { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1.4rem; }
 .gallery figure { margin: 0; text-align: center; }
 .gallery figcaption { margin-top: 1rem; }
 .gallery figcaption strong { display: block; }
@@ -373,6 +373,7 @@ main.home { max-width: none; padding: 0 0 2rem; }
   transition: border-color .15s, transform .15s;
 }
 .tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+.tile.wide { grid-column: 1 / -1; }
 .tile span { color: var(--ink-mid); font-size: .93rem; margin-top: .4rem; flex: 1; }
 .tile em { font-style: normal; font-weight: 600; font-size: .88rem; color: var(--accent); margin-top: .9rem; }
 .tiles-note { color: var(--ink-mid); margin: 1.4rem 0 0; }

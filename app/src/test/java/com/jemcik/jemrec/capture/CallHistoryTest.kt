@@ -66,6 +66,15 @@ class CallHistoryTest {
         assertEquals(r2, result.single { it.at == t + minute }.recording)
     }
 
+    @Test fun aCallTakenOverAndRecordedShowsItsMessage() {
+        // Ask first: the message up to the takeover, and the rest of the call
+        // recorded at the prompt - two recordings of one call, the list newest
+        // first. The one shown is the message, which the user did not hear.
+        val message = rec(t + 20_000).copy(message = true)
+        val rest = rec(t + 50_000)
+        assertEquals(message, classify(listOf(call(t)), recordings = listOf(rest, message)).single().recording)
+    }
+
     @Test fun anOutgoingCallNobodyAnsweredIsNotARecordingQuestion() {
         assertEquals(Status.NOT_CONNECTED, classify(listOf(call(t, Kind.OUTGOING, seconds = 0))).single().status)
     }

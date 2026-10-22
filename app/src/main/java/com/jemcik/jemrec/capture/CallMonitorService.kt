@@ -75,6 +75,15 @@ class CallMonitorService : Service() {
     @Volatile
     private var notRecording = false
 
+    /** The ticket the "Taking a message" notification's buttons must carry,
+     *  while the answering machine takes one (a test call, if [testing]);
+     *  null otherwise. One field, read once: two that moved together could
+     *  be seen half-moved from the other thread that writes them. */
+    @Volatile
+    private var messageTicket: String? = null
+    @Volatile
+    private var testing = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -128,7 +137,7 @@ class CallMonitorService : Service() {
             // CALL_ENDED arrives; this service only reflects it and, on end,
             // fetches the finished file to save. It is no longer on the audio
             // path, so a freeze here cannot cost a single packet.
-            ACTION_CALL_STARTED, ACTION_CALL_ENDED, ACTION_STOP -> {
+            ACTION_CALL_STARTED, ACTION_CALL_ENDED, ACTION_STOP, ACTION_MESSAGE_STARTED, ACTION_MESSAGE_TAKEN -> {
                 if (intent.getStringExtra(EXTRA_TOKEN) != CaptureDaemon.token(this)) {
                     Log.w(TAG, "monitor: ${intent.action} with a bad token, ignoring")
                     finishIfIdle()
@@ -140,11 +149,37 @@ class CallMonitorService : Service() {
                         intent.getBooleanExtra(EXTRA_INCOMING, false),
                         intent.getStringExtra(EXTRA_APP),
                     )
-                    ACTION_CALL_ENDED -> onCallEnded(
-                        intent.getStringExtra(EXTRA_RECFILE),
-                        intent.getBooleanExtra(EXTRA_INCOMING, false),
-                    )
+                    ACTION_CALL_ENDED -> {
+                        if (intent.getBooleanExtra(EXTRA_TEST, false)) {
+                            noteTestCall(intent.getLongExtra(EXTRA_STARTED, 0L), intent.getBooleanExtra(EXTRA_INCOMING, false))
+                        }
+                        onCallEnded(
+                            intent.getStringExtra(EXTRA_RECFILE),
+                            intent.getBooleanExtra(EXTRA_INCOMING, false),
+                        )
+                    }
+                    ACTION_MESSAGE_STARTED -> onMessageStarted(intent.getBooleanExtra(EXTRA_TEST, false))
+                    ACTION_MESSAGE_TAKEN -> onMessageTaken()
                     else -> stopSelf()
+                }
+            }
+
+            // The "Taking a message" notification's buttons. Guarded by the
+            // ticket that notification was posted with: this service is
+            // exported, and "unmute the microphone mid-call" and "hang up"
+            // are not for any app on the phone to press.
+            ACTION_TALK, ACTION_HANG_UP -> {
+                val ticket = messageTicket
+                if (ticket == null || intent.getStringExtra(EXTRA_TICKET) != ticket) {
+                    Log.w(TAG, "monitor: ${intent.action} without this message's ticket, ignoring")
+                    finishIfIdle()
+                    return START_NOT_STICKY
+                }
+                val talk = intent.action == ACTION_TALK
+                scope.launch {
+                    val ok = CaptureDaemon.handOver(this@CallMonitorService, talk)
+                    Log.i(TAG, "monitor: ${if (talk) "talk to them" else "hang up"} -> $ok")
+                    if (talk && ok) messageTaken()
                 }
             }
 
@@ -206,6 +241,11 @@ class CallMonitorService : Service() {
 
     private fun onCallStarted(recfile: String?, incoming: Boolean, app: String?) {
         callInProgress = true
+        // A message's own wake is MESSAGE_STARTED. This one, for a call the
+        // answering machine took, is Ask first's after a takeover: the
+        // message is over, and the prompt asks about the rest.
+        messageTicket = null
+        testing = false
         if (recfile.isNullOrBlank()) {
             // ON-DEMAND. The daemon is recording NOTHING yet. Ask, right at the
             // start of the call, and only a Record tap (ACTION_RECORD_NOW) tells
@@ -223,10 +263,50 @@ class CallMonitorService : Service() {
         startForegroundCompat()
     }
 
+    /** The answering machine answered, and the greeting is playing. */
+    private fun onMessageStarted(test: Boolean) {
+        Log.i(TAG, "monitor: the answering machine is taking a message${if (test) " (test)" else ""}")
+        callInProgress = true
+        testing = test
+        messageTicket = java.util.UUID.randomUUID().toString()
+        startForegroundCompat()
+    }
+
+    /** A test call of the answering machine is over, its recording deleted
+     *  by the recorder: in the call log it is an answered call, which the
+     *  missed-call check and the Calls tab must not take for a lost one. */
+    private fun noteTestCall(started: Long, incoming: Boolean) {
+        if (started <= 0) return
+        val seconds = ((System.currentTimeMillis() - started) / 1000).toInt().coerceAtLeast(0)
+        CallLedger.noteTestCall(this, started, incoming, seconds)
+        Log.i(TAG, "monitor: a test call of the answering machine, ${seconds}s, noted")
+    }
+
+    /** The user took the call over - unmuting on the call screen, Talk to
+     *  them, or answering a second call: a call like any other now. Never
+     *  late: the recorder sends no start once the call's end is on its way,
+     *  and its wakes arrive in order. So it may well be the first this
+     *  service hears of the call, if the message's own wake did not land. */
+    private fun onMessageTaken() {
+        Log.i(TAG, "monitor: the call was taken over")
+        callInProgress = true
+        messageTaken()
+    }
+
+    /** The message is the user's call now: recorded on, in Record every
+     *  call. In Ask first the recorder stopped at the takeover, and its
+     *  prompt (CALL_STARTED) asks about the rest. */
+    private fun messageTaken() {
+        messageTicket = null
+        recordingNow = RecordingMode.of(this) == RecordingMode.AUTOMATIC
+        startForegroundCompat()
+    }
+
     private fun onCallEnded(recfile: String?, incoming: Boolean) {
         Log.i(TAG, "monitor: call ended, recfile=$recfile")
         callInProgress = false
         recordingNow = false
+        messageTicket = null
         // If a start-of-call prompt is still up, the chance to answer it is gone.
         RecordPrompt.dismiss(this)
 
@@ -298,6 +378,11 @@ class CallMonitorService : Service() {
             // Only ringing: nobody answered.
             RecordingSaver.Outcome.NotAnswered ->
                 Log.i(TAG, "monitor: $recfile was never answered")
+            // The answering machine answered; the caller left before the beep.
+            RecordingSaver.Outcome.GreetingHangUp ->
+                Log.i(TAG, "monitor: $recfile - the caller hung up during the greeting")
+            // Every answered call would end this way until it is put right.
+            RecordingSaver.Outcome.GreetingFailed -> reportNotRecorded(GREETING_FAILED)
             RecordingSaver.Outcome.Empty -> {
                 reportNotRecorded(
                     "No call audio came through. Some phones do not allow calls to be recorded.",
@@ -327,22 +412,32 @@ class CallMonitorService : Service() {
         // says what it is doing about THIS call. "Recording call" while it
         // records; "Call in progress" in the gap before recording starts, or
         // while the mid-call prompt waits for an answer in on-demand mode.
+        val ticket = messageTicket
         val title = when {
+            ticket != null && testing -> "Testing the answering machine"
+            ticket != null -> "Taking a message"
             recordingNow -> "Recording call"
             notRecording -> "Not recording this call"
             else -> "Call in progress"
         }
         val text = when {
+            ticket != null && testing -> "Your greeting is playing to the caller"
+            ticket != null -> "Your greeting is playing; your microphone is muted"
             recordingNow -> "Saving this call"
             notRecording -> "Tap to see why"
             else -> "JemRec is handling this call"
         }
-        val notification: Notification = Notification.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(tap)
             .setOngoing(true)
+        if (ticket != null) {
+            builder.addAction(messageAction("Talk to them", ACTION_TALK, ticket))
+                .addAction(messageAction("Hang up", ACTION_HANG_UP, ticket))
+        }
+        val notification: Notification = builder
             // IMMEDIATE, or Android 12+ sits on a foreground service's
             // notification for ten seconds before showing it - a deferral meant
             // to spare short background jobs a flash of UI. Measured on a real
@@ -370,6 +465,18 @@ class CallMonitorService : Service() {
         }
     }
 
+    private fun messageAction(label: String, action: String, ticket: String): Notification.Action =
+        Notification.Action.Builder(
+            null as android.graphics.drawable.Icon?,
+            label,
+            PendingIntent.getService(
+                this,
+                action.hashCode(),
+                Intent(this, CallMonitorService::class.java).setAction(action).putExtra(EXTRA_TICKET, ticket),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ),
+        ).build()
+
     /**
      * Tell the user a call went unrecorded, once, with the reason.
      *
@@ -382,23 +489,7 @@ class CallMonitorService : Service() {
         recordingNow = false
         notRecording = true
         runCatching { startForegroundCompat() }
-
-        runCatching {
-            val tap = PendingIntent.getActivity(
-                this, 0, Intent(this, MainActivity::class.java),
-                PendingIntent.FLAG_IMMUTABLE,
-            )
-            val notification = Notification.Builder(this, PROBLEM_CHANNEL_ID)
-                .setContentTitle("Call not recorded")
-                .setContentText(reason)
-                .setStyle(Notification.BigTextStyle().bigText(reason))
-                .setSmallIcon(android.R.drawable.stat_notify_error)
-                .setContentIntent(tap)
-                .setAutoCancel(true)
-                .build()
-            getSystemService(NotificationManager::class.java)
-                .notify(PROBLEM_NOTIFICATION_ID, notification)
-        }.onFailure { Log.w(TAG, "monitor: could not report the failure", it) }
+        postNotRecorded(this, reason)
     }
 
     private fun createChannel() {
@@ -450,6 +541,33 @@ class CallMonitorService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val PROBLEM_CHANNEL_ID = AfterCall.PROBLEM_CHANNEL_ID
         private const val PROBLEM_NOTIFICATION_ID = 31
+
+        /** Why an answered call kept nothing: the greeting would not play. */
+        internal const val GREETING_FAILED = "The answering machine answered a call, but could not play your " +
+            "greeting, so it hung up. Run the test call in Settings, Answering machine."
+
+        /** "Call not recorded", with [reason] - from here at a hang-up, or
+         *  from a collection that found out later (RecordingSaver.reconcile). */
+        internal fun postNotRecorded(context: Context, reason: String) {
+            runCatching {
+                // A collection can get here before this service ever ran.
+                AfterCall.ensureChannels(context)
+                val tap = PendingIntent.getActivity(
+                    context, 0, Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_IMMUTABLE,
+                )
+                val notification = Notification.Builder(context, PROBLEM_CHANNEL_ID)
+                    .setContentTitle("Call not recorded")
+                    .setContentText(reason)
+                    .setStyle(Notification.BigTextStyle().bigText(reason))
+                    .setSmallIcon(android.R.drawable.stat_notify_error)
+                    .setContentIntent(tap)
+                    .setAutoCancel(true)
+                    .build()
+                context.getSystemService(NotificationManager::class.java)
+                    .notify(PROBLEM_NOTIFICATION_ID, notification)
+            }.onFailure { Log.w(TAG, "monitor: could not report the failure", it) }
+        }
         const val ACTION_STOP = "com.jemcik.jemrec.STOP_MONITOR"
 
         /** The mid-call prompt's buttons, when automatic recording is off. */
@@ -465,6 +583,19 @@ class CallMonitorService : Service() {
         /** Sent by the shell-side daemon when it sees a call begin or end. */
         const val ACTION_CALL_STARTED = "com.jemcik.jemrec.CALL_STARTED"
         const val ACTION_CALL_ENDED = "com.jemcik.jemrec.CALL_ENDED"
+        /** Sent by the daemon when the answering machine has answered and its
+         *  greeting is playing; [EXTRA_TEST] for a diagnostics test call. */
+        const val ACTION_MESSAGE_STARTED = "com.jemcik.jemrec.MESSAGE_STARTED"
+        /** Sent by the daemon when the user took over a message - unmuting on
+         *  the call screen, Talk to them, a second call answered - in Record
+         *  every call. */
+        const val ACTION_MESSAGE_TAKEN = "com.jemcik.jemrec.MESSAGE_TAKEN"
+        const val EXTRA_TEST = "test"
+        /** With a test call's end: when its recording began, wall clock. */
+        const val EXTRA_STARTED = "started"
+        /** The "Taking a message" notification's buttons. */
+        const val ACTION_TALK = "com.jemcik.jemrec.TALK"
+        const val ACTION_HANG_UP = "com.jemcik.jemrec.HANG_UP"
         const val EXTRA_TOKEN = "token"
 
         /**

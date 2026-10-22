@@ -6,6 +6,7 @@ import com.genymobile.scrcpy.Workarounds;
 import com.genymobile.scrcpy.audio.AudioCapture;
 import com.genymobile.scrcpy.audio.AudioCaptureException;
 import com.genymobile.scrcpy.audio.AudioCodec;
+import com.genymobile.scrcpy.audio.AudioConfig;
 import com.genymobile.scrcpy.audio.AudioDirectCapture;
 import com.genymobile.scrcpy.audio.AudioEncoder;
 import com.genymobile.scrcpy.audio.AudioRawRecorder;
@@ -18,8 +19,11 @@ import android.content.Context;
 import android.media.AudioManager;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Build;
 import android.os.ParcelFileDescriptor;
+import android.os.SystemClock;
 import android.system.Os;
+import android.telecom.TelecomManager;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
 
@@ -215,6 +219,7 @@ public final class Main {
             appToken = token == null ? "" : token;
             recordingMode = modeFromEnvironment(System.getenv(MODE_ENV));
             trackingOn = "1".equals(System.getenv(TRACK_ENV));
+            answerSettings = AnswerSettings.parse(System.getenv(ANSWER_ENV));
 
             final int bound = port;
             listenPort = bound;
@@ -322,7 +327,45 @@ public final class Main {
                 Ln.w("callwatch: could not rebind telephony context: " + e.getMessage());
             }
             AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+            // Handed out with no context at all: setMicrophoneMute reads the
+            // caller's package from it, as setMode does - which died of an NPE
+            // in the answering-machine probe (the Honor, 2026-10-22). getMode
+            // swallows the same NPE, which is why the call watch never
+            // noticed. Only the answering machine mutes, so a phone where this
+            // fails loses that, not the watch.
+            try {
+                for (String name : new String[]{"mOriginalContext", "mApplicationContext"}) {
+                    Field field = AudioManager.class.getDeclaredField(name);
+                    field.setAccessible(true);
+                    field.set(audio, context);
+                }
+                muteReady = true;
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                Ln.w("answer: could not rebind the audio context, so no mute and no answering: " + e);
+            }
             Handler handler = new Handler(Looper.getMainLooper());
+            mainHandler = handler;
+            callAudio = audio;
+            phone = telephony;
+            TelecomManager telecomManager = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
+            try {
+                Field mContext = TelecomManager.class.getDeclaredField("mContext");
+                mContext.setAccessible(true);
+                mContext.set(telecomManager, context);
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                // The answering machine's, not the watch's: whatever this
+                // throws must not stop the call watch below from registering.
+                Ln.w("answer: could not rebind the telecom context: " + e);
+            }
+            telecom = telecomManager;
+            answerMachine = new AnswerMachine(new AnswerEffects());
+            AnswerSettings settings = answerSettings;
+            answerMachine.configure(settings.on, settings.maxMessageSeconds * 1000L);
+            Ln.i("answer: " + (settings.on
+                    ? "on, " + (settings.maxMessageSeconds == AnswerSettings.NO_LIMIT ? "no limit" : "up to " + settings.maxMessageSeconds + " s")
+                        + ", route " + settings.route
+                    : "off"));
+            giveBackStaleMute();
             // Into a field, never inline: the framework only holds it weakly.
             // See callWatch.
             callWatch = new CallWatch(token, telephony, audio, handler);
@@ -422,6 +465,15 @@ public final class Main {
                 }
 
                 @Override
+                public void callGoesOn() {
+                    // The answering machine stopped listening at that idle.
+                    AnswerMachine machine = answerMachine;
+                    if (machine != null) {
+                        machine.callGoesOn();
+                    }
+                }
+
+                @Override
                 public void log(String message) {
                     Ln.i(message);
                 }
@@ -435,16 +487,28 @@ public final class Main {
             // arrived, whatever came of it.
             callEvents.incrementAndGet();
             lastCallEventAt = System.currentTimeMillis();
+            AnswerMachine machine = answerMachine;
             switch (state) {
                 case TelephonyManager.CALL_STATE_RINGING:
                     states.ringing();
+                    if (machine != null) {
+                        machine.ringing();
+                    }
                     break;
                 case TelephonyManager.CALL_STATE_OFFHOOK:
                     offHooks.incrementAndGet();
                     lastOffHookAt = System.currentTimeMillis();
+                    // First: the call start that follows asks whether this
+                    // machine answered it.
+                    if (machine != null) {
+                        machine.offHook(states.rang());
+                    }
                     states.offHook();
                     break;
                 case TelephonyManager.CALL_STATE_IDLE:
+                    if (machine != null) {
+                        machine.idleSignal();
+                    }
                     states.idle();
                     break;
                 default:
@@ -516,6 +580,29 @@ public final class Main {
             if (appIsInstalled()) {
                 continue;
             }
+            AnswerMachine machine = answerMachine;
+            if (machine != null && machine.takingMessage()) {
+                // A message under way: its caller hung up on first, and the
+                // microphone given back as the call ends - then the rest. A
+                // call the user took over is theirs, left to go on.
+                Ln.i("custodian: JemRec is no longer installed; ending the message first");
+                try {
+                    onMain(() -> {
+                        machine.hangUpNow();
+                        return null;
+                    });
+                } catch (Exception e) {
+                    Ln.w("custodian: could not end the message: " + e);
+                }
+                continue;
+            }
+            if (!giveBackStaleMute()) {
+                // A mute a predecessor left mid-message, and a call up: given
+                // back once it is over. Cleaning up now would take its marker
+                // with the rest, and nothing would look again.
+                Ln.i("custodian: JemRec is no longer installed; cleaning up once the call is over");
+                continue;
+            }
             Ln.i("custodian: JemRec is no longer installed, cleaning up and exiting");
             cleanUpAfterApp();
             System.exit(0);
@@ -552,7 +639,10 @@ public final class Main {
     }
 
     /**
-     * Put back the two things the app changed that outlive it.
+     * Put back what the app changed that outlives it: both debugging
+     * switches, a microphone left muted by a message, and its files in
+     * /data/local/tmp - the jar, the logs, recordings never collected, the
+     * greeting and its take.
      *
      * Wireless debugging was turned on for setup and is a secure setting only
      * something with shell rights can write - which this is, and the app no
@@ -572,6 +662,11 @@ public final class Main {
         leftovers.add(new File(JAR_PATH));
         leftovers.add(new File(LOG_PATH));
         leftovers.add(new File(LOG_PATH + ".1"));
+        // The user's greeting, a take, and the marker of a mute left
+        // mid-message - given back already (watchForUninstall).
+        leftovers.add(Greeting.FILE);
+        leftovers.add(Greeting.TAKE);
+        leftovers.add(MUTE_MARKER);
         File[] recordings = new File(REC_DIR).listFiles((d, n) -> n.startsWith(REC_PREFIX) && n.endsWith(REC_SUFFIX));
         if (recordings != null) {
             leftovers.addAll(java.util.Arrays.asList(recordings));
@@ -1062,6 +1157,58 @@ public final class Main {
     private static final long SKIP_CURRENT_MS = 8_000L;
     private static volatile long skipUntil;
 
+    /**
+     * THE ANSWERING MACHINE - see AnswerMachine. Its settings ("on,seconds,
+     * route") arrive in the environment at spawn and over 'N' when the user
+     * changes them, the way the mode does, and default to off. The app's
+     * go-ahead for a ringing call is 'Y' (four bytes: the delay in ms, or -1
+     * to take it back); 'H' is Talk to them ('T') or Hang up ('H') during a
+     * message; 'G' handles the greeting and 'X' the diagnostics.
+     */
+    private static final int COMMAND_ANSWER_SETTINGS = 'N';
+    private static final int COMMAND_GO_AHEAD = 'Y';
+    private static final int COMMAND_HANDOVER = 'H';
+    private static final int COMMAND_GREETING = 'G';
+    private static final int COMMAND_DIAGNOSE = 'X';
+    private static final String ANSWER_ENV = "JEMREC_ANSWER";
+    private static final String ACTION_MESSAGE_STARTED = "com.jemcik.jemrec.MESSAGE_STARTED";
+    private static final String ACTION_MESSAGE_TAKEN = "com.jemcik.jemrec.MESSAGE_TAKEN";
+    /** Left while this process holds the microphone muted, so a restart in
+     *  the middle of a message gives the microphone back. */
+    private static final File MUTE_MARKER = new File("/data/local/tmp/jemrec-muted");
+
+    private static volatile AnswerSettings answerSettings = AnswerSettings.OFF;
+    /** The microphone can be muted from here (the audio context rebound).
+     *  Without that, nothing is answered: the caller would hear the room. */
+    private static volatile boolean muteReady;
+    private static AnswerMachine answerMachine;
+    private static Handler mainHandler;
+    private static AudioManager callAudio;
+    private static TelecomManager telecom;
+    private static TelephonyManager phone;
+    private static final GreetingPlayer greetingPlayer = new GreetingPlayer();
+    /** When the recording in progress captured its first sample, on the
+     *  answering machine's clock (SystemClock.elapsedRealtime): the
+     *  message's start is counted from here, as the app counts packets. */
+    private static volatile long captureStartedAt;
+
+    /** The last diagnostics test call, for 'X' 'R'. */
+    private static volatile String testState = "none";
+    private static volatile int testRoute = -1;
+    private static volatile long testRealMs;
+    private static volatile long testAudioMs;
+    private static volatile int testToneRun;
+    private static volatile int testToneBest;
+    private static volatile int testMuteHeld = -1;
+    private static volatile int testVoice = -1;
+    /** 0 when the test's greeting could not be played at all. */
+    private static volatile int testPlayed = -1;
+    /** Chunks of about 21 ms in a row with the check tone: 8 is ~170 ms. */
+    private static final int TONE_CHUNKS = 8;
+    /** The check tone counts above -50 dBFS, and as most of the chunk. */
+    private static final double TONE_MIN_RMS = 32768 * Math.pow(10, -50 / 20.0);
+    private static final double TONE_MIN_SHARE = 0.5;
+
     /** One applyTracking at a time - the start-up thread's and the app's 'T'
      *  can overlap - so the last to run applies what trackingOn says by then,
      *  not what it said before the other ran. Not Main.class: that is held
@@ -1166,7 +1313,15 @@ public final class Main {
             long startedAt = System.currentTimeMillis();
             String name = REC_PREFIX + startedAt
                     + (app != null ? VOIP_TAG + app : incoming ? "_in" : "_out") + REC_SUFFIX;
-            AudioCapture capture = app != null ? Voip.newCapture() : new AudioDirectCapture(AUDIO_SOURCE);
+            // A phone call this process answered, through the level tap: the
+            // answering machine and its diagnostics look at what is recorded,
+            // never change it. It answered before the off-hook that starts
+            // this, so it is known now; any other call is not looked at.
+            AnswerMachine machine = answerMachine;
+            AudioCapture capture = app != null ? Voip.newCapture()
+                    : machine != null && machine.answeredThisCall()
+                    ? new LevelTap(new AudioDirectCapture(AUDIO_SOURCE), Main::onChunk)
+                    : new AudioDirectCapture(AUDIO_SOURCE);
             if (capture == null) {
                 throw new IllegalStateException("messenger calls are not armed");
             }
@@ -1208,6 +1363,7 @@ public final class Main {
             return activeRecording.name;
         }
         try {
+            captureStartedAt = 0;
             activeRecording = RecordingSession.start(incoming, app);
         } catch (Throwable t) {
             Ln.e("recording: could not start", t);
@@ -1261,6 +1417,17 @@ public final class Main {
             callActive = true;
             callIncoming = incoming;
             callVoipApp = app;
+            AnswerMachine machine = answerMachine;
+            if (app == null && machine != null && machine.takingMessage()) {
+                // A call this process answered: the recording IS the message,
+                // whatever the mode - switching the answering machine on is
+                // the consent to record one. No start-of-call wake: the
+                // message's own (MESSAGE_STARTED) follows with the greeting.
+                // Not once the user took the call: an off-hook then - a
+                // waiting call - is theirs, asked about as in any call.
+                beginRecording(incoming, null);
+                return;
+            }
             if (app == null && skipUntil > System.currentTimeMillis()) {
                 skipUntil = 0;
                 Ln.i("recording: the rules leave this call out; not recording it");
@@ -1294,12 +1461,85 @@ public final class Main {
         }
     }
 
-    private static synchronized void stopRecording() {
+    /**
+     * Ask first, and the user took over a call the answering machine answered:
+     * the recording so far is the message - kept as one, or dropped with no
+     * word in it - and nothing more is recorded unless the user says so at the
+     * Record prompt this puts up. A recording started there is the user's
+     * own: at the call's end it is named as taken, from before its first
+     * sample (Checks.takenRecfile: "_from0"), and kept whole.
+     */
+    private static void splitOffMessage(AnswerMachine.Outcome part) {
+        synchronized (Main.class) {
+            if (!callActive) {
+                // The call ended as it was taken: its end has named it.
+                Ln.i("answer: the call was taken as it ended; nothing to split");
+                return;
+            }
+            RecordingSession rec = activeRecording;
+            if (rec == null) {
+                Ln.w("answer: the call was taken; there was no recording of it to split");
+            } else {
+                rec.stop();
+                File file = new File(REC_DIR, rec.name);
+                if (part.speechAt == 0) {
+                    Ln.i("answer: the call was taken before a word was left; " + rec.name + " dropped -> "
+                            + file.delete());
+                } else {
+                    String renamed = Checks.messageRecfile(rec.name, part.messageStart(), captureStartedAt, false,
+                            false);
+                    if (file.renameTo(new File(REC_DIR, renamed))) {
+                        Ln.i("answer: the call was taken; the message so far -> " + renamed);
+                    } else {
+                        Ln.w("answer: the call was taken; could not name " + rec.name + " as a message");
+                    }
+                }
+                activeRecording = null;
+            }
+        }
+        // Even with nothing recorded - a recording that could not start: the
+        // prompt is what tells the app the message is over.
+        wake(ACTION_CALL_STARTED, callIncoming, "", null);
+    }
+
+    private static synchronized void stopRecording(AnswerMachine.Outcome outcome) {
         RecordingSession rec = activeRecording;
         if (rec == null) {
             return;
         }
         rec.stop();
+        String name = rec.name;
+        if (outcome != null && outcome.test) {
+            // A diagnostics test: what it showed is kept for 'X' 'R'; the
+            // recording is not the user's, and goes. The app is told when the
+            // call began, to account for it in the call log.
+            boolean gone = new File(REC_DIR, name).delete();
+            Ln.i("answer: test call over, its recording deleted -> " + gone);
+            activeRecording = null;
+            wake(ACTION_CALL_ENDED, rec.incoming, "", null,
+                    "--ez", "test", "true", "--el", "started", String.valueOf(rec.startedAt));
+            return;
+        }
+        if (outcome != null) {
+            // A message: named with where it starts, so whichever collector
+            // takes it - the hang-up's, or a reconcile days later - trims it
+            // the same way and knows it for a message. A call the user took
+            // over: theirs, an ordinary recording, from when they took it -
+            // or the caller's first words, if earlier; in Ask first, all of
+            // what they said Record to (see splitOffMessage).
+            boolean taken = !outcome.isMessage();
+            String renamed = taken
+                    ? Checks.takenRecfile(name, outcome.takenStart(), captureStartedAt)
+                    : Checks.messageRecfile(name, outcome.messageStart(), captureStartedAt, outcome.nothingLeft(),
+                            outcome.greetingFailed);
+            if (new File(REC_DIR, name).renameTo(new File(REC_DIR, renamed))) {
+                name = renamed;
+            } else {
+                Ln.w("answer: could not name " + name + (taken ? " with where the call was taken" : " as a message"));
+            }
+            Ln.i(taken ? "answer: the user took the call - " + name + " is an ordinary recording"
+                    : "answer: message recorded -> " + name);
+        }
         // ONLY NOW. LIST hides the active recording so the app never collects
         // a file that is still being written - and until stop() has returned,
         // it still is. Clearing this first, as it used to, opened a window in
@@ -1307,7 +1547,7 @@ public final class Main {
         // truncated file, and a truncated file reads as a complete one.
         activeRecording = null;
         // Now the file is complete and at rest, tell the app to come and get it.
-        wake(ACTION_CALL_ENDED, rec.incoming, rec.name, rec.app);
+        wake(ACTION_CALL_ENDED, rec.incoming, name, rec.app);
     }
 
     /** Call end handling. A recording that ran is finished and handed over; an
@@ -1339,6 +1579,15 @@ public final class Main {
     private static void endCall() {
         boolean wasRecording;
         String app;
+        // The answering machine first: it gives the microphone back, and says
+        // what became of the message. Only a phone call is ever its business.
+        AnswerMachine machine = answerMachine;
+        AnswerMachine.Outcome outcome = callVoipApp == null && machine != null ? machine.callEnded() : null;
+        if (outcome == null) {
+            // Not a call this process answered: a mute marker now is one a
+            // predecessor left, kept while this call was up.
+            giveBackStaleMute();
+        }
         // Under the same lock as an on-demand start, so a Record tap landing as
         // the call ends either starts before the end - and is stopped here - or
         // finds the call over and is refused. Between the two, a recording
@@ -1351,8 +1600,12 @@ public final class Main {
             callVoipApp = null;
             wasRecording = activeRecording != null;
             if (wasRecording) {
-                stopRecording();
+                stopRecording(outcome);
             }
+        }
+        if (outcome != null && outcome.test) {
+            // Recorded or not: its results are complete.
+            testState = "done";
         }
         if (!wasRecording && recordingMode != MODE_OFF) {
             wake(ACTION_CALL_ENDED, callIncoming, "", app);
@@ -1371,9 +1624,26 @@ public final class Main {
      */
     private static final int WAKE_ATTEMPTS = 3;
     private static final long WAKE_RETRY_MS = 2000L;
+    /** How long one `am` may take: one that hangs must not hold up for good
+     *  the wakes queued behind it. */
+    private static final long WAKE_TIMEOUT_MS = 10_000L;
+
+    /**
+     * The wakes, one at a time, in the order they were asked for. Each used
+     * to have a thread and an `am` of its own, so two of them a moment apart
+     * - a message's start and its call's end, a Record prompt and the end
+     * that takes it down - could reach the app the other way round, and leave
+     * "Taking a message", or the prompt, up for a call that was over.
+     */
+    private static final java.util.concurrent.ExecutorService WAKES =
+            java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+                Thread thread = new Thread(task, "jemrec-wake");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     /** Off the main thread: `am` takes a moment, and the looper must not wait for it. */
-    private static void wake(String action, boolean incoming, String recfile, String app) {
+    private static void wake(String action, boolean incoming, String recfile, String app, String... extras) {
         java.util.List<String> command = new java.util.ArrayList<>(java.util.Arrays.asList(
                 "am", "start-foreground-service",
                 "-n", APP_SERVICE,
@@ -1387,35 +1657,53 @@ public final class Main {
             command.add("app");
             command.add(app);
         }
+        command.addAll(java.util.Arrays.asList(extras));
         long seq = callSeq;
-        new Thread(() -> {
+        boolean start = ACTION_CALL_STARTED.equals(action) || ACTION_MESSAGE_STARTED.equals(action)
+                || ACTION_MESSAGE_TAKEN.equals(action);
+        WAKES.execute(() -> {
             for (int attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
-                if (attempt > 1 && ACTION_CALL_STARTED.equals(action) && endedSeq >= seq) {
-                    // That call is over, and its CALL_ENDED is on its way or
-                    // there: a start landing after it would put up a prompt,
-                    // or a "Recording" notice, for a call that has ended.
-                    Ln.i("wake: the call is over, not retrying " + action);
+                if (start && endedSeq >= seq) {
+                    // That call is over, and its CALL_ENDED is queued behind
+                    // this: a start landing now would put up a prompt, a
+                    // "Recording" or a "Taking a message" for a call that has
+                    // ended - until the next one did.
+                    Ln.i("wake: the call is over, not sending " + action);
+                    return;
+                }
+                AnswerMachine machine = answerMachine;
+                if (ACTION_MESSAGE_STARTED.equals(action) && (machine == null || !machine.takingMessage())) {
+                    // Taken over already: the wake queued behind this one
+                    // tells the app so.
+                    Ln.i("wake: the message is over, not sending " + action);
                     return;
                 }
                 try {
                     Process process = new ProcessBuilder(command)
                             .redirectErrorStream(true)
                             .start();
-                    String said = slurp(process);
-                    int exit = process.waitFor();
-                    if (exit == 0) {
-                        Ln.i("wake: " + action + " (" + recfile + ") -> exit 0"
-                                + (attempt > 1 ? " on attempt " + attempt : ""));
-                        return;
+                    // Its few lines of output wait in the pipe meanwhile.
+                    if (!process.waitFor(WAKE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                        process.destroyForcibly();
+                        Ln.w("wake: " + action + " (" + recfile + ") -> no answer in "
+                                + WAKE_TIMEOUT_MS / 1000 + " s on attempt " + attempt);
+                    } else {
+                        String said = slurp(process);
+                        int exit = process.exitValue();
+                        if (exit == 0) {
+                            Ln.i("wake: " + action + " (" + recfile + ") -> exit 0"
+                                    + (attempt > 1 ? " on attempt " + attempt : ""));
+                            return;
+                        }
+                        Ln.w("wake: " + action + " (" + recfile + ") -> exit " + exit
+                                + " on attempt " + attempt + ": " + said);
                     }
-                    Ln.w("wake: " + action + " (" + recfile + ") -> exit " + exit
-                            + " on attempt " + attempt + ": " + said);
                 } catch (Throwable t) {
                     Ln.e("wake: could not wake the app", t);
                 }
                 sleep(WAKE_RETRY_MS);
             }
-        }, "jemrec-wake").start();
+        });
     }
 
     /** Everything a finished child printed, one line, trimmed. */
@@ -1476,7 +1764,11 @@ public final class Main {
                 // a fetch cut short by the exit reads as a complete, shorter
                 // recording. The app asks this to replace an older build, and
                 // will ask again; the call is worth more than a prompt update.
-                busy = activeRecording != null || callActive || fetches.get() > 0;
+                // A ring with an answer on its way counts as mid-call.
+                AnswerMachine machine = answerMachine;
+                busy = activeRecording != null || callActive || fetches.get() > 0
+                        || (machine != null && machine.state() != AnswerMachine.State.IDLE
+                            && machine.state() != AnswerMachine.State.RINGING);
             }
             if (busy) {
                 client.getOutputStream().write("BUSY\n".getBytes(StandardCharsets.UTF_8));
@@ -1674,11 +1966,686 @@ public final class Main {
             client.getOutputStream().flush();
             return;
         }
+        if (command == COMMAND_ANSWER_SETTINGS) {
+            AnswerSettings settings = AnswerSettings.parse(readName(client));
+            answerSettings = settings;
+            AnswerMachine machine = answerMachine;
+            if (machine != null) {
+                onMain(() -> {
+                    machine.configure(settings.on, settings.maxMessageSeconds * 1000L);
+                    return null;
+                });
+            }
+            Ln.i("session: answering machine " + settings.wire());
+            reply(client, "ANSWER " + settings.wire());
+            return;
+        }
+        if (command == COMMAND_GO_AHEAD) {
+            DataInputStream in = new DataInputStream(client.getInputStream());
+            int delay = in.readInt();
+            // When the app saw the ring - eight more bytes, from 0.17 on.
+            long rangAt;
+            try {
+                rangAt = in.readLong();
+            } catch (java.io.EOFException e) {
+                rangAt = 0;
+            }
+            // On the machine's clock as it comes: SystemClock.elapsedRealtime,
+            // since boot, is the same clock in the app and here - and a
+            // wall-clock step between the ring and now cannot move it.
+            final long rang = rangAt;
+            AnswerMachine machine = answerMachine;
+            if (machine == null) {
+                reply(client, "GO none");
+                return;
+            }
+            String state = onMain(() -> {
+                if (delay < 0) {
+                    machine.cancelGoAhead();
+                } else {
+                    machine.goAhead(delay, rang);
+                }
+                return machine.state().name();
+            });
+            reply(client, "GO " + state);
+            return;
+        }
+        if (command == COMMAND_HANDOVER) {
+            int what = client.getInputStream().read();
+            AnswerMachine machine = answerMachine;
+            if (machine == null) {
+                reply(client, "HAND none");
+                return;
+            }
+            String state = onMain(() -> {
+                if (what == 'T') {
+                    // The notification's Talk, or the app seeing a second call
+                    // answered: the machine tells the app (callTaken).
+                    machine.talk();
+                } else if (what == 'H') {
+                    machine.hangUpNow();
+                }
+                return machine.state().name();
+            });
+            Ln.i("answer: hand-over '" + (char) what + "' -> " + state);
+            reply(client, "HAND " + state);
+            return;
+        }
+        if (command == COMMAND_GREETING) {
+            greeting(client);
+            return;
+        }
+        if (command == COMMAND_DIAGNOSE) {
+            diagnose(client);
+            return;
+        }
         Ln.w("session: unknown command " + command + ", closing");
+    }
+
+    private static void reply(Socket client, String line) throws IOException {
+        client.getOutputStream().write((line + "\n").getBytes(StandardCharsets.UTF_8));
+        client.getOutputStream().flush();
+    }
+
+    /**
+     * 'G': the greeting. 'Q' how long it is; 'R' and 'S' start and stop a take
+     * from the microphone; 'T' the take, 'F' the greeting, each as four bytes
+     * of length and the PCM; 'P' a new greeting, the same way in; 'D' deletes.
+     */
+    private static void greeting(Socket client) throws IOException {
+        DataInputStream in = new DataInputStream(client.getInputStream());
+        int what = in.read();
+        switch (what) {
+            case 'Q':
+                reply(client, "GREETING " + (Greeting.present() ? Greeting.FILE.length() : 0));
+                break;
+            case 'R':
+                reply(client, Greeting.startTake() ? "TAKE recording" : "TAKE busy");
+                break;
+            case 'S':
+                reply(client, "TAKE " + Greeting.stopTake());
+                break;
+            case 'T':
+            case 'F':
+                sendFile(client, what == 'T' ? Greeting.TAKE : Greeting.FILE);
+                break;
+            case 'P':
+                // A whole greeting over loopback takes a moment at most.
+                client.setSoTimeout(30_000);
+                Greeting.put(in, in.readInt());
+                reply(client, "GREETING " + Greeting.FILE.length());
+                break;
+            case 'D':
+                Greeting.delete();
+                reply(client, "GREETING 0");
+                break;
+            default:
+                Ln.w("session: unknown greeting command " + what);
+        }
+    }
+
+    private static void sendFile(Socket client, File file) throws IOException {
+        java.io.DataOutputStream out = new java.io.DataOutputStream(client.getOutputStream());
+        if (!file.isFile()) {
+            out.writeInt(0);
+            out.flush();
+            return;
+        }
+        out.writeInt((int) file.length());
+        try (FileInputStream in = new FileInputStream(file)) {
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+        }
+        out.flush();
+    }
+
+    /**
+     * 'X': the answering machine's diagnostics - see the app's diagnostics
+     * screen for what each answer means to the user.
+     *   'C' stage one, no call: one line of key=value.
+     *   'A' arm a test call: a byte (1 incoming, 0 outgoing) and a name frame,
+     *       the number to dial for an outgoing one.
+     *   'R' the last test's signals.
+     *   'F' the carrier's no-reply forwarding, as the network has it - slow.
+     *   'S' a byte of seconds: lengthen it, keeping its number.
+     */
+    private static void diagnose(Socket client) throws Exception {
+        DataInputStream in = new DataInputStream(client.getInputStream());
+        int what = in.read();
+        switch (what) {
+            case 'C':
+                reply(client, stageOne());
+                break;
+            case 'A': {
+                boolean incoming = in.read() == 1;
+                String number = readName(client);
+                AnswerMachine machine = answerMachine;
+                if (machine == null) {
+                    reply(client, "TEST none");
+                    break;
+                }
+                // Before arming: an armed outgoing test takes the next call
+                // this phone places, and a number that is not dialled leaves
+                // that to be the user's own. Ending in '#' - *100# - or of two
+                // digits, it is sent as a USSD code: no call, no off-hook.
+                if (!incoming && (!number.matches("[0-9+*#]{3,32}") || number.endsWith("#"))) {
+                    reply(client, "TEST bad-number");
+                    break;
+                }
+                // Never an emergency number - the app asks too. Telecom does
+                // not place one for the shell but opens the dialer with it
+                // (AOSP NewOutgoingCallIntentBroadcaster, read 2026-10-22),
+                // and a Call there would be taken for the test's: the check
+                // tone and the greeting, into an emergency call.
+                if (!incoming && mayBeEmergencyNumber(number)) {
+                    reply(client, "TEST emergency");
+                    break;
+                }
+                // The test plays the greeting this process has: without one,
+                // a caller is answered and hung up on, and the route blamed.
+                if (!Greeting.present()) {
+                    reply(client, "TEST no-greeting");
+                    break;
+                }
+                // A test call still up would write its results over the new
+                // test's, and end it.
+                if (machine.testing()) {
+                    reply(client, "TEST busy");
+                    break;
+                }
+                testState = "armed";
+                testRoute = -1;
+                testRealMs = 0;
+                testAudioMs = 0;
+                testToneRun = 0;
+                testToneBest = 0;
+                testMuteHeld = -1;
+                testVoice = -1;
+                testPlayed = -1;
+                onMain(() -> {
+                    machine.armTest(incoming, incoming ? TEST_INCOMING_WINDOW_MS : TEST_OUTGOING_WINDOW_MS);
+                    return null;
+                });
+                if (!incoming) {
+                    runQuietly("am", "start", "-a", "android.intent.action.CALL",
+                            "-d", "tel:" + number.replace("#", "%23"));
+                }
+                reply(client, "TEST armed");
+                break;
+            }
+            case 'R':
+                reply(client, "RESULT 1 state=" + testState
+                        + " route=" + testRoute
+                        + " realms=" + testRealMs
+                        + " audioms=" + testAudioMs
+                        + " tone=" + (testToneBest >= TONE_CHUNKS ? 1 : 0)
+                        + " tonechunks=" + testToneBest
+                        + " mute=" + testMuteHeld
+                        + " voice=" + testVoice
+                        + " played=" + testPlayed);
+                break;
+            case 'F':
+                client.setSoTimeout(60_000);
+                reply(client, "FWD " + Forwarding.readNoReply(phone));
+                break;
+            case 'P':
+                reply(client, sims());
+                break;
+            case 'S': {
+                int seconds = in.read();
+                if (seconds < 5 || seconds > 30) {
+                    reply(client, "FWD error bad-seconds");
+                    break;
+                }
+                client.setSoTimeout(90_000);
+                reply(client, "FWD " + Forwarding.setNoReply(phone, seconds));
+                break;
+            }
+            default:
+                Ln.w("session: unknown diagnostics command " + what);
+        }
+    }
+
+    /** Three minutes for someone to call. A dialled call goes out within a
+     *  second or two; the window is short, because until it closes the next
+     *  call this phone places is taken for the test. */
+    private static final long TEST_INCOMING_WINDOW_MS = 180_000L;
+    private static final long TEST_OUTGOING_WINDOW_MS = 15_000L;
+
+    /** Whether [number] is an emergency number here - or might be: one that
+     *  cannot be checked is never dialled for a test either. */
+    private static boolean mayBeEmergencyNumber(String number) {
+        try {
+            return phone.isEmergencyNumber(number);
+        } catch (Throwable t) {
+            Ln.w("answer: could not tell whether the test's number is an emergency number: " + t);
+            return true;
+        }
+    }
+
+    /** The no-call checks, as one line. */
+    private static String stageOne() {
+        StringBuilder line = new StringBuilder("DIAG 1");
+        java.util.List<String> missing = new java.util.ArrayList<>();
+        try {
+            android.content.pm.PackageManager pm = FakeContext.get().getPackageManager();
+            for (String permission : new String[]{
+                    "android.permission.MODIFY_PHONE_STATE",
+                    "android.permission.ANSWER_PHONE_CALLS",
+                    "android.permission.MODIFY_AUDIO_SETTINGS",
+                    "android.permission.READ_CALL_LOG",
+                    "android.permission.RECORD_AUDIO"}) {
+                if (pm.checkPermission(permission, "com.android.shell")
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    missing.add(permission.substring(permission.lastIndexOf('.') + 1));
+                }
+            }
+        } catch (Throwable t) {
+            missing.add("unknown");
+        }
+        if (!muteReady) {
+            // Not a permission, but as final: no mute, no answering.
+            missing.add("mute");
+        }
+        try {
+            // What a ring is refused on when it cannot be read: a phone where
+            // it always throws would refuse every call, checks passed or not.
+            Voip.callingUids(callAudio, true);
+        } catch (Throwable t) {
+            missing.add("calls");
+        }
+        line.append(" perms=").append(missing.isEmpty() ? "ok" : String.join(",", missing));
+        line.append(" incallmusic=").append(Checks.inCallMusic(dump("media.audio_policy")));
+        boolean interceptable = false;
+        try {
+            interceptable = (boolean) AudioManager.class.getMethod("isPstnCallAudioInterceptable").invoke(callAudio);
+        } catch (Throwable ignored) {
+            // Not there before Android 13, or not allowed.
+        }
+        line.append(" screening=").append(interceptable ? 1 : 0);
+        line.append(" greeting=").append(Greeting.present() ? Greeting.FILE.length() : 0);
+        line.append(" route=").append(answerSettings.route);
+        line.append(" sdk=").append(Build.VERSION.SDK_INT);
+        int voice = -1;
+        try {
+            voice = phone.getVoiceNetworkType();
+        } catch (Throwable ignored) {
+            // unknown
+        }
+        line.append(" voice=").append(voice);
+        line.append(" soc=").append(word(Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : Build.HARDWARE));
+        line.append(" maker=").append(word(Build.MANUFACTURER));
+        line.append(" model=").append(word(Build.MODEL));
+        return line.toString();
+    }
+
+    /**
+     * The phone's SIMs as Telecom has them, for the app's "Answer on" choice:
+     * "SIMS default=<id> <id>|<label> ...". Listing them takes READ_PHONE_STATE,
+     * which the app does not hold and should not ask for to fill one row.
+     */
+    private static String sims() {
+        StringBuilder line = new StringBuilder("SIMS");
+        try {
+            android.telecom.PhoneAccountHandle preferred = telecom.getDefaultOutgoingPhoneAccount("tel");
+            line.append(" default=").append(preferred == null ? "" : word(preferred.getId()));
+            for (android.telecom.PhoneAccountHandle handle : telecom.getCallCapablePhoneAccounts()) {
+                android.telecom.PhoneAccount account = telecom.getPhoneAccount(handle);
+                CharSequence label = account == null ? null : account.getLabel();
+                line.append(' ').append(word(handle.getId())).append('|')
+                        .append(word(label == null ? "SIM" : label.toString()));
+            }
+        } catch (Throwable t) {
+            Ln.w("answer: could not list the SIMs: " + t);
+        }
+        return line.toString();
+    }
+
+    /** A value for a key=value line: no spaces, no '='. */
+    private static String word(String value) {
+        return value == null || value.isEmpty() ? "unknown" : value.replaceAll("[\\s=]+", "_");
     }
 
     /** Fetches under way, which QUIT waits out. */
     private static final AtomicInteger fetches = new AtomicInteger();
+
+    /**
+     * What the answering machine does to the phone. Every method runs on the
+     * main looper, where the call watch delivers its events; the greeting's
+     * callbacks come from its own thread and are posted back here.
+     */
+    private static final class AnswerEffects implements AnswerMachine.Effects {
+
+        @Override
+        public long now() {
+            // Not the wall clock: a time correction mid-call would move a
+            // message's start, or stretch a timer, by the size of the step.
+            return SystemClock.elapsedRealtime();
+        }
+
+        @Override
+        public Object schedule(Runnable task, long delayMs) {
+            mainHandler.postDelayed(task, delayMs);
+            return task;
+        }
+
+        @Override
+        public void cancel(Object handle) {
+            mainHandler.removeCallbacks((Runnable) handle);
+        }
+
+        @Override
+        public boolean callUp() {
+            CallWatch watch = callWatch;
+            return watch != null && watch.phoneCallUp();
+        }
+
+        @Override
+        public boolean otherAppCallUp() {
+            if (callVoipApp != null) {
+                // A messenger call this process is recording.
+                return true;
+            }
+            try {
+                // The mode is the VoIP app's while its call runs - but a phone
+                // call ringing over it may hand the mode to the ringtone, so
+                // the app playing and capturing call audio is asked too.
+                // The shell's own uid counts too: this process never plays call
+                // audio, and the emulator check's stand-in call runs as the shell.
+                return callAudio.getMode() == AudioManager.MODE_IN_COMMUNICATION
+                        || !Voip.callingUids(callAudio, true).isEmpty();
+            } catch (Throwable t) {
+                Ln.w("answer: could not tell whether another app is in a call: " + t);
+                return true;
+            }
+        }
+
+        @Override
+        public boolean emergencyCallback() {
+            try {
+                // A SystemApi under READ_PRIVILEGED_PHONE_STATE, the shell's.
+                return (boolean) TelephonyManager.class.getMethod("getEmergencyCallbackMode").invoke(phone);
+            } catch (Throwable t) {
+                return false;
+            }
+        }
+
+        @Override
+        public boolean greetingPresent() {
+            return Greeting.present();
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public boolean answer() {
+            if (!muteReady) {
+                Ln.w("answer: the microphone cannot be muted from here; not answering");
+                return false;
+            }
+            try {
+                telecom.acceptRingingCall();
+                return true;
+            } catch (Throwable t) {
+                Ln.e("answer: acceptRingingCall failed", t);
+                return false;
+            }
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public void hangUp() {
+            try {
+                Ln.i("answer: endCall -> " + telecom.endCall());
+            } catch (Throwable t) {
+                Ln.e("answer: endCall failed", t);
+            }
+        }
+
+        @Override
+        public boolean audioInCall() {
+            return callAudio.getMode() == AudioManager.MODE_IN_CALL;
+        }
+
+        @Override
+        public void setMuted(boolean on) {
+            if (on) {
+                // The marker first: a death between the two leaves a marker
+                // for a mute that never happened, which costs an unneeded
+                // unmute at the next start. The other order could leave a
+                // muted phone and nothing to say so. A marker that cannot be
+                // left does not stop the mute: the caller hearing the room is
+                // worse, and the phone clears the mute as the call ends.
+                try {
+                    new FileOutputStream(MUTE_MARKER).close();
+                } catch (Throwable t) {
+                    Ln.e("answer: could not leave the mute marker", t);
+                }
+            }
+            try {
+                callAudio.setMicrophoneMute(on);
+                if (!on) {
+                    MUTE_MARKER.delete();
+                }
+                AnswerMachine machine = answerMachine;
+                if (on && machine != null && machine.testing()) {
+                    // A mute that did not take ends the test there (the
+                    // machine hangs up): this is how the test says why.
+                    testMuteHeld = callAudio.isMicrophoneMute() ? 1 : 0;
+                }
+                Ln.i("answer: microphone " + (on ? "muted" : "unmuted") + " -> " + callAudio.isMicrophoneMute());
+            } catch (Throwable t) {
+                Ln.e("answer: could not " + (on ? "mute" : "unmute") + " the microphone", t);
+            }
+        }
+
+        @Override
+        public boolean muted() {
+            return callAudio.isMicrophoneMute();
+        }
+
+        @Override
+        public void playGreeting(boolean checkTone) {
+            AnswerMachine machine = answerMachine;
+            String route = answerSettings.route;
+            greetingPlayer.play(callAudio, route, checkTone, Greeting.FILE, new GreetingPlayer.Listener() {
+                @Override
+                public void checkToneDone() {
+                    mainHandler.post(machine::checkToneDone);
+                }
+
+                @Override
+                public void done(long realMs, long audioMs) {
+                    mainHandler.post(() -> {
+                        if (machine.testing()) {
+                            // Not the mute again: the one that matters was
+                            // read back as it was asked for (setMuted), and
+                            // one lost since would have been taken for the
+                            // user taking the call, which stops the greeting
+                            // before this. Unmuted now, at the beep, is the
+                            // user's own tap - not a mute that failed.
+                            testRealMs = realMs;
+                            testAudioMs = audioMs;
+                            testPlayed = 1;
+                        }
+                        machine.greetingDone();
+                    });
+                }
+
+                @Override
+                public void failed(String why) {
+                    mainHandler.post(() -> {
+                        if (machine.testing()) {
+                            testPlayed = 0;
+                        }
+                        machine.greetingFailed();
+                    });
+                }
+            });
+            if (checkTone) {
+                // Two seconds in, the greeting's track is up: where did it go?
+                mainHandler.postDelayed(Main::checkTestRoute, GREETING_ROUTE_CHECK_MS);
+            }
+        }
+
+        @Override
+        public void stopGreeting() {
+            greetingPlayer.stop();
+        }
+
+        @Override
+        public boolean greetingLoud() {
+            return ownSideSounds && greetingPlayer.loudNow();
+        }
+
+        @Override
+        public void messageStarted() {
+            AnswerMachine machine = answerMachine;
+            boolean test = machine != null && machine.testing();
+            if (test) {
+                testState = "running";
+                try {
+                    testVoice = phone.getVoiceNetworkType();
+                } catch (Throwable t) {
+                    testVoice = -1;
+                }
+            }
+            // Only that a message is under way: where it starts, the
+            // recording's name says at the end.
+            wake(ACTION_MESSAGE_STARTED, true, "", null, "--ez", "test", String.valueOf(test));
+        }
+
+        @Override
+        public void callTaken() {
+            AnswerMachine machine = answerMachine;
+            if (recordingMode == MODE_ON_DEMAND && machine != null && !machine.testing()) {
+                // Ask first: the message ends where the user took the call,
+                // and the call is theirs to record or not - asked, as at the
+                // start of any call. Answering machines have always stopped
+                // recording when picked up. Off the looper: stopping the
+                // encoder can take a moment.
+                AnswerMachine.Outcome part = machine.messageSoFar();
+                new Thread(() -> splitOffMessage(part), "jemrec-split").start();
+                return;
+            }
+            wake(ACTION_MESSAGE_TAKEN, true, "", null);
+        }
+
+        @Override
+        public void log(String message) {
+            Ln.i(message);
+        }
+    }
+
+    private static final long GREETING_ROUTE_CHECK_MS = 3_000L;
+
+    /** The test's greeting, mid-way: is it on the output the caller hears? */
+    private static void checkTestRoute() {
+        new Thread(() -> {
+            String flinger = dump("media.audio_flinger");
+            int on = Checks.trackOutput(flinger, android.os.Process.myPid());
+            testRoute = AnswerSettings.ROUTE_MUSIC.equals(answerSettings.route) ? on : -1;
+            Ln.i("answer: test greeting on the in-call music output: "
+                    + (on == 1 ? "yes" : on == 0 ? "no" : "cannot tell"));
+        }, "jemrec-route-check").start();
+    }
+
+    /** This phone's own side of the recording - the uplink, left - is not
+     *  silent in the chunk being looked at. Muted, it is silent unless the
+     *  phone mixes the greeting into the recording: see greetingLoud. */
+    private static volatile boolean ownSideSounds;
+
+    /** Every captured chunk of a phone call this process answered: a level
+     *  for the message's start, and in a test, a look for the check tone on
+     *  the uplink side (left). */
+    private static void onChunk(short[] pcm, int frames, long atMs) {
+        long chunkMs = frames * 1000L / AudioConfig.SAMPLE_RATE;
+        if (captureStartedAt == 0) {
+            captureStartedAt = atMs - chunkMs;
+        }
+        AnswerMachine machine = answerMachine;
+        if (machine == null || !machine.answeredThisCall()) {
+            return;
+        }
+        double rms = Checks.rms(pcm, AudioConfig.CHANNELS, frames);
+        // Before the level is looked at: greetingLoud asks it.
+        ownSideSounds = Checks.channelRms(pcm, AudioConfig.CHANNELS, 0, frames) >= AnswerMachine.SOUND_RMS;
+        machine.level(rms, chunkMs);
+        if (machine.testing()) {
+            double share = Checks.toneShare(pcm, AudioConfig.CHANNELS, 0, frames, GreetingPlayer.CHECK_TONE_HZ,
+                    AudioConfig.SAMPLE_RATE);
+            if (share >= TONE_MIN_SHARE && rms >= TONE_MIN_RMS) {
+                testToneRun++;
+                testToneBest = Math.max(testToneBest, testToneRun);
+            } else {
+                testToneRun = 0;
+            }
+        }
+    }
+
+    /** A marker left mid-message - by this process's predecessor, dead: the
+     *  microphone may still be muted. Give it back. False while a call is up
+     *  and the mute is left for its end; true when nothing is left to do. */
+    private static boolean giveBackStaleMute() {
+        if (!MUTE_MARKER.exists() || callAudio == null) {
+            return true;
+        }
+        try {
+            int mode = callAudio.getMode();
+            if (mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION) {
+                // A call is up: the message this mute was for, its caller
+                // still on - muted, the room stays out - or a call of the
+                // user's, muted by them. Not this process's to unmute: the
+                // marker is looked at again as that call ends (endCall).
+                Ln.i("answer: a mute left by a message, and a call up; the microphone stays until it ends");
+                return false;
+            }
+        } catch (Throwable ignored) {
+            // Cannot tell: as before, give it back.
+        }
+        try {
+            callAudio.setMicrophoneMute(false);
+            Ln.w("answer: the microphone was left muted by a message; unmuted it");
+        } catch (Throwable t) {
+            Ln.e("answer: could not unmute the microphone a previous run muted", t);
+        }
+        MUTE_MARKER.delete();
+        return true;
+    }
+
+    /** The whole of `dumpsys <service>`, newlines kept, for the parsers;
+     *  null if it could not be run - not an answer to read as "none". */
+    private static String dump(String service) {
+        try {
+            Process process = new ProcessBuilder("dumpsys", service).redirectErrorStream(true).start();
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            try (java.io.InputStream in = process.getInputStream()) {
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                }
+            }
+            process.waitFor();
+            return out.toString("UTF-8");
+        } catch (Throwable t) {
+            Ln.w("could not run dumpsys " + service + ": " + t);
+            return null;
+        }
+    }
+
+    /** Run [task] on the main looper, where the answering machine lives, and
+     *  wait for it. */
+    private static <T> T onMain(java.util.concurrent.Callable<T> task) throws Exception {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return task.call();
+        }
+        java.util.concurrent.FutureTask<T> future = new java.util.concurrent.FutureTask<>(task);
+        mainHandler.post(future);
+        return future.get(2, TimeUnit.SECONDS);
+    }
 
     /** The name of the file being recorded into, or null. */
     private static String activeName() {
@@ -1709,7 +2676,9 @@ public final class Main {
                 + " recording=" + (rec == null ? 0 : rec.startedAt)
                 + " voip=" + Voip.apps().size()
                 + " voiparmed=" + (Voip.armed() ? 1 : 0)
-                + " tracking=" + (trackingOn ? 1 : 0);
+                + " tracking=" + (trackingOn ? 1 : 0)
+                + " answer=" + (answerSettings.on ? 1 : 0)
+                + " greeting=" + (Greeting.present() ? 1 : 0);
     }
 
     /**

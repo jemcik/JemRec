@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -43,7 +42,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
@@ -105,6 +103,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
@@ -256,8 +255,8 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
     // times a second.
     val now = LocalNow.current
     val today = dayStamp(now())
-    val filtered = remember(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly, today) {
-        filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly)
+    val filtered = remember(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly, state.messagesOnly, today) {
+        filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly, state.messagesOnly)
     }
     val shown = remember(filtered, state.visibleCount) { filtered.take(state.visibleCount) }
     val days = remember(shown, today) { byDay(shown, now()) { it.startedAtMillis } }
@@ -488,26 +487,18 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                             // something is, so the bar does not offer an empty
                             // filter to everyone who has never kept anything.
                             if (state.keptOnly || state.recordings.any { it.kept }) {
-                                FilterChip(
-                                    selected = state.keptOnly,
-                                    onClick = { haptics.tap(); vm.toggleKeptOnly() },
-                                    shape = CircleShape,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.secondary,
-                                    ),
-                                    label = {
-                                        Icon(
-                                            KeepIcons.Kept,
-                                            contentDescription = "Only recordings marked to keep",
-                                            tint = if (state.keptOnly) {
-                                                MaterialTheme.colorScheme.onSecondary
-                                            } else {
-                                                MaterialTheme.colorScheme.primary
-                                            },
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                )
+                                IconFilterChip(state.keptOnly, KeepIcons.Kept, "Only recordings marked to keep") {
+                                    haptics.tap()
+                                    vm.toggleKeptOnly()
+                                }
+                            }
+                            // Messages: the calls the answering machine took. Like
+                            // Kept, shown only once there is one.
+                            if (state.messagesOnly || state.recordings.any { it.message }) {
+                                IconFilterChip(state.messagesOnly, messageIcon, "Only messages") {
+                                    haptics.tap()
+                                    vm.toggleMessagesOnly()
+                                }
                             }
                             // The fold-out. A filter chip in looks, a disclosure in
                             // job: selected while the field is open, so the icon
@@ -722,7 +713,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        if (state.keptOnly) {
+                        if (state.messagesOnly) {
+                            "No messages match."
+                        } else if (state.keptOnly) {
                             "No kept recordings match."
                         } else if (state.favoritesOnly) {
                             "No starred recordings match."
@@ -882,6 +875,15 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                                         // No arrow where the direction is not known
                                         // (a messenger call whose app did not say).
                                         if (recording.directionKnown) DirectionArrow(recording.incoming)
+                                        // A message: the answering machine took it.
+                                        if (recording.message) {
+                                            Icon(
+                                                messageIcon,
+                                                contentDescription = "Message",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
                                         // A messenger call shows which app - its own
                                         // icon, beside the arrow, the way a phone's
                                         // call log marks a video call. Unless the
@@ -1119,27 +1121,11 @@ internal fun PlayerControls(state: UiState, vm: MainViewModel) {
 /** The tip over the recordings: how selection starts, with an x to put it away. */
 @Composable
 private fun SelectTip(onDismiss: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
+    TipCard(
+        "Tap a photo, or press and hold a call, to select recordings",
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(
-                "Tap a photo, or press and hold a call, to select recordings",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f).padding(vertical = 8.dp),
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "Dismiss tip")
-            }
-        }
-    }
+        onDismiss = onDismiss,
+    )
 }
 
 /**
@@ -1474,4 +1460,26 @@ private val HeaderRowHeight = 56.dp
 private fun clock(ms: Int): String {
     val total = (ms / 1000).coerceAtLeast(0)
     return "%d:%02d".format(total / 60, total % 60)
+}
+
+/** A filter that is an icon alone - Kept, Messages - filled in the secondary
+ *  colour while it is on. */
+@Composable
+private fun IconFilterChip(selected: Boolean, icon: ImageVector, description: String, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        shape = CircleShape,
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.secondary,
+        ),
+        label = {
+            Icon(
+                icon,
+                contentDescription = description,
+                tint = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        },
+    )
 }

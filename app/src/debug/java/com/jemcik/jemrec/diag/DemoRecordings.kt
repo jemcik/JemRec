@@ -22,8 +22,8 @@ import java.util.Locale
  * nobody can read. So the list gets a stand-in - eight calls that never happened,
  * with the shapes a real list has: contacts with a picture, contacts without one,
  * bare numbers, a call the log could not name at all, both directions, a
- * favourite, and times spread across today, this week and before it, so the
- * filter chips have something to filter.
+ * favourite, a message the answering machine took, and times spread across
+ * today, this week and before it, so the filter chips have something to filter.
  *
  * DEBUG ONLY, structurally. This whole source set is absent from a release APK,
  * so a shipped build contains no code that could fill Recordings.override - which
@@ -94,6 +94,9 @@ internal object DemoRecordings {
         val others = listOf(
             unrecorded(52, CallHistory.Kind.MISSED, "+44 20 7946 0321", 0, CallHistory.Status.NOT_CONNECTED),
             unrecorded(2 * 60 + 10, CallHistory.Kind.OUTGOING, "Priya Raman", 0, CallHistory.Status.NOT_CONNECTED),
+            // A caller who hung up during the greeting: answered, nothing kept.
+            // Ofcom's drama range, like the other London numbers here.
+            unrecorded(4 * 60 + 35, CallHistory.Kind.INCOMING, "+44 20 7946 0123", 9, CallHistory.Status.GREETING_HANGUP),
             unrecorded(24 * 60 + 2 * 60, CallHistory.Kind.INCOMING, "Hana Sato", 192, CallHistory.Status.RECORDING_OFF),
             unrecorded(2 * 24 * 60 + 15, CallHistory.Kind.INCOMING, "Dr. Lena Vogel", 312, CallHistory.Status.SKIPPED),
             unrecorded(3 * 24 * 60 + 40, CallHistory.Kind.INCOMING, "+1 202 555 0147", 58, CallHistory.Status.IN_TRASH),
@@ -120,6 +123,8 @@ internal object DemoRecordings {
         val photo: String? = null,
         /** A messenger call's app tag (VoipApps), or null for a phone call. */
         val app: String? = null,
+        /** A message the answering machine took. */
+        val message: Boolean = false,
     )
 
     private val CALLS = listOf(
@@ -127,7 +132,7 @@ internal object DemoRecordings {
             favorite = true, photo = "demo_face_1"),
         Call(3 * 60 + 20, false, "Marcus Chen", "+14155550136", 725, 5_663_129,
             photo = "demo_face_2", app = "whatsapp"),
-        Call(6 * 60 + 5, true, "+44 7700 900461", "+447700900461", 47, 360_448),
+        Call(6 * 60 + 5, true, "+44 7700 900461", "+447700900461", 47, 360_448, message = true),
         Call(26 * 60, false, "Priya Raman", "+919820098200", 158, 1_258_291),
         Call(2 * 24 * 60 + 3 * 60, true, "Daniel Okafor", "+2348031234567", 2462, 18_664_653),
         Call(4 * 24 * 60 + 90, false, "477", "477", 79, 618_496),
@@ -156,6 +161,7 @@ internal object DemoRecordings {
                 },
                 number = call.number,
                 callerFavorite = call.favorite,
+                message = call.message,
             )
         }
     }

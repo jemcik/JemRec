@@ -202,9 +202,11 @@ Android tells JemRec when each phone call is answered and when it ends, and so:
 - With call waiting, each call gets its own recording.
 - Whose calls to keep decides before anything is recorded.
 
-JemRec only reads this. It never answers, holds or ends a call, and shows no
-screen of its own during one. Turned off, JemRec records from the moment the
-phone goes off-hook, as it did before 0.14.
+Tracking only reads this: it never answers, holds or ends a call, and shows no
+screen of its own during one. The one thing that ever answers a call is the
+answering machine, below, when you switch it on. Turned off, JemRec records
+from the moment the phone goes off-hook, as it did before 0.14, and the
+answering machine, which needs it, answers nothing.
 
 ## Whose calls to keep
 
@@ -274,6 +276,89 @@ granted over JemRec's own ADB session, so turning it on needs Wi-Fi, once.
 Tested on an Honor with Viber, Telegram and WhatsApp, both directions. Signal
 takes the same path and has not been tested yet.
 
+## The answering machine
+
+**Answering machine**, in Settings, answers the phone calls you do not take,
+plays a greeting you recorded, and keeps what the caller says as a recording.
+Phone calls only: not WhatsApp, Telegram or Viber calls. It is off until you
+turn it on, and it needs two things first: your greeting, and the checks under
+*Test on this phone*.
+
+**Your greeting.** Tap **Record**, say it, and tap **Stop** — 30 seconds at
+most. JemRec trims the silence at both ends and evens the level, because the
+caller hears it at full volume. Tap the row to hear it; **Record again**
+replaces it. Callers hear what you said and then a beep, nothing else.
+
+**When it answers**
+
+- **Answer after** — 5 to 30 seconds of ringing. Your carrier's own voicemail,
+  if you have it, takes calls after its own timer, so this has to be shorter;
+  once you have asked your carrier (below), the row says if its voicemail would
+  answer first.
+- **With Do Not Disturb on** — after two rings, about 5 seconds, for callers Do
+  Not Disturb would silence. Callers it lets through ring as usual.
+- **Answer on** — with two SIMs, which one: your default for calls, or both.
+- **Longest message** — how long a caller can speak after the beep: 30 seconds,
+  1 minute or 2 minutes. Then JemRec hangs up, and the message is saved. Or
+  **No limit**, which asks first: the call then lasts until the caller hangs up
+  or has been silent for 30 seconds, and your phone is in it until then - a
+  caller somewhere noisy may never count as silent.
+
+**Who it answers** is not a setting of its own: it answers only the callers
+JemRec records, so **Whose calls to keep** applies to both. It never answers
+while you are on another call - a phone call, a messenger call or a meeting -
+while roaming, or while recording is off, and a caller JemRec cannot identify
+is left to ring. It needs Exact call tracking.
+
+**After you call an emergency number** it stands down for a day, so an
+emergency service calling you back - from any number - rings until you can pick
+up; a call the network marks as their callback is never answered. The switch
+says until when, and **Answer again now** ends the pause early, after a
+warning. iPhone does the same with its call screening, for 24 hours.
+
+**While it takes a message**, your microphone is muted: the caller hears your
+greeting, the beep, and nothing of the room you are in. A notification,
+**Taking a message**, has **Talk to them** — the greeting stops, your
+microphone opens and the call is yours — and **Hang up**. Unmuting on the call
+screen takes the call too, and so does answering a second call, one waiting or
+one you place. A call you take is saved as an ordinary recording, not a
+message, from just before you took it - or from the caller's first words, if
+they spoke first. In **Ask first** it is not: taking the call ends the message
+there - what the caller said is kept as the message - and you are asked, as at
+the start of any call, whether to record the rest. Answering machines have
+always stopped recording when picked up.
+
+**The message** is saved like any recording, from just before the caller starts
+speaking, so it does not begin with them listening to your greeting. It has a
+message icon, the **Messages** chip above the list shows only messages, and a
+notification with a sound says who left it. Auto-delete for short calls never
+removes one. A caller who hangs up during the greeting without a word leaves
+nothing; the Calls tab says **Hung up during the greeting**.
+
+**Test on this phone.** No app can play sound into a call, so the recorder does
+it, as the shell, and whether a phone carries it to the caller depends on its
+audio hardware. These tell you:
+
+- **Checks** — a second, and no call: whether the recorder has what it needs
+  and the phone has a way to play into a call. The switch can be turned on once
+  they pass.
+- **Test call** — best, someone calls you: the next call within three minutes
+  is answered with a short tone and your greeting, whoever is calling, and then
+  you are asked whether they heard it - not in the day after an emergency call,
+  when that caller may be them. Or JemRec calls a number that answers by
+  itself, such as your carrier's information line, and measures what it can;
+  never an emergency number. 2G, VoLTE and Wi-Fi Calling are kept apart,
+  because each takes its own path.
+- **Carrier voicemail** — asks your carrier when its voicemail answers, and can
+  make it wait the longest it allows, 30 seconds. Your carrier's voicemail then
+  still takes the calls JemRec does not. It is your carrier's setting, so it
+  stays if JemRec goes.
+- **Copy a report** — this phone and what the tests found, with nothing about
+  any call, to paste into a report on GitHub.
+
+Experimental. Tested on an Honor, on 2G calls; its carrier would not register
+it for VoLTE. On a phone not tried yet, the test call is how to know.
+
 ## Playing, sharing and deleting
 
 Recordings are listed newest first, under **Today**, **Yesterday** and
@@ -313,15 +398,19 @@ because removing them is JemRec's job.
 
 The **Calls** tab, beside Recordings, is your phone's call log, under the same
 day headings. A call that was recorded has the ▶ beside its length and plays on
-a tap. A call that was not says why, where JemRec knows: **In Recently
-deleted**, **Recording deleted**, **Left out by your rules**, **Too short**,
-**Recorded, not saved yet** (still on the recorder, collected when it can be),
-**Recording was off**, **Ask first, not recorded**. **Not recorded**, in red,
-means recording was on and automatic and nothing was saved — run the self-test.
-JemRec remembers deleted and left-out calls for a week, so it says this only
-for the last week. **No recording** is an older call, or one from before JemRec
-kept track, with no guess at why. Missed, declined and blocked calls are marked
-as such.
+a tap; one the answering machine took says **Message**. A call that was not
+says why, where JemRec knows: **In Recently deleted**, **Recording deleted**,
+**Left out by your rules**, **Too short**, **Recorded, not saved yet** (still
+on the recorder, collected when it can be), **Recording was off**, **Ask first,
+not recorded**, **Hung up during the greeting**, **Answering machine test**.
+**Not recorded**, in red, means recording was on and automatic and nothing was
+saved — run the self-test. **Greeting could not play**, in red too, means the
+answering machine answered and hung up without taking a message - the greeting
+would not play, or your microphone would not mute — run its test call. JemRec
+remembers deleted and left-out calls for a week, so it says this only for the
+last week. **No recording** is an older call, or one from before JemRec kept
+track, with no guess at why. Missed, declined and blocked calls are marked as
+such.
 
 It needs permission to read the call log, the same optional permission that
 puts names on recordings; the tab asks for it if you have not given it.
@@ -396,6 +485,9 @@ And when the app is closed, in notifications:
 | **Last call recorded, but silent** | The file has the right length and no sound in it. Usually Wi-Fi calling, or a phone that does not hand calls over at all. Run the self-test. |
 | **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with **Allow this Wi-Fi**), or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back. |
 | **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test. |
+| **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. |
+| **Taking a message** | The answering machine has a caller. **Talk to them** takes the call; **Hang up** ends it. |
+| **Message from** the caller | A message, with a sound, Play, Share and Delete. It stays until you dismiss it, whether or not each call is shown when it ends. |
 
 ## Settings
 
@@ -411,6 +503,7 @@ no and everything still works, with the time as each recording's headline.
 - **Record every call** — record everything, or be asked each time.
 - **Whose calls to keep** — your contacts (all, all but some, only some, or
   none) and numbers not in your contacts. Needs Show who called.
+- **Answering machine** — off until you turn it on; see The answering machine.
 - **Messenger calls** — a switch for each supported messenger installed, and
   whether to show who called from their call notifications.
 - **Exact call tracking** — recordings start at the answer, and calls nobody
@@ -504,7 +597,10 @@ started itself, and retires any other on sight.
 > devices*; remove it there with the gear beside it. Developer options stays on
 > if you turned it on. And Start fresh leaves the one privileged setting
 > granted, because handing it back would kill the app halfway through the
-> reset.
+> reset. If you tapped **Wait 30 seconds** under *Carrier voicemail*, your
+> carrier still waits 30 seconds before its voicemail answers: that timer is
+> your carrier's, not the phone's, and JemRec did not keep what it was before.
+> Ask your carrier to set it back if you want the shorter wait.
 
 ## Two honest warnings
 

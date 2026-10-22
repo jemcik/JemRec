@@ -48,6 +48,11 @@ public class CallStatesTest {
         }
 
         @Override
+        public void callGoesOn() {
+            did.add("goes on");
+        }
+
+        @Override
         public void log(String message) {
         }
     }
@@ -107,10 +112,10 @@ public class CallStatesTest {
         states.idle();
         world.audioInCall = true;
         checkDue();
-        assertDid("start out");
+        assertDid("start out", "goes on");
         world.audioInCall = false;
         checkDue();
-        assertDid("start out", "end");
+        assertDid("start out", "goes on", "end");
     }
 
     @Test

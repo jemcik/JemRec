@@ -45,6 +45,13 @@ object CallHistory {
         PENDING,
         /** Missed, declined, blocked, voicemail, or an outgoing call nobody answered. */
         NOT_CONNECTED,
+        /** The answering machine took it, and the caller left before the beep. */
+        GREETING_HANGUP,
+        /** The answering machine took it and hung up: the greeting would not
+         *  play. Said in the error colour, like NOT_RECORDED. */
+        GREETING_FAILED,
+        /** A test call of the answering machine. */
+        TEST_CALL,
     }
 
     data class Call(
@@ -100,7 +107,11 @@ object CallHistory {
         val contacts = mutableMapOf<String, CallLogLookup.Contact>()
         return matched.map { call ->
             val contact = CallLogLookup.contactFor(context, call.number, contacts)
-            call.copy(label = contact.name ?: call.label, photo = contact.photo, favorite = contact.starred)
+            call.copy(
+                label = contact.name ?: call.label,
+                photo = contact.photo,
+                favorite = contact.starred,
+            )
         }
     }
 
@@ -142,6 +153,9 @@ object CallHistory {
                 call.kind == Kind.OUTGOING && call.seconds == 0 -> Status.NOT_CONNECTED
                 binned[call] != null || during(trashed, call.at) != null -> Status.IN_TRASH
                 pending.any { accounts(it, call, incoming) } -> Status.PENDING
+                ledger.greetingHangUps.any { accounts(it, call, incoming) } -> Status.GREETING_HANGUP
+                ledger.greetingFailures.any { accounts(it, call, incoming) } -> Status.GREETING_FAILED
+                ledger.testCalls.any { accounts(it, call, incoming) } -> Status.TEST_CALL
                 ledger.skipped.any { accounts(it, call, incoming) } -> Status.SKIPPED
                 ledger.recordings.any { accounts(it, call, incoming) } -> Status.DELETED
                 call.seconds < MissedCalls.MIN_SECONDS -> Status.TOO_SHORT
@@ -165,7 +179,9 @@ object CallHistory {
             (r.seconds > 0 && call.at in r.startMillis..(r.startMillis + r.seconds * 1000L + MissedCalls.SPAN_SLACK_MS))
 
     /** Each recording to the closest call of its direction inside the window.
-     *  A call that two recordings both choose keeps the first. */
+     *  A call that two recordings both choose keeps the first - or the
+     *  message, which the user has not heard: a call taken over in Ask
+     *  first, and recorded at the prompt, has both. */
     private fun assign(recordings: List<Recording>, calls: List<Logged>): Map<Logged, Recording> {
         val out = mutableMapOf<Logged, Recording>()
         recordings.forEach { r ->
@@ -174,7 +190,7 @@ object CallHistory {
                 .filter { (it.kind == Kind.INCOMING) == r.incoming && CallLogLookup.sameCall(it.at, start) }
                 .minByOrNull { kotlin.math.abs(it.at - start) }
                 ?: return@forEach
-            out.putIfAbsent(call, r)
+            out.merge(call, r) { old, new -> if (new.message && !old.message) new else old }
         }
         return out
     }

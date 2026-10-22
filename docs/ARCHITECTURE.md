@@ -17,7 +17,8 @@ this one is - or to check that it does what it says.
 - The features: [recording and being asked](#recording-and-being-asked) ·
   [exact call tracking](#exact-call-tracking) ·
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
-  [messenger calls](#messenger-calls) · [the Calls tab](#the-calls-tab) ·
+  [messenger calls](#messenger-calls) · [the answering machine](#the-answering-machine) ·
+  [the Calls tab](#the-calls-tab) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [notifications](#after-the-call-and-when-something-is-wrong)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
@@ -171,8 +172,11 @@ way each phone call went, when it was answered, and when it ended. With that:
 - **The end of a call reaches the app directly**, a second way to collect the
   recording beside the daemon's own.
 
-JemRec only reads. The permission would let an app answer, hold and end calls;
-JemRec's service does none of that and shows no screen. It is on unless you
+Call tracking only reads. The permission would let an app answer, hold and end
+calls; JemRec's service does none of that and shows no screen. (The
+[answering machine](#the-answering-machine), when you switch it on, is the
+recorder's doing, under the shell's own permissions: it answers, mutes and hangs
+up the calls it takes messages on, and nothing else.) It is on unless you
 turn it off in Settings (*Exact call tracking*). Off, the daemon takes the
 permission back and JemRec works exactly as it did before 0.14. JemRec keeps
 what Android said about the last 40 calls - when each began, was answered and
@@ -277,6 +281,142 @@ both directions: both sides recorded, the caller named, and the other person
 heard the call throughout. Signal takes the same path and has not been tested
 yet.
 
+## The answering machine
+
+**Off until you switch it on.** It answers the phone calls you do not take,
+plays your own greeting to the caller with your microphone muted, and keeps
+their message as a recording marked as one. Phone calls only: messenger calls
+are not in Telecom, where the recorder answers from. Whether they could be is
+[a spike of its own](VOIP-ANSWER-SPIKE.md).
+
+**The app decides who; the recorder decides when.** While a call rings, JemRec's
+call tracker knows who it is and applies *Whose calls to keep*. Anything it
+cannot be sure of means no answer: a caller it cannot identify, another call
+already up, roaming, recording switched off. So does a messenger or meeting
+call in progress, which the tracker cannot see - Telecom shows it only calls it
+manages - and which the mute would silence: the audio mode says one is up, and
+the recorder asks again before answering, by the app playing and capturing
+call audio, because a phone call ringing over it may take the mode. Recording keeps a call when unsure,
+because a recording can be deleted later; an answered call cannot be unanswered.
+The tracker sends the recorder a go-ahead with the delay - 5 to 30 seconds, about
+two rings when Do Not Disturb would silence the caller - and the recorder runs
+the timer, because the app can be frozen while the dialer is in front. Without
+a go-ahead for the ring in progress, nothing is answered.
+
+**For a day after a call to an emergency number** it answers nothing, so an
+emergency service calling back rings until the user can pick up. The callback
+cannot be recognised - it comes from an ordinary number, or a withheld one -
+so phones pause instead: iPhone turns its call screening off for 24 hours after
+an emergency call, and Android turns call blocking off, 2 hours by default
+(`KEY_DURATION_BLOCKING_DISABLED_AFTER_EMERGENCY_INT`). Android's own
+emergency callback mode, which the recorder asks about too, starts only on
+CDMA, or on LTE where the carrier opts in (AOSP, read 2026-10-22): on GSM it
+never does. The call tracker notes an emergency call - to a number Android
+calls one, or one the network marks - and counts the day from its end;
+Telecom's own record of the last one, on a ringing call, counts too, and a call
+the network marks as a callback is never answered. The user can end the pause
+early, warned. No test call answers anyone in that day either - a test answers
+whoever calls in its three minutes - and none ever dials an emergency number:
+Telecom does not place one for the shell, but opens the dialer with it (AOSP
+`NewOutgoingCallIntentBroadcaster`, read 2026-10-22), and a tap on Call there
+would have been taken for the test's call. A call of the user's own while a
+test waits ends the test.
+
+**How the greeting reaches the caller.** No app can play sound into a call:
+Android lets a call's uplink be written only by a holder of
+`MODIFY_PHONE_STATE`, which the shell holds and no app can be granted. The
+recorder plays the greeting as a plain media track aimed at the call's uplink
+device, which Android's audio policy marks as *in-call music* - the output
+Qualcomm mixes into what the caller hears.
+
+Measured on an Honor (Snapdragon, MagicOS 11, Android 17), 2026-10-22, with a
+caller on another phone:
+
+- The in-call music route: heard in full. Without a 1.5-second lead-in the
+  greeting's first words were lost while the call's audio came up.
+- Android's own call-screening API (`getCallUplinkInjectionAudioTrack`): it
+  played, at real-time pace and with no error anywhere, to an output Qualcomm's
+  audio routes nowhere. The caller heard nothing, though Android's own
+  `isPstnCallAudioInterceptable` said yes.
+- Call-redirect mode: the phone's microphone and earpiece leave the call and the
+  caller's voice can be captured cleanly, but nothing at all reaches the caller.
+- `setMicrophoneMute`: the room stays out, the greeting does not. Telecom
+  adopts the mute and shows it on the call screen; it held through a switch to
+  speaker and back, and the phone cleared it as the call ended.
+
+**A message's length** is the user's: 30 seconds to 2 minutes, then the
+recorder hangs up - or no limit, which ends the call after 30 seconds without a
+sound from the caller, because a pocket dial or a line left open would
+otherwise hold the phone in the call for as long as it stayed open.
+
+**During a message**, a notification - *Taking a message* - offers *Talk to
+them* (the greeting stops, the microphone opens, the call carries on) and *Hang
+up*. Unmuting on the call screen does the same as *Talk to them*, and so does
+answering a second call - a waiting one, or one the user places - which the
+call tracker sees become active: left to the machine, the greeting would play
+into it, the microphone stay muted, and the message's limit hang it up. A call
+taken over is the user's own: an ordinary recording, not a message, from just before
+they took it - or the caller's first words, if those came first; kept from the
+answer, it began with the user hearing their own greeting in silence. In Ask
+first the takeover ends the message there instead: what the caller said is
+saved as the message, and the user is asked, as at the start of any call,
+whether to record the rest - the caller agreed to leave a message, not to a
+recorded conversation, and answering machines have always stopped recording
+when picked up (Gigaset, BT, VTech manuals; Pixel's Take a Message).
+The recorder
+leaves a marker while it holds the mute, and a recorder started after a crash
+gives the microphone back - at once between calls, or as the call in progress
+ends: muted, the room stays out of a message whose caller is still on. The mute comes as soon as the call's audio is up -
+on the Honor that is before the network connects the call (2026-10-22: 14 ms
+after the answer, connected at 235 ms) - and the greeting, and the app's
+*Taking a message*, wait for the off-hook: a caller gone in that moment left
+no call, and nothing to undo but the mute.
+
+**The message** is saved from half a second before the caller's first words,
+never later than the beep - the silence of their listening to the greeting is
+cut, and words said over it are kept. Words are a run of sound with half a
+second of sound in it: on the Honor (2026-10-22) a click as the call connected
+started a message there, and the caller's ten silent seconds were kept. The
+caller is the one sound in the recording - this phone's side is muted - unless
+a phone mixes the greeting into its recording: there the greeting is not taken
+for the caller, and words over it count in its pauses. On the Honor
+(2026-10-22) this phone's side was all zeros while muted. A caller who hangs
+up during the greeting, having said nothing, leaves nothing; the Calls tab says
+so. A message is posted on its own notification channel, with a sound, and is
+never removed by the short-calls auto-delete rule.
+
+**Your greeting** is recorded by the recorder, not the app, which holds no
+microphone permission; the app trims the silence at both ends and evens the
+level, because a call's uplink plays at full volume with no control over it.
+
+**Whether it works on a phone** is found out, not assumed. Android's own answer
+said yes on the Honor for a route that failed, so the app checks three ways:
+
+1. Without a call: the recorder holds the permissions, and the phone's audio
+   setup declares an in-call music output. The emulator declares none (Android
+   17, 2026-10-22), nor does the published audio setup of a Huawei Kirin 970
+   (read, not tried on a phone); there only Android's call-screening route is
+   left to try, which reached nobody on the Honor.
+2. A test call: someone calls, or the recorder dials a line that answers by
+   itself. The recorder checks the greeting played on the in-call music output,
+   at real-time pace (the route that failed was consumed three times too fast),
+   and looks for a check tone in the phone's own recording of its side - which
+   proves the route when found, and proves nothing when not: on the Honor's 2G
+   calls it never was, though the caller heard it.
+3. After a test someone made, one question: did they hear it?
+
+Results are kept per call type - 2G, VoLTE and Wi-Fi Calling take different
+paths - and *Copy a report* puts the phone and the results on the clipboard for
+a report, with nothing about any call. On the Honor, VoLTE could not be tried:
+its carrier would not register it for VoLTE.
+
+**Your carrier's voicemail** takes unanswered calls after its own timer, so the
+answering machine has to answer first. The recorder can ask the carrier for that
+timer (`getCallForwarding`, 6 to 18 seconds on the Honor), and, on your tap,
+make it wait the longest it allows, 30 seconds, keeping your carrier voicemail
+for calls JemRec does not take. That timer is the carrier's, on its network:
+it outlasts JemRec, which does not keep what it was before.
+
 ## The Calls tab
 
 Beside Recordings, a Calls tab shows the phone's call log, under the same
@@ -294,6 +434,14 @@ recording says why, where JemRec knows:
   land, the next pass.
 - **Recording was off**, or **Ask first, not recorded** - from a record of the
   switch and the mode that JemRec keeps from 0.12 on.
+- **Hung up during the greeting**, or **Answering machine test** - a call the
+  answering machine answered that left nothing to keep: the caller said
+  nothing before hanging up, or it was a test, whose recording is not the
+  user's. A message itself is a recorded call, marked **Message**.
+- **Greeting could not play**, in red - the answering machine answered and hung
+  up without taking a message: the greeting would not play, the microphone
+  would not mute, or the call's audio never came. The user is told then, by
+  whichever collects the call: the hang-up's save, or a later pass.
 - **Not recorded**, in red - recording was on and automatic, and still nothing
   was saved. This is the one to worry about. Said only for the last week:
   past that, a recording deleted or a call left out looks exactly the same.
@@ -353,9 +501,10 @@ None of it needs a permission the app did not already have.
 
 ## What it does not ask for
 
-No `RECORD_AUDIO`. This app never opens an audio device — the shell-side process
-does the capturing — and a call recorder that asks for the microphone anyway is
-asking for something it does not use.
+No `RECORD_AUDIO`. This app never records — the shell-side process
+does the capturing, including your greeting for the answering machine, and only
+while you are recording it — and a call recorder that asks for the microphone
+anyway is asking for something it does not use.
 
 This is the whole list, in the order F-Droid's listing page shows it, because a
 permission a call recorder does not explain is one its user has to guess at:
@@ -370,7 +519,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
-| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. JemRec never acts on a call. |
+| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine's answering is the recorder's, as the shell. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
 | `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
 

@@ -123,6 +123,15 @@ object CaptureDaemon {
      *  before it was recorded (CallTracker). 1 skips, 0 takes it back. */
     private const val COMMAND_SKIP = 'K'.code.toByte()
 
+    /** The answering machine: its settings, the go-ahead for a ringing call,
+     *  Talk to them / Hang up, the greeting, and the diagnostics. See Main in
+     *  the daemon for each. */
+    private const val COMMAND_ANSWER_SETTINGS = 'N'.code.toByte()
+    private const val COMMAND_GO_AHEAD = 'Y'.code.toByte()
+    private const val COMMAND_HANDOVER = 'H'.code.toByte()
+    private const val COMMAND_GREETING = 'G'.code.toByte()
+    private const val COMMAND_DIAGNOSE = 'X'.code.toByte()
+
     /**
      * How long a BUSY is given to come true. A daemon really recording a call
      * lets go within a couple of seconds of the call's audio being released -
@@ -515,6 +524,149 @@ object CaptureDaemon {
         setDaemonMode(context, currentMode(context))
         setVoipApps(context)
         setTracking(context)
+        syncGreeting(context)
+        setAnswering(context)
+    }
+
+    /** One command, one line back; null if the daemon could not be asked or
+     *  hung up - an older one does, on a command it does not know. */
+    private suspend fun ask(context: Context, command: Byte, payload: ByteArray, readMs: Int = 3_000): String? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                open(context, command, payload, readMs = readMs).use { socket ->
+                    socket.getInputStream().bufferedReader().readLine()?.trim()
+                }
+            }.getOrNull()
+        }
+
+    /** The answering machine's settings, to the daemon. Best-effort, like the mode. */
+    suspend fun setAnswering(context: Context): Boolean =
+        ask(context, COMMAND_ANSWER_SETTINGS, nameFrame(AnsweringMachine.wire(context)))
+            ?.startsWith("ANSWER ") == true
+
+    /** Answer the ringing call [delayMs] after it began to ring, or take the
+     *  go-ahead back (negative). [rangAt] is when this app saw the ring, on
+     *  SystemClock.elapsedRealtime - the daemon's clock too: it ignores a
+     *  go-ahead for a ring that has ended since. The daemon's state after,
+     *  or null. */
+    suspend fun goAhead(context: Context, delayMs: Int, rangAt: Long): String? =
+        ask(
+            context, COMMAND_GO_AHEAD,
+            java.nio.ByteBuffer.allocate(12).putInt(delayMs).putLong(rangAt).array(),
+            readMs = 1_500,
+        )
+
+    /** During a message: Talk to them, or Hang up. */
+    suspend fun handOver(context: Context, talk: Boolean): Boolean =
+        ask(context, COMMAND_HANDOVER, byteArrayOf((if (talk) 'T' else 'H').code.toByte()), readMs = 1_500)
+            ?.startsWith("HAND ") == true
+
+    /** How many bytes of greeting the daemon has; null if it cannot say. */
+    suspend fun greetingBytes(context: Context): Long? =
+        ask(context, COMMAND_GREETING, byteArrayOf('Q'.code.toByte()))
+            ?.takeIf { it.startsWith("GREETING ") }?.substringAfter(' ')?.toLongOrNull()
+
+    /** Start recording a greeting take from the microphone - the daemon's,
+     *  not this app's, which holds no microphone permission. */
+    suspend fun startTake(context: Context): Boolean =
+        ask(context, COMMAND_GREETING, byteArrayOf('R'.code.toByte())) == "TAKE recording"
+
+    /** Stop the take; its length in bytes, or null. */
+    suspend fun stopTake(context: Context): Long? =
+        ask(context, COMMAND_GREETING, byteArrayOf('S'.code.toByte()), readMs = 5_000)
+            ?.takeIf { it.startsWith("TAKE ") }?.substringAfter(' ')?.toLongOrNull()
+
+    /** The take just recorded, as raw PCM; null if there is none. */
+    suspend fun fetchTake(context: Context): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching {
+            open(context, COMMAND_GREETING, byteArrayOf('T'.code.toByte()), readMs = 10_000).use { socket ->
+                val input = DataInputStream(socket.getInputStream())
+                val length = input.readInt()
+                require(length in 0..4_000_000) { "implausible take of $length bytes" }
+                ByteArray(length).also { input.readFully(it) }
+            }
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+    }
+
+    /** Make [pcm] the daemon's greeting. */
+    suspend fun uploadGreeting(context: Context, pcm: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = java.nio.ByteBuffer.allocate(5 + pcm.size)
+                .put('P'.code.toByte()).putInt(pcm.size).put(pcm).array()
+            open(context, COMMAND_GREETING, payload, readMs = 10_000).use { socket ->
+                socket.getInputStream().bufferedReader().readLine() == "GREETING ${pcm.size}"
+            }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * The app's greeting is the master copy: the daemon is given it whenever
+     * it lacks it or has another, and loses its own when the app has none.
+     * The daemon's copy survives a restart of the daemon, but not every way
+     * a daemon can be replaced, and a greeting that silently went missing
+     * would turn the answering machine off without a word.
+     */
+    suspend fun syncGreeting(context: Context) {
+        val there = greetingBytes(context) ?: return
+        val here = Greeting.file(context)
+        when {
+            Greeting.present(context) && there != here.length() ->
+                uploadGreeting(context, here.readBytes())
+            !Greeting.present(context) && there > 0 ->
+                ask(context, COMMAND_GREETING, byteArrayOf('D'.code.toByte()))
+        }
+    }
+
+    /** "KEY=value" fields after a fixed head ("DIAG 1", "RESULT 1"). */
+    internal fun fields(line: String?, head: String): Map<String, String>? {
+        if (line == null || !line.startsWith("$head ")) return null
+        return line.removePrefix("$head ").split(' ').filter { '=' in it }
+            .associate { it.substringBefore('=') to it.substringAfter('=') }
+    }
+
+    /** The no-call checks; null if the daemon cannot run them. */
+    suspend fun stageOne(context: Context): Map<String, String>? =
+        fields(ask(context, COMMAND_DIAGNOSE, byteArrayOf('C'.code.toByte()), readMs = 15_000), "DIAG 1")
+
+    /** Arm a test call: the next incoming call within three minutes, or -
+     *  [number] given - one the daemon dials now. */
+    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): String? =
+        ask(
+            context, COMMAND_DIAGNOSE,
+            byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number),
+            readMs = 5_000,
+        )
+
+    /** What the last test call measured; null if the daemon cannot say. */
+    suspend fun testResult(context: Context): Map<String, String>? =
+        fields(ask(context, COMMAND_DIAGNOSE, byteArrayOf('R'.code.toByte())), "RESULT 1")
+
+    /** The carrier's no-reply forwarding: "on 25 *1234", "off 0", "error ...";
+     *  slow - the network is asked. */
+    suspend fun forwarding(context: Context): String? =
+        ask(context, COMMAND_DIAGNOSE, byteArrayOf('F'.code.toByte()), readMs = 60_000)
+            ?.takeIf { it.startsWith("FWD ") }?.removePrefix("FWD ")
+
+    /** Lengthen it to [seconds], keeping the carrier's voicemail number. */
+    suspend fun setForwarding(context: Context, seconds: Int): String? =
+        ask(context, COMMAND_DIAGNOSE, byteArrayOf('S'.code.toByte(), seconds.toByte()), readMs = 90_000)
+            ?.takeIf { it.startsWith("FWD ") }?.removePrefix("FWD ")
+
+    /** The phone's SIMs, as Telecom has them: the default one's id, and
+     *  each one's id and label. The app cannot list them itself without a
+     *  phone-state permission it does not hold. */
+    data class Sims(val defaultId: String?, val all: List<Pair<String, String>>)
+
+    suspend fun sims(context: Context): Sims? =
+        parseSims(ask(context, COMMAND_DIAGNOSE, byteArrayOf('P'.code.toByte())))
+
+    /** "SIMS default=<id> <id>|<label> ...", labels with '_' for spaces. */
+    internal fun parseSims(line: String?): Sims? {
+        if (line == null || !line.startsWith("SIMS")) return null
+        val words = line.split(' ').drop(1)
+        val default = words.firstOrNull { it.startsWith("default=") }?.substringAfter('=')?.ifEmpty { null }
+        val all = words.filter { '|' in it }.map { it.substringBefore('|') to it.substringAfter('|').replace('_', ' ') }
+        return Sims(default, all)
     }
 
     /** Tell the daemon whether exact call tracking is on; it allows or
@@ -985,6 +1137,7 @@ object CaptureDaemon {
                     "JEMREC_TOKEN=${token(context)} JEMREC_MODE=${currentMode(context)} " +
                     "JEMREC_VOIP=${VoipApps.wire(context)} " +
                     "JEMREC_TRACK=${if (CallTracking.enabled(context)) 1 else 0} " +
+                    "JEMREC_ANSWER=${AnsweringMachine.wire(context)} " +
                     "CLASSPATH=$DEVICE_PATH setsid nohup " +
                     "app_process / $MAIN_CLASS $PORT < /dev/null > $LOG_PATH 2>&1 &"
             )
@@ -1123,6 +1276,10 @@ object CaptureDaemon {
         val voipArmed: Boolean = false,
         /** Whether it has exact call tracking allowed; null if it cannot say. */
         val tracking: Boolean? = null,
+        /** Whether its answering machine is on and it holds a greeting; null
+         *  from a recorder too old to say. */
+        val answer: Boolean? = null,
+        val greeting: Boolean? = null,
     )
 
     /** "WATCH 1 since=... watching=1 looper=ok ..."; null for anything else,
@@ -1147,6 +1304,8 @@ object CaptureDaemon {
             voipApps = int("voip"),
             voipArmed = fields["voiparmed"] == "1",
             tracking = fields["tracking"]?.let { it == "1" },
+            answer = fields["answer"]?.let { it == "1" },
+            greeting = fields["greeting"]?.let { it == "1" },
         )
     }
 

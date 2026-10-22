@@ -122,7 +122,7 @@ internal object MissedCalls {
         now: Long,
     ): List<CallLogLookup.LoggedCall> {
         // A call the rules left out was recorded and thrown away on purpose.
-        val known = ledger.recordings + ledger.skipped + pending
+        val known = ledger.accounted + pending
         return calls.filter { call ->
             call.at > coveredSince &&
                 call.seconds >= MIN_SECONDS &&

@@ -198,7 +198,7 @@ private fun CallLine(call: CallHistory.Call, day: Day, playing: Boolean) {
                 )
             }
             Text(
-                recording.durationLabel,
+                if (recording.message) "Message · ${recording.durationLabel}" else recording.durationLabel,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -210,9 +210,10 @@ private fun CallLine(call: CallHistory.Call, day: Day, playing: Boolean) {
                     statusWords(call),
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
-                // Red only for the one that should not have happened: recording
-                // was on and automatic, and still nothing was saved.
-                color = if (call.status == Status.NOT_RECORDED) {
+                // Red only for the ones that should not have happened:
+                // recording was on and automatic, and still nothing was saved;
+                // or the answering machine answered and could not greet.
+                color = if (call.status == Status.NOT_RECORDED || call.status == Status.GREETING_FAILED) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -227,6 +228,9 @@ private fun CallLine(call: CallHistory.Call, day: Day, playing: Boolean) {
 /** What became of a call with no recording, in a few words. */
 private fun statusWords(call: CallHistory.Call): String = when (call.status) {
     Status.RECORDED -> ""
+    Status.GREETING_HANGUP -> "Hung up during the greeting"
+    Status.GREETING_FAILED -> "Greeting could not play"
+    Status.TEST_CALL -> "Answering machine test"
     Status.IN_TRASH -> "In Recently deleted"
     Status.DELETED -> "Recording deleted"
     Status.SKIPPED -> "Left out by your rules"
