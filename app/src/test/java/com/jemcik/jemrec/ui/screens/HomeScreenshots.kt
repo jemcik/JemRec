@@ -4,7 +4,6 @@ import com.jemcik.jemrec.capture.Waveforms
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.CallsNarrowing
 import com.jemcik.jemrec.ui.AppScaffold
-import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.HomeTab
 import com.jemcik.jemrec.ui.UiState
 import com.jemcik.jemrec.ui.theme.LightDark
@@ -15,7 +14,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
@@ -36,7 +34,7 @@ class HomeScreenshots : ScreenTest() {
      *  four marks: the mode, answering, messengers (two of three apps on in
      *  the fixture) and auto-delete (90 days). */
     private fun home(state: UiState, fontScale: Float = 1f, look: LookChoice = LookChoice()) {
-        val vm = MainViewModel(RuntimeEnvironment.getApplication(), state, AnswerUi(enabled = true))
+        val vm = viewModel(state, AnswerUi(enabled = true))
         show(fontScale, look) { AppScaffold(state, vm) }
     }
 
@@ -83,24 +81,16 @@ class HomeScreenshots : ScreenTest() {
     }
 
     @Test fun playing() {
-        val olivia = Fixtures.recordings().first()
         home(
-            Fixtures.ready().copy(
-                playingName = olivia.name, playing = true, positionMs = 107_000, durationMs = 252_000,
-                waveform = Fixtures.waveform(),
-            ),
+            Fixtures.playing(),
         )
         snap("home-playing")
     }
 
     @Config(qualifiers = "+night")
     @Test fun playingDark() {
-        val olivia = Fixtures.recordings().first()
         home(
-            Fixtures.ready().copy(
-                playingName = olivia.name, playing = true, positionMs = 107_000, durationMs = 252_000,
-                waveform = Fixtures.waveform(),
-            ),
+            Fixtures.playing(),
         )
         snap("home-playing-dark")
     }
@@ -108,8 +98,7 @@ class HomeScreenshots : ScreenTest() {
     @Test fun playingBeforeItsWaveform() {
         // The first play of a long call, while its loudness is worked out:
         // the plain scrubber, as before there was a waveform.
-        val olivia = Fixtures.recordings().first()
-        home(Fixtures.ready().copy(playingName = olivia.name, playing = true, positionMs = 107_000, durationMs = 252_000))
+        home(Fixtures.playing(waveform = null))
         snap("home-playing-slider")
     }
 
@@ -205,15 +194,8 @@ class HomeScreenshots : ScreenTest() {
     }
 
     @Test fun deckPlaying() {
-        val olivia = Fixtures.recordings().first()
         home(
-            Fixtures.ready().copy(
-                playingName = olivia.name,
-                playing = true,
-                positionMs = 103_000,
-                durationMs = 252_000,
-                waveform = Fixtures.waveform(),
-            ),
+            Fixtures.playing(),
             look = deck,
         )
         snap("deck-playing")
@@ -222,15 +204,8 @@ class HomeScreenshots : ScreenTest() {
     /** The player in dark: the negative LCD, and its keys' greys. */
     @Config(qualifiers = "+night")
     @Test fun deckPlayingDark() {
-        val olivia = Fixtures.recordings().first()
         home(
-            Fixtures.ready().copy(
-                playingName = olivia.name,
-                playing = true,
-                positionMs = 103_000,
-                durationMs = 252_000,
-                waveform = Fixtures.waveform(),
-            ),
+            Fixtures.playing(),
             look = deck,
         )
         snap("deck-playing-dark")
@@ -269,15 +244,8 @@ class HomeScreenshots : ScreenTest() {
 
     /** The player in light, whose key and buttons were near-black once. */
     @Test fun multitrackPlaying() {
-        val olivia = Fixtures.recordings().first()
         home(
-            Fixtures.ready().copy(
-                playingName = olivia.name,
-                playing = true,
-                positionMs = 103_000,
-                durationMs = 252_000,
-                waveform = Fixtures.waveform(),
-            ),
+            Fixtures.playing(),
             look = multitrack,
         )
         snap("multitrack-playing")
@@ -285,15 +253,8 @@ class HomeScreenshots : ScreenTest() {
 
     @Config(qualifiers = "+night")
     @Test fun multitrackPlayingDark() {
-        val olivia = Fixtures.recordings().first()
         home(
-            Fixtures.ready().copy(
-                playingName = olivia.name,
-                playing = true,
-                positionMs = 103_000,
-                durationMs = 252_000,
-                waveform = Fixtures.waveform(),
-            ),
+            Fixtures.playing(),
             look = multitrack,
         )
         snap("multitrack-playing-dark")

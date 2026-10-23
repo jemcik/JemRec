@@ -117,10 +117,16 @@ internal object AudioCheck {
 
     private fun measure(context: Context, uri: Uri): Levels {
         var meter: Meter? = null
+        // Packets joined, as the waveform's are (OpusPackets): the same
+        // samples, a third of the time - and the notification waits for
+        // this. A call with one side near silent, as the Honor can give,
+        // never stops early: a packet at a time, its first ten minutes took
+        // about a second a minute (the Honor, 2026-10-23).
         PcmDecoder.decode(
             context, uri,
             onFormat = { rate, channels -> meter?.reshape(rate, channels) ?: run { meter = Meter(rate, channels) } },
             onPcm = { pcm, _ -> meter!!.run { feed(pcm); !done } },
+            join = true,
         )
         return meter!!.levels()
     }

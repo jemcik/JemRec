@@ -72,8 +72,13 @@ internal object PcmDecoder {
             val format = extractor.getTrackFormat(track)
             if (fromUs > 0) extractor.seekTo(fromUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             val mime = format.getString(MediaFormat.KEY_MIME)!!
-            val dec = MediaCodec.createDecoderByType(mime).apply { configure(format, null, null, 0); start() }
+            // Held before it is configured, so the finally releases it if
+            // configure or start throws: it leaked until garbage collection,
+            // and the list's fill-in met the same file at every refresh.
+            val dec = MediaCodec.createDecoderByType(mime)
             decoder = dec
+            dec.configure(format, null, null, 0)
+            dec.start()
             val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             onFormat(format.getInteger(MediaFormat.KEY_SAMPLE_RATE), channels)
             // More than two channels are several streams to a packet, framed
@@ -164,47 +169,74 @@ internal object PcmDecoder {
         }
     }
 
-    /** The file's Opus packets, joined while they may share one (OpusPackets). */
+    /**
+     * The file's Opus packets, joined while they may share one (OpusPackets):
+     * read back to back into one array, with their sizes, and written into
+     * the decoder's buffer from there.
+     */
     private class Joining(private val extractor: MediaExtractor, private val untilUs: Long) : Input {
-        private val staging = ByteBuffer.allocate(64 * 1024)
-        /** A packet read ahead that did not fit the one before. */
-        private var held: ByteArray? = null
+        private val read = ByteBuffer.allocate(64 * 1024)
+        private val sizes = IntArray(OpusPackets.MAX_FRAMES)
+        /** A packet read ahead that did not fit the one before, moved to the
+         *  start of [read]: its size, or 0, and when it starts. */
+        private var held = 0
         private var heldAtUs = 0L
 
-        private fun read(): Boolean {
+        /** The next packet, read in at [at]: its size, or -1 at the end - or
+         *  where there is no room for it after the others, to be read first
+         *  the next time. */
+        private fun readAt(at: Int): Int {
             val atUs = extractor.sampleTime
-            if (atUs < 0 || atUs >= untilUs) return false
-            staging.clear()
-            val size = extractor.readSampleData(staging, 0)
-            if (size < 0) return false
-            held = ByteArray(size).also { staging.get(it, 0, size) }
-            heldAtUs = atUs
+            if (atUs < 0 || atUs >= untilUs) return -1
+            if (at > 0 && extractor.sampleSize > read.capacity() - at) return -1
+            val size = extractor.readSampleData(read, at)
+            if (size < 0) return -1
             extractor.advance()
-            return true
+            return size
         }
 
         override fun next(buffer: ByteBuffer): Long {
-            if (held == null && !read()) return -1
-            val first = held!!
-            val atUs = heldAtUs
-            held = null
-            val frames = mutableListOf(first)
-            var units = OpusPackets.frameUnits(first[0].toInt())
-            if (OpusPackets.joinable(first)) {
-                while (read()) {
-                    val next = held!!
-                    if (!OpusPackets.fits(first, frames.size, units, next) ||
-                        OpusPackets.joinedSize(frames + next) > buffer.capacity()
-                    ) {
+            val atUs: Long
+            if (held > 0) {
+                sizes[0] = held
+                atUs = heldAtUs
+                held = 0
+            } else {
+                atUs = extractor.sampleTime
+                val size = readAt(0)
+                if (size < 0) return -1
+                sizes[0] = size
+            }
+            val packets = read.array()
+            val firstToc = packets[0].toInt()
+            var count = 1
+            var end = sizes[0]
+            var units = OpusPackets.frameUnits(firstToc)
+            // What joinInto may write, kept as it goes: 2, and a byte more
+            // than each packet.
+            var joined = 2 + sizes[0] + 1
+            var heldAt = 0
+            if (OpusPackets.joinable(firstToc, sizes[0])) {
+                while (true) {
+                    val nextAtUs = extractor.sampleTime
+                    val size = readAt(end)
+                    if (size < 0) break
+                    val toc = packets[end].toInt()
+                    if (!OpusPackets.fits(firstToc, count, units, toc, size) || joined + size + 1 > buffer.capacity()) {
+                        held = size
+                        heldAtUs = nextAtUs
+                        heldAt = end
                         break
                     }
-                    frames += next
-                    units += OpusPackets.frameUnits(next[0].toInt())
-                    held = null
+                    sizes[count++] = size
+                    end += size
+                    units += OpusPackets.frameUnits(toc)
+                    joined += size + 1
                 }
             }
             buffer.clear()
-            buffer.put(OpusPackets.join(frames))
+            OpusPackets.joinInto(packets, sizes, count, buffer)
+            if (held > 0) System.arraycopy(packets, heldAt, packets, 0, held)
             return atUs
         }
     }

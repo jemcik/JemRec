@@ -46,13 +46,13 @@ class SettingsScreenshots : ScreenTest() {
     @Test fun themeDeckDark() {
         // Deck chosen: the whole screen is Deck's, and so is the preview.
         val deck = LookChoice(Look.DECK)
-        settings(Fixtures.ready().copy(screen = Screen.THEME, look = Look.DECK), look = deck)
+        settings(Fixtures.ready().copy(screen = Screen.THEME), look = deck)
         snap("theme-deck-dark")
     }
 
     @Test fun themeMultitrack() {
         val multitrack = LookChoice(Look.MULTITRACK)
-        settings(Fixtures.ready().copy(screen = Screen.THEME, look = Look.MULTITRACK), look = multitrack)
+        settings(Fixtures.ready().copy(screen = Screen.THEME), look = multitrack)
         snap("theme-multitrack")
     }
 
@@ -66,13 +66,13 @@ class SettingsScreenshots : ScreenTest() {
 
     @Config(qualifiers = "+h1500dp")
     @Test fun overviewDeck() {
-        settings(Fixtures.ready().copy(look = Look.DECK), look = LookChoice(Look.DECK))
+        settings(Fixtures.ready(), look = LookChoice(Look.DECK))
         snap("settings-deck")
     }
 
     @Config(qualifiers = "+h1500dp-night")
     @Test fun overviewMultitrackDark() {
-        settings(Fixtures.ready().copy(look = Look.MULTITRACK), look = LookChoice(Look.MULTITRACK))
+        settings(Fixtures.ready(), look = LookChoice(Look.MULTITRACK))
         snap("settings-multitrack-dark")
     }
 
@@ -81,13 +81,13 @@ class SettingsScreenshots : ScreenTest() {
 
     @Config(qualifiers = "+h1500dp-night")
     @Test fun overviewDeckDark() {
-        settings(Fixtures.ready().copy(look = Look.DECK), look = LookChoice(Look.DECK))
+        settings(Fixtures.ready(), look = LookChoice(Look.DECK))
         snap("settings-deck-dark")
     }
 
     @Config(qualifiers = "+h1500dp")
     @Test fun overviewMultitrack() {
-        settings(Fixtures.ready().copy(look = Look.MULTITRACK), look = LookChoice(Look.MULTITRACK))
+        settings(Fixtures.ready(), look = LookChoice(Look.MULTITRACK))
         snap("settings-multitrack")
     }
 

@@ -82,8 +82,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     // Out of sight, the player's controls are too: a recording does not go on
     // playing with the app in the background, where nothing could stop it.
-    // See MainViewModel.pausePlayback.
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.pausePlayback() }
+    // See MainViewModel.pausePlayback and fillInWaveforms.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        vm.pausePlayback()
+        vm.stopFillingIn()
+    }
 
     // A recording saved while this screen is up - by the per-call service
     // seconds after a hang-up, or by the keep-alive's reconcile right after an
@@ -200,6 +203,8 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
             }
         },
     ) { padding ->
+        // Share's sheet, over whichever tab asked for it.
+        if (ready) ShareSheets(state, vm)
         // Settings keeps its place while a screen opened from it is up -
         // Recently deleted included, which is drawn by a different branch
         // below, so this lives above them all - and Back lands where the tap
@@ -270,7 +275,7 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                     SetupScreen(state, vm)
                 } else {
                     when (state.screen) {
-                        Screen.THEME -> ThemeScreen(state, vm)
+                        Screen.THEME -> ThemeScreen(vm)
                         Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm)
                         Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
                         Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
@@ -294,11 +299,15 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
  *   record), one line at any text size, green, coral or grey: each header's
  *   word, from recorderStatus, auto-sized;
  * - "Recording every call" / "Asks before each call" under it: the AUTO or
- *   ASK mark (Deck, Multitrack) and Memo's first pill;
+ *   ASK mark (Deck, Multitrack) and Memo's first mark, its dot and words;
  * - "Tap to allow this Wi-Fi", a tap to Android's question, or "Join any
- *   Wi-Fi - it resumes on its own", when the recorder is down: the same words
- *   on each header, and the same tap;
- * - the on/off switch, not while busy: each record control (recordToggle);
+ *   Wi-Fi - it resumes on its own", when the recorder is down: each look's
+ *   words for it (Instruction), and the same tap, haptic and label
+ *   (allowWifiTap);
+ * - the on/off switch: each record control (recordToggle). It was disabled
+ *   while busy, which showed; the controls looked the same and dropped the
+ *   tap, so now a tap while busy applies at once and the recorder follows
+ *   when the app is free (setEnabled);
  * - the gear, and Recordings | Calls: on each header;
  * - the gradient rule, moving while busy: each look's own busy signal in
  *   its status instead (Deck's LCD segments, Memo's ring, Multitrack's

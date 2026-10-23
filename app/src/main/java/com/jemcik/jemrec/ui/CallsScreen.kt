@@ -1,6 +1,5 @@
 package com.jemcik.jemrec.ui
 
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
@@ -36,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.CallLogLookup
+import com.jemcik.jemrec.capture.Recording
 
 /**
  * The Calls tab: every call in the phone's log, with a play mark on the ones
@@ -91,8 +91,7 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
     val today = dayStamp(now())
     val narrowing = state.callsNarrowing
     val shown = remember(state.calls, narrowing) { filterCalls(state.calls, narrowing) }
-    val days = remember(shown, today) { byDay(shown, now()) { it.at } }
-    val wavesVersion by vm.wavesWorkedOut.collectAsStateWithLifecycle()
+    val days = remember(shown, today) { byDay(keyedCalls(shown), now()) { it.call.at } }
     val searchFocus = remember { FocusRequester() }
     LaunchedEffect(narrowing.searchOpen) {
         if (narrowing.searchOpen) runCatching { searchFocus.requestFocus() }
@@ -138,14 +137,29 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                     )
                 }
             }
+            // The chips and search left nothing: said, as on the Recordings
+            // tab, not a blank list under the chips.
+            if (state.calls.isNotEmpty() && shown.isEmpty()) {
+                item {
+                    NoMatches(
+                        when {
+                            narrowing.notRecorded -> "No unrecorded calls match."
+                            narrowing.messages -> "No messages match."
+                            narrowing.kept -> "No calls with a kept recording match."
+                            narrowing.favorites -> "No calls with favourite contacts match."
+                            else -> "No calls match your search."
+                        },
+                    )
+                }
+            }
             // Under Today, Yesterday and Earlier, as on the Recordings tab, with
             // how many each holds.
             days.forEachIndexed { run, (day, rows) ->
                 item(key = "day-$run", contentType = "day") { DayHeading(day, rows.size, calls = true) }
-                items(rows, key = { call -> "${call.at}-${call.label}" }, contentType = { "call" }) { call ->
+                items(rows, key = { it.key }, contentType = { "call" }) { (_, call) ->
                     val recording = call.recording
                     if (recording != null) {
-                        RecordingRow(recording, day, state, vm, wavesVersion)
+                        RecordingRow(recording.forCall(call), day, state, vm)
                     } else {
                         CallRow(call, day)
                     }
@@ -154,3 +168,17 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
         }
     }
 }
+
+/**
+ * [this] recording, as the row of [call] shows it: the call's own name,
+ * photo, star, direction and time, as the Calls tab's rows always showed. A
+ * call that came in during another's recording (call waiting) shares that
+ * recording, and drawn as the recording, its row repeated the first caller.
+ */
+internal fun Recording.forCall(call: CallHistory.Call): Recording = copy(
+    caller = call.label,
+    callerPhoto = call.photo,
+    callerFavorite = call.favorite,
+    incoming = call.incoming,
+    shownAt = call.at,
+)

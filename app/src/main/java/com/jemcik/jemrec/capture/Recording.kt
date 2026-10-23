@@ -64,11 +64,15 @@ data class Recording(
     val message: Boolean = false,
     /** Set only for a recording in the trash: when it goes for good. */
     val expiresAtMillis: Long? = null,
+    /** Set only where a row shows this recording for a call of its own - the
+     *  Calls tab: that call's time, shown in place of the recording's. A call
+     *  that came in during another's recording (call waiting) shares it, and
+     *  its row read the first call's time. */
+    val shownAt: Long? = null,
 ) {
     /** When the call was, read from the name in any of its formats (see
-     *  FileNames.parse). Drives the Today / This week presets; null if the
-     *  name is not one of ours. Parsed once per instance: the filter asks
-     *  every row at every keystroke. */
+     *  FileNames.parse); null if the name is not one of ours. Parsed once per
+     *  instance: the list groups and sorts every row by it. */
     val startedAtMillis: Long? get() = parsedName?.startedAt
 
     /** What the name says - time, and for some formats direction, caller and
@@ -348,7 +352,7 @@ internal object Recordings {
     private fun duration(millis: Long): String {
         if (millis <= 0) return "--:--"
         val total = millis / 1000
-        return "%d:%02d".format(total / 60, total % 60)
+        return "%d:%02d".format(Locale.US, total / 60, total % 60)
     }
 
     /** For sources that do not already know the duration, in milliseconds.

@@ -2,29 +2,22 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -61,16 +54,11 @@ import com.jemcik.jemrec.ui.theme.deckColors
 internal fun DeckHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
     val c = deckColors()
     val haptics = LocalHapticFeedback.current
-    val shape = RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp)
     Column(
         Modifier
             .fillMaxWidth()
-            // A 1dp edge under the face: the face is pale on a pale page in
-            // light, and needs a line to end on.
-            .background(c.faceEdge, shape)
-            .padding(bottom = 1.dp)
-            .background(c.face, shape)
-            .windowInsetsPadding(WindowInsets.statusBars)
+            .deckFace(c)
+            .windowInsetsPadding(BarInsets)
             .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -87,9 +75,7 @@ internal fun DeckHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
                 Box(Modifier.fillMaxSize().domed(if (state.enabled) LitRed else c.keyIdle))
             }
             DeckLcd(state, vm, marks(state, answering), c, Modifier.weight(1f))
-            IconButton(onClick = { haptics.tap(); vm.showSettings() }) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = c.icon)
-            }
+            SettingsGear(vm, c.icon)
         }
         DeckTabs(state, c, Modifier.padding(end = 10.dp)) { haptics.tap(); vm.showTab(it) }
     }
@@ -101,7 +87,7 @@ private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColo
     val off = status == RecorderStatus.OFF
     val ink = if (off) c.inkOff else c.ink
     // Dark: the segments glow, the way a negative LCD's do.
-    val glow = if (c.glow) Shadow(ink.copy(alpha = 0.55f), blurRadius = 14f) else null
+    val glow = deckGlow(c, ink)
     // The small lines in a plain mono: the LCD's dot font is for the one big
     // word, and too hard to read at this size.
     val small = TextStyle(fontFamily = LookFonts.engraved, fontSize = 11.sp, letterSpacing = 0.04.em, color = ink, shadow = glow)
@@ -124,7 +110,7 @@ private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColo
             .border(2.dp, c.bezel, lcdShape)
             .then(
                 if (asks) {
-                    Modifier.clickable(enabled = !state.busy, onClickLabel = "Allow this Wi-Fi") { vm.allowThisWifi() }
+                    Modifier.allowWifiTap(state, vm)
                 } else {
                     Modifier
                 },
@@ -216,10 +202,7 @@ private fun DeckTabs(state: UiState, c: DeckColors, modifier: Modifier, onSelect
                     // At least, not exactly: a fixed height left large text no
                     // room, and auto-size shrank it to the floor.
                     .heightIn(min = 44.dp)
-                    .clip(shape)
-                    .background(if (on) c.keyOn else c.keyOff)
-                    .border(1.dp, if (on) c.keyOnEdge else c.keyOff, shape)
-                    .keyLip(c.glow)
+                    .deckKey(c, on, shape)
                     .selectable(selected = on, role = Role.Tab) { if (!on) onSelect(tab) },
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,

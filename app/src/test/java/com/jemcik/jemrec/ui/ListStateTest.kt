@@ -5,7 +5,6 @@ import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.capture.RecordingStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito
 import java.util.Date
@@ -41,7 +40,7 @@ class ListStateTest {
         val unkept = rec(daysAgo = 1)
         val state = UiState(
             recordings = listOf(kept, unkept),
-            keptOnly = true,
+            recordingsNarrowing = RecordingsNarrowing(kept = true),
             selecting = true,
             selected = setOf(kept.name, unkept.name),
         )
@@ -51,16 +50,15 @@ class ListStateTest {
     @Test fun aNotificationsRecordingIsBroughtOnScreen() {
         val narrowed = UiState(
             screen = Screen.SETTINGS, homeTab = HomeTab.CALLS,
-            query = "x", searchOpen = true, sources = setOf("whatsapp"),
-            favoritesOnly = true, keptOnly = true, selecting = true, selected = setOf("a"),
+            recordingsNarrowing = RecordingsNarrowing(
+                query = "x", searchOpen = true, sources = setOf("whatsapp"), favorites = true, kept = true,
+            ),
+            selecting = true, selected = setOf("a"),
         )
         val shown = narrowed.revealed()
         assertEquals(Screen.HOME, shown.screen)
         assertEquals(HomeTab.RECORDINGS, shown.homeTab)
-        assertTrue(shown.sources.isEmpty())
-        assertEquals("", shown.query)
-        assertFalse(shown.keptOnly)
-        assertFalse(shown.favoritesOnly)
+        assertEquals(RecordingsNarrowing(), shown.recordingsNarrowing)
         assertFalse(shown.selecting)
     }
 }

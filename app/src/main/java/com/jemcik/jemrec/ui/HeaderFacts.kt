@@ -58,7 +58,8 @@ internal fun ageShort(days: Int): String = when (days) {
     else -> "$days d"
 }
 
-/** The same age in words, for a screen reader. */
+/** The same age in words: what a screen reader hears in the header, and
+ *  what Settings offers. */
 internal fun ageWords(days: Int): String = when (days) {
     180 -> "6 months"
     365 -> "1 year"

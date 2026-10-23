@@ -2,27 +2,20 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -69,11 +62,8 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
     Column(
         Modifier
             .fillMaxWidth()
-            .background(c.panel)
-            .drawBehind {
-                drawLine(c.line, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1.dp.toPx())
-            }
-            .windowInsetsPadding(WindowInsets.statusBars)
+            .multitrackPanel(c)
+            .windowInsetsPadding(BarInsets)
             .padding(start = 16.dp, end = 6.dp, top = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -106,7 +96,7 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
                     .weight(1f)
                     .then(
                         if (asks) {
-                            Modifier.clickable(enabled = !state.busy, onClickLabel = "Allow this Wi-Fi") { vm.allowThisWifi() }
+                            Modifier.allowWifiTap(state, vm)
                         } else {
                             Modifier
                         },
@@ -130,11 +120,9 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
                     }
                 }
             }
-            IconButton(onClick = { haptics.tap(); vm.showSettings() }) {
-                // The lanes' buttons' grey, so the look's buttons are one
-                // grey (5.8:1 on the white panel in light).
-                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = c.control)
-            }
+            // The lanes' buttons' grey, so the look's buttons are one grey
+            // (5.8:1 on the white panel in light).
+            SettingsGear(vm, c.control)
         }
         MultiTabs(state, c, Modifier.padding(end = 10.dp)) { haptics.tap(); vm.showTab(it) }
     }

@@ -1109,10 +1109,10 @@ SETUP = [
           "Tap a recording to play it inside the app. Its waveform appears under "
           "the row - tall where someone is talking, flat where it is quiet - and "
           "a tap or a drag on it goes to that place. A call's waveform is worked "
-          "out as it is saved; for an older recording, the first time it is "
-          "played, a plain slider stands in for a moment - about two and a half "
-          "seconds for a 30-minute call. The chevron beside it folds the player "
-          "away. "
+          "out as it is saved, and an older recording's while the app is open; "
+          "one played before then has a plain slider for a moment - about two "
+          "and a half seconds for a 30-minute call. The chevron beside it folds "
+          "the player away. "
           "The share button offers the original file or a converted copy that "
           "plays anywhere."),
     ("p", "To delete, tap a contact's photo or long-press a row to start "
@@ -2232,11 +2232,11 @@ PRIVACY_BODY = f"""
             the call notifications of the messengers you switched on (see
             Messenger callers). Nothing else is read or kept.</td></tr>
     <tr><td>Waveforms</td>
-        <td>For each recording you have played, its loudness: a few hundred
-            numbers, no sound, worked out from the file to draw its waveform.
-            In the app&rsquo;s cache, under a code made from the file&rsquo;s
-            name rather than the name itself; Android may clear it at any
-            time.</td></tr>
+        <td>For each recording, its loudness: 800 numbers, no sound, worked
+            out from the file to draw its waveform - when a call is saved, or
+            while the app is open. In the app&rsquo;s cache, under a code made
+            from the file&rsquo;s name rather than the name itself, until the
+            recording is deleted; Android may clear it sooner.</td></tr>
     <tr><td>Settings</td>
         <td>The app&rsquo;s own private storage: whether recording is on, whether to
             ask before each call, whether to show each call when it ends, where to

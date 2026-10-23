@@ -4,7 +4,6 @@ import android.net.Uri
 import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.CallHistory.Kind
 import com.jemcik.jemrec.capture.CallHistory.Status
-import com.jemcik.jemrec.capture.PHONE_SOURCE
 import com.jemcik.jemrec.capture.Recording
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -135,6 +134,44 @@ class ListChipsTest {
         assertEquals(listOf("Off", "Should have"), labels(CallsNarrowing(notRecorded = true)))
         assertEquals(listOf("Favourite"), labels(CallsNarrowing(query = "favou")))
         assertEquals(calls.size, labels(CallsNarrowing(query = "7946")).size)
+    }
+
+    @Test fun aCallTheLogRepeatsExactlyGetsAKeyOfItsOwn() {
+        val missed = call("Missed", Status.NOT_CONNECTED, kind = Kind.MISSED)
+        val keys = keyedCalls(listOf(missed, missed, calls[0])).map { it.key }
+        assertEquals(keys.size, keys.toSet().size)
+        // The first of a repeat keeps the key it has alone, and so does every
+        // other call: one coming in at the top moves no key.
+        assertEquals(keyedCalls(listOf(missed)).single().key, keys[0])
+        assertEquals(keyedCalls(listOf(calls[0])).single().key, keys[2])
+    }
+
+    private fun recording(name: String, favorite: Boolean = false, kept: Boolean = false, message: Boolean = false) = Recording(
+        name = name, uri = uri, whenLabel = "", incoming = true, durationLabel = "1:00", sizeLabel = "1 MB",
+        callerFavorite = favorite, kept = kept, message = message,
+    )
+
+    @Test fun eachChipDrawnLeavesSomeOfItsList() {
+        // Whether a chip is drawn and what it leaves when on are one answer
+        // (leftBy): each list's filter asked its own fields, and could have
+        // drawn a chip that then left nothing, or everything.
+        val recordings = listOf(
+            recording("20261021_101100_in.ogg", favorite = true),
+            recording("20261021_141000_in_telegram.ogg", kept = true),
+            recording("20261021_152400_out_whatsapp.ogg", message = true),
+        )
+        val overRecordings = chipsFor(recordings.map { it.chipFacts() }, emptySet()) - ListChip(ChipKind.SEARCH)
+        assertEquals(6, overRecordings.size)
+        for (chip in overRecordings) {
+            val left = filterRecordings(recordings, RecordingsNarrowing().tapped(chip))
+            assertTrue("$chip left ${left.size}", left.size in 1 until recordings.size)
+        }
+        val overCalls = chipsFor(calls.map { it.chipFacts() }, emptySet()) - ListChip(ChipKind.SEARCH)
+        assertEquals(4, overCalls.size)
+        for (chip in overCalls) {
+            val left = labels(CallsNarrowing().tapped(chip))
+            assertTrue("$chip left ${left.size}", left.size in 1 until calls.size)
+        }
     }
 
     @Test fun aChipTappedTwiceIsOffAndSearchFoldingAwayDropsItsQuery() {

@@ -3,12 +3,10 @@ package com.jemcik.jemrec.ui.screens
 import com.jemcik.jemrec.capture.AnswerDiagnostics
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
-import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.Screen
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
@@ -26,7 +24,7 @@ class AnswerScreenshots : ScreenTest() {
 
     private fun answering(answer: AnswerUi, fontScale: Float = 1f) {
         val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
-        val vm = MainViewModel(RuntimeEnvironment.getApplication(), state, answer)
+        val vm = viewModel(state, answer)
         show(fontScale) { AppScaffold(state, vm) }
     }
 

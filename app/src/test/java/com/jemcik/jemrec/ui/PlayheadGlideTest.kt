@@ -83,4 +83,29 @@ class PlayheadGlideTest {
         assertTrue(heads.all { it >= paused })
         assertTrue(neverBack(heads))
     }
+
+    @Test fun aSeekThatEndedThePlaybackIsForgotten() {
+        // Tapped just before the end; the recording finished before a reading
+        // came near it, and the head went back to the start.
+        val glide = PlayheadGlide(10_000)
+        glide.soughtTo(251_900)
+        glide.place(0)
+        glide.resume()
+        // Played again from the start: its first readings are believed.
+        val heads = frames(glide, 0, 1_500) { t -> t.toInt() }
+        assertTrue(neverBack(heads))
+        assertTrue("${heads.last()}", heads.last() > 1_000f)
+    }
+
+    @Test fun aStalledPlayerIsNotRunOnAhead() {
+        val glide = PlayheadGlide(0).apply { resume() }
+        // Plays for a second, then stalls while still playing: the same
+        // reading, again and again.
+        val heads = frames(glide, 0, 4_000) { t -> minOf(t, 1_000L).toInt() }
+        assertTrue(neverBack(heads))
+        // It goes on for two readings' worth at most - a little more, for
+        // the reading that showed the stall coming late - and then stops.
+        assertTrue("${heads.last()}", heads.last() <= 1_000f + PlayheadGlide.AHEAD_MS + 100f)
+        assertTrue(heads.last() - heads[heads.size - 60] < 5f)
+    }
 }

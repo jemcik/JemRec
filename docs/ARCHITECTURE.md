@@ -464,10 +464,12 @@ seeks; to a screen reader it is a slider, read as a time. The loudness is
 worked out from the file itself, decoded by Android's own decoder - the one
 the silence check after each call already uses - so there is no library, no
 native code, and nothing new for the reproducible build to match. It is
-worked out as a call is saved, or the first time an older recording is
-played - with a plain slider until it is there - and kept in the app's cache:
-800 levels, a byte each, under a hash of the file name, which can hold a
-caller's. Android's `Visualizer`, which draws whatever is playing, was not an
+worked out as a call is saved, an older recording's while the list is on
+screen (one at a time, stopping with the screen), or one played before then
+- with a plain slider until it is there - and kept in the app's cache: 800
+levels, a byte each, under a hash of the file name, which can hold a
+caller's, until the recording is deleted. A recording still being written is
+left until it is finished, and one decode runs at a time a recording. Android's `Visualizer`, which draws whatever is playing, was not an
 option: it needs the microphone permission this app does not hold.
 
 **Fast, for a long call.** Android's decoder runs in a process of its own,

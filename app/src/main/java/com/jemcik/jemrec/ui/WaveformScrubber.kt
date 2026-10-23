@@ -6,7 +6,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -19,7 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -28,9 +30,9 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.jemcik.jemrec.capture.Waveforms
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -56,17 +58,14 @@ internal fun WaveformScrubber(
     durationMs: Int,
     onDrag: (Int?) -> Unit,
     onSeek: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-    bar: Dp = 1.dp,
-    gap: Dp = 0.67.dp,
-    // Each look's own: Deck draws in its LCD's ink, Multitrack in the caller's
-    // colour. The slider's colours by default.
-    played: Color = MaterialTheme.colorScheme.primary,
-    rest: Color = MaterialTheme.colorScheme.secondaryContainer,
-    head: Color = played,
-    height: Dp = 48.dp,
+    modifier: Modifier,
+    // Each look's own: Memo's are the slider's, Deck draws in its LCD's ink,
+    // Multitrack in the caller's colour.
+    played: Color,
+    rest: Color,
+    head: Color,
     // While it plays, the playhead glides between the player's readings.
-    playing: Boolean = false,
+    playing: Boolean,
 ) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val duration by rememberUpdatedState(durationMs)
@@ -88,6 +87,10 @@ internal fun WaveformScrubber(
     // the head where it was drawn - a pause's last reading can be a tick
     // behind it.
     val placed = remember { mutableIntStateOf(position) }
+    // How wide it is in pixels: how far the head goes in one.
+    val widthPx = remember { mutableIntStateOf(0) }
+    // Each bar's loudest level, for this many bars, worked out once.
+    val loudness = remember(levels) { BarLoudness(levels) }
     SideEffect {
         if (!playing && position != placed.intValue) {
             glide.place(position)
@@ -99,7 +102,15 @@ internal fun WaveformScrubber(
         if (!playing) return@LaunchedEffect
         glide.resume()
         while (true) {
-            withInfiniteAnimationFrameMillis { now -> drawn.floatValue = glide.frame(now, reading, durationMs) }
+            withInfiniteAnimationFrameMillis { now ->
+                val at = glide.frame(now, reading, durationMs)
+                // Drawn again once the head reaches another pixel, not every
+                // frame: on a phone-wide scrubber a minute-long call's moves
+                // a pixel in several frames, a half-hour one's in dozens, and
+                // each drawing is two hundred bars.
+                val perPixel = if (widthPx.intValue > 0) duration.toFloat() / widthPx.intValue else 0f
+                if (abs(at - drawn.floatValue) >= perPixel) drawn.floatValue = at
+            }
         }
     }
     // A seek from here: the head goes there now, and the readings from
@@ -119,7 +130,11 @@ internal fun WaveformScrubber(
     Canvas(
         modifier
             .fillMaxWidth()
-            .height(height)
+            .height(44.dp)
+            .onSizeChanged { widthPx.intValue = it.width }
+            // Its own layer: drawn again as the head moves, it records itself
+            // again and not the card or LCD round it.
+            .graphicsLayer()
             .pointerInput(rtl, glide) {
                 detectTapGestures { goTo(timeAt(it.x, size.width)) }
             }
@@ -152,32 +167,19 @@ internal fun WaveformScrubber(
             },
     ) {
         // Three bars where there were one (3 + 2 dp), for the detail of a
-        // call - on a screen dense enough to draw them: no thinner than
-        // 3 px, nor a gap than 2, or a coarse screen breaks them up.
-        val barPx = max(bar.toPx(), 3f)
-        val gapPx = max(gap.toPx(), 2f)
-        val count = max(1, ((size.width + gapPx) / (barPx + gapPx)).toInt())
-        // The bars spread over the whole width, the last flush with its end.
-        val step = if (count > 1) (size.width - barPx) / (count - 1) else 0f
-        val lowest = 2.dp.toPx()
-        // The touch area is 48 dp; the bars keep off its edges, and the row
-        // above, by this much.
+        // call - 1dp and 0.67dp apart on a screen dense enough to draw them:
+        // no thinner than 3 px, nor a gap than 2, or a coarse screen breaks
+        // them up.
+        val barPx = max(1.dp.toPx(), 3f)
+        val gapPx = max(0.67.dp.toPx(), 2f)
+        // The bars keep off the touch area's edges, and the row above, by
+        // this much.
         val inset = 6.dp.toPx()
-        val tallest = size.height - 2 * inset
         val share = if (durationMs > 0) drawn.floatValue / durationMs else 0f
         val headAt = (if (rtl) 1 - share else share) * size.width
-        for (i in 0 until count) {
-            val level = loudestIn(levels, i, count)
-            val height = lowest + level * (tallest - lowest)
-            val left = i * step
-            val x = if (rtl) size.width - left - barPx else left
+        drawBars(loudness.of(barCount(size.width, barPx, gapPx)), barPx, 2.dp.toPx(), size.height - 2 * inset, rtl) { x ->
             val isPlayed = if (rtl) x + barPx / 2 >= headAt else x + barPx / 2 <= headAt
-            drawRoundRect(
-                color = if (isPlayed) played else rest,
-                topLeft = Offset(x, (size.height - height) / 2),
-                size = Size(barPx, height),
-                cornerRadius = CornerRadius(barPx / 2),
-            )
+            if (isPlayed) played else rest
         }
         val line = 2.dp.toPx()
         drawRoundRect(
@@ -224,12 +226,20 @@ internal class PlayheadGlide(start: Int) {
     private var sought = NOT_DRAGGING
     private var staleLeft = 0
 
-    /** Not playing: the head is at [ms], the player's or the finger's. */
+    /** Not playing: the head is at [ms], the player's or the finger's. Away
+     *  from a seek's target, the seek is over: tapped just before the end,
+     *  a recording finished before a reading came near it, the head was put
+     *  back at 0:00 - and the next play's first readings, far from the old
+     *  target, were not believed, the head waiting a second as it played. */
     fun place(ms: Int) {
         head = ms.toFloat()
         last = ms
         seen = ms
         moving = false
+        if (sought != NOT_DRAGGING && abs(ms - sought) > SETTLE_MS) {
+            sought = NOT_DRAGGING
+            staleLeft = 0
+        }
     }
 
     /** The scrubber sent the player to [ms]. */
@@ -266,14 +276,19 @@ internal class PlayheadGlide(start: Int) {
                 lastAt = now
             }
         }
-        val player = if (moving) last + (now - lastAt) else last.toLong()
+        // Moved on from the last reading for two of the player's readings at
+        // most: a player that stalls while still playing sends the same
+        // reading again, which moves nothing here, and the head ran on ahead
+        // of the sound - then stopped, or jumped back.
+        val running = moving && now - lastAt <= AHEAD_MS
+        val player = if (moving) last + min(now - lastAt, AHEAD_MS) else last.toLong()
         val behind = player - head
         val elapsed = now - frameAt
         frameAt = now
         head = if (abs(behind) >= JUMP_MS) {
             player.toFloat()
         } else {
-            val pace = (if (moving) 1f else 0f) + behind / CATCH_UP_MS
+            val pace = (if (running) 1f else 0f) + behind / CATCH_UP_MS
             head + elapsed * pace.coerceAtLeast(0f)
         }
         head = head.coerceIn(0f, max(0, durationMs).toFloat())
@@ -285,16 +300,67 @@ internal class PlayheadGlide(start: Int) {
         const val JUMP_MS = 1500f
         const val SETTLE_MS = 700
         const val STALE_READINGS = 3
+
+        /** Two of MainViewModel's 300 ms readings. */
+        const val AHEAD_MS = 600L
         private const val NONE = Long.MIN_VALUE
+    }
+}
+
+/** The loudest of [levels] for each of a number of bars, worked out once
+ *  for each number: the bars are drawn again as the head moves, and each
+ *  bar's loudest was looked for again among the 800 levels every time. */
+internal class BarLoudness(private val levels: List<Float>) {
+    private var count = -1
+    private var loudest = FloatArray(0)
+
+    fun of(count: Int): FloatArray {
+        if (count != this.count) {
+            loudest = FloatArray(count) { loudestIn(levels, it, count) }
+            this.count = count
+        }
+        return loudest
     }
 }
 
 /** The loudest of [levels] that bar [i] of [count] stands for. */
 internal fun loudestIn(levels: List<Float>, i: Int, count: Int): Float {
     if (levels.isEmpty()) return 0f
-    val from = (i.toLong() * levels.size / count).toInt()
-    val to = min(levels.size, max(from + 1, ((i + 1).toLong() * levels.size / count).toInt()))
     var loudest = 0f
-    for (l in from until to) loudest = max(loudest, levels[l])
+    for (l in Waveforms.slice(i, count, levels.size)) loudest = max(loudest, levels[l])
     return loudest
+}
+
+/** How many bars [barPx] wide, at least [gapPx] apart, [width] has room for. */
+internal fun barCount(width: Float, barPx: Float, gapPx: Float): Int =
+    max(1, ((width + gapPx) / (barPx + gapPx)).toInt())
+
+/**
+ * [loudest] - a level a bar - as bars [barPx] wide spread over the whole
+ * width, the last flush with its end, each centred and from [lowest] up to
+ * [tallest] tall, in [colorAt] where it starts. Time runs the way the
+ * player's does: right to left in a right-to-left language. The row's strip
+ * and the player's waveform both: each drew its bars with a copy of this.
+ */
+internal inline fun DrawScope.drawBars(
+    loudest: FloatArray,
+    barPx: Float,
+    lowest: Float,
+    tallest: Float,
+    rtl: Boolean,
+    colorAt: (x: Float) -> Color,
+) {
+    val count = loudest.size
+    val step = if (count > 1) (size.width - barPx) / (count - 1) else 0f
+    for (i in 0 until count) {
+        val height = lowest + loudest[i] * (tallest - lowest)
+        val left = i * step
+        val x = if (rtl) size.width - left - barPx else left
+        drawRoundRect(
+            color = colorAt(x),
+            topLeft = Offset(x, (size.height - height) / 2),
+            size = Size(barPx, height),
+            cornerRadius = CornerRadius(barPx / 2),
+        )
+    }
 }

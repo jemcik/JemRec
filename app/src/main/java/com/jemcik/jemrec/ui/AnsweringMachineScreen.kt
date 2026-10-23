@@ -181,7 +181,6 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    icon = SettingsIcons.Voicemail,
                     // ANS, as on the Settings row that leads here.
                     mark = headerMark(Marked.ANSWERING, marks(state, a.enabled), recorderStatus(state)),
                     checked = a.enabled,

@@ -95,11 +95,8 @@ data class MemoColors(
     val head: Color,
     val disc: Color,
     val discEdge: Color,
-    /** The pills that name what is on. */
-    val pill: Color,
-    val pillEdge: Color,
-    val pillInk: Color,
-    /** The state, in words: ready, recording or cannot, off. */
+    /** The state, in words: ready, recording or cannot, off - [idle] is
+     *  also the quiet ink of the rest: the marks, the notes, the gear. */
     val ready: Color,
     val alarm: Color,
     val idle: Color,
@@ -123,7 +120,6 @@ data class MemoColors(
 
 val MemoLight = MemoColors(
     head = Color(0xFFEEF2F8), disc = Color(0xFFFFFFFF), discEdge = Color(0xFFDCE1E9),
-    pill = Color(0xFFFFFFFF), pillEdge = Color(0xFFDCE1E9), pillInk = Color(0xFF43474E),
     ready = Color(0xFF1E6B34), alarm = Color(0xFFBE3A2D), idle = Color(0xFF43474E), offRing = Color(0xFFC3C7CF),
     track = Color(0xFFE6EAF1), segment = Color(0xFFFFFFFF), badge = Color(0xFFD1E4FF), badgeInk = Color(0xFF001D36),
     card = Color(0xFFFFFFFF), cardEdge = Color(0xFFE3E6EC), cardPlaying = Color(0xFFE8F1FF), cardPlayingEdge = Color(0xFFC9DCF7),
@@ -132,7 +128,6 @@ val MemoLight = MemoColors(
 
 val MemoDark = MemoColors(
     head = Color(0xFF1E2227), disc = Color(0xFF2A2E34), discEdge = Color(0xFF3A3F46),
-    pill = Color(0xFF2A2E34), pillEdge = Color(0xFF3A3F46), pillInk = Color(0xFFC3C7CF),
     ready = Color(0xFF6FDF9B), alarm = Color(0xFFFF7A6B), idle = Color(0xFFC3C7CF), offRing = Color(0xFF6B7078),
     track = Color(0xFF2A2E34), segment = Color(0xFF3B4048), badge = Color(0xFF00497D), badgeInk = Color(0xFFD1E4FF),
     card = Color(0xFF1B1E22), cardEdge = Color(0xFF2A2E34), cardPlaying = Color(0xFF12304D), cardPlayingEdge = Color(0xFF21507A),
@@ -153,9 +148,8 @@ data class MultitrackColors(
     val disc: Color,
     val recOn: Color,
     val recOff: Color,
-    /** The state word: armed, recording, off, no link. */
+    /** The state word: armed, disarmed, no link; arming is [muted]. */
     val armed: Color,
-    val rec: Color,
     val off: Color,
     val cannot: Color,
     /** A setting's LED, lit and dark. */
@@ -194,7 +188,7 @@ val MultitrackLight = MultitrackColors(
     panel = Color(0xFFFFFFFF), line = Color(0xFFE1E4E8),
     text = Color(0xFF1B1F24), soft = Color(0xFF3A4049), muted = Color(0xFF555D68), faint = Color(0xFF626A76),
     ring = Color(0xFFC9CED6), disc = Color(0xFFF3F4F6), recOn = Color(0xFFE8463B), recOff = Color(0xFFE3CFCC),
-    armed = Color(0xFF128A45), rec = Color(0xFFC8372D), off = Color(0xFF555D68), cannot = Color(0xFF8A6400),
+    armed = Color(0xFF128A45), off = Color(0xFF555D68), cannot = Color(0xFF8A6400),
     ledOn = Color(0xFF18A957), ledOff = Color(0xFFCDD2D9),
     marker = Color(0xFF8A6400),
     lane = Color(0xFFE7EAEE), lanePlaying = Color(0xFFEAF0F7), key = Color(0xFF505864), keyInk = Color(0xFFFFFFFF),
@@ -209,7 +203,7 @@ val MultitrackDark = MultitrackColors(
     panel = Color(0xFF161A20), line = Color(0xFF232831),
     text = Color(0xFFE6E9EE), soft = Color(0xFFC9CED6), muted = Color(0xFFA3ABB6), faint = Color(0xFF8B939E),
     ring = Color(0xFF3A404A), disc = Color(0xFF1B1F26), recOn = Color(0xFFFF4D42), recOff = Color(0xFF4A2C2A),
-    armed = Color(0xFF7CF29A), rec = Color(0xFFFF6A5F), off = Color(0xFFA3ABB6), cannot = Color(0xFFF5C542),
+    armed = Color(0xFF7CF29A), off = Color(0xFFA3ABB6), cannot = Color(0xFFF5C542),
     ledOn = Color(0xFF3DDC84), ledOff = Color(0xFF2A3038),
     marker = Color(0xFFF5C542),
     lane = Color(0xFF1B1F26), lanePlaying = Color(0xFF12161C), key = Color(0xFFE6E9EE), keyInk = Color(0xFF0E1014),

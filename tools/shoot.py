@@ -120,6 +120,52 @@ def dismiss_tip(on: bool) -> None:
     print(f"  select tip: {'dismissed' if on else 'showing'}")
 
 
+# The look and its light or dark, as Settings > Theme keeps them (Looks): the
+# shots are of the default, Memo following the phone, whatever the phone's
+# owner picked - with Deck and Dark picked, every light shot came out Deck
+# and dark. The app tells Android its light or dark as it starts, so the
+# phone's night mode decides again.
+LOOK_KEYS = {"look": "MEMO", "light_dark": "PHONE"}
+
+
+def set_look(values: dict) -> None:
+    """Write the look's settings in place, with the app stopped. A setting
+    never written needs nothing: absent is the default."""
+    shell(f"am force-stop {PKG}")
+    for key, value in values.items():
+        shell(
+            f"run-as {PKG} sed -i "
+            f"'s/name=\"{key}\">[A-Z_]*</name=\"{key}\">{value}</' "
+            "shared_prefs/jemrec.xml"
+        )
+
+
+def pin_look() -> dict:
+    """Memo, following the phone, for the shoot; what the owner had, to put
+    back after."""
+    prefs = shell(f"run-as {PKG} cat shared_prefs/jemrec.xml")
+    was = {}
+    for key in LOOK_KEYS:
+        found = re.search(rf'name="{key}">([A-Z_]+)<', prefs)
+        if found:
+            was[key] = found.group(1)
+    set_look(LOOK_KEYS)
+    print(f"  look: Memo, as the phone (was {was or 'the default'})")
+    return was
+
+
+def selected(label: str) -> bool:
+    """Whether the node carrying exactly this text or description is
+    selected - a tab."""
+    shell("uiautomator dump /sdcard/ui.xml")
+    xml = shell("cat /sdcard/ui.xml")
+    for node in xml.split("<node")[1:]:
+        labels = [l for l in re.findall(r'(?:text|content-desc)="([^"]*)"', node) if l]
+        if any(label.lower() == l.lower() for l in labels):
+            return 'selected="true"' in node
+    return False
+
+
 def status_bar(clean: bool) -> None:
     """A fixed clock and full bars, so the shots do not date themselves.
 
@@ -227,12 +273,13 @@ def shoot(theme: str) -> None:
     # The Calls tab, with the invented call log behind the invented list.
     # Checked, not assumed: once the tap landed while the header was still
     # settling, missed the tab, and calls.png was the Recordings tab again.
-    # The calls list has no time chips and the recordings list does.
+    # Asked of the tab itself: the check was a time chip only the Recordings
+    # list had, and those chips went - it passed whichever tab was open.
     for _ in range(3):
         if not tap("Calls", "the calls tab", exact=True):
             break
         time.sleep(1)
-        if not centre("This week"):
+        if selected("Calls"):
             grab(into / "calls.png")
             tap("Recordings", "the recordings tab", exact=True)
             break
@@ -311,6 +358,7 @@ if __name__ == "__main__":
         sys.exit()
 
     only = sys.argv[1:] or list(THEMES)
+    looked = pin_look()
     demo(True)
     dismissed = tip_dismissed()
     if dismissed:
@@ -327,6 +375,8 @@ if __name__ == "__main__":
         shell(f"am force-stop {PKG}")
         if dismissed:
             dismiss_tip(True)
+        if looked:
+            set_look(looked)
     thumbnails()
     listing()
     print("done")

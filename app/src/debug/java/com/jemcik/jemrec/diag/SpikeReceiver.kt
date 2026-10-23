@@ -415,11 +415,10 @@ class SpikeReceiver : BroadcastReceiver() {
                             report(appContext, "waveform", "no recording named '$name'")
                         } else {
                             val started = android.os.SystemClock.elapsedRealtime()
-                            val levels = com.jemcik.jemrec.capture.Waveforms.levels(
+                            val levels = com.jemcik.jemrec.capture.Waveforms.measure(
                                 appContext, recording.name, recording.uri,
                                 workers = intent.getIntExtra("workers", 0),
                                 join = intent.getBooleanExtra("join", true),
-                                useCache = false,
                             )
                             report(
                                 appContext, "waveform",

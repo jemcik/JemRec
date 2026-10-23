@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.ui
 
 import com.jemcik.jemrec.capture.VoipApps
-import com.jemcik.jemrec.capture.PHONE_SOURCE
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -98,6 +97,7 @@ import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -109,7 +109,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.Trash
-import com.jemcik.jemrec.capture.filterRecordings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.jemcik.jemrec.ui.theme.JemRecColors
@@ -124,7 +123,7 @@ import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.LookFonts
 import com.jemcik.jemrec.ui.theme.multitrackColors
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.util.Locale
 
 /**
  * The recordings, and nothing else.
@@ -144,8 +143,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
     // undo the point of hiding it behind one tap.
     val searchFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(state.searchOpen) {
-        if (state.searchOpen) runCatching { searchFocus.requestFocus() }
+    val narrowing = state.recordingsNarrowing
+    LaunchedEffect(narrowing.searchOpen) {
+        if (narrowing.searchOpen) runCatching { searchFocus.requestFocus() }
     }
     // Entering selection blurs the field and drops the keyboard. The field
     // stays on screen as context - the query you searched by - but you are
@@ -186,91 +186,23 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
         )
     }
 
-    // Share asks HOW first: the original Opus is instant and fine for Android
-    // and desktop; the .m4a plays on Apple's stock apps too but has to be
-    // converted. A bottom sheet, not a dialog - it is a short menu of ways to
-    // do one thing, the M3 pattern for exactly that, and roomy enough to say
-    // what each costs.
-    state.shareChoice?.let { recording ->
-        ModalBottomSheet(onDismissRequest = { vm.dismissShareChoice() }) {
-            Column(Modifier.padding(bottom = 24.dp)) {
-                Text(
-                    "Share as",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
-                )
-                ListItem(
-                    headlineContent = { Text("Any device (.m4a)") },
-                    supportingContent = {
-                        Text("Converts first - plays on iPhone, Mac, Windows, anything")
-                    },
-                    leadingContent = {
-                        Icon(Icons.Filled.Share, contentDescription = null)
-                    },
-                    modifier = Modifier.clickable {
-                        haptics.tap(); vm.shareUniversal(recording)
-                    },
-                )
-                ListItem(
-                    headlineContent = { Text("Original (.ogg)") },
-                    supportingContent = {
-                        Text("No conversion, smaller - best for Android and desktop")
-                    },
-                    leadingContent = {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                    },
-                    modifier = Modifier.clickable {
-                        haptics.tap(); vm.shareOriginal(recording)
-                    },
-                )
-            }
-        }
-    }
-
-    // While the .m4a is being made. Indeterminate - the wait is the length of
-    // the call, not a known number of steps - and not dismissible: cancelling
-    // half a transcode just leaves nothing to share. A short blocking wait, so
-    // a spinner with a word, not a whole screen.
-    if (state.converting) {
-        AlertDialog(
-            // Back or a tap outside cancels too - the same as the button, so the
-            // dialog is never a trap while it works.
-            onDismissRequest = { vm.cancelConversion() },
-            confirmButton = {
-                TextButton(onClick = { haptics.tap(); vm.cancelConversion() }) {
-                    Text("Cancel")
-                }
-            },
-            text = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    CircularProgressIndicator()
-                    Text("Converting to .m4a…")
-                }
-            },
-        )
-    }
-
     val audioPermission = rememberPermissionRequest { vm.onAudioAccessResult() }
 
     val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
-    // Filtered, cut and grouped once per change of what they depend on - and
-    // per day, which Today and the headings both read - not on every
+    // Filtered, cut and grouped once per change of what they depend on - the
+    // grouping also per day, which the headings read - not on every
     // recomposition: the player's position ticks recompose this screen three
     // times a second.
     val now = LocalNow.current
     val today = dayStamp(now())
-    val filtered = remember(state.recordings, state.query, state.favoritesOnly, state.keptOnly, state.messagesOnly, state.sources, today) {
-        filterRecordings(state.recordings, state.query, state.favoritesOnly, state.keptOnly, state.messagesOnly, state.sources)
-    }
+    val filtered = remember(state.recordings, narrowing) { filterRecordings(state.recordings, narrowing) }
     val shown = remember(filtered, state.visibleCount) { filtered.take(state.visibleCount) }
     val days = remember(shown, today) { byDay(shown, now()) { it.startedAtMillis } }
-    // Each row's waveform comes from the cache; this moves as the view model
-    // works out the ones a row is still waiting for.
-    val wavesVersion by vm.wavesWorkedOut.collectAsStateWithLifecycle()
+    // A day's count is all of its recordings, not the ones the endless
+    // scroll has drawn so far: counted from `shown`, Earlier read 15 beside a
+    // tab saying 50, and grew as the list scrolled.
+    val dayCounts = remember(filtered, today) { filtered.groupingBy { dayOf(it.startedAtMillis, now()) }.eachCount() }
 
     // Endless scroll instead of a "Show more" button. Everything is already in
     // memory - the list, the durations, the caller lookups - so a button gating
@@ -441,21 +373,11 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                 // last chip unfolds the field below them on demand. Hidden while
                 // selecting, where the header is a selection toolbar instead.
                 if (!state.selecting && state.recordings.isNotEmpty()) {
-                    val on = state.recordingChipsOn()
+                    val on = narrowing.chipsOn()
                     val chips = remember(state.recordings, on) {
                         chipsFor(state.recordings.map { it.chipFacts() }, on)
                     }
-                    ListChipRow(chips, on, calls = false) { chip ->
-                        haptics.tap()
-                        when (chip.kind) {
-                            ChipKind.FAVORITES -> vm.toggleFavorites()
-                            ChipKind.SOURCE -> chip.source?.let(vm::toggleSource)
-                            ChipKind.KEPT -> vm.toggleKeptOnly()
-                            ChipKind.MESSAGES -> vm.toggleMessagesOnly()
-                            ChipKind.SEARCH -> vm.toggleSearch()
-                            ChipKind.NOT_RECORDED -> Unit
-                        }
-                    }
+                    ListChipRow(chips, on, calls = false) { chip -> haptics.tap(); vm.tapRecordingsChip(chip) }
                 }
                 // The search field is deliberately NOT gated on !selecting: it
                 // stays open through selection, so the query you searched by is
@@ -467,11 +389,11 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                     // fades in together so it reads as unfolding from the chip,
                     // not jumping into place.
                     AnimatedVisibility(
-                        visible = state.searchOpen,
+                        visible = narrowing.searchOpen,
                         enter = expandVertically() + fadeIn(),
                         exit = shrinkVertically() + fadeOut(),
                     ) {
-                        ListSearchField(state.query, vm::setQuery, searchFocus, "Search by name or number")
+                        ListSearchField(narrowing.query, vm::setQuery, searchFocus, "Search by name or number")
                     }
                 }
                 // The rule caps the header once rows are passing under it -
@@ -545,33 +467,17 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
             }
         } else if (shown.isEmpty()) {
             item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 32.dp, vertical = 56.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        "No matches",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        if (state.messagesOnly) {
-                            "No messages match."
-                        } else if (state.keptOnly) {
-                            "No kept recordings match."
-                        } else if (state.favoritesOnly) {
-                            "No starred recordings match."
-                        } else {
-                            "No recordings match your search or filter."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                NoMatches(
+                    if (narrowing.messages) {
+                        "No messages match."
+                    } else if (narrowing.kept) {
+                        "No kept recordings match."
+                    } else if (narrowing.favorites) {
+                        "No starred recordings match."
+                    } else {
+                        "No recordings match your search or filter."
+                    },
+                )
             }
         } else {
             // A one-time nudge toward the way in that has no button: selection
@@ -593,9 +499,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
             // Under Today, Yesterday and Earlier, as a phone's call history
             // reads, with no rules between rows: the headings do the grouping.
             days.forEachIndexed { run, (day, rows) ->
-                item(key = "day-$run", contentType = "day") { DayHeading(day, rows.size) }
+                item(key = "day-$run", contentType = "day") { DayHeading(day, dayCounts[day] ?: rows.size) }
                 items(rows, key = { it.name }, contentType = { "recording" }) { recording ->
-                    RecordingRow(recording, day, state, vm, wavesVersion)
+                    RecordingRow(recording, day, state, vm)
                 }
             }
 
@@ -705,24 +611,138 @@ internal fun YieldingRow(gap: Dp, content: @Composable () -> Unit) {
 }
 
 /**
+ * How to share a recording, and the wait while it converts - for a Share
+ * tapped on either tab: drawn by AppScaffold, over whichever is showing. It
+ * was HomeScreen's, from when only the Recordings tab had Share; the Calls
+ * tab's recorded rows got Share buttons, and a tap there set the choice and
+ * showed nothing - until the Recordings tab was next opened.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ShareSheets(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    // Share asks HOW first: the original Opus is instant and fine for Android
+    // and desktop; the .m4a plays on Apple's stock apps too but has to be
+    // converted. A bottom sheet, not a dialog - it is a short menu of ways to
+    // do one thing, the M3 pattern for exactly that, and roomy enough to say
+    // what each costs.
+    state.shareChoice?.let { recording ->
+        ModalBottomSheet(onDismissRequest = { vm.dismissShareChoice() }) {
+            Column(Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    "Share as",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+                )
+                ListItem(
+                    headlineContent = { Text("Any device (.m4a)") },
+                    supportingContent = {
+                        Text("Converts first - plays on iPhone, Mac, Windows, anything")
+                    },
+                    leadingContent = {
+                        Icon(Icons.Filled.Share, contentDescription = null)
+                    },
+                    modifier = Modifier.clickable {
+                        haptics.tap(); vm.shareUniversal(recording)
+                    },
+                )
+                ListItem(
+                    headlineContent = { Text("Original (.ogg)") },
+                    supportingContent = {
+                        Text("No conversion, smaller - best for Android and desktop")
+                    },
+                    leadingContent = {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    },
+                    modifier = Modifier.clickable {
+                        haptics.tap(); vm.shareOriginal(recording)
+                    },
+                )
+            }
+        }
+    }
+
+    // While the .m4a is being made. Indeterminate - the wait is the length of
+    // the call, not a known number of steps - and not dismissible: cancelling
+    // half a transcode just leaves nothing to share. A short blocking wait, so
+    // a spinner with a word, not a whole screen.
+    if (state.converting) {
+        AlertDialog(
+            // Back or a tap outside cancels too - the same as the button, so the
+            // dialog is never a trap while it works.
+            onDismissRequest = { vm.cancelConversion() },
+            confirmButton = {
+                TextButton(onClick = { haptics.tap(); vm.cancelConversion() }) {
+                    Text("Cancel")
+                }
+            },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    CircularProgressIndicator()
+                    Text("Converting to .m4a…")
+                }
+            },
+        )
+    }
+}
+
+/** What a list says when its chips and search leave nothing: the
+ *  Recordings tab's and the Calls tab's, [why] in a line under it. */
+@Composable
+internal fun NoMatches(why: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp, vertical = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            "No matches",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            why,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/**
  * A day's heading in the Recordings and Calls lists, in the look's own way
- * (LookHeading), with how many at the line's end. [count] is the day's
- * recordings, where it is known (Recordings, not Calls). Memo once had no
- * count; the user asked for the three to say the same (2026-10-23).
+ * (LookHeading), with how many at the line's end: [count], the day's
+ * recordings - or, with [calls], its calls - every one, not only the rows
+ * drawn so far. Memo once had no count; the user asked for the three to say
+ * the same (2026-10-23).
  */
 @Composable
-internal fun DayHeading(day: Day, count: Int? = null, calls: Boolean = false) {
+internal fun DayHeading(day: Day, count: Int, calls: Boolean = false) {
+    // Heard with what it counts: "Today, 3" said nothing of what the 3 was.
+    val said = "$count ${if (calls) "call" else "recording"}${if (count == 1) "" else "s"}"
     when (LocalLook.current) {
-        Look.MEMO -> LookHeading(day.title, Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp), end = count?.toString())
-        Look.DECK -> LookHeading(day.title, Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp), end = count?.toString())
+        Look.MEMO -> LookHeading(
+            day.title, Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+            end = count.toString(), endSaid = said,
+        )
+        Look.DECK -> LookHeading(
+            day.title, Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp),
+            end = count.toString(), endSaid = said,
+        )
         Look.MULTITRACK -> {
             // Recordings are the editor's clips; calls are calls.
             val unit = if (calls) "CALL" else "CLIP"
             LookHeading(
                 day.title,
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
-                end = count?.let { if (it == 1) "1 $unit" else "$it ${unit}S" },
+                end = if (count == 1) "1 $unit" else "$count ${unit}S",
                 flag = true,
+                endSaid = said,
             )
         }
     }
@@ -731,17 +751,26 @@ internal fun DayHeading(day: Day, count: Int? = null, calls: Boolean = false) {
 /**
  * A heading in the look's own way: Memo's words; Deck's engraved capitals on
  * a rule; Multitrack's editor's marker, in its capitals on a line, with the
- * marker's [flag] over a list of days. [end] at the line's end. The days'
- * headings, and Settings' (SettingsHeading), so a group in Settings is
- * headed as a day is.
+ * marker's [flag] over a list of days. [end] at the line's end, heard as
+ * [endSaid] where it is given. The days' headings, and Settings'
+ * (SettingsHeading), so a group in Settings is headed as a day is.
  */
 @Composable
-internal fun LookHeading(title: String, modifier: Modifier = Modifier, end: String? = null, flag: Boolean = false) {
+internal fun LookHeading(
+    title: String,
+    modifier: Modifier = Modifier,
+    end: String? = null,
+    flag: Boolean = false,
+    endSaid: String? = null,
+) {
     val scheme = MaterialTheme.colorScheme
     val row = Modifier
         .fillMaxWidth()
         .then(modifier)
-        .semantics(mergeDescendants = true) { heading() }
+        .semantics(mergeDescendants = true) {
+            heading()
+            if (endSaid != null) contentDescription = "$title, $endSaid"
+        }
     when (LocalLook.current) {
         Look.MEMO -> Row(row, verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -923,8 +952,11 @@ internal fun ListSearchField(query: String, onQuery: (String) -> Unit, focus: Fo
     // text. Driving the decoration box directly lets the
     // reserved padding shrink so a single line sits in 48dp,
     // the M3 minimum touch target and the shortest a field may
-    // honestly be. The pill shape and colours are the stock
-    // ones, only the height is ours.
+    // honestly be. The colours are the stock ones; the height
+    // is ours, and the shape the look's chips' (chipShape): the
+    // stock pill sat under Deck's keys and Multitrack's tags.
+    // In Memo it is the same pill - 28dp corners on a 48dp
+    // field were drawn 24dp, half its height, as a circle's.
     val searchInteraction = remember { MutableInteractionSource() }
     // The stock field paints a bold primary-blue border while
     // focused - and this one is focused whenever it is open,
@@ -989,7 +1021,7 @@ internal fun ListSearchField(query: String, onQuery: (String) -> Unit, focus: Fo
                         isError = false,
                         interactionSource = searchInteraction,
                         colors = searchColors,
-                        shape = RoundedCornerShape(28.dp),
+                        shape = chipShape(),
                         focusedBorderThickness = 1.dp,
                         unfocusedBorderThickness = 1.dp,
                     )
@@ -1035,10 +1067,10 @@ internal fun SelectableAvatar(
     caller: String?,
     photo: Uri?,
     selected: Boolean,
-    size: Dp = 36.dp,
-    container: Color = MaterialTheme.colorScheme.secondary,
-    content: Color = MaterialTheme.colorScheme.onSecondary,
-    edge: Color? = null,
+    size: Dp,
+    container: Color,
+    content: Color,
+    edge: Color?,
     onClick: () -> Unit,
 ) {
     val rotation by animateFloatAsState(
@@ -1121,7 +1153,7 @@ internal fun CallerAvatar(
             // longer fit a 36 dp circle and spilled out of it (the screen
             // tests' large-text screenshots showed it). The size labelLarge
             // has at the default font size, held there.
-            val letters = with(LocalDensity.current) { (if (size < 32.dp) 11.dp else 14.dp).toSp() }
+            val letters = with(LocalDensity.current) { 14.dp.toSp() }
             Text(
                 initials,
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = letters, lineHeight = letters),
@@ -1136,7 +1168,7 @@ internal fun CallerAvatar(
                 Icons.Filled.Person,
                 contentDescription = null,
                 tint = content,
-                modifier = Modifier.size(if (size < 32.dp) 16.dp else 22.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
     }
@@ -1183,10 +1215,10 @@ private fun initialsOf(caller: String?): String? {
 }
 
 /**
- * Which way the call went, as the arrow every phone app uses.
+ * Which way the call went, as Material's call_made and call_received
+ * icons show it.
  *
- * Material has call_made and call_received for exactly this and neither is in
- * material-icons-core, which ships about fifty icons rather than several
+ * Neither is in material-icons-core, which ships about fifty icons rather than several
  * thousand. Both shapes are a plain arrow turned: out is up-and-right, in is
  * down-and-left. Rotating one is honest and free, where pulling in
  * material-icons-extended for two glyphs would cost thousands of vectors.
@@ -1248,10 +1280,13 @@ internal fun PauseGlyph(tint: Color, modifier: Modifier = Modifier, size: Dp = 2
  */
 private val HeaderRowHeight = 56.dp
 
-/** mm:ss, for the scrubber's two ends. */
+/** mm:ss, for the scrubber's two ends. In Latin digits in any language, as
+ *  the rows' times are (SimpleDateFormat, Locale.US): the phone's own made
+ *  Arabic-Indic digits in Arabic or Persian, which the looks' fonts do not
+ *  have, beside Latin ones - and so for every m:ss the app draws. */
 internal fun clock(ms: Int): String {
     val total = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(total / 60, total % 60)
+    return "%d:%02d".format(Locale.US, total / 60, total % 60)
 }
 
 /** A filter that is an icon alone - Kept, Messages - filled in the secondary

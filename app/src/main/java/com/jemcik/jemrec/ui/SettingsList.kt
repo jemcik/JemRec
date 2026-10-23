@@ -43,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
@@ -313,10 +312,7 @@ private fun LookSwitch(checked: Boolean, enabled: Boolean) {
                     .alpha(if (enabled) 1f else 0.38f)
                     .heightIn(min = 36.dp)
                     .widthIn(min = 62.dp)
-                    .clip(shape)
-                    .background(if (checked) c.keyOn else c.keyOff)
-                    .border(1.dp, if (checked) c.keyOnEdge else c.keyOff, shape)
-                    .keyLip(c.glow)
+                    .deckKey(c, checked, shape)
                     .padding(start = 10.dp, end = 10.dp, bottom = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
@@ -418,7 +414,7 @@ private fun MemoMark(mark: HeaderMark) {
 private fun DeckMark(mark: HeaderMark) {
     val c = deckColors()
     val ink = if (mark.lit) c.ink else c.inkOff
-    val glow = if (mark.lit && c.glow) Shadow(ink.copy(alpha = 0.55f), blurRadius = 10f) else null
+    val glow = if (mark.lit) deckGlow(c, ink, blur = 10f) else null
     val shape = RoundedCornerShape(4.dp)
     Box(
         Modifier
@@ -660,12 +656,10 @@ internal fun StatusDot(color: Color) {
 
 /**
  * The icons Settings needs that material-icons-core lacks, drawn here rather
- * than pulling in material-icons-extended for six of them (see KeepIcons). The
+ * than pulling in material-icons-extended for nine of them (see KeepIcons). The
  * paths are Material's own.
  */
 internal object SettingsIcons {
-
-    val Record = icon("Record", "M12,7c-2.76,0 -5,2.24 -5,5s2.24,5 5,5 5,-2.24 5,-5 -2.24,-5 -5,-5zM12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM12,20c-4.42,0 -8,-3.58 -8,-8s3.58,-8 8,-8 8,3.58 8,8 -3.58,8 -8,8z")
 
     val Chat = icon("Chat", "M20,2H4c-1.1,0 -1.99,0.9 -1.99,2L2,22l4,-4h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zM18,14H6v-2h12v2zM18,11H6V9h12v2zM18,8H6V6h12v2z")
 

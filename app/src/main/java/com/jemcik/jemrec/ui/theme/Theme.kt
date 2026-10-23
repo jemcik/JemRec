@@ -186,14 +186,13 @@ private val DarkScheme = darkColorScheme(
 object JemRecColors {
 
     /**
-     * The two colours the launcher icon is made of.
-     *
-     * Named here so the app and its icon cannot drift apart. They are NOT taken
-     * from the scheme: the icon is a fixed thing that exists on a home screen
-     * next to other icons, and it does not change with the theme - so anything
-     * meant to match it must not either.
+     * The launcher icon's red (ic_launcher_foreground.xml), which Memo's
+     * record button is lit in. NOT taken from the scheme: the icon is a fixed
+     * thing that sits on a home screen next to other icons, and it does not
+     * change with the theme - so what is meant to match it must not either.
+     * A copy of the drawable's colour, named so it can be found when that
+     * one changes.
      */
-    val iconWave: Color = Color(0xFF8AB4F8)
     val iconRecord: Color = Color(0xFFE8564B)
 
     /** Starts playback. */
@@ -371,6 +370,15 @@ val LocalDark = staticCompositionLocalOf { false }
 /** Which look is on, for the pieces each look draws its own way. */
 val LocalLook = staticCompositionLocalOf { Look.MEMO }
 
+/**
+ * The look and light or dark the app is drawn in, as chosen: what Settings
+ * and its Theme screen say is picked. Read from the theme, so what they say
+ * is what is drawn. A copy kept in the screen's state said Memo and System
+ * until the first refresh was done - seconds, with the recorder down - over
+ * an app in Deck.
+ */
+val LocalLookChoice = staticCompositionLocalOf { LookChoice() }
+
 internal fun schemeFor(look: Look, dark: Boolean): ColorScheme = when (look) {
     Look.MEMO -> if (dark) DarkScheme else LightScheme
     Look.DECK -> if (dark) DeckDarkScheme else DeckLightScheme
@@ -387,7 +395,7 @@ fun JemRecTheme(choice: LookChoice = LookChoice(), content: @Composable () -> Un
         LightDark.LIGHT -> false
         LightDark.DARK -> true
     }
-    CompositionLocalProvider(LocalDark provides dark, LocalLook provides choice.look) {
+    CompositionLocalProvider(LocalDark provides dark, LocalLook provides choice.look, LocalLookChoice provides choice) {
         MaterialTheme(colorScheme = schemeFor(choice.look, dark), content = content)
     }
 }

@@ -11,6 +11,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -20,12 +22,15 @@ import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
+import com.jemcik.jemrec.ui.AnswerUi
+import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.LocalNow
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.UiState
 import com.jemcik.jemrec.ui.forgetAppIcons
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.LookChoice
+import com.jemcik.jemrec.ui.theme.Looks
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -81,8 +86,10 @@ abstract class ScreenTest {
         TimeZone.setDefault(zone)
     }
 
-    /** A view model over [state] that only the taps reach. */
-    fun viewModel(state: UiState = UiState()) = MainViewModel(RuntimeEnvironment.getApplication(), state)
+    /** A view model over [state] - and the answering machine's [answer] -
+     *  that only the taps reach. */
+    fun viewModel(state: UiState = UiState(), answer: AnswerUi? = null) =
+        MainViewModel(RuntimeEnvironment.getApplication(), state, answer)
 
     /**
      * Whether WhatsApp, Telegram and Viber are "installed", so their icons
@@ -92,9 +99,10 @@ abstract class ScreenTest {
     var messengersInstalled = true
 
     /** Draws [content] as the app would: its theme - [look], Memo unless
-     *  said - its background, the fixed clock, and the text at [fontScale]
-     *  times the phone's size. */
-    fun show(fontScale: Float = 1f, look: LookChoice = LookChoice(), content: @Composable () -> Unit) {
+     *  said, or with null the saved choice as it changes, as the activity
+     *  draws it - its background, the fixed clock, and the text at
+     *  [fontScale] times the phone's size. */
+    fun show(fontScale: Float = 1f, look: LookChoice? = LookChoice(), content: @Composable () -> Unit) {
         forgetAppIcons()
         if (messengersInstalled) {
             val pm = shadowOf(RuntimeEnvironment.getApplication().packageManager)
@@ -115,7 +123,7 @@ abstract class ScreenTest {
                 LocalNow provides { Fixtures.NOW },
                 LocalDensity provides Density(density.density, fontScale),
             ) {
-                JemRecTheme(look) {
+                JemRecTheme(look ?: Looks.changes(RuntimeEnvironment.getApplication()).collectAsState().value) {
                     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
                         content()
                     }
@@ -123,6 +131,13 @@ abstract class ScreenTest {
             }
         }
         compose.waitForIdle()
+    }
+
+    /** What MainScreen draws (AppScaffold) over [vm]'s state as it changes,
+     *  as [show] draws anything. */
+    fun showApp(vm: MainViewModel, fontScale: Float = 1f, look: LookChoice? = LookChoice()) = show(fontScale, look) {
+        val state by vm.state.collectAsState()
+        AppScaffold(state, vm)
     }
 
     /** Compares the screen with app/src/test/screenshots/[name].png. */

@@ -20,6 +20,7 @@ import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.isToggleable
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -40,6 +41,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.test.getBoundsInRoot
 import com.jemcik.jemrec.ui.AnswerUi
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.snapshots.Snapshot
@@ -76,6 +78,9 @@ import com.jemcik.jemrec.ui.theme.LookChoice
 import com.jemcik.jemrec.ui.theme.Looks
 import com.jemcik.jemrec.ui.LOOK_PREVIEW
 import com.jemcik.jemrec.ui.SETTINGS_BAR
+import com.jemcik.jemrec.ui.CallsNarrowing
+import com.jemcik.jemrec.capture.RecorderSwitch
+import androidx.compose.ui.semantics.getOrNull
 import com.jemcik.jemrec.ui.SettingsBar
 import com.jemcik.jemrec.ui.headerMarks
 import com.jemcik.jemrec.ui.markTag
@@ -112,10 +117,7 @@ class BehaviourTest : ScreenTest() {
 
     @Test fun backFromEachScreenOfSettingsReturnsToSettingsThenHome() {
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         // Each row, and the title its screen opens with. Recently deleted is
         // drawn by a different branch of the scaffold from the others.
         for ((row, title) in listOf(
@@ -141,10 +143,7 @@ class BehaviourTest : ScreenTest() {
         // The scroll lived inside a branch Recently deleted replaces, and was
         // lost with it: Back came out at the top.
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         compose.onNodeWithText("Start fresh").performScrollTo()
         compose.onNodeWithText("Recently deleted").performClick()
         compose.waitForIdle()
@@ -157,19 +156,13 @@ class BehaviourTest : ScreenTest() {
         // that came in while home was up waited, and jumped Diagnostics to
         // the bottom whenever it was next opened.
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.HOME, selfTestShown = 1L))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         assertEquals(0L, vm.state.value.selfTestShown)
     }
 
     @Test fun theTipGoesAtItsX() {
         val vm = viewModel(Fixtures.ready().copy(selectHintSeen = false))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         compose.onNodeWithText("Tap a photo, or press and hold a call, to select recordings").assertIsDisplayed()
         compose.onNodeWithContentDescription("Dismiss tip").performClick()
         compose.waitForIdle()
@@ -181,10 +174,7 @@ class BehaviourTest : ScreenTest() {
         // The scrubber under the row is the only control; another tab or
         // Settings takes it off the screen, so the playing stops there too -
         // paused, with its place kept.
-        val playing = Fixtures.ready().copy(
-            homeTab = HomeTab.CALLS, playingName = Fixtures.recordings().first().name,
-            playing = true, positionMs = 60_000, durationMs = 252_000,
-        )
+        val playing = Fixtures.playing(positionMs = 60_000, waveform = null).copy(homeTab = HomeTab.CALLS)
         viewModel(playing).let { vm ->
             vm.showTab(HomeTab.RECORDINGS)
             assertFalse("another tab", vm.state.value.playing)
@@ -203,10 +193,7 @@ class BehaviourTest : ScreenTest() {
 
     @Test fun noLimitOnAMessageIsAskedAboutFirst() {
         val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
-        val vm = com.jemcik.jemrec.ui.MainViewModel(
-            org.robolectric.RuntimeEnvironment.getApplication(), state,
-            com.jemcik.jemrec.ui.AnswerUi(enabled = true, greetingSeconds = 6.0, longest = 60),
-        )
+        val vm = viewModel(state, AnswerUi(enabled = true, greetingSeconds = 6.0, longest = 60))
         show { AppScaffold(state, vm) }
         compose.onNodeWithText("Longest message").performScrollTo().performClick()
         compose.onNodeWithText("No limit").performClick()
@@ -225,10 +212,7 @@ class BehaviourTest : ScreenTest() {
 
     @Test fun answeringAgainAfterAnEmergencyCallIsAskedAboutFirst() {
         val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
-        val vm = com.jemcik.jemrec.ui.MainViewModel(
-            org.robolectric.RuntimeEnvironment.getApplication(), state,
-            com.jemcik.jemrec.ui.AnswerUi(enabled = true, greetingSeconds = 6.0, pausedUntil = Fixtures.NOW),
-        )
+        val vm = viewModel(state, AnswerUi(enabled = true, greetingSeconds = 6.0, pausedUntil = Fixtures.NOW))
         show { AppScaffold(state, vm) }
         compose.onNodeWithText("Answer again now").performClick()
         // A warning first: keeping the pause changes nothing.
@@ -287,15 +271,8 @@ class BehaviourTest : ScreenTest() {
      * reader: the row's name says it in words.
      */
     @Test fun settingsCarriesTheHeadersMarks() {
-        val vm = MainViewModel(
-            RuntimeEnvironment.getApplication(),
-            Fixtures.ready().copy(screen = Screen.SETTINGS),
-            AnswerUi(enabled = true),
-        )
-        show(look = LookChoice(Look.DECK)) {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS), AnswerUi(enabled = true))
+        showApp(vm, look = LookChoice(Look.DECK))
         // What the header would show, from the same facts: here AUTO, ANS and
         // DEL 90D lit, MSG dark - no messenger is installed on the test phone.
         val shown = headerMarks(marks(vm.state.value, answering = true), recorderStatus(vm.state.value))
@@ -364,17 +341,11 @@ class BehaviourTest : ScreenTest() {
     }
 
     /** A recording loaded in the player, its waveform worked out. */
-    private fun playingWithWaveform() = Fixtures.ready().copy(
-        playingName = Fixtures.recordings().first().name, playing = false, positionMs = 107_000, durationMs = 252_000,
-        waveform = Fixtures.waveform(),
-    )
+    private fun playingWithWaveform() = Fixtures.playing(playing = false)
 
     @Test fun aTapOnTheWaveformGoesThere() {
         val vm = viewModel(playingWithWaveform())
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         compose.onNodeWithContentDescription("Position in the recording").performTouchInput { click(center) }
         compose.waitForIdle()
         // The middle of a 4:12 call, to within a bar.
@@ -383,10 +354,7 @@ class BehaviourTest : ScreenTest() {
 
     @Test fun aDragOnTheWaveformSeeksOnceAtItsEnd() {
         val vm = viewModel(playingWithWaveform())
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         val waveform = compose.onNodeWithContentDescription("Position in the recording")
         waveform.performTouchInput {
             down(centerLeft + androidx.compose.ui.geometry.Offset(10f, 0f))
@@ -403,10 +371,7 @@ class BehaviourTest : ScreenTest() {
 
     @Test fun aScreenReaderHearsTheWaveformAsAPositionItCanMove() {
         val vm = viewModel(playingWithWaveform())
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         val waveform = compose.onNodeWithContentDescription("Position in the recording")
         waveform.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "1:47 of 4:12"))
         waveform.assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
@@ -421,10 +386,7 @@ class BehaviourTest : ScreenTest() {
 
     private fun homeIn(look: Look): MainViewModel {
         val vm = viewModel(Fixtures.ready())
-        show(look = LookChoice(look)) {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm, look = LookChoice(look))
         return vm
     }
 
@@ -435,6 +397,37 @@ class BehaviourTest : ScreenTest() {
         // setEnabled's business, and here (no phone) setup is re-checked into
         // a step this test does not draw - so only the switch is read.
         assertFalse("$look", vm.state.value.enabled)
+    }
+
+    /** While the app is busy - each opening's check holds busy for seconds -
+     *  the record control still takes a tap: it was dropped, with nothing
+     *  to show it. The switch is saved at once; the recorder follows when
+     *  the app is free. */
+    @Test fun theRecordControlTakesATapWhileBusy() {
+        val app = RuntimeEnvironment.getApplication()
+        val vm = viewModel(Fixtures.ready().copy(busy = true))
+        try {
+            showApp(vm)
+            compose.onNodeWithContentDescription("Record calls").assertIsOn().performClick()
+            compose.waitForIdle()
+            assertFalse(vm.state.value.enabled)
+            assertFalse(RecorderSwitch.isOn(app))
+            compose.onNodeWithContentDescription("Record calls").assertIsOff()
+        } finally {
+            RecorderSwitch.set(app, true)
+        }
+    }
+
+    /** Memo's tabs are 36dp tall, under the 48dp Android asks of a touch
+     *  target - but Compose takes a tap near a small control as its own
+     *  (NodeCoordinator's minimum touch target, 48dp): a tap 5dp under the
+     *  Calls tab opens it. */
+    @Test fun aTapJustOffMemosTabStillTakesIt() {
+        val vm = homeIn(Look.MEMO)
+        val tab = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab) and hasText("Calls")
+        compose.onNode(tab).performTouchInput { click(Offset(centerX, height + 5.dp.toPx())) }
+        compose.waitForIdle()
+        assertEquals(HomeTab.CALLS, vm.state.value.homeTab)
     }
 
     @Test fun memosButtonIsTheRecordSwitch() = tapTheRecordControl(Look.MEMO)
@@ -490,7 +483,7 @@ class BehaviourTest : ScreenTest() {
             "cannot" to { it.copy(daemonRunning = false) },
             "asks for this Wi-Fi" to { it.copy(daemonRunning = false, networkNotAllowed = true) },
         )
-        val vm = MainViewModel(RuntimeEnvironment.getApplication(), ready, AnswerUi(enabled = true))
+        val vm = viewModel(ready, AnswerUi(enabled = true))
         var shown by mutableStateOf(ready)
         var scale by mutableFloatStateOf(1f)
         show(look = LookChoice(look)) {
@@ -536,7 +529,7 @@ class BehaviourTest : ScreenTest() {
      */
     private fun wasteNoRoom(look: Look, vararg scales: Float) {
         val ready = Fixtures.ready()
-        val vm = MainViewModel(RuntimeEnvironment.getApplication(), ready, AnswerUi(enabled = true))
+        val vm = viewModel(ready, AnswerUi(enabled = true))
         var shown by mutableStateOf(ready)
         var scale by mutableFloatStateOf(1f)
         show(look = LookChoice(look)) {
@@ -611,6 +604,8 @@ class BehaviourTest : ScreenTest() {
             SemanticsProperties.Heading in node.config && texts(node).any { it.equals("Today", ignoreCase = true) }
         }
         compose.onNode(heading).assert(SemanticsMatcher("says $today") { node -> texts(node).any { it.startsWith("$today") } })
+        // Heard with what it counts, not a bare number.
+        compose.onNode(heading).assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Today, $today recordings")))
     }
 
     @Test fun memosDayHeadingCounts() = theDayHeadingCounts(Look.MEMO)
@@ -651,12 +646,9 @@ class BehaviourTest : ScreenTest() {
     private fun thePlayingRowKeepsItsPhoto(look: Look) {
         val playing = Fixtures.recordings().first()
         val vm = viewModel(
-            Fixtures.ready().copy(playingName = playing.name, playing = true, positionMs = 107_000, durationMs = 252_000),
+            Fixtures.playing(waveform = null),
         )
-        show(look = LookChoice(look)) {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm, look = LookChoice(look))
         val centre = { initials: String -> compose.onNodeWithText(initials, useUnmergedTree = true).getBoundsInRoot().let { (it.left + it.right) / 2 } }
         // The playing row's photo (Olivia Bennett's) and the next row's
         // (Marcus Chen's), one above the other.
@@ -672,26 +664,24 @@ class BehaviourTest : ScreenTest() {
     @Test fun multitracksPlayingRowKeepsItsPhoto() = thePlayingRowKeepsItsPhoto(Look.MULTITRACK)
 
     /**
-     * The playhead glides: between the player's readings - every 300 ms, and
-     * here only one - it moves on with the frames. Drawn only at the
-     * readings it stepped three times a second (the Honor, 2026-10-23).
-     * The test's clock is taken by hand first: while it runs by itself the
-     * test environment cancels infinite animations, which is what keeps the
-     * screen tests' pictures still.
+     * The playhead glides: between the player's readings - every 300 ms - it
+     * moves on with the frames. Drawn only at the readings it stepped three
+     * times a second (the Honor, 2026-10-23). A 20-second call, so one
+     * reading's 300 ms is pixels of the scrubber. The test's clock is taken
+     * by hand first: while it runs by itself the test environment cancels
+     * infinite animations, which is what keeps the screen tests' pictures
+     * still.
      */
     @Test fun thePlayheadMovesBetweenReadings() {
         val olivia = Fixtures.recordings().first()
-        val playing = Fixtures.ready().copy(
-            playingName = olivia.name, playing = true, positionMs = 107_000, durationMs = 252_000,
-            waveform = Fixtures.waveform(),
-        )
+        val playing = Fixtures.playing(positionMs = 7_000, durationMs = 20_000)
         val vm = viewModel(playing)
         var shown by mutableStateOf(playing)
         show { AppScaffold(shown, vm) }
         compose.mainClock.autoAdvance = false
         // Paused and played again, so the head's frame loop starts under
         // the hand-run clock; a reading that shows the player moving; then
-        // none for three seconds.
+        // the 300 ms until the next.
         // Each change sent on before the frames, or the clock run by hand
         // never sees it: the pause and the play would meet in one picture.
         val frames = { n: Int ->
@@ -702,11 +692,11 @@ class BehaviourTest : ScreenTest() {
         frames(2)
         shown = playing
         frames(2)
-        shown = playing.copy(positionMs = 107_300)
+        shown = playing.copy(positionMs = 7_300)
         frames(2)
         val scrubber = compose.onNodeWithContentDescription("Position in the recording")
         val before = scrubber.captureToImage().toPixelMap()
-        compose.mainClock.advanceTimeBy(3_000)
+        compose.mainClock.advanceTimeBy(300)
         val after = scrubber.captureToImage().toPixelMap()
         compose.mainClock.autoAdvance = true
         // The head, found in a band only it reaches - above the bars, which
@@ -715,10 +705,9 @@ class BehaviourTest : ScreenTest() {
         val headAt = { map: PixelMap ->
             (0 until map.width).filter { map[it, band].red < 0.5f }.average()
         }
-        // Three seconds of a 4:12 call is about 5px of this scrubber; one
-        // reading's 300 ms, under a pixel.
+        // 300 ms of a 20-second call is about 7px of this scrubber.
         val moved = headAt(after) - headAt(before)
-        assertTrue("the playhead moved ${"%.1f".format(moved)}px in three seconds without a reading", moved >= 3)
+        assertTrue("the playhead moved ${"%.1f".format(moved)}px between two readings", moved >= 3)
     }
 
     /** A messenger's chip on the Recordings tab leaves that messenger's
@@ -747,10 +736,7 @@ class BehaviourTest : ScreenTest() {
      *  (recorded) nor the missed one. */
     @Test fun theCallsTabsNotRecordedChipLeavesThoseCalls() {
         val vm = viewModel(Fixtures.ready().copy(homeTab = HomeTab.CALLS))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         compose.onNodeWithContentDescription("Only calls not recorded").performScrollTo().performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Hana Sato").assertExists()
@@ -763,14 +749,100 @@ class BehaviourTest : ScreenTest() {
      *  does not start one. */
     @Test fun aRecordedCallsRowHasKeepAndShareButStartsNoSelection() {
         val vm = viewModel(Fixtures.ready().copy(homeTab = HomeTab.CALLS))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         compose.onNodeWithContentDescription("Kept - tap to stop keeping").assertExists()
         compose.onNodeWithText("Olivia Bennett").performTouchInput { longClick() }
         compose.waitForIdle()
         assertFalse(vm.state.value.selecting)
+    }
+
+    /** Two identical rows in the call log - a backup restored twice - are two
+     *  rows: keyed by time and name alone, they crashed the tab, as LazyColumn
+     *  takes no key twice. */
+    @Test fun aCallTheLogRepeatsIsTwoRows() {
+        val calls = Fixtures.calls().flatMap { if (it.label == "+44 20 7946 0321") listOf(it, it) else listOf(it) }
+        show { AppScaffold(Fixtures.ready().copy(homeTab = HomeTab.CALLS, calls = calls), viewModel()) }
+        compose.onAllNodesWithText("+44 20 7946 0321").assertCountEquals(2)
+    }
+
+    /** Share on the Calls tab asks how, as on Recordings: the sheet was the
+     *  Recordings tab's alone, and a tap here showed nothing. */
+    @Test fun shareAsksHowOnTheCallsTabToo() {
+        val vm = viewModel(Fixtures.ready().copy(homeTab = HomeTab.CALLS))
+        showApp(vm)
+        compose.onAllNodesWithContentDescription("Share")[0].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Share as").assertExists()
+    }
+
+    /** The plain slider - a recording with no waveform yet - seeks for
+     *  TalkBack's adjust, and so for a tap: both end the drag in the same
+     *  handler that starts it, and reading the drag as it was when last drawn,
+     *  it never sought. */
+    @Test fun thePlainSliderSeeksForTalkBack() {
+        val olivia = Fixtures.recordings().first()
+        val vm = viewModel(
+            Fixtures.playing(positionMs = 0, playing = false, waveform = null),
+        )
+        showApp(vm)
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress))
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(120_000f) }
+        compose.waitForIdle()
+        assertEquals(120_000, vm.state.value.positionMs)
+    }
+
+    /** ...and a drag the waveform cuts short - it arrives mid-drag and takes
+     *  the slider's place - still seeks: it was lost, and the row's clock
+     *  stayed frozen where the finger was. */
+    @Test fun aDragTheWaveformCutsShortStillSeeks() {
+        val olivia = Fixtures.recordings().first()
+        val vm = viewModel(Fixtures.ready())
+        var state by mutableStateOf(
+            Fixtures.playing(positionMs = 0, playing = false, waveform = null),
+        )
+        show { AppScaffold(state, vm) }
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress)).performTouchInput {
+            down(Offset(width * 0.1f, centerY))
+            repeat(10) { moveBy(Offset(width * 0.04f, 0f)) }
+        }
+        // The drag is the slider's to take first; the finger stays down.
+        compose.waitForIdle()
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress))
+            .assert(SemanticsMatcher("dragged") { (it.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)?.current ?: 0f) > 0f })
+        compose.runOnUiThread { state = state.copy(waveform = Fixtures.waveform()) }
+        compose.waitForIdle()
+        assertTrue("${vm.state.value.positionMs}", vm.state.value.positionMs in 90_000..160_000)
+    }
+
+    /** The Calls tab says when its chips and search leave nothing, as the
+     *  Recordings tab does: it showed a blank list under the chips. */
+    @Test fun theCallsTabSaysWhenNothingMatches() {
+        val nobody = CallsNarrowing(query = "Nobody", searchOpen = true)
+        show { AppScaffold(Fixtures.ready().copy(homeTab = HomeTab.CALLS, callsNarrowing = nobody), viewModel()) }
+        compose.onNodeWithText("No matches").assertExists()
+        compose.onNodeWithText("No calls match your search.").assertExists()
+    }
+
+    /** A day's heading counts all of its recordings, not the first page the
+     *  endless list has drawn: 30 under Earlier read 20. */
+    @Test fun aDaysCountIsAllOfIt() {
+        val earlier = (0 until 30).map { i ->
+            Fixtures.recordings().first().copy(name = "20261012_10%02d00_in.ogg".format(i), caller = "Caller $i", kept = false)
+        }
+        show { AppScaffold(Fixtures.ready().copy(recordings = earlier), viewModel()) }
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading) and hasText("30")).assertExists()
+    }
+
+    /** Settings and the Theme screen say the look the app is drawn in,
+     *  read from the theme: a copy of it in the screen's state said Memo and
+     *  System until the first refresh - seconds, with the recorder down -
+     *  over an app in Deck. */
+    @Test fun theThemeScreenSaysTheLookTheAppIsIn() {
+        showApp(viewModel(Fixtures.ready().copy(screen = Screen.THEME)), look = LookChoice(Look.DECK, LightDark.DARK))
+        compose.onNodeWithText("Deck").assertIsSelected()
+        compose.onNodeWithText("Dark").performScrollTo().assertIsSelected()
+        back()
+        compose.onNodeWithText("Deck · dark").assertExists()
     }
 
     @Test fun memosButtonPressesRound() = pressStaysRound(Look.MEMO)
@@ -791,15 +863,13 @@ class BehaviourTest : ScreenTest() {
         val app = RuntimeEnvironment.getApplication()
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.THEME))
         try {
-            show {
-                val state by vm.state.collectAsState()
-                AppScaffold(state, vm)
-            }
+            // Drawn in the saved choice, as the app is: a choice repaints it.
+            showApp(vm, look = null)
             compose.onNodeWithText("Deck").performClick()
             compose.onNodeWithText("Dark").performScrollTo().performClick()
             compose.waitForIdle()
-            assertEquals(Look.DECK, vm.state.value.look)
             assertEquals(LookChoice(Look.DECK, LightDark.DARK), Looks.choice(app))
+            compose.onNodeWithText("Deck").assertIsSelected()
             compose.onNodeWithText("Dark").assertIsSelected()
             // The line under the looks is the one picked's.
             compose.onNodeWithText("A pocket recorder, an LCD and a REC key").assertExists()
@@ -816,10 +886,7 @@ class BehaviourTest : ScreenTest() {
      *  says the phone's own in full. */
     @Test fun lightOrDarkIsAsAndroidSaysIt() {
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.THEME))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         val lefts = listOf("Light", "Dark", "System").map {
             compose.onNodeWithText(it).performScrollTo().getBoundsInRoot().left
         }
@@ -838,10 +905,7 @@ class BehaviourTest : ScreenTest() {
      */
     @Test fun theThemePreviewTakesNoTaps() {
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.THEME))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         compose.onNodeWithTag(LOOK_PREVIEW).performTouchInput {
             // Memo's record button, its gear, then the first row.
             click(Offset(width * 0.11f, height * 0.05f))
@@ -859,10 +923,7 @@ class BehaviourTest : ScreenTest() {
      *  user's. */
     @Test fun theThemePreviewIsSilent() {
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.THEME))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         // The merged tree, as TalkBack reads it: the unmerged one keeps what
         // clearAndSetSemantics cleared, by design.
         compose.onNodeWithTag(LOOK_PREVIEW).assertExists()
@@ -877,10 +938,7 @@ class BehaviourTest : ScreenTest() {
         // the list never moved. One height now: a swipe moves the list only.
         val many = Fixtures.recordings() + Fixtures.recordings().mapIndexed { i, r -> r.copy(name = "more-$i-" + r.name) }
         val vm = viewModel(Fixtures.ready().copy(recordings = many))
-        show {
-            val state by vm.state.collectAsState()
-            AppScaffold(state, vm)
-        }
+        showApp(vm)
         repeat(3) { compose.onRoot().performTouchInput { swipeUp(startY = bottom - 10f, endY = centerY - 100f) } }
         compose.waitForIdle()
         compose.onNodeWithText("Olivia Bennett").assertIsNotDisplayed()

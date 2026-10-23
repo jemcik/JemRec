@@ -3,9 +3,9 @@ package com.jemcik.jemrec.capture
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.nio.ByteBuffer
 
 /** Opus frames joined six to a packet, for the waveform's decoding: framed
  *  as RFC 6716 says, and every frame's bytes kept as they were. */
@@ -17,6 +17,26 @@ class OpusPacketsTest {
 
     private fun packet(size: Int, toc: Int = this.toc, fill: Int = 7) =
         ByteArray(size) { if (it == 0) toc.toByte() else (fill + it).toByte() }
+
+    /** [packets] joined as the decoder joins them: read back to back into
+     *  one array, then written by joinInto - into a buffer of the room it
+     *  says it needs, so writing more fails the test. */
+    private fun join(packets: List<ByteArray>): ByteArray {
+        val all = ByteArray(packets.sumOf { it.size })
+        var at = 0
+        for (p in packets) {
+            p.copyInto(all, at)
+            at += p.size
+        }
+        val out = ByteBuffer.allocate(2 + packets.sumOf { it.size + 1 })
+        OpusPackets.joinInto(all, packets.map { it.size }.toIntArray(), packets.size, out)
+        return out.array().copyOf(out.position())
+    }
+
+    private fun fits(first: ByteArray, frames: Int, units: Int, packet: ByteArray) =
+        OpusPackets.fits(first[0].toInt(), frames, units, packet[0].toInt(), packet.size)
+
+    private fun joinable(packet: ByteArray) = OpusPackets.joinable(packet[0].toInt(), packet.size)
 
     /** A code 3 packet read back as RFC 6716, 3.2.5 lays it out: its frames,
      *  each with the TOC byte it would have alone. Written from the RFC, not
@@ -61,12 +81,12 @@ class OpusPacketsTest {
         val six = List(6) { packet(320, fill = it) }
         var units = 0
         six.forEachIndexed { i, p ->
-            assertTrue("frame $i fits", OpusPackets.fits(six[0], i, units, p))
+            assertTrue("frame $i fits", fits(six[0], i, units, p))
             units += OpusPackets.frameUnits(p[0].toInt())
         }
         // A seventh would be past 120 ms.
-        assertFalse(OpusPackets.fits(six[0], 6, units, packet(320)))
-        val joined = OpusPackets.join(six)
+        assertFalse(fits(six[0], 6, units, packet(320)))
+        val joined = join(six)
         // All the same size: no sizes written, the frames shared evenly.
         assertEquals(2 + 6 * 319, joined.size)
         assertEquals(0, joined[1].toInt() and 0x80)
@@ -77,31 +97,30 @@ class OpusPacketsTest {
         // One under 252, one of 252 itself and one over: the one- and
         // two-byte forms, and the last frame's size left to the rest.
         val three = listOf(packet(200), packet(253), packet(700), packet(90))
-        val joined = OpusPackets.join(three)
+        val joined = join(three)
         assertEquals(0x80, joined[1].toInt() and 0x80)
-        assertTrue(joined.size <= OpusPackets.joinedSize(three))
         frames(joined).forEachIndexed { i, frame -> assertArrayEquals("frame $i", three[i], frame) }
     }
 
     @Test fun theLargestFrameStillFits() {
         val big = listOf(packet(1276), packet(1276), packet(10))
-        frames(OpusPackets.join(big)).forEachIndexed { i, frame -> assertArrayEquals(big[i], frame) }
+        frames(join(big)).forEachIndexed { i, frame -> assertArrayEquals(big[i], frame) }
     }
 
     @Test fun onlyFramesThatMayShareAPacketAreJoined() {
         val first = packet(320)
         // Another configuration (CELT 10 ms), or mono: not with these.
-        assertFalse(OpusPackets.fits(first, 1, 8, packet(320, toc = (30 shl 3) or (1 shl 2))))
-        assertFalse(OpusPackets.fits(first, 1, 8, packet(320, toc = 31 shl 3)))
+        assertFalse(fits(first, 1, 8, packet(320, toc = (30 shl 3) or (1 shl 2))))
+        assertFalse(fits(first, 1, 8, packet(320, toc = 31 shl 3)))
         // A packet of two frames already (code 1), or an empty one - silence
         // the encoder left out: each goes as it came.
-        assertFalse(OpusPackets.joinable(packet(320, toc = toc or 1)))
-        assertFalse(OpusPackets.joinable(ByteArray(1) { toc.toByte() }))
-        assertTrue(OpusPackets.joinable(first))
+        assertFalse(joinable(packet(320, toc = toc or 1)))
+        assertFalse(joinable(ByteArray(1) { toc.toByte() }))
+        assertTrue(joinable(first))
     }
 
     @Test fun onePacketIsPassedOnAsItIs() {
         val one = packet(320)
-        assertSame(one, OpusPackets.join(listOf(one)))
+        assertArrayEquals(one, join(listOf(one)))
     }
 }

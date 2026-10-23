@@ -110,4 +110,22 @@ object Fixtures {
      *  pauses between them, two people at their own levels, and a quiet
      *  stretch in the middle - the same every run, so the same pixels. */
     fun waveform(from: Long = 20_261_022L): List<Float> = Waveforms.invented(from)
+
+    /** Olivia's call - the list's first, 4:12 - in the player, at
+     *  [positionMs], [playing] or paused, and its [waveform] worked out, or
+     *  null for the plain slider before it is. The same moment in every look
+     *  unless a test says otherwise: Memo's pictures were at 1:47 and the
+     *  others' at 1:43, for no reason. */
+    fun playing(
+        positionMs: Int = 107_000,
+        playing: Boolean = true,
+        waveform: List<Float>? = Fixtures.waveform(),
+        durationMs: Int = 252_000,
+    ): UiState = ready().copy(
+        playingName = recordings().first().name,
+        playing = playing,
+        positionMs = positionMs,
+        durationMs = durationMs,
+        waveform = waveform,
+    )
 }

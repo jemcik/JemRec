@@ -6,11 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -64,11 +62,14 @@ internal const val LOOK_PREVIEW = "look-preview"
 @Composable
 internal fun LookPreview(vm: MainViewModel, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
+    val window = LocalWindowInfo.current.containerSize
     // As wide as the app's window, as the home screen is.
-    val width = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
+    val width = with(density) { window.width.toDp() }
     // The top of a phone's screen, 9 by 16: the header, the chips and four
-    // or five rows - 640dp of the 360dp test phone.
-    val height = width * 16f / 9f
+    // or five rows - 640dp of the 360dp test phone. No taller than the
+    // window: 9 by 16 of a window on its side was taller than the screen,
+    // half of it empty, and the looks' choices two screens down.
+    val height = minOf(width * 16f / 9f, with(density) { window.height.toDp() })
     val shape = RoundedCornerShape(20.dp)
     val home = remember { InventedHome() }
     Box(
@@ -95,8 +96,8 @@ internal fun LookPreview(vm: MainViewModel, modifier: Modifier = Modifier) {
                         scaleY = SCALE
                     }
                     .background(MaterialTheme.colorScheme.background)
-                    // No status bar in a picture: the headers pad for one.
-                    .consumeWindowInsets(WindowInsets.systemBars)
+                    // No system bars in a picture: the headers pad for them.
+                    .consumeWindowInsets(BarInsets)
                     // As tall as it is; the box cuts it off.
                     .wrapContentHeight(Alignment.Top, unbounded = true),
             ) {
@@ -106,7 +107,7 @@ internal fun LookPreview(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
                 for ((day, rows) in home.days) {
                     DayHeading(day, rows.size)
-                    for (recording in rows) RecordingRow(recording, day, home.state, vm, version = 0)
+                    for (recording in rows) RecordingRow(recording, day, home.state, vm)
                 }
             }
         }
@@ -126,7 +127,10 @@ internal fun LookPreview(vm: MainViewModel, modifier: Modifier = Modifier) {
  * The preview's home screen: recording every call, the answering machine
  * and WhatsApp on, and five calls with the screenshots' people, who do not
  * exist - three today, one yesterday and one before, by the preview's own
- * clock, 18:00 today, so it reads the same at any hour.
+ * clock, 18:00 on a fixed day, so it reads the same on any day and at any
+ * hour. Its calls' waveforms are seeded from their names, which hold the
+ * day: from today's date, they changed every day, and the Theme screen's
+ * pictures with them.
  */
 private class InventedHome {
     val now: Long
@@ -136,10 +140,8 @@ private class InventedHome {
 
     init {
         val clock = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 18)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
+            clear()
+            set(2026, Calendar.OCTOBER, 21, 18, 0, 0)
         }
         now = clock.timeInMillis
         val date = SimpleDateFormat("yyyyMMdd", Locale.US)

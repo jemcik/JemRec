@@ -2,20 +2,18 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,11 +26,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -104,8 +97,8 @@ private fun MemoBar(title: String, busy: Boolean, onBack: () -> Unit) {
         Modifier
             .testTag(SETTINGS_BAR)
             .fillMaxWidth()
-            .background(c.head, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-            .windowInsetsPadding(WindowInsets.statusBars)
+            .memoBand(c)
+            .windowInsetsPadding(BarInsets)
             .padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -144,17 +137,13 @@ private val CHASE_WIDTH = (6 * 7 + 5 * 2).dp
 @Composable
 private fun DeckBar(title: String, busy: Boolean, onBack: () -> Unit) {
     val c = deckColors()
-    val shape = RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp)
-    val glow = if (c.glow) Shadow(c.ink.copy(alpha = 0.55f), blurRadius = 14f) else null
+    val glow = deckGlow(c)
     Row(
         Modifier
             .testTag(SETTINGS_BAR)
             .fillMaxWidth()
-            // The face on its 1dp edge, as the home header's.
-            .background(c.faceEdge, shape)
-            .padding(bottom = 1.dp)
-            .background(c.face, shape)
-            .windowInsetsPadding(WindowInsets.statusBars)
+            .deckFace(c)
+            .windowInsetsPadding(BarInsets)
             .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -163,10 +152,7 @@ private fun DeckBar(title: String, busy: Boolean, onBack: () -> Unit) {
         Box(
             Modifier
                 .size(48.dp)
-                .clip(keyShape)
-                .background(c.keyOff)
-                .border(1.dp, c.keyOff, keyShape)
-                .keyLip(c.glow)
+                .deckKey(c, on = false, keyShape)
                 .clickable(role = Role.Button, onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {
@@ -202,16 +188,6 @@ private fun DeckBar(title: String, busy: Boolean, onBack: () -> Unit) {
     }
 }
 
-/** A key's lower lip, as Deck's tabs have. */
-internal fun Modifier.keyLip(dark: Boolean) = drawBehind {
-    val lip = 3.dp.toPx()
-    drawRect(
-        Color.Black.copy(alpha = if (dark) 0.35f else 0.10f),
-        topLeft = Offset(0f, size.height - lip),
-        size = Size(size.width, lip),
-    )
-}
-
 /** Six LEDs: room for the sweep, kept when idle. */
 private val SCAN_WIDTH = (6 * 6 + 5 * 3).dp
 
@@ -222,11 +198,8 @@ private fun MultitrackBar(title: String, busy: Boolean, onBack: () -> Unit) {
         Modifier
             .testTag(SETTINGS_BAR)
             .fillMaxWidth()
-            .background(c.panel)
-            .drawBehind {
-                drawLine(c.line, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1.dp.toPx())
-            }
-            .windowInsetsPadding(WindowInsets.statusBars)
+            .multitrackPanel(c)
+            .windowInsetsPadding(BarInsets)
             .heightIn(min = 64.dp)
             .padding(start = 4.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,

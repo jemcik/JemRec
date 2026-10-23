@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.ui.theme.LightDark
+import com.jemcik.jemrec.ui.theme.LocalLookChoice
 import com.jemcik.jemrec.ui.theme.Look
 
 internal fun lookName(look: Look): String = when (look) {
@@ -64,7 +65,8 @@ private fun blurb(look: Look): String = when (look) {
  * - the line about each: under the choices, for the picked one.
  */
 @Composable
-internal fun ThemeScreen(state: UiState, vm: MainViewModel) {
+internal fun ThemeScreen(vm: MainViewModel) {
+    val chosen = LocalLookChoice.current
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             "All three work the same; only the look changes.",
@@ -74,12 +76,12 @@ internal fun ThemeScreen(state: UiState, vm: MainViewModel) {
         LookPreview(vm, Modifier.padding(vertical = 4.dp).align(Alignment.CenterHorizontally))
         ConnectedChoices(
             choices = Look.entries,
-            selected = state.look,
+            selected = chosen.look,
             label = ::lookName,
             onChoose = vm::setLook,
         )
         Text(
-            blurb(state.look),
+            blurb(chosen.look),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -88,7 +90,7 @@ internal fun ThemeScreen(state: UiState, vm: MainViewModel) {
         SettingsHeading("Light or dark", top = 12.dp)
         ConnectedChoices(
             choices = LIGHT_DARK,
-            selected = state.lightDark,
+            selected = chosen.lightDark,
             label = ::lightDarkWord,
             onChoose = vm::setLightDark,
         )

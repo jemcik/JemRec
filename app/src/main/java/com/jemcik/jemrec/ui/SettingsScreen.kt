@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
@@ -60,6 +59,7 @@ import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.Retention
 import com.jemcik.jemrec.capture.Trash
 import com.jemcik.jemrec.ui.theme.JemRecColors
+import com.jemcik.jemrec.ui.theme.LocalLookChoice
 
 /** Which of Settings' dialogs is open. Saved by name, so a rotation keeps it. */
 private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT }
@@ -201,7 +201,6 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                         "Asks with a notification when a call starts. The opening " +
                             "seconds are not saved."
                     },
-                    icon = SettingsIcons.Record,
                     mark = headerMark(Marked.MODE, headerFacts, status),
                     checked = state.automatic,
                     onCheckedChange = vm::setAutomatic,
@@ -225,7 +224,6 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                 SettingsRow(
                     title = "Answering machine",
                     summary = answerSummary(answer),
-                    icon = SettingsIcons.Voicemail,
                     mark = headerMark(Marked.ANSWERING, headerFacts, status),
                     onClick = { vm.showScreen(Screen.ANSWERING_MACHINE) },
                 )
@@ -234,7 +232,6 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                 SettingsRow(
                     title = "Messenger calls",
                     summary = messengerSummary(state),
-                    icon = SettingsIcons.Chat,
                     mark = headerMark(Marked.MESSENGERS, headerFacts, status),
                     onClick = { vm.showScreen(Screen.MESSENGER_CALLS) },
                 )
@@ -260,7 +257,7 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
             row {
                 SettingsRow(
                     title = "Theme",
-                    summary = "${lookName(state.look)} · ${lightDarkSummary(state.lightDark)}",
+                    summary = LocalLookChoice.current.let { "${lookName(it.look)} · ${lightDarkSummary(it.lightDark)}" },
                     icon = SettingsIcons.Palette,
                     onClick = { vm.showScreen(Screen.THEME) },
                 )
@@ -301,7 +298,6 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                     } else {
                         "Older than ${ageChoice(state.autoDeleteAfterDays)}"
                     },
-                    icon = Icons.Filled.DateRange,
                     mark = headerMark(Marked.AUTO_DELETE, headerFacts, status),
                     onClick = { dialog = SettingsDialog.OLD },
                 )
@@ -449,12 +445,8 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
 private const val KEPT_AND_TRASH = "Recordings you mark to keep are never removed. " +
     "Anything removed waits in Recently deleted for ${Trash.DAYS} days first."
 
-private fun ageChoice(days: Int): String = when (days) {
-    0 -> "Never"
-    180 -> "6 months"
-    365 -> "1 year"
-    else -> "$days days"
-}
+/** An age to choose, in the header's words for it (ageWords) - or Never. */
+private fun ageChoice(days: Int): String = if (days == 0) "Never" else ageWords(days)
 
 /** A format's name - the same words in the dialog and on the row, so the row
  *  shows the option that was picked. */

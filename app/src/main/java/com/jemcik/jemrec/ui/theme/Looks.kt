@@ -41,9 +41,16 @@ object Looks {
 
     @Volatile private var flow: MutableStateFlow<LookChoice>? = null
 
+    /** Read once a process - and Android told its light or dark then too:
+     *  told only on a change, its own copy could differ from the setting
+     *  (the setting written by hand, as tools/shoot.py does, or brought back
+     *  by a restore), and the app opened in Android's. */
     private fun state(context: Context): MutableStateFlow<LookChoice> =
         flow ?: synchronized(this) {
-            flow ?: MutableStateFlow(read(context)).also { flow = it }
+            flow ?: MutableStateFlow(read(context)).also {
+                flow = it
+                tellAndroid(context, it.value.lightDark)
+            }
         }
 
     fun choice(context: Context): LookChoice = state(context).value

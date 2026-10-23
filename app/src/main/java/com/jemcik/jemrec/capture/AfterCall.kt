@@ -17,6 +17,7 @@ import com.jemcik.jemrec.Prefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 /**
  * What the user sees the moment a call has been saved.
@@ -147,6 +148,9 @@ internal object AfterCall {
         // A message is news whenever it turns up: the user did not hear it.
         if (!saved.message && System.currentTimeMillis() - startMillis - (saved.seconds * 1000).toLong() > FRESH_MS) {
             Log.i(TAG, "aftercall: ${FileNames.forLog(saved.name)} is from a while ago, not announcing it")
+            // Not announced, but drawn: its waveform as any saved call's, or
+            // it waited for the list's fill-in - the app open, its turn come.
+            Waveforms.levels(context, saved.name, saved.uri)
             return
         }
         val verdict = AudioCheck.check(context, saved.uri)
@@ -327,7 +331,7 @@ internal object AfterCall {
     /** "3:21", or "45 s" for a call under a minute. */
     internal fun length(seconds: Double): String {
         val total = seconds.toLong()
-        return if (total < 60) "$total s" else "%d:%02d".format(total / 60, total % 60)
+        return if (total < 60) "$total s" else "%d:%02d".format(Locale.US, total / 60, total % 60)
     }
 
     private fun action(label: String, intent: PendingIntent): Notification.Action =

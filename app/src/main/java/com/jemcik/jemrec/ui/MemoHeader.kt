@@ -2,30 +2,24 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,8 +66,8 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
     Column(
         Modifier
             .fillMaxWidth()
-            .background(c.head, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-            .windowInsetsPadding(WindowInsets.statusBars)
+            .memoBand(c)
+            .windowInsetsPadding(BarInsets)
             .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -109,16 +103,14 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
                         MemoSmall(
                             memoWords(instruction),
                             MaterialTheme.colorScheme.primary,
-                            Modifier.clickable(enabled = !state.busy) { haptics.tap(); vm.allowThisWifi() },
+                            Modifier.allowWifiTap(state, vm),
                         )
                     } else {
                         MemoSmall(memoWords(instruction), c.idle)
                     }
                 }
             }
-            IconButton(onClick = { haptics.tap(); vm.showSettings() }) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = c.idle)
-            }
+            SettingsGear(vm, c.idle)
         }
         MemoTabs(state, c) { haptics.tap(); vm.showTab(it) }
     }
@@ -169,13 +161,13 @@ private fun MemoMarks(c: MemoColors, marks: Marks) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Led(JemRecColors.play, size = 7.dp, glow = false)
-            MemoSmall(if (marks.automatic) "Every call" else "Asks each call", c.pillInk)
+            MemoSmall(if (marks.automatic) "Every call" else "Asks each call", c.idle)
         }
         if (marks.answering) {
-            Icon(messageIcon, contentDescription = "Answering machine on", tint = c.pillInk, modifier = Modifier.size(16.dp))
+            Icon(messageIcon, contentDescription = "Answering machine on", tint = c.idle, modifier = Modifier.size(16.dp))
         }
         if (marks.messengers) {
-            Icon(SettingsIcons.Chat, contentDescription = "Messenger calls on", tint = c.pillInk, modifier = Modifier.size(14.dp))
+            Icon(SettingsIcons.Chat, contentDescription = "Messenger calls on", tint = c.idle, modifier = Modifier.size(14.dp))
         }
         if (marks.autoDeleteDays > 0) {
             Row(
@@ -185,8 +177,8 @@ private fun MemoMarks(c: MemoColors, marks: Marks) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Icon(Icons.Filled.Delete, contentDescription = null, tint = c.pillInk, modifier = Modifier.size(14.dp))
-                MemoSmall(ageShort(marks.autoDeleteDays), c.pillInk)
+                Icon(Icons.Filled.Delete, contentDescription = null, tint = c.idle, modifier = Modifier.size(14.dp))
+                MemoSmall(ageShort(marks.autoDeleteDays), c.idle)
             }
         }
     }

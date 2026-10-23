@@ -1,7 +1,5 @@
 package com.jemcik.jemrec.ui
 
-import com.jemcik.jemrec.capture.filterRecordings
-
 /*
  * Small decisions about the recordings list, kept out of the ViewModel so
  * they can be tested (ListStateTest). Each acted on the wrong rows once.
@@ -25,8 +23,7 @@ internal fun picked(selected: Set<String>, shown: List<String>): Picked = when {
  *  user cannot see. */
 internal fun stillShown(state: UiState): Set<String> {
     if (state.selected.isEmpty()) return state.selected
-    val shown = filterRecordings(state.recordings, state.query, state.favoritesOnly, state.keptOnly, state.messagesOnly, state.sources)
-        .map { it.name }.toSet()
+    val shown = filterRecordings(state.recordings, state.recordingsNarrowing).map { it.name }.toSet()
     return state.selected intersect shown
 }
 
@@ -35,7 +32,6 @@ internal fun stillShown(state: UiState): Set<String> {
  *  player and its share sheet to be. */
 internal fun UiState.revealed(): UiState = copy(
     screen = Screen.HOME, homeTab = HomeTab.RECORDINGS,
-    query = "", searchOpen = false,
-    favoritesOnly = false, keptOnly = false, messagesOnly = false, sources = emptySet(),
+    recordingsNarrowing = RecordingsNarrowing(),
     selecting = false, selected = emptySet(),
 )

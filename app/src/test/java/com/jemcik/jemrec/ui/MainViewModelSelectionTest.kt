@@ -41,6 +41,9 @@ class MainViewModelSelectionTest {
     private val unknown = rec("20260907_120000_in.ogg")
 
     private val state get() = vm.state.value
+    private val narrowing get() = state.recordingsNarrowing
+
+    private fun tap(kind: ChipKind, source: String? = null) = vm.tapRecordingsChip(ListChip(kind, source))
 
     /** A fresh ViewModel over these recordings. Recordings otherwise only
      *  enter state through refreshNow(), which is device-bound. */
@@ -51,28 +54,28 @@ class MainViewModelSelectionTest {
     @Before fun setUp() = given()
 
     @Test fun sourcesAddUpAndComeOffOneByOne() {
-        vm.toggleSource("whatsapp")
-        vm.toggleSource("telegram")
-        assertEquals(setOf("whatsapp", "telegram"), state.sources)
-        vm.toggleSource("whatsapp")
-        assertEquals(setOf("telegram"), state.sources)
+        tap(ChipKind.SOURCE, "whatsapp")
+        tap(ChipKind.SOURCE, "telegram")
+        assertEquals(setOf("whatsapp", "telegram"), narrowing.sources)
+        tap(ChipKind.SOURCE, "whatsapp")
+        assertEquals(setOf("telegram"), narrowing.sources)
     }
 
     @Test fun favouritesIsItsOwnAxis() {
-        vm.toggleKeptOnly()
-        vm.toggleFavorites()
-        assertTrue(state.favoritesOnly)
-        assertTrue(state.keptOnly)
-        vm.toggleFavorites()
-        assertFalse(state.favoritesOnly)
+        tap(ChipKind.KEPT)
+        tap(ChipKind.FAVORITES)
+        assertTrue(narrowing.favorites)
+        assertTrue(narrowing.kept)
+        tap(ChipKind.FAVORITES)
+        assertFalse(narrowing.favorites)
     }
 
     @Test fun foldingSearchAwayDropsTheQuery() {
-        vm.toggleSearch()
+        tap(ChipKind.SEARCH)
         vm.setQuery("bob")
-        assertTrue(state.searchOpen); assertEquals("bob", state.query)
-        vm.toggleSearch()
-        assertFalse(state.searchOpen); assertEquals("", state.query)
+        assertTrue(narrowing.searchOpen); assertEquals("bob", narrowing.query)
+        tap(ChipKind.SEARCH)
+        assertFalse(narrowing.searchOpen); assertEquals("", narrowing.query)
     }
 
     @Test fun narrowingTheQueryDropsSelectionsThatLeaveTheListAndWideningKeepsThem() {
@@ -85,6 +88,17 @@ class MainViewModelSelectionTest {
         assertTrue(state.selecting)
         vm.setQuery("")
         assertEquals(setOf(bob.name), state.selected)
+    }
+
+    @Test fun anyChipThatNarrowsDropsSelectionsThatLeaveTheList() {
+        // Only the sources' chip did: Kept, Favourites and Messages left a
+        // picked row selected that the list had stopped showing.
+        val keptAlice = alice.copy(kept = true)
+        given(keptAlice, bob)
+        vm.startSelecting(keptAlice)
+        vm.toggleSelected(bob)
+        tap(ChipKind.KEPT)
+        assertEquals(setOf(keptAlice.name), state.selected)
     }
 
     @Test fun selectAllVisibleRespectsTheQueryAndThePage() {

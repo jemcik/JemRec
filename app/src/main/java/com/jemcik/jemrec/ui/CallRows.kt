@@ -1,7 +1,5 @@
 package com.jemcik.jemrec.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,11 +7,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,16 +29,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.CallHistory.Kind
 import com.jemcik.jemrec.capture.CallHistory.Status
-import com.jemcik.jemrec.ui.theme.JemRecColors
 import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
-import com.jemcik.jemrec.ui.theme.LookFonts
 import com.jemcik.jemrec.ui.theme.memoColors
 import com.jemcik.jemrec.ui.theme.multitrackColors
+import java.util.Locale
 
 /**
  * A call with no recording, on the Calls tab, in the look's own row - Memo's
@@ -62,20 +56,12 @@ internal fun CallRow(call: CallHistory.Call, day: Day) {
     }
 }
 
-/** The name or number, with the contact's favourite star, as RowName. */
-@Composable
-private fun CallName(call: CallHistory.Call, style: TextStyle) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(call.label, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-        if (call.favorite) {
-            Icon(Icons.Filled.Star, contentDescription = "Favourite contact", tint = JemRecColors.favorite, modifier = Modifier.size(16.dp))
-        }
-    }
-}
-
 /** Whether nobody answered: missed, declined, blocked, voicemail - marked in
- *  the error colour, the way every phone app marks them. */
-private fun unanswered(call: CallHistory.Call) = call.kind != Kind.INCOMING && call.kind != Kind.OUTGOING
+ *  the error colour. Not a call answered on another device (Kind.OTHER):
+ *  "not incoming and not outgoing" took that in too, and drew it red. */
+internal fun unanswered(call: CallHistory.Call) = call.kind in UNANSWERED
+
+private val UNANSWERED = setOf(Kind.MISSED, Kind.DECLINED, Kind.BLOCKED, Kind.VOICEMAIL)
 
 /** The details, as RowMeta's for a phone call: which way, a phone, when. */
 @Composable
@@ -157,26 +143,18 @@ private fun kindWord(call: CallHistory.Call): String = when (call.kind) {
 }
 
 /** "3:21", from the call log's seconds. */
-private fun length(seconds: Int): String = "%d:%02d".format(seconds / 60, seconds % 60)
+private fun length(seconds: Int): String = "%d:%02d".format(Locale.US, seconds / 60, seconds % 60)
 
 @Composable
 private fun MemoCallRow(call: CallHistory.Call, day: Day) {
     val c = memoColors()
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(20.dp)
-    Column(
-        Modifier
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .fillMaxWidth()
-            .clip(shape)
-            .background(c.card)
-            .border(1.dp, c.cardEdge, shape),
-    ) {
+    Column(Modifier.memoCard(c.card, c.cardEdge)) {
         RowHead(
-            Modifier.padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 4.dp),
-            avatar = { CallerAvatar(call.label, call.photo, size = 40.dp) },
+            Modifier.memoHead(),
+            avatar = { CallerAvatar(call.label, call.photo, size = RowPhoto) },
         ) {
-            CallName(call, MaterialTheme.typography.bodyLarge)
+            NameLine(call.label, call.favorite, MaterialTheme.typography.bodyLarge)
             CallMeta(call, day, MaterialTheme.typography.bodySmall, scheme.onSurfaceVariant)
             Outcome(call, MaterialTheme.typography.bodySmall, scheme.onSurfaceVariant)
         }
@@ -186,14 +164,12 @@ private fun MemoCallRow(call: CallHistory.Call, day: Day) {
 @Composable
 private fun DeckCallRow(call: CallHistory.Call, day: Day) {
     val scheme = MaterialTheme.colorScheme
-    val mono = TextStyle(fontFamily = LookFonts.engraved, fontSize = 13.sp)
+    val mono = deckMono
     RowHead(
-        Modifier
-            .heightIn(min = 64.dp)
-            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
-        avatar = { CallerAvatar(call.label, call.photo, size = 40.dp) },
+        Modifier.deckTrack(),
+        avatar = { CallerAvatar(call.label, call.photo, size = RowPhoto) },
     ) {
-        CallName(call, MaterialTheme.typography.bodyLarge)
+        NameLine(call.label, call.favorite, MaterialTheme.typography.bodyLarge)
         CallMeta(call, day, mono, scheme.onSurfaceVariant)
         Outcome(call, mono, scheme.onSurfaceVariant)
     }
@@ -209,14 +185,9 @@ private fun MultitrackCallRow(call: CallHistory.Call, day: Day) {
     val c = multitrackColors()
     val hue = hueFor(call.label, c)
     RowHead(
-        Modifier
-            .heightIn(min = 64.dp)
-            .drawBehind {
-                drawLine(c.lane, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1.dp.toPx())
-            }
-            .padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        Modifier.multitrackRow(c),
         avatar = {
-            CallerAvatar(call.label, call.photo, size = 40.dp, container = hue.copy(alpha = c.tint), content = hue, edge = hue.copy(alpha = c.edge))
+            CallerAvatar(call.label, call.photo, size = RowPhoto, container = hue.copy(alpha = c.tint), content = hue, edge = hue.copy(alpha = c.edge))
         },
         gap = 10.dp,
     ) {
@@ -234,10 +205,10 @@ private fun MultitrackCallRow(call: CallHistory.Call, day: Day) {
                         style = Stroke(width = line, pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, dash * 0.75f))),
                     )
                 }
-                .padding(start = 9.dp, end = 2.dp, top = 5.dp, bottom = 1.dp),
+                .padding(MultitrackClipPadding),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            CallName(call, multitrackName.copy(color = c.text))
+            NameLine(call.label, call.favorite, multitrackName.copy(color = c.text))
             CallMeta(call, day, multitrackMono, c.muted)
             Outcome(call, multitrackMono, c.muted)
         }

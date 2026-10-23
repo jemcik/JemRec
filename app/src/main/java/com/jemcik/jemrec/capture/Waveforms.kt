@@ -4,9 +4,14 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import java.io.File
 import java.nio.ShortBuffer
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
@@ -21,10 +26,11 @@ import kotlin.math.sqrt
  *
  * Worked out from the file itself, decoded by Android's own decoder
  * (PcmDecoder): no library, no native code, nothing new for the reproducible
- * build to match. As a call is saved (AfterCall), or the first time an older
- * recording is played, and then kept in the app's cache - a byte a level,
- * under a hash of the file's name, which can hold a caller's. Android may
- * clear the cache; it is worked out again then.
+ * build to match. As a call is saved (AfterCall), in the background for the
+ * list's rows while the app is on screen (MainViewModel.fillInWaveforms),
+ * or when one is played that has none yet; then kept in the app's cache - a
+ * byte a level, under a hash of the file's name, which can hold a caller's -
+ * until the recording is deleted (prune) or Android clears the cache.
  *
  * FAST, because a long call's is waited for: packets joined six to one
  * (OpusPackets), and up to four decoders at once, each on a stretch of the
@@ -104,24 +110,132 @@ internal object Waveforms {
     private const val SETTLE_US = 1_000_000L
 
     /**
+     * One lock a recording, so it is worked out once at a time: just after a
+     * call the player, the list's fill-in and AfterCall all asked for it, and
+     * three decodes of it ran at once, four decoders each. The second to ask
+     * waits, then reads what the first kept.
+     */
+    private val decoding = ConcurrentHashMap<String, Any>()
+
+    /**
+     * The recordings being written now (RecordingStore.open, until publish or
+     * abandon). In a chosen folder or app storage a recording is listed under
+     * its final name while it fills, and its levels, worked out then, were the
+     * first minutes', kept as the whole call's for good.
+     */
+    private val writing: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    fun writingStarted(name: String) {
+        writing += name
+    }
+
+    /** Finished, or abandoned: the name's levels are worked out from what it
+     *  holds now, not from any file it had before. */
+    fun writingEnded(context: Context, name: String) {
+        writing -= name
+        forget { it == name }
+        runCatching { cacheFile(context, name).delete() }
+    }
+
+    fun isBeingWritten(name: String): Boolean = name in writing
+
+    /**
+     * The levels read or worked out lately, kept in memory: a row scrolled
+     * back into view read its file again - a hash, a read, 800 numbers - and
+     * drew its strip a frame late. The last [IN_MEMORY], about 13 KB each.
+     */
+    private val inMemory = object : LinkedHashMap<String, List<Float>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Float>>?) = size > IN_MEMORY
+    }
+    private const val IN_MEMORY = 100
+
+    private fun remembered(name: String): List<Float>? = synchronized(inMemory) { inMemory[name] }
+
+    private fun remember(name: String, levels: List<Float>) = synchronized(inMemory) { inMemory[name] = levels }
+
+    private fun forget(names: (String) -> Boolean) = synchronized(inMemory) { inMemory.keys.removeAll(names) }
+
+    private val _kept = MutableStateFlow(0)
+
+    /**
+     * Moves each time levels are kept, whoever worked them out - the list's
+     * fill-in, the player, AfterCall: the rows still without theirs look
+     * again. Only the fill-in's used to wake them, and a call saved while the
+     * list was open kept a blank strip until its row was drawn again.
+     */
+    val kept: StateFlow<Int> = _kept.asStateFlow()
+
+    /**
      * The levels of the recording [name] at [uri]: from the cache, or worked
      * out now - a whole decode, so off the main thread. [keepGoing] is asked
      * as it decodes; a stop leaves nothing cached. Null for a file that
-     * cannot be decoded. [workers] and [join] are for measuring the ways of
-     * working it out against each other (0 and true: as the app does).
+     * cannot be decoded, or one still being written.
      */
-    fun levels(
-        context: Context,
-        name: String,
-        uri: Uri,
-        keepGoing: () -> Boolean = { true },
-        workers: Int = 0,
-        join: Boolean = true,
-        useCache: Boolean = true,
-    ): List<Float>? {
+    fun levels(context: Context, name: String, uri: Uri, keepGoing: () -> Boolean = { true }): List<Float>? {
         override?.invoke(name)?.let { return it }
-        val cached = cacheFile(context, name)
-        if (useCache) runCatching { fromBytes(cached.readBytes()) }.getOrNull()?.let { return it }
+        if (name in writing) return null
+        remembered(name)?.let { return it }
+        synchronized(decoding.computeIfAbsent(name) { Any() }) {
+            val cached = cacheFile(context, name)
+            runCatching { fromBytes(cached.readBytes()) }.getOrNull()?.let {
+                remember(name, it)
+                return it
+            }
+            val levels = workOut(name, context, uri, keepGoing, workers = 0, join = true) ?: return null
+            // Begun again under this name meanwhile: what was decoded is not it.
+            if (name in writing) return levels
+            remember(name, levels)
+            runCatching {
+                cached.parentFile?.mkdirs()
+                cached.writeBytes(toBytes(levels))
+            }.onSuccess { _kept.update { it + 1 } }
+                .onFailure { Log.w(TAG, "waveform: could not keep it: $it") }
+            return levels
+        }
+    }
+
+    /**
+     * [name]'s levels worked out with [workers] decoders - 0, as many as
+     * workersFor says - and its packets joined or not: the ways of working
+     * them out, measured against each other (the debug build's "waveform"
+     * broadcast; 0 and joined are the app's). Nothing is read, kept or
+     * waited for, and no stand-in answers: it is the file that is measured.
+     * These were levels()'s parameters, which the app never passed.
+     */
+    internal fun measure(context: Context, name: String, uri: Uri, workers: Int, join: Boolean): List<Float>? =
+        workOut(name, context, uri, { true }, workers, join)
+
+    /** Whether [name]'s levels are kept, without reading them: the list's
+     *  fill-in asks it of every recording, each time the list is read. */
+    fun has(context: Context, name: String): Boolean =
+        override?.invoke(name) != null || cacheFile(context, name).length() == LEVELS.toLong()
+
+    /**
+     * Forget the levels of recordings no longer kept: every cache file but
+     * [names]', and but those kept in the last [graceMs] - a call saved since
+     * the list was read. Nothing else removed them: a deleted recording's
+     * loudness stayed in the cache until Android cleared it.
+     */
+    fun prune(context: Context, names: Collection<String>, graceMs: Long = 10 * 60_000L) {
+        val dir = File(context.cacheDir, DIR)
+        val listed = names.toHashSet()
+        forget { it !in listed }
+        val keep = names.mapTo(HashSet()) { "${hashOf(it)}.lvl" }
+        val now = System.currentTimeMillis()
+        dir.listFiles()?.forEach { file ->
+            if (file.name !in keep && now - file.lastModified() > graceMs) runCatching { file.delete() }
+        }
+    }
+
+    /** The decode itself, and the line saying how long it took. */
+    private fun workOut(
+        name: String,
+        context: Context,
+        uri: Uri,
+        keepGoing: () -> Boolean,
+        workers: Int,
+        join: Boolean,
+    ): List<Float>? {
         val started = SystemClock.elapsedRealtime()
         val frames: FloatArray
         val used: Int
@@ -139,12 +253,6 @@ internal object Waveforms {
             "worked out in ${SystemClock.elapsedRealtime() - started} ms ($used at once${if (join) ", joined" else ""})"
         Log.i(TAG, line)
         onMeasured?.let { sink -> runCatching { sink(line) } }
-        if (useCache) {
-            runCatching {
-                cached.parentFile?.mkdirs()
-                cached.writeBytes(toBytes(levels))
-            }.onFailure { Log.w(TAG, "waveform: could not keep it: $it") }
-        }
         return levels
     }
 
@@ -155,12 +263,14 @@ internal object Waveforms {
      */
     fun cached(context: Context, name: String): List<Float>? {
         override?.invoke(name)?.let { return it }
-        return runCatching { fromBytes(cacheFile(context, name).readBytes()) }.getOrNull()
+        remembered(name)?.let { return it }
+        return runCatching { fromBytes(cacheFile(context, name).readBytes()) }.getOrNull()?.also { remember(name, it) }
     }
 
-    /** The stand-in's levels, which need no file: a row draws them at once,
-     *  the first frame (the screenshots, the debug build's invented calls). */
-    fun peek(name: String): List<Float>? = override?.invoke(name)
+    /** The levels to be had without a file: the stand-in's (the screenshots,
+     *  the debug build's invented calls), or those in memory. A row draws
+     *  them at once, the first frame. */
+    fun peek(name: String): List<Float>? = override?.invoke(name) ?: remembered(name)
 
     /**
      * How many decoders at once for a recording [durationUs] long, on a
@@ -364,15 +474,17 @@ internal object Waveforms {
     /** Below this, frames are too quiet to line up by: about -55 dBFS. */
     private const val QUIET_RMS = 60f
 
-    private fun cacheFile(context: Context, name: String): File {
+    internal fun cacheFile(context: Context, name: String): File {
         for (old in OLD_DIRS) {
             val dir = File(context.cacheDir, old)
             if (dir.exists()) runCatching { dir.deleteRecursively() }
         }
-        val hash = MessageDigest.getInstance("SHA-256").digest(name.toByteArray())
-            .take(12).joinToString("") { "%02x".format(it) }
-        return File(File(context.cacheDir, DIR), "$hash.lvl")
+        return File(File(context.cacheDir, DIR), "${hashOf(name)}.lvl")
     }
+
+    private fun hashOf(name: String): String =
+        MessageDigest.getInstance("SHA-256").digest(name.toByteArray())
+            .take(12).joinToString("") { "%02x".format(it) }
 
     /**
      * Each twentieth of a second's loudness - its RMS, in 16-bit units, over
@@ -429,14 +541,20 @@ internal object Waveforms {
     internal fun reduce(frames: FloatArray, n: Int): List<Float> {
         if (frames.isEmpty()) return List(n) { 0f }
         val db = DoubleArray(n) { i ->
-            val from = (i.toLong() * frames.size / n).toInt()
-            val to = min(frames.size, max(from + 1, ((i + 1).toLong() * frames.size / n).toInt()))
             var peak = 0f
-            for (f in from until to) peak = max(peak, frames[f])
+            for (f in slice(i, n, frames.size)) peak = max(peak, frames[f])
             if (peak <= 0f) -120.0 else 20 * log10(peak / 32768.0)
         }
         val top = max(db.max(), TOP_DB)
         return db.map { ((it - FLOOR_DB) / (top - FLOOR_DB)).coerceIn(0.0, 1.0).toFloat() }
+    }
+
+    /** Which of [size] things part [i] of [n] stands for - never none, so
+     *  a part has one when there are fewer things than parts: a level's
+     *  frames here, and a bar's levels in the player (loudestIn). */
+    internal fun slice(i: Int, n: Int, size: Int): IntRange {
+        val from = (i.toLong() * size / n).toInt()
+        return from until min(size, max(from + 1, ((i + 1).toLong() * size / n).toInt()))
     }
 
     /** A byte a level: what the cache keeps. */
