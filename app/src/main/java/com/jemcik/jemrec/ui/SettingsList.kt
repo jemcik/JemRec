@@ -1,5 +1,9 @@
 package com.jemcik.jemrec.ui
 
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,7 +55,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -59,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.jemcik.jemrec.ui.theme.LocalLook
+import com.jemcik.jemrec.ui.theme.lookMono
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.LookFonts
 import com.jemcik.jemrec.ui.theme.deckColors
@@ -367,7 +371,8 @@ internal fun markTag(mark: HeaderMark) = "mark-${mark.label}-${if (mark.lit) "li
  * Drawn by the header's own composable for the look - MemoMark, DeckMark,
  * MultitrackMark - so it is the header's mark, not a likeness: drawn here
  * apart, Memo's had sat in coloured circles, Multitrack's LED over a smaller
- * label, Deck's in another spacing (the user found it, 2026-10-23). A mark
+ * label, Deck's in another spacing (the user found it, 2026-10-23). Memo's
+ * is drawn larger here, at the rows' icon size (MEMO_MARK_IN_SETTINGS). A mark
  * the header leaves out because it is off is drawn here as off: Memo's
  * faded, Deck's on its LCD's off grey, Multitrack's LED dark, as its header
  * shows them.
@@ -390,7 +395,7 @@ internal fun SettingsMark(mark: HeaderMark) {
             contentAlignment = Alignment.Center,
         ) {
             when (LocalLook.current) {
-                Look.MEMO -> MemoMark(mark, memoColors(), Modifier.alpha(if (mark.lit) 1f else 0.38f))
+                Look.MEMO -> MemoMark(mark, memoColors(), Modifier.alpha(if (mark.lit) 1f else 0.38f), MEMO_MARK_IN_SETTINGS)
                 Look.DECK -> DeckMarkOnLcd(mark)
                 Look.MULTITRACK -> MultitrackMark(mark, multitrackColors())
             }
@@ -415,6 +420,68 @@ private fun DeckMarkOnLcd(mark: HeaderMark) {
         contentAlignment = Alignment.Center,
     ) {
         DeckMark(mark, deckSmall(c, if (mark.lit) c.ink else c.inkOff))
+    }
+}
+
+/**
+ * A label for a button of ButtonPair: one line, shrunk at most to
+ * [SHRINK_AT_MOST] of its size to fit. On two lines it was a block, not a
+ * button - Diagnostics' "Start recorder" in Multitrack's monospace, wider
+ * than the phone's font, on the Honor (2026-10-23).
+ */
+@Composable
+internal fun ButtonLabel(text: String) {
+    val size = MaterialTheme.typography.labelLarge.fontSize
+    Text(
+        text,
+        maxLines = 1,
+        softWrap = false,
+        // Only where its pair said it must: the steps up from the floor do
+        // not land on the full size, and every label came out a shade small.
+        autoSize = if (LocalLabelsShrink.current) TextAutoSize.StepBased(minFontSize = size * SHRINK_AT_MOST, maxFontSize = size) else null,
+    )
+}
+
+/** Whether ButtonPair's labels need to shrink to sit side by side. */
+private val LocalLabelsShrink = staticCompositionLocalOf { false }
+
+/** How far a ButtonLabel may shrink: a little, never as far as large text
+ *  undone - at twice the text size, shrunk to fit beside "Delete", "Record
+ *  again" was half its neighbour's size. */
+private const val SHRINK_AT_MOST = 0.85f
+
+/**
+ * Buttons that share a row at equal width - or, where a label would not fit
+ * its half even shrunk to [SHRINK_AT_MOST], one under the other, each the
+ * full width: at large text a pair stacks, rather than wrap a label onto two
+ * lines or shrink it past reading. [button] draws the [i]th with the
+ * modifier it is given.
+ */
+@Composable
+internal fun ButtonPair(
+    labels: List<String>,
+    modifier: Modifier = Modifier,
+    button: @Composable (i: Int, modifier: Modifier) -> Unit,
+) {
+    val measurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.labelLarge
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val gap = 8.dp
+        // A filled button's own padding, 24 dp a side (Material's
+        // ButtonDefaults.ContentPadding), out of each share.
+        val room = (maxWidth - gap * (labels.size - 1)) / labels.size - 48.dp
+        fun fit(scale: Float) = labels.all { label ->
+            val width = measurer.measure(label, style.copy(fontSize = style.fontSize * scale), maxLines = 1, softWrap = false).size.width
+            with(density) { width.toDp() } <= room
+        }
+        if (fit(SHRINK_AT_MOST)) {
+            CompositionLocalProvider(LocalLabelsShrink provides !fit(1f)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(gap)) { labels.indices.forEach { button(it, Modifier.weight(1f)) } }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(gap)) { labels.indices.forEach { button(it, Modifier.fillMaxWidth()) } }
+        }
     }
 }
 
@@ -510,7 +577,7 @@ internal fun <T> ChoiceDialog(
                                     Text(
                                         it,
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
+                                        fontFamily = lookMono(),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }

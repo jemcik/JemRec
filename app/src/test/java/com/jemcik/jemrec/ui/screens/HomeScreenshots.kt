@@ -62,6 +62,26 @@ class HomeScreenshots : ScreenTest() {
         snap("home-dark")
     }
 
+    // A phone on its side, 800 x 360 dp: the header in a column at the left,
+    // the list beside it at the full height (headerAside).
+    @Config(qualifiers = "w800dp-h360dp-land-hdpi")
+    @Test fun landscape() {
+        home(Fixtures.ready())
+        snap("home-landscape")
+    }
+
+    @Config(qualifiers = "w800dp-h360dp-land-hdpi")
+    @Test fun deckLandscape() {
+        home(Fixtures.ready(), look = deck)
+        snap("deck-landscape")
+    }
+
+    @Config(qualifiers = "w800dp-h360dp-land-night-hdpi")
+    @Test fun multitrackLandscapeDark() {
+        home(Fixtures.ready(), look = multitrack)
+        snap("multitrack-landscape-dark")
+    }
+
     @Test fun withTheSelectionTip() {
         home(Fixtures.ready().copy(selectHintSeen = false))
         snap("home-tip")

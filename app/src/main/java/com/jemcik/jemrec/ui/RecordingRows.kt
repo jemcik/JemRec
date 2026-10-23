@@ -822,15 +822,19 @@ private fun DeckPlaying(recording: Recording, day: Day, state: UiState, vm: Main
 // MULTITRACK: an editor's lane - a clip in the caller's colour - and,
 // playing, the clip opened up across the lane with its transport.
 
-/** A caller's colour: picked by name, so a caller's clips are one colour all
- *  down the list; a bare number's is the neutral one. */
+/** A caller's colour: theirs, so a caller's clips are one colour all down
+ *  the list; a bare number's is the neutral one. */
+@Composable
 internal fun hueOf(recording: Recording, c: MultitrackColors): Color = hueFor(recording.caller, c)
 
-/** The colour for [caller], a name or a number: by name, so the Calls tab's
- *  rows wear the same colour as the caller's recordings. */
+/** The colour for [caller], a name or a number: the one CallerColours gave
+ *  the name, so the Calls tab's rows wear the same colour as the caller's
+ *  recordings - or, not given one yet, the name's hash's. */
+@Composable
 internal fun hueFor(caller: String?, c: MultitrackColors): Color {
-    val name = caller?.takeIf { it.any { ch -> ch.isLetter() } } ?: return c.unknown
-    return c.hues[abs(name.lowercase().hashCode() % c.hues.size)]
+    val name = caller?.takeIf { CallerColours.named(it) } ?: return c.unknown
+    val index = LocalCallerColours.current[CallerColours.keyOf(name)] ?: CallerColours.legacyIndex(name, c.hues.size)
+    return c.hues[index % c.hues.size]
 }
 
 /** Deck's small engraved words: a row's details, the Calls tab's. */

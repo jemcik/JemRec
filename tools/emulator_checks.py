@@ -32,6 +32,13 @@ through the real app and daemon, checking what each one leaves behind:
               recording the rest
   waveform    a call's 800 levels are worked out and kept as it is saved,
               so its row has its waveform the first time it is drawn
+  background-playback  a recording played from its row goes on with the
+              screen off, called only "Call recording" while the phone is
+              locked and by its caller again once unlocked; a call ringing
+              in holds it back, and it plays on once the call is over
+  recently-deleted  a recording deleted is brought back by Restore all in
+              Recently deleted; deleted again, Delete all for good removes
+              it, from Android's own trash as well, its file with it
   looks       the app, started again in Deck (dark), Multitrack and Memo,
               opens in each, its own header drawn
 
@@ -269,7 +276,10 @@ def exact(name_part):
     """Saved, named with [name_part], and as long as Telecom says the call was."""
     packets, _, name = saved()
     seconds = packets * 0.020  # one Opus packet, 20 ms
-    _, _, answered, ended = tracked()[-1]
+    # Waited for: read at once, the app's account came back empty once, the
+    # first call on the Android 12 AVD in a run beside another emulator
+    # (2026-10-24) - the call saved, its end seen, and it passed run again.
+    _, _, answered, ended = wait_for(tracked, 5, "Telecom's account of the call in the app's preferences")[-1]
     talk = (ended - answered) / 1000
     assert name_part in name, f"saved as {name}, wanted {name_part!r} in it"
     assert abs(seconds - talk) <= 0.15, f"{seconds:.2f} s saved for {talk:.2f} s of call"
@@ -590,6 +600,148 @@ def waveform():
     return f"{name}: 800 levels kept"
 
 
+# PlaybackState's states by number: Android 13 and older print the number
+# alone ("state=3"), Android 17 its name too ("state=PLAYING(3)").
+PLAYBACK_STATES = {"0": "NONE", "1": "STOPPED", "2": "PAUSED", "3": "PLAYING", "6": "BUFFERING", "7": "ERROR"}
+
+
+def session():
+    """JemRec's media session as `dumpsys media_session` reports it: its
+    state (PLAYING, PAUSED, ...), position in ms, and title - or None."""
+    for block in sh("dumpsys media_session").split("package=")[1:]:
+        if not block.startswith(PKG):
+            continue
+        state = re.search(r"state=PlaybackState \{state=(?:\w+\()?(\d+)\)?, position=(\d+)", block)
+        title = re.search(r"description=([^,\n]*)", block)
+        if state:
+            return (PLAYBACK_STATES.get(state.group(1), state.group(1)), int(state.group(2)),
+                    title.group(1).strip() if title else "")
+    return None
+
+
+def session_is(state):
+    s = session()
+    return s if s and s[0] == state else None
+
+
+def digits(text):
+    return re.sub(r"\D", "", text or "")
+
+
+def tap_text(digits_in):
+    """Tap the middle of the first node on screen whose text holds [digits_in]."""
+    for m in re.finditer(r'<node [^>]*text="([^"]*)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', ui()):
+        if digits_in in digits(m.group(1)):
+            x1, y1, x2, y2 = (int(v) for v in m.groups()[1:])
+            sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
+            return True
+    return False
+
+
+def background_playback():
+    """Played from its row, a recording goes on in PlaybackService with the
+    screen off, named for the lock screen; a call holds it back."""
+    sh("logcat -c")
+    dial(STRANGER_OUT, ring_s=2, talk_s=30)
+    saved()
+    try:
+        sh(f"am start -n {PKG}/.MainActivity")
+        wait_for(lambda: tap_text(STRANGER_OUT), 30, "the recording's row to tap")
+        wait_for(lambda: session_is("PLAYING"), 10, "the recording to play")
+        sh("input keyevent KEYCODE_SLEEP")
+        time.sleep(2)
+        _, before, title = session()
+        time.sleep(5)
+        state, after, _ = session()
+        assert state == "PLAYING" and after - before >= 4000, \
+            f"with the screen off it went {state}, {before} -> {after} ms in 5 s"
+        assert title == "Call recording", f"with the screen off it is called {title!r}"
+        sh("input keyevent KEYCODE_WAKEUP")
+        sh("wm dismiss-keyguard")
+        wait_for(lambda: STRANGER_OUT in digits((session() or ("", 0, ""))[2]), 10,
+                 "the caller's number back once unlocked")
+        adb("emu", "gsm", "call", STRANGER_IN)
+        wait_for(lambda: session_is("PAUSED"), 15, "a ringing call to hold it back")
+        adb("emu", "gsm", "cancel", STRANGER_IN)
+        wait_for(phone_idle, 15, "the ringing call to end")
+        wait_for(lambda: session_is("PLAYING"), 10, "it to play on after the call")
+    finally:
+        sh(f"am force-stop {PKG}")
+    return f"{after - before} ms played in 5 s with the screen off, as \"{title}\"; held back by a call, then on"
+
+
+def tap(label):
+    """Tap the middle of the first node on screen whose text or content
+    description is [label]."""
+    for node in re.findall(r"<node [^>]*>", ui()):
+        said = re.findall(r'(?:text|content-desc)="([^"]*)"', node)
+        if label in said:
+            x1, y1, x2, y2 = (int(v) for v in re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node).groups())
+            sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
+            return True
+    return False
+
+
+def on_screen(label):
+    return f'"{label}"' in ui()
+
+
+def open_trash():
+    """Recently deleted, reached as a person reaches it: the gear, then its
+    row in Settings, scrolled to."""
+    sh("input keyevent KEYCODE_WAKEUP")
+    sh("wm dismiss-keyguard")
+    sh(f"am force-stop {PKG}")
+    sh(f"am start -n {PKG}/.MainActivity")
+    wait_for(lambda: tap("Settings"), 30, "the Settings gear")
+    width, height = (int(v) for v in re.findall(r"(\d+)x(\d+)", sh("wm size"))[-1])
+    for _ in range(8):
+        if tap("Recently deleted"):
+            return wait_for(lambda: on_screen("Restore all"), 15, "Recently deleted, with Restore all")
+        sh(f"input swipe {width // 2} {height * 3 // 4} {width // 2} {height // 4} 300")
+        time.sleep(0.5)
+    raise TimeoutError("Recently deleted in Settings")
+
+
+def recently_deleted():
+    """A recording moved to Recently deleted (the debug build's diag 'trash',
+    as the list's delete moves it) comes back with Restore all, tapped there;
+    moved again, Delete all for good and its question remove it - from
+    MediaStore's trash, which Robolectric cannot run, and its file with it."""
+    sh("logcat -c")
+    dial(STRANGER_OUT, ring_s=2, talk_s=4)
+    _, _, name = saved()
+
+    def where(move=False):
+        said = diag("trash", "--es", "name", name, *(("--ez", "move", "true") if move else ()))
+        m = re.search(r"listed=(\w+) trashed=(\w+)", said)
+        assert m, said
+        return (m.group(1) == "true", m.group(2) == "true"), said
+
+    def files():
+        return [f for f in sh(f"ls -a {RECORDINGS}/").split() if name in f]
+
+    try:
+        place, said = where(move=True)
+        assert place == (False, True), f"not moved to the trash: {said}"
+        open_trash()
+        tap("Restore all")
+        wait_for(lambda: where()[0] == (True, False), 20, "Restore all to bring it back")
+        assert files() == [name], f"restored, its files are {files()}"
+        place, said = where(move=True)
+        assert place == (False, True), f"not moved to the trash again: {said}"
+        trashed = files()
+        open_trash()
+        tap("Delete all for good")
+        wait_for(lambda: on_screen("Delete for good"), 10, "the question")
+        tap("Delete for good")
+        wait_for(lambda: where()[0] == (False, False), 20, "Delete all for good to remove it")
+        assert not files(), f"deleted for good, its files are {files()}"
+    finally:
+        sh(f"am force-stop {PKG}")
+    return f"restored by Restore all; deleted for good, {trashed[0] if trashed else '?'} gone"
+
+
 # What each look's header shows uiautomator, with the recorder ready. Deck's
 # and Multitrack's headers are one sentence to a screen reader (headerSpeech),
 # Memo's its own words; Multitrack's tabs are in capitals.
@@ -626,7 +778,8 @@ def self_test():
 
 CHECKS = [ringing, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
-          answer_after_emergency, answer_takeover_ask_first, waveform, looks]
+          answer_after_emergency, answer_takeover_ask_first, waveform, background_playback,
+          recently_deleted, looks]
 
 
 def nothing_pending():

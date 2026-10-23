@@ -19,7 +19,7 @@ this one is - or to check that it does what it says.
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
   [messenger calls](#messenger-calls) · [the answering machine](#the-answering-machine) ·
   [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
-  [three looks](#three-looks) ·
+  [playing in the background](#playing-in-the-background) · [three looks](#three-looks) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [notifications](#after-the-call-and-when-something-is-wrong)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
@@ -179,7 +179,11 @@ calls; JemRec's service does none of that and shows no screen. (The
 recorder's doing, under the shell's own permissions: it answers, mutes and hangs
 up the calls it takes messages on, and nothing else.) It is on unless you
 turn it off in Settings (*Exact call tracking*). Off, the daemon takes the
-permission back and JemRec works exactly as it did before 0.14. JemRec keeps
+permission back and JemRec works exactly as it did before 0.14. The answering
+machine answers on tracking's word, so it goes off with it: with the machine
+on, the switch first asks *Turn off the answering machine too?* - until 0.19
+it turned the machine off without a word (the user found it, 2026-10-24) - and
+the machine's row in Settings then says it is off for want of tracking. JemRec keeps
 what Android said about the last 40 calls - when each began, was answered and
 ended, which way it went, and the number only with the call-log permission.
 
@@ -462,6 +466,14 @@ a trap. One that is on stays, so it can be turned off. Whether a chip is
 drawn and what it leaves are one rule in the code, so a chip offered never
 leaves something other than it promised.
 
+A narrowed list says so. A line under the chips names what narrows it - each
+lit chip, what is typed - with how many of how many are shown, and *Show all*
+turns every chip off and folds the search away; and a chip lit past the
+row's edge is scrolled into view as the screen opens. On the Honor
+(2026-10-23) Messages was lit off the screen's edge and the list showed 2 of
+52 with nothing saying why: recordings that seemed gone. The row's chips
+cannot all be in view on a phone with three messengers; the line can.
+
 ## Playing a recording
 
 A recording plays inside the app, never handed to another: the first version
@@ -499,6 +511,55 @@ packet at a time with one decoder, 6.9 s joined, and 2.5 s joined four at
 once; a 58-second call, 1.0 s and then 0.14 s. Drawn, the bars match the one
 decoder's within 10%.
 
+## Playing in the background
+
+A recording plays on with the screen off and the app out of sight, under the
+phone's own media controls - the notification, Quick Settings, the lock
+screen, a headset's buttons - and, on the Honor, in MagicOS's pill at the top
+of the screen. It is Android's documented route: a Media3 media session in a
+foreground service of the media-playback type (`PlaybackService`), with
+nothing Honor-specific. Measured with a probe, 2026-10-23: on the Honor
+(MagicOS 11) the pill showed it from the standard session alone, and it
+played 59.2 s in 60.3 s with the screen off; on the Android 17 emulator it
+played on as well. An emulator check plays a recording from its row and
+holds all of this below on each release AVD.
+
+- **No caller on the lock screen.** The controls name the caller once the
+  phone is unlocked, and say only *Call recording* while it is locked: a lock
+  screen is read by whoever holds the phone, and with Media3's defaults the
+  Honor's showed the name. One session feeds every surface, so the session
+  itself is renamed as the screen goes off and as the phone is unlocked; a
+  Bluetooth device or a car sees the same. The unlock is SystemUI's
+  `USER_PRESENT`, and SystemUI is an app, so its receiver is exported -
+  registered not exported, it never heard the unlock on the Honor and the
+  name did not come back; the broadcast is protected, so no other app can
+  send it. Measured on the Honor, 2026-10-23: *Call recording* on the lock
+  screen, the name again within two seconds of unlocking.
+- **The same player.** Recordings still play with `MediaPlayer` - its exact
+  seeking, measured, kept - wrapped for the session (`SessionPlayer`). The
+  session alone added 0.56 MB to the release APK; ExoPlayer would have added
+  1.54 MB (9.19 MB before, measured). So what ExoPlayer does by itself is
+  written out (`PlaybackRules`), from Android's audio-focus guide: a ringing
+  call holds it back and it plays on after; another app taking the audio
+  pauses it until you play it again; asked to duck, speech pauses instead,
+  so no word is missed; headphones coming out pause it, so a call never
+  moves to the loudspeaker by itself. During a call it does not start -
+  Android refuses it the audio - and the app says so.
+- **Who may use it.** Android lets any app ask to connect to a session. JemRec
+  alone chooses what plays; the system's controls, and apps the user lets read
+  notifications - which see the media notification anyway - may play, pause
+  and seek; any other app is turned away. Playback resumption, the system's
+  offer to start the last recording again after a reboot, is off: it would
+  name a caller.
+- **It no longer pauses when you leave.** Until 0.19 a recording paused when
+  the app went out of sight, and on another tab or in Settings: the row's
+  player was its only control, and one left playing in a pocket could not
+  have been stopped. With the system's controls it plays on. The end still
+  rewinds to the start, paused; swiping JemRec away in Recents leaves a
+  playing recording playing, as music apps do; the notification's pause, or
+  the row's chevron, stops it. Reopened while it plays, the app shows it
+  where it is, waveform and all.
+
 ## Three looks
 
 The app comes in three looks, picked in Settings → Theme: **Memo**, the
@@ -527,9 +588,47 @@ tapped or heard by a screen reader - both held by tests - or focused.
 
 The looks' type is four fonts in the APK, unmodified from
 [Google Fonts](https://github.com/google/fonts) under the SIL Open Font
-Licence ([NOTICE.md](../NOTICE.md)): Doto for Deck's LCD word, Share Tech Mono
-for Deck's smaller print, JetBrains Mono for Multitrack's readouts and Space
-Grotesk for its names. They grew the APK from 8.83 to 9.13 MB.
+Licence ([NOTICE.md](../NOTICE.md)): Doto for Deck's LCD word and Share Tech
+Mono for everything else in Deck, its names and keys included; Space Grotesk
+for Multitrack's names and titles and JetBrains Mono for the rest of it. They
+grew the APK from 8.83 to 9.13 MB. Each look's theme carries its type for
+every screen drawn in Material's text styles - Settings' screens, Recently
+deleted, the dialogs and sheets - not only for the look's own pieces: until
+0.19 those were in the phone's font in every look, and Deck's names and its
+Recordings and Calls keys with them (the user found it, 2026-10-23).
+
+Multitrack gives each caller a colour of their own, and keeps it. By the
+name's hash alone, two callers shared one of its six colours one time in six
+- on the Honor the user's two most frequent callers were both blue. Now a
+caller seen for the first time gets the colour fewest of the callers in the
+lists have (most frequent first, when many are new at once), so the first six
+are six colours, and the colour stays theirs. What is kept is a one-way key -
+the first 12 hex digits of the SHA-256 of the name - and the colour's number,
+in private storage that no backup takes. Colours are given only while
+Multitrack is the look, and kept after a change of look, so a caller's colour
+is still theirs on the way back; uninstalling deletes them.
+
+None of Share Tech Mono, Space Grotesk or Doto has Cyrillic (0 of the 64
+letters each, read from their character maps), so Android drew a Cyrillic
+name in the phone's font. Deck's face is now a chain Android builds
+(`Typeface.CustomFallbackBuilder`): Share Tech Mono, then JetBrains Mono at
+weight 400 for Cyrillic - every Ukrainian letter and the apostrophe U+02BC,
+and Share Tech Mono's weight (a capital's stem 0.123 of its cap height, to
+0.125) - then the phone's monospace. Of eight candidates drawn on the Honor
+the user picked it; Anonymous Pro, as wide as Share Tech Mono, drew Cyrillic
+visibly lighter (0.102). Multitrack's Cyrillic names stay in the phone's
+sans, close to Space Grotesk's shapes - the user's choice.
+
+On a phone on its side - a window under 480 dp tall, Android's compact
+height, and wider than it is tall - home's header becomes a side panel at the
+left, at its portrait width, its ground the full height: the state at the
+top, the list's chips and search in the middle, named there (the row has room
+only for icons), and the tabs at the foot, under the left thumb. The list
+beside it takes the full height, with no chip row of its own.
+On top, the header and the chips took half a landscape screen and left about
+one row in view (800 x 360 dp, every look). Android's window size classes put
+"99.78% of phones in landscape" in compact height, and show the top app bar
+only from medium height up in their example; the width is where the room is.
 
 ## Keeping, deleting and cleaning up
 
@@ -542,7 +641,13 @@ Grotesk for its names. They grew the APK from 8.83 to 9.13 MB.
   folder you chose, the file is renamed the way Android's trash names it
   (`.trashed-<expiry>-<name>`, hidden from most file managers, with any `@`
   written `%40` so Honor's Phone app stops offering it), and JemRec removes
-  it when the 30 days are up.
+  it when the 30 days are up. Recently deleted restores one at a time, or
+  all at once (*Restore all*), and *Delete all for good* empties it now,
+  after a question saying it cannot be undone - wherever each waits, with
+  Android's own dialog for a file it does not count as JemRec's. Until 0.19
+  only time emptied it, by choice; the user asked for both (2026-10-23). An
+  emulator check taps both in the real screen and finds the file gone from
+  Android's trash and the disk; Robolectric has no MediaStore to try it on.
 - **Auto-delete** - off until you choose. It removes recordings older than 30
   days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30
   seconds - wrong numbers, hang-ups. A short call is caught as it is saved,
@@ -597,6 +702,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
+| `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | To play a recording on with the screen off, in `PlaybackService` ([playing in the background](#playing-in-the-background)). It plays; it never records. |
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |

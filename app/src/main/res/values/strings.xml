@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">JemRec</string>
+    <!-- The notification channel of a recording playing in the background. -->
+    <string name="playback_channel">Playing a recording</string>
 </resources>

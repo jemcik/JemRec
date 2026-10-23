@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui
 
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -50,15 +51,20 @@ import com.jemcik.jemrec.ui.theme.deckColors
  * One strip in every look (option A of the header redesign, 2026-10-23):
  * the label row over it went, and the 84dp key became 48, which took the
  * header from 245dp to about 130.
+ *
+ * With a [panel] - a phone on its side - the header is the side panel: its
+ * ground the column's full height, the panel under the state, the tabs at
+ * the foot.
  */
 @Composable
-internal fun DeckHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
+internal fun DeckHeader(state: UiState, vm: MainViewModel, answering: Boolean, panel: (@Composable () -> Unit)? = null) {
     val c = deckColors()
     val haptics = LocalHapticFeedback.current
     Column(
         Modifier
             .fillMaxWidth()
-            .deckFace(c)
+            .then(if (panel != null) Modifier.fillMaxHeight() else Modifier)
+            .deckFace(c, aside = panel != null)
             .windowInsetsPadding(BarInsets)
             .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -78,6 +84,7 @@ internal fun DeckHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
             DeckLcd(state, vm, marks(state, answering), c, Modifier.weight(1f))
             SettingsGear(vm, c.icon)
         }
+        panel?.let { PanelMiddle(it) }
         DeckTabs(state, c, Modifier.padding(end = 10.dp)) { haptics.tap(); vm.showTab(it) }
     }
 }
@@ -198,7 +205,9 @@ internal fun DeckMark(mark: HeaderMark, small: TextStyle) {
         modifier = Modifier
             .testTag(markFaceTag(mark))
             .border(1.dp, small.color, RoundedCornerShape(2.dp))
-            .padding(horizontal = 3.dp),
+            // Room inside the box: with none above and below, the border
+            // sat on the letters (the user, on the Honor, 2026-10-23).
+            .padding(horizontal = 4.dp, vertical = 1.dp),
     )
 }
 

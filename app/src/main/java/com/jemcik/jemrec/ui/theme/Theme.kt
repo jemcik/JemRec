@@ -3,6 +3,12 @@ package com.jemcik.jemrec.ui.theme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.isSpecified
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -385,6 +391,63 @@ internal fun schemeFor(look: Look, dark: Boolean): ColorScheme = when (look) {
     Look.MULTITRACK -> if (dark) MultitrackDarkScheme else MultitrackLightScheme
 }
 
+/**
+ * Each look's type for everything drawn in Material's styles - the screens
+ * past Settings' list, the dialogs and sheets, chips, buttons, the empty
+ * lists - as its own pieces have it: Memo the phone's; Deck engraved, Share
+ * Tech Mono, as its keys' legends and its LCD's small print are (Doto stays
+ * the LCD's word alone); Multitrack Space Grotesk for names and titles and
+ * JetBrains Mono for the rest, as its lanes and its Settings rows are. Until
+ * 2026-10-23 only each look's own pieces had its type, and whatever used
+ * Material's styles was in the phone's font in every look: the user found
+ * Deck's names and its Recordings and Calls keys in it.
+ */
+internal fun typographyFor(look: Look): Typography = when (look) {
+    Look.MEMO -> Typography()
+    // No letter spacing added: Material's suits a proportional face, and on a
+    // mono one, every letter already as wide as an m, it spread names out
+    // ("O l i v i a") and put "Exact call tracking" on two lines. Deck's own
+    // styles never added any.
+    Look.DECK -> Typography().inFamilies(names = LookFonts.engraved, rest = LookFonts.engraved, spacing = 0.sp)
+    Look.MULTITRACK -> Typography().inFamilies(names = LookFonts.grotesk, rest = LookFonts.mono)
+}
+
+/** Each look's monospace, for what is set as code - the Diagnostics log, a
+ *  file name's example: the phone's in Memo, Deck's engraved face,
+ *  Multitrack's readouts' face. It was the phone's in every look. */
+@Composable
+internal fun lookMono(): FontFamily = when (LocalLook.current) {
+    Look.MEMO -> FontFamily.Monospace
+    Look.DECK -> LookFonts.engraved
+    Look.MULTITRACK -> LookFonts.mono
+}
+
+/** [names] for the display, headline and title styles and bodyLarge - what
+ *  names a thing; [rest] for the smaller body and the label styles - what
+ *  is said about it, and the buttons'. By role: Material's titleSmall and
+ *  labelLarge are the same style, so telling them apart by their values
+ *  would put the buttons in the names' type. */
+private fun Typography.inFamilies(names: FontFamily, rest: FontFamily, spacing: TextUnit = TextUnit.Unspecified): Typography {
+    fun TextStyle.set(family: FontFamily) = copy(fontFamily = family, letterSpacing = if (spacing.isSpecified) spacing else letterSpacing)
+    return Typography(
+        displayLarge = displayLarge.set(names),
+        displayMedium = displayMedium.set(names),
+        displaySmall = displaySmall.set(names),
+        headlineLarge = headlineLarge.set(names),
+        headlineMedium = headlineMedium.set(names),
+        headlineSmall = headlineSmall.set(names),
+        titleLarge = titleLarge.set(names),
+        titleMedium = titleMedium.set(names),
+        titleSmall = titleSmall.set(names),
+        bodyLarge = bodyLarge.set(names),
+        bodyMedium = bodyMedium.set(rest),
+        bodySmall = bodySmall.set(rest),
+        labelLarge = labelLarge.set(rest),
+        labelMedium = labelMedium.set(rest),
+        labelSmall = labelSmall.set(rest),
+    )
+}
+
 @Composable
 fun JemRecTheme(choice: LookChoice = LookChoice(), content: @Composable () -> Unit) {
     // Worked out here as well as told to Android (Looks): with the phone's
@@ -396,6 +459,6 @@ fun JemRecTheme(choice: LookChoice = LookChoice(), content: @Composable () -> Un
         LightDark.DARK -> true
     }
     CompositionLocalProvider(LocalDark provides dark, LocalLook provides choice.look, LocalLookChoice provides choice) {
-        MaterialTheme(colorScheme = schemeFor(choice.look, dark), content = content)
+        MaterialTheme(colorScheme = schemeFor(choice.look, dark), typography = typographyFor(choice.look), content = content)
     }
 }

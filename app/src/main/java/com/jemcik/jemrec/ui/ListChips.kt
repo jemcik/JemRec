@@ -35,6 +35,30 @@ internal enum class ChipKind { SEARCH, FAVORITES, SOURCE, KEPT, MESSAGES, NOT_RE
 /** A chip; a SOURCE chip says which: [PHONE_SOURCE] or a messenger's tag. */
 internal data class ListChip(val kind: ChipKind, val source: String? = null)
 
+/** A chip's name in words: on the side panel's chips (WordChip), and in the
+ *  line that says what narrows a list (narrowedBy) - one name for both. */
+internal fun chipName(chip: ListChip): String = when (chip.kind) {
+    ChipKind.SEARCH -> "Search"
+    ChipKind.FAVORITES -> "Favourites"
+    ChipKind.SOURCE -> chip.source.let { if (it == PHONE_SOURCE) "Phone" else VoipApps.labelForTag(it) ?: it.orEmpty() }
+    ChipKind.KEPT -> "Kept"
+    ChipKind.MESSAGES -> "Messages"
+    ChipKind.NOT_RECORDED -> "Not recorded"
+}
+
+/**
+ * What narrows a list now, in words, for the line that says so
+ * (NarrowingLine): each lit chip's name, in the row's order, then what is
+ * typed into search, in quotes. Empty when nothing narrows: search open with
+ * nothing typed leaves every row.
+ */
+internal fun narrowedBy(on: Set<ListChip>, query: String): List<String> = buildList {
+    ChipKind.entries.filter { it != ChipKind.SEARCH }.forEach { kind ->
+        on.filter { it.kind == kind }.forEach { add(chipName(it)) }
+    }
+    query.trim().takeIf { it.isNotEmpty() }?.let { add("\u201C$it\u201D") }
+}
+
 /** An item of a list as the chips see it: a recording, or a call. [source]
  *  is null where the list has none to tell apart (the Calls tab: the phone's
  *  call log holds phone calls only). */

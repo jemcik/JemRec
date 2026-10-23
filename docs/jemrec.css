@@ -462,9 +462,6 @@ main.home { max-width: none; padding: 0 0 2rem; }
 }
 .band .card { background: var(--surface); }
 .band .links { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: 1.8rem 0 0; }
-.cards.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-@media (max-width: 62rem) { .cards.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 38rem) { .cards.four { grid-template-columns: minmax(0, 1fr); } }
 
 .faq { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.6fr); gap: 1rem 3.5rem; align-items: start; }
 @media (max-width: 54rem) { .faq { grid-template-columns: minmax(0, 1fr); } }

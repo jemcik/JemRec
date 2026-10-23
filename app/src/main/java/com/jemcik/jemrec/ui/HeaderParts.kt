@@ -1,5 +1,12 @@
 package com.jemcik.jemrec.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -13,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
@@ -65,26 +73,54 @@ import com.jemcik.jemrec.ui.theme.MultitrackColors
  * TopAppBar kept (TopAppBarDefaults.windowInsets, material3 1.4.0: the
  * system bars and the cutout, top and sides). The looks' headers and bars
  * kept the status bar alone, and in landscape the navigation bar covered
- * the gear, Back or the record button at their ends.
+ * the gear, Back or the record button at their ends. Which sides, from
+ * LocalBarSides: the top and both sides, or - home's header in its column at
+ * the left, on a phone on its side - the top and the start alone.
  */
 internal val BarInsets: WindowInsets
     @Composable get() = WindowInsets.systemBars.union(WindowInsets.displayCutout)
-        .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
+        .only(LocalBarSides.current)
+
+/** The sides a bar keeps clear for the system (BarInsets). */
+internal val LocalBarSides = staticCompositionLocalOf { WindowInsetsSides.Horizontal + WindowInsetsSides.Top }
 
 /** Memo's header ground, its tinted band round at the bottom: the home
- *  header's and the Settings bar's, so the two cannot drift apart. */
-internal fun Modifier.memoBand(c: MemoColors) =
-    background(c.head, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+ *  header's and the Settings bar's, so the two cannot drift apart. [aside],
+ *  the side panel of a phone on its side: round at the end, facing the list. */
+internal fun Modifier.memoBand(c: MemoColors, aside: Boolean = false) = background(
+    c.head,
+    if (aside) RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp) else RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+)
 
 /** Deck's, the recorder's face on a 1dp edge: the face is pale on a pale
- *  page in light, and needs a line to end on. */
-internal fun Modifier.deckFace(c: DeckColors): Modifier {
-    val shape = RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp)
-    return background(c.faceEdge, shape).padding(bottom = 1.dp).background(c.face, shape)
+ *  page in light, and needs a line to end on - at the end, [aside]. */
+internal fun Modifier.deckFace(c: DeckColors, aside: Boolean = false): Modifier {
+    val shape = if (aside) RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp) else RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp)
+    return background(c.faceEdge, shape).padding(if (aside) PaddingValues(end = 1.dp) else PaddingValues(bottom = 1.dp)).background(c.face, shape)
 }
 
-/** Multitrack's, the editor's panel on its line. */
-internal fun Modifier.multitrackPanel(c: MultitrackColors) = background(c.panel).lineUnder(c.line)
+/** Multitrack's, the editor's panel on its line - along its end, [aside]. */
+internal fun Modifier.multitrackPanel(c: MultitrackColors, aside: Boolean = false) =
+    background(c.panel).then(if (aside) Modifier.lineAtEnd(c.line) else Modifier.lineUnder(c.line))
+
+/** A 1dp line down the end edge: Multitrack's side panel ends on it. */
+internal fun Modifier.lineAtEnd(color: Color) = drawBehind {
+    val x = if (layoutDirection == LayoutDirection.Ltr) size.width else 0f
+    drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+}
+
+/**
+ * The side panel's middle, between the state and the tabs: the list's chips
+ * and search (NarrowingPanel), taking the height there is and scrolling
+ * when they need more, so the tabs keep the panel's foot - under the left
+ * thumb of a phone held on its side. Option B of the landscape sketches,
+ * the user's pick (2026-10-23): the column under a header on top of it had
+ * been two-thirds empty on the Honor.
+ */
+@Composable
+internal fun ColumnScope.PanelMiddle(content: @Composable () -> Unit) {
+    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) { content() }
+}
 
 /** A 1dp line along the bottom: what Multitrack's panels and lanes end on. */
 internal fun Modifier.lineUnder(color: Color) = drawBehind {
@@ -178,8 +214,8 @@ internal fun Modifier.domed(colors: List<Color>): Modifier = drawBehind {
 
 /** An LED: [color], with a soft glow round it when [glow]. */
 @Composable
-internal fun Led(color: Color, size: Dp = 7.dp, glow: Boolean = true) {
-    Box(Modifier.size(size).drawBehind { drawLed(color, glow) })
+internal fun Led(color: Color, modifier: Modifier = Modifier, size: Dp = 7.dp, glow: Boolean = true) {
+    Box(modifier.size(size).drawBehind { drawLed(color, glow) })
 }
 
 private fun DrawScope.drawLed(color: Color, glow: Boolean) {

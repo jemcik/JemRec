@@ -6,6 +6,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
+import java.util.Locale
+import com.jemcik.jemrec.capture.Recording
+import android.net.Uri
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -66,6 +71,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import com.jemcik.jemrec.ui.AppScaffold
+import com.jemcik.jemrec.ui.answerSummary
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.ChoiceDialog
 import com.jemcik.jemrec.ui.ConnectedChoices
@@ -87,6 +93,11 @@ import com.jemcik.jemrec.ui.headerMarks
 import com.jemcik.jemrec.ui.markTag
 import com.jemcik.jemrec.ui.RecorderStatus
 import com.jemcik.jemrec.ui.markFaceTag
+import com.jemcik.jemrec.ui.RecordingsNarrowing
+import com.jemcik.jemrec.ui.headerAside
+import com.jemcik.jemrec.ui.MEMO_MARK_IN_SETTINGS
+import com.jemcik.jemrec.ui.markGlyphTag
+import com.jemcik.jemrec.ui.HeaderMark
 import com.jemcik.jemrec.ui.marks
 import com.jemcik.jemrec.ui.recorderStatus
 import androidx.compose.ui.geometry.Offset
@@ -173,24 +184,160 @@ class BehaviourTest : ScreenTest() {
         compose.onAllNodesWithText("Tap a photo, or press and hold a call, to select recordings").assertCountEquals(0)
     }
 
-    @Test fun playbackPausesWhenItsControlsLeaveTheScreen() {
-        // The scrubber under the row is the only control; another tab or
-        // Settings takes it off the screen, so the playing stops there too -
-        // paused, with its place kept.
+    /** Opening search leaves a scrolled list where it was. On the Honor
+     *  (2026-10-23) both lists jumped to the top as the field opened. */
+    @Test fun openingSearchLeavesTheRecordingsWhereTheyWere() {
+        val many = (0 until 40).map { i ->
+            Recording(
+                name = "202610%02d_1200%02d_in.ogg".format(Locale.US, 20 - i / 10, i % 60),
+                uri = Uri.parse("jemrec-test://$i"),
+                whenLabel = "",
+                incoming = true,
+                durationLabel = "1:00",
+                sizeLabel = "1.0 MB",
+                caller = "Caller $i",
+            )
+        }
+        showApp(viewModel(Fixtures.ready().copy(recordings = many)))
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(14)
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Caller 0").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Search recordings").performClick()
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Caller 0").assertCountEquals(0)
+    }
+
+    @Test fun openingSearchLeavesTheCallsWhereTheyWere() {
+        val many = (0 until 40).map { i ->
+            Fixtures.calls().first().copy(at = Fixtures.calls().first().at - i * 3_600_000L, label = "Caller $i", recording = null)
+        }
+        showApp(viewModel(Fixtures.ready().copy(homeTab = HomeTab.CALLS, calls = many)))
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(14)
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Caller 0").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Search calls").performClick()
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Caller 0").assertCountEquals(0)
+    }
+
+    /** On a phone on its side the header is beside the list: the rows begin
+     *  right of the gear, and the list starts at the top, not under it. */
+    @Config(qualifiers = "w800dp-h360dp-land-hdpi")
+    @Test fun onAPhoneOnItsSideTheHeaderIsBesideTheList() {
+        showApp(viewModel(Fixtures.ready()))
+        val gear = compose.onNodeWithContentDescription("Settings").fetchSemanticsNode().boundsInRoot
+        val row = compose.onNodeWithText("Olivia Bennett").fetchSemanticsNode().boundsInRoot
+        assertTrue("the row begins right of the header: $row, gear $gear", row.left > gear.right)
+        assertTrue("the row is higher than under a header on top: $row", row.top < gear.bottom + 200f)
+    }
+
+    /** On its side, the chips are in the panel with their names, the list
+     *  has none of its own, and Search opens its field there. */
+    @Config(qualifiers = "w800dp-h360dp-land-hdpi")
+    @Test fun onAPhoneOnItsSideTheChipsAreNamedInThePanel() {
+        val vm = viewModel(Fixtures.ready())
+        showApp(vm)
+        compose.onNodeWithText("Favourites").assertIsDisplayed()
+        // One set of chips: the row's icon-only search is not drawn as well.
+        compose.onAllNodesWithContentDescription("Search recordings").assertCountEquals(0)
+        compose.onNodeWithText("Search").performClick()
+        compose.waitForIdle()
+        assertTrue(vm.state.value.recordingsNarrowing.searchOpen)
+        compose.onNodeWithText("Search by name or number").assertIsDisplayed()
+        compose.onNodeWithText("Kept").performClick()
+        compose.waitForIdle()
+        assertTrue(vm.state.value.recordingsNarrowing.kept)
+    }
+
+    /** A narrowed list says so - what narrows it, how many of how many - and
+     *  Show all brings every recording back: a lit chip could be past the
+     *  row's edge, and the list showed 2 of 52 with nothing saying why. */
+    @Test fun aNarrowedListSaysSoAndShowAllBringsEveryRecordingBack() {
+        val vm = viewModel(Fixtures.ready().copy(recordingsNarrowing = RecordingsNarrowing(kept = true)))
+        showApp(vm)
+        val all = Fixtures.recordings()
+        compose.onNodeWithText("Kept · ${all.count { it.kept }} of ${all.size}").assertIsDisplayed()
+        compose.onNodeWithText("Show all").performClick()
+        compose.waitForIdle()
+        assertEquals(RecordingsNarrowing(), vm.state.value.recordingsNarrowing)
+        compose.onAllNodesWithText("Show all").assertCountEquals(0)
+    }
+
+    @Test fun aNarrowedCallsListSaysSoToo() {
+        val vm = viewModel(Fixtures.ready().copy(homeTab = HomeTab.CALLS, callsNarrowing = CallsNarrowing(favorites = true)))
+        showApp(vm)
+        val calls = Fixtures.calls()
+        compose.onNodeWithText("Favourites · ${calls.count { it.favorite }} of ${calls.size}").assertIsDisplayed()
+        compose.onNodeWithText("Show all").performClick()
+        compose.waitForIdle()
+        assertEquals(CallsNarrowing(), vm.state.value.callsNarrowing)
+    }
+
+    /** A chip lit past the row's edge is brought into view as the screen
+     *  opens: on the Honor, Messages was lit off the screen. */
+    @Test fun aLitChipPastTheRowsEdgeIsBroughtIntoView() {
+        val more = listOf("telegram", "viber", "signal").mapIndexed { i, app ->
+            Fixtures.recordings()[1].copy(name = "2026101${i}_120000_in_$app.ogg")
+        } + Fixtures.recordings()[0].copy(name = "20261009_100000_in.ogg", message = true)
+        val state = Fixtures.ready().copy(
+            recordings = Fixtures.recordings() + more,
+            recordingsNarrowing = RecordingsNarrowing(messages = true),
+        )
+        showApp(viewModel(state))
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Only messages").assertIsDisplayed()
+    }
+
+    @Test fun whenTheHeaderGoesBesideTheList() {
+        assertTrue("a phone on its side", headerAside(widthDp = 800, heightDp = 360))
+        assertFalse("a phone upright", headerAside(widthDp = 360, heightDp = 800))
+        assertFalse("a tablet on its side: room for the header on top", headerAside(widthDp = 1280, heightDp = 800))
+        assertFalse("a square window of compact height", headerAside(widthDp = 400, heightDp = 400))
+    }
+
+    /** Recently deleted's two buttons; Delete all for good asks first, and
+     *  Cancel leaves everything as it was. */
+    @Test fun recentlyDeletedRestoresAllOrDeletesAllForGoodOnceAsked() {
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.TRASH, trashed = Fixtures.trashed()))
+        showApp(vm)
+        compose.onNodeWithText("Restore all").assertIsDisplayed()
+        compose.onNodeWithText("Delete all for good").performClick()
+        compose.onNodeWithText("Delete all 3 for good?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitForIdle()
+        assertFalse(vm.state.value.confirmingEmptyTrash)
+        compose.onAllNodesWithText("Delete all 3 for good?").assertCountEquals(0)
+        assertEquals(3, vm.state.value.trashed.size)
+    }
+
+    @Test fun anEmptyRecentlyDeletedOffersNeither() {
+        showApp(viewModel(Fixtures.ready().copy(screen = Screen.TRASH)))
+        compose.onAllNodesWithText("Restore all").assertCountEquals(0)
+        compose.onAllNodesWithText("Delete all for good").assertCountEquals(0)
+    }
+
+    @Test fun playbackGoesOnWhenItsRowLeavesTheScreen() {
+        // Until 0.19 another tab, Settings or Recently deleted paused it: the
+        // row's player was its only control. Now the system's media controls
+        // are there too (PlaybackService), so it plays on, its place kept.
         val playing = Fixtures.playing(positionMs = 60_000, waveform = null).copy(homeTab = HomeTab.CALLS)
         viewModel(playing).let { vm ->
             vm.showTab(HomeTab.RECORDINGS)
-            assertFalse("another tab", vm.state.value.playing)
+            assertTrue("another tab", vm.state.value.playing)
             assertEquals("its place kept", 60_000, vm.state.value.positionMs)
             assertEquals(playing.playingName, vm.state.value.playingName)
         }
         viewModel(playing).let { vm ->
             vm.showSettings()
-            assertFalse("Settings", vm.state.value.playing)
+            assertTrue("Settings", vm.state.value.playing)
         }
         viewModel(playing).let { vm ->
             vm.showTrash()
-            assertFalse("Recently deleted", vm.state.value.playing)
+            assertTrue("Recently deleted", vm.state.value.playing)
+        }
+        viewModel(playing).let { vm ->
+            vm.screenHidden()
+            assertTrue("the app out of sight", vm.state.value.playing)
         }
     }
 
@@ -227,6 +374,38 @@ class BehaviourTest : ScreenTest() {
         compose.onNodeWithText("Answer again").performClick()
         assertEquals(null, vm.answer.state.value.pausedUntil)
         compose.onNodeWithText("Answer again now").assertDoesNotExist()
+    }
+
+    @Test fun trackingOffWithTheMachineOnIsAskedAboutFirst() {
+        // It turned the answering machine off without a word (the user,
+        // 2026-10-24).
+        val state = Fixtures.ready().copy(screen = Screen.SETTINGS)
+        val vm = viewModel(state, AnswerUi(enabled = true, greetingSeconds = 6.0))
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Exact call tracking").performScrollTo().performClick()
+        compose.onNodeWithText("Turn off the answering machine too?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        assertTrue(vm.state.value.callTracking)
+        assertTrue(vm.answer.state.value.enabled)
+        // Asked again, and said yes to: both off.
+        compose.onNodeWithText("Exact call tracking").performClick()
+        compose.onNodeWithText("Turn both off").performClick()
+        assertFalse(vm.state.value.callTracking)
+        assertFalse(vm.answer.state.value.enabled)
+    }
+
+    @Test fun trackingOffWithTheMachineOffIsNotAsked() {
+        val state = Fixtures.ready().copy(screen = Screen.SETTINGS)
+        val vm = viewModel(state, AnswerUi(enabled = false))
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Exact call tracking").performScrollTo().performClick()
+        compose.onNodeWithText("Turn off the answering machine too?").assertDoesNotExist()
+        assertFalse(vm.state.value.callTracking)
+    }
+
+    @Test fun theMachineOffForWantOfTrackingSaysWhy() {
+        assertEquals("Off - needs exact call tracking", answerSummary(AnswerUi(callTracking = false)))
+        assertEquals("Off", answerSummary(AnswerUi()))
     }
 
     @Test fun theTileRowSaysWhenTheTileIsInThePanel() {
@@ -314,19 +493,26 @@ class BehaviourTest : ScreenTest() {
     private fun marksDrawnAlike(look: Look) {
         val vm = viewModel(Fixtures.ready(), AnswerUi(enabled = true))
         showApp(vm, look = LookChoice(look))
+        // Memo's marks are measured by their dot or icon, which Settings
+        // draws larger; the others whole, which it draws at the header's size.
+        val tagOf = { mark: HeaderMark -> if (look == Look.MEMO) markGlyphTag(mark) else markFaceTag(mark) }
         val inHeader = headerMarks(marks(Fixtures.ready(), answering = true), RecorderStatus.READY)
             .mapNotNull { mark ->
                 // Twice in the header, each line laying out what it can show
                 // unseen (SteadyLine): the same composable, one size.
-                compose.onAllNodesWithTag(markFaceTag(mark), useUnmergedTree = true).fetchSemanticsNodes()
-                    .firstOrNull()?.let { markFaceTag(mark) to it.size }
+                compose.onAllNodesWithTag(tagOf(mark), useUnmergedTree = true).fetchSemanticsNodes()
+                    .firstOrNull()?.let { tagOf(mark) to it.size }
             }
         assertTrue("$look: the header shows marks", inHeader.size >= 3)
         compose.runOnUiThread { vm.showSettings() }
         compose.waitForIdle()
+        // Memo's icons are the header's drawn larger, at the rows' icon size;
+        // the others the header's own size.
+        val scale = if (look == Look.MEMO) MEMO_MARK_IN_SETTINGS else 1f
         for ((tag, size) in inHeader) {
             val inSettings = compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo().fetchSemanticsNode().size
-            assertEquals("$look $tag", size, inSettings)
+            assertEquals("$look $tag width", size.width * scale, inSettings.width.toFloat(), 1.5f)
+            assertEquals("$look $tag height", size.height * scale, inSettings.height.toFloat(), 1.5f)
         }
     }
 

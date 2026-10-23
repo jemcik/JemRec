@@ -232,6 +232,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.core:core-ktx:1.19.0")
 
+    // Playing a recording with the screen off: a media session in a service,
+    // Android's documented route, under the system's media controls. The
+    // session alone, not ExoPlayer: recordings still play with MediaPlayer
+    // (capture/SessionPlayer.kt). Measured on the release APK, 2026-10-23:
+    // 9.19 MB -> 9.75 MB with it; ExoPlayer as well would have made 10.73.
+    implementation("androidx.media3:media3-session:1.11.1")
+
     // Keeps the shell-side recorder alive without a permanent foreground
     // service: a periodic job revives it when it is down and Wi-Fi is around.
     implementation("androidx.work:work-runtime-ktx:2.9.1")

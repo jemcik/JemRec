@@ -4,6 +4,8 @@ import com.jemcik.jemrec.capture.AnswerDiagnostics
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.Screen
+import com.jemcik.jemrec.ui.theme.Look
+import com.jemcik.jemrec.ui.theme.LookChoice
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -22,10 +24,10 @@ class AnswerScreenshots : ScreenTest() {
         permissions = true, inCallMusic = true, screening = true, describe = "HONOR BKQ-N49 (SM8850) Android API 37",
     )
 
-    private fun answering(answer: AnswerUi, fontScale: Float = 1f) {
+    private fun answering(answer: AnswerUi, fontScale: Float = 1f, look: LookChoice = LookChoice()) {
         val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
         val vm = viewModel(state, answer)
-        show(fontScale) { AppScaffold(state, vm) }
+        show(fontScale, look) { AppScaffold(state, vm) }
     }
 
     private val ready = AnswerUi(
@@ -41,6 +43,20 @@ class AnswerScreenshots : ScreenTest() {
     @Test fun readyAndOn() {
         answering(ready)
         snap("answering")
+    }
+
+    // In Deck and Multitrack: a screen drawn in Material's styles, so in each
+    // look's type through its theme (typographyFor), as their own pieces are.
+    @Config(qualifiers = "+h1700dp")
+    @Test fun readyAndOnInDeck() {
+        answering(ready, look = LookChoice(Look.DECK))
+        snap("answering-deck")
+    }
+
+    @Config(qualifiers = "+h1700dp-night")
+    @Test fun readyAndOnInMultitrackDark() {
+        answering(ready, look = LookChoice(Look.MULTITRACK))
+        snap("answering-multitrack-dark")
     }
 
     @Config(qualifiers = "+h1700dp-night")

@@ -1,6 +1,13 @@
 package com.jemcik.jemrec.ui.theme
 
+import android.content.Context
+import android.graphics.Typeface
+import android.graphics.fonts.Font as AndroidFontFile
+import android.graphics.fonts.FontFamily as AndroidFontFamily
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.font.AndroidFont
+import androidx.compose.ui.text.font.FontLoadingStrategy
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
@@ -239,7 +246,20 @@ fun multitrackColors(): MultitrackColors = if (LocalDark.current) MultitrackDark
  */
 object LookFonts {
     val lcd: FontFamily = variable(R.font.doto, FontWeight.Bold, FontWeight.Black)
-    val engraved: FontFamily = FontFamily(Font(R.font.share_tech_mono))
+
+    /** Share Tech Mono alone: what [engraved] falls back to where its chain
+     *  cannot be built. */
+    val engravedLatin: FontFamily = FontFamily(Font(R.font.share_tech_mono))
+
+    /** Deck's engraved face, Cyrillic included: each weight is the chain
+     *  (EngravedChain), Android's bold faked from its one weight for SemiBold
+     *  and Bold as Compose's synthesis did; plain Share Tech Mono last, for
+     *  wherever the chain cannot be built. */
+    val engraved: FontFamily = FontFamily(
+        listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map(::EngravedFont) +
+            Font(R.font.share_tech_mono),
+    )
+
     val mono: FontFamily = variable(
         R.font.jetbrains_mono, FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold,
     )
@@ -252,4 +272,56 @@ object LookFonts {
             Font(res, weight = weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
         },
     )
+}
+
+/**
+ * Deck's engraved face as Android draws it, a chain: Share Tech Mono, which
+ * has no Cyrillic (0 of the 64 letters, read from its character map,
+ * 2026-10-23); then JetBrains Mono at weight 400 for Cyrillic; then the
+ * phone's monospace. Before it a Cyrillic name was drawn in the phone's own
+ * font among Deck's mono ones (found on the Honor). JetBrains Mono at 400 has
+ * Share Tech Mono's weight - a capital's stem 0.123 of its cap height to
+ * Share Tech Mono's 0.125 - and every Ukrainian letter, the apostrophe U+02BC
+ * included. Anonymous Pro, first chosen for its width (102% of Share Tech
+ * Mono's), drew Cyrillic visibly lighter on the Honor, its stem 0.102; of
+ * eight samples drawn on the phone the user picked this one, 11% wider, and
+ * already in the APK. A chain is Android's, not Compose's
+ * (Typeface.CustomFallbackBuilder, API 29+), so each weight of
+ * LookFonts.engraved is an AndroidFont whose loader builds it - once a
+ * process - from the app's resources. Wrapped as a whole typeface instead,
+ * Compose ignored the weight asked for, and Deck's lit key lost its bold.
+ */
+private object EngravedChain : AndroidFont.TypefaceLoader {
+
+    @Volatile
+    private var chain: Typeface? = null
+
+    private fun chain(context: Context): Typeface = chain ?: synchronized(this) {
+        chain ?: run {
+            val res = context.resources
+            fun family(font: AndroidFontFile) = AndroidFontFamily.Builder(font).build()
+            Typeface.CustomFallbackBuilder(family(AndroidFontFile.Builder(res, R.font.share_tech_mono).build()))
+                .addCustomFallback(
+                    family(AndroidFontFile.Builder(res, R.font.jetbrains_mono).setWeight(400).setFontVariationSettings("'wght' 400").build()),
+                )
+                .setSystemFallback("monospace")
+                .build()
+                .also { chain = it }
+        }
+    }
+
+    override fun loadBlocking(context: Context, font: AndroidFont): Typeface? = runCatching {
+        val base = chain(context)
+        if (font.weight == FontWeight.Normal) base else Typeface.create(base, font.weight.weight, false)
+    }.getOrNull()
+
+    override suspend fun awaitLoad(context: Context, font: AndroidFont): Typeface? = loadBlocking(context, font)
+}
+
+/** One weight of Deck's chain, for Compose to pick by weight. */
+private class EngravedFont(override val weight: FontWeight) :
+    AndroidFont(FontLoadingStrategy.OptionalLocal, EngravedChain, FontVariation.Settings()) {
+    override val style: FontStyle = FontStyle.Normal
+    override fun equals(other: Any?) = other is EngravedFont && other.weight == weight
+    override fun hashCode() = weight.hashCode()
 }

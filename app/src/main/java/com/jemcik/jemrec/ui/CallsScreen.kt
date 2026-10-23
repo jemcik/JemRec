@@ -53,7 +53,7 @@ import com.jemcik.jemrec.capture.Recording
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
+fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier, narrowingAside: Boolean = false) {
     val haptics = LocalHapticFeedback.current
     val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
@@ -98,8 +98,8 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
         buildMap { for ((_, rows) in days) for ((key, call) in rows) call.recording?.let { putIfAbsent(it.name, key) } }
     }
     val searchFocus = remember { FocusRequester() }
-    LaunchedEffect(narrowing.searchOpen) {
-        if (narrowing.searchOpen) runCatching { searchFocus.requestFocus() }
+    LaunchedEffect(narrowing.searchOpen, narrowingAside) {
+        if (narrowing.searchOpen && !narrowingAside) runCatching { searchFocus.requestFocus() }
     }
     val listState = rememberLazyListState()
     val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
@@ -116,17 +116,27 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
             // search; pinned and on the list's ground, as there.
             if (state.calls.isNotEmpty()) {
                 stickyHeader {
-                    Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
-                        val on = narrowing.chipsOn()
-                        val chips = remember(state.calls, on) { chipsFor(state.calls.map { it.chipFacts() }, on) }
-                        ListChipRow(chips, on, calls = true) { chip -> haptics.tap(); vm.tapCallsChip(chip) }
-                        AnimatedVisibility(
-                            visible = narrowing.searchOpen,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            ListSearchField(narrowing.query, vm::setCallsQuery, searchFocus, "Search by name or number")
+                    Column(Modifier.keepsItsPlace().background(MaterialTheme.colorScheme.surface)) {
+                        // Beside the list instead, on a phone on its side
+                        // (NarrowingPanel).
+                        if (!narrowingAside) {
+                            val on = narrowing.chipsOn()
+                            val chips = remember(state.calls, on) { chipsFor(state.calls.map { it.chipFacts() }, on) }
+                            ListChipRow(chips, on, calls = true) { chip -> haptics.tap(); vm.tapCallsChip(chip) }
+                            AnimatedVisibility(
+                                visible = narrowing.searchOpen,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut(),
+                            ) {
+                                ListSearchField(narrowing.query, vm::setCallsQuery, searchFocus, "Search by name or number")
+                            }
                         }
+                        NarrowingLine(
+                            narrowedBy(narrowing.chipsOn(), narrowing.query),
+                            shown = shown.size,
+                            of = state.calls.size,
+                            onShowAll = vm::showAllCalls,
+                        )
                         if (scrolled) HorizontalDivider()
                     }
                 }

@@ -308,7 +308,8 @@ replaces it. Callers hear what you said and then a beep, nothing else.
 JemRec records, so **Whose calls to keep** applies to both. It never answers
 while you are on another call - a phone call, a messenger call or a meeting -
 while roaming, or while recording is off, and a caller JemRec cannot identify
-is left to ring. It needs Exact call tracking.
+is left to ring. It needs Exact call tracking: turning tracking off with the
+machine on asks first, then turns both off.
 
 **After you call an emergency number** it stands down for a day, so an
 emergency service calling you back - from any number - rings until you can pick
@@ -370,11 +371,22 @@ then has a plain slider for a moment - about two and a half seconds for a
 30-minute call. The chevron beside it folds the player away. The share button
 offers the original file or a converted copy that plays anywhere.
 
+**With the screen off.** A recording plays on when the screen goes off or you
+leave the app, under the phone's own media controls: in the notifications, in
+Quick Settings, on the lock screen, and on an Honor in the pill at the top of
+the screen. They name the caller only once the phone is unlocked; locked, they
+say **Call recording**. A call ringing in pauses it, and it plays on after;
+headphones coming out pause it until you play it again. It does not start
+during a call. The notification's pause, or the chevron, stops it; swiping
+JemRec away leaves it playing, as music apps do.
+
 **Finding a recording.** The chips above the list narrow it: favourites, the
 phone or a messenger, kept, messages. The magnifier opens a search by name,
 number or time. Chips of one kind add up - WhatsApp and Telegram - and
 different kinds narrow: and favourites. A chip only appears where it would
-narrow the list, and one that is on stays, so you can turn it off.
+narrow the list, and one that is on stays, so you can turn it off. While
+anything narrows the list, a line under the chips says what, and how many of
+how many are shown; **Show all** brings everything back.
 
 To delete, tap a contact's photo or long-press a row to start selecting, tick
 what you want, and use the bin in the toolbar. It asks first and tells you how
@@ -445,7 +457,10 @@ do; a line of what is on - in Memo in words and icons, on Deck's LCD as
 **AUTO** or **ASK**, **ANS**, **MSG** and **DEL** with the age, in Multitrack
 as a row of LEDs, lit for what is on; the gear for Settings; and the
 **Recordings** and **Calls** tabs, Recordings with how many there are. The
-settings the header marks wear the same mark in Settings.
+settings the header marks wear the same mark in Settings. With the phone on its
+side, the header becomes a panel at the left - the chips and search in it, with
+their names, the tabs at its foot - and the list beside it takes the full
+height.
 
 ## Turning JemRec off
 
@@ -521,6 +536,7 @@ And when the app is closed, in notifications:
 | **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. |
 | **Taking a message** | The answering machine has a caller. **Talk to them** takes the call; **Hang up** ends it. |
 | **Message from** the caller | A message, with a sound, Play, Share and Delete. It stays until you dismiss it, whether or not each call is shown when it ends. |
+| The caller, with pause and a seek bar | A recording you played, going on with the screen off. On the lock screen it says only **Call recording**. It goes when the recording is stopped. |
 
 ## Settings
 
@@ -541,7 +557,8 @@ everything still works, with the time as each recording's headline.
 - **Messenger calls** — a switch for each supported messenger installed, and
   whether to show who called from their call notifications.
 - **Exact call tracking** — recordings start at the answer, and calls nobody
-  answered are not kept.
+  answered are not kept. The answering machine needs it: with the machine on,
+  turning it off asks whether to turn both off.
 
 **Look**
 
@@ -558,7 +575,8 @@ everything still works, with the time as each recording's headline.
   shorter than 5, 10 or 30 seconds. Kept recordings are never touched, and
   whatever is removed waits in Recently deleted.
 - **Recently deleted** — what has been deleted in the last 30 days, with
-  **Restore** for each.
+  **Restore** for each, **Restore all**, and **Delete all for good**, which
+  asks first: it cannot be undone.
 
 **Notifications and shortcuts**
 

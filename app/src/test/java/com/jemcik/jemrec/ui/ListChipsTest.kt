@@ -30,6 +30,22 @@ class ListChipsTest {
 
     private fun kinds(chips: List<ListChip>) = chips.map { it.kind }
 
+    @Test fun theNarrowingLineNamesTheLitChipsInTheRowsOrderThenTheSearch() {
+        val on = setOf(
+            ListChip(ChipKind.MESSAGES),
+            ListChip(ChipKind.SOURCE, "whatsapp"),
+            ListChip(ChipKind.FAVORITES),
+            ListChip(ChipKind.SEARCH),
+        )
+        assertEquals(listOf("Favourites", "WhatsApp", "Messages", "\u201Colivia\u201D"), narrowedBy(on, "  olivia "))
+        assertEquals(listOf("Phone"), narrowedBy(setOf(ListChip(ChipKind.SOURCE, PHONE_SOURCE)), ""))
+    }
+
+    @Test fun nothingNarrowsWithNothingLitOrSearchOpenWithNothingTyped() {
+        assertEquals(emptyList<String>(), narrowedBy(emptySet(), ""))
+        assertEquals(emptyList<String>(), narrowedBy(setOf(ListChip(ChipKind.SEARCH)), "   "))
+    }
+
     @Test fun aChipIsDrawnOnlyWhereItLeavesSomeButNotAll() {
         assertTrue(ChipKind.FAVORITES in kinds(chips(facts(favorite = true), facts())))
         // Every one a favourite: the chip would show them all.

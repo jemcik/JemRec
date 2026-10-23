@@ -13,6 +13,17 @@ import android.content.Intent
 import android.content.IntentSender
 import android.net.Uri
 import android.os.SystemClock
+import android.content.ComponentName
+import android.media.AudioManager
+import androidx.core.content.ContextCompat
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.capture.AfterCall
 import com.jemcik.jemrec.capture.MissedCalls
@@ -36,6 +47,7 @@ import com.jemcik.jemrec.capture.NetworkRevive
 import com.jemcik.jemrec.capture.RecorderHealth
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.DeleteResult
+import com.jemcik.jemrec.capture.BulkDeleteResult
 import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.capture.Recordings
 import com.jemcik.jemrec.capture.Transcoder
@@ -43,7 +55,8 @@ import androidx.core.content.FileProvider
 import java.io.File
 import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
-import com.jemcik.jemrec.capture.RecordingPlayer
+import com.jemcik.jemrec.capture.PlaybackRules
+import com.jemcik.jemrec.capture.PlaybackService
 import com.jemcik.jemrec.capture.RecordingStore
 import com.jemcik.jemrec.capture.Trash
 import com.jemcik.jemrec.capture.Waveforms
@@ -205,6 +218,8 @@ data class UiState(
     /** The call log, matched to recordings. Read only while the Calls tab is
      *  showing - it is a query and a contacts lookup per number. */
     val calls: List<CallHistory.Call> = emptyList(),
+    /** Multitrack's caller colours, by name key (CallerColours). */
+    val callerColours: Map<String, Int> = emptyMap(),
     /** Auto-delete's two rules, 0 for off. See Retention. */
     val autoDeleteAfterDays: Int = 0,
     val autoDeleteShorterThan: Int = 0,
@@ -261,6 +276,8 @@ data class UiState(
     val selecting: Boolean = false,
     val selected: Set<String> = emptySet(),
     val confirmingDeleteSelected: Boolean = false,
+    /** Recently deleted's Delete all for good, asked about before it is done. */
+    val confirmingEmptyTrash: Boolean = false,
     /** The recording whose share format is being chosen, if the sheet is open. */
     val shareChoice: Recording? = null,
     /** True while a recording is being transcoded to .m4a for sharing - the
@@ -285,6 +302,12 @@ class MainViewModel @JvmOverloads constructor(
     initial: UiState = UiState(),
     /** The same, for the answering machine's screen. */
     initialAnswer: AnswerUi? = null,
+    /** How it reaches PlaybackService's session: Media3's controller in the
+     *  app. The screen tests give one that never connects - Robolectric
+     *  binds no real service, and Media3 fails on its stand-in binding. */
+    private val connectSession: (Application) -> ListenableFuture<MediaController> = { a ->
+        MediaController.Builder(a, SessionToken(a, ComponentName(a, PlaybackService::class.java))).buildAsync()
+    },
 ) : AndroidViewModel(app) {
 
     // Whether messenger calls can work here is known at once (a cached
@@ -294,7 +317,7 @@ class MainViewModel @JvmOverloads constructor(
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** The answering machine's settings, greeting and diagnostics. */
-    val answer = AnswerController(app, viewModelScope, ::say, initialAnswer)
+    val answer = AnswerController(app, viewModelScope, ::say, initialAnswer, quiet = { controller?.pause() })
 
     /** Failures of something the user just did, for a snackbar where they are:
      *  the log in Diagnostics is no place to learn that a share or a delete
@@ -331,17 +354,14 @@ class MainViewModel @JvmOverloads constructor(
     fun selfTestSeen() = _state.update { it.copy(selfTestShown = 0L) }
 
     fun showSettings() {
-        pausePlayback()
         _state.update { it.copy(screen = Screen.SETTINGS) }
     }
 
     fun showTrash() {
-        pausePlayback()
         _state.update { it.copy(screen = Screen.TRASH) }
     }
 
     fun showScreen(screen: Screen) {
-        if (screen != Screen.HOME) pausePlayback()
         _state.update { it.copy(screen = screen) }
     }
 
@@ -352,7 +372,6 @@ class MainViewModel @JvmOverloads constructor(
      *  something there; arriving at Calls reads the call log. */
     fun showTab(tab: HomeTab) {
         if (_state.value.homeTab == tab) return
-        pausePlayback()
         _state.update { it.copy(homeTab = tab, selecting = false, selected = emptySet()) }
         if (tab == HomeTab.CALLS) refresh()
     }
@@ -739,6 +758,8 @@ class MainViewModel @JvmOverloads constructor(
     fun setLook(look: Look) {
         val app = getApplication<Application>()
         Looks.set(app, Looks.choice(app).copy(look = look))
+        // Multitrack's caller colours are given only while it is the look.
+        if (look == Look.MULTITRACK) refresh()
     }
 
     fun setLightDark(lightDark: LightDark) {
@@ -816,6 +837,12 @@ class MainViewModel @JvmOverloads constructor(
         next.copy(selected = stillShown(next))
     }
 
+    /** The narrowing line's Show all: every chip off, the search folded away
+     *  with what was typed. Widening, so the selection stays as it is. */
+    fun showAllRecordings() = _state.update { it.copy(recordingsNarrowing = RecordingsNarrowing()) }
+
+    fun showAllCalls() = _state.update { it.copy(callsNarrowing = CallsNarrowing()) }
+
     /** A chip of the Calls tab tapped. */
     internal fun tapCallsChip(chip: ListChip) = _state.update { it.copy(callsNarrowing = it.callsNarrowing.tapped(chip)) }
 
@@ -847,6 +874,48 @@ class MainViewModel @JvmOverloads constructor(
             is DeleteResult.Failed -> say("could not restore ${recording.name}: ${result.error.message}")
         }
         refreshNow()
+    }
+
+    /** Recently deleted's Restore all: every recording in it back in the list. */
+    fun restoreAll() = launchAction("restore all") {
+        val all = _state.value.trashed
+        if (all.isEmpty()) return@launchAction
+        val result = withContext(Dispatchers.IO) { Trash.restoreAll(getApplication(), all) }
+        report(all.size, result, "restored")
+        refreshNow()
+    }
+
+    fun askEmptyTrash() = _state.update { it.copy(confirmingEmptyTrash = true) }
+
+    fun cancelEmptyTrash() = _state.update { it.copy(confirmingEmptyTrash = false) }
+
+    /** Delete all for good, once asked: what is in Recently deleted is gone,
+     *  and cannot be restored. When free, as the dialog's yes is not a tap
+     *  to drop. */
+    fun confirmEmptyTrash() {
+        _state.update { it.copy(confirmingEmptyTrash = false) }
+        // What the question counted, read as it is answered: read after the
+        // wait for busy, a recording trashed meanwhile went for good unasked.
+        val all = _state.value.trashed
+        if (all.isEmpty()) return
+        launchActionWhenFree("delete for good") {
+            val result = withContext(Dispatchers.IO) { Trash.deleteForGood(getApplication(), all) }
+            report(all.size, result, "deleted for good")
+            refreshNow()
+        }
+    }
+
+    /** How a bulk restore or delete went, and Android's question next for
+     *  what it wants confirmed - counted as asked, not as failed. */
+    private fun report(of: Int, result: BulkDeleteResult, did: String) {
+        val asked = of - result.deleted - result.failed
+        val summary = listOfNotNull(
+            "$did ${result.deleted}".takeIf { result.deleted > 0 },
+            "asking Android about $asked".takeIf { result.needsConsent != null && asked > 0 },
+            "could not do ${result.failed}".takeIf { result.failed > 0 },
+        ).joinToString(", ")
+        if (result.failed > 0) tell(summary) else if (summary.isNotEmpty()) say(summary)
+        result.needsConsent?.let { request -> _state.update { it.copy(deleteConsent = request) } }
     }
 
     /** One of auto-delete's two rules changed: saved, and applied at once. */
@@ -905,8 +974,9 @@ class MainViewModel @JvmOverloads constructor(
         CallTracking.setEnabled(app, on)
         _state.update { it.copy(callTracking = on) }
         // The answering machine answers on tracking's word alone: left on
-        // without it, it would say it answers and never would.
-        if (!on && AnsweringMachine.enabled(app)) {
+        // without it, it would say it answers and never would. Settings asks
+        // before this (SettingsDialog.TRACKING_OFF).
+        if (!on && (answer.state.value.enabled || AnsweringMachine.enabled(app))) {
             answer.setEnabled(false)
             say("the answering machine is off too: it needs exact call tracking")
         }
@@ -997,6 +1067,23 @@ class MainViewModel @JvmOverloads constructor(
         val snapshot = withContext(Dispatchers.IO) {
             val recordings = Recordings.list(app)
             val trashed = if (Recordings.override != null) emptyList() else Trash.list(app)
+            // Only while the tab is up: it is the call log and a contacts
+            // lookup per number, and nobody is looking at it otherwise. Null
+            // when not read, so this refresh leaves alone a list a later one
+            // has read already.
+            val calls = if (_state.value.homeTab == HomeTab.CALLS) CallHistory.load(app, recordings, trashed) else null
+            // Before the lists reach the screen, so no row shows a colour and
+            // then changes it; and given only in Multitrack, the one look that
+            // has them - a look never chosen keeps nothing. Once given, they
+            // stay through a change of look, so a caller's colour is theirs.
+            val colours = if (Looks.choice(app).look == Look.MULTITRACK) {
+                CallerColours.update(
+                    app,
+                    recordings.map { it.caller to (it.startedAtMillis ?: 0L) } + (calls ?: _state.value.calls).map { it.label to it.at },
+                )
+            } else {
+                emptyMap()
+            }
             Snapshot(
                 // CONFIRMED, because this reading decides whether to revive.
                 //
@@ -1031,15 +1118,8 @@ class MainViewModel @JvmOverloads constructor(
                     !CallLogLookup.bannerDismissed(app),
                 recordings = recordings,
                 trashed = trashed,
-                // Only while the tab is up: it is the call log and a contacts
-                // lookup per number, and nobody is looking at it otherwise.
-                // Null when not read, so this refresh leaves alone a list a
-                // later one has read already.
-                calls = if (_state.value.homeTab == HomeTab.CALLS) {
-                    CallHistory.load(app, recordings, trashed)
-                } else {
-                    null
-                },
+                calls = calls,
+                callerColours = colours,
                 autoDeleteAfterDays = Retention.maxAgeDays(app),
                 autoDeleteShorterThan = Retention.minSeconds(app),
                 ruleContacts = CallRules.contacts(app),
@@ -1089,6 +1169,7 @@ class MainViewModel @JvmOverloads constructor(
                 recordings = snapshot.recordings,
                 trashed = snapshot.trashed,
                 calls = snapshot.calls ?: it.calls,
+                callerColours = snapshot.callerColours,
                 autoDeleteAfterDays = snapshot.autoDeleteAfterDays,
                 autoDeleteShorterThan = snapshot.autoDeleteShorterThan,
                 ruleContacts = snapshot.ruleContacts,
@@ -1115,9 +1196,20 @@ class MainViewModel @JvmOverloads constructor(
         }
         answer.reload()
         // Its row gone - deleted from its notification, auto-deleted - the
-        // recording stops too, rather than play on with no control on screen.
+        // recording stops too: a deleted call does not play on. The list
+        // holds every recording (only drawing it is paged), so one playing
+        // on from before the screen opened is in it.
         _state.value.playingName?.let { name ->
             if (snapshot.recordings.none { it.name == name }) stopPlayback()
+        }
+        // A recording that played on while the screen was away gets its
+        // waveform once the list it is in has arrived: the session can name
+        // it before that (measured on the Android 17 emulator, 2026-10-23 -
+        // the reopened row showed the plain scrubber).
+        _state.value.let { now ->
+            if (now.playingName != null && now.waveform == null && waveformJob?.isActive != true) {
+                now.recordings.firstOrNull { it.name == now.playingName }?.let(::loadWaveform)
+            }
         }
         fillInWaveforms()
     }
@@ -1209,6 +1301,7 @@ class MainViewModel @JvmOverloads constructor(
         val recordings: List<Recording>,
         val trashed: List<Recording>,
         val calls: List<CallHistory.Call>?,
+        val callerColours: Map<String, Int>,
         val autoDeleteAfterDays: Int,
         val autoDeleteShorterThan: Int,
         val ruleContacts: CallRules.Contacts,
@@ -1271,12 +1364,33 @@ class MainViewModel @JvmOverloads constructor(
     /** The in-flight .m4a conversion, so its spinner's Cancel can stop it. */
     private var conversionJob: Job? = null
 
-    private val player by lazy { RecordingPlayer(getApplication()) }
+    /**
+     * The media session's player, in PlaybackService, reached as the
+     * system's controls reach it. Null until something is played, or until
+     * the screen comes forward while the service is up. Main thread.
+     */
+    private var controller: MediaController? = null
+    private var connecting: ListenableFuture<MediaController>? = null
+    private val whenConnected = mutableListOf<(MediaController) -> Unit>()
+    private var screenUp = true
     private var ticker: kotlinx.coroutines.Job? = null
     private var waveformJob: Job? = null
 
+    /** What the session does, whoever asked for it: JemRec's own taps, or
+     *  the system's controls - a pause from the lock screen, a call holding
+     *  it back, the headphones coming out. */
+    private val sessionEvents = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) = showPlayback()
+
+        override fun onPlayerError(error: PlaybackException) {
+            tell("could not play that recording")
+            stopPlayback()
+        }
+    }
+
     /**
-     * Play or pause a recording, inside this app.
+     * Play or pause a recording - inside this app, in PlaybackService, so it
+     * goes on with the screen off under the system's media controls.
      *
      * It used to fire an ACTION_VIEW and let Android choose, which on this
      * phone meant YouTube Music's preview bar - no close button, and it looked
@@ -1284,14 +1398,105 @@ class MainViewModel @JvmOverloads constructor(
      * recording of a private call to whichever app claimed the intent.
      */
     fun play(recording: Recording) {
-        val another = _state.value.playingName != recording.name
-        if (!player.toggle(recording.uri) { onPlaybackFinished() }) {
-            tell("could not play that recording")
-            stopPlayback()
+        // Android refuses a player the audio during a call; say why, rather
+        // than a tap that does nothing. A pause is never refused: a voice
+        // app can hold the call's audio mode with a recording still playing.
+        val pausing = _state.value.playingName == recording.name && _state.value.playing
+        if (!pausing && inCall()) {
+            tell("a recording does not play during a call")
             return
         }
-        startTicker(recording)
-        if (another) loadWaveform(recording)
+        if (_state.value.playingName != recording.name) {
+            _state.update { it.copy(playingName = recording.name, playing = false, positionMs = 0, durationMs = 0) }
+            loadWaveform(recording)
+        }
+        withController { c ->
+            when {
+                c.currentMediaItem?.mediaId != recording.name -> {
+                    c.setMediaItem(mediaItem(recording))
+                    c.prepare()
+                    c.play()
+                }
+                c.isPlaying -> c.pause()
+                else -> {
+                    // Closed, its item still set: stopped by the system's
+                    // controls, or failed with the screen away. Play alone
+                    // opens nothing.
+                    if (c.playbackState == Player.STATE_IDLE) c.prepare()
+                    c.play()
+                }
+            }
+        }
+    }
+
+    /** A recording as the session plays it: named for the system's controls
+     *  (PlaybackRules.titles), its uri sent as the request's, which reaches
+     *  the session where a MediaItem's own does not. */
+    private fun mediaItem(recording: Recording): MediaItem {
+        val titles = PlaybackRules.titles(recording.caller, recording.app, recording.message, recording.whenLabel)
+        return MediaItem.Builder()
+            .setMediaId(recording.name)
+            .setUri(recording.uri)
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(recording.uri).build())
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(titles.title).setArtist(titles.subtitle).build())
+            .build()
+    }
+
+    private fun inCall(): Boolean =
+        getApplication<Application>().getSystemService(AudioManager::class.java)
+            ?.let { it.mode != AudioManager.MODE_NORMAL } == true
+
+    /** [action] on the session's player, once connected - at once if it is. */
+    private fun withController(action: (MediaController) -> Unit) {
+        controller?.let { action(it); return }
+        whenConnected += action
+        if (connecting != null) return
+        val app = getApplication<Application>()
+        val future = connectSession(app)
+        connecting = future
+        future.addListener({
+            connecting = null
+            val waiting = whenConnected.toList()
+            whenConnected.clear()
+            val c = runCatching { future.get() }.getOrNull()
+            if (c == null) {
+                Log.e("JemRec", "playback: no session")
+                if (waiting.isNotEmpty()) {
+                    tell("could not play that recording")
+                    stopPlayback()
+                }
+                return@addListener
+            }
+            controller = c
+            c.addListener(sessionEvents)
+            waiting.forEach { it(c) }
+            showPlayback()
+        }, ContextCompat.getMainExecutor(app))
+    }
+
+    /**
+     * The screen made to match the session: which recording, playing or
+     * not, where. A recording that started while the screen was away - the
+     * app reopened while it plays - gets its waveform here.
+     */
+    private fun showPlayback() {
+        val c = controller ?: return
+        val name = c.currentMediaItem?.mediaId
+        val arrived = name != null && name != _state.value.playingName
+        _state.update {
+            if (name == null) {
+                it.copy(playingName = null, playing = false, positionMs = 0, durationMs = 0, waveform = null)
+            } else {
+                it.copy(
+                    playingName = name,
+                    playing = c.isPlaying,
+                    positionMs = c.currentPosition.toInt(),
+                    durationMs = c.duration.takeIf { d -> d != C.TIME_UNSET }?.toInt() ?: 0,
+                )
+            }
+        }
+        if (arrived) _state.value.recordings.firstOrNull { it.name == name }?.let(::loadWaveform)
+        if (c.isPlaying && screenUp) tick() else ticker?.cancel()
     }
 
     /** The waveform of the recording just loaded: the plain scrubber until
@@ -1308,41 +1513,33 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     fun seekTo(ms: Int) {
-        player.seekTo(ms)
+        controller?.seekTo(ms.toLong())
         _state.update { it.copy(positionMs = ms) }
     }
 
     /**
-     * The end of the recording rewinds the player; it does not close it. It
-     * used to vanish the moment playback ended - a player that disappears
-     * under your thumb as you go to seek back is a small ambush. The chevron
-     * is the way out; this leaves the row ready to play again.
+     * Drives the progress bar: the session's position every 300 ms, while
+     * it plays and the screen is up. The end of the recording rewinds it to
+     * the start, paused (SessionPlayer); it does not close the row. It used to
+     * vanish the moment playback ended - a player that disappears under your
+     * thumb as you go to seek back is a small ambush. The chevron is the way
+     * out.
      */
-    private fun onPlaybackFinished() {
-        ticker?.cancel()
-        _state.update { it.copy(playing = false, positionMs = 0) }
-    }
-
-    /** Drives the progress bar. Cheap, and only while something is playing. */
-    private fun startTicker(recording: Recording) {
-        ticker?.cancel()
-        _state.update {
-            it.copy(
-                playingName = if (player.current != null) recording.name else null,
-                playing = player.isPlaying,
-                durationMs = player.durationMs,
-                positionMs = player.positionMs,
-            )
-        }
-        if (!player.isPlaying) return
+    private fun tick() {
+        if (ticker?.isActive == true) return
         ticker = viewModelScope.launch {
-            while (player.isPlaying) {
+            while (true) {
+                val c = controller ?: break
+                if (!c.isPlaying) break
                 _state.update {
-                    it.copy(playing = true, positionMs = player.positionMs, durationMs = player.durationMs)
+                    it.copy(
+                        playing = true,
+                        positionMs = c.currentPosition.toInt(),
+                        durationMs = c.duration.takeIf { d -> d != C.TIME_UNSET }?.toInt() ?: it.durationMs,
+                    )
                 }
                 kotlinx.coroutines.delay(300)
             }
-            _state.update { it.copy(playing = false) }
         }
     }
 
@@ -1350,21 +1547,27 @@ class MainViewModel @JvmOverloads constructor(
     fun stopPlaying() = stopPlayback()
 
     /**
-     * Pause, keeping the place, whenever the player's controls leave the
-     * screen: another tab, Settings, the app in the background.
-     *
-     * The scrubber under the row is the only control there is, so a recording
-     * that went on playing without it went on with nothing on screen able to
-     * stop it - from a pocket, once the app was closed, a private call out
-     * loud. Android's way to play on in the background is a media session in
-     * a service, with the system's controls; JemRec has none, so it does not
-     * play on. Coming back, the row is still open where it was, and the play
-     * mark resumes it.
+     * The screen came forward: show what the session plays - it may have
+     * played on, or been paused from the lock screen, while it was away.
      */
-    fun pausePlayback() {
-        if (player.isPlaying) player.pause()
+    fun screenShown() {
+        screenUp = true
+        if (controller != null) showPlayback() else if (PlaybackService.running) withController { }
+    }
+
+    /**
+     * Out of sight, the scrubber is no longer driven; the recording plays
+     * on, under the system's media controls.
+     *
+     * Until 0.19 it paused here, and on another tab or Settings too: the
+     * scrubber under the row was the only control there was, so a recording
+     * that went on playing without it went on with nothing able to stop it -
+     * from a pocket, a private call out loud. PlaybackService gave it the
+     * system's controls, so it no longer pauses for any of them.
+     */
+    fun screenHidden() {
+        screenUp = false
         ticker?.cancel()
-        _state.update { if (it.playing) it.copy(playing = false) else it }
     }
 
     /**
@@ -1391,16 +1594,26 @@ class MainViewModel @JvmOverloads constructor(
     private fun stopPlayback() {
         ticker?.cancel()
         waveformJob?.cancel()
-        player.release()
+        whenConnected.clear()
+        controller?.run {
+            stop()
+            clearMediaItems()
+        }
         _state.update {
             it.copy(playing = false, playingName = null, positionMs = 0, durationMs = 0, waveform = null)
         }
     }
 
+    /** The screen is gone for good; a recording playing goes on playing,
+     *  under the system's controls, until they stop it. */
     override fun onCleared() {
         stopWatchingSwitch()
         ticker?.cancel()
-        player.release()
+        controller?.run {
+            removeListener(sessionEvents)
+            release()
+        }
+        connecting?.let(MediaController::releaseFuture)
         super.onCleared()
     }
 

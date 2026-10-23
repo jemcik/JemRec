@@ -108,6 +108,10 @@
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Playing a recording with the screen off, in PlaybackService: the type
+         Android gives media playback. Granted at install; it plays, never
+         records. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- A reboot kills the shell-side recorder and turns Wireless debugging
@@ -267,6 +271,22 @@
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!--
+          Plays a recording on with the screen off, under the system's media
+          controls. Exported, with Media3's intent filter, because those
+          controls - the notification, the lock screen, a headset - bind to
+          it; the session turns away any other app that asks, and only JemRec
+          chooses what plays (PlaybackService, PlaybackRules.access).
+        -->
+        <service
+            android:name=".capture.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
 
         <!--
           Exported so the shell-side daemon can wake it with

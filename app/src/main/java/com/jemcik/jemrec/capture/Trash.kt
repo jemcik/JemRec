@@ -100,22 +100,8 @@ object Trash {
 
     /** Move these to the trash, asking once for whatever MediaStore will not
      *  take this app's word for. */
-    fun trashAll(context: Context, recordings: List<Recording>): BulkDeleteResult {
-        var done = 0
-        var failed = 0
-        val disputed = mutableListOf<Uri>()
-        recordings.forEach { recording ->
-            when (val result = trash(context, recording.uri, recording.filePath, recording.name)) {
-                is DeleteResult.Deleted -> done++
-                is DeleteResult.NeedsConsent -> disputed += recording.uri
-                is DeleteResult.Failed -> {
-                    failed++
-                    Log.w(TAG, "trash: could not trash ${FileNames.forLog(recording.name)}", result.error)
-                }
-            }
-        }
-        return BulkDeleteResult(done, failed, consent(context, disputed, trashed = true))
-    }
+    fun trashAll(context: Context, recordings: List<Recording>): BulkDeleteResult =
+        inBulk(context, recordings, trashed = true) { trash(context, it.uri, it.filePath, it.name) }
 
     /** Bring one back from the trash, as it was. Deleted means restored. */
     fun restore(context: Context, recording: Recording): DeleteResult {
@@ -130,6 +116,98 @@ object Trash {
         } else {
             renameDocument(context, recording.uri, recording.name)
         }
+    }
+
+    /** Bring all of these back, asking once for whatever MediaStore will not
+     *  take this app's word for. [BulkDeleteResult.deleted] is the restored. */
+    fun restoreAll(context: Context, recordings: List<Recording>): BulkDeleteResult =
+        inBulk(context, recordings, trashed = false) { restore(context, it) }
+
+    /**
+     * [one] for each of [recordings], into the trash or out of it, and one
+     * request for what MediaStore would not take this app's word for. Those
+     * count as failed if the request cannot be made: left out of both
+     * counts, they went unreported and stayed where they were.
+     */
+    private fun inBulk(
+        context: Context,
+        recordings: List<Recording>,
+        trashed: Boolean,
+        one: (Recording) -> DeleteResult,
+    ): BulkDeleteResult {
+        var done = 0
+        var failed = 0
+        val disputed = mutableListOf<Uri>()
+        recordings.forEach { recording ->
+            when (val result = one(recording)) {
+                is DeleteResult.Deleted -> done++
+                is DeleteResult.NeedsConsent -> disputed += recording.uri
+                is DeleteResult.Failed -> {
+                    failed++
+                    Log.w(TAG, "trash: could not ${if (trashed) "trash" else "restore"} ${FileNames.forLog(recording.name)}", result.error)
+                }
+            }
+        }
+        val ask = consent(context, disputed, trashed)
+        return BulkDeleteResult(done, failed + if (ask == null) disputed.size else 0, ask)
+    }
+
+    /**
+     * Delete these for good, now, wherever each waits: Android's trash, a
+     * chosen folder, app storage. Otherwise only time empties Recently
+     * deleted; this is the user's own way to (2026-10-23), behind a question.
+     * What MediaStore will not delete on this app's word - a recording from
+     * before a reinstall - is asked about once, in Android's own dialog, as
+     * trashing it was.
+     */
+    fun deleteForGood(context: Context, recordings: List<Recording>): BulkDeleteResult {
+        var done = 0
+        var failed = 0
+        val disputed = mutableListOf<Uri>()
+        recordings.forEach { recording ->
+            val path = recording.filePath
+            val gone = try {
+                when {
+                    path != null -> File(path).let { !it.exists() || it.delete() }
+                    recording.uri.authority == MediaStore.AUTHORITY -> {
+                        // Trashed rows included, as the restore's update must
+                        // ask (setTrashed). A delete by the recording's own uri
+                        // reached its trashed row without it as well, on the
+                        // Android 17 emulator (2026-10-23, the emulator check
+                        // recently_deleted); asked anyway, as nothing promises
+                        // that.
+                        val extras = Bundle().apply { putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE) }
+                        context.contentResolver.delete(recording.uri, extras) > 0
+                    }
+                    else -> DocumentsContract.deleteDocument(context.contentResolver, recording.uri)
+                }
+            } catch (e: SecurityException) {
+                // MediaStore's is a question for the user; a chosen folder's -
+                // its access taken back - is a failure, said as one.
+                if (recording.uri.authority == MediaStore.AUTHORITY) {
+                    disputed += recording.uri
+                    null
+                } else {
+                    Log.w(TAG, "trash: could not delete ${FileNames.forLog(recording.name)} for good", e)
+                    false
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "trash: could not delete ${FileNames.forLog(recording.name)} for good", t)
+                false
+            }
+            when (gone) {
+                true -> done++
+                false -> failed++
+                null -> Unit
+            }
+        }
+        val ask = if (disputed.isEmpty()) {
+            null
+        } else {
+            runCatching { MediaStore.createDeleteRequest(context.contentResolver, disputed).intentSender }.getOrNull()
+        }
+        if (done > 0) Log.i(TAG, "trash: deleted $done recording(s) for good")
+        return BulkDeleteResult(done, failed + if (ask == null) disputed.size else 0, ask)
     }
 
     private fun setTrashed(context: Context, uris: List<Uri>, trashed: Boolean): DeleteResult = try {

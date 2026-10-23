@@ -63,6 +63,13 @@ object Fixtures {
         recording("20260928_091600", false, null, "0:15", whenLabel = "28 Sept, 09:16"),
     )
 
+    /** Three recordings in Recently deleted, going in 5, 14 and 23 days -
+     *  counted from now, as the screen counts them. */
+    fun trashed(): List<Recording> = recordings().take(3).zip(listOf("21 Oct, 16:02", "21 Oct, 15:24", "21 Oct, 10:11"))
+        .mapIndexed { i, (r, at) ->
+            r.copy(whenLabel = at, expiresAtMillis = System.currentTimeMillis() + (5 + i * 9) * 86_400_000L - 3_600_000L)
+        }
+
     fun calls(): List<CallHistory.Call> {
         val byName = recordings().associateBy { it.name.take(15) }
         fun call(stamp: String, seconds: Int, kind: Kind, label: String, status: Status, favorite: Boolean = false) =

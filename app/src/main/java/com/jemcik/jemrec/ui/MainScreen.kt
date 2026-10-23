@@ -10,6 +10,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -80,13 +90,15 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         onPauseOrDispose { }
     }
 
-    // Out of sight, the player's controls are too: a recording does not go on
-    // playing with the app in the background, where nothing could stop it.
-    // See MainViewModel.pausePlayback and fillInWaveforms.
+    // Out of sight, the scrubber is not driven and the fill-in stops; a
+    // recording plays on, under the system's media controls. Back in sight,
+    // the screen shows what played on meanwhile. See MainViewModel.screenHidden
+    // and fillInWaveforms.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        vm.pausePlayback()
+        vm.screenHidden()
         vm.stopFillingIn()
     }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.screenShown() }
 
     // A recording saved while this screen is up - by the per-call service
     // seconds after a hang-up, or by the keep-alive's reconcile right after an
@@ -192,101 +204,161 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
     LaunchedEffect(Unit) {
         vm.notices.collect { snackbars.showSnackbar(it) }
     }
+    // The window's own size, not the screen's: in split screen the two differ.
+    val window = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.let { DpSize(it.width.toDp(), it.height.toDp()) } }
+    val aside = ready && !offHome && headerAside(window.width.value.toInt(), window.height.value.toInt())
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbars) },
-        topBar = {
-            // No bar during setup. There is nothing to configure yet and no
-            // second screen to reach, so a gear there would be a dead end.
-            if (ready) {
-                AppHeader(state, vm)
-            }
-        },
-    ) { padding ->
-        // Share's sheet, over whichever tab asked for it.
-        if (ready) ShareSheets(state, vm)
-        // Settings keeps its place while a screen opened from it is up -
-        // Recently deleted included, which is drawn by a different branch
-        // below, so this lives above them all - and Back lands where the tap
-        // was. Each of those screens starts at its own top.
-        val settingsScroll = rememberScrollState()
-        // Above the screens below, so it runs whichever is showing: in the
-        // branch with Settings, a result that came in while home or Recently
-        // deleted was up waited, and jumped Diagnostics to the bottom when it
-        // was next opened.
-        val subScroll = key(state.screen) { rememberScrollState() }
-        val scrollState = if (state.screen == Screen.SETTINGS || !ready) settingsScroll else subScroll
-        // A self-test's result lands in the log at the very bottom of
-        // Diagnostics - below the fold on a long log, so the user pressed
-        // the button and saw nothing move. Run the scroll to the end, so
-        // the answer is on screen instead of under a thumb.
-        LaunchedEffect(state.selfTestShown) {
-            // A self-test's result only: any other log line - a switch
-            // flipped with the recorder down, a folder chosen - jumped the
-            // page to the bottom, away from what the user was doing. And
-            // only one that lands on Diagnostics: a result that arrives
-            // after the user left is marked seen, not saved up to jump the
-            // page the next time Diagnostics opens.
-            if (state.selfTestShown > 0L && !inDiagnostics) vm.selfTestSeen()
-            if (inDiagnostics && state.selfTestShown > 0L) {
-                // The log is added/grown in this same frame and only
-                // measured after it, so the scroll range does not yet include
-                // it - reading maxValue now gives the OLD bottom, and the
-                // scroll goes nowhere. Wait two frames for layout to settle,
-                // then run to the real end.
-                withFrameNanos {}
-                withFrameNanos {}
-                scrollState.animateScrollTo(scrollState.maxValue)
-                vm.selfTestSeen()
-            }
-        }
-        // The home screen is its own scrolling list (a LazyColumn with a pinned
-        // header), so it must NOT be nested in a vertical scroll - two vertical
-        // scrolls inside each other is both a crash and the wrong behaviour. It
-        // takes the padding and fills the area itself. Setup and Settings are
-        // short, static content, so they keep the plain page scroll.
-        if (ready && !offHome) {
-            if (state.homeTab == HomeTab.CALLS) {
-                CallsScreen(state, vm, modifier = Modifier.padding(padding))
-            } else {
-                HomeScreen(state, vm, modifier = Modifier.padding(padding))
-            }
-        } else if (inTrash) {
-            // A list too, with its own scroll, for the same reason.
-            TrashScreen(state, vm, modifier = Modifier.padding(padding))
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    // verticalScroll BEFORE the 16dp, so the scroll viewport
-                    // reaches up to the header rule and content clips exactly
-                    // there as it scrolls under it.
-                    .verticalScroll(scrollState)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                // Only during setup, where there is no header rule to animate.
-                if (state.busy && !ready) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    CompositionLocalProvider(LocalCallerColours provides state.callerColours) {
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbars) },
+            topBar = {
+                // No bar during setup. There is nothing to configure yet and no
+                // second screen to reach, so a gear there would be a dead end.
+                // Nor on top on a phone on its side: home's header is beside the
+                // list then.
+                if (ready && !aside) {
+                    AppHeader(state, vm)
                 }
-
-                if (!ready) {
-                    SetupScreen(state, vm)
+            },
+        ) { padding ->
+            // Share's sheet, over whichever tab asked for it.
+            if (ready) ShareSheets(state, vm)
+            // Settings keeps its place while a screen opened from it is up -
+            // Recently deleted included, which is drawn by a different branch
+            // below, so this lives above them all - and Back lands where the tap
+            // was. Each of those screens starts at its own top.
+            val settingsScroll = rememberScrollState()
+            // Above the screens below, so it runs whichever is showing: in the
+            // branch with Settings, a result that came in while home or Recently
+            // deleted was up waited, and jumped Diagnostics to the bottom when it
+            // was next opened.
+            val subScroll = key(state.screen) { rememberScrollState() }
+            val scrollState = if (state.screen == Screen.SETTINGS || !ready) settingsScroll else subScroll
+            // A self-test's result lands in the log at the very bottom of
+            // Diagnostics - below the fold on a long log, so the user pressed
+            // the button and saw nothing move. Run the scroll to the end, so
+            // the answer is on screen instead of under a thumb.
+            LaunchedEffect(state.selfTestShown) {
+                // A self-test's result only: any other log line - a switch
+                // flipped with the recorder down, a folder chosen - jumped the
+                // page to the bottom, away from what the user was doing. And
+                // only one that lands on Diagnostics: a result that arrives
+                // after the user left is marked seen, not saved up to jump the
+                // page the next time Diagnostics opens.
+                if (state.selfTestShown > 0L && !inDiagnostics) vm.selfTestSeen()
+                if (inDiagnostics && state.selfTestShown > 0L) {
+                    // The log is added/grown in this same frame and only
+                    // measured after it, so the scroll range does not yet include
+                    // it - reading maxValue now gives the OLD bottom, and the
+                    // scroll goes nowhere. Wait two frames for layout to settle,
+                    // then run to the real end.
+                    withFrameNanos {}
+                    withFrameNanos {}
+                    scrollState.animateScrollTo(scrollState.maxValue)
+                    vm.selfTestSeen()
+                }
+            }
+            // The home screen is its own scrolling list (a LazyColumn with a pinned
+            // header), so it must NOT be nested in a vertical scroll - two vertical
+            // scrolls inside each other is both a crash and the wrong behaviour. It
+            // takes the padding and fills the area itself. Setup and Settings are
+            // short, static content, so they keep the plain page scroll.
+            if (ready && !offHome) {
+                val list = @Composable { modifier: Modifier, narrowingAside: Boolean ->
+                    if (state.homeTab == HomeTab.CALLS) {
+                        CallsScreen(state, vm, modifier = modifier, narrowingAside = narrowingAside)
+                    } else {
+                        HomeScreen(state, vm, modifier = modifier, narrowingAside = narrowingAside)
+                    }
+                }
+                if (aside) {
+                    // A phone on its side: the header in a column of its own at
+                    // the left, at its portrait width where there is room (it is
+                    // laid out for 360 dp: at 320, Multitrack's LEDs wrapped onto
+                    // a second line), and the list beside
+                    // it at the full height. On top, the header and the chips
+                    // took half of a landscape screen and left about one row in
+                    // view (800 x 360 dp, every look, 2026-10-23). Android's
+                    // window size classes: compact height is "99.78% of phones in
+                    // landscape", where its example shows the top app bar only
+                    // from medium height up - the width is what there is room in.
+                    //
+                    // The header is the side panel, its ground the full height
+                    // (option B of the landscape sketches, the user's pick): the
+                    // state at the top, the list's chips and search in the middle -
+                    // named, as the row has no room to - and the tabs at the foot,
+                    // under the left thumb. Under a header on top, the column was
+                    // two-thirds empty on the Honor. The bottom is kept clear too:
+                    // the tabs sit over the gesture bar.
+                    val direction = LocalLayoutDirection.current
+                    Row(Modifier.fillMaxSize()) {
+                        CompositionLocalProvider(
+                            LocalBarSides provides WindowInsetsSides.Top + WindowInsetsSides.Start + WindowInsetsSides.Bottom,
+                        ) {
+                            Box(
+                                Modifier
+                                    .width((window.width * 0.45f).coerceIn(300.dp, 360.dp))
+                                    .fillMaxHeight(),
+                            ) { AppHeader(state, vm, panel = { NarrowingPanel(state, vm) }) }
+                        }
+                        list(
+                            Modifier
+                                .weight(1f)
+                                .padding(
+                                    top = padding.calculateTopPadding(),
+                                    bottom = padding.calculateBottomPadding(),
+                                    end = padding.calculateEndPadding(direction),
+                                ),
+                            true,
+                        )
+                    }
                 } else {
-                    when (state.screen) {
-                        Screen.THEME -> ThemeScreen(vm)
-                        Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm)
-                        Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
-                        Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
-                        Screen.ANSWERING_MACHINE -> AnsweringMachineScreen(state, vm)
-                        else -> SettingsScreen(state, vm)
+                    list(Modifier.padding(padding), false)
+                }
+            } else if (inTrash) {
+                // A list too, with its own scroll, for the same reason.
+                TrashScreen(state, vm, modifier = Modifier.padding(padding))
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        // verticalScroll BEFORE the 16dp, so the scroll viewport
+                        // reaches up to the header rule and content clips exactly
+                        // there as it scrolls under it.
+                        .verticalScroll(scrollState)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    // Only during setup, where there is no header rule to animate.
+                    if (state.busy && !ready) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+
+                    if (!ready) {
+                        SetupScreen(state, vm)
+                    } else {
+                        when (state.screen) {
+                            Screen.THEME -> ThemeScreen(vm)
+                            Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm)
+                            Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
+                            Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
+                            Screen.ANSWERING_MACHINE -> AnsweringMachineScreen(state, vm)
+                            else -> SettingsScreen(state, vm)
+                        }
                     }
                 }
             }
         }
     }
 }
+
+/**
+ * Whether home's header goes beside the list rather than over it: a window
+ * of compact height - under 480 dp, Android's line - that is wider than it
+ * is tall, as a phone on its side is.
+ */
+internal fun headerAside(widthDp: Int, heightDp: Int): Boolean = heightDp < 480 && widthDp > heightDp
 
 /**
  * The bar over every screen once setup is done: on home, the look's own
@@ -319,13 +391,13 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
  * resume effects reach the recorder and the device.
  */
 @Composable
-internal fun AppHeader(state: UiState, vm: MainViewModel) {
+internal fun AppHeader(state: UiState, vm: MainViewModel, panel: (@Composable () -> Unit)? = null) {
     val haptics = LocalHapticFeedback.current
     if (state.screen == Screen.HOME) {
         // The answering machine has its own state (AnswerController); its
         // mark is the one fact here that UiState does not carry.
         val answer by vm.answer.state.collectAsStateWithLifecycle()
-        HomeHeader(state, vm, answer.enabled)
+        HomeHeader(state, vm, answer.enabled, panel)
         return
     }
     SettingsBar(
@@ -344,13 +416,13 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
 }
 
 /** The home screen's header, in the look's own way: on home, and in the Theme
- *  screen's preview. */
+ *  screen's preview. With a [panel], the side panel of a phone on its side. */
 @Composable
-internal fun HomeHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
+internal fun HomeHeader(state: UiState, vm: MainViewModel, answering: Boolean, panel: (@Composable () -> Unit)? = null) {
     when (LocalLook.current) {
-        Look.MEMO -> MemoHeader(state, vm, answering)
-        Look.DECK -> DeckHeader(state, vm, answering)
-        Look.MULTITRACK -> MultitrackHeader(state, vm, answering)
+        Look.MEMO -> MemoHeader(state, vm, answering, panel)
+        Look.DECK -> DeckHeader(state, vm, answering, panel)
+        Look.MULTITRACK -> MultitrackHeader(state, vm, answering, panel)
     }
 }
 

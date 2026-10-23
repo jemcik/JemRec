@@ -1,10 +1,12 @@
 package com.jemcik.jemrec.ui.screens
 
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.jemcik.jemrec.capture.CallRules.Contacts
 import com.jemcik.jemrec.capture.FileNames
+import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.UiState
@@ -194,6 +196,13 @@ class SettingsScreenshots : ScreenTest() {
         snap("diagnostics-recorder-down")
     }
 
+    // In Multitrack's mono, wider than the phone's font: "Start recorder" was
+    // on two lines in its button on the Honor (2026-10-23). One line now.
+    @Test fun diagnosticsInMultitrack() {
+        settings(Fixtures.ready().copy(screen = Screen.DIAGNOSTICS, daemonRunning = false), look = LookChoice(Look.MULTITRACK))
+        snap("diagnostics-multitrack")
+    }
+
     @Test fun fileNamesDialog() {
         // Honor's format chosen but the folder not yet: the dialog says so,
         // with the button that fixes it.
@@ -203,6 +212,38 @@ class SettingsScreenshots : ScreenTest() {
         compose.onNodeWithText("File names").performScrollTo().performClick()
         compose.waitForIdle()
         snapWithDialog("dialog-file-names")
+    }
+
+    // Recently deleted, with its Restore all and Delete all for good, and the
+    // question Delete all for good asks first.
+    @Test fun recentlyDeleted() {
+        settings(Fixtures.ready().copy(screen = Screen.TRASH, trashed = Fixtures.trashed()))
+        snap("trash")
+    }
+
+    @Test fun recentlyDeletedInDeck() {
+        settings(Fixtures.ready().copy(screen = Screen.TRASH, trashed = Fixtures.trashed()), look = LookChoice(Look.DECK))
+        snap("trash-deck")
+    }
+
+    @Test fun recentlyDeletedInMultitrack() {
+        settings(Fixtures.ready().copy(screen = Screen.TRASH, trashed = Fixtures.trashed()), look = LookChoice(Look.MULTITRACK))
+        snap("trash-multitrack")
+    }
+
+    @Test fun recentlyDeletedAsksFirst() {
+        settings(Fixtures.ready().copy(screen = Screen.TRASH, trashed = Fixtures.trashed(), confirmingEmptyTrash = true))
+        snapWithDialog("trash-delete-all")
+    }
+
+    @Test fun trackingOffAsksFirst() {
+        // With the answering machine on, exact call tracking's switch asks
+        // before it turns both off.
+        val shown = Fixtures.ready().copy(screen = Screen.SETTINGS)
+        show { AppScaffold(shown, viewModel(shown, AnswerUi(enabled = true, greetingSeconds = 6.0))) }
+        compose.onNodeWithText("Exact call tracking").performScrollTo().performClick()
+        compose.onNodeWithText("Turn off the answering machine too?").assertIsDisplayed()
+        snapWithDialog("dialog-tracking-off")
     }
 
     @Config(qualifiers = "+night")

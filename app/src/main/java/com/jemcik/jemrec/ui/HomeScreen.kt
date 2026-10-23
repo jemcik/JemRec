@@ -1,9 +1,24 @@
 package com.jemcik.jemrec.ui
 
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import com.jemcik.jemrec.capture.VoipApps
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.relocation.BringIntoViewModifierNode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
@@ -136,7 +151,7 @@ import java.util.Locale
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
+fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier, narrowingAside: Boolean = false) {
     val haptics = LocalHapticFeedback.current
     // Focus jumps to the search field the moment it opens, so the keyboard is
     // up and ready - opening search only to have to tap the field as well would
@@ -144,8 +159,8 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
     val searchFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val narrowing = state.recordingsNarrowing
-    LaunchedEffect(narrowing.searchOpen) {
-        if (narrowing.searchOpen) runCatching { searchFocus.requestFocus() }
+    LaunchedEffect(narrowing.searchOpen, narrowingAside) {
+        if (narrowing.searchOpen && !narrowingAside) runCatching { searchFocus.requestFocus() }
     }
     // Entering selection blurs the field and drops the keyboard. The field
     // stays on screen as context - the query you searched by - but you are
@@ -280,7 +295,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
         // are part of the list they filter. Opaque, so rows scroll UNDER it
         // without showing through.
         stickyHeader {
-            Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.keepsItsPlace().background(MaterialTheme.colorScheme.surface)) {
                 // NO "Recordings" TITLE, NO "Select" BUTTON. The screen is the
                 // recordings, so a heading only restated the obvious and cost a
                 // whole pinned row. Selection is entered by tapping a row's photo
@@ -372,7 +387,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                 // once in a while; now the chips are all that is pinned, and the
                 // last chip unfolds the field below them on demand. Hidden while
                 // selecting, where the header is a selection toolbar instead.
-                if (!state.selecting && state.recordings.isNotEmpty()) {
+                // Beside the list instead, on a phone on its side
+                // (NarrowingPanel), chips and search both.
+                if (!state.selecting && state.recordings.isNotEmpty() && !narrowingAside) {
                     val on = narrowing.chipsOn()
                     val chips = remember(state.recordings, on) {
                         chipsFor(state.recordings.map { it.chipFacts() }, on)
@@ -384,7 +401,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                 // still on screen while you tick rows and delete - and the list
                 // does not jump as it vanishes. Only the chip row above becomes
                 // the selection toolbar; the field holds its place under both.
-                if (state.recordings.isNotEmpty()) {
+                if (state.recordings.isNotEmpty() && !narrowingAside) {
                     // Below the header row, and only when asked for. Expands and
                     // fades in together so it reads as unfolding from the chip,
                     // not jumping into place.
@@ -396,6 +413,12 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                         ListSearchField(narrowing.query, vm::setQuery, searchFocus, "Search by name or number")
                     }
                 }
+                NarrowingLine(
+                    narrowedBy(narrowing.chipsOn(), narrowing.query),
+                    shown = filtered.size,
+                    of = state.recordings.size,
+                    onShowAll = vm::showAllRecordings,
+                )
                 // The rule caps the header once rows are passing under it -
                 // Material's app bars separate from content on scroll the same
                 // way. At the top there is nothing to separate it from.
@@ -830,6 +853,19 @@ internal fun LookHeading(
  */
 @Composable
 internal fun ListChipRow(chips: List<ListChip>, on: Set<ListChip>, calls: Boolean, onTap: (ListChip) -> Unit) {
+    // A lit chip in view whenever the row is drawn anew - the app reopened,
+    // the tab switched to - with it on: past the screen's edge it said
+    // nothing (on the Honor, Messages, 2026-10-23). B of the fixes sketched,
+    // with NarrowingLine. Not on a tap: the chip tapped is where the finger
+    // is. The pinned header's keepsItsPlace stops the request at the row.
+    val firstLit = remember { chips.firstOrNull { it in on && it.kind != ChipKind.SEARCH } }
+    val lit = remember { BringIntoViewRequester() }
+    LaunchedEffect(Unit) {
+        if (firstLit != null) {
+            withFrameNanos { }
+            runCatching { lit.bringIntoView() }
+        }
+    }
     BoxWithConstraints(Modifier.fillMaxWidth().height(HeaderRowHeight)) {
         Row(
             modifier = Modifier
@@ -841,71 +877,210 @@ internal fun ListChipRow(chips: List<ListChip>, on: Set<ListChip>, calls: Boolea
             verticalAlignment = Alignment.CenterVertically,
         ) {
             for (chip in chips) {
-                val selected = chip in on
-                val tap = { onTap(chip) }
-                when (chip.kind) {
-                    // Starred contacts, on top of the other chips.
-                    ChipKind.FAVORITES -> FilterChip(
-                        selected = selected,
-                        onClick = tap,
-                        shape = chipShape(),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.secondary,
-                        ),
-                        label = {
-                            Icon(
-                                Icons.Filled.Star,
-                                contentDescription = "Only calls with favourite contacts",
-                                // Gold on the band; a DEEPER gold once
-                                // selected, where the pill turns pale in dark
-                                // theme and the bright gold washed into it.
-                                tint = if (selected) JemRecColors.favoriteSelected else JemRecColors.favorite,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        },
-                    )
-                    ChipKind.SOURCE -> SourceChip(chip.source.orEmpty(), selected, tap)
-                    ChipKind.KEPT -> IconFilterChip(
-                        selected,
-                        KeepIcons.Kept,
-                        if (calls) "Only calls whose recording is kept" else "Only recordings marked to keep",
-                        tap,
-                    )
-                    // The calls the answering machine took.
-                    ChipKind.MESSAGES -> IconFilterChip(selected, messageIcon, "Only messages", tap)
-                    ChipKind.NOT_RECORDED -> IconFilterChip(selected, CallIcons.NotRecorded, "Only calls not recorded", tap)
-                    // The fold-out. A filter chip in looks, a disclosure in
-                    // job: selected while the field is open, so the icon
-                    // reads as "search is showing" rather than a filter that
-                    // is on.
-                    ChipKind.SEARCH -> FilterChip(
-                        selected = selected,
-                        onClick = tap,
-                        shape = chipShape(),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.secondary,
-                        ),
-                        label = {
-                            Icon(
-                                Icons.Filled.Search,
-                                contentDescription = if (calls) "Search calls" else "Search recordings",
-                                // An icon-only chip label does not inherit a
-                                // visible content colour the way a text label
-                                // does - untinted it came out invisible - so
-                                // the tint is set for each state: onSecondary
-                                // on the bright selected pill, onSurfaceVariant
-                                // on the band.
-                                tint = if (selected) {
-                                    MaterialTheme.colorScheme.onSecondary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.size(18.dp),
-                            )
-                        },
-                    )
+                Box(if (chip == firstLit) Modifier.bringIntoViewRequester(lit) else Modifier) {
+                    ListChip(chip, chip in on, calls, words = false, onTap)
                 }
             }
+        }
+    }
+}
+
+/**
+ * One chip of the list's narrowing, as the chip row draws it - an icon, its
+ * meaning in words for a screen reader - or, with [words], as the side panel
+ * does: the icon, then its name, where there is room for one.
+ */
+@Composable
+private fun ListChip(chip: ListChip, selected: Boolean, calls: Boolean, words: Boolean, onTap: (ListChip) -> Unit) {
+    val tap = { onTap(chip) }
+    if (words) {
+        WordChip(chip, selected, tap)
+        return
+    }
+    when (chip.kind) {
+        // Starred contacts, on top of the other chips.
+        ChipKind.FAVORITES -> FilterChip(
+            selected = selected,
+            onClick = tap,
+            shape = chipShape(),
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.secondary,
+            ),
+            label = {
+                Icon(
+                    chipVector(chip.kind),
+                    contentDescription = "Only calls with favourite contacts",
+                    tint = favouriteTint(selected),
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+        )
+        ChipKind.SOURCE -> SourceChip(chip.source.orEmpty(), selected, tap)
+        ChipKind.KEPT -> IconFilterChip(
+            selected,
+            chipVector(chip.kind),
+            if (calls) "Only calls whose recording is kept" else "Only recordings marked to keep",
+            tap,
+        )
+        // The calls the answering machine took.
+        ChipKind.MESSAGES -> IconFilterChip(selected, chipVector(chip.kind), "Only messages", tap)
+        ChipKind.NOT_RECORDED -> IconFilterChip(selected, chipVector(chip.kind), "Only calls not recorded", tap)
+        // The fold-out. A filter chip in looks, a disclosure in
+        // job: selected while the field is open, so the icon
+        // reads as "search is showing" rather than a filter that
+        // is on.
+        ChipKind.SEARCH -> FilterChip(
+            selected = selected,
+            onClick = tap,
+            shape = chipShape(),
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.secondary,
+            ),
+            label = {
+                Icon(
+                    chipVector(chip.kind),
+                    contentDescription = if (calls) "Search calls" else "Search recordings",
+                    // An icon-only chip label does not inherit a
+                    // visible content colour the way a text label
+                    // does - untinted it came out invisible - so
+                    // the tint is set for each state: onSecondary
+                    // on the bright selected pill, onSurfaceVariant
+                    // on the band.
+                    tint = if (selected) {
+                        MaterialTheme.colorScheme.onSecondary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+        )
+    }
+}
+
+/** A chip's icon, the row's and the side panel's alike; SOURCE's is the
+ *  phone's - a messenger's chip wears its app's icon instead. */
+private fun chipVector(kind: ChipKind): ImageVector = when (kind) {
+    ChipKind.SEARCH -> Icons.Filled.Search
+    ChipKind.FAVORITES -> Icons.Filled.Star
+    ChipKind.SOURCE -> Icons.Filled.Call
+    ChipKind.KEPT -> KeepIcons.Kept
+    // The calls the answering machine took.
+    ChipKind.MESSAGES -> messageIcon
+    ChipKind.NOT_RECORDED -> CallIcons.NotRecorded
+}
+
+/** The favourites' star: gold on the band; a DEEPER gold once selected,
+ *  where the pill turns pale in dark theme and the bright gold washed into
+ *  it. */
+@Composable
+private fun favouriteTint(selected: Boolean) = if (selected) JemRecColors.favoriteSelected else JemRecColors.favorite
+
+/** A chip with its name (chipName), for the side panel: the row's own icon
+ *  first. */
+@Composable
+private fun WordChip(chip: ListChip, selected: Boolean, onClick: () -> Unit) {
+    val name = chipName(chip)
+    val source = chip.source.orEmpty()
+    val icon: @Composable () -> Unit = if (chip.kind == ChipKind.SOURCE && source != PHONE_SOURCE) {
+        val app = rememberAppIcon(packagesForTag(source), 18.dp)
+        ({ if (app != null) Image(app, contentDescription = null, modifier = Modifier.size(18.dp)) })
+    } else {
+        {
+            Icon(
+                chipVector(chip.kind),
+                contentDescription = null,
+                tint = if (chip.kind == ChipKind.FAVORITES) favouriteTint(selected) else LocalContentColor.current,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        shape = chipShape(),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.secondary,
+            selectedLabelColor = MaterialTheme.colorScheme.onSecondary,
+            selectedLeadingIconColor = MaterialTheme.colorScheme.onSecondary,
+        ),
+        leadingIcon = icon,
+        label = { ChipLabel(name) },
+    )
+}
+
+/**
+ * The line that says a list is narrowed - what narrows it, how many of how
+ * many are shown - and Show all, which turns every chip off and folds the
+ * search away. Pinned under the chips, in both tabs, upright or on its side.
+ * A lit chip can be scrolled out of the row's sight, and was: on the Honor
+ * (2026-10-23) Messages was lit past the screen's edge and the list showed 2
+ * of 52 with nothing saying why - the user's worry, recordings that seem to
+ * be gone. A of the fixes sketched, the user's pick. Heard as it changes.
+ */
+@Composable
+internal fun NarrowingLine(by: List<String>, shown: Int, of: Int, onShowAll: () -> Unit) {
+    if (by.isEmpty()) return
+    val haptics = LocalHapticFeedback.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 40.dp)
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "${by.joinToString(" · ")} · $shown of $of",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        TextButton(onClick = { haptics.tap(); onShowAll() }) { Text("Show all") }
+    }
+}
+
+/**
+ * The list's chips and search beside the list, on a phone on its side - the
+ * side panel's middle (option B, the user's pick, 2026-10-23). The same chips
+ * by the same rule as the row (chipsFor) and the same composable (ListChip),
+ * named and wrapping, as the row has no room to and scrolls instead; the
+ * search field under them. As in the row, the Recordings chips give way while
+ * selecting, and the field stays.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun NarrowingPanel(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    val focus = remember { FocusRequester() }
+    val calls = state.homeTab == HomeTab.CALLS
+    if (if (calls) state.calls.isEmpty() else state.recordings.isEmpty()) return
+    val open = if (calls) state.callsNarrowing.searchOpen else state.recordingsNarrowing.searchOpen
+    val query = if (calls) state.callsNarrowing.query else state.recordingsNarrowing.query
+    val on = if (calls) state.callsNarrowing.chipsOn() else state.recordingsNarrowing.chipsOn()
+    val chips = remember(if (calls) state.calls else state.recordings, on) {
+        if (calls) chipsFor(state.calls.map { it.chipFacts() }, on) else chipsFor(state.recordings.map { it.chipFacts() }, on)
+    }
+    LaunchedEffect(open) {
+        if (open) runCatching { focus.requestFocus() }
+    }
+    Column(Modifier.padding(top = 6.dp)) {
+        if (calls || !state.selecting) {
+            FlowRow(
+                Modifier.padding(end = 10.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (chip in chips) {
+                    ListChip(chip, chip in on, calls, words = true) { tapped ->
+                        haptics.tap()
+                        if (calls) vm.tapCallsChip(tapped) else vm.tapRecordingsChip(tapped)
+                    }
+                }
+            }
+        }
+        AnimatedVisibility(visible = open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            ListSearchField(query, if (calls) vm::setCallsQuery else vm::setQuery, focus, "Search by name or number")
         }
     }
 }
@@ -918,7 +1093,7 @@ internal fun ListChipRow(chips: List<ListChip>, on: Set<ListChip>, calls: Boolea
 @Composable
 private fun SourceChip(source: String, selected: Boolean, onClick: () -> Unit) {
     if (source == PHONE_SOURCE) {
-        IconFilterChip(selected, Icons.Filled.Call, "Only phone calls", onClick)
+        IconFilterChip(selected, chipVector(ChipKind.SOURCE), "Only phone calls", onClick)
         return
     }
     val name = VoipApps.labelForTag(source) ?: source
@@ -939,6 +1114,29 @@ private fun SourceChip(source: String, selected: Boolean, onClick: () -> Unit) {
             }
         },
     )
+}
+
+/**
+ * A pinned header keeps its place: a request from inside it to be brought
+ * into view - the search field's, as it takes focus when search opens -
+ * stops here. Passed on, it reached the list, which scrolled to where the
+ * header's item really is, the top: both lists jumped to their start as
+ * search opened (found on the Honor, 2026-10-23; BehaviourTest
+ * openingSearchLeaves...). Pinned, the header is on screen already, so there
+ * is nothing to scroll to.
+ */
+internal fun Modifier.keepsItsPlace(): Modifier = this then KeepsItsPlace
+
+private data object KeepsItsPlace : ModifierNodeElement<KeepsItsPlaceNode>() {
+    override fun create() = KeepsItsPlaceNode()
+    override fun update(node: KeepsItsPlaceNode) = Unit
+    override fun InspectorInfo.inspectableProperties() {
+        name = "keepsItsPlace"
+    }
+}
+
+private class KeepsItsPlaceNode : Modifier.Node(), BringIntoViewModifierNode {
+    override suspend fun bringIntoView(childCoordinates: LayoutCoordinates, boundsProvider: () -> Rect?) = Unit
 }
 
 /** The list's search field, folded out under the chips: [placeholder] says

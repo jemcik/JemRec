@@ -345,6 +345,27 @@ class SpikeReceiver : BroadcastReceiver() {
 
                     // The README's screenshots: swap the real list for invented
                     // calls, or put it back. See DemoRecordings.
+                    // Recently deleted's emulator check (tools/emulator_checks.py,
+                    // recently_deleted): a recording moved to the trash, as the
+                    // list's delete moves it, and where it is now - in the list,
+                    // in Recently deleted, or in neither:
+                    //   --es op trash --es name <file name> [--ez move true]
+                    "trash" -> {
+                        val name = intent.getStringExtra("name").orEmpty()
+                        val recordings = com.jemcik.jemrec.capture.Recordings
+                        val moved = if (intent.getBooleanExtra("move", false)) {
+                            recordings.list(appContext, withCallers = false).firstOrNull { it.name == name }
+                                ?.let { com.jemcik.jemrec.capture.Trash.trashAll(appContext, listOf(it)) }
+                                ?.let { " (moved ${it.deleted}, failed ${it.failed}, asks ${it.needsConsent != null})" }
+                                ?: " (no recording named so)"
+                        } else {
+                            ""
+                        }
+                        val listed = recordings.list(appContext, withCallers = false).any { it.name == name }
+                        val trashed = com.jemcik.jemrec.capture.Trash.list(appContext).any { it.name == name }
+                        report(appContext, "trash", "$name: listed=$listed trashed=$trashed$moved")
+                    }
+
                     "demo" -> {
                         val on = intent.getBooleanExtra("on", false)
                         DemoRecordings.set(appContext, on)

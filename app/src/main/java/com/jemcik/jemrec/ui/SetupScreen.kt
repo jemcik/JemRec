@@ -175,17 +175,12 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ButtonPair(listOf("Keep it", "Hide it")) { i, modifier ->
                         FilledTonalButton(
-                            onClick = { haptics.tap(); vm.setHideDebugNotification(false) },
+                            onClick = { haptics.tap(); vm.setHideDebugNotification(i == 1) },
                             enabled = !state.busy,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("Keep it") }
-                        FilledTonalButton(
-                            onClick = { haptics.tap(); vm.setHideDebugNotification(true) },
-                            enabled = !state.busy,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("Hide it") }
+                            modifier = modifier,
+                        ) { ButtonLabel(if (i == 0) "Keep it" else "Hide it") }
                     }
                 }
             }

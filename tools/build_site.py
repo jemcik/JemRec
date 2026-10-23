@@ -492,9 +492,6 @@ main.home { max-width: none; padding: 0 0 2rem; }
 }
 .band .card { background: var(--surface); }
 .band .links { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: 1.8rem 0 0; }
-.cards.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-@media (max-width: 62rem) { .cards.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 38rem) { .cards.four { grid-template-columns: minmax(0, 1fr); } }
 
 .faq { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.6fr); gap: 1rem 3.5rem; align-items: start; }
 @media (max-width: 54rem) { .faq { grid-template-columns: minmax(0, 1fr); } }
@@ -1106,7 +1103,8 @@ SETUP = [
           "callers JemRec records, so **Whose calls to keep** applies to both. "
           "It never answers while you are on another call - a phone call, a "
           "messenger call or a meeting - while roaming, or while recording is "
-          "off, and a caller JemRec cannot identify is left to ring. It needs Exact call tracking."),
+          "off, and a caller JemRec cannot identify is left to ring. It needs Exact call tracking: "
+          "turning tracking off with the machine on asks first, then turns both off."),
     ("p", "**After you call an emergency number** it stands down for a day, so "
           "an emergency service calling you back - from any number - rings until "
           "you can pick up; a call the network marks as their callback is never "
@@ -1170,12 +1168,23 @@ SETUP = [
           "the player away. "
           "The share button offers the original file or a converted copy that "
           "plays anywhere."),
+    ("p", "**With the screen off.** A recording plays on when the screen goes "
+          "off or you leave the app, under the phone's own media controls: in "
+          "the notifications, in Quick Settings, on the lock screen, and on an "
+          "Honor in the pill at the top of the screen. They name the caller "
+          "only once the phone is unlocked; locked, they say **Call recording**. "
+          "A call ringing in pauses it, and it plays on after; headphones coming "
+          "out pause it until you play it again. It does not start during a "
+          "call. The notification's pause, or the chevron, stops it; swiping "
+          "JemRec away leaves it playing, as music apps do."),
     ("p", "**Finding a recording.** The chips above the list narrow it: "
           "favourites, the phone or a messenger, kept, messages. The magnifier "
           "opens a search by name, number or time. Chips of one kind add up - "
           "WhatsApp and Telegram - and different kinds narrow: and favourites. "
           "A chip only appears where it would narrow the list, and one that is "
-          "on stays, so you can turn it off."),
+          "on stays, so you can turn it off. While anything narrows the list, a "
+          "line under the chips says what, and how many of how many are shown; "
+          "**Show all** brings everything back."),
     ("p", "To delete, tap a contact's photo or long-press a row to start "
           "selecting, tick what you want, and use the bin in the toolbar. It asks "
           "first and tells you how many."),
@@ -1243,7 +1252,9 @@ SETUP = [
           "on; the gear "
           "for Settings; and the **Recordings** and **Calls** tabs, Recordings "
           "with how many there are. The settings the header marks wear the same "
-          "mark in Settings."),
+          "mark in Settings. With the phone on its side, the header becomes a "
+          "panel at the left - the chips and search in it, with their names, the "
+          "tabs at its foot - and the list beside it takes the full height."),
 
     ("h2", "Turning JemRec off"),
     ("p", "The record button in the header - Memo's round button, Deck's REC "
@@ -1326,6 +1337,9 @@ SETUP = [
         ["**Message from** the caller", "A message, with a sound, Play, Share and "
          "Delete. It stays until you dismiss it, whether or not each call is "
          "shown when it ends."],
+        ["The caller, with pause and a seek bar", "A recording you played, going "
+         "on with the screen off. On the lock screen it says only **Call "
+         "recording**. It goes when the recording is stopped."],
     ])),
 
     ("h2", "Settings"),
@@ -1347,7 +1361,8 @@ SETUP = [
         "**Messenger calls** — a switch for each supported messenger installed, "
         "and whether to show who called from their call notifications.",
         "**Exact call tracking** — recordings start at the answer, and calls "
-        "nobody answered are not kept.",
+        "nobody answered are not kept. The answering machine needs it: with the "
+        "machine on, turning it off asks whether to turn both off.",
     ]),
     ("p", "**Look**"),
     ("ul", [
@@ -1364,7 +1379,8 @@ SETUP = [
         "year; calls shorter than 5, 10 or 30 seconds. Kept recordings are never "
         "touched, and whatever is removed waits in Recently deleted.",
         "**Recently deleted** — what has been deleted in the last 30 days, with "
-        "**Restore** for each.",
+        "**Restore** for each, **Restore all**, and **Delete all for good**, which "
+        "asks first: it cannot be undone.",
     ]),
     ("p", "**Notifications and shortcuts**"),
     ("ul", [
@@ -1808,7 +1824,8 @@ FEATURES = [
      "plays them from its call history.",
      "file-names"),
     ("Play, keep, clean up",
-     "A call plays as its waveform, to see where people talk; a keep mark, a "
+     "A call plays as its waveform, to see where people talk, and plays on with "
+     "the screen off, under the phone&rsquo;s media controls; a keep mark, a "
      "30-day Recently deleted, and auto-delete for old or very short ones.",
      "playing-sharing-and-deleting"),
     ("Hear about problems",
@@ -1841,6 +1858,9 @@ PRIVACY_POINTS = [
     ("person", "Calls and contacts only if you allow them",
      "To name callers, keep calls by who they were with, and notice a call that "
      "went unrecorded. Everything works without them."),
+    ("lock", "No caller on the lock screen",
+     "While a recording plays, the phone&rsquo;s media controls name the caller "
+     "only once it is unlocked; locked, they say <em>Call recording</em>."),
     ("shield", "Debugging stays on while JemRec is installed",
      "The recorder needs it. A computer you have paired can connect over the "
      "same Wi-Fi, so now and then check <em>Wireless debugging &rarr; Paired "
@@ -2058,7 +2078,7 @@ INDEX_BODY = f"""
     <h2>Privacy and permissions</h2>
     <p class="intro">JemRec has no servers, no accounts and no analytics: what it
        records stays on your phone.</p>
-    <div class="cards four">
+    <div class="cards">
       {"".join(card(*p) for p in PRIVACY_POINTS)}
     </div>
     <div class="links">
@@ -2196,7 +2216,7 @@ HOW_BODY = f"""
 
   <h3>Nothing is deleted by accident</h3>
   <p>Delete moves a recording to Recently deleted, where it can be restored for
-     30 days. Auto-delete, off until you choose it, removes recordings past an
+     30 days, one by one or all at once, unless you empty it first. Auto-delete, off until you choose it, removes recordings past an
      age you pick and calls too short to have been a conversation, into the same
      place. A bookmark marks a recording to keep, and nothing removes a kept one.
      A Quick Settings tile turns recording on and off without opening the
@@ -2271,9 +2291,16 @@ PRIVACY_BODY = f"""
             deleted in JemRec waits 30 days in Recently deleted, then is removed:
             in the standard folder, Android&rsquo;s own trash does that; in a
             folder you chose, it waits as a hidden file that JemRec removes.
+            <em>Delete all for good</em> removes them all at once, when you ask.
             Messages the answering machine took are recordings too; which ones
             are messages is kept by file name in the app&rsquo;s private
             storage.</td></tr>
+    <tr><td>Caller colours</td>
+        <td>Only once you use the Multitrack look: which of its six colours
+            each caller has, so a caller keeps theirs, also after you change the
+            look. Kept by a one-way code worked out
+            from the name, not the name itself, in the app&rsquo;s private
+            storage, and in no backup. Uninstalling deletes it.</td></tr>
     <tr><td>Your greeting</td>
         <td>Only if you record one for the answering machine: in the app&rsquo;s
             private storage, and a copy the recorder plays from. Deleting it in
@@ -2348,6 +2375,14 @@ PRIVACY_BODY = f"""
             which recordings you marked to keep (by file name), and random tokens the app uses to talk to its own recorder
             and to its own notifications.</td></tr>
   </table>
+
+  <h2>While a recording plays</h2>
+  <p>The phone&rsquo;s media controls show who the call was with, as they show
+     a song&rsquo;s title: in the notifications and Quick Settings, and to a
+     Bluetooth device or a car the phone is connected to. On the lock screen they
+     say only <em>Call recording</em>. Apps you have allowed to read your
+     notifications can see it, as they can any notification; other apps are
+     turned away. Nothing of it is kept: it goes when the recording stops.</p>
 
   <h2>Network use</h2>
   <p>The app holds the <code>INTERNET</code> permission and uses no network. Android

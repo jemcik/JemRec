@@ -85,6 +85,11 @@ class AnswerController(
     private val scope: CoroutineScope,
     private val say: (String) -> Unit,
     initial: AnswerUi? = null,
+    /** A recording playing paused, before a take or the greeting's preview.
+     *  Since 0.19 one plays on past the home screen, and a take records the
+     *  microphone: over the loudspeaker, the call would go into the greeting
+     *  every caller hears. */
+    private val quiet: () -> Unit = {},
 ) {
     private val _state = MutableStateFlow(initial ?: AnswerUi())
     val state: StateFlow<AnswerUi> = _state.asStateFlow()
@@ -176,6 +181,7 @@ class AnswerController(
     fun startTake() {
         if (take?.isActive == true) return
         stopPreview()
+        quiet()
         take = scope.launch {
             if (!CaptureDaemon.startTake(app)) {
                 _state.update { it.copy(greetingProblem = "The recorder could not start recording. Is it running?") }
@@ -222,6 +228,7 @@ class AnswerController(
             stopPreview()
             return
         }
+        quiet()
         scope.launch {
             val pcm = withContext(Dispatchers.IO) { Greeting.file(app).takeIf { it.isFile }?.readBytes() } ?: return@launch
             val track = Greeting.preview(pcm) ?: return@launch

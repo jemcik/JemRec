@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui
 
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -45,9 +46,13 @@ import com.jemcik.jemrec.ui.theme.multitrackColors
  * it cannot record; or, switching on, a row of LEDs sweeping.
  *
  * Option A of the header redesign (2026-10-23): from 211dp to about 112.
+ *
+ * With a [panel] - a phone on its side - the header is the side panel: its
+ * ground the column's full height, the panel under the state, the tabs at
+ * the foot.
  */
 @Composable
-internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
+internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Boolean, panel: (@Composable () -> Unit)? = null) {
     val c = multitrackColors()
     val haptics = LocalHapticFeedback.current
     val status = recorderStatus(state)
@@ -63,7 +68,8 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
     Column(
         Modifier
             .fillMaxWidth()
-            .multitrackPanel(c)
+            .then(if (panel != null) Modifier.fillMaxHeight() else Modifier)
+            .multitrackPanel(c, aside = panel != null)
             .windowInsetsPadding(BarInsets)
             .padding(start = 16.dp, end = 6.dp, top = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -125,6 +131,7 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
             // (5.8:1 on the white panel in light).
             SettingsGear(vm, c.control)
         }
+        panel?.let { PanelMiddle(it) }
         MultiTabs(state, c, Modifier.padding(end = 10.dp)) { haptics.tap(); vm.showTab(it) }
     }
 }

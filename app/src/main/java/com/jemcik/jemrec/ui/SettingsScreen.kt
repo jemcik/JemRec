@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Log
+import com.jemcik.jemrec.ui.theme.lookMono
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
@@ -49,7 +50,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.R
@@ -62,7 +62,7 @@ import com.jemcik.jemrec.ui.theme.JemRecColors
 import com.jemcik.jemrec.ui.theme.LocalLookChoice
 
 /** Which of Settings' dialogs is open. Saved by name, so a rotation keeps it. */
-private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT }
+private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT, TRACKING_OFF }
 
 /**
  * The things that are not the answer to "would a call be recorded right now".
@@ -150,6 +150,27 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
             onChoose = { vm.setAutoDelete(shorterThan = it) },
             onDismiss = { dialog = null },
             enabled = !state.busy,
+        )
+        // Exact call tracking switched off with the answering machine on: the
+        // machine goes off with it, and did without a word (the user found it,
+        // 2026-10-24). Asked first - Material's dialog "to provide
+        // confirmation of a choice before committing to it" - with the
+        // question itself as the headline and a confirm named for what it
+        // does. Cancel leaves both on.
+        SettingsDialog.TRACKING_OFF -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Turn off the answering machine too?") },
+            text = {
+                Text(
+                    "The answering machine needs exact call tracking to answer calls, so it goes " +
+                        "off with it. Turning tracking back on leaves the machine off: switch it on " +
+                        "again in Answering machine."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { haptics.confirm(); dialog = null; vm.setCallTracking(false) }) { Text("Turn both off") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
         )
         null -> Unit
     }
@@ -248,7 +269,11 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
                     },
                     icon = Icons.Filled.Phone,
                     checked = state.callTracking,
-                    onCheckedChange = vm::setCallTracking,
+                    // Off with the answering machine on turns that off too:
+                    // asked first (SettingsDialog.TRACKING_OFF).
+                    onCheckedChange = { on ->
+                        if (!on && answer.enabled) dialog = SettingsDialog.TRACKING_OFF else vm.setCallTracking(on)
+                    },
                 )
             }
         }
@@ -933,20 +958,24 @@ fun DiagnosticsScreen(state: UiState, vm: MainViewModel) {
 
         // Two related actions, one language: tonal buttons sharing the row at
         // equal width, not a loud one beside a faint one.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(
-                onClick = { haptics.tap(); vm.selfTest() },
-                enabled = !state.busy,
-                modifier = Modifier.weight(1f),
-            ) { Text("Self-test") }
-            // Off when there is nothing to start: against a running recorder
-            // it short-circuits on the first ping and reports success, which
-            // is indistinguishable from doing nothing - because it is.
-            FilledTonalButton(
-                onClick = { haptics.tap(); vm.bootstrapDaemon() },
-                enabled = !state.busy && !state.daemonRunning,
-                modifier = Modifier.weight(1f),
-            ) { Text("Start recorder") }
+        ButtonPair(listOf("Self-test", "Start recorder")) { i, modifier ->
+            if (i == 0) {
+                FilledTonalButton(
+                    onClick = { haptics.tap(); vm.selfTest() },
+                    enabled = !state.busy,
+                    modifier = modifier,
+                ) { ButtonLabel("Self-test") }
+            } else {
+                // Off when there is nothing to start: against a running
+                // recorder it short-circuits on the first ping and reports
+                // success, which is indistinguishable from doing nothing -
+                // because it is.
+                FilledTonalButton(
+                    onClick = { haptics.tap(); vm.bootstrapDaemon() },
+                    enabled = !state.busy && !state.daemonRunning,
+                    modifier = modifier,
+                ) { ButtonLabel("Start recorder") }
+            }
         }
 
         if (state.log.isNotEmpty()) {
@@ -962,7 +991,7 @@ fun DiagnosticsScreen(state: UiState, vm: MainViewModel) {
                         RoundedCornerShape(20.dp),
                     )
                     .padding(12.dp),
-                fontFamily = FontFamily.Monospace,
+                fontFamily = lookMono(),
                 style = MaterialTheme.typography.bodySmall,
                 overflow = TextOverflow.Clip,
             )

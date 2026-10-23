@@ -284,27 +284,27 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                 )
             }
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(top = 8.dp),
-        ) {
-            if (a.recordingTake) {
-                FilledTonalButton(
+        val record = if (a.greetingSeconds == null) "Record" else "Record again"
+        val labels = when {
+            a.recordingTake -> listOf("Stop")
+            a.greetingSeconds != null -> listOf(record, "Delete")
+            else -> listOf(record)
+        }
+        ButtonPair(labels, Modifier.padding(top = 8.dp)) { i, modifier ->
+            when (labels[i]) {
+                "Stop" -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.stopTake() },
-                    modifier = Modifier.weight(1f),
-                ) { Text("Stop") }
-            } else {
-                FilledTonalButton(
+                    modifier = modifier,
+                ) { ButtonLabel("Stop") }
+                "Delete" -> FilledTonalButton(
+                    onClick = { haptics.tap(); vm.answer.deleteGreeting() },
+                    modifier = modifier,
+                ) { ButtonLabel("Delete") }
+                else -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.startTake() },
                     enabled = state.daemonRunning,
-                    modifier = Modifier.weight(1f),
-                ) { Text(if (a.greetingSeconds == null) "Record" else "Record again") }
-                if (a.greetingSeconds != null) {
-                    FilledTonalButton(
-                        onClick = { haptics.tap(); vm.answer.deleteGreeting() },
-                        modifier = Modifier.weight(1f),
-                    ) { Text("Delete") }
-                }
+                    modifier = modifier,
+                ) { ButtonLabel(record) }
             }
         }
         if (a.recordingTake) TakeTimer(a.takeStartedAt)
@@ -524,6 +524,9 @@ internal fun answerSummary(a: AnswerUi): String = when {
     a.enabled -> "After ${a.delay} seconds" +
         if (a.results.isEmpty()) " - not tested on this phone yet" else ""
     a.stageOne?.possible == false -> "Not available on this phone"
+    // Why it is off, where the user looks: Android's settings guide, a
+    // dependent setting with "a brief explanation of why" it is unavailable.
+    !a.callTracking -> "Off - needs exact call tracking"
     else -> "Off"
 }
 

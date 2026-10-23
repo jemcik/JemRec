@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-567 JVM tests, no device needed - 465 for the app and 102 for the daemon:
+631 JVM tests, no device needed - 529 for the app and 102 for the daemon:
 
     ./gradlew test
 
@@ -86,7 +86,7 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.18):
+emulator, for each Android version it claims (12, 13 and 17 for 0.19):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 
@@ -101,9 +101,14 @@ call ringing over a messenger call left to ring (a stand-in call from
 in the day after an emergency call (the pause set as the call tracker sets it;
 no emergency number is dialled), and, in Ask first, a call taken over: the
 message kept and the rest asked about. Then a call's waveform, kept as it is
-saved, and the app started again in Deck (dark), Multitrack and Memo, opening
-in each. It refuses to run on anything but an emulator, and needs a
-`google_apis` image.
+saved; a recording played from its row going on with the screen off, named
+only "Call recording" while locked and by its caller again once unlocked,
+held back by a ringing call and playing on after it; a deleted recording
+brought back by Restore all in Recently deleted, then deleted again and gone
+for good by Delete all for good, from Android's own trash and the disk; and
+the app started again in Deck (dark), Multitrack and Memo, opening in each.
+It refuses to run on anything but an emulator, and needs a `google_apis`
+image.
 
 A pre-push hook runs the tests and lint before anything leaves the machine:
 

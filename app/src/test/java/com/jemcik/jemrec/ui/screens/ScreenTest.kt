@@ -32,6 +32,7 @@ import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.LookChoice
 import com.jemcik.jemrec.ui.theme.Looks
 import org.junit.After
+import com.google.common.util.concurrent.SettableFuture
 import org.junit.Before
 import org.junit.Rule
 import org.junit.rules.ExternalResource
@@ -87,9 +88,11 @@ abstract class ScreenTest {
     }
 
     /** A view model over [state] - and the answering machine's [answer] -
-     *  that only the taps reach. */
+     *  that only the taps reach. Its playback session never connects: a tap
+     *  that plays changes the screen as the app does before the session
+     *  answers, and no further. */
     fun viewModel(state: UiState = UiState(), answer: AnswerUi? = null) =
-        MainViewModel(RuntimeEnvironment.getApplication(), state, answer)
+        MainViewModel(RuntimeEnvironment.getApplication(), state, answer, connectSession = { SettableFuture.create() })
 
     /**
      * Whether WhatsApp, Telegram and Viber are "installed", so their icons

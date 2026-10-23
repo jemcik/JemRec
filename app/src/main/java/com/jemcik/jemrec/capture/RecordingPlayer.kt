@@ -6,6 +6,22 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Log
 
+/** What SessionPlayer plays a recording with: RecordingPlayer on the phone,
+ *  a stand-in in the tests. */
+internal interface PlaybackEngine {
+    /** Opens [uri], ready to start from the beginning; false if it will not
+     *  open. [onFinished] at its end, [onFailed] on an error while playing. */
+    fun open(uri: Uri, onFinished: () -> Unit, onFailed: () -> Unit): Boolean
+
+    /** False if it would not start: after an error the player stays down. */
+    fun start(): Boolean
+    fun pause()
+    fun seekTo(ms: Int)
+    fun close()
+    val positionMs: Int
+    val durationMs: Int
+}
+
 /**
  * Plays recordings inside the app.
  *
@@ -22,46 +38,26 @@ import android.util.Log
  * its recordings to anything without being asked to.
  *
  * So playback stays here, and sharing stays a separate, deliberate action.
+ * Since 0.19 it plays in PlaybackService, under the system's media controls,
+ * so it goes on with the screen off; SessionPlayer drives this.
  *
  * Speech, not music: USAGE_MEDIA with CONTENT_TYPE_SPEECH routes to the media
  * stream rather than the call stream, which is what a person expects when they
  * play a recording back with the phone to their ear or on speaker.
  */
-class RecordingPlayer(private val context: Context) {
+internal class RecordingPlayer(private val context: Context) : PlaybackEngine {
 
     private var player: MediaPlayer? = null
 
-    /** Which recording is loaded, playing or paused. Null when nothing is. */
-    var current: Uri? = null
-        private set
-
-    var isPlaying: Boolean = false
-        private set
-
-    val positionMs: Int
+    override val positionMs: Int
         get() = runCatching { player?.currentPosition ?: 0 }.getOrDefault(0)
 
-    val durationMs: Int
+    override val durationMs: Int
         get() = runCatching { player?.duration ?: 0 }.getOrDefault(0)
 
-    /**
-     * Play this recording, or pause it if it is the one already playing.
-     *
-     * Tapping the row that is currently playing should stop it - anything else
-     * means there is no way to stop a recording except letting it finish.
-     */
-    /** Whether it is now playing, or paused at the user's tap: false is a
-     *  recording that would not play, for the screen to say so. */
-    fun toggle(uri: Uri, onFinished: () -> Unit): Boolean {
-        if (current == uri && player != null) {
-            if (isPlaying) {
-                pause()
-                return true
-            }
-            return resume()
-        }
-        release()
-        runCatching {
+    override fun open(uri: Uri, onFinished: () -> Unit, onFailed: () -> Unit): Boolean {
+        close()
+        return runCatching {
             player = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -70,52 +66,40 @@ class RecordingPlayer(private val context: Context) {
                         .build()
                 )
                 setDataSource(context, uri)
-                setOnCompletionListener {
-                    this@RecordingPlayer.isPlaying = false
-                    onFinished()
-                }
+                setOnCompletionListener { onFinished() }
                 setOnErrorListener { _, what, extra ->
                     Log.e(TAG, "player: error what=$what extra=$extra")
-                    this@RecordingPlayer.isPlaying = false
-                    onFinished()
+                    onFailed()
                     true
                 }
                 prepare()
-                start()
             }
-            current = uri
-            isPlaying = true
-        }.onFailure {
+            true
+        }.getOrElse {
             Log.e(TAG, "player: could not play $uri", it)
-            release()
+            close()
+            false
         }
-        return isPlaying
-    }
-
-    fun pause() {
-        runCatching { player?.pause() }
-        isPlaying = false
     }
 
     /** After an error the player will not start again: playing only if it
      *  did, rather than a pause icon and a running clock over silence. */
-    private fun resume(): Boolean {
-        isPlaying = player != null && runCatching { player?.start() }.isSuccess
-        return isPlaying
+    override fun start(): Boolean = player != null && runCatching { player?.start() }.isSuccess
+
+    override fun pause() {
+        runCatching { player?.pause() }
     }
 
     /** To [ms] itself. The plain seekTo(int) is SEEK_PREVIOUS_SYNC (Android's
      *  MediaPlayer docs): the sync frame at or before it, which can leave
      *  the player short of where the scrubber was tapped. */
-    fun seekTo(ms: Int) {
+    override fun seekTo(ms: Int) {
         runCatching { player?.seekTo(ms.toLong(), MediaPlayer.SEEK_CLOSEST) }
     }
 
-    fun release() {
+    override fun close() {
         runCatching { player?.release() }
         player = null
-        current = null
-        isPlaying = false
     }
 
     private companion object {

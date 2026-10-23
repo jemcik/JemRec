@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui
 
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -51,9 +52,13 @@ import com.jemcik.jemrec.ui.theme.memoColors
  * fragile: on the Honor (2026-10-23) it once took every scroll and the list
  * stopped. Option A of the header redesign put it all in one strip, about
  * 120dp where it was 368, and nothing folds.
+ *
+ * With a [panel] - a phone on its side - the header is the side panel: its
+ * ground the column's full height, the panel under the state, the tabs at
+ * the foot.
  */
 @Composable
-internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
+internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, panel: (@Composable () -> Unit)? = null) {
     val c = memoColors()
     val haptics = LocalHapticFeedback.current
     val status = recorderStatus(state)
@@ -67,7 +72,8 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
     Column(
         Modifier
             .fillMaxWidth()
-            .memoBand(c)
+            .then(if (panel != null) Modifier.fillMaxHeight() else Modifier)
+            .memoBand(c, aside = panel != null)
             .windowInsetsPadding(BarInsets)
             .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -113,6 +119,7 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
             }
             SettingsGear(vm, c.idle)
         }
+        panel?.let { PanelMiddle(it) }
         MemoTabs(state, c) { haptics.tap(); vm.showTab(it) }
     }
 }
@@ -193,25 +200,39 @@ private fun memoMarkWords(mark: HeaderMark): String = when (mark.setting) {
  * composable for both: drawn apart, Settings' marks sat in coloured circles
  * the header never had (the user found it, 2026-10-23). A mark that is off,
  * which the header leaves out, Settings draws faded.
+ *
+ * [scale] draws its dot or icon larger, and the spacing - not the age,
+ * which scaled with them ran into the row's name - and is
+ * MEMO_MARK_IN_SETTINGS there: at the header's size the marks sat small
+ * among the rows' 24 dp icons (the user, 2026-10-23).
  */
 @Composable
-internal fun MemoMark(mark: HeaderMark, c: MemoColors, modifier: Modifier = Modifier) {
+internal fun MemoMark(mark: HeaderMark, c: MemoColors, modifier: Modifier = Modifier, scale: Float = 1f) {
     Row(
         modifier.testTag(markFaceTag(mark)),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp * scale),
     ) {
+        val glyph = Modifier.testTag(markGlyphTag(mark))
         when (mark.setting) {
-            Marked.MODE -> Led(JemRecColors.play, size = 7.dp, glow = false)
-            Marked.ANSWERING -> Icon(messageIcon, contentDescription = null, tint = c.idle, modifier = Modifier.size(16.dp))
-            Marked.MESSENGERS -> Icon(SettingsIcons.Chat, contentDescription = null, tint = c.idle, modifier = Modifier.size(14.dp))
+            Marked.MODE -> Led(JemRecColors.play, size = 7.dp * scale, glow = false, modifier = glyph)
+            Marked.ANSWERING -> Icon(messageIcon, contentDescription = null, tint = c.idle, modifier = glyph.size(16.dp * scale))
+            Marked.MESSENGERS -> Icon(SettingsIcons.Chat, contentDescription = null, tint = c.idle, modifier = glyph.size(14.dp * scale))
             Marked.AUTO_DELETE -> {
-                Icon(Icons.Filled.Delete, contentDescription = null, tint = c.idle, modifier = Modifier.size(14.dp))
+                Icon(Icons.Filled.Delete, contentDescription = null, tint = c.idle, modifier = glyph.size(14.dp * scale))
                 if (mark.lit) MemoSmall(ageShort(mark.days), c.idle)
             }
         }
     }
 }
+
+/** A Memo mark's dot or icon, for the tests to measure. */
+internal fun markGlyphTag(mark: HeaderMark) = "${markFaceTag(mark)}-glyph"
+
+/** Memo's marks in Settings, against the header's: the answering machine's
+ *  16 dp icon at the rows' 24 dp. Deck's and Multitrack's are their
+ *  header's size there - they are print and LEDs, not icons. */
+internal const val MEMO_MARK_IN_SETTINGS = 1.5f
 
 @Composable
 private fun MemoButton(state: UiState, vm: MainViewModel, c: MemoColors) {
