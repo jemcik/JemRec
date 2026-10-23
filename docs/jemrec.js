@@ -16,7 +16,39 @@
     btn.querySelector('.theme-name').textContent = name;
   }
 
+  // The screenshots' look, as the theme: Memo, Deck, Multitrack, round. Memo,
+  // the app's default, is no attribute at all.
+  var LOOK_KEY = 'jemrec-look', LOOKS = ['memo', 'deck', 'multitrack'];
+  function readLook() {
+    try {
+      var v = localStorage.getItem(LOOK_KEY);
+      return LOOKS.indexOf(v) >= 0 ? v : 'memo';
+    } catch (e) { return 'memo'; }
+  }
+  function applyLook(v) {
+    var r = document.documentElement;
+    if (v === 'memo') r.removeAttribute('data-look');
+    else r.setAttribute('data-look', v);
+  }
+  function labelLook(btn, v) {
+    var name = v.charAt(0).toUpperCase() + v.slice(1);
+    btn.setAttribute('aria-label', 'Screenshots in the ' + name + ' look. Click to change.');
+    btn.querySelector('.look-name').textContent = name;
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
+    var lookBtn = document.querySelector('.look');
+    if (lookBtn) {
+      var curLook = readLook();
+      labelLook(lookBtn, curLook);
+      lookBtn.addEventListener('click', function () {
+        curLook = LOOKS[(LOOKS.indexOf(curLook) + 1) % LOOKS.length];
+        try { localStorage.setItem(LOOK_KEY, curLook); } catch (e) {}
+        applyLook(curLook);
+        labelLook(lookBtn, curLook);
+      });
+    }
+
     var btn = document.querySelector('.theme');
     if (btn) {
       var cur = read();

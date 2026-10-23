@@ -92,6 +92,11 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
     val narrowing = state.callsNarrowing
     val shown = remember(state.calls, narrowing) { filterCalls(state.calls, narrowing) }
     val days = remember(shown, today) { byDay(keyedCalls(shown), now()) { it.call.at } }
+    // The row each recording's player opens under: the topmost of the calls
+    // that share it (LocalPlayerHere).
+    val playerRow = remember(days) {
+        buildMap { for ((_, rows) in days) for ((key, call) in rows) call.recording?.let { putIfAbsent(it.name, key) } }
+    }
     val searchFocus = remember { FocusRequester() }
     LaunchedEffect(narrowing.searchOpen) {
         if (narrowing.searchOpen) runCatching { searchFocus.requestFocus() }
@@ -156,10 +161,12 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
             // how many each holds.
             days.forEachIndexed { run, (day, rows) ->
                 item(key = "day-$run", contentType = "day") { DayHeading(day, rows.size, calls = true) }
-                items(rows, key = { it.key }, contentType = { "call" }) { (_, call) ->
+                items(rows, key = { it.key }, contentType = { "call" }) { (key, call) ->
                     val recording = call.recording
                     if (recording != null) {
-                        RecordingRow(recording.forCall(call), day, state, vm)
+                        CompositionLocalProvider(LocalPlayerHere provides (playerRow[recording.name] == key)) {
+                            RecordingRow(recording.forCall(call), day, state, vm)
+                        }
                     } else {
                         CallRow(call, day)
                     }

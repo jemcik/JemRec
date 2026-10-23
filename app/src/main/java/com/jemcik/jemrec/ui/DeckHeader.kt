@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -88,9 +89,7 @@ private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColo
     val ink = if (off) c.inkOff else c.ink
     // Dark: the segments glow, the way a negative LCD's do.
     val glow = deckGlow(c, ink)
-    // The small lines in a plain mono: the LCD's dot font is for the one big
-    // word, and too hard to read at this size.
-    val small = TextStyle(fontFamily = LookFonts.engraved, fontSize = 11.sp, letterSpacing = 0.04.em, color = ink, shadow = glow)
+    val small = deckSmall(c, ink)
     val word = when (status) {
         RecorderStatus.READY -> "REC READY"
         RecorderStatus.STARTING -> "STARTING"
@@ -110,7 +109,7 @@ private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColo
             .border(2.dp, c.bezel, lcdShape)
             .then(
                 if (asks) {
-                    Modifier.allowWifiTap(state, vm)
+                    Modifier.allowWifiTap(vm)
                 } else {
                     Modifier
                 },
@@ -128,14 +127,14 @@ private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColo
             SteadyLine(sizes = { DeckWord(word, ink, glow, fitted = false) }) { DeckWord(word, ink, glow) }
             SteadyLine(
                 sizes = {
-                    DeckMarks(markLabels(marks, RecorderStatus.READY), small, ink)
+                    DeckMarks(litMarks(marks, RecorderStatus.READY), small)
                     for (each in Instruction.entries) Text(deckWords(each), style = small)
                 },
             ) {
                 when {
                     status == RecorderStatus.STARTING -> SegmentChase(ink)
                     instruction != null -> Text(deckWords(instruction), style = small)
-                    else -> DeckMarks(markLabels(marks, status), small, ink)
+                    else -> DeckMarks(litMarks(marks, status), small)
                 }
             }
         }
@@ -169,22 +168,38 @@ private fun DeckWord(word: String, ink: Color, glow: Shadow?, fitted: Boolean = 
  *  text size the four are wider than the LCD. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DeckMarks(labels: List<String>, small: TextStyle, ink: Color) {
+private fun DeckMarks(marks: List<HeaderMark>, small: TextStyle) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        for (label in labels) {
-            Text(
-                label,
-                style = small.copy(fontSize = 9.sp),
-                maxLines = 1,
-                modifier = Modifier
-                    .border(1.dp, ink, RoundedCornerShape(2.dp))
-                    .padding(horizontal = 3.dp),
-            )
-        }
+        for (mark in marks) DeckMark(mark, small)
     }
+}
+
+/** The LCD's small print - the marks, the notes - in a plain mono: the
+ *  LCD's dot font is for the one big word, and too hard to read this small.
+ *  [ink] lit or off, glowing in dark. */
+internal fun deckSmall(c: DeckColors, ink: Color) =
+    TextStyle(fontFamily = LookFonts.engraved, fontSize = 11.sp, letterSpacing = 0.04.em, color = ink, shadow = deckGlow(c, ink))
+
+/**
+ * One setting's mark as the LCD prints it, boxed, in [small] (deckSmall) - on
+ * the header's LCD and on Settings' beside the setting (SettingsMark). One
+ * composable for both: drawn apart, the two had come to differ in their
+ * spacing, padding and glow (the user found it, 2026-10-23).
+ */
+@Composable
+internal fun DeckMark(mark: HeaderMark, small: TextStyle) {
+    Text(
+        mark.label,
+        style = small.copy(fontSize = 9.sp),
+        maxLines = 1,
+        modifier = Modifier
+            .testTag(markFaceTag(mark))
+            .border(1.dp, small.color, RoundedCornerShape(2.dp))
+            .padding(horizontal = 3.dp),
+    )
 }
 
 /** Recordings | Calls, as two keys on the face; the lit one has an LED, and

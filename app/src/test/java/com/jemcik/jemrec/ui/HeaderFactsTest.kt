@@ -24,14 +24,14 @@ class HeaderFactsTest {
 
     @Test fun oneMarkPerSettingInAFixedOrder() {
         val all = Marks(automatic = true, answering = true, messengers = true, autoDeleteDays = 90)
-        assertEquals(listOf("AUTO", "ANS", "MSG", "DEL 90D"), markLabels(all, RecorderStatus.READY))
+        assertEquals(listOf("AUTO", "ANS", "MSG", "DEL 90D"), litMarks(all, RecorderStatus.READY).map { it.label })
         // The mode is one setting, so one mark: ASK instead of AUTO, never both.
-        assertEquals(listOf("ASK"), markLabels(Marks(false, false, false, 0), RecorderStatus.READY))
+        assertEquals(listOf("ASK"), litMarks(Marks(false, false, false, 0), RecorderStatus.READY).map { it.label })
     }
 
     @Test fun withRecordingOffTheModeMarkGoesOut() {
         val all = Marks(automatic = true, answering = true, messengers = true, autoDeleteDays = 365)
-        assertEquals(listOf("ANS", "MSG", "DEL 1Y"), markLabels(all, RecorderStatus.OFF))
+        assertEquals(listOf("ANS", "MSG", "DEL 1Y"), litMarks(all, RecorderStatus.OFF).map { it.label })
     }
 
     /** Settings draws each setting's mark from the same function the
@@ -43,7 +43,7 @@ class HeaderFactsTest {
         assertEquals(Marked.entries.toList(), each.map { it.setting })
         assertEquals(listOf("ASK", "ANS", "MSG", "DEL"), each.map { it.label })
         assertEquals(listOf(true, true, false, false), each.map { it.lit })
-        assertEquals(markLabels(some, RecorderStatus.READY), each.filter { it.lit }.map { it.label })
+        assertEquals(litMarks(some, RecorderStatus.READY), each.filter { it.lit })
         // A setting that is off still has its mark in Settings, dark.
         assertEquals(HeaderMark(Marked.MESSENGERS, "MSG", false), headerMark(Marked.MESSENGERS, some, RecorderStatus.READY))
         assertFalse(headerMark(Marked.MODE, some, RecorderStatus.OFF).lit)

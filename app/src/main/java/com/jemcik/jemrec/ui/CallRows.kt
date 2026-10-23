@@ -66,15 +66,14 @@ private val UNANSWERED = setOf(Kind.MISSED, Kind.DECLINED, Kind.BLOCKED, Kind.VO
 /** The details, as RowMeta's for a phone call: which way, a phone, when. */
 @Composable
 private fun CallMeta(call: CallHistory.Call, day: Day, style: TextStyle, tint: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        DirectionArrow(
-            incoming = call.incoming,
-            tint = if (unanswered(call)) MaterialTheme.colorScheme.error else tint,
-            description = kindWord(call),
-        )
-        Icon(Icons.Filled.Call, contentDescription = "Phone call", tint = tint, modifier = Modifier.size(14.dp))
-        Text(timeUnder(day, call.at), style = style, color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
+    DetailsLine(
+        style, tint,
+        incoming = call.incoming,
+        phone = true,
+        time = timeUnder(day, call.at),
+        arrowTint = if (unanswered(call)) MaterialTheme.colorScheme.error else tint,
+        arrowWords = kindWord(call),
+    )
 }
 
 /**
@@ -83,7 +82,8 @@ private fun CallMeta(call: CallHistory.Call, day: Day, style: TextStyle, tint: C
  * call left unrecorded by a setting or a rule, the message mark for the
  * answering machine's, the bin for a recording since deleted. In the error
  * colour for a call nobody answered and for what should not have happened.
- * As tall as a recording's waveform line, Keep and Share included.
+ * As tall as a recording's waveform line, Keep and Share included
+ * (ThirdLineHeight).
  */
 @Composable
 private fun Outcome(call: CallHistory.Call, style: TextStyle, tint: Color) {
@@ -91,7 +91,7 @@ private fun Outcome(call: CallHistory.Call, style: TextStyle, tint: Color) {
     val alarming = call.status == Status.NOT_RECORDED || call.status == Status.GREETING_FAILED
     val color = if (alarming || (call.status == Status.NOT_CONNECTED && unanswered(call))) error else tint
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 36.dp),
+        Modifier.fillMaxWidth().heightIn(min = ThirdLineHeight),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {

@@ -18,13 +18,17 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-560-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-567-success)](docs/DEVELOPMENT.md#tests)
 
-<img src="docs/screenshots/home.png" width="19%" alt="The recordings list">
-<img src="docs/screenshots/calls.png" width="19%" alt="The calls tab">
-<img src="docs/screenshots/settings.png" width="19%" alt="Settings">
-<img src="docs/screenshots/answering.png" width="19%" alt="The answering machine">
-<img src="docs/screenshots/home-dark.png" width="19%" alt="The recordings list, dark">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/multitrack/home-dark.png"><img src="docs/screenshots/multitrack/home.png" width="26%" alt="Multitrack: the recordings list"></picture>
+
+<sub>Three looks - <b>Memo</b>, <b>Deck</b> and <b>Multitrack</b> - each light, dark or as the phone, in Settings → Theme.</sub>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/calls-dark.png"><img src="docs/screenshots/memo/calls.png" width="26%" alt="The calls tab"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/settings-dark.png"><img src="docs/screenshots/memo/settings.png" width="26%" alt="Settings"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/answering-dark.png"><img src="docs/screenshots/memo/answering.png" width="26%" alt="The answering machine"></picture>
 
 <sub>The people in these screenshots do not exist: a screenshot of a call recorder is a screenshot of someone's calls, so the debug build invents them. Everything else is real.</sub>
 
@@ -134,11 +138,12 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 | **Start at the answer** | Exact call tracking cuts the ringing, skips calls nobody answered, and splits call waiting into one recording per call. → [more](docs/ARCHITECTURE.md#exact-call-tracking) |
 | **Keep only the calls you want** | All your contacts, all but some, only some, or none - and other numbers on their own switch. → [more](docs/ARCHITECTURE.md#whose-calls-to-keep) |
 | **Messenger calls** | WhatsApp, Telegram and Viber, both sides, each switched on separately, with the caller's name from the app's notification. Android 14+. → [more](docs/ARCHITECTURE.md#messenger-calls) |
-| **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
+| **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. Search either list, or narrow it with a tap. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
 | **Name files your way** | By date and time, with the caller, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
-| **Keep, delete, clean up** | A keep mark, a 30-day Recently deleted, and auto-delete for old or very short recordings. → [more](docs/ARCHITECTURE.md#keeping-deleting-and-cleaning-up) |
+| **Play, keep, clean up** | A call plays as its waveform, to see where people talk; a keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-a-recording) |
 | **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, or a call went unrecorded. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
 | **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
+| **Three looks** | Memo, calm and simple; Deck, a pocket recorder with an LCD and a REC key; Multitrack, a sound editor with a colour for each caller. Each light, dark or as the phone, in Settings → Theme. → [more](docs/ARCHITECTURE.md#three-looks) |
 
 Recordings are Opus files in the phone's standard `Recordings/JemRec` folder,
 where any file manager or music app can open them - or in a folder you choose.
@@ -353,7 +358,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 560 tests, screenshots of the screens included
+    ./gradlew test              # 567 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

@@ -86,13 +86,13 @@ body {
 .bar nav a:first-child { margin-left: 0; }
 .bar nav a:hover { color: var(--accent); }
 
-.theme {
+.theme, .look {
   display: inline-flex; align-items: center; gap: .35rem;
   font: inherit; font-size: .92rem; color: var(--ink-mid);
   background: var(--raise); border: 1px solid var(--line); border-radius: 999px;
   padding: .2rem .66rem; cursor: pointer;
 }
-.theme:hover { color: var(--accent); border-color: var(--accent); }
+.theme:hover, .look:hover { color: var(--accent); border-color: var(--accent); }
 /* In the bar, so it is on every page and stays in view - a link at the foot of
    the page was found by nobody. The theme button's shape, in the record red,
    which on this site means the one thing to notice. */
@@ -107,13 +107,13 @@ body {
 .support-btn:hover { background: color-mix(in srgb, var(--record) 18%, transparent); }
 /* One height for the pair: once their words are hidden, the theme button holds
    a 14px icon and the heart a line of text, and they came out 23px and 33px. */
-.theme, .support-btn { min-height: 2rem; justify-content: center; }
-.theme svg { width: 14px; height: 14px; }
+.theme, .look, .support-btn { min-height: 2rem; justify-content: center; }
+.theme svg, .look svg { width: 14px; height: 14px; }
 /* The words go before the buttons do, then the links before the words would
    wrap: a masthead on two lines looks broken rather than responsive. First the
    two pills lose their labels, then the bar keeps only Setup (below). */
 @media (max-width: 46rem) {
-  .theme .theme-name, .support-btn .support-name { display: none; }
+  .theme .theme-name, .look .look-name, .support-btn .support-name { display: none; }
   .support-btn { padding: .2rem .62rem; }
 }
 @media (max-width: 36rem) {
@@ -339,9 +339,9 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .after-steps { margin: 1.4rem 0 0; color: var(--ink-mid); max-width: 46rem; }
 @media (max-width: 54rem) { .steps { grid-template-columns: minmax(0, 1fr); } }
 
-/* A row of five, or on a phone a strip that scrolls sideways and stops on each
-   one - five phones stacked would be five screens of scrolling. */
-.gallery { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1.4rem; }
+/* A row of six, or on a phone a strip that scrolls sideways and stops on each
+   one - six phones stacked would be six screens of scrolling. */
+.gallery { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1.2rem; }
 .gallery figure { margin: 0; text-align: center; }
 .gallery figcaption { margin-top: 1rem; }
 .gallery figcaption strong { display: block; }
@@ -514,6 +514,14 @@ main.home { max-width: none; padding: 0 0 2rem; }
 }
 :root[data-theme="dark"] .light-only { display: none; }
 :root[data-theme="dark"] .dark-only { display: block; }
+
+/* AND ONCE PER LOOK - Memo, Deck, Multitrack - the look's button hiding all
+   but the one picked. Only ever hiding: the theme's rules above decide what
+   shows, these take the other looks away, so they outrank them (:root twice).
+   Memo, the app's default, is the page's; data-look is set for the others. */
+:root:root:not([data-look="deck"]) .look-deck,
+:root:root:not([data-look="multitrack"]) .look-multitrack,
+:root:root[data-look] .look-memo { display: none; }
 
 /* ── the screenshot viewer ── */
 

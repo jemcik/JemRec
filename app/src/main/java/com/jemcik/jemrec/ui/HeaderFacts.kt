@@ -70,8 +70,13 @@ internal fun ageWords(days: Int): String = when (days) {
 internal enum class Marked { MODE, ANSWERING, MESSENGERS, AUTO_DELETE }
 
 /** One setting's mark: its label, and whether it is lit - shown, on Deck's
- *  LCD; a lit LED, on Multitrack's. */
-internal data class HeaderMark(val setting: Marked, val label: String, val lit: Boolean)
+ *  LCD; a lit LED, on Multitrack's. [days] is auto-delete's age, which Memo
+ *  writes out ("90 d") where the others print the label. */
+internal data class HeaderMark(val setting: Marked, val label: String, val lit: Boolean, val days: Int = 0)
+
+/** A mark as it is drawn, header or Settings, for the tests to measure: the
+ *  two are one composable each look, and must come out one size. */
+internal fun markFaceTag(mark: HeaderMark) = "markface-${mark.setting}-${if (mark.lit) "lit" else "dark"}"
 
 /**
  * [setting]'s mark, as the header shows it - and as its row in Settings shows
@@ -89,6 +94,7 @@ internal fun headerMark(setting: Marked, marks: Marks, status: RecorderStatus): 
         setting,
         if (marks.autoDeleteDays > 0) "DEL ${ageMark(marks.autoDeleteDays)}" else "DEL",
         marks.autoDeleteDays > 0,
+        marks.autoDeleteDays,
     )
 }
 
@@ -96,9 +102,10 @@ internal fun headerMark(setting: Marked, marks: Marks, status: RecorderStatus): 
 internal fun headerMarks(marks: Marks, status: RecorderStatus): List<HeaderMark> =
     Marked.entries.map { headerMark(it, marks, status) }
 
-/** The lit marks' labels, in order: Deck's LCD. */
-internal fun markLabels(marks: Marks, status: RecorderStatus): List<String> =
-    headerMarks(marks, status).filter { it.lit }.map { it.label }
+/** The lit marks, in order: what Deck's LCD prints - it leaves out what is
+ *  off, where Multitrack's LEDs go dark. */
+internal fun litMarks(marks: Marks, status: RecorderStatus): List<HeaderMark> =
+    headerMarks(marks, status).filter { it.lit }
 
 /** What the header asks of the user while nothing can be recorded; each
  *  look words it its own way. */

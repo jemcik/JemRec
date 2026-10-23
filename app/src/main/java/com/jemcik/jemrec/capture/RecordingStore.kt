@@ -179,14 +179,11 @@ object RecordingStore {
     }
 
     /**
-     * Open somewhere to record into, falling back rather than failing.
+     * Open somewhere to record [name] into - the chosen folder, Recordings,
+     * or app storage - falling back rather than failing. Mid-call is the
+     * worst moment to discover a storage problem, so a deleted folder or a
+     * revoked permission drops to the next option instead of losing the call.
      *
-     * Mid-call is the worst moment to discover a storage problem, so a deleted
-     * folder or a revoked permission drops to the next option instead of
-     * losing the call.
-     */
-    /**
-     * Where [name] is written: the chosen folder, Recordings, or app storage.
      * Until it is finished its waveform waits (Waveforms.writingStarted): in a
      * chosen folder or app storage it is listed while it fills, and a decode
      * then would keep the first minutes' levels as the whole call's.

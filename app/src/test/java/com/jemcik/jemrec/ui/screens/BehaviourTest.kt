@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -84,6 +85,8 @@ import androidx.compose.ui.semantics.getOrNull
 import com.jemcik.jemrec.ui.SettingsBar
 import com.jemcik.jemrec.ui.headerMarks
 import com.jemcik.jemrec.ui.markTag
+import com.jemcik.jemrec.ui.RecorderStatus
+import com.jemcik.jemrec.ui.markFaceTag
 import com.jemcik.jemrec.ui.marks
 import com.jemcik.jemrec.ui.recorderStatus
 import androidx.compose.ui.geometry.Offset
@@ -262,6 +265,69 @@ class BehaviourTest : ScreenTest() {
         compose.onNodeWithText("Record every call").assertIsOn().performClick()
         compose.onNodeWithText("Record every call").assertIsOff()
         compose.onAllNodesWithText("OFF").assertCountEquals(0)
+    }
+
+    /**
+     * And it is the header's mark as drawn, not a likeness: drawn apart,
+     * Memo's sat in circles the header never had and Multitrack's stood its
+     * LED over a smaller label (the user found it, 2026-10-23), while the
+     * test below held only that they said the same. Held here by size: each
+     * mark the header shows is the same size in Settings, in every look.
+     */
+    /** "Allow this Wi-Fi" takes a tap while the app is busy, as the record
+     *  control does: it shows while the recorder is down, when each
+     *  opening's check is busiest, and a tap then did nothing at all. */
+    @Test fun memosWifiTapIsTakenWhileBusy() = wifiTapTakenWhileBusy(Look.MEMO)
+
+    @Test fun decksWifiTapIsTakenWhileBusy() = wifiTapTakenWhileBusy(Look.DECK)
+
+    @Test fun multitracksWifiTapIsTakenWhileBusy() = wifiTapTakenWhileBusy(Look.MULTITRACK)
+
+    private fun wifiTapTakenWhileBusy(look: Look) {
+        val asks = Fixtures.ready().copy(daemonRunning = false, networkNotAllowed = true, busy = true)
+        show(look = LookChoice(look)) { AppScaffold(asks, viewModel(asks)) }
+        compose.onNode(
+            SemanticsMatcher("taps to allow this Wi-Fi") {
+                it.config.getOrNull(SemanticsActions.OnClick)?.label == "Allow this Wi-Fi"
+            },
+        ).assertIsEnabled()
+    }
+
+    /** Call waiting: two calls on the Calls tab share one recording, and
+     *  playing it opens one player, under the topmost - each opened its own,
+     *  two seek bars for one playback. */
+    @Test fun twoCallsSharingARecordingOpenOnePlayer() {
+        val olivia = Fixtures.calls().first()
+        val waiting = olivia.copy(at = olivia.at + 60_000, label = "Marcus Chen", favorite = false)
+        val state = Fixtures.playing().copy(homeTab = HomeTab.CALLS, calls = listOf(waiting, olivia))
+        show { AppScaffold(state, viewModel(state)) }
+        compose.onAllNodesWithContentDescription("Collapse player").assertCountEquals(1)
+        compose.onAllNodesWithText("Marcus Chen").assertCountEquals(1)
+    }
+
+    @Test fun settingsDrawsMemosMarksAsItsHeaderDoes() = marksDrawnAlike(Look.MEMO)
+
+    @Test fun settingsDrawsDecksMarksAsItsHeaderDoes() = marksDrawnAlike(Look.DECK)
+
+    @Test fun settingsDrawsMultitracksMarksAsItsHeaderDoes() = marksDrawnAlike(Look.MULTITRACK)
+
+    private fun marksDrawnAlike(look: Look) {
+        val vm = viewModel(Fixtures.ready(), AnswerUi(enabled = true))
+        showApp(vm, look = LookChoice(look))
+        val inHeader = headerMarks(marks(Fixtures.ready(), answering = true), RecorderStatus.READY)
+            .mapNotNull { mark ->
+                // Twice in the header, each line laying out what it can show
+                // unseen (SteadyLine): the same composable, one size.
+                compose.onAllNodesWithTag(markFaceTag(mark), useUnmergedTree = true).fetchSemanticsNodes()
+                    .firstOrNull()?.let { markFaceTag(mark) to it.size }
+            }
+        assertTrue("$look: the header shows marks", inHeader.size >= 3)
+        compose.runOnUiThread { vm.showSettings() }
+        compose.waitForIdle()
+        for ((tag, size) in inHeader) {
+            val inSettings = compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo().fetchSemanticsNode().size
+            assertEquals("$look $tag", size, inSettings)
+        }
     }
 
     /**

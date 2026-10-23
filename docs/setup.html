@@ -7,7 +7,7 @@
 <meta name="description" content="How to set up JemRec: three minutes, on the phone, no computer.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="icon.png">
-<script>(function(){try{var v=localStorage.getItem('jemrec-theme');if(v&&v!=='system')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+<script>(function(){try{var v=localStorage.getItem('jemrec-theme');if(v&&v!=='system')document.documentElement.setAttribute('data-theme',v);var l=localStorage.getItem('jemrec-look');if(l==='deck'||l==='multitrack')document.documentElement.setAttribute('data-look',l);}catch(e){}})();</script>
 <link rel="stylesheet" href="jemrec.css">
 <script src="jemrec.js" defer></script>
 </head>
@@ -158,6 +158,7 @@
   <p>Experimental. Tested on an Honor, on 2G calls; its carrier would not register it for VoLTE. On a phone not tried yet, the test call is how to know.</p>
   <h2 id="playing-sharing-and-deleting">Playing, sharing and deleting</h2>
   <p>Recordings are listed newest first, under <strong>Today</strong>, <strong>Yesterday</strong> and <strong>Earlier</strong>. Tap a recording to play it inside the app. Its waveform appears under the row - tall where someone is talking, flat where it is quiet - and a tap or a drag on it goes to that place. A call's waveform is worked out as it is saved, and an older recording's while the app is open; one played before then has a plain slider for a moment - about two and a half seconds for a 30-minute call. The chevron beside it folds the player away. The share button offers the original file or a converted copy that plays anywhere.</p>
+  <p><strong>Finding a recording.</strong> The chips above the list narrow it: favourites, the phone or a messenger, kept, messages. The magnifier opens a search by name, number or time. Chips of one kind add up - WhatsApp and Telegram - and different kinds narrow: and favourites. A chip only appears where it would narrow the list, and one that is on stays, so you can turn it off.</p>
   <p>To delete, tap a contact's photo or long-press a row to start selecting, tick what you want, and use the bin in the toolbar. It asks first and tells you how many.</p>
   <p><strong>Deleting is not immediate.</strong> A deleted recording goes to <strong>Recently deleted</strong>, in Settings, waits there 30 days, and can be restored until then. After that it is gone for good. In the standard Recordings folder this is Android's own trash, so other apps stop seeing the file at once.</p>
   <p><strong>Keep what matters.</strong> The bookmark on each row marks a recording to keep: auto-delete never touches it, and the bookmark chip above the list shows only kept recordings. To mark several, select them and use the bookmark in the toolbar.</p>
@@ -166,9 +167,13 @@
   <p>Recordings are kept when JemRec is uninstalled, because they are yours rather than the app's — so if you want them gone, delete them <strong>before</strong> you uninstall. Recently deleted ones in the standard folder are still emptied by Android on time. In a folder you chose, they stay behind as hidden files, because removing them is JemRec's job.</p>
   <h2 id="the-calls-tab">The Calls tab</h2>
   <p>The <strong>Calls</strong> tab, beside Recordings, is your phone's call log, under the same day headings. A call that was recorded has the ▶ beside its length and plays on a tap; one the answering machine took says <strong>Message</strong>. A call that was not says why, where JemRec knows: <strong>In Recently deleted</strong>, <strong>Recording deleted</strong>, <strong>Left out by your rules</strong>, <strong>Too short</strong>, <strong>Recorded, not saved yet</strong> (still on the recorder, collected when it can be), <strong>Recording was off</strong>, <strong>Ask first, not recorded</strong>, <strong>Hung up during the greeting</strong>, <strong>Answering machine test</strong>. <strong>Not recorded</strong>, in red, means recording was on and automatic and nothing was saved — run the self-test. <strong>Greeting could not play</strong>, in red too, means the answering machine answered and hung up without taking a message - the greeting would not play, or your microphone would not mute — run its test call. JemRec remembers deleted and left-out calls for a week, so it says this only for the last week. <strong>No recording</strong> is an older call, or one from before JemRec kept track, with no guess at why. Missed, declined and blocked calls are marked as such.</p>
+  <p>Its chips work as the Recordings tab's, with <strong>Not recorded</strong> for the calls that connected and were not recorded; its search finds a name or a number. When nothing matches, it says so.</p>
   <p>It needs permission to read the call log, the same optional permission that puts names on recordings; the tab asks for it if you have not given it.</p>
+  <h2 id="three-looks">Three looks</h2>
+  <p><strong>Settings → Theme</strong> changes how JemRec looks, never what it does. <strong>Memo</strong>, the default, is calm and simple, with one big record button; <strong>Deck</strong> is a pocket recorder, with a REC key and an LCD; <strong>Multitrack</strong> is a sound editor, each caller in a colour of their own. Under them, <strong>Light</strong>, <strong>Dark</strong> or <strong>System</strong>, as the phone is set. The preview at the top shows the look you pick, with invented calls, and the app changes at once. Notifications and the Quick Settings tile always follow the phone.</p>
+  <p>The header holds the same things in every look: the record button, which turns recording on and off; whether JemRec can record right now, and if not, what to do; a line of what is on - in Memo in words and icons, on Deck's LCD as <strong>AUTO</strong> or <strong>ASK</strong>, <strong>ANS</strong>, <strong>MSG</strong> and <strong>DEL</strong> with the age, in Multitrack as a row of LEDs, lit for what is on; the gear for Settings; and the <strong>Recordings</strong> and <strong>Calls</strong> tabs, Recordings with how many there are. The settings the header marks wear the same mark in Settings.</p>
   <h2 id="turning-jemrec-off">Turning JemRec off</h2>
-  <p>The switch in the header is the on/off control for the whole app. Off means no call is recorded and no notification appears. Your recordings and your pairing are untouched, and the recorder itself keeps running in the background doing nothing — which is what makes turning it back on instant, anywhere, with no network.</p>
+  <p>The record button in the header - Memo's round button, Deck's REC key, Multitrack's armed button - is the on/off control for the whole app. Off means no call is recorded and no notification appears. Your recordings and your pairing are untouched, and the recorder itself keeps running in the background doing nothing — which is what makes turning it back on instant, anywhere, with no network.</p>
   <p>The same switch is a <strong>Quick Settings tile</strong>, so you can flip it without opening the app. Settings has a row that adds it, on Android 13 and later; on 12, edit the Quick Settings panel and drag JemRec in. On a locked phone the tile asks for your unlock first.</p>
   <h2 id="after-a-restart">After a restart</h2>
   <p>A reboot kills the recorder, and building it again takes a few seconds of Wi-Fi. Until that has happened, calls are not recorded and the header says so — and if it lasts more than two minutes, a notification does too. Whether it happens without you comes down to one setting on your phone.</p>
@@ -202,7 +207,7 @@
     <tr><td><strong>Message from</strong> the caller</td><td>A message, with a sound, Play, Share and Delete. It stays until you dismiss it, whether or not each call is shown when it ends.</td></tr>
   </table>
   <h2 id="settings">Settings</h2>
-  <p>One screen, in four groups, each row showing what it is set to now. Until you allow it, a <strong>Show who called</strong> card sits at the top: it labels each recording with the contact's name and photo, or the number when they are not in your contacts, and lets JemRec tell you if a call went by unrecorded. It needs your call log and contacts, and is asked for in the app rather than at install. Say no and everything still works, with the time as each recording's headline.</p>
+  <p>One screen, in five groups, each row showing what it is set to now, and the settings the header marks wearing the same mark. Until you allow it, a <strong>Show who called</strong> card sits at the top: it labels each recording with the contact's name and photo, or the number when they are not in your contacts, and lets JemRec tell you if a call went by unrecorded. It needs your call log and contacts, and is asked for in the app rather than at install. Say no and everything still works, with the time as each recording's headline.</p>
   <p><strong>Recording</strong></p>
   <ul>
     <li><strong>Record every call</strong> — record everything, or be asked each time.</li>
@@ -210,6 +215,10 @@
     <li><strong>Answering machine</strong> — off until you turn it on; see The answering machine.</li>
     <li><strong>Messenger calls</strong> — a switch for each supported messenger installed, and whether to show who called from their call notifications.</li>
     <li><strong>Exact call tracking</strong> — recordings start at the answer, and calls nobody answered are not kept.</li>
+  </ul>
+  <p><strong>Look</strong></p>
+  <ul>
+    <li><strong>Theme</strong> — Memo, Deck or Multitrack, and light, dark or as the phone; see Three looks.</li>
   </ul>
   <p><strong>Saving</strong></p>
   <ul>

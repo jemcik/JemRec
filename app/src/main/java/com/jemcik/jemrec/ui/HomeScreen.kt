@@ -623,9 +623,8 @@ internal fun ShareSheets(state: UiState, vm: MainViewModel) {
     val haptics = LocalHapticFeedback.current
     // Share asks HOW first: the original Opus is instant and fine for Android
     // and desktop; the .m4a plays on Apple's stock apps too but has to be
-    // converted. A bottom sheet, not a dialog - it is a short menu of ways to
-    // do one thing, the M3 pattern for exactly that, and roomy enough to say
-    // what each costs.
+    // converted. A bottom sheet, not a dialog: a short menu of ways to do one
+    // thing, with room to say what each costs.
     state.shareChoice?.let { recording ->
         ModalBottomSheet(onDismissRequest = { vm.dismissShareChoice() }) {
             Column(Modifier.padding(bottom = 24.dp)) {

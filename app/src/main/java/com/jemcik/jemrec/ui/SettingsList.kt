@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -24,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -363,58 +363,46 @@ internal fun markTag(mark: HeaderMark) = "mark-${mark.label}-${if (mark.lit) "li
 
 /**
  * The header's mark for a row's setting, where its icon would be, so
- * Settings says what each mark in the header is (headerMark decides both):
- * Deck's on a small LCD, as its LCD shows it - lit, or dim where the header
- * leaves it out; Multitrack's LED with its label, lit or dark, as its LEDs
- * are; Memo's icon from its header's line, lit in the play green.
+ * Settings says what each mark in the header is (headerMark decides both).
+ * Drawn by the header's own composable for the look - MemoMark, DeckMark,
+ * MultitrackMark - so it is the header's mark, not a likeness: drawn here
+ * apart, Memo's had sat in coloured circles, Multitrack's LED over a smaller
+ * label, Deck's in another spacing (the user found it, 2026-10-23). A mark
+ * the header leaves out because it is off is drawn here as off: Memo's
+ * faded, Deck's on its LCD's off grey, Multitrack's LED dark, as its header
+ * shows them.
  *
- * Drawn at the normal text size, to fit the icon's width: it is a picture of
+ * Drawn at the normal text size, as the header is at it: it is a picture of
  * the header's mark, and the row's name and summary say it in words, at any
  * size. Silent to a screen reader for the same reason - "ANS" read out after
- * "Answering machine" would say it twice, the second time in code.
+ * "Answering machine" would say it twice, the second time in code. Wider
+ * than the icon's slot where the header's mark is (Multitrack's DEL 90D),
+ * centred over it rather than squeezed.
  */
 @Composable
 internal fun SettingsMark(mark: HeaderMark) {
     val density = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(density.density, 1f)) {
-        Box(Modifier.clearAndSetSemantics { testTag = markTag(mark) }, contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .wrapContentWidth(unbounded = true)
+                .clearAndSetSemantics { testTag = markTag(mark) },
+            contentAlignment = Alignment.Center,
+        ) {
             when (LocalLook.current) {
-                Look.MEMO -> MemoMark(mark)
-                Look.DECK -> DeckMark(mark)
-                Look.MULTITRACK -> MultitrackMark(mark)
+                Look.MEMO -> MemoMark(mark, memoColors(), Modifier.alpha(if (mark.lit) 1f else 0.38f))
+                Look.DECK -> DeckMarkOnLcd(mark)
+                Look.MULTITRACK -> MultitrackMark(mark, multitrackColors())
             }
         }
     }
 }
 
+/** Deck's mark on a scrap of its LCD: it is the LCD's print, and needs the
+ *  LCD's ground - lit, or the off grey the LCD has with recording off. */
 @Composable
-private fun MemoMark(mark: HeaderMark) {
-    val c = memoColors()
-    val scheme = MaterialTheme.colorScheme
-    val tint = if (mark.lit) c.lengthInk else scheme.onSurfaceVariant
-    Box(
-        Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(if (mark.lit) c.lengthPill else scheme.surfaceContainerHighest),
-        contentAlignment = Alignment.Center,
-    ) {
-        // The icons of the header's line: its dot for the mode, then the
-        // answering machine's, a messenger's and the bin's.
-        when (mark.setting) {
-            Marked.MODE -> Led(tint, size = 10.dp, glow = false)
-            Marked.ANSWERING -> Icon(messageIcon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-            Marked.MESSENGERS -> Icon(SettingsIcons.Chat, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-            Marked.AUTO_DELETE -> Icon(Icons.Filled.Delete, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        }
-    }
-}
-
-@Composable
-private fun DeckMark(mark: HeaderMark) {
+private fun DeckMarkOnLcd(mark: HeaderMark) {
     val c = deckColors()
-    val ink = if (mark.lit) c.ink else c.inkOff
-    val glow = if (mark.lit) deckGlow(c, ink, blur = 10f) else null
     val shape = RoundedCornerShape(4.dp)
     Box(
         Modifier
@@ -426,34 +414,7 @@ private fun DeckMark(mark: HeaderMark) {
             .padding(horizontal = 3.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            mark.label,
-            fontFamily = LookFonts.engraved,
-            fontSize = 9.sp,
-            color = ink,
-            style = TextStyle(shadow = glow),
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.border(1.dp, ink, RoundedCornerShape(2.dp)).padding(horizontal = 2.dp),
-        )
-    }
-}
-
-@Composable
-private fun MultitrackMark(mark: HeaderMark) {
-    val c = multitrackColors()
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Led(if (mark.lit) c.ledOn else c.ledOff, size = 7.dp, glow = mark.lit)
-        Text(
-            mark.label,
-            fontFamily = LookFonts.mono,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.02.em,
-            color = if (mark.lit) c.soft else c.faint,
-            maxLines = 1,
-            softWrap = false,
-        )
+        DeckMark(mark, deckSmall(c, if (mark.lit) c.ink else c.inkOff))
     }
 }
 

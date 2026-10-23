@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -103,7 +104,7 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
                         MemoSmall(
                             memoWords(instruction),
                             MaterialTheme.colorScheme.primary,
-                            Modifier.allowWifiTap(state, vm),
+                            Modifier.allowWifiTap(vm),
                         )
                     } else {
                         MemoSmall(memoWords(instruction), c.idle)
@@ -159,26 +160,54 @@ private fun MemoMarks(c: MemoColors, marks: Marks) {
         verticalArrangement = Arrangement.spacedBy(2.dp),
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            Led(JemRecColors.play, size = 7.dp, glow = false)
-            MemoSmall(if (marks.automatic) "Every call" else "Asks each call", c.idle)
+        for (mark in headerMarks(marks, RecorderStatus.READY)) {
+            when {
+                mark.setting == Marked.MODE -> Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    MemoMark(mark, c)
+                    MemoSmall(if (marks.automatic) "Every call" else "Asks each call", c.idle)
+                }
+                mark.lit -> MemoMark(
+                    mark,
+                    c,
+                    Modifier.semantics(mergeDescendants = true) { contentDescription = memoMarkWords(mark) },
+                )
+            }
         }
-        if (marks.answering) {
-            Icon(messageIcon, contentDescription = "Answering machine on", tint = c.idle, modifier = Modifier.size(16.dp))
-        }
-        if (marks.messengers) {
-            Icon(SettingsIcons.Chat, contentDescription = "Messenger calls on", tint = c.idle, modifier = Modifier.size(14.dp))
-        }
-        if (marks.autoDeleteDays > 0) {
-            Row(
-                Modifier.semantics(mergeDescendants = true) {
-                    contentDescription = "Auto-delete after ${ageWords(marks.autoDeleteDays)}"
-                },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
+    }
+}
+
+private fun memoMarkWords(mark: HeaderMark): String = when (mark.setting) {
+    Marked.MODE -> ""
+    Marked.ANSWERING -> "Answering machine on"
+    Marked.MESSENGERS -> "Messenger calls on"
+    Marked.AUTO_DELETE -> "Auto-delete after ${ageWords(mark.days)}"
+}
+
+/**
+ * One setting's mark as Memo's header line draws it - the mode's dot, then
+ * the answering machine's, a messenger's and the bin's icons, the bin with
+ * its age - and as Settings draws it beside the setting (SettingsMark). One
+ * composable for both: drawn apart, Settings' marks sat in coloured circles
+ * the header never had (the user found it, 2026-10-23). A mark that is off,
+ * which the header leaves out, Settings draws faded.
+ */
+@Composable
+internal fun MemoMark(mark: HeaderMark, c: MemoColors, modifier: Modifier = Modifier) {
+    Row(
+        modifier.testTag(markFaceTag(mark)),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        when (mark.setting) {
+            Marked.MODE -> Led(JemRecColors.play, size = 7.dp, glow = false)
+            Marked.ANSWERING -> Icon(messageIcon, contentDescription = null, tint = c.idle, modifier = Modifier.size(16.dp))
+            Marked.MESSENGERS -> Icon(SettingsIcons.Chat, contentDescription = null, tint = c.idle, modifier = Modifier.size(14.dp))
+            Marked.AUTO_DELETE -> {
                 Icon(Icons.Filled.Delete, contentDescription = null, tint = c.idle, modifier = Modifier.size(14.dp))
-                MemoSmall(ageShort(marks.autoDeleteDays), c.idle)
+                if (mark.lit) MemoSmall(ageShort(mark.days), c.idle)
             }
         }
     }

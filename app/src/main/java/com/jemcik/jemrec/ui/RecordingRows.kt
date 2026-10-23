@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalDensity
@@ -120,6 +121,15 @@ internal fun RecordingRow(recording: Recording, day: Day, state: UiState, vm: Ma
  * no toolbar to act on it.
  */
 internal val LocalRowsSelectable = staticCompositionLocalOf { true }
+
+/**
+ * Whether this row is where its recording's player opens. Always, but on
+ * the Calls tab, where a call that came in during another's recording (call
+ * waiting) shares it: there the player opens under one of their rows (the
+ * topmost), not both - each opened its own, two seek bars for one playback.
+ * The other row shows the recording playing, tinted, as any current row.
+ */
+internal val LocalPlayerHere = staticCompositionLocalOf { true }
 
 /** What a tap means: play - or, selecting, pick; a long press starts
  *  selecting, as Material's selection pattern has it: "On touch devices,
@@ -230,27 +240,70 @@ internal fun NameLine(label: String, favorite: Boolean, style: TextStyle) {
  */
 @Composable
 internal fun RowMeta(recording: Recording, day: Day, style: TextStyle, tint: Color) {
-    YieldingRow(gap = 4.dp) {
+    // Which app, by its own icon - unless the headline already says it
+    // ("Viber call").
+    val app = recording.app?.takeIf { recording.caller != "$it call" }
+    val appIcon = recording.parsedName?.app
+        ?.takeIf { app != null }
+        ?.let { rememberAppIcon(packagesForTag(it), 16.dp) }
+    DetailsLine(
+        style, tint,
         // No arrow where the direction is not known (a messenger call whose
         // app did not say).
-        if (recording.directionKnown) DirectionArrow(recording.incoming, tint = tint)
-        if (recording.app == null) {
+        incoming = recording.incoming.takeIf { recording.directionKnown },
+        phone = recording.app == null,
+        appIcon = appIcon,
+        appName = app,
+        message = recording.message,
+        // With no caller the headline already is the date.
+        time = if (recording.caller != null) {
+            (recording.shownAt ?: recording.startedAtMillis)?.let { timeUnder(day, it) } ?: recording.whenLabel
+        } else {
+            null
+        },
+    )
+}
+
+/**
+ * A row's details line - which way, a phone or the messenger's icon, the
+ * answering machine's mark, when - giving way in a set order when short of
+ * room (YieldingRow): a recording's (RowMeta) and an unrecorded call's on
+ * the Calls tab (CallMeta), so the two kinds, side by side there, are one
+ * line - the call's was a copy in a plain row, and broke otherwise at large
+ * text. [arrowTint] and [arrowWords] are the call's: red, and its kind, for
+ * one nobody answered.
+ */
+@Composable
+internal fun DetailsLine(
+    style: TextStyle,
+    tint: Color,
+    incoming: Boolean?,
+    phone: Boolean,
+    time: String?,
+    arrowTint: Color = tint,
+    arrowWords: String? = null,
+    appIcon: ImageBitmap? = null,
+    appName: String? = null,
+    message: Boolean = false,
+) {
+    YieldingRow(gap = 4.dp) {
+        if (incoming != null) {
+            if (arrowWords != null) {
+                DirectionArrow(incoming, tint = arrowTint, description = arrowWords)
+            } else {
+                DirectionArrow(incoming, tint = arrowTint)
+            }
+        }
+        if (phone) {
             Icon(Icons.Filled.Call, contentDescription = "Phone call", tint = tint, modifier = Modifier.size(14.dp))
         }
-        // Which app, by its own icon - unless the headline already says it
-        // ("Viber call").
-        val app = recording.app?.takeIf { recording.caller != "$it call" }
-        val appIcon = recording.parsedName?.app
-            ?.takeIf { app != null }
-            ?.let { rememberAppIcon(packagesForTag(it), 16.dp) }
-        if (appIcon != null) Image(appIcon, contentDescription = app, modifier = Modifier.size(16.dp))
-        if (recording.message) {
+        if (appIcon != null) Image(appIcon, contentDescription = appName, modifier = Modifier.size(16.dp))
+        if (message) {
             Icon(messageIcon, contentDescription = "Message", tint = tint, modifier = Modifier.size(16.dp))
         }
-        // With no caller the headline already is the date.
-        if (recording.caller != null) {
+        if (time != null) {
             Text(
-                (recording.shownAt ?: recording.startedAtMillis)?.let { timeUnder(day, it) } ?: recording.whenLabel,
+                time,
                 style = style,
                 color = tint,
                 maxLines = 1,
@@ -258,6 +311,7 @@ internal fun RowMeta(recording: Recording, day: Day, style: TextStyle, tint: Col
                 modifier = Modifier.layoutId(GivesWay(order = 3)),
             )
         }
+        val app = appName
         if (app != null && appIcon == null) {
             Text(
                 "· $app",
@@ -332,10 +386,12 @@ internal fun RowActions(recording: Recording, vm: MainViewModel, tint: Color, ke
     }
 }
 
-/** Whether [recording]'s player shows: it is loaded, known long, and the
- *  list is not selecting - where the row's taps pick instead. */
+/** Whether [recording]'s player shows under this row: it is loaded, known
+ *  long, the list is not selecting - where the row's taps pick instead -
+ *  and the player opens here (LocalPlayerHere). */
+@Composable
 private fun playerShows(recording: Recording, state: UiState) =
-    !state.selecting && state.playingName == recording.name && state.durationMs > 0
+    LocalPlayerHere.current && !state.selecting && state.playingName == recording.name && state.durationMs > 0
 
 /**
  * The photo, centred beside the row's lines: three of them, or - playing -
@@ -373,7 +429,7 @@ private fun WaveLine(
     // shorter, and every row would shrink - the list lurching - as
     // selection starts.
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 36.dp),
+        Modifier.fillMaxWidth().heightIn(min = ThirdLineHeight),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -527,6 +583,11 @@ private fun TransportBar(
 
 /** The photo beside a row's lines, in every look and both kinds of row. */
 internal val RowPhoto = 40.dp
+
+/** A row's third line, at least: the waveform with Keep and Share, or an
+ *  unrecorded call's outcome (CallRows' Outcome), so the two kinds of row
+ *  are one height. */
+internal val ThirdLineHeight = 36.dp
 
 private val MemoCard = RoundedCornerShape(20.dp)
 

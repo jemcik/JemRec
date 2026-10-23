@@ -110,12 +110,17 @@ internal object Waveforms {
     private const val SETTLE_US = 1_000_000L
 
     /**
-     * One lock a recording, so it is worked out once at a time: just after a
-     * call the player, the list's fill-in and AfterCall all asked for it, and
-     * three decodes of it ran at once, four decoders each. The second to ask
-     * waits, then reads what the first kept.
+     * A recording is worked out once at a time: just after a call the player,
+     * the list's fill-in and AfterCall all asked for it, and three decodes of
+     * it ran at once, four decoders each. The second to ask waits, then reads
+     * what the first kept. Sixteen locks shared out by name, not one a
+     * recording: those were kept for every recording ever decoded, for the
+     * life of the process - and two recordings sharing a lock only take
+     * turns.
      */
-    private val decoding = ConcurrentHashMap<String, Any>()
+    private val decoding = Array(16) { Any() }
+
+    private fun lockFor(name: String): Any = decoding[name.hashCode() and (decoding.size - 1)]
 
     /**
      * The recordings being written now (RecordingStore.open, until publish or
@@ -175,7 +180,7 @@ internal object Waveforms {
         override?.invoke(name)?.let { return it }
         if (name in writing) return null
         remembered(name)?.let { return it }
-        synchronized(decoding.computeIfAbsent(name) { Any() }) {
+        synchronized(lockFor(name)) {
             val cached = cacheFile(context, name)
             runCatching { fromBytes(cached.readBytes()) }.getOrNull()?.let {
                 remember(name, it)

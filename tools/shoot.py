@@ -1,4 +1,5 @@
-"""Capture JemRec's screenshots on the phone, in both themes, with invented calls.
+"""Capture JemRec's screenshots on the phone, in all three looks and both
+themes, with invented calls.
 
 WHY A DEBUG BUILD AND FAKE DATA. A screenshot of a call recorder is a screenshot
 of somebody's calls. The debug source set can fill the list with people who do
@@ -23,6 +24,8 @@ Taps are located by TEXT from the view hierarchy rather than by coordinates, so
 this survives a layout change.
 
 Run from anywhere:  python3 tools/shoot.py
+                    python3 tools/shoot.py deck dark calls  (only those looks,
+                                          themes and screens; any of each)
                     python3 tools/shoot.py --listing   (no phone: re-derive the
                                           README and F-Droid copies from disk)
 """
@@ -38,21 +41,31 @@ import time
 DEV = os.environ.get("JEMREC_DEVICE", "AUNN025C15000871")
 PKG = "com.jemcik.jemrec"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# docs/screenshots/<look>/<theme>/<screen>.png at full size, and beside each
+# look's folder the README's and the site's copies (see thumbnails).
 OUT = ROOT / "docs" / "screenshots"
+
+# The three looks of Settings > Theme, as Looks keeps them. Every screen is
+# shot in each: the site has a switch for the look as well as for light or
+# dark (the user's choice, 2026-10-23).
+LOOKS = {"memo": "MEMO", "deck": "DECK", "multitrack": "MULTITRACK"}
+THEMES = {"light": "no", "dark": "yes"}
+SCREENS = ("home", "calls", "settings", "answering", "theme", "selftest")
+
 # The F-Droid listing. fastlane orders screenshots by file name, so these are
-# numbered; the shots the README and the site show, at full resolution.
+# numbered: the three looks first, then the rest in Memo, the default (the
+# user's choice, 2026-10-23); full resolution.
 LISTING = ROOT / "fastlane" / "metadata" / "android" / "en-US" / "images" / "phoneScreenshots"
 LISTING_ORDER = (
-    ("light", "home"),
-    ("light", "calls"),
-    ("light", "settings"),
-    ("light", "answering"),
-    ("light", "selftest"),
-    ("dark", "home"),
-    ("dark", "selftest"),
+    ("memo", "light", "home"),
+    ("deck", "light", "home"),
+    ("multitrack", "light", "home"),
+    ("memo", "light", "calls"),
+    ("memo", "light", "settings"),
+    ("memo", "light", "answering"),
+    ("memo", "light", "selftest"),
+    ("memo", "light", "theme"),
 )
-
-THEMES = {"light": "no", "dark": "yes"}
 
 # What the README shows, at the width it shows it. Full-resolution shots of a
 # 1256px-wide phone are 300 kB each and the page scales them to a fifth of that.
@@ -120,49 +133,87 @@ def dismiss_tip(on: bool) -> None:
     print(f"  select tip: {'dismissed' if on else 'showing'}")
 
 
-# The look and its light or dark, as Settings > Theme keeps them (Looks): the
-# shots are of the default, Memo following the phone, whatever the phone's
-# owner picked - with Deck and Dark picked, every light shot came out Deck
-# and dark. The app tells Android its light or dark as it starts, so the
-# phone's night mode decides again.
-LOOK_KEYS = {"look": "MEMO", "light_dark": "PHONE"}
+# The look and its light or dark, as Settings > Theme keeps them (Looks):
+# each shot is of one look following the phone, whatever the phone's owner
+# picked - with Deck and Dark picked, every light shot came out Deck and
+# dark. The app tells Android its light or dark as it starts, so the phone's
+# night mode decides again.
+LOOK_KEYS = ("look", "light_dark")
 
 
-def set_look(values: dict) -> None:
-    """Write the look's settings in place, with the app stopped. A setting
-    never written needs nothing: absent is the default."""
+def set_look(look: str, light_dark: str = "PHONE") -> None:
+    """Write the look's two settings, with the app stopped: replaced where
+    the owner has them, added where they have never been written - Deck
+    has to be written, where Memo, the default, could be left absent. The
+    file holds every setting the owner has made, so it is read whole and
+    written back with only these two changed."""
     shell(f"am force-stop {PKG}")
-    for key, value in values.items():
-        shell(
-            f"run-as {PKG} sed -i "
-            f"'s/name=\"{key}\">[A-Z_]*</name=\"{key}\">{value}</' "
-            "shared_prefs/jemrec.xml"
-        )
+    prefs = shell(f"run-as {PKG} cat shared_prefs/jemrec.xml")
+    if "</map>" not in prefs:
+        print("    !! no settings file to write the look into")
+        return
+    for key, value in (("look", look), ("light_dark", light_dark)):
+        line = f'<string name="{key}">{value}</string>'
+        if re.search(rf'<string name="{key}">[A-Z_]*</string>', prefs):
+            prefs = re.sub(rf'<string name="{key}">[A-Z_]*</string>', line, prefs)
+        else:
+            prefs = prefs.replace("</map>", f"    {line}\n</map>")
+    subprocess.run(
+        ["adb", "-s", DEV, "shell",
+         f"run-as {PKG} sh -c 'cat > shared_prefs/jemrec.xml'"],
+        input=prefs, text=True, check=True,
+    )
 
 
-def pin_look() -> dict:
-    """Memo, following the phone, for the shoot; what the owner had, to put
-    back after."""
+def look_is(look: str) -> bool:
+    """Whether the settings file says [look] now - checked with the app
+    stopped, just before it starts: a process started between set_look's
+    read and write (the keep-alive job, a call) could write its own copy of
+    the file back over it."""
+    prefs = shell(f"run-as {PKG} cat shared_prefs/jemrec.xml")
+    return f'<string name="look">{look}</string>' in prefs
+
+
+def night_mode() -> str:
+    """The phone's own night mode, as `cmd uimode night` says it, to put
+    back: the shoot sets it for each theme, and ended by setting it to yes
+    whatever it had been."""
+    said = re.search(r"Night mode: (\w+)", shell("cmd uimode night"))
+    return said.group(1) if said else "unknown"
+
+
+def owners_look() -> dict:
+    """The look and light or dark the phone's owner keeps, to put back."""
     prefs = shell(f"run-as {PKG} cat shared_prefs/jemrec.xml")
     was = {}
     for key in LOOK_KEYS:
         found = re.search(rf'name="{key}">([A-Z_]+)<', prefs)
         if found:
             was[key] = found.group(1)
-    set_look(LOOK_KEYS)
-    print(f"  look: Memo, as the phone (was {was or 'the default'})")
+    print(f"  the owner's look: {was or 'the default'}")
     return was
 
 
 def selected(label: str) -> bool:
     """Whether the node carrying exactly this text or description is
-    selected - a tab."""
+    selected, or the node round it - a tab. Round it: the looks' tabs are
+    rows holding their name, and the name's own node is never the selected
+    one - asked of it, the Calls tab never opened, in every look."""
+    import xml.etree.ElementTree as ET
+
     shell("uiautomator dump /sdcard/ui.xml")
-    xml = shell("cat /sdcard/ui.xml")
-    for node in xml.split("<node")[1:]:
-        labels = [l for l in re.findall(r'(?:text|content-desc)="([^"]*)"', node) if l]
-        if any(label.lower() == l.lower() for l in labels):
-            return 'selected="true"' in node
+    try:
+        root = ET.fromstring(shell("cat /sdcard/ui.xml"))
+    except ET.ParseError:
+        return False
+    parent = {child: node for node in root.iter() for child in node}
+    for node in root.iter("node"):
+        if any((node.get(a) or "").lower() == label.lower() for a in ("text", "content-desc")):
+            while node is not None:
+                if node.get("selected") == "true":
+                    return True
+                node = parent.get(node)
+            return False
     return False
 
 
@@ -255,27 +306,44 @@ def tap(label: str, what: str, exact: bool = False) -> bool:
     return True
 
 
-def shoot(theme: str) -> None:
-    print(f"  {theme}")
+def scroll_to(label: str) -> bool:
+    """Swipe the screen up until a node with exactly this text is on it -
+    not a fixed distance: one swipe stopped being enough the day Settings
+    gained a card."""
+    for _ in range(6):
+        if centre(label, exact=True):
+            return True
+        shell("input swipe 628 2000 628 900 400")
+        time.sleep(1)
+    return bool(centre(label, exact=True))
+
+
+def shoot(look: str, theme: str, wanted: set) -> None:
+    print(f"  {look}, {theme}")
+    set_look(LOOKS[look])
     shell(f"cmd uimode night {THEMES[theme]}")
     time.sleep(1)
     shell(f"am force-stop {PKG}")
+    if not look_is(LOOKS[look]):
+        print(f"    the look was written over; writing {look} again")
+        set_look(LOOKS[look])
     shell(f"am start -n {PKG}/.MainActivity")
     time.sleep(4)
 
-    into = OUT / theme
-    play_first()
-    grab(into / "home.png")
-    # Folded away again: the Calls tab would show the same player under the
-    # same call.
-    tap("Collapse player", "the player's chevron")
+    into = OUT / look / theme
+    if "home" in wanted:
+        play_first()
+        grab(into / "home.png")
+        # Folded away again: the Calls tab would show the same player under
+        # the same call.
+        tap("Collapse player", "the player's chevron")
 
     # The Calls tab, with the invented call log behind the invented list.
     # Checked, not assumed: once the tap landed while the header was still
     # settling, missed the tab, and calls.png was the Recordings tab again.
     # Asked of the tab itself: the check was a time chip only the Recordings
     # list had, and those chips went - it passed whichever tab was open.
-    for _ in range(3):
+    for _ in range(3 if "calls" in wanted else 0):
         if not tap("Calls", "the calls tab", exact=True):
             break
         time.sleep(1)
@@ -284,29 +352,34 @@ def shoot(theme: str) -> None:
             tap("Recordings", "the recordings tab", exact=True)
             break
     else:
-        print("    !! the calls tab never opened; calls.png is unchanged")
+        if "calls" in wanted:
+            print("    !! the calls tab never opened; calls.png is unchanged")
 
+    if not wanted & {"settings", "answering", "theme", "selftest"}:
+        return
     if not tap("Settings", "the settings gear"):
         return
-    grab(into / "settings.png")
+    if "settings" in wanted:
+        grab(into / "settings.png")
 
     # The answering machine's own screen: real, as the phone has it - the
     # greeting's length and the test results are this phone's.
-    if tap("Answering machine", "the answering machine row", exact=True):
+    if "answering" in wanted and tap("Answering machine", "the answering machine row", exact=True):
         grab(into / "answering.png")
         shell("input keyevent KEYCODE_BACK")
         time.sleep(1)
 
-    # Diagnostics is its own screen, the last row of Settings: scroll until the
-    # row is on screen (not a fixed distance - one swipe stopped being enough
-    # the day Settings gained a card), open it, run the test, and let the
-    # screen's own auto-scroll bring the answer into view.
-    for _ in range(6):
-        if centre("Diagnostics", exact=True):
-            break
-        shell("input swipe 628 2000 628 900 400")
+    # Settings > Theme: the look's own preview over the looks to choose.
+    if "theme" in wanted and scroll_to("Theme") and tap("Theme", "the theme row", exact=True):
+        grab(into / "theme.png")
+        shell("input keyevent KEYCODE_BACK")
         time.sleep(1)
-    if tap("Diagnostics", "the diagnostics row", exact=True) and tap("Self-test", "the self-test button"):
+
+    # Diagnostics is its own screen, the last row of Settings: open it, run
+    # the test, and let the screen's own auto-scroll bring the answer into
+    # view.
+    if "selftest" in wanted and scroll_to("Diagnostics") and tap("Diagnostics", "the diagnostics row", exact=True) \
+            and tap("Self-test", "the self-test button"):
         time.sleep(6)
         grab(into / "selftest.png")
         shell("input keyevent KEYCODE_BACK")
@@ -316,20 +389,22 @@ def shoot(theme: str) -> None:
 
 
 def thumbnails() -> None:
-    """The copies the README points at: one flat set, scaled to page width."""
+    """The copies the README and the site point at, scaled to page width:
+    docs/screenshots/<look>/<screen>.png, and <screen>-dark.png."""
     from PIL import Image
 
-    for theme in THEMES:
-        for name in ("home", "calls", "settings", "answering", "selftest"):
-            source = OUT / theme / f"{name}.png"
-            if not source.exists():
-                continue
-            suffix = "" if theme == "light" else "-dark"
-            target = OUT / f"{name}{suffix}.png"
-            image = Image.open(source)
-            height = round(image.height * README_WIDTH / image.width)
-            image.resize((README_WIDTH, height), Image.LANCZOS).save(target)
-            print(f"    {target.relative_to(ROOT)}  {target.stat().st_size // 1024} kB")
+    for look in LOOKS:
+        for theme in THEMES:
+            for name in SCREENS:
+                source = OUT / look / theme / f"{name}.png"
+                if not source.exists():
+                    continue
+                suffix = "" if theme == "light" else "-dark"
+                target = OUT / look / f"{name}{suffix}.png"
+                image = Image.open(source)
+                height = round(image.height * README_WIDTH / image.width)
+                image.resize((README_WIDTH, height), Image.LANCZOS).save(target)
+                print(f"    {target.relative_to(ROOT)}  {target.stat().st_size // 1024} kB")
 
 
 def listing() -> None:
@@ -339,12 +414,12 @@ def listing() -> None:
     LISTING.mkdir(parents=True, exist_ok=True)
     for old in LISTING.glob("*.png"):
         old.unlink()
-    for number, (theme, name) in enumerate(LISTING_ORDER, start=1):
-        source = OUT / theme / f"{name}.png"
+    for number, (look, theme, name) in enumerate(LISTING_ORDER, start=1):
+        source = OUT / look / theme / f"{name}.png"
         if not source.exists():
             continue
         suffix = "" if theme == "light" else "-dark"
-        target = LISTING / f"{number}-{name}{suffix}.png"
+        target = LISTING / f"{number}-{name}-{look}{suffix}.png"
         shutil.copyfile(source, target)
         print(f"    {target.relative_to(ROOT)}  {target.stat().st_size // 1024} kB")
 
@@ -357,26 +432,34 @@ if __name__ == "__main__":
         listing()
         sys.exit()
 
-    only = sys.argv[1:] or list(THEMES)
-    looked = pin_look()
+    asked = sys.argv[1:]
+    looks = [a for a in asked if a in LOOKS] or list(LOOKS)
+    themes = [a for a in asked if a in THEMES] or list(THEMES)
+    wanted = {a for a in asked if a in SCREENS} or set(SCREENS)
+    looked = owners_look()
+    night = night_mode()
+    print(f"  the phone's night mode: {night}")
     demo(True)
     dismissed = tip_dismissed()
     if dismissed:
         dismiss_tip(False)
     status_bar(True)
     try:
-        for theme in only:
-            shoot(theme)
+        for look in looks:
+            for theme in themes:
+                shoot(look, theme, wanted)
     finally:
         status_bar(False)
         demo(False)
         # Leave the phone as its owner keeps it.
-        shell("cmd uimode night yes")
+        if night in ("yes", "no", "auto"):
+            shell(f"cmd uimode night {night}")
+        else:
+            print(f"  !! the phone's night mode was {night}: set it back by hand")
         shell(f"am force-stop {PKG}")
         if dismissed:
             dismiss_tip(True)
-        if looked:
-            set_look(looked)
+        set_look(looked.get("look", "MEMO"), looked.get("light_dark", "PHONE"))
     thumbnails()
     listing()
     print("done")

@@ -12,6 +12,7 @@ import com.jemcik.jemrec.adb.AdbTransport
 import android.content.Intent
 import android.content.IntentSender
 import android.net.Uri
+import android.os.SystemClock
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.capture.AfterCall
 import com.jemcik.jemrec.capture.MissedCalls
@@ -68,6 +69,12 @@ import java.util.Locale
 
 /** Recordings added to the list per "show more" tap. */
 private const val PAGE = 20
+
+/** How long a recording the waveform fill-in could not decode waits before
+ *  it is tried again: long enough that a file that will not decode does not
+ *  log its warning at every refresh, short enough that one that failed for
+ *  the moment gets its waveform the same day. */
+private const val RETRY_UNDECODABLE_MS = 30 * 60_000L
 
 /** How much diagnostics log to keep. Roughly a screen or two of history,
  *  which is as far back as anyone reads. */
@@ -379,11 +386,24 @@ class MainViewModel @JvmOverloads constructor(
      * question comes up over this screen, and closing it resumes the screen,
      * whose re-check revives the recorder. See CaptureDaemon.askToAllowNetwork.
      */
-    fun allowThisWifi() = launchAction("allow this Wi-Fi") {
-        if (!CaptureDaemon.askToAllowNetwork(getApplication())) {
-            say("could not switch Wireless debugging - open it in Developer options and allow this network")
+    /** Waits its turn rather than being dropped, as setEnabled does: asked
+     *  for while the recorder is down, when the opening's check holds busy
+     *  for seconds, the tap went without a sign. One at a time - a second
+     *  tap while one waits is the same question. */
+    fun allowThisWifi() {
+        if (!askingForWifi.compareAndSet(false, true)) return
+        launchActionWhenFree("allow this Wi-Fi") {
+            try {
+                if (!CaptureDaemon.askToAllowNetwork(getApplication())) {
+                    say("could not switch Wireless debugging - open it in Developer options and allow this network")
+                }
+            } finally {
+                askingForWifi.set(false)
+            }
         }
     }
+
+    private val askingForWifi = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** "They are on already", from the Developer options card on a phone that
      *  hides them. See Setup.developerOptions. */
@@ -1138,9 +1158,15 @@ class MainViewModel @JvmOverloads constructor(
                 for (recording in now.recordings) {
                     if (!isActive) break
                     val name = recording.name
-                    if (name in undecodable || Waveforms.isBeingWritten(name) || Waveforms.has(app, name)) continue
+                    val failedAt = undecodable[name]
+                    if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < RETRY_UNDECODABLE_MS) continue
+                    if (Waveforms.isBeingWritten(name) || Waveforms.has(app, name)) continue
                     val levels = Waveforms.levels(app, name, recording.uri, keepGoing = { isActive })
-                    if (levels == null && isActive && !Waveforms.isBeingWritten(name)) undecodable += name
+                    if (levels == null && isActive && !Waveforms.isBeingWritten(name)) {
+                        undecodable[name] = SystemClock.elapsedRealtime()
+                    } else {
+                        undecodable.remove(name)
+                    }
                 }
             } while (fillAgain && isActive)
         }
@@ -1156,10 +1182,12 @@ class MainViewModel @JvmOverloads constructor(
     @Volatile
     private var fillAgain = false
 
-    /** Recordings the fill-in could not decode, not tried again until the
-     *  app is next started: tried on every refresh, each logged its warning
-     *  again and again. */
-    private val undecodable: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    /** Recordings the fill-in could not decode, and when: tried on every
+     *  refresh, each logged its warning again and again; never again for
+     *  the life of the process, one that failed only for the moment - its
+     *  codec not to be had while AfterCall decoded another - kept no
+     *  waveform for days. Tried again after RETRY_UNDECODABLE_MS. */
+    private val undecodable = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     /** Everything refresh() reads off disk, gathered in one background pass. */
     private data class Snapshot(

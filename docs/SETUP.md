@@ -370,6 +370,12 @@ then has a plain slider for a moment - about two and a half seconds for a
 30-minute call. The chevron beside it folds the player away. The share button
 offers the original file or a converted copy that plays anywhere.
 
+**Finding a recording.** The chips above the list narrow it: favourites, the
+phone or a messenger, kept, messages. The magnifier opens a search by name,
+number or time. Chips of one kind add up - WhatsApp and Telegram - and
+different kinds narrow: and favourites. A chip only appears where it would
+narrow the list, and one that is on stays, so you can turn it off.
+
 To delete, tap a contact's photo or long-press a row to start selecting, tick
 what you want, and use the bin in the toolbar. It asks first and tells you how
 many.
@@ -416,16 +422,39 @@ last week. **No recording** is an older call, or one from before JemRec kept
 track, with no guess at why. Missed, declined and blocked calls are marked as
 such.
 
+Its chips work as the Recordings tab's, with **Not recorded** for the calls
+that connected and were not recorded; its search finds a name or a number. When
+nothing matches, it says so.
+
 It needs permission to read the call log, the same optional permission that
 puts names on recordings; the tab asks for it if you have not given it.
 
+## Three looks
+
+**Settings → Theme** changes how JemRec looks, never what it does. **Memo**,
+the default, is calm and simple, with one big record button; **Deck** is a
+pocket recorder, with a REC key and an LCD; **Multitrack** is a sound editor,
+each caller in a colour of their own. Under them, **Light**, **Dark** or
+**System**, as the phone is set. The preview at the top shows the look you
+pick, with invented calls, and the app changes at once. Notifications and the
+Quick Settings tile always follow the phone.
+
+The header holds the same things in every look: the record button, which turns
+recording on and off; whether JemRec can record right now, and if not, what to
+do; a line of what is on - in Memo in words and icons, on Deck's LCD as
+**AUTO** or **ASK**, **ANS**, **MSG** and **DEL** with the age, in Multitrack
+as a row of LEDs, lit for what is on; the gear for Settings; and the
+**Recordings** and **Calls** tabs, Recordings with how many there are. The
+settings the header marks wear the same mark in Settings.
+
 ## Turning JemRec off
 
-The switch in the header is the on/off control for the whole app. Off means no
-call is recorded and no notification appears. Your recordings and your pairing
-are untouched, and the recorder itself keeps running in the background doing
-nothing — which is what makes turning it back on instant, anywhere, with no
-network.
+The record button in the header - Memo's round button, Deck's REC key,
+Multitrack's armed button - is the on/off control for the whole app. Off means
+no call is recorded and no notification appears. Your recordings and your
+pairing are untouched, and the recorder itself keeps running in the background
+doing nothing — which is what makes turning it back on instant, anywhere, with
+no network.
 
 The same switch is a **Quick Settings tile**, so you can flip it without
 opening the app. Settings has a row that adds it, on Android 13 and later; on
@@ -495,12 +524,13 @@ And when the app is closed, in notifications:
 
 ## Settings
 
-One screen, in four groups, each row showing what it is set to now. Until you
-allow it, a **Show who called** card sits at the top: it labels each recording
-with the contact's name and photo, or the number when they are not in your
-contacts, and lets JemRec tell you if a call went by unrecorded. It needs your
-call log and contacts, and is asked for in the app rather than at install. Say
-no and everything still works, with the time as each recording's headline.
+One screen, in five groups, each row showing what it is set to now, and the
+settings the header marks wearing the same mark. Until you allow it, a **Show
+who called** card sits at the top: it labels each recording with the contact's
+name and photo, or the number when they are not in your contacts, and lets
+JemRec tell you if a call went by unrecorded. It needs your call log and
+contacts, and is asked for in the app rather than at install. Say no and
+everything still works, with the time as each recording's headline.
 
 **Recording**
 
@@ -512,6 +542,11 @@ no and everything still works, with the time as each recording's headline.
   whether to show who called from their call notifications.
 - **Exact call tracking** — recordings start at the answer, and calls nobody
   answered are not kept.
+
+**Look**
+
+- **Theme** — Memo, Deck or Multitrack, and light, dark or as the phone; see
+  Three looks.
 
 **Saving**
 

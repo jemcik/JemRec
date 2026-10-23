@@ -19,6 +19,7 @@ this one is - or to check that it does what it says.
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
   [messenger calls](#messenger-calls) · [the answering machine](#the-answering-machine) ·
   [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
+  [three looks](#three-looks) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [notifications](#after-the-call-and-when-something-is-wrong)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
@@ -450,6 +451,17 @@ recording says why, where JemRec knows:
 Missed, declined and blocked calls are marked as such. The tab needs call-log
 access, the same optional permission that names callers in the list.
 
+**Finding a call.** Both tabs can be searched - by name or number, and on
+Recordings by the time the row shows - and narrowed by chips: favourites,
+kept, messages, and on Recordings the phone and each messenger, on Calls the
+calls that connected and were not recorded. Chips of one kind widen (WhatsApp
+and Telegram), chips of different kinds narrow (and favourites). A chip is
+drawn only where it would leave some of its list, not all of it and not none:
+one that would change nothing is noise, and one that would empty the list is
+a trap. One that is on stays, so it can be turned off. Whether a chip is
+drawn and what it leaves are one rule in the code, so a chip offered never
+leaves something other than it promised.
+
 ## Playing a recording
 
 A recording plays inside the app, never handed to another: the first version
@@ -476,12 +488,48 @@ option: it needs the microphone permission this app does not hold.
 and every packet handed to it is a trip there and back. So the packets go six
 to one - Opus lets a packet hold up to 120 ms of frames, which decode to the
 same samples - and up to four decoders work at once, each on a stretch of the
-call, lined up against each other where the stretches overlap: after a jump
+call, lined up against each other where the stretches overlap. Joined, the
+samples are the same CRC for CRC (two phone calls' middles and a messenger
+call's whole file, on the Honor), but for the encoder's first 6.5 ms, which
+the decoder trims from a single frame and keeps from a joined one - less
+than a bar. Lined up, because after a jump
 into a file, Android's times for the app's own recordings were a 20 ms packet
 early. Measured on the Honor (2026-10-23), a 30-minute call took 24.5 s a
 packet at a time with one decoder, 6.9 s joined, and 2.5 s joined four at
 once; a 58-second call, 1.0 s and then 0.14 s. Drawn, the bars match the one
 decoder's within 10%.
+
+## Three looks
+
+The app comes in three looks, picked in Settings → Theme: **Memo**, the
+default and the app as it was, so an update changes nothing unasked; **Deck**,
+a pocket recorder, with a REC key and an LCD; **Multitrack**, a sound editor,
+each caller's calls in a colour of their own. Each is light, dark, or as the
+phone - Android's words and order for an in-app choice ("Implement dark
+theme"), told to Android as the app starts (`setApplicationNightMode`, from
+API 31, the minimum here), so the launch screen is drawn in it too.
+
+They are one app drawn three ways, not three apps: the same screens from the
+same state, and only the colours, the type and the home screen's own pieces -
+the header, the rows, the player - and Settings' bar and groups differ. What
+each look shows is the same: the header's one strip (the record control, the
+state, a line of marks or of what to do, the gear, the tabs) is one height in
+every state and at every text size, and each setting the header marks -
+AUTO or ASK, ANS, MSG, DEL - carries the same mark in Settings, from one
+function. A look draws nothing that is not data: no meter moves between calls,
+no LED is lit for show.
+
+The Theme screen previews the picked look with the home screen's own parts,
+drawn over five invented calls: a preview of the user's calls would put them
+on a settings screen, and the hand-drawn pictures it replaced had already
+fallen behind the headers they showed. It is a picture: nothing in it can be
+tapped or heard by a screen reader - both held by tests - or focused.
+
+The looks' type is four fonts in the APK, unmodified from
+[Google Fonts](https://github.com/google/fonts) under the SIL Open Font
+Licence ([NOTICE.md](../NOTICE.md)): Doto for Deck's LCD word, Share Tech Mono
+for Deck's smaller print, JetBrains Mono for Multitrack's readouts and Space
+Grotesk for its names. They grew the APK from 8.83 to 9.13 MB.
 
 ## Keeping, deleting and cleaning up
 

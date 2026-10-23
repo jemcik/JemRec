@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -96,7 +97,7 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
                     .weight(1f)
                     .then(
                         if (asks) {
-                            Modifier.allowWifiTap(state, vm)
+                            Modifier.allowWifiTap(vm)
                         } else {
                             Modifier
                         },
@@ -168,21 +169,33 @@ private fun MultiMarks(c: MultitrackColors, marks: List<HeaderMark>) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        for (mark in marks) MultiLed(c, mark.label, mark.lit)
+        for (mark in marks) MultitrackMark(mark, c)
     }
 }
 
+/**
+ * One setting's mark as the header's row of LEDs shows it - the LED, lit or
+ * dark, beside its label - and as Settings shows it beside the setting
+ * (SettingsMark). One composable for both: drawn apart, Settings' stood the
+ * LED over a smaller label (the user found it, 2026-10-23).
+ */
 @Composable
-private fun MultiLed(c: MultitrackColors, label: String, lit: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Led(if (lit) c.ledOn else c.ledOff, size = 6.dp, glow = lit)
+internal fun MultitrackMark(mark: HeaderMark, c: MultitrackColors) {
+    Row(
+        Modifier.testTag(markFaceTag(mark)),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Led(if (mark.lit) c.ledOn else c.ledOff, size = 6.dp, glow = mark.lit)
         Text(
-            label,
+            mark.label,
             fontFamily = LookFonts.mono,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.06.em,
-            color = if (lit) c.soft else c.faint,
+            color = if (mark.lit) c.soft else c.faint,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }

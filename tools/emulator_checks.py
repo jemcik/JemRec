@@ -30,6 +30,10 @@ through the real app and daemon, checking what each one leaves behind:
   answer-takeover-ask-first  in Ask first, taking over a call the machine
               answered keeps what was said as the message, and asks before
               recording the rest
+  waveform    a call's 800 levels are worked out and kept as it is saved,
+              so its row has its waveform the first time it is drawn
+  looks       the app, started again in Deck (dark), Multitrack and Memo,
+              opens in each, its own header drawn
 
 Every call is the emulator's own simulation - nothing leaves the machine -
 and the script refuses to touch anything that is not an emulator. It needs a
@@ -39,6 +43,7 @@ version a release claims; see docs/DEVELOPMENT.md, Tests.
 Exit status: 0 if every check passed.
 """
 import argparse
+import hashlib
 import re
 import subprocess
 import sys
@@ -178,6 +183,10 @@ def set_up(apk):
     # between boots, and a run that ended on an answering check left it on for
     # the call-timing checks of the next.
     diag("answer", "--ez", "on", "false")
+    # And the screenshots' invented calls off (tools/shoot.py, DemoRecordings):
+    # left on, the waveforms are the invented ones and nothing is kept - the
+    # waveform check failed on the Android 12 and 13 AVDs, 2026-10-23.
+    diag("demo", "--ez", "on", "false")
     start_recorder()
 
 
@@ -564,6 +573,50 @@ def _answer_takeover_ask_first():
     return "the message kept, the rest asked about"
 
 
+def ui():
+    """The screen as uiautomator sees it."""
+    sh("uiautomator dump /sdcard/ui.xml")
+    return sh("cat /sdcard/ui.xml")
+
+
+def waveform():
+    sh("logcat -c")
+    dial(STRANGER_OUT, ring_s=2, talk_s=4)
+    _, _, name = saved()
+    # Waveforms.cacheFile: the first 12 bytes of the name's SHA-256, in hex.
+    cached = f"cache/waveforms-v2/{hashlib.sha256(name.encode()).digest()[:12].hex()}.lvl"
+    wait_for(lambda: sh(f"run-as {PKG} stat -c %s {cached}").strip() == "800", 30,
+             "the call's 800 levels to be kept")
+    return f"{name}: 800 levels kept"
+
+
+# What each look's header shows uiautomator, with the recorder ready. Deck's
+# and Multitrack's headers are one sentence to a screen reader (headerSpeech),
+# Memo's its own words; Multitrack's tabs are in capitals.
+LOOK_SIGNS = {
+    "DECK": lambda x: 'content-desc="Ready to record' in x and 'text="Ready to record"' not in x
+    and 'text="CALLS"' not in x,
+    "MULTITRACK": lambda x: 'text="CALLS"' in x,
+    "MEMO": lambda x: 'text="Ready to record"' in x,
+}
+
+
+def looks():
+    """Each look picked and the app started again: it opens in it - four
+    fonts and a light or dark of its own, on this Android."""
+    try:
+        for look, sign in LOOK_SIGNS.items():
+            set_prefs(look=look, light_dark="DARK" if look == "DECK" else "PHONE")
+            sh(f"am force-stop {PKG}")
+            sh(f"am start -n {PKG}/.MainActivity")
+            wait_for(lambda: sign(ui()), 30, f"the app to open in {look}")
+            assert sh(f"pidof {PKG}").strip(), f"the app stopped in {look}"
+    finally:
+        set_prefs(look="MEMO", light_dark="PHONE")
+        sh(f"am force-stop {PKG}")
+    return "it opened in Deck (dark), Multitrack and Memo"
+
+
 def self_test():
     report = diag("selftest")
     assert "PASS" in report, report
@@ -573,7 +626,7 @@ def self_test():
 
 CHECKS = [ringing, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
-          answer_after_emergency, answer_takeover_ask_first]
+          answer_after_emergency, answer_takeover_ask_first, waveform, looks]
 
 
 def nothing_pending():
