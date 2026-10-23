@@ -401,6 +401,82 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "audiocheck", "${file.name}: $verdict (levels in files/audiocheck.log)")
                     }
 
+                    // How long a waveform takes to work out, one way or
+                    // another, on the phone - nothing cached, nothing kept:
+                    //   --es op waveform --es name <file name>
+                    //   [--ei workers N] [--ez join false]
+                    // One way per broadcast: a long call's can take longer
+                    // than a broadcast may.
+                    "waveform" -> {
+                        val name = intent.getStringExtra("name").orEmpty()
+                        val recording = com.jemcik.jemrec.capture.Recordings.list(appContext, withCallers = false)
+                            .firstOrNull { it.name == name }
+                        if (recording == null) {
+                            report(appContext, "waveform", "no recording named '$name'")
+                        } else {
+                            val started = android.os.SystemClock.elapsedRealtime()
+                            val levels = com.jemcik.jemrec.capture.Waveforms.levels(
+                                appContext, recording.name, recording.uri,
+                                workers = intent.getIntExtra("workers", 0),
+                                join = intent.getBooleanExtra("join", true),
+                                useCache = false,
+                            )
+                            report(
+                                appContext, "waveform",
+                                // The levels themselves, to compare the ways of working them out.
+                                "$name: ${if (levels == null) "could not be worked out" else "levels " + com.jemcik.jemrec.capture.Waveforms.toBytes(levels).joinToString(",")} " +
+                                    "in ${android.os.SystemClock.elapsedRealtime() - started} ms (timings in files/waveform.log)",
+                            )
+                        }
+                    }
+
+                    // Whether two ways of decoding a recording give the same
+                    // sound: a CRC of every sample, the samples counted, and
+                    // when the first chunk starts.
+                    //   --es op pcmhash --es name <file name> [--ez join true]
+                    //   [--el from <us>] [--el until <us>] [--ei skip <samples>]
+                    "pcmhash" -> {
+                        val name = intent.getStringExtra("name").orEmpty()
+                        val recording = com.jemcik.jemrec.capture.Recordings.list(appContext, withCallers = false)
+                            .firstOrNull { it.name == name }
+                        if (recording == null) {
+                            report(appContext, "pcmhash", "no recording named '$name'")
+                        } else {
+                            val crc = java.util.zip.CRC32()
+                            var samples = 0L
+                            var chunks = 0
+                            var firstUs = -1L
+                            val formats = StringBuilder()
+                            val bytes = ByteArray(64 * 1024)
+                            // Samples (all channels) left out of the CRC at the start.
+                            var skip = intent.getIntExtra("skip", 0)
+                            com.jemcik.jemrec.capture.PcmDecoder.decode(
+                                appContext, recording.uri,
+                                onFormat = { rate, channels -> formats.append("$rate/$channels ") },
+                                onPcm = { pcm, atUs ->
+                                    if (firstUs < 0) firstUs = atUs
+                                    chunks++
+                                    val n = pcm.remaining()
+                                    samples += n
+                                    var at = 0
+                                    while (pcm.hasRemaining()) {
+                                        val v = pcm.get().toInt()
+                                        if (skip > 0) { skip--; continue }
+                                        bytes[at++] = v.toByte()
+                                        bytes[at++] = (v shr 8).toByte()
+                                        if (at == bytes.size) { crc.update(bytes, 0, at); at = 0 }
+                                    }
+                                    crc.update(bytes, 0, at)
+                                    true
+                                },
+                                fromUs = intent.getLongExtra("from", 0L),
+                                untilUs = intent.getLongExtra("until", Long.MAX_VALUE),
+                                join = intent.getBooleanExtra("join", false),
+                            )
+                            report(appContext, "pcmhash", "$name: crc ${"%08x".format(crc.value)}, $samples samples in $chunks chunks, first at $firstUs us, formats $formats")
+                        }
+                    }
+
                     else -> report(appContext, "?", "unknown op '$op'")
                 }
             } catch (t: Throwable) {

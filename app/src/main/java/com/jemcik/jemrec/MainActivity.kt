@@ -4,11 +4,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.ui.MainScreen
 import com.jemcik.jemrec.ui.theme.JemRecTheme
+import com.jemcik.jemrec.ui.theme.Looks
 
 /**
  * Single activity. It owns the theme decision and nothing else - the whole of
@@ -38,7 +41,10 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) DeepLink.offer(this, intent)
 
         setContent {
-            JemRecTheme {
+            // Watched, not read once: a theme picked in Settings repaints
+            // the app there and then.
+            val look by Looks.changes(this).collectAsState()
+            JemRecTheme(look) {
                 MainScreen()
             }
         }

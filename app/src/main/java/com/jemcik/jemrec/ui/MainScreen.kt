@@ -9,7 +9,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -20,7 +19,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,29 +32,24 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.Tab
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import com.jemcik.jemrec.ui.theme.LocalLook
+import com.jemcik.jemrec.ui.theme.Look
 import androidx.compose.runtime.Composable
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -294,6 +287,7 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                     SetupScreen(state, vm)
                 } else {
                     when (state.screen) {
+                        Screen.THEME -> ThemeScreen(state, vm)
                         Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm)
                         Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
                         Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
@@ -307,9 +301,27 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
 }
 
 /**
- * The bar over every screen once setup is done: the state as the headline on
- * home (with the on/off switch, the gear and the tabs), the screen's name and
- * Back elsewhere, and the gradient rule under both.
+ * The bar over every screen once setup is done: on home, the look's own
+ * header (DeckHeader, MemoHeader, MultitrackHeader); elsewhere the screen's
+ * name and Back, with the gradient rule under it.
+ *
+ * WHAT THE OLD HOME HEADER DID, AND WHERE EACH NOW IS. It was one TopAppBar
+ * for every look; each look's header now does all of it in its own way:
+ * - the state as the headline (Off, Starting..., Ready to record, Cannot
+ *   record), one line at any text size, green, coral or grey: each header's
+ *   word, from recorderStatus, auto-sized;
+ * - "Recording every call" / "Asks before each call" under it: the AUTO or
+ *   ASK mark (Deck, Multitrack) and Memo's first pill;
+ * - "Tap to allow this Wi-Fi", a tap to Android's question, or "Join any
+ *   Wi-Fi - it resumes on its own", when the recorder is down: the same words
+ *   on each header, and the same tap;
+ * - the on/off switch, not while busy: each record control (recordToggle);
+ * - the gear, and Recordings | Calls: on each header;
+ * - the gradient rule, moving while busy: each look's own busy signal in
+ *   its status instead (Deck's LCD segments, Memo's ring, Multitrack's
+ *   LEDs) - and only while recording is switching on, not on the check each
+ *   opening of the app makes, which moved the line for nothing the user did.
+ *   At rest each header ends on its own edge.
  *
  * Its own composable so the screen tests can draw it without MainScreen, whose
  * resume effects reach the recorder and the device.
@@ -318,211 +330,44 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
 @Composable
 internal fun AppHeader(state: UiState, vm: MainViewModel) {
     val haptics = LocalHapticFeedback.current
-    val offHome = state.screen != Screen.HOME
-    // The second line: bodySmall, stepping down a little before it would wrap.
-    val subtitleSize = oneLineAutoSize(min = 10.dp, max = 12.sp)
-    // The bar and the line under it are one thing, so they live in
-    // one Column. TopAppBar has no bottom border of its own.
-    //
-    // ON HOME, THE BAR AND THE TABS ARE ONE TINTED BLOCK. Material
-    // 3 joins tabs to their app bar as a single unit, with a divider
-    // along the bottom (m3.material.io, Tabs). On the plain surface
-    // the tabs floated between the bar and the list - nothing said
-    // they belonged to either. The tint is the app bar's scrolled
-    // colour, kept on at rest: at rest is exactly when the tabs
-    // floated. The gradient rule under them is the divider.
-    val headerColor = if (offHome) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+    if (state.screen == Screen.HOME) {
+        // The answering machine has its own state (AnswerController); its
+        // mark is the one fact here that UiState does not carry.
+        val answer by vm.answer.state.collectAsStateWithLifecycle()
+        when (LocalLook.current) {
+            Look.MEMO -> MemoHeader(state, vm, answer.enabled)
+            Look.DECK -> DeckHeader(state, vm, answer.enabled)
+            Look.MULTITRACK -> MultitrackHeader(state, vm, answer.enabled)
+        }
+        return
     }
     Column {
         TopAppBar(
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = headerColor,
-                scrolledContainerColor = headerColor,
-            ),
             title = {
-                // THE STATE IS THE HEADLINE.
-                //
-                // The app's name was, and a name is the one thing
-                // on this screen the user already knows - it is
-                // written under the icon they just tapped. What
-                // they cannot know without being told is whether
-                // their next call will be recorded, so that gets
-                // the row.
-                //
-                // Clear of the switch: the title shrinks to the room it has,
-                // and at twice the text size that room ended at the switch's
-                // edge, so the two touched.
-                Column(Modifier.padding(end = 8.dp)) {
-                    Text(
-                        if (offHome) {
-                            when (state.screen) {
-                                Screen.WHOSE_CALLS -> "Whose calls to keep"
-                                Screen.MESSENGER_CALLS -> "Messenger calls"
-                                Screen.DIAGNOSTICS -> "Diagnostics"
-                                Screen.ANSWERING_MACHINE -> "Answering machine"
-                                Screen.TRASH -> "Recently deleted"
-                                else -> "Settings"
-                            }
-                        } else {
-                            when {
-                                !state.enabled -> "Off"
-                                state.starting -> "Starting..."
-                                state.daemonRunning -> "Ready to record"
-                                // The recorder is down. Wi-Fi is the
-                                // one lever the user has: the app
-                                // turns Wireless debugging back on by
-                                // itself when it revives, so that
-                                // switch is never theirs to touch
-                                // here (it used to be named, and the
-                                // phone turns it off on every Wi-Fi
-                                // loss - so it was named constantly,
-                                // and wrongly). The Wi-Fi goes in the
-                                // line under this one: at title size
-                                // "Cannot record, needs Wi-Fi" wrapped.
-                                else -> "Cannot record"
-                            }
-                        },
-                        // ONE LINE, WHATEVER THE FONT SIZE. The
-                        // headline is the state and has to be read
-                        // at a glance beside the switch; a wrap
-                        // there looks like a broken layout. The
-                        // wording fits at the default size, and the
-                        // type steps down a little for anyone
-                        // running large fonts rather than wrapping
-                        // or losing letters to an ellipsis - down to
-                        // a floor in dp, which a larger font size does
-                        // not raise: at twice the size a 15 sp floor
-                        // was 30 dp, and the title ran under the switch.
-                        maxLines = 1,
-                        autoSize = oneLineAutoSize(min = 15.dp, max = 22.sp),
-                        // A traffic light: green ready, coral cannot,
-                        // grey off/starting. Green is the play colour,
-                        // so "go" reads the same in the header as it
-                        // does on every row - and says "good to go"
-                        // where the accent blue only said "accent".
-                        color = when {
-                            offHome -> MaterialTheme.colorScheme.onSurface
-                            !state.enabled || state.starting ->
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            state.daemonRunning -> JemRecColors.play
-                            else -> MaterialTheme.colorScheme.error
-                        },
-                    )
-                    // Under the ready state, HOW it will record - so
-                    // the user is not left to remember whether the
-                    // next call records on its own or waits for a
-                    // tap. Only when it is actually ready: under
-                    // "Off", "Starting" or "Cannot record" it would
-                    // either be moot or contradict the line above.
-                    if (!offHome && state.enabled && state.daemonRunning) {
-                        Text(
-                            if (state.automatic) "Recording every call"
-                            else "Asks before each call",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            autoSize = subtitleSize,
-                        )
-                    }
-                    // Under the down state, what to do about it. The
-                    // app watches for Wi-Fi and revives the recorder
-                    // the moment it returns - re-arming Wireless
-                    // debugging itself - so this is one instruction
-                    // and a wait, not a fault to act on.
-                    if (!offHome && state.enabled && !state.starting &&
-                        !state.daemonRunning
-                    ) {
-                        // Except on a Wi-Fi Android has not allowed
-                        // Wireless debugging on (see RecorderHealth):
-                        // the user is on Wi-Fi already, and the one
-                        // thing that helps is Android's question,
-                        // which the tap puts back on screen.
-                        if (state.networkNotAllowed) {
-                            Text(
-                                "Tap to allow this Wi-Fi",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                autoSize = subtitleSize,
-                                modifier = Modifier.clickable(enabled = !state.busy) {
-                                    haptics.tap()
-                                    vm.allowThisWifi()
-                                },
-                            )
-                        } else {
-                            Text(
-                                // Every fact in one short line: the cause,
-                                // that any network will do, and that there
-                                // is nothing else to do. The longer version
-                                // wrapped under the title.
-                                "Join any Wi-Fi - it resumes on its own",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                autoSize = subtitleSize,
-                            )
-                        }
-                    }
-                }
+                Text(
+                    when (state.screen) {
+                        Screen.WHOSE_CALLS -> "Whose calls to keep"
+                        Screen.MESSENGER_CALLS -> "Messenger calls"
+                        Screen.DIAGNOSTICS -> "Diagnostics"
+                        Screen.ANSWERING_MACHINE -> "Answering machine"
+                        Screen.TRASH -> "Recently deleted"
+                        Screen.THEME -> "Theme"
+                        else -> "Settings"
+                    },
+                    maxLines = 1,
+                    autoSize = oneLineAutoSize(min = 15.dp, max = 22.sp),
+                    modifier = Modifier.padding(end = 8.dp),
+                )
             },
             navigationIcon = {
-                if (offHome) {
-                    IconButton(onClick = { haptics.tap(); vm.back() }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                        )
-                    }
-                }
-            },
-            actions = {
-                if (!offHome) {
-                    // Red when on, matching the record capsule in
-                    // the launcher icon - so the thing that means
-                    // "recording" is one colour everywhere the user
-                    // meets it.
-                    Switch(
-                        checked = state.enabled,
-                        onCheckedChange = { haptics.toggle(it); vm.setEnabled(it) },
-                        enabled = !state.busy,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = JemRecColors.iconRecord,
-                            checkedBorderColor = JemRecColors.iconRecord,
-                        ),
+                IconButton(onClick = { haptics.tap(); vm.back() }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
                     )
-                    IconButton(onClick = { haptics.tap(); vm.showSettings() }) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
-                    }
                 }
             },
         )
-        // Recordings | Calls. Primary tabs, under the app bar, as
-        // Material 3 puts them; not on the other screens, which
-        // are reached from here and not part of it. Their own
-        // divider is dropped - the header rule below already is
-        // one, and the busy line rides on it.
-        if (!offHome) {
-            PrimaryTabRow(
-                selectedTabIndex = state.homeTab.ordinal,
-                containerColor = headerColor,
-                divider = {},
-            ) {
-                Tab(
-                    selected = state.homeTab == HomeTab.RECORDINGS,
-                    onClick = { haptics.tap(); vm.showTab(HomeTab.RECORDINGS) },
-                    text = { Text("Recordings") },
-                )
-                Tab(
-                    selected = state.homeTab == HomeTab.CALLS,
-                    onClick = { haptics.tap(); vm.showTab(HomeTab.CALLS) },
-                    text = { Text("Calls") },
-                )
-            }
-        }
         HeaderRule(active = state.busy)
     }
 }
@@ -547,7 +392,7 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
  * so the motion reads as the app's own rather than a generic bar.
  */
 @Composable
-private fun HeaderRule(active: Boolean) {
+internal fun HeaderRule(active: Boolean) {
     val period = with(LocalDensity.current) { 220.dp.toPx() }
 
     val shift by rememberInfiniteTransition(label = "rule").animateFloat(

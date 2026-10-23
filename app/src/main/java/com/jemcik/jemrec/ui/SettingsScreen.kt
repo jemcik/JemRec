@@ -254,6 +254,18 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
             }
         }
 
+        SettingsGroup("Look") {
+            row { shape ->
+                SettingsRow(
+                    title = "Theme",
+                    summary = "${lookName(state.look)} · ${lightDarkWord(state.lightDark).lowercase()}",
+                    icon = SettingsIcons.Palette,
+                    onClick = { vm.showScreen(Screen.THEME) },
+                    shape = shape,
+                )
+            }
+        }
+
         SettingsGroup("Saving") {
             row { shape ->
                 SettingsRow(

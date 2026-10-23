@@ -1,12 +1,8 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaFormat
 import android.net.Uri
 import android.util.Log
-import java.nio.ByteOrder
 import kotlin.math.sqrt
 
 /**
@@ -53,7 +49,6 @@ import kotlin.math.sqrt
 internal object AudioCheck {
 
     private const val TAG = "JemRec"
-    private const val TIMEOUT_US = 10_000L
 
     /** About -45 dBFS in 16-bit samples. */
     internal const val ACTIVE_RMS = 180.0
@@ -121,72 +116,13 @@ internal object AudioCheck {
     }
 
     private fun measure(context: Context, uri: Uri): Levels {
-        val extractor = MediaExtractor()
-        var decoder: MediaCodec? = null
-        try {
-            extractor.setDataSource(context, uri, null)
-            val track = (0 until extractor.trackCount).firstOrNull {
-                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)
-                    ?.startsWith("audio/") == true
-            } ?: error("no audio track")
-            extractor.selectTrack(track)
-            val format = extractor.getTrackFormat(track)
-            val dec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
-                .apply { configure(format, null, null, 0); start() }
-            decoder = dec
-
-            val meter = Meter(
-                sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE),
-                channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT),
-            )
-            val info = MediaCodec.BufferInfo()
-            var inputDone = false
-            // A decoder that has taken the end of the input and then goes
-            // quiet must not hold this loop for ever.
-            var idleAfterInput = 0
-            while (!meter.done && idleAfterInput < 500) {
-                if (!inputDone) {
-                    val idx = dec.dequeueInputBuffer(TIMEOUT_US)
-                    if (idx >= 0) {
-                        val buffer = dec.getInputBuffer(idx)!!
-                        val size = extractor.readSampleData(buffer, 0)
-                        if (size < 0) {
-                            dec.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
-                        } else {
-                            dec.queueInputBuffer(idx, 0, size, extractor.sampleTime, 0)
-                            extractor.advance()
-                        }
-                    }
-                }
-                val out = dec.dequeueOutputBuffer(info, TIMEOUT_US)
-                if (inputDone && out == MediaCodec.INFO_TRY_AGAIN_LATER) idleAfterInput++
-                when {
-                    out == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        val actual = dec.outputFormat
-                        meter.reshape(
-                            actual.getInteger(MediaFormat.KEY_SAMPLE_RATE),
-                            actual.getInteger(MediaFormat.KEY_CHANNEL_COUNT),
-                        )
-                    }
-                    out >= 0 -> {
-                        if (info.size > 0) {
-                            val pcm = dec.getOutputBuffer(out)!!
-                            pcm.position(info.offset)
-                            pcm.limit(info.offset + info.size)
-                            meter.feed(pcm.order(ByteOrder.nativeOrder()).asShortBuffer())
-                        }
-                        dec.releaseOutputBuffer(out, false)
-                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
-                    }
-                }
-            }
-            return meter.levels()
-        } finally {
-            runCatching { decoder?.stop() }
-            runCatching { decoder?.release() }
-            runCatching { extractor.release() }
-        }
+        var meter: Meter? = null
+        PcmDecoder.decode(
+            context, uri,
+            onFormat = { rate, channels -> meter?.reshape(rate, channels) ?: run { meter = Meter(rate, channels) } },
+            onPcm = { pcm, _ -> meter!!.run { feed(pcm); !done } },
+        )
+        return meter!!.levels()
     }
 
     /**

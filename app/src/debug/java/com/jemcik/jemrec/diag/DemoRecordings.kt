@@ -7,8 +7,14 @@ import android.database.Cursor
 import android.net.Uri
 import android.util.Log
 import com.jemcik.jemrec.capture.CallHistory
+import com.jemcik.jemrec.capture.OpusOggWriter
 import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.capture.Recordings
+import com.jemcik.jemrec.capture.Waveforms
+import java.io.File
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,7 +70,60 @@ internal object DemoRecordings {
     fun install(on: Boolean) {
         Recordings.override = if (on) { context -> recordings(context) } else null
         CallHistory.override = if (on) { context -> calls(context) } else null
+        Waveforms.override = if (on) { name -> waveform(name.hashCode().toLong()) } else null
     }
+
+    /**
+     * An invented call's loudness, for its waveform: phrases of words and the
+     * pauses between them, two people at their own levels, a quiet stretch
+     * in the middle - the same for the same call, every time.
+     */
+    private fun waveform(seed: Long): List<Float> {
+        var state = seed
+        fun next(): Double {
+            state = state * 6_364_136_223_846_793_005L + 1_442_695_040_888_963_407L
+            return (state ushr 11).toDouble() / (1L shl 53)
+        }
+        val out = ArrayList<Float>()
+        while (out.size < Waveforms.LEVELS) {
+            val voice = 0.5 + next() * 0.45
+            repeat(4 + (next() * 12).toInt()) { out += (voice * (0.35 + 0.65 * next())).toFloat() }
+            repeat(1 + (next() * 5).toInt()) { out += (0.01 + next() * 0.06).toFloat() }
+        }
+        for (i in 470 until 540) out[i] = (0.01 + next() * 0.04).toFloat()
+        return out.take(Waveforms.LEVELS)
+    }
+
+    /**
+     * A silent call [seconds] long, for the player to play in the
+     * screenshots - the invented calls have no sound, and a player that will
+     * not start shows no waveform. Written as the app writes a recording,
+     * with Android's own Ogg muxer (OpusOggWriter), from packets of one empty
+     * frame each, which a decoder fills with silence. Made on the phone, once,
+     * in the app's cache: there is no audio file in the repository.
+     */
+    private fun silentCall(context: Context, seconds: Int): Uri? = runCatching {
+        // A tenth of a second over: the decoder trims the start, and the
+        // player's end time read 4:11 for a 4:12 call with less (the Honor,
+        // 2026-10-23). In the name, so a file made shorter is not reused.
+        val packets = seconds * 50 + 5
+        val file = File(context.cacheDir, "demo-call-$packets.ogg")
+        if (file.length() == 0L) {
+            val head = ByteBuffer.allocate(19).order(ByteOrder.LITTLE_ENDIAN)
+                .put("OpusHead".toByteArray()).put(1).put(2).putShort(312).putInt(48_000).putShort(0).put(0)
+                .array()
+            val part = File(context.cacheDir, "demo-call.part")
+            FileOutputStream(part).use { out ->
+                val writer = OpusOggWriter(out.fd, head)
+                // CELT, fullband, 20 ms, stereo, one frame - of no bytes.
+                val nothing = byteArrayOf(0xfc.toByte())
+                repeat(packets) { writer.write(nothing, 0) }
+                check(writer.finish())
+            }
+            check(part.renameTo(file))
+        }
+        Uri.fromFile(file)
+    }.onFailure { Log.w(TAG, "demo: no silent call to play: $it") }.getOrNull()
 
     /**
      * The Calls tab's invented log: every invented recording as the call it
@@ -150,7 +209,10 @@ internal object DemoRecordings {
                 // format or the Today and This week chips filter it all away.
                 name = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(at) +
                     (if (call.incoming) "_in" else "_out") + (call.app?.let { "_$it" } ?: "") + ".ogg",
-                uri = Uri.parse("jemrec-demo://call/${call.minutesAgo}"),
+                // The first plays - silence - so the screenshots can show its
+                // waveform; the rest are names alone.
+                uri = (if (call === CALLS.first()) silentCall(context, call.seconds) else null)
+                    ?: Uri.parse("jemrec-demo://call/${call.minutesAgo}"),
                 whenLabel = whenLabel(at),
                 incoming = call.incoming,
                 durationLabel = "%d:%02d".format(call.seconds / 60, call.seconds % 60),
@@ -214,6 +276,11 @@ class DemoProvider : ContentProvider() {
         val measurements = java.io.File(context.filesDir, "audiocheck.log")
         com.jemcik.jemrec.capture.AudioCheck.onMeasured = { line ->
             measurements.appendText("${java.util.Date()} $line\n")
+        }
+        // How long a waveform took to work out, the same way.
+        val waveforms = java.io.File(context.filesDir, "waveform.log")
+        com.jemcik.jemrec.capture.Waveforms.onMeasured = { line ->
+            waveforms.appendText("${java.util.Date()} $line\n")
         }
         return true
     }

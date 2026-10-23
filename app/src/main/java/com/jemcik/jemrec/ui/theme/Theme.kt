@@ -1,10 +1,13 @@
 package com.jemcik.jemrec.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -195,12 +198,12 @@ object JemRecColors {
 
     /** Starts playback. */
     val play: Color
-        @Composable get() = if (isSystemInDarkTheme()) Color(0xFF6FDF9B) else Color(0xFF14713C)
+        @Composable get() = if (LocalDark.current) Color(0xFF6FDF9B) else Color(0xFF14713C)
 
     /** A call with a favourite contact - the gold star convention used
      *  everywhere for favourites, a touch lighter on dark for contrast. */
     val favorite: Color
-        @Composable get() = if (isSystemInDarkTheme()) Color(0xFFFFCA28) else Color(0xFFF9A825)
+        @Composable get() = if (LocalDark.current) Color(0xFFFFCA28) else Color(0xFFF9A825)
 
     /**
      * The favourite star on a SELECTED filter chip.
@@ -212,7 +215,7 @@ object JemRecColors {
      * the selected pill is dark, so the bright gold is kept.
      */
     val favoriteSelected: Color
-        @Composable get() = if (isSystemInDarkTheme()) Color(0xFF7A5900) else Color(0xFFF9A825)
+        @Composable get() = if (LocalDark.current) Color(0xFF7A5900) else Color(0xFFF9A825)
 
     /**
      * Deletes a recording - to Recently deleted, since the trash; still the
@@ -227,10 +230,164 @@ object JemRecColors {
         @Composable get() = MaterialTheme.colorScheme.error
 }
 
+// Deck: warm paper under a graphite-and-aluminium recorder. Primary is the
+// face's graphite in light and the LCD's glow in dark, so a switch in
+// Settings is the same object as the header.
+private val DeckLightScheme = lightColorScheme(
+    primary = Color(0xFF4A5058),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFDDE5C2),
+    onPrimaryContainer = Color(0xFF1E2A12),
+    secondary = Color(0xFF50555C),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE4E6E9),
+    onSecondaryContainer = Color(0xFF1A1C1E),
+    tertiary = Color(0xFF4E6B26),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFDDE5C2),
+    onTertiaryContainer = Color(0xFF1E2A12),
+    error = LightError,
+    onError = LightOnError,
+    errorContainer = LightErrorContainer,
+    onErrorContainer = LightOnErrorContainer,
+    background = Color(0xFFF6F5F2),
+    onBackground = Color(0xFF1A1C1E),
+    surface = Color(0xFFF6F5F2),
+    onSurface = Color(0xFF1A1C1E),
+    surfaceVariant = Color(0xFFE4E6E9),
+    onSurfaceVariant = Color(0xFF50555C),
+    outline = Color(0xFF7A8088),
+    outlineVariant = Color(0xFFCCD0D5),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF1F0EC),
+    surfaceContainer = Color(0xFFECEBE6),
+    surfaceContainerHigh = Color(0xFFE7E6E1),
+    surfaceContainerHighest = Color(0xFFE0DFDA),
+)
+
+private val DeckDarkScheme = darkColorScheme(
+    primary = Color(0xFFB6F27A),
+    onPrimary = Color(0xFF1E2A12),
+    primaryContainer = Color(0xFF2A3A1A),
+    onPrimaryContainer = Color(0xFFD6F7B0),
+    secondary = Color(0xFFA3A9B0),
+    onSecondary = Color(0xFF1A1C1E),
+    secondaryContainer = Color(0xFF2C3137),
+    onSecondaryContainer = Color(0xFFE3E5E8),
+    tertiary = Color(0xFFB6F27A),
+    onTertiary = Color(0xFF1E2A12),
+    tertiaryContainer = Color(0xFF2A3A1A),
+    onTertiaryContainer = Color(0xFFD6F7B0),
+    error = DarkError,
+    onError = DarkOnError,
+    errorContainer = DarkErrorContainer,
+    onErrorContainer = DarkOnErrorContainer,
+    background = Color(0xFF111315),
+    onBackground = Color(0xFFE3E5E8),
+    surface = Color(0xFF111315),
+    onSurface = Color(0xFFE3E5E8),
+    surfaceVariant = Color(0xFF2A2E33),
+    onSurfaceVariant = Color(0xFFA3A9B0),
+    outline = Color(0xFF6E747B),
+    outlineVariant = Color(0xFF2C3137),
+    surfaceContainerLowest = Color(0xFF0C0E10),
+    surfaceContainerLow = Color(0xFF16191C),
+    surfaceContainer = Color(0xFF1C1F23),
+    surfaceContainerHigh = Color(0xFF23272B),
+    surfaceContainerHighest = Color(0xFF2A2E33),
+)
+
+// Multitrack: a sound editor. Primary is the LED green - a switch that is on
+// is lit - and the panels are white on grey in light, as an editor's lanes.
+private val MultitrackLightScheme = lightColorScheme(
+    primary = Color(0xFF12803F),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFCFEEDB),
+    onPrimaryContainer = Color(0xFF002110),
+    secondary = Color(0xFF555D68),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE1E4E8),
+    onSecondaryContainer = Color(0xFF1B1F24),
+    tertiary = Color(0xFF8A6400),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFE08F),
+    onTertiaryContainer = Color(0xFF2B1F00),
+    error = LightError,
+    onError = LightOnError,
+    errorContainer = LightErrorContainer,
+    onErrorContainer = LightOnErrorContainer,
+    background = Color(0xFFF3F4F6),
+    onBackground = Color(0xFF1B1F24),
+    surface = Color(0xFFF3F4F6),
+    onSurface = Color(0xFF1B1F24),
+    surfaceVariant = Color(0xFFE7EAEE),
+    onSurfaceVariant = Color(0xFF555D68),
+    outline = Color(0xFF8A929C),
+    outlineVariant = Color(0xFFE1E4E8),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFAFBFC),
+    surfaceContainer = Color(0xFFFFFFFF),
+    surfaceContainerHigh = Color(0xFFFFFFFF),
+    surfaceContainerHighest = Color(0xFFE7EAEE),
+)
+
+private val MultitrackDarkScheme = darkColorScheme(
+    primary = Color(0xFF3DDC84),
+    onPrimary = Color(0xFF003919),
+    primaryContainer = Color(0xFF1B3A28),
+    onPrimaryContainer = Color(0xFFB6F5CF),
+    secondary = Color(0xFFA3ABB6),
+    onSecondary = Color(0xFF0E1014),
+    secondaryContainer = Color(0xFF232831),
+    onSecondaryContainer = Color(0xFFE6E9EE),
+    tertiary = Color(0xFFF5C542),
+    onTertiary = Color(0xFF3F2E00),
+    tertiaryContainer = Color(0xFF5B4300),
+    onTertiaryContainer = Color(0xFFFFE08F),
+    error = DarkError,
+    onError = DarkOnError,
+    errorContainer = DarkErrorContainer,
+    onErrorContainer = DarkOnErrorContainer,
+    background = Color(0xFF0E1014),
+    onBackground = Color(0xFFE6E9EE),
+    surface = Color(0xFF0E1014),
+    onSurface = Color(0xFFE6E9EE),
+    surfaceVariant = Color(0xFF1B1F26),
+    onSurfaceVariant = Color(0xFFA3ABB6),
+    outline = Color(0xFF5A626E),
+    outlineVariant = Color(0xFF232831),
+    surfaceContainerLowest = Color(0xFF0A0C10),
+    surfaceContainerLow = Color(0xFF12151A),
+    surfaceContainer = Color(0xFF161A20),
+    surfaceContainerHigh = Color(0xFF161A20),
+    surfaceContainerHighest = Color(0xFF1E232B),
+)
+
+/** Whether the app is drawn dark: the phone's mode, or the user's own choice
+ *  (LightDark). Read this, never isSystemInDarkTheme(), which only knows the
+ *  phone's. */
+val LocalDark = staticCompositionLocalOf { false }
+
+/** Which look is on, for the pieces each look draws its own way. */
+val LocalLook = staticCompositionLocalOf { Look.MEMO }
+
+internal fun schemeFor(look: Look, dark: Boolean): ColorScheme = when (look) {
+    Look.MEMO -> if (dark) DarkScheme else LightScheme
+    Look.DECK -> if (dark) DeckDarkScheme else DeckLightScheme
+    Look.MULTITRACK -> if (dark) MultitrackDarkScheme else MultitrackLightScheme
+}
+
 @Composable
-fun JemRecTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkScheme else LightScheme,
-        content = content,
-    )
+fun JemRecTheme(choice: LookChoice = LookChoice(), content: @Composable () -> Unit) {
+    // Worked out here as well as told to Android (Looks): with the phone's
+    // mode isSystemInDarkTheme() is right, and with the user's own it is right
+    // too once Android has applied it - this is what makes it right before.
+    val dark = when (choice.lightDark) {
+        LightDark.PHONE -> isSystemInDarkTheme()
+        LightDark.LIGHT -> false
+        LightDark.DARK -> true
+    }
+    CompositionLocalProvider(LocalDark provides dark, LocalLook provides choice.look) {
+        MaterialTheme(colorScheme = schemeFor(choice.look, dark), content = content)
+    }
 }

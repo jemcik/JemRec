@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.RecordPrompt
 import com.jemcik.jemrec.ui.theme.JemRecTheme
+import com.jemcik.jemrec.ui.theme.Looks
 
 /**
  * The full-screen half of the mid-call prompt.
@@ -60,7 +61,7 @@ class RecordPromptActivity : ComponentActivity() {
         val app = intent?.getStringExtra(CallMonitorService.EXTRA_APP)
 
         setContent {
-            JemRecTheme {
+            JemRecTheme(Looks.choice(this)) {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     verticalArrangement = Arrangement.Center,

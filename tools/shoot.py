@@ -156,6 +156,13 @@ def centre(label: str, exact: bool = False):
     By substring unless `exact`: the Calls tab has to be asked for exactly,
     or the favourites chip - "Only calls with favourite contacts" - answers.
     """
+    box = bounds(label, exact)
+    return ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2) if box else None
+
+
+def bounds(label: str, exact: bool = False):
+    """The box (left, top, right, bottom) of the node carrying this text or
+    description, or None - as centre() finds it."""
     shell("uiautomator dump /sdcard/ui.xml")
     xml = shell("cat /sdcard/ui.xml")
     # Node by node: one regex over the whole dump lets a node's empty text=""
@@ -167,9 +174,29 @@ def centre(label: str, exact: bool = False):
             continue
         labels = [l for l in re.findall(r'(?:text|content-desc)="([^"]*)"', node) if l]
         if any(label.lower() == l.lower() if exact else label.lower() in l.lower() for l in labels):
-            x1, y1, x2, y2 = map(int, box.groups())
-            return (x1 + x2) // 2, (y1 + y2) // 2
+            return tuple(map(int, box.groups()))
     return None
+
+
+# The invented call the list shows playing: the first, whose stand-in is a
+# silent file that really plays (DemoRecordings), so its player opens with its
+# waveform - one waveform, in the list only.
+PLAYING = "Olivia Bennett"
+
+
+def play_first() -> None:
+    """The first call opened in its player, paused two fifths of the way in."""
+    if not tap(PLAYING, "the first recording"):
+        return
+    box = bounds("Position in the recording")
+    if not box:
+        print("    !! no waveform under the first recording; home.png shows none")
+        return
+    x = box[0] + (box[2] - box[0]) * 2 // 5
+    shell(f"input tap {x} {(box[1] + box[3]) // 2}")
+    time.sleep(1)
+    # Paused, so the time under it is the time tapped.
+    tap(PLAYING, "the first recording, to pause it")
 
 
 def tap(label: str, what: str, exact: bool = False) -> bool:
@@ -191,7 +218,11 @@ def shoot(theme: str) -> None:
     time.sleep(4)
 
     into = OUT / theme
+    play_first()
     grab(into / "home.png")
+    # Folded away again: the Calls tab would show the same player under the
+    # same call.
+    tap("Collapse player", "the player's chevron")
 
     # The Calls tab, with the invented call log behind the invented list.
     # Checked, not assumed: once the tap landed while the header was still

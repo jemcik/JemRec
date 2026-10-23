@@ -362,9 +362,13 @@ it for VoLTE. On a phone not tried yet, the test call is how to know.
 ## Playing, sharing and deleting
 
 Recordings are listed newest first, under **Today**, **Yesterday** and
-**Earlier**. Tap a recording to play it inside the app; a scrubber appears
-under the row, and the chevron beside it folds the player away. The share
-button offers the original file or a converted copy that plays anywhere.
+**Earlier**. Tap a recording to play it inside the app. Its waveform appears
+under the row - tall where someone is talking, flat where it is quiet - and a
+tap or a drag on it goes to that place. A call's waveform is worked out as it
+is saved; for an older recording, the first time it is played, a plain slider
+stands in for a moment - about two and a half seconds for a 30-minute call. The
+chevron beside it folds the player away. The share button offers the original
+file or a converted copy that plays anywhere.
 
 To delete, tap a contact's photo or long-press a row to start selecting, tick
 what you want, and use the bin in the toolbar. It asks first and tells you how

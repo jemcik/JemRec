@@ -48,9 +48,13 @@ import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.RecordingPlayer
 import com.jemcik.jemrec.capture.RecordingStore
 import com.jemcik.jemrec.capture.Trash
+import com.jemcik.jemrec.capture.Waveforms
 import com.jemcik.jemrec.capture.Retention
 import com.jemcik.jemrec.capture.KeepMarks
 import com.jemcik.jemrec.capture.SelfTest
+import com.jemcik.jemrec.ui.theme.LightDark
+import com.jemcik.jemrec.ui.theme.Look
+import com.jemcik.jemrec.ui.theme.Looks
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -84,12 +88,12 @@ private const val LOG_LIMIT = 8_000
 enum class Screen {
     HOME, SETTINGS,
     // Reached from Settings, and back to it.
-    WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE;
+    WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE, THEME;
 
     /** Where Back goes from here. */
     val up: Screen get() = when (this) {
         HOME, SETTINGS -> HOME
-        WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE -> SETTINGS
+        WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE, THEME -> SETTINGS
     }
 }
 
@@ -243,6 +247,11 @@ data class UiState(
     /** The Quick Settings tile is in the panel, as far as Android has said
      *  (see RecorderTile.isAdded). */
     val tileAdded: Boolean = false,
+    /** The look and light or dark, for Settings and its Theme screen. What
+     *  the app is drawn in comes from Looks itself, which both activities
+     *  watch. */
+    val look: Look = Look.MEMO,
+    val lightDark: LightDark = LightDark.PHONE,
     /**
      * How many of them the list is currently showing.
      *
@@ -276,6 +285,9 @@ data class UiState(
     val playing: Boolean = false,
     val positionMs: Int = 0,
     val durationMs: Int = 0,
+    /** The loaded recording's loudness, for its waveform (Waveforms); null
+     *  until worked out, or for one that cannot be - the plain scrubber then. */
+    val waveform: List<Float>? = null,
     val log: String = "",
 )
 
@@ -717,6 +729,19 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(afterCallNotice = on) }
     }
 
+    /** The app repaints at once: both activities draw from Looks. */
+    fun setLook(look: Look) {
+        val app = getApplication<Application>()
+        Looks.set(app, Looks.choice(app).copy(look = look))
+        _state.update { it.copy(look = look) }
+    }
+
+    fun setLightDark(lightDark: LightDark) {
+        val app = getApplication<Application>()
+        Looks.set(app, Looks.choice(app).copy(lightDark = lightDark))
+        _state.update { it.copy(lightDark = lightDark) }
+    }
+
     /**
      * A notification's button brought the user here: play that call, share
      * it, run the self-test, or pair again.
@@ -1052,6 +1077,8 @@ class MainViewModel @JvmOverloads constructor(
                 inHonorFolder = FileNames.inHonorFolder(app),
                 selectHintSeen = Prefs.of(app).getBoolean("select_hint_seen", false),
                 tileAdded = RecorderTile.isAdded(app),
+                look = Looks.choice(app).look,
+                lightDark = Looks.choice(app).lightDark,
             )
         }
 
@@ -1093,6 +1120,8 @@ class MainViewModel @JvmOverloads constructor(
                 inHonorFolder = snapshot.inHonorFolder,
                 selectHintSeen = snapshot.selectHintSeen,
                 tileAdded = snapshot.tileAdded,
+                look = snapshot.look,
+                lightDark = snapshot.lightDark,
                 connected = AdbTransport.lastKnownConnected,
             ).let { next ->
                 // A name that is no longer shown cannot stay selected. It would
@@ -1107,7 +1136,37 @@ class MainViewModel @JvmOverloads constructor(
         _state.value.playingName?.let { name ->
             if (snapshot.recordings.none { it.name == name }) stopPlayback()
         }
+        fillInWaveforms(snapshot.recordings)
     }
+
+    /**
+     * Rows of the list draw each recording's waveform, from its cache (see
+     * rememberRowLevels). A call saved since the waveform player has one
+     * (AfterCall); one recorded before has none until it is played - so they
+     * are worked out here, newest first, one at a time, while the app is
+     * open. Measured on the Honor (2026-10-23): 0.14 s a minute-long call,
+     * 2.5 s a half-hour one - once each, then read from the cache. Each one
+     * done bumps [wavesWorkedOut], for the rows waiting on it to look again.
+     */
+    private fun fillInWaveforms(recordings: List<Recording>) {
+        if (fillingIn?.isActive == true) return
+        val app = getApplication<Application>()
+        fillingIn = viewModelScope.launch(Dispatchers.IO) {
+            for (recording in recordings) {
+                if (!isActive) break
+                if (Waveforms.cached(app, recording.name) != null) continue
+                Waveforms.levels(app, recording.name, recording.uri, keepGoing = { isActive }) ?: continue
+                _wavesWorkedOut.update { it + 1 }
+            }
+        }
+    }
+
+    private var fillingIn: Job? = null
+    private val _wavesWorkedOut = MutableStateFlow(0)
+
+    /** How many waveforms fillInWaveforms has worked out: a row without one
+     *  reads its cache again when this moves. */
+    val wavesWorkedOut: StateFlow<Int> = _wavesWorkedOut.asStateFlow()
 
     /** Everything refresh() reads off disk, gathered in one background pass. */
     private data class Snapshot(
@@ -1145,6 +1204,8 @@ class MainViewModel @JvmOverloads constructor(
         val inHonorFolder: Boolean,
         val selectHintSeen: Boolean,
         val tileAdded: Boolean,
+        val look: Look,
+        val lightDark: LightDark,
     )
 
     /**
@@ -1193,6 +1254,7 @@ class MainViewModel @JvmOverloads constructor(
 
     private val player by lazy { RecordingPlayer(getApplication()) }
     private var ticker: kotlinx.coroutines.Job? = null
+    private var waveformJob: Job? = null
 
     /**
      * Play or pause a recording, inside this app.
@@ -1203,12 +1265,27 @@ class MainViewModel @JvmOverloads constructor(
      * recording of a private call to whichever app claimed the intent.
      */
     fun play(recording: Recording) {
+        val another = _state.value.playingName != recording.name
         if (!player.toggle(recording.uri) { onPlaybackFinished() }) {
             tell("could not play that recording")
             stopPlayback()
             return
         }
         startTicker(recording)
+        if (another) loadWaveform(recording)
+    }
+
+    /** The waveform of the recording just loaded: the plain scrubber until
+     *  it is there, which for a long call can be a few seconds the first time. */
+    private fun loadWaveform(recording: Recording) {
+        waveformJob?.cancel()
+        _state.update { it.copy(waveform = null) }
+        waveformJob = viewModelScope.launch {
+            val levels = withContext(Dispatchers.IO) {
+                Waveforms.levels(getApplication(), recording.name, recording.uri, keepGoing = { isActive })
+            } ?: return@launch
+            _state.update { if (it.playingName == recording.name) it.copy(waveform = levels) else it }
+        }
     }
 
     fun seekTo(ms: Int) {
@@ -1294,9 +1371,10 @@ class MainViewModel @JvmOverloads constructor(
 
     private fun stopPlayback() {
         ticker?.cancel()
+        waveformJob?.cancel()
         player.release()
         _state.update {
-            it.copy(playing = false, playingName = null, positionMs = 0, durationMs = 0)
+            it.copy(playing = false, playingName = null, positionMs = 0, durationMs = 0, waveform = null)
         }
     }
 

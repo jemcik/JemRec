@@ -155,6 +155,10 @@ internal object AfterCall {
             context,
             Call(saved.name, saved.uri, saved.filePath, saved.seconds, incoming, startMillis, caller, verdict, saved.message),
         )
+        // Its waveform worked out now, the notification up and nobody waiting:
+        // the player then draws it at once. A 30-minute call's takes about
+        // 2.5 s (the Honor, 2026-10-23, Waveforms).
+        Waveforms.levels(context, saved.name, saved.uri)
     }
 
     /** Who, the way the list would say it: the call log for a phone call,

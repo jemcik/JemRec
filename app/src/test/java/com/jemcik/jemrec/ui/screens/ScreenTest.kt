@@ -25,6 +25,7 @@ import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.UiState
 import com.jemcik.jemrec.ui.forgetAppIcons
 import com.jemcik.jemrec.ui.theme.JemRecTheme
+import com.jemcik.jemrec.ui.theme.LookChoice
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -90,9 +91,10 @@ abstract class ScreenTest {
      */
     var messengersInstalled = true
 
-    /** Draws [content] as the app would: its theme, its background, the fixed
-     *  clock, and the text at [fontScale] times the phone's size. */
-    fun show(fontScale: Float = 1f, content: @Composable () -> Unit) {
+    /** Draws [content] as the app would: its theme - [look], Memo unless
+     *  said - its background, the fixed clock, and the text at [fontScale]
+     *  times the phone's size. */
+    fun show(fontScale: Float = 1f, look: LookChoice = LookChoice(), content: @Composable () -> Unit) {
         forgetAppIcons()
         if (messengersInstalled) {
             val pm = shadowOf(RuntimeEnvironment.getApplication().packageManager)
@@ -113,7 +115,7 @@ abstract class ScreenTest {
                 LocalNow provides { Fixtures.NOW },
                 LocalDensity provides Density(density.density, fontScale),
             ) {
-                JemRecTheme {
+                JemRecTheme(look) {
                     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
                         content()
                     }

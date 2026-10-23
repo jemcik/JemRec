@@ -104,8 +104,11 @@ class RecordingPlayer(private val context: Context) {
         return isPlaying
     }
 
+    /** To [ms] itself. The plain seekTo(int) is SEEK_PREVIOUS_SYNC (Android's
+     *  MediaPlayer docs): the sync frame at or before it, which can leave
+     *  the player short of where the scrubber was tapped. */
     fun seekTo(ms: Int) {
-        runCatching { player?.seekTo(ms) }
+        runCatching { player?.seekTo(ms.toLong(), MediaPlayer.SEEK_CLOSEST) }
     }
 
     fun release() {

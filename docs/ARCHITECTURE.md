@@ -18,7 +18,7 @@ this one is - or to check that it does what it says.
   [exact call tracking](#exact-call-tracking) ·
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
   [messenger calls](#messenger-calls) · [the answering machine](#the-answering-machine) ·
-  [the Calls tab](#the-calls-tab) ·
+  [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [notifications](#after-the-call-and-when-something-is-wrong)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
@@ -449,6 +449,37 @@ recording says why, where JemRec knows:
 
 Missed, declined and blocked calls are marked as such. The tab needs call-log
 access, the same optional permission that names callers in the list.
+
+## Playing a recording
+
+A recording plays inside the app, never handed to another: the first version
+let Android choose, which on the Honor meant YouTube Music's preview bar, and
+gave a third-party app the audio of a private call at every tap. Sharing is a
+separate, deliberate action.
+
+The player under the row is the recording's **waveform**: a bar for each slice
+of it, as loud as the loudest twentieth of a second in that slice, so words
+stand out of the pauses and a long silence reads as one. A tap or a drag on it
+seeks; to a screen reader it is a slider, read as a time. The loudness is
+worked out from the file itself, decoded by Android's own decoder - the one
+the silence check after each call already uses - so there is no library, no
+native code, and nothing new for the reproducible build to match. It is
+worked out as a call is saved, or the first time an older recording is
+played - with a plain slider until it is there - and kept in the app's cache:
+800 levels, a byte each, under a hash of the file name, which can hold a
+caller's. Android's `Visualizer`, which draws whatever is playing, was not an
+option: it needs the microphone permission this app does not hold.
+
+**Fast, for a long call.** Android's decoder runs in a process of its own,
+and every packet handed to it is a trip there and back. So the packets go six
+to one - Opus lets a packet hold up to 120 ms of frames, which decode to the
+same samples - and up to four decoders work at once, each on a stretch of the
+call, lined up against each other where the stretches overlap: after a jump
+into a file, Android's times for the app's own recordings were a 20 ms packet
+early. Measured on the Honor (2026-10-23), a 30-minute call took 24.5 s a
+packet at a time with one decoder, 6.9 s joined, and 2.5 s joined four at
+once; a 58-second call, 1.0 s and then 0.14 s. Drawn, the bars match the one
+decoder's within 10%.
 
 ## Keeping, deleting and cleaning up
 

@@ -45,6 +45,23 @@ and marked `PATCHED:` at the site. The full licence text is in
 
 <https://github.com/Genymobile/scrcpy>
 
+## Fonts - the Deck and Multitrack themes
+
+Four typefaces, bundled unmodified in `app/src/main/res/font/` from
+<https://github.com/google/fonts> (downloaded 2026-10-23), each under the SIL
+Open Font License 1.1. The licence text of each travels in the app, in
+`app/src/main/assets/licenses/`.
+
+- **Doto** (`doto.ttf`, the LCD): Copyright 2024 The Doto Project Authors.
+  <https://github.com/oliverlalan/Doto>
+- **Share Tech Mono** (`share_tech_mono.ttf`, Deck's engraved labels):
+  Copyright (c) 2012 Carrois Type Design, Ralph du Carrois, with Reserved
+  Font Name "Share" - which is why it is used as it came, never cut down.
+- **JetBrains Mono** (`jetbrains_mono.ttf`, Multitrack): Copyright 2020 The
+  JetBrains Mono Project Authors. <https://github.com/JetBrains/JetBrainsMono>
+- **Space Grotesk** (`space_grotesk.ttf`, Multitrack): Copyright 2020 The
+  Space Grotesk Project Authors. <https://github.com/floriankarsten/space-grotesk>
+
 ## F-Droid logo - the website only
 
 `docs/fdroid-logo.svg`, on the website's "Get it on F-Droid" button, is

@@ -2,7 +2,6 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
@@ -25,6 +24,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -42,7 +42,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.material3.TextButton
@@ -55,16 +54,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -117,6 +114,18 @@ import com.jemcik.jemrec.capture.filterRecordings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.jemcik.jemrec.ui.theme.JemRecColors
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.jemcik.jemrec.ui.theme.LocalLook
+import com.jemcik.jemrec.ui.theme.Look
+import com.jemcik.jemrec.ui.theme.LookFonts
+import com.jemcik.jemrec.ui.theme.multitrackColors
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * The recordings, and nothing else.
@@ -260,6 +269,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
     }
     val shown = remember(filtered, state.visibleCount) { filtered.take(state.visibleCount) }
     val days = remember(shown, today) { byDay(shown, now()) { it.startedAtMillis } }
+    // Each row's waveform comes from the cache; this moves as the view model
+    // works out the ones a row is still waiting for.
+    val wavesVersion by vm.wavesWorkedOut.collectAsStateWithLifecycle()
 
     // Endless scroll instead of a "Show more" button. Everything is already in
     // memory - the list, the durations, the caller lookups - so a button gating
@@ -463,7 +475,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                             FilterChip(
                                 selected = state.favoritesOnly,
                                 onClick = { haptics.tap(); vm.toggleFavorites() },
-                                shape = CircleShape,
+                                shape = chipShape(),
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.secondary,
                                 ),
@@ -507,7 +519,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                             FilterChip(
                                 selected = state.searchOpen,
                                 onClick = { haptics.tap(); vm.toggleSearch() },
-                                shape = CircleShape,
+                                shape = chipShape(),
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.secondary,
                                 ),
@@ -748,295 +760,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
             // Under Today, Yesterday and Earlier, as a phone's call history
             // reads, with no rules between rows: the headings do the grouping.
             days.forEachIndexed { run, (day, rows) ->
-                item(key = "day-$run", contentType = "day") { DayHeading(day) }
+                item(key = "day-$run", contentType = "day") { DayHeading(day, rows.size) }
                 items(rows, key = { it.name }, contentType = { "recording" }) { recording ->
-                    Column {
-                        val isCurrent = state.playingName == recording.name
-                        val isSelected = recording.name in state.selected
-                        Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    // A fixed minimum height, so a row is the same
-                                    // height whether or not it is selecting. Normal
-                                    // rows are as tall as the 48dp share button;
-                                    // selection rows drop it and use a checkbox that
-                                    // - being row-driven, not self-clickable -
-                                    // reserves no interactive size, so without this
-                                    // the rows visibly shrank on entering selection.
-                                    .heightIn(min = 64.dp)
-                                    // The row that is playing is tinted, so which
-                                    // one is loaded reads at a glance now that no
-                                    // big glyph at the leading edge says it.
-                                    .background(
-                                        if (isCurrent && !state.selecting) {
-                                            MaterialTheme.colorScheme.surfaceContainerHigh
-                                        } else {
-                                            Color.Transparent
-                                        },
-                                    )
-                                    // The whole row is the target, not just the
-                                    // text. What the tap MEANS depends on the mode:
-                                    // normally it plays, and while selecting it
-                                    // picks - which is the Android convention and
-                                    // the reason long-press is reserved for
-                                    // starting selection rather than used for a
-                                    // menu.
-                                    .combinedClickable(
-                                        onClickLabel = if (state.selecting) "Select" else "Play",
-                                        onLongClickLabel = if (state.selecting) "Select" else "Start selecting",
-                                        onClick = {
-                                            if (state.selecting) {
-                                                // In selection mode a tap anywhere on
-                                                // the row picks it - the Android
-                                                // convention, and the only thing that
-                                                // makes sense once selecting has
-                                                // stopped playback and hidden the
-                                                // scrubber: a tap that played here
-                                                // played invisibly.
-                                                haptics.toggle(recording.name !in state.selected)
-                                                vm.toggleSelected(recording)
-                                            } else {
-                                                // Otherwise the row plays. Selecting
-                                                // starts from the photo or a
-                                                // long-press - the Gmail split: the
-                                                // avatar selects, the row opens.
-                                                haptics.tap()
-                                                vm.play(recording)
-                                            }
-                                        },
-                                        onLongClick = {
-                                            if (state.selecting) {
-                                                haptics.toggle(recording.name !in state.selected)
-                                                vm.toggleSelected(recording)
-                                            } else {
-                                                // The one everyone expects to feel:
-                                                // a long-press that starts selecting.
-                                                haptics.longPress()
-                                                vm.startSelecting(recording)
-                                            }
-                                        },
-                                    )
-                                    // Padding goes INSIDE the clickable, so the
-                                    // ripple fills the whole row edge to edge while
-                                    // the content still lines up with the 16dp the
-                                    // header sits at.
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                // Tapping the photo picks the row - the Gmail /
-                                // Photos gesture. The photo FLIPS to a tick rather
-                                // than a checkbox blinking in beside it, so the
-                                // feedback is the object turning over, not a new
-                                // control appearing. A firm long-press haptic on the
-                                // way in, the lighter toggle buzz after. Tapping the
-                                // row body plays; long-press on the row also selects.
-                                SelectableAvatar(
-                                    caller = recording.caller,
-                                    photo = recording.callerPhoto,
-                                    selected = isSelected,
-                                    onClick = {
-                                        if (state.selecting) {
-                                            haptics.toggle(!isSelected)
-                                            vm.toggleSelected(recording)
-                                        } else {
-                                            haptics.longPress()
-                                            vm.startSelecting(recording)
-                                        }
-                                    },
-                                )
-                                Column(Modifier.weight(1f)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        Text(
-                                            // The contact's name, or the number if
-                                            // they are not saved. Nothing else on this
-                                            // line - a name IS the identity.
-                                            recording.caller ?: recording.whenLabel,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false),
-                                        )
-                                        // Read-only: the address book's favourite
-                                        // star, not something to toggle here.
-                                        if (recording.callerFavorite) {
-                                            Icon(
-                                                Icons.Filled.Star,
-                                                contentDescription = "Favourite contact",
-                                                tint = JemRecColors.favorite,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                    }
-                                    YieldingRow(gap = 4.dp) {
-                                        // No arrow where the direction is not known
-                                        // (a messenger call whose app did not say).
-                                        if (recording.directionKnown) DirectionArrow(recording.incoming)
-                                        // A message: the answering machine took it.
-                                        if (recording.message) {
-                                            Icon(
-                                                messageIcon,
-                                                contentDescription = "Message",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                        // A messenger call shows which app - its own
-                                        // icon, beside the arrow, the way a phone's
-                                        // call log marks a video call. Unless the
-                                        // headline already says it ("Viber call").
-                                        // The name in words, as it was, cut the
-                                        // time off ("WhatsApp · To...") on a row
-                                        // that has no room for it.
-                                        val app = recording.app?.takeIf { recording.caller != "$it call" }
-                                        val appIcon = recording.parsedName?.app
-                                            ?.takeIf { app != null }
-                                            ?.let { rememberAppIcon(packagesForTag(it), 16.dp) }
-                                        if (appIcon != null) {
-                                            Image(
-                                                appIcon,
-                                                contentDescription = app,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                        // When, and how long. With no caller the
-                                        // headline already is the date, so just the
-                                        // length here. The time gives way when space
-                                        // is short - after a messenger's name, never
-                                        // before it, and the length never does (see
-                                        // YieldingRow). Under Today or Yesterday the
-                                        // heading says the day, so only the time.
-                                        // The dot is a piece of its own, after the
-                                        // time and giving way before it: cut
-                                        // together, a time that fitted came out as
-                                        // "18:56..." - the ellipsis eating only the dot.
-                                        if (recording.caller != null) {
-                                            Text(
-                                                recording.startedAtMillis?.let { timeUnder(day, it) } ?: recording.whenLabel,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.layoutId(GivesWay(order = 3)),
-                                            )
-                                            Text(
-                                                "·",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                softWrap = false,
-                                                modifier = Modifier.layoutId(GivesWay(order = 2, whole = true)),
-                                            )
-                                        }
-                                        // THE PLAY AFFORDANCE, ON THE LENGTH. A big
-                                        // triangle led every row, and cost 32dp of the
-                                        // name for something the row tap already does.
-                                        // A small one beside the duration says "this
-                                        // plays, for this long", the way a voice
-                                        // message does, and turns to pause on the row
-                                        // that is playing. Not while selecting, where
-                                        // a tap selects.
-                                        if (!state.selecting) {
-                                            if (isCurrent && state.playing) {
-                                                PauseGlyph(tint = JemRecColors.play, size = 14.dp)
-                                            } else {
-                                                Icon(
-                                                    Icons.Filled.PlayArrow,
-                                                    contentDescription = null,
-                                                    tint = JemRecColors.play,
-                                                    modifier = Modifier.size(16.dp),
-                                                )
-                                            }
-                                        }
-                                        Text(
-                                            recording.durationLabel,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                        )
-                                        // The app in words only when its icon
-                                        // cannot be had (it was uninstalled since):
-                                        // last, and the first to give way - when and
-                                        // how long matter more than which app.
-                                        if (app != null && appIcon == null) {
-                                            Text(
-                                                "· $app",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.layoutId(GivesWay(order = 1, atLeast = 40.dp)),
-                                            )
-                                        }
-                                    }
-                                }
-                                // Share stays on the row because sharing one
-                                // recording is a single-item action. Delete does
-                                // NOT: it sat a thumb-width from Play on a row
-                                // whose entire purpose is being tapped, and what it
-                                // destroyed could not be recovered. It lives in the
-                                // selection toolbar now, where reaching it takes a
-                                // deliberate step.
-                                if (!state.selecting) {
-                                    // Keep and Share side by side with no gap, as
-                                    // one group against the edge.
-                                    Row(Modifier.offset(x = 12.dp)) {
-                                        // Keep is the mark itself: filled when the
-                                        // recording is kept, so the row shows its
-                                        // state and the tap changes it, in one place.
-                                        IconButton(onClick = { haptics.tap(); vm.toggleKept(recording) }) {
-                                            Icon(
-                                                if (recording.kept) KeepIcons.Kept else KeepIcons.NotKept,
-                                                contentDescription = if (recording.kept) {
-                                                    "Kept - tap to stop keeping"
-                                                } else {
-                                                    "Keep: never auto-delete"
-                                                },
-                                                tint = if (recording.kept) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.secondary
-                                                },
-                                            )
-                                        }
-                                        IconButton(onClick = { haptics.tap(); vm.share(recording) }) {
-                                            Icon(
-                                                Icons.Filled.Share,
-                                                contentDescription = "Share",
-                                                // Match the avatar circle rather than
-                                                // defaulting to near-black: the share
-                                                // control belongs with the row's other
-                                                // furniture, not shouting over it.
-                                                tint = MaterialTheme.colorScheme.secondary,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            // The scrubber belongs to whichever recording is
-                            // loaded, and only appears there - a row of sliders
-                            // would be noise.
-                            //
-                            // WITH A WAY OUT. Once a recording was loaded the
-                            // scrubber stayed under its row until the recording was
-                            // deleted; there was no control that folded it back. The
-                            // scrubber is the row EXPANDED, so the control is
-                            // Material's expand/collapse chevron on the trailing
-                            // edge, under the row's share icon so the trailing
-                            // controls line up. NOT a close (X): in a list of
-                            // recordings, next to a recording, an X reads as "remove
-                            // this one" - it was tried, and it did. The chevron
-                            // stops playback and folds the row back.
-                            if (!state.selecting && isCurrent && state.durationMs > 0) {
-                                PlayerControls(state, vm)
-                            }
-
-                        }
-                    }
+                    RecordingRow(recording, day, state, vm, wavesVersion)
                 }
             }
 
@@ -1045,6 +771,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
             // filtered list on its own and there is nothing to tap.
         }
     }
+}
 
 /**
  * Who the call was with, as a circle.
@@ -1064,31 +791,48 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
  * The player under whichever recording is loaded: a scrubber, its times, and
  * the chevron that folds it away. Shared by the Recordings and Calls tabs, so
  * a recording plays the same from either.
+ *
+ * The scrubber is the recording's waveform (WaveformScrubber) once its
+ * loudness is worked out - at once for one played before - and the plain
+ * slider until then, or for a file that cannot be read for it.
  */
 @Composable
 internal fun PlayerControls(state: UiState, vm: MainViewModel) {
     val haptics = LocalHapticFeedback.current
+    // Where the finger is, while it drags: the player's own position,
+    // ticking in every 300 ms, snapped the thumb back under it. Sought once,
+    // on letting go; the time under the finger is shown meanwhile.
+    var dragging by remember { mutableStateOf<Int?>(null) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Where the finger is, while it drags: the player's own position,
-        // ticking in every 300 ms, snapped the thumb back under it. Sought
-        // once, on letting go.
-        var dragging by remember { mutableStateOf<Float?>(null) }
-        Slider(
-            value = (dragging ?: state.positionMs.toFloat())
-                .coerceIn(0f, state.durationMs.toFloat()),
-            onValueChange = { dragging = it },
-            onValueChangeFinished = {
-                dragging?.let { vm.seekTo(it.toInt()) }
-                dragging = null
-            },
-            valueRange = 0f..state.durationMs.toFloat(),
-            modifier = Modifier.weight(1f),
-        )
+        val waveform = state.waveform
+        if (waveform != null) {
+            WaveformScrubber(
+                levels = waveform,
+                positionMs = dragging ?: state.positionMs,
+                durationMs = state.durationMs,
+                onDrag = { dragging = it },
+                onSeek = { vm.seekTo(it) },
+                modifier = Modifier.weight(1f),
+                playing = state.playing && dragging == null,
+            )
+        } else {
+            Slider(
+                value = (dragging ?: state.positionMs).toFloat()
+                    .coerceIn(0f, state.durationMs.toFloat()),
+                onValueChange = { dragging = it.toInt() },
+                onValueChangeFinished = {
+                    dragging?.let { vm.seekTo(it) }
+                    dragging = null
+                },
+                valueRange = 0f..state.durationMs.toFloat(),
+                modifier = Modifier.weight(1f),
+            )
+        }
         IconButton(onClick = { haptics.tap(); vm.stopPlaying() }) {
             Icon(
                 Icons.Filled.KeyboardArrowUp,
@@ -1106,7 +850,7 @@ internal fun PlayerControls(state: UiState, vm: MainViewModel) {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            clock(state.positionMs),
+            clock(dragging ?: state.positionMs),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1141,7 +885,7 @@ internal val LocalNow = staticCompositionLocalOf<() -> Long> { System::currentTi
  * dropped rather than squeezed into less than [atLeast], where an ellipsis
  * would be all that is left of it.
  */
-private data class GivesWay(val order: Int, val whole: Boolean = false, val atLeast: Dp = 0.dp)
+internal data class GivesWay(val order: Int, val whole: Boolean = false, val atLeast: Dp = 0.dp)
 
 /**
  * A line of short pieces that gives way in a set order when it runs out of
@@ -1156,7 +900,7 @@ private data class GivesWay(val order: Int, val whole: Boolean = false, val atLe
  * of it.
  */
 @Composable
-private fun YieldingRow(gap: Dp, content: @Composable () -> Unit) {
+internal fun YieldingRow(gap: Dp, content: @Composable () -> Unit) {
     Layout(content) { measurables, constraints ->
         val gapPx = gap.roundToPx()
         val loose = constraints.copy(minWidth = 0)
@@ -1202,18 +946,87 @@ private fun YieldingRow(gap: Dp, content: @Composable () -> Unit) {
     }
 }
 
-/** A day's heading in the Recordings and Calls lists. */
+/**
+ * A day's heading in the Recordings and Calls lists, in the look's own way:
+ * Memo's words; Deck's engraved capitals on a rule; Multitrack's editor's
+ * marker - each with how many at the line's end. [count] is the day's
+ * recordings, where it is known (Recordings, not Calls). Memo once had no
+ * count; the user asked for the three to say the same (2026-10-23).
+ */
 @Composable
-internal fun DayHeading(day: Day) {
-    Text(
-        day.title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
-            .semantics { heading() },
-    )
+internal fun DayHeading(day: Day, count: Int? = null) {
+    val scheme = MaterialTheme.colorScheme
+    when (LocalLook.current) {
+        Look.MEMO -> Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+                .semantics(mergeDescendants = true) { heading() },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(day.title, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            // At the line's end, where the other looks have it.
+            if (count != null) Text("$count", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+        }
+        Look.DECK -> Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp)
+                .semantics(mergeDescendants = true) { heading() },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            val engraved = TextStyle(fontFamily = LookFonts.engraved, fontSize = 12.sp, letterSpacing = 0.14.em, color = scheme.onSurfaceVariant)
+            Text(day.title.uppercase(), style = engraved)
+            Box(Modifier.weight(1f).height(1.dp).background(scheme.outlineVariant))
+            if (count != null) Text("$count", style = engraved)
+        }
+        Look.MULTITRACK -> {
+            val c = multitrackColors()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
+                    .semantics(mergeDescendants = true) { heading() },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val mono = TextStyle(fontFamily = LookFonts.mono, fontSize = 11.sp, letterSpacing = 0.14.em)
+                // The marker's flag: an editor's, pointing down at its lanes.
+                Box(
+                    Modifier.size(10.dp).drawBehind {
+                        drawPath(
+                            Path().apply {
+                                moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2, size.height * 0.8f); close()
+                            },
+                            c.marker,
+                        )
+                    },
+                )
+                Text(day.title.uppercase(), style = mono.copy(fontWeight = FontWeight.SemiBold), color = c.marker)
+                Box(Modifier.weight(1f).height(1.dp).background(c.line))
+                if (count != null) Text(if (count == 1) "1 CLIP" else "$count CLIPS", style = mono, color = c.faint)
+            }
+        }
+    }
+}
+
+/** A filter chip's shape and words in the look: Memo's pill, Deck's key and
+ *  Multitrack's tag, the last two in capitals of their mono. */
+@Composable
+private fun chipShape(): Shape = when (LocalLook.current) {
+    Look.MEMO -> CircleShape
+    Look.DECK -> RoundedCornerShape(8.dp)
+    Look.MULTITRACK -> RoundedCornerShape(6.dp)
+}
+
+@Composable
+private fun ChipLabel(label: String) {
+    when (LocalLook.current) {
+        Look.MEMO -> Text(label)
+        Look.DECK -> Text(label.uppercase(), fontFamily = LookFonts.engraved, letterSpacing = 0.08.em)
+        Look.MULTITRACK -> Text(label.uppercase(), fontFamily = LookFonts.mono, fontSize = 12.sp, letterSpacing = 0.08.em)
+    }
 }
 
 /** One preset filter chip.
@@ -1227,12 +1040,12 @@ private fun PresetChip(selected: Boolean, label: String, onClick: () -> Unit) {
     FilterChip(
         selected = selected,
         onClick = onClick,
-        label = { Text(label) },
-        // Fully rounded, not the M3 default 8dp: the search field is a pill and
-        // the avatars are circles, so a squarish chip was the one hard-cornered
-        // thing in a rounded header. CircleShape on a wider-than-tall chip is a
-        // stadium - a pill - which unifies the row's shape language.
-        shape = CircleShape,
+        label = { ChipLabel(label) },
+        // Fully rounded in Memo, not the M3 default 8dp: the search field is a
+        // pill and the avatars are circles, so a squarish chip was the one
+        // hard-cornered thing in a rounded header. Deck's and Multitrack's are
+        // keys and tags, squarer, as their headers are.
+        shape = chipShape(),
         colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = MaterialTheme.colorScheme.secondary,
             selectedLabelColor = MaterialTheme.colorScheme.onSecondary,
@@ -1254,10 +1067,14 @@ private fun PresetChip(selected: Boolean, label: String, onClick: () -> Unit) {
  * parent's rotation.
  */
 @Composable
-private fun SelectableAvatar(
+internal fun SelectableAvatar(
     caller: String?,
     photo: Uri?,
     selected: Boolean,
+    size: Dp = 36.dp,
+    container: Color = MaterialTheme.colorScheme.secondary,
+    content: Color = MaterialTheme.colorScheme.onSecondary,
+    edge: Color? = null,
     onClick: () -> Unit,
 ) {
     val rotation by animateFloatAsState(
@@ -1267,7 +1084,7 @@ private fun SelectableAvatar(
     )
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(size)
             .graphicsLayer {
                 rotationY = rotation
                 // Without a finite camera distance the turn looks flat and
@@ -1280,7 +1097,7 @@ private fun SelectableAvatar(
         contentAlignment = Alignment.Center,
     ) {
         if (rotation <= 90f) {
-            CallerAvatar(caller, photo)
+            CallerAvatar(caller, photo, size, container, content, edge)
         } else {
             Box(
                 modifier = Modifier
@@ -1302,7 +1119,14 @@ private fun SelectableAvatar(
 }
 
 @Composable
-internal fun CallerAvatar(caller: String?, photo: Uri?) {
+internal fun CallerAvatar(
+    caller: String?,
+    photo: Uri?,
+    size: Dp = 36.dp,
+    container: Color = MaterialTheme.colorScheme.secondary,
+    content: Color = MaterialTheme.colorScheme.onSecondary,
+    edge: Color? = null,
+) {
     val initials = initialsOf(caller)
     val bitmap = rememberContactPhoto(photo)
     // A SOLID circle, not a tonal container. secondaryContainer is a pale blue
@@ -1311,11 +1135,13 @@ internal fun CallerAvatar(caller: String?, photo: Uri?) {
     // is pale by design and cannot stand off a pale surface. The solid
     // secondary role does, in both themes, and its on-colour gives the glyph or
     // initials full contrast.
+    // Multitrack's is its caller's colour, a tint with an edge.
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(size)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.secondary),
+            .background(container)
+            .then(if (edge != null) Modifier.border(1.dp, edge, CircleShape) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -1331,20 +1157,22 @@ internal fun CallerAvatar(caller: String?, photo: Uri?) {
             // longer fit a 36 dp circle and spilled out of it (the screen
             // tests' large-text screenshots showed it). The size labelLarge
             // has at the default font size, held there.
-            val size = with(LocalDensity.current) { 14.dp.toSp() }
+            val letters = with(LocalDensity.current) { (if (size < 32.dp) 11.dp else 14.dp).toSp() }
             Text(
                 initials,
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = size, lineHeight = size),
-                color = MaterialTheme.colorScheme.onSecondary,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = letters, lineHeight = letters),
+                color = content,
                 maxLines = 1,
                 softWrap = false,
             )
         } else {
+            // A person, not a phone: in the line under the name a phone now
+            // says the call was a phone call (2026-10-23).
             Icon(
-                Icons.Filled.Phone,
+                Icons.Filled.Person,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondary,
-                modifier = Modifier.size(18.dp),
+                tint = content,
+                modifier = Modifier.size(if (size < 32.dp) 16.dp else 22.dp),
             )
         }
     }
@@ -1457,7 +1285,7 @@ internal fun PauseGlyph(tint: Color, modifier: Modifier = Modifier, size: Dp = 2
 private val HeaderRowHeight = 56.dp
 
 /** mm:ss, for the scrubber's two ends. */
-private fun clock(ms: Int): String {
+internal fun clock(ms: Int): String {
     val total = (ms / 1000).coerceAtLeast(0)
     return "%d:%02d".format(total / 60, total % 60)
 }
@@ -1469,7 +1297,7 @@ private fun IconFilterChip(selected: Boolean, icon: ImageVector, description: St
     FilterChip(
         selected = selected,
         onClick = onClick,
-        shape = CircleShape,
+        shape = chipShape(),
         colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = MaterialTheme.colorScheme.secondary,
         ),

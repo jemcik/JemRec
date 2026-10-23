@@ -7,6 +7,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasProgressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
@@ -19,19 +26,61 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.captureToImage
+import com.jemcik.jemrec.ui.dayOf
+import com.jemcik.jemrec.ui.Day
+import androidx.compose.ui.semantics.SemanticsNode
+import com.jemcik.jemrec.ui.UiState
+import com.jemcik.jemrec.ui.STEADY_SHOWN
+import com.jemcik.jemrec.ui.STEADY_LINE
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.test.getBoundsInRoot
+import com.jemcik.jemrec.ui.AnswerUi
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.snapshots.Snapshot
+import kotlinx.coroutines.launch
+import androidx.compose.ui.node.invalidateDraw
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.ui.graphics.PixelMap
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import com.jemcik.jemrec.ui.AppScaffold
+import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.ChoiceDialog
 import com.jemcik.jemrec.ui.ConnectedChoices
 import com.jemcik.jemrec.ui.HomeTab
 import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.SettingsRow
 import com.jemcik.jemrec.ui.SwitchRow
+import com.jemcik.jemrec.ui.theme.LightDark
+import com.jemcik.jemrec.ui.theme.Look
+import com.jemcik.jemrec.ui.theme.LookChoice
+import com.jemcik.jemrec.ui.theme.Looks
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
@@ -238,5 +287,468 @@ class BehaviourTest : ScreenTest() {
         compose.waitForIdle()
         assertEquals(30, applied)
         compose.onAllNodesWithText("Auto-delete old recordings").assertCountEquals(0)
+    }
+
+    /** A recording loaded in the player, its waveform worked out. */
+    private fun playingWithWaveform() = Fixtures.ready().copy(
+        playingName = Fixtures.recordings().first().name, playing = false, positionMs = 107_000, durationMs = 252_000,
+        waveform = Fixtures.waveform(),
+    )
+
+    @Test fun aTapOnTheWaveformGoesThere() {
+        val vm = viewModel(playingWithWaveform())
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        compose.onNodeWithContentDescription("Position in the recording").performTouchInput { click(center) }
+        compose.waitForIdle()
+        // The middle of a 4:12 call, to within a bar.
+        assertEquals(126_000f, vm.state.value.positionMs.toFloat(), 3_000f)
+    }
+
+    @Test fun aDragOnTheWaveformSeeksOnceAtItsEnd() {
+        val vm = viewModel(playingWithWaveform())
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        val waveform = compose.onNodeWithContentDescription("Position in the recording")
+        waveform.performTouchInput {
+            down(centerLeft + androidx.compose.ui.geometry.Offset(10f, 0f))
+            moveBy(androidx.compose.ui.geometry.Offset(width / 4f, 0f))
+            moveBy(androidx.compose.ui.geometry.Offset(width / 4f, 0f))
+        }
+        compose.waitForIdle()
+        // Not sought yet: the player stays where it was while the finger looks.
+        assertEquals(107_000, vm.state.value.positionMs)
+        waveform.performTouchInput { up() }
+        compose.waitForIdle()
+        assertTrue(vm.state.value.positionMs in 120_000..135_000)
+    }
+
+    @Test fun aScreenReaderHearsTheWaveformAsAPositionItCanMove() {
+        val vm = viewModel(playingWithWaveform())
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        val waveform = compose.onNodeWithContentDescription("Position in the recording")
+        waveform.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "1:47 of 4:12"))
+        waveform.assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo))
+        waveform.performSemanticsAction(SemanticsActions.SetProgress) { it(60_000f) }
+        compose.waitForIdle()
+        assertEquals(60_000, vm.state.value.positionMs)
+    }
+
+    // The record control, in each look: the old header's switch in another
+    // shape, so a switch to a screen reader, on while recording is on, and a
+    // tap turns recording off.
+
+    private fun homeIn(look: Look): MainViewModel {
+        val vm = viewModel(Fixtures.ready())
+        show(look = LookChoice(look)) {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        return vm
+    }
+
+    private fun tapTheRecordControl(look: Look) {
+        val vm = homeIn(look)
+        compose.onNodeWithContentDescription("Record calls").assertIsOn().performClick()
+        // The switch is saved at once; what the recorder then does is
+        // setEnabled's business, and here (no phone) setup is re-checked into
+        // a step this test does not draw - so only the switch is read.
+        assertFalse("$look", vm.state.value.enabled)
+    }
+
+    @Test fun memosButtonIsTheRecordSwitch() = tapTheRecordControl(Look.MEMO)
+
+    @Test fun decksRecKeyIsTheRecordSwitch() = tapTheRecordControl(Look.DECK)
+
+    @Test fun multitracksButtonIsTheRecordSwitch() = tapTheRecordControl(Look.MULTITRACK)
+
+    /**
+     * Held down, the record button lights up inside its circle and not in
+     * the square around it - which Multitrack's did on the Honor (2026-10-23).
+     * Robolectric does not draw the platform ripple, so the screen is given
+     * a press that paints all it is allowed to: what stops it is the clip,
+     * as it is what stops the ripple. The corner of the button's box is
+     * outside the circle and must stay as it was.
+     */
+    private fun pressStaysRound(look: Look) {
+        val vm = viewModel(Fixtures.ready())
+        show(look = LookChoice(look)) {
+            val state by vm.state.collectAsState()
+            CompositionLocalProvider(LocalIndication provides PaintsWhenPressed) { AppScaffold(state, vm) }
+        }
+        val button = compose.onNodeWithContentDescription("Record calls")
+        val before = button.captureToImage().toPixelMap()
+        button.performTouchInput { down(center) }
+        val held = button.captureToImage().toPixelMap()
+        button.performTouchInput { cancel() }
+        assertEquals("$look: no press drawn", PaintsWhenPressed.COLOUR, held[held.width / 2, held.height / 2])
+        assertEquals("$look: the press reached the corner", before[1, 1], held[1, 1])
+    }
+
+    /**
+     * The header is one height whatever the record switch and the Wi-Fi make
+     * it say - switched on, switching on, off, unable to record - under each
+     * set of settings. Multitrack's grew and shrank as recording was switched
+     * on the Honor (2026-10-23) - the line under the state is LEDs, a sweep
+     * or words, each its own height - and the list under it jumped. At three
+     * text sizes, since a line that wraps at one of them is the same jump.
+     * (A setting is changed on another screen, so the header may differ from
+     * one set of settings to the next; it is never seen to change.)
+     */
+    private fun oneHeight(look: Look) {
+        val ready = Fixtures.ready()
+        val settings = listOf(
+            "everything on" to ready,
+            "asks" to ready.copy(automatic = false),
+            "nothing else on" to ready.copy(voipEnabled = emptySet(), autoDeleteAfterDays = 0),
+        )
+        val switches = listOf<Pair<String, (UiState) -> UiState>>(
+            "ready" to { it },
+            "starting" to { it.copy(starting = true, daemonRunning = false) },
+            "off" to { it.copy(enabled = false) },
+            "cannot" to { it.copy(daemonRunning = false) },
+            "asks for this Wi-Fi" to { it.copy(daemonRunning = false, networkNotAllowed = true) },
+        )
+        val vm = MainViewModel(RuntimeEnvironment.getApplication(), ready, AnswerUi(enabled = true))
+        var shown by mutableStateOf(ready)
+        var scale by mutableFloatStateOf(1f)
+        show(look = LookChoice(look)) {
+            val base = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(base.density, scale)) { AppScaffold(shown, vm) }
+        }
+        val tabs = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        for (s in listOf(1f, 1.3f, 2f)) {
+            scale = s
+            for ((set, with) in settings) {
+                val bottoms = switches.associate { (name, switch) ->
+                    shown = switch(with)
+                    compose.waitForIdle()
+                    name to compose.onAllNodes(tabs)[0].getBoundsInRoot().bottom
+                }
+                assertEquals("$look, $set, at ${s}x: $bottoms", 1, bottoms.values.distinct().size)
+            }
+        }
+        // What the lines are sized for is neither seen nor heard: switched
+        // on, nothing says to switch on.
+        shown = ready
+        compose.waitForIdle()
+        compose.onAllNodesWithText("record calls", substring = true, ignoreCase = true).assertCountEquals(0)
+    }
+
+    @Test fun memosHeaderIsOneHeight() = oneHeight(Look.MEMO)
+
+    @Test fun decksHeaderIsOneHeight() = oneHeight(Look.DECK)
+
+    @Test fun multitracksHeaderIsOneHeight() = oneHeight(Look.MULTITRACK)
+
+    /**
+     * At normal text size a steady line keeps no line it does not show: all
+     * it can say fits one line. It may keep a little more than it shows -
+     * Deck's marks are smaller than its notes - but a note that wraps keeps
+     * a whole line more, and that is what is caught. On the Honor
+     * (2026-10-23) Memo's second line kept two lines - for its longest note,
+     * and for marks that were off - and the one line it showed sat in the
+     * middle of them, with the record button centred on the blank. Memo
+     * draws in the phone's own font, so it is held to this a tenth wider
+     * too; Deck and Multitrack bring their fonts, and draw the same on any
+     * phone.
+     */
+    private fun wasteNoRoom(look: Look, vararg scales: Float) {
+        val ready = Fixtures.ready()
+        val vm = MainViewModel(RuntimeEnvironment.getApplication(), ready, AnswerUi(enabled = true))
+        var shown by mutableStateOf(ready)
+        var scale by mutableFloatStateOf(1f)
+        show(look = LookChoice(look)) {
+            val base = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(base.density, scale)) { AppScaffold(shown, vm) }
+        }
+        for (s in scales) {
+            scale = s
+            // The Honor's: asking each call, the answering machine on, nothing else.
+            for (state in listOf(ready, ready.copy(automatic = false, voipEnabled = emptySet(), autoDeleteAfterDays = 0))) {
+                shown = state
+                compose.waitForIdle()
+                val lines = compose.onAllNodesWithTag(STEADY_LINE, useUnmergedTree = true).fetchSemanticsNodes()
+                val inside = compose.onAllNodesWithTag(STEADY_SHOWN, useUnmergedTree = true).fetchSemanticsNodes()
+                assertEquals(2, lines.size)
+                for ((line, words) in lines.zip(inside)) {
+                    assertTrue(
+                        "$look at ${s}x: a line ${line.size.height}px tall shows ${words.size.height}px",
+                        line.size.height - words.size.height < words.size.height / 2,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test fun memosLinesWasteNoRoom() = wasteNoRoom(Look.MEMO, 1f, 1.1f)
+
+    @Test fun decksLinesWasteNoRoom() = wasteNoRoom(Look.DECK, 1f)
+
+    @Test fun multitracksLinesWasteNoRoom() = wasteNoRoom(Look.MULTITRACK, 1f)
+
+    /**
+     * Every look says how many recordings there are, in one place: on the
+     * Recordings tab, in every state. Deck had it in its LCD, and only while
+     * ready, and Multitrack not at all, until the user asked for the three
+     * headers to tell the same things (2026-10-23).
+     */
+    private fun theTabCounts(look: Look) {
+        val ready = Fixtures.ready()
+        val vm = viewModel(ready)
+        var shown by mutableStateOf(ready)
+        show(look = LookChoice(look)) { AppScaffold(shown, vm) }
+        val says = "${ready.recordings.size} recordings"
+        val tabs = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        for (state in listOf(ready, ready.copy(enabled = false), ready.copy(daemonRunning = false))) {
+            shown = state
+            compose.waitForIdle()
+            compose.onAllNodes(tabs)[0].assert(
+                SemanticsMatcher("says \"$says\"") { says in it.config.getOrElse(SemanticsProperties.ContentDescription) { emptyList() } },
+            )
+        }
+        // And only there.
+        compose.onAllNodesWithText("TRK", substring = true).assertCountEquals(0)
+    }
+
+    @Test fun memosRecordingsTabCountsThem() = theTabCounts(Look.MEMO)
+
+    @Test fun decksRecordingsTabCountsThem() = theTabCounts(Look.DECK)
+
+    @Test fun multitracksRecordingsTabCountsThem() = theTabCounts(Look.MULTITRACK)
+
+    /**
+     * Every look's day heading ends with how many recordings the day has:
+     * Deck's and Multitrack's did, Memo's said only "Today", until the user
+     * asked for the three to say the same (2026-10-23).
+     */
+    private fun theDayHeadingCounts(look: Look) {
+        homeIn(look)
+        val today = Fixtures.recordings().count { r -> r.startedAtMillis?.let { dayOf(it, Fixtures.NOW) } == Day.TODAY }
+        val texts = { node: SemanticsNode -> node.config.getOrElse(SemanticsProperties.Text) { emptyList() }.map { it.text } }
+        val heading = SemanticsMatcher("today's heading") { node ->
+            SemanticsProperties.Heading in node.config && texts(node).any { it.equals("Today", ignoreCase = true) }
+        }
+        compose.onNode(heading).assert(SemanticsMatcher("says $today") { node -> texts(node).any { it.startsWith("$today") } })
+    }
+
+    @Test fun memosDayHeadingCounts() = theDayHeadingCounts(Look.MEMO)
+
+    @Test fun decksDayHeadingCounts() = theDayHeadingCounts(Look.DECK)
+
+    @Test fun multitracksDayHeadingCounts() = theDayHeadingCounts(Look.MULTITRACK)
+
+    /**
+     * Starting to select takes Keep and Share off the rows, and the rows stay
+     * as tall as they were: the list does not lurch under the finger. Read
+     * from where the next day's heading sits.
+     */
+    private fun rowsKeepTheirHeight(look: Look) {
+        val vm = homeIn(look)
+        val yesterday = SemanticsMatcher("yesterday's heading") { node ->
+            SemanticsProperties.Heading in node.config &&
+                node.config.getOrElse(SemanticsProperties.Text) { emptyList() }.any { it.text.equals("Yesterday", ignoreCase = true) }
+        }
+        val before = compose.onNode(yesterday).getBoundsInRoot().top
+        vm.startSelecting(Fixtures.recordings().first())
+        compose.waitForIdle()
+        compose.onAllNodesWithContentDescription("Share").assertCountEquals(0)
+        assertEquals("$look", before, compose.onNode(yesterday).getBoundsInRoot().top)
+    }
+
+    @Test fun memosRowsKeepTheirHeightSelecting() = rowsKeepTheirHeight(Look.MEMO)
+
+    @Test fun decksRowsKeepTheirHeightSelecting() = rowsKeepTheirHeight(Look.DECK)
+
+    @Test fun multitracksRowsKeepTheirHeightSelecting() = rowsKeepTheirHeight(Look.MULTITRACK)
+
+    /**
+     * Playing, the row keeps its photo where every row has one - the play
+     * key used to take its place, out of line with the photos around it
+     * (the user, 2026-10-23) - and the pause key is in the player under it.
+     */
+    private fun thePlayingRowKeepsItsPhoto(look: Look) {
+        val playing = Fixtures.recordings().first()
+        val vm = viewModel(
+            Fixtures.ready().copy(playingName = playing.name, playing = true, positionMs = 107_000, durationMs = 252_000),
+        )
+        show(look = LookChoice(look)) {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        val centre = { initials: String -> compose.onNodeWithText(initials, useUnmergedTree = true).getBoundsInRoot().let { (it.left + it.right) / 2 } }
+        // The playing row's photo (Olivia Bennett's) and the next row's
+        // (Marcus Chen's), one above the other.
+        assertEquals("$look", centre("OB").value, centre("MC").value, 0.5f)
+        val photoBottom = compose.onNodeWithText("OB", useUnmergedTree = true).getBoundsInRoot().bottom
+        assertTrue("$look: the pause key is under the photo", compose.onNodeWithContentDescription("Pause").getBoundsInRoot().top > photoBottom)
+    }
+
+    @Test fun memosPlayingRowKeepsItsPhoto() = thePlayingRowKeepsItsPhoto(Look.MEMO)
+
+    @Test fun decksPlayingRowKeepsItsPhoto() = thePlayingRowKeepsItsPhoto(Look.DECK)
+
+    @Test fun multitracksPlayingRowKeepsItsPhoto() = thePlayingRowKeepsItsPhoto(Look.MULTITRACK)
+
+    /**
+     * The playhead glides: between the player's readings - every 300 ms, and
+     * here only one - it moves on with the frames. Drawn only at the
+     * readings it stepped three times a second (the Honor, 2026-10-23).
+     * The test's clock is taken by hand first: while it runs by itself the
+     * test environment cancels infinite animations, which is what keeps the
+     * screen tests' pictures still.
+     */
+    @Test fun thePlayheadMovesBetweenReadings() {
+        val olivia = Fixtures.recordings().first()
+        val playing = Fixtures.ready().copy(
+            playingName = olivia.name, playing = true, positionMs = 107_000, durationMs = 252_000,
+            waveform = Fixtures.waveform(),
+        )
+        val vm = viewModel(playing)
+        var shown by mutableStateOf(playing)
+        show { AppScaffold(shown, vm) }
+        compose.mainClock.autoAdvance = false
+        // Paused and played again, so the head's frame loop starts under
+        // the hand-run clock; a reading that shows the player moving; then
+        // none for three seconds.
+        // Each change sent on before the frames, or the clock run by hand
+        // never sees it: the pause and the play would meet in one picture.
+        val frames = { n: Int ->
+            Snapshot.sendApplyNotifications()
+            repeat(n) { compose.mainClock.advanceTimeByFrame() }
+        }
+        shown = playing.copy(playing = false)
+        frames(2)
+        shown = playing
+        frames(2)
+        shown = playing.copy(positionMs = 107_300)
+        frames(2)
+        val scrubber = compose.onNodeWithContentDescription("Position in the recording")
+        val before = scrubber.captureToImage().toPixelMap()
+        compose.mainClock.advanceTimeBy(3_000)
+        val after = scrubber.captureToImage().toPixelMap()
+        compose.mainClock.autoAdvance = true
+        // The head, found in a band only it reaches - above the bars, which
+        // keep 6dp off the scrubber's edges - as the middle of its dark run.
+        val band = (before.height * 0.09f).toInt()
+        val headAt = { map: PixelMap ->
+            (0 until map.width).filter { map[it, band].red < 0.5f }.average()
+        }
+        // Three seconds of a 4:12 call is about 5px of this scrubber; one
+        // reading's 300 ms, under a pixel.
+        val moved = headAt(after) - headAt(before)
+        assertTrue("the playhead moved ${"%.1f".format(moved)}px in three seconds without a reading", moved >= 3)
+    }
+
+    @Test fun memosButtonPressesRound() = pressStaysRound(Look.MEMO)
+
+    @Test fun decksRecKeyPressesRound() = pressStaysRound(Look.DECK)
+
+    @Test fun multitracksButtonPressesRound() = pressStaysRound(Look.MULTITRACK)
+
+    @Test fun decksLcdIsOneSentenceToAScreenReader() {
+        // "AUTO ANS MSG DEL 90D" means nothing read out; the LCD is heard as
+        // what it says.
+        homeIn(Look.DECK)
+        compose.onNodeWithContentDescription("Ready to record. Records every call.", substring = true).assertExists()
+        compose.onAllNodesWithText("DEL 90D").assertCountEquals(0)
+    }
+
+    @Test fun choosingAThemeKeepsIt() {
+        val app = RuntimeEnvironment.getApplication()
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.THEME))
+        try {
+            show {
+                val state by vm.state.collectAsState()
+                AppScaffold(state, vm)
+            }
+            compose.onNodeWithText("Deck").performClick()
+            compose.onNodeWithText("Dark").performScrollTo().performClick()
+            compose.waitForIdle()
+            assertEquals(Look.DECK, vm.state.value.look)
+            assertEquals(LookChoice(Look.DECK, LightDark.DARK), Looks.choice(app))
+            compose.onNodeWithText("Dark").assertIsSelected()
+            back()
+            // Settings names it.
+            compose.onNodeWithText("Deck · dark").assertExists()
+        } finally {
+            Looks.set(app, LookChoice())
+        }
+    }
+
+    @Test fun theHeaderStaysPutAndTheListScrolls() {
+        // Memo's header used to fold away as the list scrolled, and once - on
+        // the Honor, 2026-10-23 - the fold took every scroll for itself and
+        // the list never moved. One height now: a swipe moves the list only.
+        val many = Fixtures.recordings() + Fixtures.recordings().mapIndexed { i, r -> r.copy(name = "more-$i-" + r.name) }
+        val vm = viewModel(Fixtures.ready().copy(recordings = many))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        repeat(3) { compose.onRoot().performTouchInput { swipeUp(startY = bottom - 10f, endY = centerY - 100f) } }
+        compose.waitForIdle()
+        compose.onNodeWithText("Olivia Bennett").assertIsNotDisplayed()
+        compose.onNodeWithText("Ready to record").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("Record calls").assertCountEquals(1)
+        repeat(8) { compose.onRoot().performTouchInput { swipeDown(startY = centerY, endY = bottom - 10f) } }
+        compose.waitForIdle()
+        compose.onNodeWithText("Olivia Bennett").assertIsDisplayed()
+    }
+
+    @Test fun theBusySignalIsForSwitchingOnOnly() {
+        // The old busy line moved on every opening of the app - the check it
+        // makes - for nothing the user did. The look's signal (here Memo's
+        // ring) shows while recording is switching on, and only then.
+        val vm = viewModel(Fixtures.ready())
+        var state by mutableStateOf(Fixtures.ready().copy(busy = true))
+        show { AppScaffold(state, vm) }
+        val ring = hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)
+        // Busy with the check on opening: nothing moves.
+        compose.onAllNodes(ring).assertCountEquals(0)
+        // Switching on: the ring turns.
+        compose.runOnUiThread { state = state.copy(starting = true) }
+        compose.waitForIdle()
+        compose.onAllNodes(ring).assertCountEquals(1)
+        compose.onNodeWithText("Starting...").assertIsDisplayed()
+    }
+}
+
+/** A press that fills everything it may draw on in one plain colour. */
+private object PaintsWhenPressed : IndicationNodeFactory {
+    val COLOUR = Color(0xFFFF00FF)
+
+    override fun create(interactionSource: InteractionSource): DelegatableNode = Node(interactionSource)
+
+    override fun equals(other: Any?) = other === this
+
+    override fun hashCode() = 0
+
+    private class Node(private val source: InteractionSource) : Modifier.Node(), DrawModifierNode {
+        private var pressed = false
+
+        override fun onAttach() {
+            coroutineScope.launch {
+                source.interactions.collect {
+                    when (it) {
+                        is PressInteraction.Press -> pressed = true
+                        is PressInteraction.Release, is PressInteraction.Cancel -> pressed = false
+                    }
+                    invalidateDraw()
+                }
+            }
+        }
+
+        override fun ContentDrawScope.draw() {
+            drawContent()
+            if (pressed) drawRect(COLOUR)
+        }
     }
 }

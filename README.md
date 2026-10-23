@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-419-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-513-success)](docs/DEVELOPMENT.md#tests)
 
 <img src="docs/screenshots/home.png" width="19%" alt="The recordings list">
 <img src="docs/screenshots/calls.png" width="19%" alt="The calls tab">
@@ -353,7 +353,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 419 tests, screenshots of the screens included
+    ./gradlew test              # 513 tests, screenshots of the screens included
 
 | | |
 | --- | --- |
