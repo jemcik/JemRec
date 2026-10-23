@@ -119,14 +119,14 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
                 SteadyLine(sizes = { MultiWord(word, wordColor, fitted = false) }) { MultiWord(word, wordColor) }
                 SteadyLine(
                     sizes = {
-                        MultiMarks(c, marks, modeLit = true)
+                        MultiMarks(c, headerMarks(marks, RecorderStatus.READY))
                         for (each in Instruction.entries) MultiNote(c, multiWords(each))
                     },
                 ) {
                     when {
                         status == RecorderStatus.STARTING -> LedScan(c.ledOn, c.ledOff)
                         instruction != null -> MultiNote(c, multiWords(instruction))
-                        else -> MultiMarks(c, marks, modeLit = status != RecorderStatus.OFF)
+                        else -> MultiMarks(c, headerMarks(marks, status))
                     }
                 }
             }
@@ -175,15 +175,12 @@ private fun MultiNote(c: MultitrackColors, text: String) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MultiMarks(c: MultitrackColors, marks: Marks, modeLit: Boolean) {
+private fun MultiMarks(c: MultitrackColors, marks: List<HeaderMark>) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        MultiLed(c, if (marks.automatic) "AUTO" else "ASK", modeLit)
-        MultiLed(c, "ANS", marks.answering)
-        MultiLed(c, "MSG", marks.messengers)
-        MultiLed(c, if (marks.autoDeleteDays > 0) "DEL ${ageMark(marks.autoDeleteDays)}" else "DEL", marks.autoDeleteDays > 0)
+        for (mark in marks) MultiLed(c, mark.label, mark.lit)
     }
 }
 

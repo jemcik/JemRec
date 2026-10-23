@@ -25,7 +25,7 @@ data class DeckColors(
     /** Engraved words on the face, and its icons. */
     val label: Color,
     val icon: Color,
-    /** The frame round the LCD, and round the REC key. */
+    /** The frame round the LCD; the REC key's, and its edge. */
     val bezel: Color,
     val keyBezel: Color,
     val keyEdge: Color,
@@ -69,11 +69,18 @@ val DeckLight = DeckColors(
 )
 
 /** Dark: graphite, and the LCD negative - glowing segments on black - so the
- *  one bright thing at night is the text, not the whole display. */
+ *  one bright thing at night is the text, not the whole display.
+ *
+ *  The LCD's frame is lighter than the face, as light's is darker: the LCD
+ *  is near black already, so a darker frame cannot show. It was #0E1013,
+ *  1.2:1 on the face, and the LCD all but vanished into it (the user, the
+ *  Honor, 2026-10-23); #565D66 is 2.5:1. Of three frames drawn: a green
+ *  edge showed as well but lit the display's outline as well as its text,
+ *  and the REC key's 1dp lip, at 1.6:1, hardly showed. */
 val DeckDark = DeckColors(
     face = Color(0xFF1C1F23), faceEdge = Color(0xFF2C3137),
     label = Color(0xFF9AA3AD), icon = Color(0xFFC9CED4),
-    bezel = Color(0xFF0E1013), keyBezel = Color(0xFF0E1013), keyEdge = Color(0xFF3A4047),
+    bezel = Color(0xFF565D66), keyBezel = Color(0xFF0E1013), keyEdge = Color(0xFF3A4047),
     lcd = Color(0xFF0E140B), ink = Color(0xFFB6F27A), lcdOff = Color(0xFF0B0F09), inkOff = Color(0xFF6E8E50),
     glow = true,
     keyOn = Color(0xFF343A41), keyOnInk = Color(0xFFFFFFFF), keyOnEdge = Color(0xFF343A41), keyMark = Color(0xFFFFFFFF),

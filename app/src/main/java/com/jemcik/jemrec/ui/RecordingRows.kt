@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -112,12 +113,23 @@ internal fun RecordingRow(recording: Recording, day: Day, state: UiState, vm: Ma
     }
 }
 
+/**
+ * Whether the rows may start a selection: not on the Calls tab, which has
+ * none - there a recorded call's row is its Recordings row in every other
+ * way, and a long press or a tap on its photo would start a selection with
+ * no toolbar to act on it.
+ */
+internal val LocalRowsSelectable = staticCompositionLocalOf { true }
+
 /** What a tap means: play - or, selecting, pick; a long press starts
  *  selecting. The Android convention, which is why a long press is not a menu. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun Modifier.rowTaps(recording: Recording, state: UiState, vm: MainViewModel): Modifier {
     val haptics = LocalHapticFeedback.current
+    if (!LocalRowsSelectable.current) {
+        return clickable(onClickLabel = "Play") { haptics.tap(); vm.play(recording) }
+    }
     return combinedClickable(
         onClickLabel = if (state.selecting) "Select" else "Play",
         onLongClickLabel = if (state.selecting) "Select" else "Start selecting",
@@ -155,6 +167,10 @@ internal fun RowAvatar(
     edge: Color? = null,
 ) {
     val haptics = LocalHapticFeedback.current
+    if (!LocalRowsSelectable.current) {
+        CallerAvatar(recording.caller, recording.callerPhoto, size, container, content, edge)
+        return
+    }
     val selected = recording.name in state.selected
     SelectableAvatar(recording.caller, recording.callerPhoto, selected, size, container, content, edge) {
         if (state.selecting) {
@@ -317,7 +333,7 @@ private fun playerShows(recording: Recording, state: UiState) =
  * top, at the user's word: the photo is the row's, not its first line's.
  */
 @Composable
-private fun RowHead(modifier: Modifier, avatar: @Composable () -> Unit, gap: Dp = 12.dp, lines: @Composable ColumnScope.() -> Unit) {
+internal fun RowHead(modifier: Modifier, avatar: @Composable () -> Unit, gap: Dp = 12.dp, lines: @Composable ColumnScope.() -> Unit) {
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -704,15 +720,19 @@ private fun DeckPlaying(recording: Recording, day: Day, state: UiState, vm: Main
 
 /** A caller's colour: picked by name, so a caller's clips are one colour all
  *  down the list; a bare number's is the neutral one. */
-internal fun hueOf(recording: Recording, c: MultitrackColors): Color {
-    val name = recording.caller?.takeIf { caller -> caller.any { it.isLetter() } } ?: return c.unknown
+internal fun hueOf(recording: Recording, c: MultitrackColors): Color = hueFor(recording.caller, c)
+
+/** The colour for [caller], a name or a number: by name, so the Calls tab's
+ *  rows wear the same colour as the caller's recordings. */
+internal fun hueFor(caller: String?, c: MultitrackColors): Color {
+    val name = caller?.takeIf { it.any { ch -> ch.isLetter() } } ?: return c.unknown
     return c.hues[abs(name.lowercase().hashCode() % c.hues.size)]
 }
 
-private val multitrackName =
+internal val multitrackName =
     TextStyle(fontFamily = LookFonts.grotesk, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
 
-private val multitrackMono = TextStyle(fontFamily = LookFonts.mono, fontSize = 11.sp, letterSpacing = 0.04.em)
+internal val multitrackMono = TextStyle(fontFamily = LookFonts.mono, fontSize = 11.sp, letterSpacing = 0.04.em)
 
 @Composable
 private fun MultitrackRow(recording: Recording, day: Day, state: UiState, vm: MainViewModel, version: Int) {

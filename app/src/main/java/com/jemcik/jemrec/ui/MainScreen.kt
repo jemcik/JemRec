@@ -10,33 +10,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
 import androidx.compose.runtime.Composable
@@ -48,9 +35,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -67,7 +51,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.RecordingSaver
-import com.jemcik.jemrec.ui.theme.JemRecColors
 import kotlinx.coroutines.delay
 import kotlin.system.exitProcess
 import kotlinx.coroutines.flow.conflate
@@ -302,8 +285,8 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
 
 /**
  * The bar over every screen once setup is done: on home, the look's own
- * header (DeckHeader, MemoHeader, MultitrackHeader); elsewhere the screen's
- * name and Back, with the gradient rule under it.
+ * header (DeckHeader, MemoHeader, MultitrackHeader); elsewhere the look's
+ * own bar, with the screen's name and Back (SettingsBar).
  *
  * WHAT THE OLD HOME HEADER DID, AND WHERE EACH NOW IS. It was one TopAppBar
  * for every look; each look's header now does all of it in its own way:
@@ -326,7 +309,6 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
  * Its own composable so the screen tests can draw it without MainScreen, whose
  * resume effects reach the recorder and the device.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AppHeader(state: UiState, vm: MainViewModel) {
     val haptics = LocalHapticFeedback.current
@@ -334,102 +316,35 @@ internal fun AppHeader(state: UiState, vm: MainViewModel) {
         // The answering machine has its own state (AnswerController); its
         // mark is the one fact here that UiState does not carry.
         val answer by vm.answer.state.collectAsStateWithLifecycle()
-        when (LocalLook.current) {
-            Look.MEMO -> MemoHeader(state, vm, answer.enabled)
-            Look.DECK -> DeckHeader(state, vm, answer.enabled)
-            Look.MULTITRACK -> MultitrackHeader(state, vm, answer.enabled)
-        }
+        HomeHeader(state, vm, answer.enabled)
         return
     }
-    Column {
-        TopAppBar(
-            title = {
-                Text(
-                    when (state.screen) {
-                        Screen.WHOSE_CALLS -> "Whose calls to keep"
-                        Screen.MESSENGER_CALLS -> "Messenger calls"
-                        Screen.DIAGNOSTICS -> "Diagnostics"
-                        Screen.ANSWERING_MACHINE -> "Answering machine"
-                        Screen.TRASH -> "Recently deleted"
-                        Screen.THEME -> "Theme"
-                        else -> "Settings"
-                    },
-                    maxLines = 1,
-                    autoSize = oneLineAutoSize(min = 15.dp, max = 22.sp),
-                    modifier = Modifier.padding(end = 8.dp),
-                )
-            },
-            navigationIcon = {
-                IconButton(onClick = { haptics.tap(); vm.back() }) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                    )
-                }
-            },
-        )
-        HeaderRule(active = state.busy)
-    }
+    SettingsBar(
+        title = when (state.screen) {
+            Screen.WHOSE_CALLS -> "Whose calls to keep"
+            Screen.MESSENGER_CALLS -> "Messenger calls"
+            Screen.DIAGNOSTICS -> "Diagnostics"
+            Screen.ANSWERING_MACHINE -> "Answering machine"
+            Screen.TRASH -> "Recently deleted"
+            Screen.THEME -> "Theme"
+            else -> "Settings"
+        },
+        busy = state.busy,
+        onBack = { haptics.tap(); vm.back() },
+    )
 }
 
-/**
- * The line under the control bar.
- *
- * A gradient in the launcher icon's own two colours, left to right - the blue
- * of the waveform running into the red of the record mark. Separating fixed
- * controls from scrolling content is what any divider would do; what this one
- * additionally does is carry the icon's colours into the app, so the thing on
- * the home screen and the thing you open are recognisably the same object.
- *
- * WHEN BUSY, THE LINE ITSELF MOVES.
- *
- * A separate progress bar used to appear below this rule while the app worked -
- * turning on, checking setup - which put two horizontal lines a few dp apart,
- * one of them meaningful and one of them chrome. Animating the rule instead
- * keeps it to one line: the gradient slides, so the divider that is already
- * there becomes the activity indicator rather than growing a second one beneath
- * it. The colours flow wave-into-record-into-wave (a mirrored, tiled gradient),
- * so the motion reads as the app's own rather than a generic bar.
- */
+/** The home screen's header, in the look's own way: on home, and in the Theme
+ *  screen's preview. */
 @Composable
-internal fun HeaderRule(active: Boolean) {
-    val period = with(LocalDensity.current) { 220.dp.toPx() }
-
-    val shift by rememberInfiniteTransition(label = "rule").animateFloat(
-        initialValue = 0f,
-        targetValue = period,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "rule-shift",
-    )
-
-    val brush = if (active) {
-        // Three stops, mirror-tiled, translated by an animated offset: the
-        // gradient flows along the line without a visible seam. Mirror rather
-        // than Repeated so blue never butts straight up against blue.
-        Brush.linearGradient(
-            colors = listOf(
-                JemRecColors.iconWave, JemRecColors.iconRecord, JemRecColors.iconWave,
-            ),
-            start = Offset(shift, 0f),
-            end = Offset(shift + period, 0f),
-            tileMode = TileMode.Mirror,
-        )
-    } else {
-        Brush.horizontalGradient(
-            listOf(JemRecColors.iconWave, JemRecColors.iconRecord),
-        )
+internal fun HomeHeader(state: UiState, vm: MainViewModel, answering: Boolean) {
+    when (LocalLook.current) {
+        Look.MEMO -> MemoHeader(state, vm, answering)
+        Look.DECK -> DeckHeader(state, vm, answering)
+        Look.MULTITRACK -> MultitrackHeader(state, vm, answering)
     }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(2.dp)
-            .background(brush),
-    )
 }
+
 
 /**
  * Text that must stay on one line and shrinks to fit, from [max] (which grows

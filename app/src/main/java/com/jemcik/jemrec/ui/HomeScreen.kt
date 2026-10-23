@@ -1,5 +1,8 @@
 package com.jemcik.jemrec.ui
 
+import com.jemcik.jemrec.capture.VoipApps
+import com.jemcik.jemrec.capture.PHONE_SOURCE
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
@@ -41,12 +43,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -108,7 +108,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CallLogLookup
-import com.jemcik.jemrec.capture.RecordingFilter
 import com.jemcik.jemrec.capture.Trash
 import com.jemcik.jemrec.capture.filterRecordings
 import kotlinx.coroutines.Dispatchers
@@ -264,8 +263,8 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
     // times a second.
     val now = LocalNow.current
     val today = dayStamp(now())
-    val filtered = remember(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly, state.messagesOnly, today) {
-        filterRecordings(state.recordings, state.query, state.filter, state.favoritesOnly, state.keptOnly, state.messagesOnly)
+    val filtered = remember(state.recordings, state.query, state.favoritesOnly, state.keptOnly, state.messagesOnly, state.sources, today) {
+        filterRecordings(state.recordings, state.query, state.favoritesOnly, state.keptOnly, state.messagesOnly, state.sources)
     }
     val shown = remember(filtered, state.visibleCount) { filtered.take(state.visibleCount) }
     val days = remember(shown, today) { byDay(shown, now()) { it.startedAtMillis } }
@@ -442,106 +441,19 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                 // last chip unfolds the field below them on demand. Hidden while
                 // selecting, where the header is a selection toolbar instead.
                 if (!state.selecting && state.recordings.isNotEmpty()) {
-                    BoxWithConstraints(Modifier.fillMaxWidth().height(HeaderRowHeight)) {
-                        Row(
-                            // The same band the selection toolbar wears, so the header
-                            // is one strip in both modes and switching moves nothing.
-                            // Scrolled sideways when the chips outgrow the screen - a
-                            // fifth, Kept, appears once something is kept - and still
-                            // centred whenever they fit: at least as wide as the band.
-                            modifier = Modifier
-                                .horizontalScroll(rememberScrollState())
-                                .widthIn(min = maxWidth)
-                                .fillMaxHeight()
-                                .padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            // No "All" chip: all IS the resting state, the one where
-                            // none of these is picked. A chip for it would be the
-                            // only one always selectable and never meaningfully off,
-                            // and tapping the active chip again already falls back to
-                            // all - so the empty row says "everything" on its own.
-                            PresetChip(state.filter == RecordingFilter.TODAY, "Today") {
-                                haptics.tap(); vm.setFilter(RecordingFilter.TODAY)
-                            }
-                            PresetChip(state.filter == RecordingFilter.THIS_WEEK, "This week") {
-                                haptics.tap(); vm.setFilter(RecordingFilter.THIS_WEEK)
-                            }
-                            // A toggle on its own axis, not one of the mutually
-                            // exclusive time presets: it narrows to starred contacts
-                            // on top of whatever time range is chosen, and leaves the
-                            // time chips alone.
-                            FilterChip(
-                                selected = state.favoritesOnly,
-                                onClick = { haptics.tap(); vm.toggleFavorites() },
-                                shape = chipShape(),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.secondary,
-                                ),
-                                label = {
-                                    Icon(
-                                        Icons.Filled.Star,
-                                        contentDescription = "Only calls with favourite contacts",
-                                        // Gold on the band; a DEEPER gold once
-                                        // selected, where the pill turns pale in dark
-                                        // theme and the bright gold washed into it.
-                                        tint = if (state.favoritesOnly) {
-                                            JemRecColors.favoriteSelected
-                                        } else {
-                                            JemRecColors.favorite
-                                        },
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                },
-                            )
-                            // Kept: recordings marked to keep. Shown only once
-                            // something is, so the bar does not offer an empty
-                            // filter to everyone who has never kept anything.
-                            if (state.keptOnly || state.recordings.any { it.kept }) {
-                                IconFilterChip(state.keptOnly, KeepIcons.Kept, "Only recordings marked to keep") {
-                                    haptics.tap()
-                                    vm.toggleKeptOnly()
-                                }
-                            }
-                            // Messages: the calls the answering machine took. Like
-                            // Kept, shown only once there is one.
-                            if (state.messagesOnly || state.recordings.any { it.message }) {
-                                IconFilterChip(state.messagesOnly, messageIcon, "Only messages") {
-                                    haptics.tap()
-                                    vm.toggleMessagesOnly()
-                                }
-                            }
-                            // The fold-out. A filter chip in looks, a disclosure in
-                            // job: selected while the field is open, so the icon
-                            // reads as "search is showing" rather than a filter that
-                            // is on.
-                            FilterChip(
-                                selected = state.searchOpen,
-                                onClick = { haptics.tap(); vm.toggleSearch() },
-                                shape = chipShape(),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.secondary,
-                                ),
-                                label = {
-                                    Icon(
-                                        Icons.Filled.Search,
-                                        contentDescription = "Search recordings",
-                                        // An icon-only chip label does not inherit a
-                                        // visible content colour the way a text label
-                                        // does - untinted it came out invisible - so
-                                        // the tint is set for each state: onSecondary
-                                        // on the bright selected pill, onSurfaceVariant
-                                        // on the band.
-                                        tint = if (state.searchOpen) {
-                                            MaterialTheme.colorScheme.onSecondary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                },
-                            )
+                    val on = state.recordingChipsOn()
+                    val chips = remember(state.recordings, on) {
+                        chipsFor(state.recordings.map { it.chipFacts() }, on)
+                    }
+                    ListChipRow(chips, on, calls = false) { chip ->
+                        haptics.tap()
+                        when (chip.kind) {
+                            ChipKind.FAVORITES -> vm.toggleFavorites()
+                            ChipKind.SOURCE -> chip.source?.let(vm::toggleSource)
+                            ChipKind.KEPT -> vm.toggleKeptOnly()
+                            ChipKind.MESSAGES -> vm.toggleMessagesOnly()
+                            ChipKind.SEARCH -> vm.toggleSearch()
+                            ChipKind.NOT_RECORDED -> Unit
                         }
                     }
                 }
@@ -559,86 +471,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
                         enter = expandVertically() + fadeIn(),
                         exit = shrinkVertically() + fadeOut(),
                     ) {
-                        // A hand-built compact field, not the stock
-                        // OutlinedTextField. That one reserves 56dp - the M3
-                        // search-bar height - and forcing it shorter clips the
-                        // text. Driving the decoration box directly lets the
-                        // reserved padding shrink so a single line sits in 48dp,
-                        // the M3 minimum touch target and the shortest a field may
-                        // honestly be. The pill shape and colours are the stock
-                        // ones, only the height is ours.
-                        val searchInteraction = remember { MutableInteractionSource() }
-                        // The stock field paints a bold primary-blue border while
-                        // focused - and this one is focused whenever it is open,
-                        // so it wore a blue ring the grey-outlined chips never did.
-                        // Border pinned to the chips' own outline colour, one
-                        // thickness focused or not, so the field reads as part of
-                        // the same set. Cursor stays primary; that is the caret,
-                        // not the outline.
-                        val searchColors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                        BasicTextField(
-                            value = state.query,
-                            onValueChange = vm::setQuery,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp)
-                                .padding(bottom = 12.dp)
-                                // No forced height: a fixed height taller than the
-                                // content parks the content at the top and leaves
-                                // the slack below, so the text sat high in the pill.
-                                // The content padding sizes it instead (see below),
-                                // which keeps the one line centred.
-                                .focusRequester(searchFocus),
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                            ),
-                            singleLine = true,
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            interactionSource = searchInteraction,
-                            decorationBox = { innerTextField ->
-                                OutlinedTextFieldDefaults.DecorationBox(
-                                    value = state.query,
-                                    innerTextField = innerTextField,
-                                    enabled = true,
-                                    singleLine = true,
-                                    visualTransformation = VisualTransformation.None,
-                                    interactionSource = searchInteraction,
-                                    colors = searchColors,
-                                    placeholder = { Text("Search by name or number") },
-                                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                                    trailingIcon = {
-                                        if (state.query.isNotEmpty()) {
-                                            IconButton(onClick = { vm.setQuery("") }) {
-                                                Icon(Icons.Filled.Close, contentDescription = "Clear search")
-                                            }
-                                        }
-                                    },
-                                    // The whole reason this is hand-built: with no
-                                    // forced height, this padding IS the height -
-                                    // one 24dp line plus 12dp each side is a 48dp
-                                    // pill, the M3 minimum touch target - and being
-                                    // equal top and bottom it centres the line.
-                                    contentPadding = OutlinedTextFieldDefaults.contentPadding(
-                                        top = 12.dp,
-                                        bottom = 12.dp,
-                                    ),
-                                    container = {
-                                        OutlinedTextFieldDefaults.Container(
-                                            enabled = true,
-                                            isError = false,
-                                            interactionSource = searchInteraction,
-                                            colors = searchColors,
-                                            shape = RoundedCornerShape(28.dp),
-                                            focusedBorderThickness = 1.dp,
-                                            unfocusedBorderThickness = 1.dp,
-                                        )
-                                    },
-                                )
-                            },
-                        )
+                        ListSearchField(state.query, vm::setQuery, searchFocus, "Search by name or number")
                     }
                 }
                 // The rule caps the header once rows are passing under it -
@@ -787,81 +620,6 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier)
  * caller just as well at this size, and keep the app to the one permission it
  * actually asked for.
  */
-/**
- * The player under whichever recording is loaded: a scrubber, its times, and
- * the chevron that folds it away. Shared by the Recordings and Calls tabs, so
- * a recording plays the same from either.
- *
- * The scrubber is the recording's waveform (WaveformScrubber) once its
- * loudness is worked out - at once for one played before - and the plain
- * slider until then, or for a file that cannot be read for it.
- */
-@Composable
-internal fun PlayerControls(state: UiState, vm: MainViewModel) {
-    val haptics = LocalHapticFeedback.current
-    // Where the finger is, while it drags: the player's own position,
-    // ticking in every 300 ms, snapped the thumb back under it. Sought once,
-    // on letting go; the time under the finger is shown meanwhile.
-    var dragging by remember { mutableStateOf<Int?>(null) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val waveform = state.waveform
-        if (waveform != null) {
-            WaveformScrubber(
-                levels = waveform,
-                positionMs = dragging ?: state.positionMs,
-                durationMs = state.durationMs,
-                onDrag = { dragging = it },
-                onSeek = { vm.seekTo(it) },
-                modifier = Modifier.weight(1f),
-                playing = state.playing && dragging == null,
-            )
-        } else {
-            Slider(
-                value = (dragging ?: state.positionMs).toFloat()
-                    .coerceIn(0f, state.durationMs.toFloat()),
-                onValueChange = { dragging = it.toInt() },
-                onValueChangeFinished = {
-                    dragging?.let { vm.seekTo(it) }
-                    dragging = null
-                },
-                valueRange = 0f..state.durationMs.toFloat(),
-                modifier = Modifier.weight(1f),
-            )
-        }
-        IconButton(onClick = { haptics.tap(); vm.stopPlaying() }) {
-            Icon(
-                Icons.Filled.KeyboardArrowUp,
-                contentDescription = "Collapse player",
-                tint = MaterialTheme.colorScheme.secondary,
-            )
-        }
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            // The end label sits under the slider's end,
-            // not under the chevron.
-            .padding(start = 16.dp, end = 52.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            clock(dragging ?: state.positionMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            clock(state.durationMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
 /** The tip over the recordings: how selection starts, with an x to put it away. */
 @Composable
 private fun SelectTip(onDismiss: () -> Unit) {
@@ -947,68 +705,298 @@ internal fun YieldingRow(gap: Dp, content: @Composable () -> Unit) {
 }
 
 /**
- * A day's heading in the Recordings and Calls lists, in the look's own way:
- * Memo's words; Deck's engraved capitals on a rule; Multitrack's editor's
- * marker - each with how many at the line's end. [count] is the day's
+ * A day's heading in the Recordings and Calls lists, in the look's own way
+ * (LookHeading), with how many at the line's end. [count] is the day's
  * recordings, where it is known (Recordings, not Calls). Memo once had no
  * count; the user asked for the three to say the same (2026-10-23).
  */
 @Composable
-internal fun DayHeading(day: Day, count: Int? = null) {
-    val scheme = MaterialTheme.colorScheme
+internal fun DayHeading(day: Day, count: Int? = null, calls: Boolean = false) {
     when (LocalLook.current) {
-        Look.MEMO -> Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
-                .semantics(mergeDescendants = true) { heading() },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(day.title, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Look.MEMO -> LookHeading(day.title, Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp), end = count?.toString())
+        Look.DECK -> LookHeading(day.title, Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp), end = count?.toString())
+        Look.MULTITRACK -> {
+            // Recordings are the editor's clips; calls are calls.
+            val unit = if (calls) "CALL" else "CLIP"
+            LookHeading(
+                day.title,
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp),
+                end = count?.let { if (it == 1) "1 $unit" else "$it ${unit}S" },
+                flag = true,
+            )
+        }
+    }
+}
+
+/**
+ * A heading in the look's own way: Memo's words; Deck's engraved capitals on
+ * a rule; Multitrack's editor's marker, in its capitals on a line, with the
+ * marker's [flag] over a list of days. [end] at the line's end. The days'
+ * headings, and Settings' (SettingsHeading), so a group in Settings is
+ * headed as a day is.
+ */
+@Composable
+internal fun LookHeading(title: String, modifier: Modifier = Modifier, end: String? = null, flag: Boolean = false) {
+    val scheme = MaterialTheme.colorScheme
+    val row = Modifier
+        .fillMaxWidth()
+        .then(modifier)
+        .semantics(mergeDescendants = true) { heading() }
+    when (LocalLook.current) {
+        Look.MEMO -> Row(row, verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             // At the line's end, where the other looks have it.
-            if (count != null) Text("$count", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+            if (end != null) Text(end, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
         }
         Look.DECK -> Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp)
-                .semantics(mergeDescendants = true) { heading() },
+            row,
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             val engraved = TextStyle(fontFamily = LookFonts.engraved, fontSize = 12.sp, letterSpacing = 0.14.em, color = scheme.onSurfaceVariant)
-            Text(day.title.uppercase(), style = engraved)
+            Text(title.uppercase(), style = engraved)
             Box(Modifier.weight(1f).height(1.dp).background(scheme.outlineVariant))
-            if (count != null) Text("$count", style = engraved)
+            if (end != null) Text(end, style = engraved)
         }
         Look.MULTITRACK -> {
             val c = multitrackColors()
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
-                    .semantics(mergeDescendants = true) { heading() },
+                row,
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 val mono = TextStyle(fontFamily = LookFonts.mono, fontSize = 11.sp, letterSpacing = 0.14.em)
                 // The marker's flag: an editor's, pointing down at its lanes.
-                Box(
-                    Modifier.size(10.dp).drawBehind {
-                        drawPath(
-                            Path().apply {
-                                moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2, size.height * 0.8f); close()
-                            },
-                            c.marker,
-                        )
-                    },
-                )
-                Text(day.title.uppercase(), style = mono.copy(fontWeight = FontWeight.SemiBold), color = c.marker)
+                if (flag) {
+                    Box(
+                        Modifier.size(10.dp).drawBehind {
+                            drawPath(
+                                Path().apply {
+                                    moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2, size.height * 0.8f); close()
+                                },
+                                c.marker,
+                            )
+                        },
+                    )
+                }
+                Text(title.uppercase(), style = mono.copy(fontWeight = FontWeight.SemiBold), color = c.marker)
                 Box(Modifier.weight(1f).height(1.dp).background(c.line))
-                if (count != null) Text(if (count == 1) "1 CLIP" else "$count CLIPS", style = mono, color = c.faint)
+                if (end != null) Text(end, style = mono, color = c.faint)
             }
         }
     }
+}
+
+/**
+ * A list's chips, as one band: the Recordings tab's and the Calls tab's, drawn
+ * from [chips] (see chipsFor - a chip only where it narrows its list), [on]
+ * the ones picked. [calls] words them for the Calls tab.
+ *
+ * The same band the selection toolbar wears, so the header is one strip in
+ * both modes and switching moves nothing. Scrolled sideways when the chips
+ * outgrow the screen, and still centred whenever they fit: at least as wide
+ * as the band. No "All" chip: all IS the resting state, the one where none of
+ * these is picked. A chip for it would be the only one always selectable and
+ * never meaningfully off, and tapping the active chip again already falls
+ * back to all - so the empty row says "everything" on its own.
+ */
+@Composable
+internal fun ListChipRow(chips: List<ListChip>, on: Set<ListChip>, calls: Boolean, onTap: (ListChip) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(HeaderRowHeight)) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .widthIn(min = maxWidth)
+                .fillMaxHeight()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            for (chip in chips) {
+                val selected = chip in on
+                val tap = { onTap(chip) }
+                when (chip.kind) {
+                    // Starred contacts, on top of the other chips.
+                    ChipKind.FAVORITES -> FilterChip(
+                        selected = selected,
+                        onClick = tap,
+                        shape = chipShape(),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.secondary,
+                        ),
+                        label = {
+                            Icon(
+                                Icons.Filled.Star,
+                                contentDescription = "Only calls with favourite contacts",
+                                // Gold on the band; a DEEPER gold once
+                                // selected, where the pill turns pale in dark
+                                // theme and the bright gold washed into it.
+                                tint = if (selected) JemRecColors.favoriteSelected else JemRecColors.favorite,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                    )
+                    ChipKind.SOURCE -> SourceChip(chip.source.orEmpty(), selected, tap)
+                    ChipKind.KEPT -> IconFilterChip(
+                        selected,
+                        KeepIcons.Kept,
+                        if (calls) "Only calls whose recording is kept" else "Only recordings marked to keep",
+                        tap,
+                    )
+                    // The calls the answering machine took.
+                    ChipKind.MESSAGES -> IconFilterChip(selected, messageIcon, "Only messages", tap)
+                    ChipKind.NOT_RECORDED -> IconFilterChip(selected, CallIcons.NotRecorded, "Only calls not recorded", tap)
+                    // The fold-out. A filter chip in looks, a disclosure in
+                    // job: selected while the field is open, so the icon
+                    // reads as "search is showing" rather than a filter that
+                    // is on.
+                    ChipKind.SEARCH -> FilterChip(
+                        selected = selected,
+                        onClick = tap,
+                        shape = chipShape(),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.secondary,
+                        ),
+                        label = {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = if (calls) "Search calls" else "Search recordings",
+                                // An icon-only chip label does not inherit a
+                                // visible content colour the way a text label
+                                // does - untinted it came out invisible - so
+                                // the tint is set for each state: onSecondary
+                                // on the bright selected pill, onSurfaceVariant
+                                // on the band.
+                                tint = if (selected) {
+                                    MaterialTheme.colorScheme.onSecondary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * How the call came, as a chip: a phone for phone calls, a messenger's own
+ * icon for its calls - or its name, where the icon cannot be had (the app
+ * uninstalled since).
+ */
+@Composable
+private fun SourceChip(source: String, selected: Boolean, onClick: () -> Unit) {
+    if (source == PHONE_SOURCE) {
+        IconFilterChip(selected, Icons.Filled.Call, "Only phone calls", onClick)
+        return
+    }
+    val name = VoipApps.labelForTag(source) ?: source
+    val icon = rememberAppIcon(packagesForTag(source), 18.dp)
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        shape = chipShape(),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.secondary,
+            selectedLabelColor = MaterialTheme.colorScheme.onSecondary,
+        ),
+        label = {
+            if (icon != null) {
+                Image(icon, contentDescription = "Only $name calls", modifier = Modifier.size(18.dp))
+            } else {
+                ChipLabel(name)
+            }
+        },
+    )
+}
+
+/** The list's search field, folded out under the chips: [placeholder] says
+ *  what it searches. */
+@Composable
+internal fun ListSearchField(query: String, onQuery: (String) -> Unit, focus: FocusRequester, placeholder: String) {
+    // A hand-built compact field, not the stock
+    // OutlinedTextField. That one reserves 56dp - the M3
+    // search-bar height - and forcing it shorter clips the
+    // text. Driving the decoration box directly lets the
+    // reserved padding shrink so a single line sits in 48dp,
+    // the M3 minimum touch target and the shortest a field may
+    // honestly be. The pill shape and colours are the stock
+    // ones, only the height is ours.
+    val searchInteraction = remember { MutableInteractionSource() }
+    // The stock field paints a bold primary-blue border while
+    // focused - and this one is focused whenever it is open,
+    // so it wore a blue ring the grey-outlined chips never did.
+    // Border pinned to the chips' own outline colour, one
+    // thickness focused or not, so the field reads as part of
+    // the same set. Cursor stays primary; that is the caret,
+    // not the outline.
+    val searchColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+    )
+    BasicTextField(
+        value = query,
+        onValueChange = onQuery,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 12.dp)
+            // No forced height: a fixed height taller than the
+            // content parks the content at the top and leaves
+            // the slack below, so the text sat high in the pill.
+            // The content padding sizes it instead (see below),
+            // which keeps the one line centred.
+            .focusRequester(focus),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+        ),
+        singleLine = true,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        interactionSource = searchInteraction,
+        decorationBox = { innerTextField ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = query,
+                innerTextField = innerTextField,
+                enabled = true,
+                singleLine = true,
+                visualTransformation = VisualTransformation.None,
+                interactionSource = searchInteraction,
+                colors = searchColors,
+                placeholder = { Text(placeholder) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { onQuery("") }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                // The whole reason this is hand-built: with no
+                // forced height, this padding IS the height -
+                // one 24dp line plus 12dp each side is a 48dp
+                // pill, the M3 minimum touch target - and being
+                // equal top and bottom it centres the line.
+                contentPadding = OutlinedTextFieldDefaults.contentPadding(
+                    top = 12.dp,
+                    bottom = 12.dp,
+                ),
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = true,
+                        isError = false,
+                        interactionSource = searchInteraction,
+                        colors = searchColors,
+                        shape = RoundedCornerShape(28.dp),
+                        focusedBorderThickness = 1.dp,
+                        unfocusedBorderThickness = 1.dp,
+                    )
+                },
+            )
+        },
+    )
 }
 
 /** A filter chip's shape and words in the look: Memo's pill, Deck's key and
@@ -1027,30 +1015,6 @@ private fun ChipLabel(label: String) {
         Look.DECK -> Text(label.uppercase(), fontFamily = LookFonts.engraved, letterSpacing = 0.08.em)
         Look.MULTITRACK -> Text(label.uppercase(), fontFamily = LookFonts.mono, fontSize = 12.sp, letterSpacing = 0.08.em)
     }
-}
-
-/** One preset filter chip.
- *
- *  Selected chips wear `secondary`, not the default `secondaryContainer`: on the
- *  neutral header band the container tone sat too close to the band to read as
- *  on. `secondary` is a light tone in dark theme, so a picked chip becomes a
- *  bright pill that pops the way the ticked photos and checkbox do. */
-@Composable
-private fun PresetChip(selected: Boolean, label: String, onClick: () -> Unit) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { ChipLabel(label) },
-        // Fully rounded in Memo, not the M3 default 8dp: the search field is a
-        // pill and the avatars are circles, so a squarish chip was the one
-        // hard-cornered thing in a rounded header. Deck's and Multitrack's are
-        // keys and tags, squarer, as their headers are.
-        shape = chipShape(),
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.secondary,
-            selectedLabelColor = MaterialTheme.colorScheme.onSecondary,
-        ),
-    )
 }
 
 /**
@@ -1291,7 +1255,10 @@ internal fun clock(ms: Int): String {
 }
 
 /** A filter that is an icon alone - Kept, Messages - filled in the secondary
- *  colour while it is on. */
+ *  colour while it is on: not the default `secondaryContainer`, which on the
+ *  neutral header band sat too close to the band to read as on. `secondary`
+ *  is a light tone in dark theme, so a picked chip becomes a bright pill that
+ *  pops the way the ticked photos and checkbox do. */
 @Composable
 private fun IconFilterChip(selected: Boolean, icon: ImageVector, description: String, onClick: () -> Unit) {
     FilterChip(

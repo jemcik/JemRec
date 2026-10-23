@@ -34,6 +34,21 @@ class HeaderFactsTest {
         assertEquals(listOf("ANS", "MSG", "DEL 1Y"), markLabels(all, RecorderStatus.OFF))
     }
 
+    /** Settings draws each setting's mark from the same function the
+     *  headers do: every setting has one, lit or not, and the lit ones are
+     *  exactly Deck's LCD. */
+    @Test fun settingsMarksAreTheHeadersMarks() {
+        val some = Marks(automatic = false, answering = true, messengers = false, autoDeleteDays = 0)
+        val each = headerMarks(some, RecorderStatus.READY)
+        assertEquals(Marked.entries.toList(), each.map { it.setting })
+        assertEquals(listOf("ASK", "ANS", "MSG", "DEL"), each.map { it.label })
+        assertEquals(listOf(true, true, false, false), each.map { it.lit })
+        assertEquals(markLabels(some, RecorderStatus.READY), each.filter { it.lit }.map { it.label })
+        // A setting that is off still has its mark in Settings, dark.
+        assertEquals(HeaderMark(Marked.MESSENGERS, "MSG", false), headerMark(Marked.MESSENGERS, some, RecorderStatus.READY))
+        assertFalse(headerMark(Marked.MODE, some, RecorderStatus.OFF).lit)
+    }
+
     @Test fun messengersCountOnlyWhenAnAppIsBothInstalledAndOn() {
         val whatsapp = VoipApps.KNOWN.first { it.pkg == "com.whatsapp" }
         val installedOff = ready.copy(voipSupported = true, voipInstalled = listOf(whatsapp), voipEnabled = emptySet())

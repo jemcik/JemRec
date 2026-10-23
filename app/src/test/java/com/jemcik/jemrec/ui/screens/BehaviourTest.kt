@@ -1,6 +1,5 @@
 package com.jemcik.jemrec.ui.screens
 
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +28,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.longClick
 import com.jemcik.jemrec.ui.dayOf
 import com.jemcik.jemrec.ui.Day
 import androidx.compose.ui.semantics.SemanticsNode
@@ -74,6 +74,16 @@ import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.LookChoice
 import com.jemcik.jemrec.ui.theme.Looks
+import com.jemcik.jemrec.ui.LOOK_PREVIEW
+import com.jemcik.jemrec.ui.SETTINGS_BAR
+import com.jemcik.jemrec.ui.SettingsBar
+import com.jemcik.jemrec.ui.headerMarks
+import com.jemcik.jemrec.ui.markTag
+import com.jemcik.jemrec.ui.marks
+import com.jemcik.jemrec.ui.recorderStatus
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.onNodeWithTag
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -248,22 +258,86 @@ class BehaviourTest : ScreenTest() {
         compose.onNodeWithText("All").assertIsNotSelected()
     }
 
-    @Test fun aSwitchRowIsOneSwitch() {
-        // The whole row is the control: one toggleable node, its text merged
-        // in, not a row with a switch beside it that a screen reader visits
-        // separately.
-        show {
+    @Test fun aSwitchRowIsOneSwitch() = oneSwitch(Look.MEMO)
+
+    @Test fun decksKeyIsOneSwitch() = oneSwitch(Look.DECK)
+
+    @Test fun multitracksLitButtonIsOneSwitch() = oneSwitch(Look.MULTITRACK)
+
+    /** The whole row is the control: one toggleable node, its text merged
+     *  in, not a row with a switch beside it that a screen reader visits
+     *  separately - Deck's key and Multitrack's button too, which are only
+     *  drawn, and say ON or OFF to the eye alone. */
+    private fun oneSwitch(look: Look) {
+        show(look = LookChoice(look)) {
             var on by remember { mutableStateOf(true) }
-            SwitchRow("Record every call", on, { on = it }, RectangleShape, summary = "Every call, without asking")
+            SwitchRow("Record every call", on, { on = it }, summary = "Every call, without asking")
         }
         compose.onAllNodes(isToggleable()).assertCountEquals(1)
+        compose.onAllNodesWithText("ON").assertCountEquals(0)
         compose.onNodeWithText("Record every call").assertIsOn().performClick()
         compose.onNodeWithText("Record every call").assertIsOff()
+        compose.onAllNodesWithText("OFF").assertCountEquals(0)
+    }
+
+    /**
+     * Settings in the look's own way, design C: each setting the header
+     * marks carries the header's mark - from the same function - where its
+     * icon would be, and it changes with the setting. Silent to a screen
+     * reader: the row's name says it in words.
+     */
+    @Test fun settingsCarriesTheHeadersMarks() {
+        val vm = MainViewModel(
+            RuntimeEnvironment.getApplication(),
+            Fixtures.ready().copy(screen = Screen.SETTINGS),
+            AnswerUi(enabled = true),
+        )
+        show(look = LookChoice(Look.DECK)) {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        // What the header would show, from the same facts: here AUTO, ANS and
+        // DEL 90D lit, MSG dark - no messenger is installed on the test phone.
+        val shown = headerMarks(marks(vm.state.value, answering = true), recorderStatus(vm.state.value))
+        assertEquals(listOf("AUTO", "ANS", "DEL 90D"), shown.filter { it.lit }.map { it.label })
+        for (mark in shown) compose.onNodeWithTag(markTag(mark), useUnmergedTree = true).assertExists()
+        compose.onAllNodesWithText("ANS").assertCountEquals(0)
+        compose.onNodeWithText("Record every call").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("mark-ASK-lit", useUnmergedTree = true).assertExists()
+        compose.onAllNodesWithTag("mark-AUTO-lit", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test fun memosBarKeepsStill() = barKeepsStill(Look.MEMO)
+
+    @Test fun decksBarKeepsStill() = barKeepsStill(Look.DECK)
+
+    @Test fun multitracksBarKeepsStill() = barKeepsStill(Look.MULTITRACK)
+
+    /** The bar over Settings' screens says the screen's name as a heading,
+     *  in its own words - not Deck's and Multitrack's capitals - and keeps
+     *  one height, and the name in one place, busy or not: the busy
+     *  signal's room is kept. Back goes back. */
+    private fun barKeepsStill(look: Look) {
+        var busy by mutableStateOf(false)
+        var backs = 0
+        show(look = LookChoice(look)) { SettingsBar("Whose calls to keep", busy) { backs++ } }
+        val bar = compose.onNodeWithTag(SETTINGS_BAR).getBoundsInRoot()
+        val name = compose.onNodeWithText("Whose calls to keep")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+            .getBoundsInRoot()
+        compose.onAllNodesWithText("WHOSE CALLS TO KEEP").assertCountEquals(0)
+        compose.runOnUiThread { busy = true }
+        compose.waitForIdle()
+        assertEquals("$look", bar, compose.onNodeWithTag(SETTINGS_BAR).getBoundsInRoot())
+        assertEquals("$look", name, compose.onNodeWithText("Whose calls to keep").getBoundsInRoot())
+        compose.onNodeWithContentDescription("Back").performClick()
+        assertEquals(1, backs)
     }
 
     @Test fun aDisabledRowIgnoresTaps() {
         var tapped = false
-        show { SettingsRow("Start fresh", RectangleShape, onClick = { tapped = true }, enabled = false) }
+        show { SettingsRow("Start fresh", onClick = { tapped = true }, enabled = false) }
         compose.onNodeWithText("Start fresh").assertIsNotEnabled().performClick()
         assertFalse(tapped)
     }
@@ -647,6 +721,58 @@ class BehaviourTest : ScreenTest() {
         assertTrue("the playhead moved ${"%.1f".format(moved)}px in three seconds without a reading", moved >= 3)
     }
 
+    /** A messenger's chip on the Recordings tab leaves that messenger's
+     *  calls: the fixtures' one WhatsApp call, Marcus Chen's. */
+    @Test fun aMessengersChipLeavesItsCalls() {
+        homeIn(Look.MEMO)
+        compose.onNodeWithContentDescription("Only WhatsApp calls").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Marcus Chen").assertExists()
+        compose.onAllNodesWithText("Olivia Bennett").assertCountEquals(0)
+    }
+
+    /** Two source chips together show the calls that came either way: the
+     *  phone's and WhatsApp's both. */
+    @Test fun sourceChipsCombine() {
+        homeIn(Look.MEMO)
+        compose.onNodeWithContentDescription("Only WhatsApp calls").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Only phone calls").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Marcus Chen").assertExists()
+        compose.onNodeWithText("Olivia Bennett").assertExists()
+    }
+
+    /** The Calls tab's own chip: the calls that connected and were not
+     *  recorded - Hana Sato's (recording was off), not Olivia Bennett's
+     *  (recorded) nor the missed one. */
+    @Test fun theCallsTabsNotRecordedChipLeavesThoseCalls() {
+        val vm = viewModel(Fixtures.ready().copy(homeTab = HomeTab.CALLS))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        compose.onNodeWithContentDescription("Only calls not recorded").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Hana Sato").assertExists()
+        compose.onAllNodesWithText("Olivia Bennett").assertCountEquals(0)
+        compose.onAllNodesWithText("+44 20 7946 0321").assertCountEquals(0)
+    }
+
+    /** On the Calls tab a recorded call's row is its Recordings row, Keep and
+     *  Share included - but there is no selection there, so a long press
+     *  does not start one. */
+    @Test fun aRecordedCallsRowHasKeepAndShareButStartsNoSelection() {
+        val vm = viewModel(Fixtures.ready().copy(homeTab = HomeTab.CALLS))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        compose.onNodeWithContentDescription("Kept - tap to stop keeping").assertExists()
+        compose.onNodeWithText("Olivia Bennett").performTouchInput { longClick() }
+        compose.waitForIdle()
+        assertFalse(vm.state.value.selecting)
+    }
+
     @Test fun memosButtonPressesRound() = pressStaysRound(Look.MEMO)
 
     @Test fun decksRecKeyPressesRound() = pressStaysRound(Look.DECK)
@@ -675,12 +801,74 @@ class BehaviourTest : ScreenTest() {
             assertEquals(Look.DECK, vm.state.value.look)
             assertEquals(LookChoice(Look.DECK, LightDark.DARK), Looks.choice(app))
             compose.onNodeWithText("Dark").assertIsSelected()
+            // The line under the looks is the one picked's.
+            compose.onNodeWithText("A pocket recorder, an LCD and a REC key").assertExists()
+            compose.onAllNodesWithText("Calm and simple, one big record button").assertCountEquals(0)
             back()
             // Settings names it.
             compose.onNodeWithText("Deck · dark").assertExists()
         } finally {
             Looks.set(app, LookChoice())
         }
+    }
+
+    /** Light, Dark, System: Android's words, in its order - and Settings
+     *  says the phone's own in full. */
+    @Test fun lightOrDarkIsAsAndroidSaysIt() {
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.THEME))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        val lefts = listOf("Light", "Dark", "System").map {
+            compose.onNodeWithText(it).performScrollTo().getBoundsInRoot().left
+        }
+        assertEquals(lefts.sorted(), lefts)
+        compose.onNodeWithText("System").assertIsSelected()
+        compose.onAllNodesWithText("Same as phone").assertCountEquals(0)
+        back()
+        compose.onNodeWithText("Memo · system default").assertExists()
+    }
+
+    /**
+     * The Theme screen's preview is the home screen's own header and rows,
+     * wired to the view model - so nothing in it may take a tap: its record
+     * button would switch recording off, its gear open Settings, a row play
+     * a call that never happened.
+     */
+    @Test fun theThemePreviewTakesNoTaps() {
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.THEME))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        compose.onNodeWithTag(LOOK_PREVIEW).performTouchInput {
+            // Memo's record button, its gear, then the first row.
+            click(Offset(width * 0.11f, height * 0.05f))
+            click(Offset(width * 0.92f, height * 0.05f))
+            click(Offset(width * 0.5f, height * 0.42f))
+        }
+        compose.waitForIdle()
+        assertTrue(vm.state.value.enabled)
+        assertEquals(Screen.THEME, vm.state.value.screen)
+        assertNull(vm.state.value.playingName)
+    }
+
+    /** ...and a screen reader hears none of it: the choices under it name
+     *  the look. Its invented calls are not read out as if they were the
+     *  user's. */
+    @Test fun theThemePreviewIsSilent() {
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.THEME))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        // The merged tree, as TalkBack reads it: the unmerged one keeps what
+        // clearAndSetSemantics cleared, by design.
+        compose.onNodeWithTag(LOOK_PREVIEW).assertExists()
+        compose.onAllNodesWithText("Olivia Bennett").assertCountEquals(0)
+        compose.onAllNodesWithText("Ready to record").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Settings").assertCountEquals(0)
     }
 
     @Test fun theHeaderStaysPutAndTheListScrolls() {

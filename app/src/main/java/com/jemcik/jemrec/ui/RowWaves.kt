@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -21,6 +23,14 @@ import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 /**
+ * Levels for rows whose calls are invented - the Theme screen's preview -
+ * from the name, instead of the cache: an invented call has no sound, and is
+ * not to be looked for among the real recordings' waveforms. Null, the cache,
+ * everywhere else.
+ */
+internal val LocalInventedLevels = staticCompositionLocalOf<((name: String) -> List<Float>)?> { null }
+
+/**
  * A row's waveform: the recording's levels from the cache, or null while it
  * has none - the row then draws none, rather than a made-up shape. Looked
  * for again each time the view model works one out ([version], its
@@ -28,6 +38,7 @@ import kotlin.math.max
  */
 @Composable
 internal fun rememberRowLevels(recording: Recording, version: Int): List<Float>? {
+    LocalInventedLevels.current?.let { invented -> return remember(recording.name) { invented(recording.name) } }
     val context = LocalContext.current
     val levels by produceState(Waveforms.peek(recording.name), recording.name, version) {
         if (value == null) value = withContext(Dispatchers.IO) { Waveforms.cached(context, recording.name) }

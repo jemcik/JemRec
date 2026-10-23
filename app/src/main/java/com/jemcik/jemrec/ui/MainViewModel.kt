@@ -42,7 +42,6 @@ import com.jemcik.jemrec.capture.Transcoder
 import androidx.core.content.FileProvider
 import java.io.File
 import com.jemcik.jemrec.capture.RecorderSwitch
-import com.jemcik.jemrec.capture.RecordingFilter
 import com.jemcik.jemrec.capture.filterRecordings
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.RecordingPlayer
@@ -197,16 +196,17 @@ data class UiState(
      *  now and then, not every visit, so it does not sit taking height until the
      *  search chip asks for it. */
     val searchOpen: Boolean = false,
-    /** Which time preset is active: All / Today / This week. */
-    val filter: RecordingFilter = RecordingFilter.ALL,
-    /** Favourites is its own axis, not one of the time presets: narrowing to
-     *  calls with starred contacts ANDs with whatever time range is chosen,
-     *  rather than replacing it. */
+    /** Only calls with starred contacts; it ANDs with the other chips. */
     val favoritesOnly: Boolean = false,
     /** Only recordings marked to keep. Its own axis too, like favourites. */
     val keptOnly: Boolean = false,
     /** Only messages the answering machine took. Its own axis too. */
     val messagesOnly: Boolean = false,
+    /** Only calls that came one of these ways: PHONE_SOURCE, or messengers'
+     *  tags. Empty: every way. */
+    val sources: Set<String> = emptySet(),
+    /** The Calls tab's own chips and search. */
+    val callsNarrowing: CallsNarrowing = CallsNarrowing(),
     /** What is in Recently deleted, soonest to go first. See Trash. */
     val trashed: List<Recording> = emptyList(),
     /** Which tab of the home screen is showing. */
@@ -801,7 +801,7 @@ class MainViewModel @JvmOverloads constructor(
         // can no longer see. Widening the query keeps everything, as it should.
         val next = if (current.selecting) {
             val stillShown = filterRecordings(
-                current.recordings, query, current.filter, current.favoritesOnly, current.keptOnly, current.messagesOnly,
+                current.recordings, query, current.favoritesOnly, current.keptOnly, current.messagesOnly, current.sources,
             ).map { it.name }.toSet()
             current.selected intersect stillShown
         } else {
@@ -818,21 +818,25 @@ class MainViewModel @JvmOverloads constructor(
         if (it.searchOpen) it.copy(searchOpen = false, query = "") else it.copy(searchOpen = true)
     }
 
-    fun setFilter(filter: RecordingFilter) = _state.update {
-        // Tapping the active chip again clears it back to All, the usual
-        // single-select filter-chip behaviour. These are the TIME presets only;
-        // favourites is separate and untouched here.
-        it.copy(filter = if (it.filter == filter) RecordingFilter.ALL else filter)
-    }
-
-    /** Favourites is a toggle on its own axis, not one of the time presets:
-     *  turning it on narrows to starred contacts on TOP of the time range,
-     *  turning it off widens back. It never disturbs the time chips. */
+    /** Favourites is a toggle on its own axis: turning it on narrows to starred
+     *  contacts on top of the other chips, turning it off widens back. */
     fun toggleFavorites() = _state.update { it.copy(favoritesOnly = !it.favoritesOnly) }
 
     fun toggleKeptOnly() = _state.update { it.copy(keptOnly = !it.keptOnly) }
 
     fun toggleMessagesOnly() = _state.update { it.copy(messagesOnly = !it.messagesOnly) }
+
+    /** Calls that came [source]'s way, shown too - or, tapped again, not.
+     *  Leaves a selection to the rows still shown, as a search does. */
+    fun toggleSource(source: String) = _state.update { current ->
+        val next = current.copy(sources = if (source in current.sources) current.sources - source else current.sources + source)
+        next.copy(selected = stillShown(next))
+    }
+
+    /** A chip of the Calls tab tapped. */
+    internal fun tapCallsChip(chip: ListChip) = _state.update { it.copy(callsNarrowing = it.callsNarrowing.tapped(chip)) }
+
+    fun setCallsQuery(query: String) = _state.update { it.copy(callsNarrowing = it.callsNarrowing.copy(query = query)) }
 
     /** Mark one recording to keep, or take the mark off. Kept recordings are
      *  never auto-deleted. */
@@ -1537,7 +1541,7 @@ class MainViewModel @JvmOverloads constructor(
         // "All visible" means all that pass the search and preset - the same
         // rows the list is showing - not every recording on disk.
         val visible = filterRecordings(
-            current.recordings, current.query, current.filter, current.favoritesOnly, current.keptOnly, current.messagesOnly,
+            current.recordings, current.query, current.favoritesOnly, current.keptOnly, current.messagesOnly, current.sources,
         ).take(current.visibleCount)
         current.copy(selected = visible.map { it.name }.toSet())
     }

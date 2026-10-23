@@ -3,7 +3,6 @@ package com.jemcik.jemrec.ui
 import android.app.Application
 import android.net.Uri
 import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.RecordingFilter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -51,21 +50,19 @@ class MainViewModelSelectionTest {
 
     @Before fun setUp() = given()
 
-    @Test fun tappingTheActiveChipAgainClearsItToAll() {
-        vm.setFilter(RecordingFilter.TODAY)
-        assertEquals(RecordingFilter.TODAY, state.filter)
-        vm.setFilter(RecordingFilter.TODAY)
-        assertEquals(RecordingFilter.ALL, state.filter)
-        vm.setFilter(RecordingFilter.THIS_WEEK)
-        vm.setFilter(RecordingFilter.TODAY)
-        assertEquals(RecordingFilter.TODAY, state.filter)
+    @Test fun sourcesAddUpAndComeOffOneByOne() {
+        vm.toggleSource("whatsapp")
+        vm.toggleSource("telegram")
+        assertEquals(setOf("whatsapp", "telegram"), state.sources)
+        vm.toggleSource("whatsapp")
+        assertEquals(setOf("telegram"), state.sources)
     }
 
     @Test fun favouritesIsItsOwnAxis() {
-        vm.setFilter(RecordingFilter.THIS_WEEK)
+        vm.toggleKeptOnly()
         vm.toggleFavorites()
         assertTrue(state.favoritesOnly)
-        assertEquals(RecordingFilter.THIS_WEEK, state.filter)
+        assertTrue(state.keptOnly)
         vm.toggleFavorites()
         assertFalse(state.favoritesOnly)
     }

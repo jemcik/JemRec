@@ -109,19 +109,5 @@ object Fixtures {
     /** A call's loudness as the waveform draws it: phrases of words and the
      *  pauses between them, two people at their own levels, and a quiet
      *  stretch in the middle - the same every run, so the same pixels. */
-    fun waveform(from: Long = 20_261_022L): List<Float> {
-        var seed = from
-        fun next(): Double {
-            seed = seed * 6_364_136_223_846_793_005L + 1_442_695_040_888_963_407L
-            return (seed ushr 11).toDouble() / (1L shl 53)
-        }
-        val out = ArrayList<Float>()
-        while (out.size < Waveforms.LEVELS) {
-            val voice = 0.5 + next() * 0.45
-            repeat(4 + (next() * 12).toInt()) { out += (voice * (0.35 + 0.65 * next())).toFloat() }
-            repeat(1 + (next() * 5).toInt()) { out += (0.01 + next() * 0.06).toFloat() }
-        }
-        for (i in 470 until 540) out[i] = (0.01 + next() * 0.04).toFloat()
-        return out.take(Waveforms.LEVELS)
-    }
+    fun waveform(from: Long = 20_261_022L): List<Float> = Waveforms.invented(from)
 }

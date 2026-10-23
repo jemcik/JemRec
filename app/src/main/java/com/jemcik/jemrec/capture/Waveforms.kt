@@ -65,6 +65,29 @@ internal object Waveforms {
     @Volatile
     var override: ((name: String) -> List<Float>?)? = null
 
+    /**
+     * An invented call's loudness: phrases of words and the pauses between
+     * them, two people at their own levels, a quiet stretch in the middle -
+     * the same for the same [seed], every time. For calls that never
+     * happened: the Theme screen's preview, the debug build's demo list and
+     * the screen tests, which each had a copy of it.
+     */
+    fun invented(seed: Long): List<Float> {
+        var state = seed
+        fun next(): Double {
+            state = state * 6_364_136_223_846_793_005L + 1_442_695_040_888_963_407L
+            return (state ushr 11).toDouble() / (1L shl 53)
+        }
+        val out = ArrayList<Float>()
+        while (out.size < LEVELS) {
+            val voice = 0.5 + next() * 0.45
+            repeat(4 + (next() * 12).toInt()) { out += (voice * (0.35 + 0.65 * next())).toFloat() }
+            repeat(1 + (next() * 5).toInt()) { out += (0.01 + next() * 0.06).toFloat() }
+        }
+        for (i in 470 until 540) out[i] = (0.01 + next() * 0.04).toFloat()
+        return out.take(LEVELS)
+    }
+
     /** Each "worked out in" line, for the debug build to keep where `run-as`
      *  can read it, as AudioCheck.onMeasured: on MagicOS 11 the app's own
      *  log lines are not readable. */

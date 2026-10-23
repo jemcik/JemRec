@@ -65,16 +65,39 @@ internal fun ageWords(days: Int): String = when (days) {
     else -> "$days days"
 }
 
+/** The settings that have a mark, in the order the headers show them. */
+internal enum class Marked { MODE, ANSWERING, MESSENGERS, AUTO_DELETE }
+
+/** One setting's mark: its label, and whether it is lit - shown, on Deck's
+ *  LCD; a lit LED, on Multitrack's. */
+internal data class HeaderMark(val setting: Marked, val label: String, val lit: Boolean)
+
 /**
- * The marks as LCD labels, in a fixed order. With recording off the mode does
- * not apply, so its mark goes out; the others stay - they are still set.
+ * [setting]'s mark, as the header shows it - and as its row in Settings shows
+ * it, design C of the canvas's "Settings, three ways" (the user's choice,
+ * 2026-10-23: "it will definitely help users to understand what is in the
+ * header"). One function for both, so they cannot disagree. With recording
+ * off the mode does not apply, so its mark goes out; the others stay - they
+ * are still set.
  */
-internal fun markLabels(marks: Marks, status: RecorderStatus): List<String> = buildList {
-    if (status != RecorderStatus.OFF) add(if (marks.automatic) "AUTO" else "ASK")
-    if (marks.answering) add("ANS")
-    if (marks.messengers) add("MSG")
-    if (marks.autoDeleteDays > 0) add("DEL ${ageMark(marks.autoDeleteDays)}")
+internal fun headerMark(setting: Marked, marks: Marks, status: RecorderStatus): HeaderMark = when (setting) {
+    Marked.MODE -> HeaderMark(setting, if (marks.automatic) "AUTO" else "ASK", status != RecorderStatus.OFF)
+    Marked.ANSWERING -> HeaderMark(setting, "ANS", marks.answering)
+    Marked.MESSENGERS -> HeaderMark(setting, "MSG", marks.messengers)
+    Marked.AUTO_DELETE -> HeaderMark(
+        setting,
+        if (marks.autoDeleteDays > 0) "DEL ${ageMark(marks.autoDeleteDays)}" else "DEL",
+        marks.autoDeleteDays > 0,
+    )
 }
+
+/** Every setting's mark, lit or not, in order: Multitrack's LEDs. */
+internal fun headerMarks(marks: Marks, status: RecorderStatus): List<HeaderMark> =
+    Marked.entries.map { headerMark(it, marks, status) }
+
+/** The lit marks' labels, in order: Deck's LCD. */
+internal fun markLabels(marks: Marks, status: RecorderStatus): List<String> =
+    headerMarks(marks, status).filter { it.lit }.map { it.label }
 
 /** What the header asks of the user while nothing can be recorded; each
  *  look words it its own way. */

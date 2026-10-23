@@ -70,28 +70,7 @@ internal object DemoRecordings {
     fun install(on: Boolean) {
         Recordings.override = if (on) { context -> recordings(context) } else null
         CallHistory.override = if (on) { context -> calls(context) } else null
-        Waveforms.override = if (on) { name -> waveform(name.hashCode().toLong()) } else null
-    }
-
-    /**
-     * An invented call's loudness, for its waveform: phrases of words and the
-     * pauses between them, two people at their own levels, a quiet stretch
-     * in the middle - the same for the same call, every time.
-     */
-    private fun waveform(seed: Long): List<Float> {
-        var state = seed
-        fun next(): Double {
-            state = state * 6_364_136_223_846_793_005L + 1_442_695_040_888_963_407L
-            return (state ushr 11).toDouble() / (1L shl 53)
-        }
-        val out = ArrayList<Float>()
-        while (out.size < Waveforms.LEVELS) {
-            val voice = 0.5 + next() * 0.45
-            repeat(4 + (next() * 12).toInt()) { out += (voice * (0.35 + 0.65 * next())).toFloat() }
-            repeat(1 + (next() * 5).toInt()) { out += (0.01 + next() * 0.06).toFloat() }
-        }
-        for (i in 470 until 540) out[i] = (0.01 + next() * 0.04).toFloat()
-        return out.take(Waveforms.LEVELS)
+        Waveforms.override = if (on) { name -> Waveforms.invented(name.hashCode().toLong()) } else null
     }
 
     /**

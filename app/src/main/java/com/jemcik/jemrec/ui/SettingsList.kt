@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -21,17 +24,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
@@ -39,14 +43,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.jemcik.jemrec.ui.theme.LocalLook
+import com.jemcik.jemrec.ui.theme.Look
+import com.jemcik.jemrec.ui.theme.LookFonts
+import com.jemcik.jemrec.ui.theme.deckColors
+import com.jemcik.jemrec.ui.theme.memoColors
+import com.jemcik.jemrec.ui.theme.multitrackColors
 
 /*
  * The parts Settings is built from: a titled group of rows, the rows
@@ -56,62 +74,125 @@ import androidx.compose.ui.unit.sp
  * WHY THESE SHAPES. Android's settings guidelines
  * (source.android.com/docs/core/settings/settings-guidelines) ask for a screen
  * that can be read at a glance - each setting's current value under its title,
- * explanations in a footer, single choices in a dialog - and Material 3's lists
- * guidance groups related rows with small gaps rather than dividers. Settings
- * was fourteen cards of paragraphs with the values buried in them; these are
- * what it is made of now.
+ * explanations in a footer, single choices in a dialog. Settings was fourteen
+ * cards of paragraphs with the values buried in them; these are what it is
+ * made of now.
+ *
+ * IN THE LOOK'S OWN WAY - design C of the canvas's "Settings, three ways",
+ * the user's choice, 2026-10-23. A group is headed as a day is in the lists
+ * and sits on the look's ground, a line between its rows, as the lists' rows
+ * sit: a Memo card, a Deck face plate, Multitrack's lanes. It was Material
+ * 3's grouped tiles, split by small gaps, the same in every look. A row's
+ * words are in the look's type; its switch is the look's own; and a setting
+ * the header marks carries that mark where its icon was.
  */
-
-/** The corner of a group's outer edge, and of the edges between its rows. */
-private val OUTER = 20.dp
-private val INNER = 4.dp
-
-/** One row's shape, from where it sits in its group: the group is one rounded
- *  block, split by gaps, so only its first and last rows round off. */
-internal fun groupShape(index: Int, count: Int): Shape = RoundedCornerShape(
-    topStart = if (index == 0) OUTER else INNER,
-    topEnd = if (index == 0) OUTER else INNER,
-    bottomStart = if (index == count - 1) OUTER else INNER,
-    bottomEnd = if (index == count - 1) OUTER else INNER,
-)
 
 /** Collects a group's rows, so each can be drawn knowing where it sits.
  *  A row of a list that changes (a chosen contact) gives a [key], so removing
  *  one does not hand its remembered state - its photo - to the next. */
 internal class SettingsGroupScope {
-    val rows = mutableListOf<Pair<Any?, @Composable (Shape) -> Unit>>()
-    fun row(key: Any? = null, content: @Composable (shape: Shape) -> Unit) {
+    val rows = mutableListOf<Pair<Any?, @Composable () -> Unit>>()
+    fun row(key: Any? = null, content: @Composable () -> Unit) {
         rows += key to content
     }
 }
 
-/** A heading in the theme's accent, as Android's own Settings heads a group. */
+/** A group's heading, as a day's is in the lists (LookHeading): Memo's
+ *  words, Deck's engraved capitals on a rule, Multitrack's marker capitals
+ *  - without the marker's flag, as a group does not fold. */
 @Composable
-internal fun SettingsHeading(text: String, top: Dp = 24.dp) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = top, bottom = 8.dp),
-    )
+internal fun SettingsHeading(text: String, top: Dp = 20.dp) {
+    LookHeading(text, Modifier.padding(start = 4.dp, end = 4.dp, top = top, bottom = 8.dp))
 }
 
 /** Related rows as one block, under an optional heading, with an optional
  *  [note] under them, on a tip card: something they depend on that is set
- *  elsewhere. */
+ *  elsewhere. On the look's own ground, a line between its rows: a Memo
+ *  card, a Deck face plate, Multitrack's lanes across the screen. */
 @Composable
 internal fun SettingsGroup(title: String? = null, note: String? = null, build: SettingsGroupScope.() -> Unit) {
     val rows = SettingsGroupScope().apply(build).rows
     if (rows.isEmpty()) return
     Column {
         if (title != null) SettingsHeading(title)
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        GroupGround {
             rows.forEachIndexed { index, (rowKey, row) ->
-                key(rowKey ?: index) { row(groupShape(index, rows.size)) }
+                key(rowKey ?: index) {
+                    if (index > 0) GroupLine()
+                    row()
+                }
             }
         }
         if (note != null) TipCard(note, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
     }
+}
+
+@Composable
+private fun GroupGround(rows: @Composable () -> Unit) {
+    when (LocalLook.current) {
+        Look.MEMO -> {
+            val c = memoColors()
+            val shape = RoundedCornerShape(20.dp)
+            Column(Modifier.fillMaxWidth().clip(shape).background(c.card).border(1.dp, c.cardEdge, shape)) { rows() }
+        }
+        Look.DECK -> {
+            // The face the player's card is: a plate on the page.
+            val c = deckColors()
+            val shape = RoundedCornerShape(18.dp)
+            Column(Modifier.fillMaxWidth().clip(shape).background(c.face).border(1.dp, c.faceEdge, shape)) { rows() }
+        }
+        Look.MULTITRACK -> Column(Modifier.toTheEdges(16.dp)) {
+            GroupLine()
+            rows()
+            GroupLine()
+        }
+    }
+}
+
+/** The line between two rows: the card's edge, the face's, a lane's. */
+@Composable
+private fun GroupLine() {
+    val color = when (LocalLook.current) {
+        Look.MEMO -> memoColors().cardEdge
+        Look.DECK -> deckColors().faceEdge
+        Look.MULTITRACK -> multitrackColors().lane
+    }
+    HorizontalDivider(thickness = 1.dp, color = color)
+}
+
+/** Out past the screen's [margin] to its edges, as Multitrack's lanes run
+ *  across the home screen. Settings' column has a 16dp margin. */
+private fun Modifier.toTheEdges(margin: Dp) = layout { measurable, constraints ->
+    if (!constraints.hasBoundedWidth) {
+        val placeable = measurable.measure(constraints)
+        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+    val out = margin.roundToPx()
+    val placeable = measurable.measure(
+        constraints.copy(minWidth = constraints.minWidth + 2 * out, maxWidth = constraints.maxWidth + 2 * out),
+    )
+    layout(placeable.width - 2 * out, placeable.height) { placeable.place(-out, 0) }
+}
+
+/** A row's name and its summary, in the look's type: Memo's, the phone's;
+ *  Deck's summary engraved, as its rows' details are; Multitrack's name in
+ *  Space Grotesk over JetBrains Mono, as its lanes'.
+ *
+ *  Deck's summary was 13sp, spaced 0.02em: a mono letter is as wide as an
+ *  m, and "Asks with a notification when a call starts..." took five lines
+ *  on the Honor (2026-10-23). At 12sp, unspaced - Multitrack's size - it is
+ *  a line shorter, as short as in the phone's font, and still Deck's. */
+@Composable
+private fun rowTitle(): TextStyle = when (LocalLook.current) {
+    Look.MULTITRACK -> TextStyle(fontFamily = LookFonts.grotesk, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 22.sp)
+    else -> MaterialTheme.typography.bodyLarge
+}
+
+@Composable
+private fun rowSummary(): TextStyle = when (LocalLook.current) {
+    Look.MEMO -> MaterialTheme.typography.bodyMedium
+    Look.DECK -> TextStyle(fontFamily = LookFonts.engraved, fontSize = 12.sp, lineHeight = 17.sp)
+    Look.MULTITRACK -> TextStyle(fontFamily = LookFonts.mono, fontSize = 12.sp, lineHeight = 17.sp, letterSpacing = 0.02.em)
 }
 
 /**
@@ -120,11 +201,13 @@ internal fun SettingsGroup(title: String? = null, note: String? = null, build: S
  * Tappable when [onClick] is given - it then opens what changes it - and with
  * whatever [trailing] holds at the end. Not [enabled], it is faded as
  * Material's disabled list items are, so a tap that does nothing is expected.
+ * A setting the header marks gives its [mark], drawn where the icon would be
+ * (SettingsMark). An icon, a photo or a mark take one width, so the names
+ * line up under each other.
  */
 @Composable
 internal fun SettingsRow(
     title: String,
-    shape: Shape,
     summary: String? = null,
     icon: ImageVector? = null,
     summaryColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -133,79 +216,249 @@ internal fun SettingsRow(
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
     rowModifier: Modifier = Modifier,
+    mark: HeaderMark? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val haptics = LocalHapticFeedback.current
-    Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (onClick != null) {
-                        Modifier.clickable(enabled = enabled) { haptics.tap(); onClick() }
-                    } else {
-                        Modifier
-                    },
-                )
-                .then(rowModifier)
-                .heightIn(min = if (summary != null) 72.dp else 56.dp)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            // The trailing control is left alone: a switch has disabled
-            // colours of its own.
-            val faded = Modifier.alpha(if (enabled) 1f else 0.38f)
-            if (leading != null) {
-                Box(faded) { leading() }
-            } else if (icon != null) {
-                Icon(icon, contentDescription = null, tint = iconTint, modifier = faded)
-            }
-            Column(Modifier.weight(1f).then(faded)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge, color = titleColor)
-                if (summary != null) {
-                    Text(summary, style = MaterialTheme.typography.bodyMedium, color = summaryColor)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(enabled = enabled) { haptics.tap(); onClick() }
+                } else {
+                    Modifier
+                },
+            )
+            .then(rowModifier)
+            .heightIn(min = if (summary != null) 72.dp else 56.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // The trailing control is left alone: a switch has disabled
+        // colours of its own.
+        val faded = Modifier.alpha(if (enabled) 1f else 0.38f)
+        if (mark != null || leading != null || icon != null) {
+            Box(Modifier.width(48.dp).then(faded), contentAlignment = Alignment.Center) {
+                when {
+                    mark != null -> SettingsMark(mark)
+                    leading != null -> leading()
+                    icon != null -> Icon(icon, contentDescription = null, tint = iconTint)
                 }
             }
-            trailing?.invoke()
         }
+        Column(Modifier.weight(1f).then(faded)) {
+            Text(title, style = rowTitle(), color = titleColor)
+            if (summary != null) {
+                Text(summary, style = rowSummary(), color = summaryColor)
+            }
+        }
+        trailing?.invoke()
     }
 }
 
 /**
  * A setting that is on or off. The whole row is the switch - a tap anywhere
  * flips it, and a screen reader hears one switch - as Material asks of a list
- * item with a trailing switch.
+ * item with a trailing switch. The switch drawn is the look's (LookSwitch).
  */
 @Composable
 internal fun SwitchRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    shape: Shape,
     summary: String? = null,
     icon: ImageVector? = null,
     summaryColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     enabled: Boolean = true,
+    mark: HeaderMark? = null,
     leading: (@Composable () -> Unit)? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     SettingsRow(
         title = title,
-        shape = shape,
         summary = summary,
         icon = icon,
         summaryColor = summaryColor,
         enabled = enabled,
+        mark = mark,
         leading = leading,
         rowModifier = Modifier.toggleable(
             value = checked,
             enabled = enabled,
             role = Role.Switch,
         ) { haptics.toggle(it); onCheckedChange(it) },
-        trailing = { Switch(checked = checked, onCheckedChange = null, enabled = enabled) },
+        trailing = { LookSwitch(checked, enabled) },
     )
+}
+
+/**
+ * On or off, in the look's own way: Memo keeps Material's switch; Deck's is
+ * a key with its LED, as its tabs are - lit, and printed ON, when on;
+ * Multitrack's an editor's lit button. Only drawn: the row is the switch, to
+ * a tap and to a screen reader, which hears it as one already.
+ */
+@Composable
+private fun LookSwitch(checked: Boolean, enabled: Boolean) {
+    when (LocalLook.current) {
+        Look.MEMO -> Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        Look.DECK -> {
+            val c = deckColors()
+            val shape = RoundedCornerShape(8.dp)
+            Row(
+                Modifier
+                    .clearAndSetSemantics { }
+                    .alpha(if (enabled) 1f else 0.38f)
+                    .heightIn(min = 36.dp)
+                    .widthIn(min = 62.dp)
+                    .clip(shape)
+                    .background(if (checked) c.keyOn else c.keyOff)
+                    .border(1.dp, if (checked) c.keyOnEdge else c.keyOff, shape)
+                    .keyLip(c.glow)
+                    .padding(start = 10.dp, end = 10.dp, bottom = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (checked) Led(c.keyLed, size = 6.dp)
+                Text(
+                    if (checked) "ON" else "OFF",
+                    fontFamily = LookFonts.engraved,
+                    fontSize = 13.sp,
+                    color = if (checked) c.keyOnInk else c.keyOffInk,
+                    maxLines = 1,
+                )
+            }
+        }
+        Look.MULTITRACK -> {
+            val c = multitrackColors()
+            val shape = RoundedCornerShape(4.dp)
+            Row(
+                Modifier
+                    .clearAndSetSemantics { }
+                    .alpha(if (enabled) 1f else 0.38f)
+                    .heightIn(min = 32.dp)
+                    .widthIn(min = 58.dp)
+                    .clip(shape)
+                    .background(if (checked) c.ledOn.copy(alpha = 0.14f) else Color.Transparent)
+                    .border(1.dp, if (checked) c.ledOn else c.faint, shape)
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Led(if (checked) c.ledOn else c.ledOff, size = 7.dp, glow = checked)
+                Text(
+                    if (checked) "ON" else "OFF",
+                    fontFamily = LookFonts.mono,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.06.em,
+                    color = if (checked) c.text else c.muted,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** The mark, for the tests to find: it is silent to a screen reader. */
+internal fun markTag(mark: HeaderMark) = "mark-${mark.label}-${if (mark.lit) "lit" else "dark"}"
+
+/**
+ * The header's mark for a row's setting, where its icon would be, so
+ * Settings says what each mark in the header is (headerMark decides both):
+ * Deck's on a small LCD, as its LCD shows it - lit, or dim where the header
+ * leaves it out; Multitrack's LED with its label, lit or dark, as its LEDs
+ * are; Memo's icon from its header's line, lit in the play green.
+ *
+ * Drawn at the normal text size, to fit the icon's width: it is a picture of
+ * the header's mark, and the row's name and summary say it in words, at any
+ * size. Silent to a screen reader for the same reason - "ANS" read out after
+ * "Answering machine" would say it twice, the second time in code.
+ */
+@Composable
+internal fun SettingsMark(mark: HeaderMark) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(density.density, 1f)) {
+        Box(Modifier.clearAndSetSemantics { testTag = markTag(mark) }, contentAlignment = Alignment.Center) {
+            when (LocalLook.current) {
+                Look.MEMO -> MemoMark(mark)
+                Look.DECK -> DeckMark(mark)
+                Look.MULTITRACK -> MultitrackMark(mark)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoMark(mark: HeaderMark) {
+    val c = memoColors()
+    val scheme = MaterialTheme.colorScheme
+    val tint = if (mark.lit) c.lengthInk else scheme.onSurfaceVariant
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (mark.lit) c.lengthPill else scheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center,
+    ) {
+        // The icons of the header's line: its dot for the mode, then the
+        // answering machine's, a messenger's and the bin's.
+        when (mark.setting) {
+            Marked.MODE -> Led(tint, size = 10.dp, glow = false)
+            Marked.ANSWERING -> Icon(messageIcon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+            Marked.MESSENGERS -> Icon(SettingsIcons.Chat, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+            Marked.AUTO_DELETE -> Icon(Icons.Filled.Delete, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun DeckMark(mark: HeaderMark) {
+    val c = deckColors()
+    val ink = if (mark.lit) c.ink else c.inkOff
+    val glow = if (mark.lit && c.glow) Shadow(ink.copy(alpha = 0.55f), blurRadius = 10f) else null
+    val shape = RoundedCornerShape(4.dp)
+    Box(
+        Modifier
+            .height(26.dp)
+            .widthIn(min = 40.dp)
+            .clip(shape)
+            .background(if (mark.lit) c.lcd else c.lcdOff)
+            .border(1.dp, c.bezel, shape)
+            .padding(horizontal = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            mark.label,
+            fontFamily = LookFonts.engraved,
+            fontSize = 9.sp,
+            color = ink,
+            style = TextStyle(shadow = glow),
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.border(1.dp, ink, RoundedCornerShape(2.dp)).padding(horizontal = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun MultitrackMark(mark: HeaderMark) {
+    val c = multitrackColors()
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Led(if (mark.lit) c.ledOn else c.ledOff, size = 7.dp, glow = mark.lit)
+        Text(
+            mark.label,
+            fontFamily = LookFonts.mono,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.02.em,
+            color = if (mark.lit) c.soft else c.faint,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
 }
 
 /**

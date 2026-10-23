@@ -1,21 +1,24 @@
 package com.jemcik.jemrec.capture
 
-import java.util.Calendar
-
-/** The time presets shown as chips above the list: All / Today / This week.
- *  These are mutually exclusive - a recording is in one time range - and pick
- *  the WHEN. Favourites (WHO) and Kept (marked to keep) are separate axes,
- *  each on its own toggle. */
-enum class RecordingFilter { ALL, TODAY, THIS_WEEK }
+/** The source a list can be narrowed to besides a messenger's tag: a phone
+ *  call - one with no messenger in its name. */
+const val PHONE_SOURCE = "phone"
 
 /**
- * Apply the search text, the time preset, and the favourites and kept toggles
- * to a list.
+ * Apply the search text, and the favourites, kept, messages and source
+ * chips, to a list. Each is its own question - who the call was with, what
+ * was kept, how the call came - so they combine: each ANDs on top of the
+ * others. There is no time preset: Today and This week went (the user,
+ * 2026-10-23) - the list is newest first under Today, Yesterday and Earlier,
+ * which says what they did without hiding the rest.
  *
- * The time preset and favourites are different questions - WHEN a call was and
- * WHO it was with - so they combine rather than compete: favouritesOnly ANDs on
- * top of whatever time range is chosen. "Favourite calls this week" is a thing
- * a person reasonably wants to narrow to.
+ * [sources], when any are set, are the ways a call may have come:
+ * [PHONE_SOURCE], or messengers' tags ("whatsapp") - any of them. Chips of
+ * one kind widen the list, chips of different kinds narrow it: WhatsApp and
+ * Telegram and favourites is favourites' calls on either app. They were one
+ * at a time, copied from the time presets, where picking one replaced the
+ * other; a call comes one way only, so a second source can only widen (the
+ * user asked why they excluded each other, 2026-10-23).
  *
  * Shared by the list (what to show) and select-all (what "all" means now), so
  * the two can never disagree about which rows are on screen. Pure and cheap;
@@ -24,39 +27,24 @@ enum class RecordingFilter { ALL, TODAY, THIS_WEEK }
 fun filterRecordings(
     recordings: List<Recording>,
     query: String,
-    filter: RecordingFilter,
     favoritesOnly: Boolean,
     keptOnly: Boolean = false,
     messagesOnly: Boolean = false,
+    sources: Set<String> = emptySet(),
 ): List<Recording> {
     val q = query.trim()
-    val now = System.currentTimeMillis()
     return recordings.filter { r ->
-        val passesTime = when (filter) {
-            RecordingFilter.ALL -> true
-            RecordingFilter.TODAY -> r.startedAtMillis?.let { sameDay(it, now) } ?: false
-            RecordingFilter.THIS_WEEK -> r.startedAtMillis?.let { withinDays(it, now, 7) } ?: false
-        }
         val passesFavorite = !favoritesOnly || r.callerFavorite
         val passesKept = !keptOnly || r.kept
         val passesMessage = !messagesOnly || r.message
+        val passesSource = sources.isEmpty() || sourceOf(r) in sources
         val passesQuery = q.isEmpty() ||
             r.caller?.contains(q, ignoreCase = true) == true ||
             r.number?.contains(q) == true ||
             r.whenLabel.contains(q, ignoreCase = true)
-        passesTime && passesFavorite && passesKept && passesMessage && passesQuery
+        passesFavorite && passesKept && passesMessage && passesSource && passesQuery
     }
 }
 
-private fun sameDay(a: Long, b: Long): Boolean {
-    val ca = Calendar.getInstance().apply { timeInMillis = a }
-    val cb = Calendar.getInstance().apply { timeInMillis = b }
-    return ca.get(Calendar.YEAR) == cb.get(Calendar.YEAR) &&
-        ca.get(Calendar.DAY_OF_YEAR) == cb.get(Calendar.DAY_OF_YEAR)
-}
-
-/** A rolling window: within the last N days, and not in the future. */
-private fun withinDays(at: Long, now: Long, days: Int): Boolean {
-    val ago = now - days.toLong() * 24 * 60 * 60 * 1000
-    return at in ago..now
-}
+/** How [recording]'s call came: a messenger's tag, or [PHONE_SOURCE]. */
+fun sourceOf(recording: Recording): String = recording.parsedName?.app ?: PHONE_SOURCE

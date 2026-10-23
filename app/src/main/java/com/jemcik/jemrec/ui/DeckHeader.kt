@@ -30,10 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -222,15 +219,7 @@ private fun DeckTabs(state: UiState, c: DeckColors, modifier: Modifier, onSelect
                     .clip(shape)
                     .background(if (on) c.keyOn else c.keyOff)
                     .border(1.dp, if (on) c.keyOnEdge else c.keyOff, shape)
-                    // The key's lower lip.
-                    .drawBehind {
-                        val lip = 3.dp.toPx()
-                        drawRect(
-                            Color.Black.copy(alpha = if (c.glow) 0.35f else 0.10f),
-                            topLeft = Offset(0f, size.height - lip),
-                            size = Size(size.width, lip),
-                        )
-                    }
+                    .keyLip(c.glow)
                     .selectable(selected = on, role = Role.Tab) { if (!on) onSelect(tab) },
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,

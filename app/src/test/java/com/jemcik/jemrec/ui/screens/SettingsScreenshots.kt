@@ -34,7 +34,8 @@ class SettingsScreenshots : ScreenTest() {
         show(fontScale, look) { AppScaffold(shown, viewModel(shown)) }
     }
 
-    // Settings > Theme: the three looks as pictures, and light or dark.
+    // Settings > Theme: the home screen in the look picked, drawn by its own
+    // parts, the looks and light or dark under it - each look once.
 
     @Test fun theme() {
         settings(Fixtures.ready().copy(screen = Screen.THEME))
@@ -43,10 +44,16 @@ class SettingsScreenshots : ScreenTest() {
 
     @Config(qualifiers = "+night")
     @Test fun themeDeckDark() {
-        // Deck chosen: the whole screen is Deck's, and so are the pictures.
+        // Deck chosen: the whole screen is Deck's, and so is the preview.
         val deck = LookChoice(Look.DECK)
         settings(Fixtures.ready().copy(screen = Screen.THEME, look = Look.DECK), look = deck)
         snap("theme-deck-dark")
+    }
+
+    @Test fun themeMultitrack() {
+        val multitrack = LookChoice(Look.MULTITRACK)
+        settings(Fixtures.ready().copy(screen = Screen.THEME, look = Look.MULTITRACK), look = multitrack)
+        snap("theme-multitrack")
     }
 
     @Test fun themeLargeText() {
@@ -67,6 +74,21 @@ class SettingsScreenshots : ScreenTest() {
     @Test fun overviewMultitrackDark() {
         settings(Fixtures.ready().copy(look = Look.MULTITRACK), look = LookChoice(Look.MULTITRACK))
         snap("settings-multitrack-dark")
+    }
+
+    // Each look in light and dark: Deck dark (the user's own) and
+    // Multitrack light, beside Memo's two above and the two over these.
+
+    @Config(qualifiers = "+h1500dp-night")
+    @Test fun overviewDeckDark() {
+        settings(Fixtures.ready().copy(look = Look.DECK), look = LookChoice(Look.DECK))
+        snap("settings-deck-dark")
+    }
+
+    @Config(qualifiers = "+h1500dp")
+    @Test fun overviewMultitrack() {
+        settings(Fixtures.ready().copy(look = Look.MULTITRACK), look = LookChoice(Look.MULTITRACK))
+        snap("settings-multitrack")
     }
 
     // The whole overview, so the screen is taller than a phone's.

@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui.screens
 
 import com.jemcik.jemrec.capture.Waveforms
 import com.jemcik.jemrec.ui.AnswerUi
+import com.jemcik.jemrec.ui.CallsNarrowing
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.HomeTab
@@ -145,6 +146,22 @@ class HomeScreenshots : ScreenTest() {
     @Test fun calls() {
         home(Fixtures.ready().copy(homeTab = HomeTab.CALLS))
         snap("calls")
+    }
+
+    @Test fun deckCalls() {
+        home(Fixtures.ready().copy(homeTab = HomeTab.CALLS), look = deck)
+        snap("deck-calls")
+    }
+
+    @Test fun multitrackCalls() {
+        home(Fixtures.ready().copy(homeTab = HomeTab.CALLS), look = multitrack)
+        snap("multitrack-calls")
+    }
+
+    /** The Calls tab's own chip on: the calls that were not recorded. */
+    @Test fun callsNotRecorded() {
+        home(Fixtures.ready().copy(homeTab = HomeTab.CALLS, callsNarrowing = CallsNarrowing(notRecorded = true)))
+        snap("calls-not-recorded")
     }
 
     @Test fun callsLargeText() {

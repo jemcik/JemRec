@@ -165,7 +165,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
 
     Column {
         SettingsGroup {
-            row { shape ->
+            row {
                 val blocked = a.blocked
                 val paused = a.paused
                 SwitchRow(
@@ -182,23 +182,23 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     icon = SettingsIcons.Voicemail,
+                    // ANS, as on the Settings row that leads here.
+                    mark = headerMark(Marked.ANSWERING, marks(state, a.enabled), recorderStatus(state)),
                     checked = a.enabled,
                     enabled = a.enabled || blocked == null,
                     onCheckedChange = vm.answer::setEnabled,
-                    shape = shape,
                 )
             }
             // A day after a call to an emergency number it stands down, so a
             // callback rings on (EmergencyPause). Ending that early is the
             // user's to choose, warned.
             if (a.paused != null) {
-                row { shape ->
+                row {
                     SettingsRow(
                         title = "Answer again now",
                         summary = "It stands down for a day after you call an emergency number",
                         icon = Icons.Filled.Warning,
                         onClick = { dialog = AnswerDialog.RESUME },
-                        shape = shape,
                     )
                 }
             }
@@ -209,7 +209,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
             note = "It answers only the callers JemRec records: Whose calls to keep, in " +
                 "Settings, applies here too.",
         ) {
-            row { shape ->
+            row {
                 SettingsRow(
                     title = "Answer after",
                     summary = "${a.delay} seconds" + (a.carrierSeconds?.takeIf { it <= a.delay }
@@ -221,20 +221,18 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                     },
                     icon = SettingsIcons.Timer,
                     onClick = { dialog = AnswerDialog.DELAY },
-                    shape = shape,
                 )
             }
-            row { shape ->
+            row {
                 SettingsRow(
                     title = "With Do Not Disturb on",
                     summary = if (a.dndShort) "After 2 rings" else "The same delay",
                     icon = Icons.Filled.Notifications,
                     onClick = { dialog = AnswerDialog.DND },
-                    shape = shape,
                 )
             }
             if (a.sims.size >= 2) {
-                row { shape ->
+                row {
                     SettingsRow(
                         title = "Answer on",
                         summary = when (a.sim) {
@@ -244,11 +242,10 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                         },
                         icon = Icons.Filled.Call,
                         onClick = { dialog = AnswerDialog.SIM },
-                        shape = shape,
                     )
                 }
             }
-            row { shape ->
+            row {
                 SettingsRow(
                     title = "Longest message",
                     summary = if (a.longest == AnsweringMachine.NO_LIMIT) {
@@ -258,13 +255,12 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                     },
                     icon = SettingsIcons.Timer,
                     onClick = { dialog = AnswerDialog.LONGEST },
-                    shape = shape,
                 )
             }
         }
 
         SettingsGroup("Greeting") {
-            row { shape ->
+            row {
                 SettingsRow(
                     title = when {
                         a.recordingTake -> "Recording your greeting"
@@ -286,7 +282,6 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                     },
                     icon = if (a.recordingTake) SettingsIcons.Mic else Icons.Filled.PlayArrow,
                     onClick = if (a.greetingSeconds != null && !a.recordingTake) vm.answer::togglePreview else null,
-                    shape = shape,
                 )
             }
         }
@@ -316,7 +311,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
         if (a.recordingTake) TakeTimer(a.takeStartedAt)
 
         SettingsGroup("Test on this phone") {
-            row { shape ->
+            row {
                 val stage = a.stageOne
                 SettingsRow(
                     title = "Checks",
@@ -334,10 +329,9 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                     icon = Icons.Filled.Build,
                     onClick = vm.answer::runChecks,
                     enabled = !a.checking && state.daemonRunning,
-                    shape = shape,
                 )
             }
-            row { shape ->
+            row {
                 SettingsRow(
                     title = "Test call",
                     summary = when (a.test) {
@@ -352,10 +346,9 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                     icon = Icons.Filled.Call,
                     onClick = if (a.test == null) ({ dialog = AnswerDialog.TEST }) else null,
                     enabled = a.stageOne?.possible == true && a.greetingSeconds != null && state.daemonRunning,
-                    shape = shape,
                 )
             }
-            row { shape ->
+            row {
                 SettingsRow(
                     title = "Carrier voicemail",
                     summary = when {
@@ -368,16 +361,14 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                     icon = SettingsIcons.Voicemail,
                     onClick = { dialog = AnswerDialog.CARRIER },
                     enabled = state.daemonRunning,
-                    shape = shape,
                 )
             }
-            row { shape ->
+            row {
                 SettingsRow(
                     title = "Copy a report",
                     summary = "This phone and what the tests found, to paste into a report on GitHub",
                     icon = Icons.Filled.Share,
                     onClick = { haptics.tap(); vm.answer.copyReport() },
-                    shape = shape,
                 )
             }
         }

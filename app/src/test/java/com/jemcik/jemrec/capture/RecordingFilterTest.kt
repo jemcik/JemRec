@@ -2,7 +2,6 @@ package com.jemcik.jemrec.capture
 
 import android.net.Uri
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 import org.mockito.Mockito
 import java.util.Calendar
@@ -40,49 +39,29 @@ class RecordingFilterTest {
 
     @Test fun allKeepsEverythingInOrder() {
         val list = listOf(rec(now), rec(now - day), rec(null))
-        assertEquals(list.names(), filterRecordings(list, "", RecordingFilter.ALL, false).names())
+        assertEquals(list.names(), filterRecordings(list, "", false).names())
     }
 
-    @Test fun todayKeepsOnlyTodaysCalls() {
-        val today = rec(now)
-        val list = listOf(today, rec(now - day), rec(now + day), rec(null))
-        assertEquals(listOf(today.name), filterRecordings(list, "", RecordingFilter.TODAY, false).names())
-    }
-
-    @Test fun thisWeekIsARollingWindowThatExcludesTheFuture() {
-        val recent = rec(now - 6 * day)
-        val list = listOf(rec(now + day), recent, rec(now - 8 * day), rec(null))
-        assertEquals(listOf(recent.name), filterRecordings(list, "", RecordingFilter.THIS_WEEK, false).names())
-    }
-
-    @Test fun unparseableNamesNeverPassATimePreset() {
-        assertNull(rec(null).startedAtMillis)
-        val list = listOf(rec(null))
-        assertEquals(emptyList<String>(), filterRecordings(list, "", RecordingFilter.TODAY, false).names())
-        assertEquals(emptyList<String>(), filterRecordings(list, "", RecordingFilter.THIS_WEEK, false).names())
-        assertEquals(list.names(), filterRecordings(list, "", RecordingFilter.ALL, false).names())
-    }
-
-    @Test fun favouritesNarrowOnTopOfTheTimeRange() {
-        val favToday = rec(now, caller = "Alice", favorite = true)
-        val list = listOf(favToday, rec(now, caller = "Bob"), rec(now - day, caller = "Carol", favorite = true))
-        assertEquals(listOf(favToday.name), filterRecordings(list, "", RecordingFilter.TODAY, true).names())
-        assertEquals(2, filterRecordings(list, "", RecordingFilter.ALL, true).size)
+    @Test fun favouritesNarrowToStarredContacts() {
+        val alice = rec(now, caller = "Alice", favorite = true)
+        val list = listOf(alice, rec(now, caller = "Bob"))
+        assertEquals(listOf(alice.name), filterRecordings(list, "", true).names())
+        assertEquals(2, filterRecordings(list, "", false).size)
     }
 
     @Test fun queryMatchesCallerCaseInsensitivelyAndIsTrimmed() {
         val alice = rec(caller = "Alice Smith")
         val list = listOf(alice, rec(caller = "Bob"))
-        assertEquals(listOf(alice.name), filterRecordings(list, "  alice ", RecordingFilter.ALL, false).names())
+        assertEquals(listOf(alice.name), filterRecordings(list, "  alice ", false).names())
     }
 
     @Test fun queryMatchesNumberAndWhenLabelButNumberIsNotNormalised() {
         val withNumber = rec(caller = "Alice", number = "+380501234567", whenLabel = "Today 16:53")
         val list = listOf(withNumber, rec(caller = "Bob", whenLabel = "3 Sep, 09:10"))
-        assertEquals(listOf(withNumber.name), filterRecordings(list, "0501", RecordingFilter.ALL, false).names())
-        assertEquals(listOf(withNumber.name), filterRecordings(list, "today", RecordingFilter.ALL, false).names())
+        assertEquals(listOf(withNumber.name), filterRecordings(list, "0501", false).names())
+        assertEquals(listOf(withNumber.name), filterRecordings(list, "today", false).names())
         // Digits with a space in between do not match: search is a raw substring.
-        assertEquals(emptyList<String>(), filterRecordings(list, "380 50", RecordingFilter.ALL, false).names())
+        assertEquals(emptyList<String>(), filterRecordings(list, "380 50", false).names())
     }
 
     @Test fun nameForAndStartedAtMillisAgree() {
@@ -115,8 +94,8 @@ class KeptFilterTest {
 
     @Test fun keptOnlyShowsOnlyKept() {
         val list = listOf(rec("a", kept = true), rec("b", kept = false))
-        assertEquals(listOf("a"), filterRecordings(list, "", RecordingFilter.ALL, false, keptOnly = true).map { it.name })
-        assertEquals(listOf("a", "b"), filterRecordings(list, "", RecordingFilter.ALL, false, keptOnly = false).map { it.name })
+        assertEquals(listOf("a"), filterRecordings(list, "", false, keptOnly = true).map { it.name })
+        assertEquals(listOf("a", "b"), filterRecordings(list, "", false, keptOnly = false).map { it.name })
     }
 
     @Test fun keptAndFavouritesNarrowTogether() {
@@ -125,6 +104,23 @@ class KeptFilterTest {
             rec("kept", kept = true),
             rec("favourite", kept = false, favorite = true),
         )
-        assertEquals(listOf("both"), filterRecordings(list, "", RecordingFilter.ALL, true, keptOnly = true).map { it.name })
+        assertEquals(listOf("both"), filterRecordings(list, "", true, keptOnly = true).map { it.name })
+    }
+
+    @Test fun aSourceLeavesOnlyTheCallsThatCameThatWayAndSourcesCombine() {
+        // Named as the recorder names them: a messenger's tag after the
+        // direction; none for a phone call.
+        val whatsapp = rec("20261021_152400_out_whatsapp.ogg", kept = false)
+        val telegram = rec("20261021_141000_in_telegram.ogg", kept = false)
+        val phone = rec("20261021_101100_in.ogg", kept = false)
+        val list = listOf(whatsapp, telegram, phone)
+        fun names(vararg sources: String) = filterRecordings(list, "", false, sources = sources.toSet()).map { it.name }
+        assertEquals(listOf(whatsapp.name), names("whatsapp"))
+        assertEquals(listOf(phone.name), names(PHONE_SOURCE))
+        // Two sources: calls that came either way - a second can only widen.
+        assertEquals(listOf(whatsapp.name, telegram.name), names("whatsapp", "telegram"))
+        assertEquals(list.map { it.name }, names())
+        // Still narrowed by the other chips: none of these is kept.
+        assertEquals(emptyList<String>(), filterRecordings(list, "", false, keptOnly = true, sources = setOf("whatsapp", "telegram")))
     }
 }
