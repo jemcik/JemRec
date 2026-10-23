@@ -677,7 +677,11 @@ out on the day you need the call. So JemRec says so, in four notifications.
   seconds of Wi-Fi, or Android has not allowed Wireless debugging on this Wi-Fi
   (with *Allow this Wi-Fi*), or it cannot connect and the pairing is probably
   gone (with *Pair again*), or it could not start. It goes away when the
-  recorder is back.
+  recorder is back. The home screen's header says the same at once, each cause
+  with its own line, and only off Wi-Fi does it say to join one. A pairing
+  turned away twice in a row sends home to setup's pairing step instead, which
+  says why: through 0.19 the header told the user to join a Wi-Fi they were on,
+  their pairing deleted (the Honor, 2026-10-24).
 - **A call was not recorded** - in automatic mode, with call-log access, the
   call log is held against what was recorded, and an answered call with nothing
   to show for it is reported once. Recordings you delete do not count as missed:

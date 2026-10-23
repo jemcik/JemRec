@@ -183,18 +183,26 @@ internal fun Modifier.recordToggle(state: UiState, vm: MainViewModel): Modifier 
         .semantics { contentDescription = "Record calls" }
 }
 
-/** The tap that asks Android to allow this Wi-Fi, in every look's header:
- *  written three times, the copies had drifted - Deck's and Multitrack's
- *  lost the old header's haptic, Memo's had no label for TalkBack. Taken
- *  while busy too, as the record control's is (allowThisWifi): the words
- *  show while the recorder is down, when each opening's check is busiest,
- *  and a tap then did nothing, the words looking as tappable as ever. */
+/** The tap an instruction is, in every look's header - none for one that
+ *  is not (Instruction.tap): asking Android to allow this Wi-Fi, pairing
+ *  again, starting the recorder again. Written three times, the Wi-Fi copies
+ *  had drifted - Deck's and Multitrack's lost the old header's haptic,
+ *  Memo's had no label for TalkBack. Taken while busy too, as the record
+ *  control's is (allowThisWifi): the words show while the recorder is down,
+ *  when each opening's check is busiest, and a tap then did nothing, the
+ *  words looking as tappable as ever. */
 @Composable
-internal fun Modifier.allowWifiTap(vm: MainViewModel): Modifier {
+internal fun Modifier.instructionTap(vm: MainViewModel, instruction: Instruction?): Modifier {
+    val label = instruction?.tap ?: return this
     val haptics = LocalHapticFeedback.current
-    return clickable(onClickLabel = "Allow this Wi-Fi") {
+    return clickable(onClickLabel = label) {
         haptics.tap()
-        vm.allowThisWifi()
+        when (instruction) {
+            Instruction.ALLOW_WIFI -> vm.allowThisWifi()
+            Instruction.PAIR_AGAIN -> vm.pairAgain()
+            Instruction.START_AGAIN -> vm.startAgain()
+            Instruction.SWITCH_ON, Instruction.JOIN_WIFI -> Unit
+        }
     }
 }
 

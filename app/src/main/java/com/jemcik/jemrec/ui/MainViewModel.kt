@@ -70,6 +70,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -170,6 +172,19 @@ data class UiState(
      * instead of telling someone already on Wi-Fi to join one.
      */
     val networkNotAllowed: Boolean = false,
+    /**
+     * The recorder is down because Wireless debugging turns JemRec away, twice
+     * in a row - a deleted pairing (RecorderHealth.CANNOT_CONNECT): home gives
+     * way to setup's pairing step. Through 0.19 the header said "Join any Wi-Fi"
+     * for it, with the phone on Wi-Fi (the user, on the Honor, 2026-10-24).
+     */
+    val pairingRefused: Boolean = false,
+    /** Whether the phone is on Wi-Fi, the one network the recorder can come
+     *  back on (NetworkRevive.onWifi). */
+    val onWifi: Boolean = true,
+    /** Setup is on its pairing step because Wireless debugging turned JemRec
+     *  away (pairAgain): the step says so, as nobody chose to set up again. */
+    val pairingLost: Boolean = false,
     /**
      * Whether JemRec's notifications are off, or the pairing channel muted, so
      * the pairing code would have nowhere to appear. Only read on the pairing
@@ -465,7 +480,7 @@ class MainViewModel @JvmOverloads constructor(
         // is how the daemon learns automatic vs ask-first after a plain reopen.
         pushDaemonMode()
         val step = Setup.currentStep(getApplication())
-        _state.update { it.copy(step = step) }
+        _state.update { it.copy(step = step, pairingLost = it.pairingLost && step != SetupStep.READY) }
 
         // THE REPLY FIELD HAS TO BE THERE BEFORE THE USER NEEDS IT.
         //
@@ -527,6 +542,49 @@ class MainViewModel @JvmOverloads constructor(
     fun onWifiAvailable() {
         val s = _state.value
         if (s.step == SetupStep.READY && s.enabled && !s.daemonRunning) reviveInBackground()
+    }
+
+    /** The header's Tap to start again: the recorder down on Wi-Fi, for a
+     *  reason the last revive could not name - started again now, rather
+     *  than at the keep-alive's next turn. */
+    fun startAgain() = onWifiAvailable()
+
+    private var pairingWatch: Job? = null
+
+    /**
+     * The pairing refused, home in view: setup's pairing step, which says why
+     * (pairingLostOnHome). Watched, not checked at a refresh: the refusal that
+     * settles it comes from a revive, whose refresh ran while the header still
+     * read Starting, and the header was left saying Tap to pair again (on the
+     * Honor, 2026-10-24). From the screen's first showing, as only then does
+     * the step matter. Wrong, and setup's next look connects and finishes by
+     * itself (Setup.forgetPairing).
+     */
+    private fun watchPairing() {
+        if (pairingWatch != null) return
+        pairingWatch = viewModelScope.launch {
+            _state.map(::pairingLostOnHome).distinctUntilChanged().collect { lost -> if (lost) pairAgain() }
+        }
+    }
+
+    /**
+     * Pair again: from the header, and from the recorder-down alert. Wireless
+     * debugging is there and turns JemRec away, which is what a deleted
+     * pairing looks like (RecorderHealth.CANNOT_CONNECT); setup opens on the
+     * pairing step. If the pairing was fine after all, setup's next look
+     * connects and finishes by itself (Setup.forgetPairing).
+     */
+    fun pairAgain() {
+        Setup.forgetPairing(getApplication())
+        RecorderHealth.pairingAgain(getApplication())
+        // Refused no longer, until a revive says so again: kept, setup back on
+        // READY by itself - the pairing fine after all - was sent straight
+        // back here.
+        _state.update { it.copy(screen = Screen.HOME, pairingLost = true, pairingRefused = false) }
+        viewModelScope.launch {
+            _state.first { !it.busy }
+            refreshSetup()
+        }
     }
 
     private fun reviveInBackground() {
@@ -808,12 +866,7 @@ class MainViewModel @JvmOverloads constructor(
                     _state.first { !it.busy }
                     allowThisWifi()
                 }
-                DeepLink.Kind.PAIR_AGAIN -> {
-                    Setup.forgetPairing(app)
-                    _state.update { it.copy(screen = Screen.HOME) }
-                    _state.first { !it.busy }
-                    refreshSetup()
-                }
+                DeepLink.Kind.PAIR_AGAIN -> pairAgain()
             }
         }
     }
@@ -1103,8 +1156,9 @@ class MainViewModel @JvmOverloads constructor(
                 wirelessDebuggingOn = Setup.wirelessDebuggingOn(app),
                 usbDebugging = Setup.usbDebugging(app),
                 developerOptionsHidden = Setup.developerOptionsHidden(app),
-                networkNotAllowed =
-                    RecorderHealth.cause(app) == RecorderHealth.Problem.NETWORK_NOT_ALLOWED,
+                networkNotAllowed = RecorderHealth.cause(app) == RecorderHealth.Problem.NETWORK_NOT_ALLOWED,
+                pairingRefused = RecorderHealth.cause(app) == RecorderHealth.Problem.CANNOT_CONNECT,
+                onWifi = NetworkRevive.onWifi(app),
                 pairingNotificationsBlocked = PairingNotification.blocked(app),
                 folder = RecordingStore.describe(app),
                 usingDefaultFolder = RecordingStore.treeUri(app) == null,
@@ -1156,6 +1210,8 @@ class MainViewModel @JvmOverloads constructor(
                 usbDebugging = snapshot.usbDebugging,
                 developerOptionsHidden = snapshot.developerOptionsHidden,
                 networkNotAllowed = snapshot.networkNotAllowed,
+                pairingRefused = snapshot.pairingRefused,
+                onWifi = snapshot.onWifi,
                 pairingNotificationsBlocked = snapshot.pairingNotificationsBlocked,
                 folder = snapshot.folder,
                 usingDefaultFolder = snapshot.usingDefaultFolder,
@@ -1288,6 +1344,8 @@ class MainViewModel @JvmOverloads constructor(
         val usbDebugging: GlobalSettings.Reading,
         val developerOptionsHidden: Boolean,
         val networkNotAllowed: Boolean,
+        val pairingRefused: Boolean,
+        val onWifi: Boolean,
         val pairingNotificationsBlocked: Boolean,
         val folder: String,
         val usingDefaultFolder: Boolean,
@@ -1552,6 +1610,7 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun screenShown() {
         screenUp = true
+        watchPairing()
         if (controller != null) showPlayback() else if (PlaybackService.running) withController { }
     }
 

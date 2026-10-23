@@ -106,11 +106,11 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
                 ) {
                     if (instruction == null) {
                         MemoMarks(c, marks)
-                    } else if (instruction == Instruction.ALLOW_WIFI) {
+                    } else if (instruction.tap != null) {
                         MemoSmall(
                             memoWords(instruction),
                             MaterialTheme.colorScheme.primary,
-                            Modifier.allowWifiTap(vm),
+                            Modifier.instructionTap(vm, instruction),
                         )
                     } else {
                         MemoSmall(memoWords(instruction), c.idle)
@@ -132,6 +132,8 @@ private fun memoWords(instruction: Instruction): String = when (instruction) {
     // Short enough for one line on the Honor: "Join any Wi-Fi - it resumes
     // on its own" took two there, and its line kept room for both.
     Instruction.JOIN_WIFI -> "Join any Wi-Fi to resume"
+    Instruction.PAIR_AGAIN -> "Tap to pair again"
+    Instruction.START_AGAIN -> "Tap to start it again"
 }
 
 /** The state: shrunk to fit one line, unless not [fitted] - the full size,

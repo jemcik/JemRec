@@ -143,8 +143,14 @@ class HomeScreenshots : ScreenTest() {
     }
 
     @Test fun cannotRecord() {
-        home(Fixtures.ready().copy(daemonRunning = false))
+        home(Fixtures.ready().copy(daemonRunning = false, onWifi = false))
         snap("home-cannot-record")
+    }
+
+    @Test fun cannotRecordOnWifi() {
+        // On Wi-Fi, for no reason a revive has named yet: a tap starts it again.
+        home(Fixtures.ready().copy(daemonRunning = false))
+        snap("home-start-again")
     }
 
     @Test fun wifiNotAllowed() {
@@ -281,7 +287,7 @@ class HomeScreenshots : ScreenTest() {
     }
 
     @Test fun multitrackCannotRecord() {
-        home(Fixtures.ready().copy(daemonRunning = false), look = multitrack)
+        home(Fixtures.ready().copy(daemonRunning = false, onWifi = false), look = multitrack)
         snap("multitrack-cannot-record")
     }
 

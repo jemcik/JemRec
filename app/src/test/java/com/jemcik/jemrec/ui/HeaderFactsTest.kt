@@ -83,10 +83,41 @@ class HeaderFactsTest {
 
     @Test fun theRecorderDownSaysWhatToDo() {
         val none = Marks(true, false, false, 0)
-        assertTrue(headerSpeech(ready.copy(daemonRunning = false), none).startsWith("Cannot record. Join any Wi-Fi"))
+        val down = ready.copy(daemonRunning = false)
+        assertTrue(headerSpeech(down.copy(onWifi = false), none).startsWith("Cannot record. Join any Wi-Fi"))
         assertTrue(
-            headerSpeech(ready.copy(daemonRunning = false, networkNotAllowed = true), none)
+            headerSpeech(down.copy(networkNotAllowed = true), none)
                 .startsWith("Cannot record. Android has not allowed this Wi-Fi."),
         )
+        assertTrue(headerSpeech(down.copy(pairingRefused = true), none).startsWith("Cannot record. Wireless debugging turns JemRec away"))
+        assertTrue(headerSpeech(down, none).startsWith("Cannot record. The recorder did not start"))
+    }
+
+    @Test fun onWifiTheRecorderDownIsNeverToldToJoinOne() {
+        // The Honor, 2026-10-24: on Wi-Fi, its pairing deleted, the header
+        // said "Join any Wi-Fi to resume".
+        val down = ready.copy(daemonRunning = false)
+        assertEquals(Instruction.PAIR_AGAIN, instruction(down.copy(pairingRefused = true)))
+        assertEquals(Instruction.START_AGAIN, instruction(down))
+        assertEquals(Instruction.ALLOW_WIFI, instruction(down.copy(networkNotAllowed = true)))
+        // Off Wi-Fi, Wi-Fi is what brings it back, whatever else is wrong.
+        assertEquals(Instruction.JOIN_WIFI, instruction(down.copy(onWifi = false, pairingRefused = true)))
+        assertEquals(Instruction.JOIN_WIFI, instruction(down.copy(onWifi = false, networkNotAllowed = true)))
+    }
+
+    @Test fun everyInstructionThatIsATapSaysWhatItDoes() {
+        assertEquals(setOf(Instruction.ALLOW_WIFI, Instruction.PAIR_AGAIN, Instruction.START_AGAIN), Instruction.entries.filter { it.tap != null }.toSet())
+    }
+
+    @Test fun homeGivesWayToPairingOnlyWhenThePairingIsRefusedOnWifi() {
+        val lost = ready.copy(step = SetupStep.READY, screen = Screen.HOME, daemonRunning = false, pairingRefused = true)
+        assertTrue(pairingLostOnHome(lost))
+        assertFalse(pairingLostOnHome(lost.copy(pairingRefused = false)))
+        assertFalse(pairingLostOnHome(lost.copy(onWifi = false)))
+        assertFalse(pairingLostOnHome(lost.copy(daemonRunning = true)))
+        assertFalse(pairingLostOnHome(lost.copy(starting = true)))
+        assertFalse(pairingLostOnHome(lost.copy(enabled = false)))
+        assertFalse(pairingLostOnHome(lost.copy(screen = Screen.SETTINGS)))
+        assertFalse(pairingLostOnHome(lost.copy(step = SetupStep.NEEDS_PAIRING)))
     }
 }

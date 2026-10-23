@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-631 JVM tests, no device needed - 529 for the app and 102 for the daemon:
+640 JVM tests, no device needed - 538 for the app and 102 for the daemon:
 
     ./gradlew test
 
@@ -86,7 +86,7 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.19):
+emulator, for each Android version it claims (12, 13 and 17 for 0.19.1):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 

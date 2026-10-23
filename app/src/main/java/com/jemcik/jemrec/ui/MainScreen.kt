@@ -372,10 +372,10 @@ internal fun headerAside(widthDp: Int, heightDp: Int): Boolean = heightDp < 480 
  *   word, from recorderStatus, auto-sized;
  * - "Recording every call" / "Asks before each call" under it: the AUTO or
  *   ASK mark (Deck, Multitrack) and Memo's first mark, its dot and words;
- * - "Tap to allow this Wi-Fi", a tap to Android's question, or "Join any
- *   Wi-Fi - it resumes on its own", when the recorder is down: each look's
- *   words for it (Instruction), and the same tap, haptic and label
- *   (allowWifiTap);
+ * - what brings the recorder back, when it is down: "Join any Wi-Fi",
+ *   or a tap - to Android's question for this Wi-Fi, to pairing again, to
+ *   starting it again - each look's words for it (Instruction), and the
+ *   same tap, haptic and label (instructionTap);
  * - the on/off switch: each record control (recordToggle). It was disabled
  *   while busy, which showed; the controls looked the same and dropped the
  *   tap, so now a tap while busy applies at once and the recorder follows

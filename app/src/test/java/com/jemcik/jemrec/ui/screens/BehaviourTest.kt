@@ -472,6 +472,51 @@ class BehaviourTest : ScreenTest() {
         ).assertIsEnabled()
     }
 
+    /** The pairing refused: every look's header offers to pair again, for the
+     *  moment before home gives way to the pairing step, and the tap opens
+     *  it. The view model's own state is not refused, so the tap is what
+     *  pairs again here, not its watch (homeGivesWayToThePairingStep). */
+    @Test fun memosHeaderPairsAgain() = headerPairsAgain(Look.MEMO)
+
+    @Test fun decksHeaderPairsAgain() = headerPairsAgain(Look.DECK)
+
+    @Test fun multitracksHeaderPairsAgain() = headerPairsAgain(Look.MULTITRACK)
+
+    private fun headerPairsAgain(look: Look) {
+        val app = RuntimeEnvironment.getApplication()
+        com.jemcik.jemrec.ui.Setup.markPaired(app)
+        val refused = Fixtures.ready().copy(daemonRunning = false, pairingRefused = true)
+        val vm = viewModel(Fixtures.ready())
+        show(look = LookChoice(look)) { AppScaffold(refused, vm) }
+        compose.onNode(
+            SemanticsMatcher("taps to pair again") { it.config.getOrNull(SemanticsActions.OnClick)?.label == "Pair again" },
+        ).performClick()
+        assertFalse(com.jemcik.jemrec.ui.Setup.hasPaired(app))
+        assertTrue(vm.state.value.pairingLost)
+    }
+
+    @Test fun homeGivesWayToThePairingStep() {
+        // Whatever changes the state to it, not one refresh: on the Honor
+        // (2026-10-24) the refusal that settled it came from a revive whose
+        // refresh still read Starting, and the header was left saying Tap to
+        // pair again. Here Settings, left for home.
+        val app = RuntimeEnvironment.getApplication()
+        com.jemcik.jemrec.ui.Setup.markPaired(app)
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS, daemonRunning = false, pairingRefused = true))
+        vm.screenShown() // as MainScreen does as it starts
+        assertTrue("left alone in Settings", com.jemcik.jemrec.ui.Setup.hasPaired(app))
+        vm.showScreen(Screen.HOME)
+        assertFalse(com.jemcik.jemrec.ui.Setup.hasPaired(app))
+        assertTrue(vm.state.value.pairingLost)
+        assertFalse(vm.state.value.pairingRefused)
+    }
+
+    @Test fun thePairingStepSaysWhyItIsBack() {
+        val lost = Fixtures.ready().copy(step = com.jemcik.jemrec.ui.SetupStep.NEEDS_PAIRING, pairingLost = true)
+        show { AppScaffold(lost, viewModel(lost)) }
+        compose.onNodeWithText("Wireless debugging no longer lets JemRec in", substring = true).assertIsDisplayed()
+    }
+
     /** Call waiting: two calls on the Calls tab share one recording, and
      *  playing it opens one player, under the topmost - each opened its own,
      *  two seek bars for one playback. */
@@ -732,8 +777,10 @@ class BehaviourTest : ScreenTest() {
             "ready" to { it },
             "starting" to { it.copy(starting = true, daemonRunning = false) },
             "off" to { it.copy(enabled = false) },
-            "cannot" to { it.copy(daemonRunning = false) },
+            "cannot" to { it.copy(daemonRunning = false, onWifi = false) },
             "asks for this Wi-Fi" to { it.copy(daemonRunning = false, networkNotAllowed = true) },
+            "asks to pair again" to { it.copy(daemonRunning = false, pairingRefused = true) },
+            "asks to start again" to { it.copy(daemonRunning = false) },
         )
         val vm = viewModel(ready, AnswerUi(enabled = true))
         var shown by mutableStateOf(ready)

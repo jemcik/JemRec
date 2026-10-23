@@ -1,0 +1,1 @@
+A deleted pairing no longer reads as missing Wi-Fi. When Wireless debugging turns JemRec away twice in a row, the home screen goes to setup's pairing step, which says why; your recordings and settings stay as they are. On Wi-Fi, a recorder that did not come back offers Tap to start it again, and only off Wi-Fi does the header say to join one.

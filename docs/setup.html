@@ -192,7 +192,9 @@
     <tr><td><strong>Ready to record</strong></td><td>A call would be recorded right now.</td></tr>
     <tr><td><strong>Recording call</strong></td><td>In the notification, during a call.</td></tr>
     <tr><td><strong>Cannot record, needs Wi-Fi</strong></td><td>Join any Wi-Fi and it resumes on its own. Usually a reboot, or a long stretch away from a network.</td></tr>
+    <tr><td><strong>Cannot record, tap to start it again</strong></td><td>On Wi-Fi, the recorder did not come back. Tap the line to try now.</td></tr>
     <tr><td><strong>Cannot record, tap to allow this Wi-Fi</strong></td><td>You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick <strong>Always allow on this network</strong> and tap <strong>Allow</strong>.</td></tr>
+    <tr><td><strong>Cannot record, tap to pair again</strong></td><td>Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before.</td></tr>
     <tr><td><strong>Starting…</strong></td><td>Rebuilding the recorder. A few seconds.</td></tr>
     <tr><td><strong>Off</strong></td><td>You turned the switch off.</td></tr>
   </table>
@@ -244,10 +246,10 @@
   <h2 id="if-something-goes-wrong">If something goes wrong</h2>
   <p><strong>Pairing fails every time.</strong> Almost always the dialog closed. It survives only while Settings is on screen, which is why step 4 uses the notification shade rather than switching back to the app. Reopen the dialog for a fresh code each attempt.</p>
   <p><strong>A debugging switch keeps turning itself off.</strong> Some phones do that the first time one is enabled without a cable, and Android turns Wireless debugging off whenever Wi-Fi drops. Turn it on again with Wi-Fi connected; it holds the second time.</p>
-  <p><strong>It says it cannot record.</strong> Join any Wi-Fi and leave it a few seconds; the app rebuilds its recorder without being asked. If you would rather not wait, Settings → Diagnostics → <strong>Start recorder</strong>.</p>
+  <p><strong>It says it cannot record.</strong> Off Wi-Fi, join any Wi-Fi and leave it a few seconds; the app rebuilds its recorder without being asked. On Wi-Fi, the header's line says what to do: tap it to start the recorder again, or to allow this Wi-Fi.</p>
   <p><strong>Android asks to allow wireless debugging on this network.</strong> That is JemRec restarting the recorder after a reboot, on a Wi-Fi network you have not used it on before. Tick <strong>Always allow on this network</strong> and tap <strong>Allow</strong>: Android lets Wireless debugging work only on networks you allowed, and JemRec needs it for a few seconds. If you tapped Cancel, the notification and the app's header offer to ask again.</p>
   <p><strong>Recordings have only your voice.</strong> Your phone's audio hardware does not expose the other side to apps. Nothing in any app can change that, and the self-test will tell you plainly.</p>
-  <p><strong>A notification says JemRec cannot connect.</strong> The phone has most likely forgotten its pairing — Wireless debugging → Paired devices no longer lists JemRec. Tap <strong>Pair again</strong> on the notification: it opens the pairing step, and a fresh code puts everything back. If the pairing was fine after all, JemRec reconnects without asking for a code.</p>
+  <p><strong>JemRec is back on its pairing step, or a notification says it cannot connect.</strong> The phone has most likely forgotten its pairing — Wireless debugging → Paired devices no longer lists JemRec, as after deleting it there. Once Wireless debugging has turned JemRec away twice in a row, the home screen gives way to the pairing step, and the notification's <strong>Pair again</strong> opens it too: a fresh code puts everything back, recordings and settings included. If the pairing was fine after all, JemRec reconnects without asking for a code.</p>
   <p><strong>A notification says a call was not recorded.</strong> Tap <strong>Self-test</strong>. It says whether the recorder is running and hearing calls; a recorder that was down at the time is the usual answer.</p>
   <h2 id="uninstalling">Uninstalling</h2>
   <p>Uninstall it however you like — long-press the icon, or Settings → Apps. There is nothing special to do.</p>

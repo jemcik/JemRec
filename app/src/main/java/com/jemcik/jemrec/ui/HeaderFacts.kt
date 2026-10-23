@@ -11,7 +11,8 @@ internal enum class RecorderStatus {
     /** Switched on and not yet finished starting. */
     STARTING,
     READY,
-    /** Switched on, and the recorder is down - until Wi-Fi brings it back. */
+    /** Switched on, and the recorder is down: Instruction says what brings
+     *  it back. */
     CANNOT,
 }
 
@@ -108,21 +109,52 @@ internal fun litMarks(marks: Marks, status: RecorderStatus): List<HeaderMark> =
     headerMarks(marks, status).filter { it.lit }
 
 /** What the header asks of the user while nothing can be recorded; each
- *  look words it its own way. */
-internal enum class Instruction {
+ *  look words it its own way. [tap], where the words are a tap: what
+ *  TalkBack says the tap does (instructionTap). */
+internal enum class Instruction(val tap: String? = null) {
     /** Recording is off: the record control turns it on. */
     SWITCH_ON,
     /** Android has not allowed this Wi-Fi: a tap asks. */
-    ALLOW_WIFI,
+    ALLOW_WIFI("Allow this Wi-Fi"),
     /** No Wi-Fi: the recorder comes back by itself once there is one. */
     JOIN_WIFI,
+    /** On Wi-Fi, and Wireless debugging turns JemRec away - a deleted
+     *  pairing, likeliest: a tap opens setup's pairing step. */
+    PAIR_AGAIN("Pair again"),
+    /** On Wi-Fi, and the recorder did not come back for a reason no revive
+     *  has named yet: a tap tries again. */
+    START_AGAIN("Start the recorder again"),
 }
 
+/**
+ * The recorder down: off Wi-Fi, Wi-Fi is what brings it back, whatever else
+ * is wrong; on Wi-Fi, what the last failed revive found (RecorderHealth) -
+ * this Wi-Fi not allowed, the pairing refused, or neither yet. Two refusals
+ * in a row make the pairing the cause; after one it is a try again, whose
+ * tap makes the second.
+ */
 internal fun instruction(state: UiState): Instruction? = when (recorderStatus(state)) {
     RecorderStatus.OFF -> Instruction.SWITCH_ON
-    RecorderStatus.CANNOT -> if (state.networkNotAllowed) Instruction.ALLOW_WIFI else Instruction.JOIN_WIFI
+    RecorderStatus.CANNOT -> when {
+        !state.onWifi -> Instruction.JOIN_WIFI
+        state.networkNotAllowed -> Instruction.ALLOW_WIFI
+        state.pairingRefused -> Instruction.PAIR_AGAIN
+        else -> Instruction.START_AGAIN
+    }
     else -> null
 }
+
+/**
+ * Whether home gives way to setup's pairing step (MainViewModel watches for
+ * it): set up, on home, the recorder down on Wi-Fi, and Wireless debugging
+ * turning JemRec away twice in a row - its pairing deleted, likeliest. Only
+ * pairing again brings the recorder back, and a line in the header was a
+ * sentence to read and a tap to find (the user, 2026-10-24). Another screen
+ * is left alone: it happens once home shows again.
+ */
+internal fun pairingLostOnHome(state: UiState): Boolean =
+    state.step == SetupStep.READY && state.screen == Screen.HOME &&
+        recorderStatus(state) == RecorderStatus.CANNOT && state.onWifi && state.pairingRefused
 
 /**
  * All of it as one sentence, for TalkBack: a screen reader hears the state,
@@ -136,10 +168,11 @@ internal fun headerSpeech(state: UiState, marks: Marks): String {
         RecorderStatus.OFF -> "Off. Calls are not recorded."
         RecorderStatus.STARTING -> "Starting."
         RecorderStatus.READY -> if (marks.automatic) "Ready to record. Records every call." else "Ready to record. Asks before each call."
-        RecorderStatus.CANNOT -> if (state.networkNotAllowed) {
-            "Cannot record. Android has not allowed this Wi-Fi."
-        } else {
-            "Cannot record. Join any Wi-Fi; it resumes on its own."
+        RecorderStatus.CANNOT -> when (instruction(state)) {
+            Instruction.ALLOW_WIFI -> "Cannot record. Android has not allowed this Wi-Fi."
+            Instruction.PAIR_AGAIN -> "Cannot record. Wireless debugging turns JemRec away; pair again."
+            Instruction.START_AGAIN -> "Cannot record. The recorder did not start; start it again."
+            else -> "Cannot record. Join any Wi-Fi; it resumes on its own."
         }
     }
     val on = buildList {

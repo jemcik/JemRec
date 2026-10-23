@@ -282,6 +282,16 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                         if (bothOn) "Pair with this phone" else "Turn on debugging and pair",
                         style = MaterialTheme.typography.titleMedium,
                     )
+                    // Back here without asking: say why, and that nothing
+                    // else went with the pairing.
+                    if (state.pairingLost) {
+                        Text(
+                            "Wireless debugging no longer lets JemRec in, as happens once its " +
+                                "pairing is deleted. Pair again to record calls; your recordings " +
+                                "and settings stay as they are.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                     // Why the code goes into a notification and not back here,
                     // said once and plainly: a person told to type a code
                     // somewhere other than where it appeared will otherwise

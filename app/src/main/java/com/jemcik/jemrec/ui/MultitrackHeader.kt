@@ -64,7 +64,7 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
         RecorderStatus.CANNOT -> "NO LINK" to c.cannot
     }
     val instruction = instruction(state)
-    val asks = instruction == Instruction.ALLOW_WIFI
+    val asks = instruction?.tap != null
     Column(
         Modifier
             .fillMaxWidth()
@@ -103,7 +103,7 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
                     .weight(1f)
                     .then(
                         if (asks) {
-                            Modifier.allowWifiTap(vm)
+                            Modifier.instructionTap(vm, instruction)
                         } else {
                             Modifier
                         },
@@ -140,6 +140,8 @@ private fun multiWords(instruction: Instruction): String = when (instruction) {
     Instruction.SWITCH_ON -> "TAP THE BUTTON TO RECORD CALLS"
     Instruction.ALLOW_WIFI -> "TAP TO ALLOW THIS WI-FI"
     Instruction.JOIN_WIFI -> "JOIN ANY WI-FI · RESUMES ITSELF"
+    Instruction.PAIR_AGAIN -> "TAP TO PAIR AGAIN"
+    Instruction.START_AGAIN -> "TAP TO START IT AGAIN"
 }
 
 /** The state in the editor's capitals: shrunk to fit one line, unless not

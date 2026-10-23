@@ -169,6 +169,20 @@ internal object RecorderHealth {
         }.onFailure { Log.w(TAG, "health: could not post", it) }
     }
 
+    /**
+     * The user is pairing again (MainViewModel.pairAgain): what the refusals
+     * said is being acted on, so their count and the cause start over and the
+     * alert goes. Setup is unfinished meanwhile, and an unfinished setup has
+     * no alerts; left, the old cause sent home straight back to the pairing
+     * step once setup was done, before any revive had read the new state.
+     */
+    fun pairingAgain(context: Context) {
+        Prefs.of(context).edit()
+            .remove(KEY_REFUSED).remove(KEY_DOWN_SINCE).remove(KEY_ALERTED).remove(KEY_CAUSE)
+            .apply()
+        cancel(context)
+    }
+
     fun cancel(context: Context) {
         runCatching { context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID) }
     }
