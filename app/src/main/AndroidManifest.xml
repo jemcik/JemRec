@@ -128,6 +128,12 @@
          there is Wi-Fi to do it over. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- WorkManager declares it too, for the keep-alive job. Declared here
+         because the cable watch takes one itself (CallMonitorService): a
+         cable usually comes out with the screen off, and a phone asleep does
+         not run the watch. Granted at install. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!--
       Optional, and asked for in the app rather than assumed here.
 

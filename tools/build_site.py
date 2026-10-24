@@ -1369,6 +1369,17 @@ SETUP = [
           "Once it is up, calls are recorded with Wi-Fi off, on mobile data, "
           "anywhere."),
 
+    ("h2", "Unplugging from a computer"),
+    ("p", "On some phones, pulling the cable out of a computer stops the "
+          "recorder: measured on an Honor, three seconds after the cable came "
+          "out. A charger does not. JemRec starts it again by itself - on "
+          "Wi-Fi, within seconds; off Wi-Fi, at the next Wi-Fi, as after a "
+          "restart. Nothing to open - but with the screen off, which is how a "
+          "cable usually comes out, only if JemRec may start automatically "
+          "(the setting just above): measured on that Honor, 13 seconds with "
+          "it; without it, the phone's battery manager froze JemRec until the "
+          "phone was woken or charged, about four minutes."),
+
     ("h2", "What the app tells you"),
     ("p", "The header is the honest indicator:"),
     ("table", (["It says", "Meaning"], [
@@ -1407,6 +1418,11 @@ SETUP = [
          "call audio came through - or the answering machine answered and could "
          "not play your greeting, so it hung up. The notification says which; "
          "for the greeting, run the answering machine's test call."],
+        ["**Checking the recorder**", "A USB cable went in or came out, and "
+         "the recorder went with it: JemRec is starting it again. A few "
+         "seconds; a cable that changed nothing shows nothing. Minutes on a "
+         "phone that holds JemRec back with the screen off - see *Unplugging "
+         "from a computer*."],
         ["**Taking a message**", "The answering machine has a caller. **Talk to "
          "them** takes the call; **Hang up** ends it."],
         ["**Message from** the caller", "A message, with a sound, Play, Share and "
@@ -1998,7 +2014,11 @@ FAQ = [
      "Wireless debugging, which Android runs over Wi-Fi. Once started, the "
      "recorder carries on with Wi-Fi off, on mobile data, anywhere. A reboot "
      "stops it, and the next few seconds of Wi-Fi bring it back by themselves "
-     "(see <a href=\"#get-started\">Get started</a>, step 3). Until then nothing "
+     "(see <a href=\"#get-started\">Get started</a>, step 3). Unplugging the "
+     "phone from a computer can stop it too (a charger does not); on Wi-Fi it "
+     "is back within seconds, by itself. With the screen off, step 3 matters "
+     "here as well: without it, the phone&rsquo;s battery manager kept the "
+     "recorder down for about four minutes in two tests of three. Until then nothing "
      "is recorded &mdash; the header says so, and after two minutes a "
      "notification does too."),
     ("Why isn&rsquo;t it on Google Play?",
@@ -2275,7 +2295,7 @@ HOW_BODY = f"""
   <p>Losing Wi-Fi restarts the ADB daemon and kills what it spawned, so the
      recorder keeps one debugging switch on to survive it, and minds that switch
      itself. That is what lets a call be recorded in a field with no network.</p>
-  <p>A reboot is the one thing it cannot survive, because starting the recorder
+  <p>A reboot is one thing it cannot survive, because starting the recorder
      is the single operation that needs ADB. A scheduled job and a system-held
      Wi-Fi watcher rebuild it without you within seconds of the phone joining a
      network &mdash; when the phone lets the app start in the background at boot
@@ -2283,6 +2303,16 @@ HOW_BODY = f"""
      is why the manual says to open the app once after a restart. Either way the
      app says plainly that it cannot record rather than looking healthy, and
      after two minutes a notification says it too.</p>
+  <p>Unplugging the phone from a computer is the other. Measured on an Honor:
+     three seconds after the cable came out, the phone stopped the ADB daemon,
+     the recorder went with it, and nothing started the ADB daemon again. So the
+     recorder watches the USB port and spends those three seconds waking the
+     app, which switches Wireless debugging off and on &mdash; what has Android
+     start the ADB daemon &mdash; and starts the recorder: recording again 12 to
+     16 seconds after the cable came out, nothing tapped. With the screen off
+     that needs the app allowed to start by itself: left to the phone, an
+     Honor froze it until it was woken, about four minutes. A charger stops
+     nothing.</p>
 
   <h2 id="what-it-does">What it does</h2>
 
@@ -2365,7 +2395,7 @@ HOW_BODY = f"""
     <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
     <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
     <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
-    <tr><td><code>WAKE_LOCK</code></td><td>Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work.</td></tr>
+    <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too.</td></tr>
   </table>
 
   <div class="note">

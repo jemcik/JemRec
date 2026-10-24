@@ -47,6 +47,11 @@ through the real app and daemon, checking what each one leaves behind:
               app is uninstalled and installed again and the empty list's
               Allow is answered in Android's own dialog: the marks are read
               back from the recording's own tags
+  cable       a USB cable in or out wakes the app from the daemon; a recorder
+              that lives through it is left alone, and one killed meanwhile
+              (as unplugging an Honor from a computer does, three seconds
+              later) is started again, with Wireless debugging switched off
+              and on - the port is the emulator's own simulated one
 
 Every call is the emulator's own simulation - nothing leaves the machine -
 and the script refuses to touch anything that is not an emulator. It needs a
@@ -931,6 +936,42 @@ def reinstall():
     return f"{name}: a kept message again after the reinstall, {duration} ms in Android's index{moved}; asked \"{question}\""
 
 
+def cable():
+    """The daemon reads the USB port's status once a second and wakes the app
+    when a cable goes in or comes out; the app watches the recorder for a few
+    seconds and starts it again if it went. An emulator has no port, so
+    UsbService's simulated one stands in, and the kill a computer's cable
+    brings on an Honor is done by hand."""
+    daemon_log = "cat /data/local/tmp/jemrec-capture.out"
+    sh("dumpsys usb add-port cable dual")
+    sh("dumpsys usb connect-port cable ufp sink device")
+    try:
+        start_recorder()  # the daemon looks for ports as it starts
+        wait_for(lambda: "cable: watching USB port(s) [cable" in sh(daemon_log), 10, "the daemon to watch the port")
+        before = daemon_pid()
+        sh("dumpsys usb disconnect-port cable")
+        wait_log(r"cable: unplugged; watching the recorder", 10, "the app woken by the unplug")
+        wait_log(r"cable: the recorder is unaffected", 15, "the app to leave a recorder that lived")
+        assert daemon_pid() == before, "the recorder was restarted for nothing"
+        sh("logcat -c")
+        sh("dumpsys usb connect-port cable ufp sink device")
+        wait_log(r"cable: plugged in; watching the recorder", 10, "the app woken by the plug")
+        time.sleep(2)
+        sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
+        wait_log(r"cable: the recorder went", 10, "the app to see the recorder go")
+        wait_log(r"switching Wireless debugging off and on", 15, "Wireless debugging switched off and on")
+        back = wait_log(r"cable: the recorder is back", 40, "the recorder started again")
+        after = wait_for(daemon_pid, 10, "a recorder process")
+        assert after != before, "the same recorder process"
+        return f"left alone when it lived; started again when killed ({back.group(0)})"
+    finally:
+        sh("dumpsys usb reset")
+        try:
+            start_recorder()
+        except Exception as e:  # not in place of whatever failed the check
+            print(f"     (the recorder could not be started again afterwards: {e})")
+
+
 def self_test():
     report = diag("selftest")
     assert "PASS" in report, report
@@ -941,7 +982,7 @@ def self_test():
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, waveform, background_playback,
-          recently_deleted, looks, reinstall]
+          recently_deleted, looks, reinstall, cable]
 
 
 def nothing_pending():

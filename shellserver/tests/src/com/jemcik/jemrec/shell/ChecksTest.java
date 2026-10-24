@@ -36,6 +36,52 @@ public class ChecksTest {
     }
 
     @Test
+    public void aCableIsAnyPortModeButNone() {
+        // Measured on the Honor: a computer, a wall charger, nothing.
+        assertTrue(Checks.cableIn(1));
+        assertTrue(Checks.cableIn(8));
+        assertFalse(Checks.cableIn(0));
+        // A port that could not be read is not a cable.
+        assertFalse(Checks.cableIn(-1));
+    }
+
+    @Test
+    public void anyPortWithACableInIsACableIn() {
+        assertEquals(1, Checks.portsReading(0, 1));
+        assertEquals(8, Checks.portsReading(8, -1));
+        assertEquals(0, Checks.portsReading(0, 0));
+        // A port that could not be read says nothing; none read, nothing known.
+        assertEquals(0, Checks.portsReading(-1, 0));
+        assertEquals(-1, Checks.portsReading(-1, -1));
+        assertEquals(-1, Checks.portsReading());
+    }
+
+    @Test
+    public void onlyAChangeOfCableWakesTheApp() {
+        // The first reading is how things are.
+        assertEquals(null, Checks.cableChange(null, true));
+        assertEquals(null, Checks.cableChange(null, false));
+        assertEquals(null, Checks.cableChange(true, true));
+        assertEquals(null, Checks.cableChange(false, false));
+        assertEquals("unplugged", Checks.cableChange(true, false));
+        assertEquals("plugged in", Checks.cableChange(false, true));
+    }
+
+    @Test
+    public void usbDebuggingIsTheAdbFunctionItself() {
+        // The Honor plugged into a computer, then unplugged or on a charger.
+        assertTrue(Checks.usbAdb("hisuite,mtp,mass_storage,adb"));
+        assertFalse(Checks.usbAdb("hisuite,mtp,mass_storage"));
+        assertTrue(Checks.usbAdb("adb"));
+        assertTrue(Checks.usbAdb("mtp,adb"));
+        // Honor's HiSuite bridge, and anything else with the letters in it.
+        assertFalse(Checks.usbAdb("hisuite,hdb"));
+        assertFalse(Checks.usbAdb("adbx"));
+        assertFalse(Checks.usbAdb(""));
+        assertFalse(Checks.usbAdb(null));
+    }
+
+    @Test
     public void onlyJemRecAndTheShellAreLetIn() {
         int app = 10083;
         assertTrue(Checks.callerAllowed(app, app));

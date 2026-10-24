@@ -13,6 +13,7 @@ this one is - or to check that it does what it says.
   [the daemon records](#the-daemon-records-the-app-collects) ·
   [the authenticated socket](#the-socket-is-authenticated-in-both-directions) ·
   [staying alive without Wi-Fi](#staying-alive-without-wi-fi) ·
+  [unplugged from a computer](#unplugged-from-a-computer) ·
   [after a restart](#after-a-restart)
 - The features: [recording and being asked](#recording-and-being-asked) ·
   [exact call tracking](#exact-call-tracking) ·
@@ -108,8 +109,9 @@ seconds, because this phone turns it off on its own.
 Proven on the device: no cable, Wi-Fi off, a real call recorded while `adbd` and
 the daemon kept their process IDs across the outage.
 
-When the daemon does die — a reboot kills it outright, and the system reclaims
-it eventually — it has to be started again, and starting it is the one operation
+When the daemon does die — a reboot kills it outright, unplugging the phone
+from a computer can (see the next section), and the system reclaims it
+eventually — it has to be started again, and starting it is the one operation
 that needs ADB and therefore Wi-Fi. A scheduled job and a system-held Wi-Fi
 watcher do it without you: the app is woken when a network appears, rebuilds the
 recorder in a few seconds, and stands the ADB session back down.
@@ -121,6 +123,56 @@ manual says to open the app once after a restart rather than trusting the
 machinery. **Between the restart and that moment nothing is recorded**, which is
 why the header says so plainly rather than looking healthy - and after two
 minutes of it, a notification does too.
+
+## Unplugged from a computer
+
+**Pulling the cable out of a computer stops the recorder, and JemRec starts it
+again by itself.** Measured on the Honor (Android 17), 2026-10-24: three
+seconds after the cable came out - Android's debounce of a USB disconnect -
+the phone took USB debugging off the cable's functions and `adbd` was stopped.
+The recorder was started through `adbd`, so it is in `adbd`'s cgroup, and
+Android kills the whole group: the recorder went at the same instant. Shell
+cannot move a process out; every `cgroup.procs` belongs to the system. Then
+nothing: `adbd` stayed stopped with both debugging switches still on, there was
+nothing to connect to, and the app took that for a Wi-Fi Android had not
+allowed. The day it was found, that cost 74 minutes of calls.
+
+So the recorder watches the USB port, once a second, and spends its last three
+seconds waking the app, which zygote started in a cgroup of its own and which
+lives through it. The app watches for eight seconds. If the recorder goes, it
+switches Wireless debugging off and on - the one thing that had Android start
+`adbd` again - and starts the recorder. Measured on the same phone with the
+screen on: recording again 12 and 16 seconds after the cable came out in the
+two runs that were timed, nothing tapped, and back by itself in a third. Off
+Wi-Fi, the next revive on Wi-Fi does the same.
+
+**With the screen off it needs JemRec allowed to run on its own** - the
+setting [After a restart](#after-a-restart) is about. A cable usually comes out
+with the screen off. On *Manage manually*, measured: recording again 13
+seconds after the unplug, JemRec started from nothing by the wake and done two
+seconds later. On *Manage automatically*, Honor's power manager freezes JemRec,
+foreground service or not, and takes its wake lock away; its own log says so.
+Measured 2026-10-25: unfrozen for the recorder's wake at 00:10:09.72,
+`freeze pid=... reason=PG` with the wake lock released half a second later,
+three seconds' thaw when JemRec's notification appeared, then frozen until the
+phone was plugged in at 00:14:46 - and nothing an app may do outranks that.
+The same happened in two earlier runs, once before the recorder was started
+and once after. The watch keeps the phone awake while it works, a minute and a
+half at most, because a foreground service keeps its process and not the CPU.
+
+The setting decides the keep-alive too: on *Manage automatically* the
+15-minute job waited on a condition of Honor's own, `HN_USER_EXPERIENCE`, that
+was not met; switched to *Manage manually*, it was met at once.
+
+A wall charger, plugged in or pulled out, stopped nothing, and the app's watch
+ends before Android would show its notification. Plugging into a computer
+stopped nothing either, the three times it was measured; the watch covers it anyway.
+
+The recorder polls rather than listens: Android refuses a broadcast receiver to
+a process it did not start ("registerReceiverWithFeature: no app for null", on
+the Android 17 emulator), as it refuses it a settings observer. The shell may
+read the USB port's status, a binder call of about 0.2 ms, and that changes
+the moment the cable does.
 
 ## After a restart
 
@@ -869,7 +921,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
 | `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine's answering is the recorder's, as the shell. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
-| `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
+| `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. |
 
 Two more (`READ_PHONE_STATE` and `WRITE_EXTERNAL_STORAGE`) are actively
 **removed** from the manifest, because the ADB library's own manifest would

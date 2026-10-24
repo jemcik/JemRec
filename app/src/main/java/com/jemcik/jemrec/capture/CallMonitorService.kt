@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import com.jemcik.jemrec.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -84,6 +85,13 @@ class CallMonitorService : Service() {
     @Volatile
     private var testing = false
 
+    /** Watching the recorder after a USB cable went in or came out (see
+     *  CableWatch); [checkingRecorder] while it runs, for the notification. */
+    @Volatile
+    private var cableWatch: Job? = null
+    @Volatile
+    private var checkingRecorder = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -109,6 +117,11 @@ class CallMonitorService : Service() {
      * the daemon is what brings it back, once, for the next call.
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A cable watch says so, rather than "Call in progress" - and only
+        // the daemon's, carrying the token, gets to change what this says.
+        if (intent?.action == ACTION_CABLE && intent.getStringExtra(EXTRA_TOKEN) == CaptureDaemon.token(this)) {
+            checkingRecorder = true
+        }
         // Owed within seconds whatever the action, because every start of this
         // service is a startForegroundService.
         startForegroundCompat()
@@ -137,7 +150,8 @@ class CallMonitorService : Service() {
             // CALL_ENDED arrives; this service only reflects it and, on end,
             // fetches the finished file to save. It is no longer on the audio
             // path, so a freeze here cannot cost a single packet.
-            ACTION_CALL_STARTED, ACTION_CALL_ENDED, ACTION_STOP, ACTION_MESSAGE_STARTED, ACTION_MESSAGE_TAKEN -> {
+            ACTION_CALL_STARTED, ACTION_CALL_ENDED, ACTION_STOP, ACTION_MESSAGE_STARTED, ACTION_MESSAGE_TAKEN,
+            ACTION_CABLE -> {
                 if (intent.getStringExtra(EXTRA_TOKEN) != CaptureDaemon.token(this)) {
                     Log.w(TAG, "monitor: ${intent.action} with a bad token, ignoring")
                     finishIfIdle()
@@ -160,6 +174,7 @@ class CallMonitorService : Service() {
                     }
                     ACTION_MESSAGE_STARTED -> onMessageStarted(intent.getBooleanExtra(EXTRA_TEST, false))
                     ACTION_MESSAGE_TAKEN -> onMessageTaken()
+                    ACTION_CABLE -> watchCable(intent.getStringExtra(EXTRA_CABLE))
                     else -> stopSelf()
                 }
             }
@@ -206,6 +221,49 @@ class CallMonitorService : Service() {
             }
         }
         return START_NOT_STICKY
+    }
+
+    /** The daemon saw a USB cable go in or come out, seconds before adbd -
+     *  and the daemon with it - may go. One watch at a time. */
+    private fun watchCable(what: String?) {
+        if (cableWatch?.isActive == true) return
+        // Awake for the watch and the restart, capped. A cable usually comes
+        // out with the screen off, and a foreground service keeps its process,
+        // not the CPU, which may sleep between the watch's pings.
+        //
+        // On an Honor left to "Manage automatically" none of it holds: its
+        // power manager freezes the app and takes this lock away regardless.
+        // Measured there, 2026-10-25 00:10, screen off - unfrozen for the
+        // daemon's wake at 00:10:09.72, "freeze pid=... reason=PG" with the
+        // lock released half a second later, a 3 s thaw when the notification
+        // appeared, then frozen until the phone was plugged in at 00:14:46.
+        // With JemRec on "Manage manually" (what Survive a restart asks for)
+        // nothing was frozen and the recorder was back in 13 s (23:47).
+        val awake = runCatching {
+            getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jemrec:cable")
+                .apply {
+                    setReferenceCounted(false)
+                    acquire(CableWatch.AWAKE_MS)
+                }
+        }.onFailure { Log.w(TAG, "monitor: no wake lock for the cable watch", it) }.getOrNull()
+        cableWatch = scope.launch {
+            ReviveLog.note(this@CallMonitorService, "cable: wake lock ${if (awake?.isHeld == true) "held" else "NOT held"}")
+            try {
+                CableWatch.watch(this@CallMonitorService, what)
+            } finally {
+                runCatching { if (awake?.isHeld == true) awake.release() }
+                checkingRecorder = false
+                // A call that started meanwhile keeps the service, and its
+                // notification goes back to saying what it says for a call.
+                if (callInProgress || recording?.isActive == true) {
+                    runCatching { startForegroundCompat() }
+                } else {
+                    // This job is still active until this block returns.
+                    stopSelf()
+                }
+            }
+        }
     }
 
     /** The user tapped Record on the start-of-call prompt (on-demand). */
@@ -342,7 +400,9 @@ class CallMonitorService : Service() {
      * half way, when the user redialled within this save's few seconds.
      */
     private fun doneWith(job: Job?) {
-        if (recording === job && !callInProgress) stopSelf()
+        // Nor under a cable watch, which may be half way through starting
+        // the recorder again; it stands the service down when it is done.
+        if (recording === job && !callInProgress && cableWatch?.isActive != true) stopSelf()
     }
 
     /**
@@ -400,7 +460,7 @@ class CallMonitorService : Service() {
     /** Nothing left to do this start, and no recording running: stand down
      *  rather than sit as a foreground service between calls. */
     private fun finishIfIdle() {
-        if (recording?.isActive != true && !callInProgress) stopSelf()
+        if (recording?.isActive != true && !callInProgress && cableWatch?.isActive != true) stopSelf()
     }
 
     private fun startForegroundCompat() {
@@ -413,7 +473,11 @@ class CallMonitorService : Service() {
         // records; "Call in progress" in the gap before recording starts, or
         // while the mid-call prompt waits for an answer in on-demand mode.
         val ticket = messageTicket
+        // Only the cable watch, no call: a check that ends in seconds when the
+        // cable changed nothing, and so the one notification here that waits.
+        val cableOnly = checkingRecorder && !callInProgress && !recordingNow && ticket == null
         val title = when {
+            cableOnly -> "Checking the recorder"
             ticket != null && testing -> "Testing the answering machine"
             ticket != null -> "Taking a message"
             recordingNow -> "Recording call"
@@ -421,6 +485,7 @@ class CallMonitorService : Service() {
             else -> "Call in progress"
         }
         val text = when {
+            cableOnly -> "A USB cable went in or came out"
             ticket != null && testing -> "Your greeting is playing to the caller"
             ticket != null -> "Your greeting is playing; your microphone is muted"
             recordingNow -> "Saving this call"
@@ -448,7 +513,14 @@ class CallMonitorService : Service() {
             // what the platform's own guidance names as a case for showing it at
             // once: the person should know the moment their call is being
             // recorded, not ten seconds into it.
-            .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+            //
+            // DEFERRED for the cable watch alone: a cable that changed
+            // nothing ends it within CableWatch.WATCH_MS, under those ten
+            // seconds, so a phone put on a charger shows nothing at all. One
+            // that took the recorder down takes longer, and then it shows.
+            .setForegroundServiceBehavior(
+                if (cableOnly) Notification.FOREGROUND_SERVICE_DEFERRED else Notification.FOREGROUND_SERVICE_IMMEDIATE,
+            )
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -583,6 +655,10 @@ class CallMonitorService : Service() {
         /** Sent by the shell-side daemon when it sees a call begin or end. */
         const val ACTION_CALL_STARTED = "com.jemcik.jemrec.CALL_STARTED"
         const val ACTION_CALL_ENDED = "com.jemcik.jemrec.CALL_ENDED"
+        /** Sent by the daemon when a USB cable goes in or comes out; [EXTRA_CABLE]
+         *  says which. See CableWatch. */
+        const val ACTION_CABLE = "com.jemcik.jemrec.CABLE"
+        const val EXTRA_CABLE = "cable"
         /** Sent by the daemon when the answering machine has answered and its
          *  greeting is playing; [EXTRA_TEST] for a diagnostics test call. */
         const val ACTION_MESSAGE_STARTED = "com.jemcik.jemrec.MESSAGE_STARTED"

@@ -526,6 +526,17 @@ part of restarting the phone. It always works.
 Either way: Wi-Fi is needed to rebuild the recorder, never to use it. Once it
 is up, calls are recorded with Wi-Fi off, on mobile data, anywhere.
 
+## Unplugging from a computer
+
+On some phones, pulling the cable out of a computer stops the recorder:
+measured on an Honor, three seconds after the cable came out. A charger does
+not. JemRec starts it again by itself - on Wi-Fi, within seconds; off Wi-Fi, at
+the next Wi-Fi, as after a restart. Nothing to open - but with the screen off,
+which is how a cable usually comes out, only if JemRec may start automatically
+(the setting just above): measured on that Honor, 13 seconds with it; without
+it, the phone's battery manager froze JemRec until the phone was woken or
+charged, about four minutes.
+
 ## What the app tells you
 
 The header is the honest indicator:
@@ -550,6 +561,7 @@ And when the app is closed, in notifications:
 | **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with **Allow this Wi-Fi**), or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back. |
 | **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test. |
 | **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. |
+| **Checking the recorder** | A USB cable went in or came out, and the recorder went with it: JemRec is starting it again. A few seconds; a cable that changed nothing shows nothing. Minutes on a phone that holds JemRec back with the screen off - see *Unplugging from a computer*. |
 | **Taking a message** | The answering machine has a caller. **Talk to them** takes the call; **Hang up** ends it. |
 | **Message from** the caller | A message, with a sound, Play, Share and Delete. It stays until you dismiss it, whether or not each call is shown when it ends. |
 | The caller, with pause and a seek bar | A recording you played, going on with the screen off. On the lock screen it says only **Call recording**. It goes when the recording is stopped. |

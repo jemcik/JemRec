@@ -290,6 +290,59 @@ final class Checks {
         return Math.sqrt(sum / frames);
     }
 
+    /**
+     * Whether a USB port's current mode (UsbPortStatus.getCurrentMode) means
+     * a cable is in. 0 is MODE_NONE, nothing attached; measured on the Honor,
+     * 2026-10-24: 1 plugged into a computer, 8 into a wall charger, 0 with
+     * neither. A negative mode is a port that could not be read, not a cable.
+     */
+    static boolean cableIn(int mode) {
+        return mode > 0;
+    }
+
+    /**
+     * One reading of every port: the highest mode, so any port with a cable
+     * in is a cable in; one that could not be read (-1) counts for nothing,
+     * and if none could, the reading is -1 - nothing is known, so nothing
+     * has changed.
+     */
+    static int portsReading(int... modes) {
+        int reading = -1;
+        for (int mode : modes) {
+            reading = Math.max(reading, mode);
+        }
+        return reading;
+    }
+
+    /**
+     * What a reading of the cable means for the recorder: "unplugged",
+     * "plugged in", or null for nothing new. The first reading ([before] null)
+     * is how things are, not a change.
+     */
+    static String cableChange(Boolean before, boolean now) {
+        if (before == null || before == now) {
+            return null;
+        }
+        return now ? "plugged in" : "unplugged";
+    }
+
+    /**
+     * Whether USB debugging is among the functions in a sys.usb.config value,
+     * "hisuite,mtp,mass_storage,adb" on the Honor plugged into a computer:
+     * "adb" as one of its comma-separated names. Honor's own "hdb" is not it.
+     */
+    static boolean usbAdb(String config) {
+        if (config == null) {
+            return false;
+        }
+        for (String function : config.split(",")) {
+            if (function.trim().equals("adb")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Root mean square of the first [frames] frames of interleaved [pcm],
      *  every channel together. */
     static double rms(short[] pcm, int channels, int frames) {

@@ -237,6 +237,12 @@ public final class Main {
             shield.setDaemon(true);
             shield.start();
 
+            // The few seconds' warning a USB cable gives before adbd goes,
+            // passed on to the app. See watchCable.
+            Thread cable = new Thread(Main::watchCable, "jemrec-cable");
+            cable.setDaemon(true);
+            cable.start();
+
             startCallWatcher(token);
             startVoipWatcher(token);
             // Off the main thread: it runs `cmd appops`, which takes a moment.
@@ -822,6 +828,153 @@ public final class Main {
         }
     }
 
+    /** One second: the warning is about three (see watchCable), and `am`
+     *  takes a fraction of one. A read is one binder call, about 0.2 ms
+     *  measured, and a sleeping phone runs none of them. */
+    private static final long CABLE_CHECK_INTERVAL_MS = 1000L;
+
+    /** How often to look again for a USB service, or ports, not there yet. */
+    private static final long CABLE_PORTS_RETRY_MS = 60 * 1000L;
+
+    /**
+     * A USB CABLE IS THE ONE WARNING THIS PROCESS GETS THAT ADBD IS ABOUT TO GO.
+     *
+     * Unplugging the phone from a computer stops adbd, and stopping adbd
+     * kills this process with it: init kills adbd's whole cgroup
+     * (/system/uid_0/pid_<adbd>, a cgroup.kill file), this process is in it
+     * whatever its session, and shell cannot leave - every cgroup.procs is
+     * system:system and shell is not in group system. Measured on the Honor
+     * (MagicOS 11, Android 17), 2026-10-24 18:44: the port read "no cable"
+     * at 18:44:18.26 and a probe started the way this process is (a one-off,
+     * not kept) ticked for the last time at 18:44:21.08 - Android's three-second debounce of a
+     * USB disconnect, then the functions reset without "adb", and init
+     * stopped adbd. And adbd STAYED stopped, both debugging switches still
+     * on, until Wireless debugging was switched off and on three minutes
+     * later. At 17:06 the same day nothing did that, and nothing recorded
+     * for 74 minutes.
+     *
+     * So this watches the cable and hands over while it can: it wakes the
+     * app, which outlives adbd (zygote started it, in a cgroup of its own),
+     * and the app waits to see whether this process goes and, if it does,
+     * starts adbd and this daemon again over Wireless debugging. A wall
+     * charger, plugged or pulled, left adbd alone (measured the same
+     * evening), and so does the app's watch: it ends after a few seconds,
+     * before Android would show its notification. Both directions wake it,
+     * because which of them restarts adbd is the phone's business: plugging
+     * into a computer started adbd every time the event log shows, and adbd
+     * is often already running then.
+     *
+     * Polled, not observed: a receiver for the power and USB broadcasts is
+     * refused to a process the ActivityManager did not start, exactly as the
+     * settings observer is (keepShieldUp) - measured on the Android 17
+     * emulator, "registerReceiverWithFeature: no app for null". Shell's
+     * MANAGE_USB lets this read the USB port's status from the USB service
+     * instead, which flips the moment the cable does (the battery status
+     * does not: plugged in at 80 % it stayed "discharging").
+     */
+    private static void watchCable() {
+        Object usb = null;
+        java.lang.reflect.Method status = null;
+        java.lang.reflect.Method mode = null;
+        java.util.List<String> ports = new java.util.ArrayList<>();
+        // Looked for until found: a recorder started just after boot can be
+        // up before the USB service is. Said once, not every minute.
+        boolean said = false;
+        while (ports.isEmpty()) {
+            try {
+                Object binder = Class.forName("android.os.ServiceManager")
+                        .getMethod("getService", String.class).invoke(null, "usb");
+                usb = Class.forName("android.hardware.usb.IUsbManager$Stub")
+                        .getMethod("asInterface", android.os.IBinder.class).invoke(null, binder);
+                java.util.List<?> found = (java.util.List<?>) usb.getClass().getMethod("getPorts").invoke(usb);
+                status = usb.getClass().getMethod("getPortStatus", String.class);
+                mode = Class.forName("android.hardware.usb.UsbPortStatus").getMethod("getCurrentMode");
+                if (found != null) {
+                    for (Object port : found) {
+                        ports.add(portId(port));
+                    }
+                }
+                if (ports.isEmpty() && !said) {
+                    Ln.i("cable: no USB port to watch yet");
+                    said = true;
+                }
+            } catch (Throwable t) {
+                if (!said) {
+                    Ln.w("cable: cannot read the USB ports yet: " + rootCause(t));
+                    said = true;
+                }
+            }
+            if (ports.isEmpty()) {
+                sleep(CABLE_PORTS_RETRY_MS);
+            }
+        }
+        Ln.i("cable: watching USB port(s) " + ports + " every " + CABLE_CHECK_INTERVAL_MS / 1000 + "s");
+        Boolean before = null;
+        while (true) {
+            int[] modes = new int[ports.size()];
+            for (int i = 0; i < modes.length; i++) {
+                modes[i] = portMode(usb, status, mode, ports.get(i));
+            }
+            int reading = Checks.portsReading(modes);
+            if (reading >= 0) {
+                boolean in = Checks.cableIn(reading);
+                String change = Checks.cableChange(before, in);
+                if (change != null) {
+                    String config = property("sys.usb.config");
+                    Ln.i("cable: " + change + " at " + new java.util.Date() + " (port mode " + reading
+                            + ", USB debugging " + (Checks.usbAdb(config) ? "on the cable" : "not on it")
+                            + ") - waking the app to watch the recorder");
+                    wake(ACTION_CABLE, false, "", null, "--es", "cable", change);
+                }
+                before = in;
+            }
+            sleep(CABLE_CHECK_INTERVAL_MS);
+        }
+    }
+
+    /** A port's id: the method where there is one, the field where Android
+     *  17 has only that, and the Honor's one port's name failing both. */
+    private static String portId(Object parcelable) {
+        try {
+            return (String) parcelable.getClass().getMethod("getId").invoke(parcelable);
+        } catch (Throwable ignored) {
+            // Android 17's ParcelableUsbPort has no getter.
+        }
+        try {
+            Field field = parcelable.getClass().getDeclaredField("mId");
+            field.setAccessible(true);
+            return (String) field.get(parcelable);
+        } catch (Throwable ignored) {
+            return "port0";
+        }
+    }
+
+    /** UsbPortStatus.getCurrentMode for [port], or -1 if it could not be read.
+     *  No status at all is a port the service does not know - unknown, not
+     *  "no cable", which is a status with mode 0. */
+    private static int portMode(Object usb, java.lang.reflect.Method status, java.lang.reflect.Method mode,
+            String port) {
+        try {
+            Object reading = status.invoke(usb, port);
+            return reading == null ? -1 : (Integer) mode.invoke(reading);
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    private static String property(String name) {
+        try {
+            return (String) Class.forName("android.os.SystemProperties")
+                    .getMethod("get", String.class).invoke(null, name);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static Throwable rootCause(Throwable t) {
+        return t.getCause() != null ? t.getCause() : t;
+    }
+
     /**
      * Take the port, allowing for a predecessor that has not finished dying.
      *
@@ -966,6 +1119,8 @@ public final class Main {
     private static final String APP_SERVICE = "com.jemcik.jemrec/.capture.CallMonitorService";
     private static final String ACTION_CALL_STARTED = "com.jemcik.jemrec.CALL_STARTED";
     private static final String ACTION_CALL_ENDED = "com.jemcik.jemrec.CALL_ENDED";
+    /** A USB cable went in or came out: adbd may be about to go. See watchCable. */
+    private static final String ACTION_CABLE = "com.jemcik.jemrec.CABLE";
     private static final String TOKEN_ENV = "JEMREC_TOKEN";
     private static final String JAR_PATH = "/data/local/tmp/jemrec-capture.jar";
     private static final String LOG_PATH = "/data/local/tmp/jemrec-capture.out";
@@ -1648,6 +1803,13 @@ public final class Main {
                 return thread;
             });
 
+    private static final java.util.concurrent.ExecutorService CABLE_WAKES =
+            java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+                Thread thread = new Thread(task, "jemrec-cable-wake");
+                thread.setDaemon(true);
+                return thread;
+            });
+
     /** Off the main thread: `am` takes a moment, and the looper must not wait for it. */
     private static void wake(String action, boolean incoming, String recfile, String app, String... extras) {
         java.util.List<String> command = new java.util.ArrayList<>(java.util.Arrays.asList(
@@ -1667,7 +1829,11 @@ public final class Main {
         long seq = callSeq;
         boolean start = ACTION_CALL_STARTED.equals(action) || ACTION_MESSAGE_STARTED.equals(action)
                 || ACTION_MESSAGE_TAKEN.equals(action);
-        WAKES.execute(() -> {
+        // A cable's wake has its own queue: it has three seconds before adbd
+        // goes, and must not wait them out behind a call's wake whose `am`
+        // is slow (exit 255 has been seen; each try may take ten seconds).
+        // It is ordered against nothing a call's wakes are.
+        (ACTION_CABLE.equals(action) ? CABLE_WAKES : WAKES).execute(() -> {
             for (int attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
                 if (start && endedSeq >= seq) {
                     // That call is over, and its CALL_ENDED is queued behind

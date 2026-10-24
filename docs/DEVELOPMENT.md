@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-674 JVM tests, no device needed - 570 for the app and 104 for the daemon:
+684 JVM tests, no device needed - 576 for the app and 108 for the daemon:
 
     ./gradlew test
 
@@ -86,7 +86,7 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.20):
+emulator, for each Android version it claims (12, 13 and 17 for 0.20.1):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 
@@ -111,6 +111,10 @@ for good by Delete all for good, from Android's own trash and the disk;
 the app started again in Deck (dark), Multitrack and Memo, opening in each;
 and a message, kept from its row, a kept message again after the app is
 uninstalled and installed again - its marks read back from the file.
+Last, a USB cable on the emulator's simulated port: pulled out, the daemon
+wakes the app and the app leaves a recorder that lived alone; plugged in with
+the recorder killed during the watch, as unplugging an Honor from a computer
+does, the app switches Wireless debugging off and on and starts it again.
 It refuses to run on anything but an emulator, and needs a `google_apis`
 image.
 

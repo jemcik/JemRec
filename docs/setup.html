@@ -195,6 +195,8 @@
   <p>The same phone with auto-launch off does nothing at all. The system declined to start the app for the boot broadcast — <em>don't meet cpuload</em>, in its own log — so neither the job nor the Wi-Fi watcher was ever armed, and seven minutes after Wi-Fi returned nothing had come back. Opening the app had it recording sixteen seconds later.</p>
   <p>So if you would rather not touch battery settings, treat opening JemRec once as part of restarting the phone. It always works.</p>
   <p>Either way: Wi-Fi is needed to rebuild the recorder, never to use it. Once it is up, calls are recorded with Wi-Fi off, on mobile data, anywhere.</p>
+  <h2 id="unplugging-from-a-computer">Unplugging from a computer</h2>
+  <p>On some phones, pulling the cable out of a computer stops the recorder: measured on an Honor, three seconds after the cable came out. A charger does not. JemRec starts it again by itself - on Wi-Fi, within seconds; off Wi-Fi, at the next Wi-Fi, as after a restart. Nothing to open - but with the screen off, which is how a cable usually comes out, only if JemRec may start automatically (the setting just above): measured on that Honor, 13 seconds with it; without it, the phone's battery manager froze JemRec until the phone was woken or charged, about four minutes.</p>
   <h2 id="what-the-app-tells-you">What the app tells you</h2>
   <p>The header is the honest indicator:</p>
   <table>
@@ -216,6 +218,7 @@
     <tr><td><strong>JemRec is not recording calls</strong></td><td>The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with <strong>Allow this Wi-Fi</strong>), or it cannot connect (with <strong>Pair again</strong>), or it could not start. It goes away by itself when the recorder is back.</td></tr>
     <tr><td><strong>A call was not recorded</strong></td><td>An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test.</td></tr>
     <tr><td><strong>Call not recorded</strong></td><td>A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call.</td></tr>
+    <tr><td><strong>Checking the recorder</strong></td><td>A USB cable went in or came out, and the recorder went with it: JemRec is starting it again. A few seconds; a cable that changed nothing shows nothing. Minutes on a phone that holds JemRec back with the screen off - see <em>Unplugging from a computer</em>.</td></tr>
     <tr><td><strong>Taking a message</strong></td><td>The answering machine has a caller. <strong>Talk to them</strong> takes the call; <strong>Hang up</strong> ends it.</td></tr>
     <tr><td><strong>Message from</strong> the caller</td><td>A message, with a sound, Play, Share and Delete. It stays until you dismiss it, whether or not each call is shown when it ends.</td></tr>
     <tr><td>The caller, with pause and a seek bar</td><td>A recording you played, going on with the screen off. On the lock screen it says only <strong>Call recording</strong>. It goes when the recording is stopped.</td></tr>

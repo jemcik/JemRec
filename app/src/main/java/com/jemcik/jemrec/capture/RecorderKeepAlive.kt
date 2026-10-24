@@ -50,6 +50,7 @@ class RecorderKeepAlive(
             Log.i(TAG, "keepalive: not set up, nothing to do")
             return Result.success()
         }
+        ReviveLog.note(applicationContext, "keepalive: run (attempt ${runAttemptCount + 1})")
         val alive = CaptureDaemon.revive(applicationContext)
         // Off Wi-Fi is exactly when the Wi-Fi watch must be armed, and the
         // one place it reliably can be: armed on Wi-Fi it fires at once and

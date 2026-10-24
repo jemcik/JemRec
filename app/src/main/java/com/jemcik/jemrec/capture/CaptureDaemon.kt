@@ -49,7 +49,10 @@ object CaptureDaemon {
     private const val LOG_PATH = "/data/local/tmp/jemrec-capture.out"
     private const val MAIN_CLASS = "com.jemcik.jemrec.shell.Main"
     /** adbd needs a moment to come up and advertise a port after re-arming. */
-    private const val ADBD_SETTLE_MS = 4_000L
+    internal const val ADBD_SETTLE_MS = 4_000L
+
+    /** How long a revive looks for adbd before giving up on this attempt. */
+    internal const val CONNECT_MS = 5_000L
     private const val KEY_TOKEN = "daemon_token"
 
     /**
@@ -408,10 +411,13 @@ object CaptureDaemon {
      */
     suspend fun revive(context: Context): Boolean = withContext(Dispatchers.IO) {
         AdbTransport.forgetLastConnect()
+        ReviveLog.note(context, "revive: start")
         val alive = lifecycle.withLock { reviveLocked(context) }
+        ReviveLog.note(context, "revive: ${if (alive) "recorder up" else "recorder down"} (connect ${AdbTransport.lastConnect})")
         // Every revive is a reading of whether the recorder is up, and the
         // one place the user hears about it when it is not. See RecorderHealth.
         RecorderHealth.onRevive(context, alive)
+        if (alive) CableWatch.forget(context)
         alive
     }
 
@@ -426,6 +432,7 @@ object CaptureDaemon {
         if (isSetUp(context)) armShield(context)
 
         val running = probeConfirmed(context)
+        ReviveLog.note(context, "revive: recorder ${running?.let { "answers, build ${it.build}" } ?: "does not answer"}")
         if (running != null && upToDate(context, running)) return true
         if (running != null) {
             // Alive, but running the jar an earlier APK staged. Carry on down
@@ -458,21 +465,50 @@ object CaptureDaemon {
         // Wi-Fi watcher brings us back here the moment there is some.
         if (!NetworkRevive.onWifi(context)) {
             Log.i(TAG, "daemon: not on Wi-Fi, nothing to revive over yet")
+            ReviveLog.note(context, "revive: not on Wi-Fi")
             return running != null
         }
 
         // A reboot resets this to 0, and without it adbd is not listening even
         // on Wi-Fi. Needs WRITE_SECURE_SETTINGS, granted once at setup.
-        if (!GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED) &&
-            GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, true)
-        ) {
-            Log.i(TAG, "daemon: re-armed Wireless debugging")
-            delay(ADBD_SETTLE_MS)
+        //
+        // And after a USB cable stopped adbd it reads 1 with nothing listening
+        // (see CableWatch): only switching it off and on has Android start
+        // adbd again. Measured on the Honor: adbd stopped at 18:44:21 and was
+        // back at 18:47:13, the moment it was switched off and on, and not
+        // before. Not done for a revive that merely finds nothing advertised:
+        // on a Wi-Fi Android has not allowed, that puts its question on screen
+        // out of nowhere (see RecorderHealth), so it is left to the button.
+        val step = wirelessDebuggingStep(
+            cableStoppedAdbd = CableWatch.stoppedAdbd(context),
+            on = GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED),
+        )
+        ReviveLog.note(context, "revive: Wireless debugging $step")
+        when (step) {
+            WirelessStep.CYCLE -> {
+                Log.i(TAG, "daemon: a USB cable stopped adbd; switching Wireless debugging off and on to start it")
+                val cycled = cycleWirelessDebugging(context)
+                ReviveLog.note(context, "revive: switched off and on: $cycled")
+                if (cycled) {
+                    // Once: that starts adbd, and a revive that fails after
+                    // it fails for some other reason, which cycling again
+                    // would only hide.
+                    CableWatch.forget(context)
+                    delay(ADBD_SETTLE_MS)
+                }
+            }
+            WirelessStep.TURN_ON -> if (GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, true)) {
+                Log.i(TAG, "daemon: re-armed Wireless debugging")
+                delay(ADBD_SETTLE_MS)
+            }
+            WirelessStep.LEAVE -> Unit
         }
 
         if (!AdbTransport.isConnected) {
-            AdbTransport.autoConnect(context, timeoutMs = 5_000).onFailure {
+            ReviveLog.note(context, "revive: connecting")
+            AdbTransport.autoConnect(context, timeoutMs = CONNECT_MS).onFailure {
                 Log.w(TAG, "daemon: no ADB session - ${it.javaClass.simpleName}: ${it.message ?: "no detail"}")
+                ReviveLog.note(context, "revive: no ADB session (${AdbTransport.lastConnect}): ${it.message}")
                 // An older build that is up is still a recorder. Only a daemon
                 // that is down is a failure here - reporting the other as one
                 // would have the keep-alive retrying with backoff all day.
@@ -480,7 +516,10 @@ object CaptureDaemon {
             }
         }
 
-        val ok = ensureRunningLocked(context).isSuccess
+        ReviveLog.note(context, "revive: connected, starting the recorder")
+        val started = ensureRunningLocked(context)
+        val ok = started.isSuccess
+        ReviveLog.note(context, "revive: start ${started.fold({ "ok" }, { "failed: ${it.message}" })}")
         if (ok) {
             // A spawned daemon is told the mode in its environment, so this is
             // for the other case - one that was already running - and it is
@@ -510,11 +549,25 @@ object CaptureDaemon {
      */
     suspend fun askToAllowNetwork(context: Context): Boolean {
         Log.i(TAG, "daemon: asking Android to allow Wireless debugging on this Wi-Fi")
+        return cycleWirelessDebugging(context)
+    }
+
+    /** Wireless debugging off, then on: what puts the network question back
+     *  on screen, and what starts an adbd a cable stopped. */
+    private suspend fun cycleWirelessDebugging(context: Context): Boolean {
         if (!GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)) return false
-        // Long enough for the off to land as its own change; the user is
-        // looking at the screen, waiting for the question.
+        // Long enough for the off to land as its own change.
         delay(1_000)
         return GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, true)
+    }
+
+    internal enum class WirelessStep { CYCLE, TURN_ON, LEAVE }
+
+    /** What a revive does to Wireless debugging before it connects. */
+    internal fun wirelessDebuggingStep(cableStoppedAdbd: Boolean, on: Boolean): WirelessStep = when {
+        cableStoppedAdbd -> WirelessStep.CYCLE
+        !on -> WirelessStep.TURN_ON
+        else -> WirelessStep.LEAVE
     }
 
     /** Push the current recorder switch + automatic/on-demand choice to the
@@ -958,6 +1011,7 @@ object CaptureDaemon {
     private suspend fun ensureRunningLocked(context: Context): Result<Unit> {
         var retired = false
         val running = probeConfirmed(context)
+        ReviveLog.note(context, "start: old recorder ${if (running != null) "answers" else "does not answer"}")
         if (running != null) {
             if (upToDate(context, running)) {
                 Log.i(TAG, "daemon: already running")
@@ -1087,8 +1141,10 @@ object CaptureDaemon {
                 }
             }
             if (!freed) Log.w(TAG, "daemon: port $PORT still held after pkill, starting anyway")
+            ReviveLog.note(context, "start: port free: $freed")
 
             val staged = stageAsset(context)
+            ReviveLog.note(context, "start: jar staged")
             Log.i(TAG, "daemon: staged jar at $staged")
 
             // The shell UID cannot read this app's private files, but it CAN
@@ -1098,6 +1154,7 @@ object CaptureDaemon {
             // sdcard mount is not something to rely on.
             exec("cp '$staged' $DEVICE_PATH && chmod 600 $DEVICE_PATH && echo staged")
                 .also { check(it.contains("staged")) { "could not copy the jar: $it" } }
+            ReviveLog.note(context, "start: jar copied")
 
             // setsid is doing the real work here, and `nohup ... &` alone is
             // not enough - measured, not guessed. The identical command run
@@ -1141,6 +1198,7 @@ object CaptureDaemon {
                     "CLASSPATH=$DEVICE_PATH setsid nohup " +
                     "app_process / $MAIN_CLASS $PORT < /dev/null > $LOG_PATH 2>&1 &"
             )
+            ReviveLog.note(context, "start: launch command returned")
 
             // Starting is not the same as listening, and listening is not the
             // same as working: app_process has a runtime to bring up and
@@ -1153,12 +1211,15 @@ object CaptureDaemon {
             // because a connection that sends no command byte looks like a
             // client that hung up.
             var started = false
+            var tries = 0
             repeat(20) {
                 if (!started) {
                     Thread.sleep(250)
+                    tries++
                     if (probe(context) != null) started = true
                 }
             }
+            ReviveLog.note(context, "start: ${if (started) "listening after $tries pings" else "not listening after $tries pings"}")
             if (!started) {
                 val log = exec("cat $LOG_PATH")
                 error("daemon did not start listening on $PORT. Its log said:\n$log")
