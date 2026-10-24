@@ -61,6 +61,27 @@
       });
     }
 
+    // The setup video is a picture of it until someone presses play. A YouTube
+    // embed loads Google's player, scripts and cookies with the page, for every
+    // visitor, watching or not, and this site fetches nothing from anywhere else
+    // - the privacy policy says so. So the player is fetched on the click that
+    // asks for it, from YouTube's privacy-enhanced youtube-nocookie.com. Without
+    // script the link simply opens the video on YouTube.
+    document.querySelectorAll('.video-frame a[data-youtube]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        var f = document.createElement('iframe');
+        f.src = 'https://www.youtube-nocookie.com/embed/' + a.dataset.youtube +
+                '?autoplay=1&rel=0';
+        f.title = 'JemRec setup video';
+        f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+        f.allowFullscreen = true;
+        f.referrerPolicy = 'strict-origin-when-cross-origin';
+        a.replaceWith(f);
+        f.focus();
+      });
+    });
+
     // Click a screenshot to see it properly. The thumbnail on the page is a
     // 420px copy; the viewer loads the full capture, which is the only place it
     // is worth a quarter of a megabyte. Escape closes, and so does clicking

@@ -63,6 +63,12 @@ the phone sets itself up.
 3. **Let it start by itself after a restart:** Settings → *Survive a restart*,
    on phones that keep such a list.
 
+<a href="https://www.youtube.com/watch?v=rt25pZd8R9M"><img src="docs/video/setup.jpg" alt="The setup video: the pairing code, in step 4" width="560"></a>
+
+**Prefer to watch?** The whole setup, start to finish, in 2:22
+[on YouTube](https://www.youtube.com/watch?v=rt25pZd8R9M), filmed on an Honor
+Magic 8 Pro.
+
 Then run **Settings → Diagnostics → Self-test**. It answers, in about a second,
 whether your phone hands over both sides of a call.
 
