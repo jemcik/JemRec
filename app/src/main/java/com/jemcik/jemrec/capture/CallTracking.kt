@@ -59,6 +59,11 @@ object CallTracking {
         /** Each moment it became active: answered, and again after a hold. */
         val activations: List<Long>,
         val endedAt: Long,
+        /** The wall clock minus the monotonic one, in ms, as measured while
+         *  the call was up: what puts the daemon's packet stamps on the
+         *  call's clock (PacketClock). Null for a call tracked before it
+         *  was kept. */
+        val clockOffset: Long? = null,
     ) {
         val answered: Boolean get() = activations.isNotEmpty()
         val answeredAt: Long get() = activations.firstOrNull() ?: 0L
@@ -100,17 +105,20 @@ object CallTracking {
         t.number ?: "",
         t.activations.joinToString(","),
         t.endedAt.toString(),
+        t.clockOffset?.toString() ?: "",
     ).joinToString(SEP.toString())
 
+    /** Five fields as kept before the clock offset was, six since. */
     internal fun decode(s: String): Tracked? {
         val p = s.split(SEP)
-        if (p.size != 5) return null
+        if (p.size != 5 && p.size != 6) return null
         return Tracked(
             id = p[0].toLongOrNull() ?: return null,
             incoming = p[1] == "in",
             number = p[2].ifEmpty { null },
             activations = p[3].split(',').mapNotNull { it.toLongOrNull() },
             endedAt = p[4].toLongOrNull() ?: return null,
+            clockOffset = p.getOrNull(5)?.toLongOrNull(),
         )
     }
 
@@ -200,9 +208,10 @@ object CallTracking {
     private fun endOf(call: Tracked): Long = if (call.endedAt == 0L) Long.MAX_VALUE else call.endedAt
 
     /**
-     * Which call each packet of the recording belongs to, as packet ranges:
-     * a packet goes to whichever call was answered or taken off hold most
-     * recently by then. Packets from before the first answer - the ringing -
+     * Which call each packet of the recording belongs to, as ranges of 20 ms
+     * slots from its start (PacketClock puts each packet in one): a packet
+     * goes to whichever call was answered or taken off hold most recently by
+     * then. Packets from before the first answer - the ringing -
      * belong to none and are not saved, and neither are those after a call
      * ended - the second or two the daemon takes to notice. One call gives one
      * range from its answer to its end; call waiting gives one per stretch.

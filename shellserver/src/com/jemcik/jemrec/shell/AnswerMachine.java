@@ -119,6 +119,16 @@ final class AnswerMachine {
         /** Telecom holds the call's audio mode. */
         boolean audioInCall();
 
+        /**
+         * The answered call's audio is up: audioInCall, or the communication
+         * mode of a phone call that plays through the mixer (Checks.
+         * phoneCallInMixer) - a Wi-Fi Calling call on a Galaxy S23, which
+         * never takes MODE_IN_CALL, and was hung up as one whose audio never
+         * came (2026-10-24). Asked only once this has answered: while it
+         * rings, communication mode is a messenger's call.
+         */
+        boolean callAudioUp();
+
         /** Mute or unmute the microphone - and remember holding the mute,
          *  so a restart can undo it. */
         void setMuted(boolean on);
@@ -456,7 +466,7 @@ final class AnswerMachine {
         if (state != State.ANSWERING) {
             return;
         }
-        boolean audio = effects.audioInCall();
+        boolean audio = effects.callAudioUp();
         if (audio && !testCall && mutedAt == 0) {
             // The room out as soon as the call's audio is up: on the Honor
             // that is before the network connects the call (see idleSignal).
@@ -574,7 +584,7 @@ final class AnswerMachine {
         if (state != State.GREETING && state != State.MESSAGE || ending) {
             return;
         }
-        if (!over && mutedAt > 0 && !effects.muted() && effects.audioInCall()) {
+        if (!over && mutedAt > 0 && !effects.muted() && effects.callAudioUp()) {
             // Unmuted, and seen so twice in a row with the call still up: the
             // user took the call from the call screen. Once could be the
             // caller hanging up - the Honor clears the mute as a call ends,

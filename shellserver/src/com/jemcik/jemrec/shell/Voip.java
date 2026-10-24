@@ -168,7 +168,26 @@ final class Voip {
     /** A capture for the call that just started, or null if not armed. */
     static AudioCapture newCapture() {
         Policy p = policy;
-        return p == null ? null : new Capture(p);
+        return p == null ? null : new Capture(p, false);
+    }
+
+    /**
+     * A capture for a PHONE call that plays through the mixer (Checks.
+     * phoneCallInMixer): the messenger capture, the copy armed for this call
+     * if no messenger app has armed it, and disarmed when the recording ends
+     * with none on the list (recordingEnded). Null when Android refuses the
+     * copy; the call is then recorded as any other.
+     */
+    static synchronized AudioCapture newPhoneCapture() {
+        if (policy == null) {
+            try {
+                policy = Policy.register();
+            } catch (Throwable t) {
+                Ln.e("voip: could not copy the phone call's audio", t);
+                return null;
+            }
+        }
+        return new Capture(policy, true);
     }
 
     // --- the audio policy --------------------------------------------------------
@@ -434,21 +453,13 @@ final class Voip {
             if (capture == null || !capture.hasMic()) {
                 return;
             }
-            for (AudioRecordingConfiguration r : audio.getActiveRecordingConfigurations()) {
-                Integer uid = uidOf(r);
-                if (uid == null || uid == android.os.Process.myUid() || !r.isClientSilenced()) {
-                    continue;
-                }
+            Integer silenced = silencedCapture(audio, uid -> {
                 String[] packages = FakeContext.get().getPackageManager().getPackagesForUid(uid);
-                if (packages != null) {
-                    for (String pkg : packages) {
-                        if (pkg.equals(app)) {
-                            Ln.w("voip: " + app + "'s microphone was silenced while recording - dropping ours");
-                            capture.dropMic();
-                            return;
-                        }
-                    }
-                }
+                return packages != null && java.util.Arrays.asList(packages).contains(app);
+            });
+            if (silenced != null) {
+                Ln.w("voip: " + app + "'s microphone was silenced while recording - dropping ours");
+                capture.dropMic();
             }
         }
     }
@@ -479,6 +490,19 @@ final class Voip {
     }
 
     /** getClientUid is a system API: by reflection, or null. */
+    /** The uid of an active capture Android has silenced - not this
+     *  process's - that [which] picks; null for none. The guards' one look:
+     *  a call's own microphone silenced while we record means ours goes. */
+    private static Integer silencedCapture(AudioManager audio, java.util.function.IntPredicate which) {
+        for (AudioRecordingConfiguration r : audio.getActiveRecordingConfigurations()) {
+            Integer uid = uidOf(r);
+            if (uid != null && uid != android.os.Process.myUid() && r.isClientSilenced() && which.test(uid)) {
+                return uid;
+            }
+        }
+        return null;
+    }
+
     private static Integer uidOf(Object config) {
         try {
             return (Integer) config.getClass().getMethod("getClientUid").invoke(config);
@@ -505,7 +529,16 @@ final class Voip {
         private static final int FRAMES = 960;              // 20 ms
         private static final int MAX_AHEAD = SAMPLE_RATE / 5; // 200 ms
 
+        /** Reads between two looks for the phone call's own microphone
+         *  silenced: about a second (phoneGuard). */
+        private static final int GUARD_READS = 50;
+
         private final Policy policy;
+        /** A phone call's recording, not a messenger call's (newPhoneCapture). */
+        private final boolean phone;
+        private int reads;
+        /** For phoneGuard: looked up once, at start. */
+        private AudioManager audio;
         private AudioRecord far;
         private volatile AudioRecord near;
         private Pump farPump;
@@ -517,8 +550,9 @@ final class Voip {
         private final short[] mine = new short[FRAMES];
         private final short[] theirs = new short[FRAMES * 2];
 
-        Capture(Policy policy) {
+        Capture(Policy policy, boolean phone) {
             this.policy = policy;
+            this.phone = phone;
         }
 
         boolean hasMic() {
@@ -553,8 +587,17 @@ final class Voip {
                 // The other side alone is still worth having.
                 Ln.w("voip: no microphone, recording the other side only: " + t);
             }
+            if (phone) {
+                audio = (AudioManager) FakeContext.get().getSystemService(Context.AUDIO_SERVICE);
+            }
             running = true;
-            startUs = SystemClock.elapsedRealtimeNanos() / 1000;
+            // The monotonic clock, as every other capture stamps with
+            // (AudioRecordReader, AudioEncoder.fixTimestamp) and the app
+            // places packets by (PacketClock): elapsedRealtime, which this
+            // used, runs on through the phone's sleep, and would put the
+            // first packet of a phone call recorded here that far past its
+            // place - found reading the code (2026-10-24), not seen.
+            startUs = System.nanoTime() / 1000;
             current = this;
             Ln.i("voip: recording both sides (" + (near != null ? "mic on" : "mic off") + ")");
         }
@@ -602,7 +645,7 @@ final class Voip {
                 // end the whole recording, theirs included.
                 java.util.Arrays.fill(mine, (short) 0);
                 long due = startUs + (framesOut + FRAMES) * 1_000_000L / SAMPLE_RATE;
-                long wait = due - SystemClock.elapsedRealtimeNanos() / 1000;
+                long wait = due - System.nanoTime() / 1000;
                 if (wait > 0) {
                     SystemClock.sleep(wait / 1000 + 1);
                 }
@@ -614,14 +657,47 @@ final class Voip {
             // ByteBuffer starts out big-endian, which would be noise.
             out.order(ByteOrder.nativeOrder());
             for (int i = 0; i < FRAMES; i++) {
-                out.putShort((short) ((theirs[2 * i] + theirs[2 * i + 1]) / 2));
-                out.putShort(mine[i]);
+                short far = (short) ((theirs[2 * i] + theirs[2 * i + 1]) / 2);
+                // A phone call's own side on the left, where the call capture
+                // has it and the answering machine reads it (Main.onChunk); a
+                // messenger call's on the right, as it always was.
+                out.putShort(phone ? mine[i] : far);
+                out.putShort(phone ? far : mine[i]);
             }
             int bytes = FRAMES * AudioConfig.CHANNELS * AudioConfig.BYTES_PER_SAMPLE;
             long pts = startUs + framesOut * 1_000_000L / SAMPLE_RATE;
             framesOut += FRAMES;
             info.set(0, bytes, pts, 0);
+            if (phone && ++reads % GUARD_READS == 0) {
+                phoneGuard();
+            }
             return bytes;
+        }
+
+        /**
+         * A phone call's own microphone silenced while we record: give ours
+         * back at once. A messenger's is an app on the list (Watch.guard); a
+         * phone call's is the call stack's - uid 1000 on the Galaxy S23 - so
+         * any system capture silenced counts, and no app's. Not seen: the
+         * call's capture outranks ours, and the S23's ran unsilenced through
+         * a whole call recorded this way (2026-10-24). But a recording must
+         * never cost the call its voice.
+         */
+        private void phoneGuard() {
+            if (near == null) {
+                return;
+            }
+            try {
+                Integer uid = silencedCapture(audio, u -> u < android.os.Process.FIRST_APPLICATION_UID);
+                if (uid != null) {
+                    Ln.w("recording: the call's microphone (uid " + uid + ") was silenced while recording - dropping ours");
+                    dropMic();
+                }
+            } catch (Throwable t) {
+                // Unable to look: the microphone goes, as the safe answer.
+                Ln.w("recording: could not check the call's microphone, dropping ours: " + t);
+                dropMic();
+            }
         }
 
         @Override

@@ -251,6 +251,31 @@ final class Checks {
         return mode == MODE_IN_COMMUNICATION || (mode != MODE_IN_CALL && appStillCalling);
     }
 
+    /** Android 14: from here the shell holds CAPTURE_VOICE_COMMUNICATION_OUTPUT,
+     *  which copying a call's playback needs (Voip.Policy). */
+    static final int SDK_VOICE_COPY = 34;
+
+    /**
+     * Whether a phone call plays through Android's mixer, as a messenger call
+     * does, instead of the modem's voice path - and so is recorded as one
+     * (Voip.Capture), because VOICE_CALL hears nothing of it. Told by the
+     * audio mode while the phone call is up.
+     *
+     * Measured on a Galaxy S23 (One UI, Android 16, 2026-10-24), over Wi-Fi
+     * Calling: MODE_IN_COMMUNICATION from the dialling, the far side played
+     * by voice-communication players of the call stack (uid 1000); VOICE_CALL
+     * at 48k stereo, 16k and 8k mono, VOICE_DOWNLINK and VOICE_UPLINK all
+     * delivered zeros at the full rate, a whole call long; the messenger
+     * capture had the far side from the copy and her side from the
+     * microphone, with the call's own microphone never silenced and both
+     * people hearing each other. Every phone call measured before - the
+     * Honor's and the emulators' - is MODE_IN_CALL, and goes through the
+     * modem as always.
+     */
+    static boolean phoneCallInMixer(int mode, int sdk) {
+        return mode == MODE_IN_COMMUNICATION && sdk >= SDK_VOICE_COPY;
+    }
+
     /** Root mean square of one [channel] of the first [frames] frames of
      *  interleaved [pcm]. */
     static double channelRms(short[] pcm, int channels, int channel, int frames) {

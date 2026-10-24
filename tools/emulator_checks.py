@@ -7,6 +7,8 @@ Installs the debug APK, sets JemRec up from nothing, and runs simulated calls
 through the real app and daemon, checking what each one leaves behind:
 
   ringing     an outgoing call is saved from its answer to its end, exactly
+  ringing-gap  the same when nothing is captured until the call is
+              answered, as over Wi-Fi Calling on a Pixel (issue #40)
   unanswered  an outgoing call nobody answered is not saved
   incoming    an incoming call is saved from its answer to its end, exactly
   rules       with Other numbers off, a stranger's call is never recorded
@@ -258,7 +260,7 @@ def tracked():
     calls = []
     for s in re.findall(r"<string>(.*?)</string>", m.group(1) if m else "", re.S):
         p = s.replace("&amp;", "&").split("|")
-        if len(p) == 5:
+        if len(p) in (5, 6):  # six with the clock offset (issue #40)
             answered = [int(a) for a in p[3].split(",") if a]
             calls.append((int(p[0]), p[1] == "in", answered[0] if answered else 0, int(p[4])))
     return sorted(calls)
@@ -276,18 +278,57 @@ def saved():
     return int(m.group(1)), float(m.group(2)), (newest[0].strip() if newest else "")
 
 
+def undelivered():
+    """What the capture never delivered inside the recording just saved, in
+    seconds, as the app counts it (RecordingSaver): 0 for one that ran through."""
+    m = re.search(r"save: wrote \d+ packets, [\d.]+s from [^\s,]+, ([\d.]+)s not delivered by the capture", log())
+    return float(m.group(1)) if m else 0.0
+
+
+def accounted():
+    """The time the app's clock says the capture left out of the daemon's
+    file - before its first packet and in its gaps (PacketClock) - against
+    what the file's own span and packet count make it, read without that
+    clock: the daemon's start (the file's name) to its stop (its log line),
+    less 20 ms a packet. The daemon drops what its capture still holds as it
+    stops, so the span may hold a little more than the clock claims - never
+    less: a gap the clock made up, its packets all there, fails here."""
+    m = re.search(r"save: (jemrec_rec_(\d+)_\w+\.dat) - (\d+) packets, the first ([\d.]+) s after the start, "
+                  r"then (\d+) gap\(s\), ([\d.]+) s", log())
+    if not m:
+        return ""
+    recfile, start, packets = m.group(1), int(m.group(2)), int(m.group(3))
+    first, gaps, lost = float(m.group(4)), int(m.group(5)), float(m.group(6))
+    stop = next((float(line.split()[0]) for line in adb("logcat", "-d", "-v", "epoch", "-s", "scrcpy:V").splitlines()
+                 if f"recording: stopped -> {recfile}" in line), None)
+    assert stop is not None, f"no stop line for {recfile}"
+    missing = stop - start / 1000 - packets * 0.020
+    claimed = first + lost
+    assert claimed <= missing + 0.1, f"the clock left out {claimed:.2f} s, the daemon's file has room for {missing:.2f} s"
+    return f"{gaps} gap(s), the daemon's file agreeing"
+
+
 def exact(name_part):
-    """Saved, named with [name_part], and as long as Telecom says the call was."""
+    """Saved, named with [name_part], and as long as Telecom says the call
+    was - less what the capture itself never delivered inside it, which no
+    cut can put back. The Android 13 emulator's capture loses ~0.7 s just
+    after an incoming call goes off-hook, every call (2026-10-24: the
+    stamps jump, and the beep's one-second rhythm shows a merged tone);
+    0.19.2, placing packets by counting, filled it with audio from after
+    the hang-up and came out the right length."""
     packets, _, name = saved()
     seconds = packets * 0.020  # one Opus packet, 20 ms
+    lost = undelivered()
+    agreed = accounted()
     # Waited for: read at once, the app's account came back empty once, the
     # first call on the Android 12 AVD in a run beside another emulator
     # (2026-10-24) - the call saved, its end seen, and it passed run again.
     _, _, answered, ended = wait_for(tracked, 5, "Telecom's account of the call in the app's preferences")[-1]
     talk = (ended - answered) / 1000
     assert name_part in name, f"saved as {name}, wanted {name_part!r} in it"
-    assert abs(seconds - talk) <= 0.15, f"{seconds:.2f} s saved for {talk:.2f} s of call"
-    return f"{name}: {seconds:.2f} s for {talk:.2f} s answered"
+    gone = f" + {lost:.2f} s the capture did not deliver" if lost else ""
+    assert abs(seconds + lost - talk) <= 0.15, f"{seconds:.2f} s saved{gone} for {talk:.2f} s of call"
+    return f"{name}: {seconds:.2f} s{gone} for {talk:.2f} s answered" + (f" ({agreed})" if lost else "")
 
 
 # --- the checks --------------------------------------------------------------------
@@ -296,6 +337,57 @@ def ringing():
     sh("logcat -c")
     dial(STRANGER_OUT, ring_s=3, talk_s=5)
     return exact("_out_")
+
+
+def ringing_gap():
+    # Over Wi-Fi Calling on a Pixel 11 Pro XL nothing was captured while an
+    # outgoing call rang (issue #40), and a cut placed by counting packets
+    # from the dialling landed past the call. Here the daemon is stopped the
+    # moment its file appears - before it captures anything - and let go
+    # 1.4 s later, before the emulator answers, which it does 2.3 s after the
+    # dialling (API 37, measured).
+    #
+    # A cut 1.4 s late runs on into the two seconds the daemon records past a
+    # hang-up, and comes out as long as the call - unnoticed, where the
+    # Pixel's 32 s ran out of packets. So the daemon is stopped again as the
+    # phone goes idle, for those two seconds, which costs nothing of the call:
+    # a late cut then comes out short. Not before it has seen the idle: its
+    # two seconds would only start once it was let go (measured, three late
+    # cuts passed).
+    #
+    # Both from the emulator itself, not over adb: a stop sent from here
+    # landed up to a second late, past the daemon's two seconds, and a late
+    # cut passed.
+    pid = daemon_pid()
+    quiet = subprocess.Popen(
+        ["adb", "-s", serial, "shell",
+         # Each wait gives up: the host kills only its adb client on a
+         # timeout, and a script left waiting here would stop the daemon
+         # at some later check's hang-up.
+         "end=$(( $(date +%s) + 40 )); "
+         "until ls /data/local/tmp | grep -q '^jemrec_rec_.*_out.dat$'; do [ $(date +%s) -gt $end ] && exit 1; done; "
+         f"kill -STOP {pid}; a=$(date +%s%3N); sleep 1.4; kill -CONT {pid}; b=$(date +%s%3N); "
+         "until dumpsys telephony.registry | grep -m1 -q mCallState=0; do [ $(date +%s) -gt $end ] && exit 1; done; sleep 0.3; "
+         f"kill -STOP {pid}; c=$(date +%s%3N); sleep 2.5; kill -CONT {pid}; d=$(date +%s%3N); "
+         "echo $a $b $c $d"],
+        stdout=subprocess.PIPE, text=True)
+    try:
+        sh("logcat -c")
+        time.sleep(0.5)
+        dial(STRANGER_OUT, ring_s=3, talk_s=5)
+        a, b, c, d = (int(t) for t in quiet.communicate(timeout=15)[0].split())
+    finally:
+        if quiet.poll() is None:
+            quiet.kill()
+        sh(f"kill -CONT {pid}")
+    started = int(re.findall(r"jemrec_rec_(\d+)_out", log())[-1])
+    _, _, answered, ended = wait_for(tracked, 5, "Telecom's account of the call")[-1]
+    stopped = f"stopped {(a - started) / 1000:.2f}-{(b - started) / 1000:.2f} s after the dialling " \
+              f"(answered at {(answered - started) / 1000:.2f}) and {(c - ended) / 1000:.2f}-{(d - ended) / 1000:.2f} s after the end"
+    try:
+        return f"{exact('_out_')}; {stopped}"
+    except AssertionError as e:
+        raise AssertionError(f"{e}; {stopped}") from e
 
 
 def unanswered():
@@ -846,7 +938,7 @@ def self_test():
     return next(l.split("] ", 1)[1] for l in report.splitlines() if "PASS" in l)
 
 
-CHECKS = [ringing, unanswered, incoming, rules, succession, caller_id, self_test,
+CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, waveform, background_playback,
           recently_deleted, looks, reinstall]

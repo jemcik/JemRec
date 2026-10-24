@@ -10,6 +10,20 @@ import org.junit.Test;
 public class ChecksTest {
 
     @Test
+    public void aPhoneCallPlayedThroughTheMixerIsRecordedAsAMessengerCall() {
+        // Wi-Fi Calling on a Galaxy S23: the call in communication mode.
+        assertTrue(Checks.phoneCallInMixer(Checks.MODE_IN_COMMUNICATION, 36));
+        // Every other phone call measured: the modem's voice path, as always.
+        assertFalse(Checks.phoneCallInMixer(Checks.MODE_IN_CALL, 36));
+        // Before Android 14 the shell may not copy a call's audio.
+        assertFalse(Checks.phoneCallInMixer(Checks.MODE_IN_COMMUNICATION, 33));
+        assertTrue(Checks.phoneCallInMixer(Checks.MODE_IN_COMMUNICATION, Checks.SDK_VOICE_COPY));
+        // A mode that does not say a call is up decides nothing.
+        assertFalse(Checks.phoneCallInMixer(0, 36));
+        assertFalse(Checks.phoneCallInMixer(1, 36));
+    }
+
+    @Test
     public void theUidsOwnLineDecides() {
         // As Main.slurp joins it, and as the device prints it.
         assertTrue(Checks.uidAllowed("Uid mode: MANAGE_ONGOING_CALLS: allow | MANAGE_ONGOING_CALLS: allow; time=+1m"));

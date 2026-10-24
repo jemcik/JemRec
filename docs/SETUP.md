@@ -365,8 +365,9 @@ audio hardware. These tell you:
 - **Copy a report** — this phone and what the tests found, with nothing about
   any call, to paste into a report on GitHub.
 
-Experimental. Tested on an Honor, on 2G calls; its carrier would not register
-it for VoLTE. On a phone not tried yet, the test call is how to know.
+Experimental. Tested on an Honor, on 2G calls (its carrier would not register
+it for VoLTE), and on a Galaxy S23 over Wi-Fi Calling. On a phone not tried
+yet, the test call is how to know.
 
 ## Playing, sharing and deleting
 

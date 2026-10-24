@@ -237,5 +237,26 @@ class SavePlanTest {
         assertEquals(1, decision.parts.size)
         assertTrue(decision.parts.single().name, decision.parts.single().name.endsWith("_in_Priya Raman.ogg"))
         assertEquals(listOf(SavePlan.LeftOut(t + 20 * s, true, 20)), decision.leftOut)
+        // Nothing to save whole should the cut catch nothing: the stranger
+        // is in the file too.
+        assertEquals(null, SavePlan.wholeIfNothingFits(decision, listOf(first, second)))
+    }
+
+    @Test fun aCallWhoseCutCatchesNothingIsSavedWholeNotDeleted() {
+        // Issue #40: the cut fell past every packet, and the call was
+        // deleted as one with no audio.
+        val call = Tracked(t, false, "+13034997111", listOf(t + 32 * s), t + 52 * s)
+        val decision = decide(Phone(), listOf(call), settings = settings(Format.DATE)) as Decision.Save
+        val whole = SavePlan.wholeIfNothingFits(decision, listOf(call))!!
+        assertEquals(decision.parts.single().name, whole.name)
+        assertEquals(listOf(0L until Long.MAX_VALUE), whole.packets)
+    }
+
+    @Test fun twoCallsKeptAreNotSavedWholeIntoOne() {
+        val first = Tracked(t, true, "+15550101", listOf(t + 2 * s, t + 50 * s), t + 70 * s)
+        val second = Tracked(t + 20 * s, true, "+15550199", listOf(t + 30 * s), t + 50 * s)
+        val decision = decide(Phone(), listOf(first, second), incoming = true, start = t + 2 * s) as Decision.Save
+        assertEquals(2, decision.parts.size)
+        assertEquals(null, SavePlan.wholeIfNothingFits(decision, listOf(first, second)))
     }
 }

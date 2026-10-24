@@ -1216,9 +1216,9 @@ SETUP = [
         "**Copy a report** — this phone and what the tests found, with nothing "
         "about any call, to paste into a report on GitHub.",
     ]),
-    ("p", "Experimental. Tested on an Honor, on 2G calls; its carrier would not "
-          "register it for VoLTE. On a phone not tried yet, the test call is how "
-          "to know."),
+    ("p", "Experimental. Tested on an Honor, on 2G calls (its carrier would not "
+          "register it for VoLTE), and on a Galaxy S23 over Wi-Fi Calling. On a "
+          "phone not tried yet, the test call is how to know."),
 
     ("h2", "Playing, sharing and deleting"),
     ("p", "Recordings are listed newest first, under **Today**, **Yesterday** "
@@ -1984,9 +1984,10 @@ FAQ = [
      "heard on your side too: your side is the plain microphone, without the "
      "call app&rsquo;s echo cancellation."),
     ("Will callers hear my greeting?",
-     "On the Honor it was developed on, yes. No app can play sound into a call, "
-     "so the recorder does it as the shell, through an output Android calls "
-     "<em>in-call music</em>; not every phone has one. Before you switch the "
+     "On the two phones it has been tried on, yes. No app can play sound into a "
+     "call, so the recorder does it as the shell: on the Honor through an output "
+     "Android calls <em>in-call music</em>, on a Galaxy S23 over Wi-Fi Calling "
+     "through Android's call-screening route; not every phone has either. Before you switch the "
      "answering machine on, its <em>Checks</em> tell you in a second whether "
      "yours does, and a <em>Test call</em> settles it for that kind of call: "
      "2G, VoLTE and Wi-Fi Calling differ. Your microphone is muted while the "
@@ -2154,7 +2155,7 @@ INDEX_BODY = f"""
      path for yours.</p>
   <div class="works">
     <h3 class="versions">What it records, by Android version</h3>
-    <h3 class="tested">Both sides recorded on three very different phones</h3>
+    <h3 class="tested">Both sides recorded on four phones</h3>
     <div class="table-card versions">
       <table>
         <tr><th></th><th>Phone calls</th><th>Messenger calls</th></tr>
@@ -2169,18 +2170,20 @@ INDEX_BODY = f"""
     <ul class="table-card devices tested">
       <li>Honor Magic 8 Pro<span>MagicOS 10 and 11, Android 16 and 17 &mdash; the phone it was developed on</span></li>
       <li>Samsung Galaxy S20<span>One UI</span></li>
+      <li>Samsung Galaxy S23<span>One UI, Android 16 &mdash; over Wi-Fi Calling too</span></li>
       <li>OnePlus<span>LineageOS 23</span></li>
     </ul>
   </div>
   <p class="muted works-note">Signal takes the same path as the other messengers
      and has not been tested yet.</p>
   <div class="note info">
-    <p><strong>Three is not a compatibility list.</strong> The one thing nobody
+    <p><strong>Four is not a compatibility list.</strong> The one thing nobody
        can promise for a phone they have not held is its audio hardware: some
        hand over both sides of the call, some one, some silence. The
        <strong>Self-test</strong> answers it on yours in about a second.</p>
-    <p><strong>The answering machine</strong> has been tried on the Honor, on
-       2G calls; its carrier would not register it for VoLTE. Whether a phone
+    <p><strong>The answering machine</strong> has been tried on two phones: the
+       Honor, on 2G calls (its carrier would not register it for VoLTE), and a
+       Galaxy S23 over Wi-Fi Calling. Whether a phone
        carries a greeting to the caller is up to its audio hardware too, so the
        answering machine has its own checks and a test call.</p>
   </div>
@@ -2378,10 +2381,11 @@ HOW_BODY = f"""
      silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
      <strong>Self-test</strong> &mdash; by opening a real capture down the same
      path a call takes and telling you what came out.</p>
-  <p class="muted">Both sides of the call have been recorded on three phones,
+  <p class="muted">Both sides of the call have been recorded on four phones,
      across three very different Android builds: an Honor Magic&nbsp;8 Pro on
-     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20 on One&nbsp;UI, and a OnePlus on
-     LineageOS&nbsp;23. Three is not a compatibility list, which is what the
+     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20 and a Galaxy&nbsp;S23 on
+     One&nbsp;UI &mdash; the S23 over Wi-Fi Calling too &mdash; and a OnePlus on
+     LineageOS&nbsp;23. Four is not a compatibility list, which is what the
      self-test is for.</p>
 """
 
@@ -2441,7 +2445,8 @@ PRIVACY_BODY = f"""
     <tr><td>Call tracking</td>
         <td>While Exact call tracking is on, which it is unless you turn it off:
             for the last 40 phone calls, when each began, was answered and
-            ended, and which way it went &mdash; and its number, only if you
+            ended, which way it went, and how far apart the phone&rsquo;s two
+            clocks were during it &mdash; and its number, only if you
             allowed JemRec to read the call log, which has it anyway. In the
             app&rsquo;s private storage, to cut each recording to its call and
             name it. Turning tracking off deletes it.</td></tr>

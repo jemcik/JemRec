@@ -16,7 +16,7 @@ In an ADB session of a few seconds the app starts a small shell-privileged daemo
 
 <b>What stays on.</b> USB and Wireless debugging stay on while JemRec is installed, turned back on if they go off: the recorder needs them. While they are on, a computer paired with the phone can connect to it on the same Wi-Fi. To turn debugging off for good, uninstall JemRec first.
 
-<b>Requirements.</b> Android 12 or newer, and a phone whose audio hardware hands over the voice-call source. Both sides have been recorded on an Honor Magic 8 Pro, a Samsung Galaxy S20 and a OnePlus on LineageOS. The self-test in Settings → Diagnostics answers it for your phone.
+<b>Requirements.</b> Android 12 or newer, and a phone whose audio hardware hands over the voice-call source. Both sides have been recorded on an Honor Magic 8 Pro, Galaxy S20 and S23, and a OnePlus on LineageOS. The self-test in Settings → Diagnostics answers it for your phone.
 
 <b>Recording calls is your responsibility.</b> Consent law differs by country and state. This app records what you tell it to and warns nobody on your behalf.
 

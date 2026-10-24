@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-659-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-674-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -199,24 +199,26 @@ Signal takes the same path as the other messengers and has not been tested yet.
 Developer options and Wireless debugging are on every Android phone, though the
 menu they live in differs by make; JemRec names the right path for yours.
 
-**Both sides of the call** have been recorded on three phones, across three very
+**Both sides of the call** have been recorded on four phones, across three very
 different Android builds:
 
 | Phone | Build |
 | --- | --- |
 | Honor Magic 8 Pro (BKQ-N49) | MagicOS 10 and 11, Android 16 and 17 — the phone it was developed on |
 | Samsung Galaxy S20 | One UI |
+| Samsung Galaxy S23 | One UI, Android 16 — over Wi-Fi Calling too, which it carries like a messenger call |
 | OnePlus | LineageOS 23 |
 
-Three is not a compatibility list. The one thing nobody can promise for a phone
+Four is not a compatibility list. The one thing nobody can promise for a phone
 they have not held is its audio hardware: some hand over both sides of the call,
 some one, some silence. The **Self-test** answers it on yours in about a second:
 it opens a real capture over the same path a call takes and tells you what came
 out of it.
 
-**The answering machine** has been tried on the Honor, on 2G calls; its carrier
-would not register it for VoLTE. Whether a phone carries a greeting to the
-caller is up to its audio hardware too - Android's own answer was wrong on the
+**The answering machine** has been tried on two phones: the Honor, on 2G calls
+(its carrier would not register it for VoLTE), and a Galaxy S23 over Wi-Fi
+Calling. Whether a phone carries a greeting to the caller is up to its audio
+hardware too - Android's own answer was wrong on the
 Honor - so the answering machine's settings hold its own checks and a test call.
 
 ## Privacy and permissions
@@ -285,9 +287,10 @@ side is the plain microphone, without the call app's echo cancellation.
 
 <br>
 
-On the Honor it was developed on, yes. No app can play sound into a call, so
-the recorder does it as the shell, through an output Android calls *in-call
-music*; not every phone has one. Before you switch the answering machine on,
+On the two phones it has been tried on, yes. No app can play sound into a
+call, so the recorder does it as the shell: on the Honor through an output
+Android calls *in-call music*, on a Galaxy S23 over Wi-Fi Calling through
+Android's call-screening route; not every phone has either. Before you switch the answering machine on,
 its *Checks* tell you in a second whether yours does, and a *Test call*
 settles it for that kind of call: 2G, VoLTE and Wi-Fi Calling differ. Your
 microphone is muted while the greeting plays and the message is left, so the
@@ -371,7 +374,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 659 tests, screenshots of the screens included
+    ./gradlew test              # 674 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

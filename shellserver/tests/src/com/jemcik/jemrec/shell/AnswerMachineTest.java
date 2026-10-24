@@ -32,6 +32,9 @@ public class AnswerMachineTest {
          *  it in call, unless [audioComes] is false. */
         boolean audioInCall;
         boolean audioComes = true;
+        /** A phone call that plays through the mixer: its audio up in
+         *  communication mode, never in call. */
+        boolean mixerCall;
         boolean muted;
         /** Whether a mute asked for takes. */
         boolean muteTakes = true;
@@ -102,6 +105,11 @@ public class AnswerMachineTest {
         @Override
         public boolean audioInCall() {
             return audioInCall;
+        }
+
+        @Override
+        public boolean callAudioUp() {
+            return audioInCall || mixerCall;
         }
 
         @Override
@@ -410,6 +418,23 @@ public class AnswerMachineTest {
         assertFalse(machine.answeredThisCall());
         assertFalse(world.timersPending());
         assertNull(machine.callEnded());
+    }
+
+    @Test
+    public void aCallThroughTheMixerIsGreetedNotHungUp() {
+        // A Wi-Fi Calling call on a Galaxy S23: never MODE_IN_CALL, its audio
+        // up in communication mode. It was hung up as a call whose audio
+        // never came (2026-10-24); the caller heard nothing and was cut off.
+        on();
+        world.audioComes = false;
+        world.mixerCall = true;
+        machine.ringing();
+        machine.goAhead(5_000L, world.now);
+        world.advance(5_000L);
+        machine.offHook(true);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("answer", "mute", "greeting", "message started");
+        assertEquals(AnswerMachine.State.GREETING, machine.state());
     }
 
     @Test

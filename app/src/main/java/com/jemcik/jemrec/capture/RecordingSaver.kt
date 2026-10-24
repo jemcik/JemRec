@@ -262,7 +262,13 @@ object RecordingSaver {
                     kept
                 }
                 val message = messageStart != null
-                val written = write(context, recfile, parts, ledger = true, message = message) { part ->
+                // Placed by the packets' own stamps, with the clocks' offset
+                // from Telecom's account (PacketClock, issue #40). A message
+                // is cut by counting from its first packet, which is where
+                // the recorder measured its start from.
+                val clock = PacketClock(startedAt.time, if (trimFrom == null) tracked.firstOrNull()?.clockOffset else null)
+                val orWhole = if (trimFrom == null) SavePlan.wholeIfNothingFits(decision, tracked) else null
+                val written = write(context, recfile, parts, ledger = true, message = message, clock = clock, orWhole = orWhole) { part ->
                     RecordingTags.Facts(message = message, incoming = part.incoming)
                 }
                 if (messageStart != null && written == Outcome.Empty) {
@@ -321,9 +327,10 @@ object RecordingSaver {
     }
 
     /**
-     * One file a daemon recording is saved into, and which of its packets -
-     * 20 ms each, counted from the first - go there. Usually one part with
-     * all of them; see SavePlan for the others.
+     * One file a daemon recording is saved into, and which of its packets go
+     * there, by 20 ms slot from the recording's start: counted from the first
+     * packet, unless the capture lost time (PacketClock). Usually one part
+     * with all of them; see SavePlan for the others.
      */
     internal class Part(
         val name: String,
@@ -333,6 +340,20 @@ object RecordingSaver {
         val packets: List<LongRange>,
     ) {
         fun holds(index: Long): Boolean = packets.any { index in it }
+
+        /**
+         * The slots of this part, from its start to the last written
+         * ([last]), that no packet filled: what the capture never delivered
+         * inside it, the stretch before its [first] packet included. A call
+         * waiting's other stretches are not this part's, and do not count.
+         * 0 with nothing written.
+         */
+        fun undeliveredSlots(first: Long, last: Long, written: Long): Long {
+            if (first < 0) return 0
+            val from = minOf(first, packets.firstOrNull()?.first ?: first)
+            val held = packets.sumOf { r -> (minOf(r.last, last) - maxOf(r.first, from) + 1).coerceAtLeast(0) }
+            return (held - written).coerceAtLeast(0)
+        }
 
         /** The same part from packet [first] on. */
         fun from(first: Long): Part = Part(
@@ -360,6 +381,16 @@ object RecordingSaver {
         private val work: File?,
         private val workFd: ParcelFileDescriptor?,
     ) {
+        /** The first and last slots written here (PacketClock): the time
+         *  they span less the packets written is what the capture never
+         *  delivered inside this part. */
+        var firstSlot = -1L
+        var lastSlot = -1L
+
+        /** Seconds inside this part the capture did not deliver. */
+        val undelivered: Double
+            get() = part.undeliveredSlots(firstSlot, lastSlot, writer.packets) * CallTracking.PACKET_MS / 1000.0
+
         /** Copy the finished file into place, with [facts] in it. */
         fun copyIn(facts: RecordingTags.Facts) {
             val from = work ?: return
@@ -379,6 +410,9 @@ object RecordingSaver {
      * opened at its first packet, so a part with none leaves nothing behind.
      * [ledger]: note each saved part for the missed-call check - phone calls
      * only. [facts]: what each part's file says of itself (RecordingTags).
+     * [clock]: where each packet falls, for parts cut to a call; without it
+     * they are counted. [orWhole]: saved into instead when no part held any
+     * of the file's packets (SavePlan.wholeIfNothingFits).
      */
     private suspend fun write(
         context: Context,
@@ -386,6 +420,8 @@ object RecordingSaver {
         parts: List<Part>,
         ledger: Boolean,
         message: Boolean = false,
+        clock: PacketClock? = null,
+        orWhole: Part? = null,
         facts: (Part) -> RecordingTags.Facts,
     ): Outcome {
         val socket = try {
@@ -403,6 +439,7 @@ object RecordingSaver {
         // marks are in the preferences still, and only a reinstall loses them.
         val tagged = !failedBefore(context, recfile)
         val open = LinkedHashMap<Part, Open>()
+        var seen = 0L
         var completed = false
         var gone = false
         var nowhere = false
@@ -430,12 +467,12 @@ object RecordingSaver {
                         Log.w(TAG, "save: $recfile had no config packet")
                         completed = true
                     } else {
-                        var index = 0L
                         while (true) {
                             val packet = stream.readPacket() ?: break
                             if (packet.isConfig) continue
-                            val part = parts.firstOrNull { it.holds(index) }
-                            index++
+                            val slot = clock?.next(packet.pts) ?: seen
+                            seen++
+                            val part = parts.firstOrNull { it.holds(slot) }
                             if (part == null) continue
                             val into = open[part] ?: run {
                                 val target = RecordingStore.open(context, part.name)
@@ -466,6 +503,8 @@ object RecordingSaver {
                                     Open(part, target, writer, work, workFd).also { open[part] = it }
                                 }
                             } ?: break
+                            if (into.firstSlot < 0) into.firstSlot = slot
+                            into.lastSlot = slot
                             into.writer.write(packet.data, packet.pts)
                         }
                         completed = !nowhere
@@ -475,6 +514,16 @@ object RecordingSaver {
         } catch (t: Throwable) {
             // Broke off mid-transfer: ambiguous, so keep the file for a retry.
             Log.e(TAG, "save: transfer of $recfile broke off", t)
+        }
+        // Where the capture put its first packet, and what it lost after: the
+        // first thing to ask of a cut that looks wrong (issue #40).
+        val first = clock?.firstMs
+        if (clock != null && first != null) {
+            Log.i(
+                TAG,
+                "save: %s - %d packets, the first %.2f s after the start, then %d gap(s), %.2f s"
+                    .format(recfile, seen, first / 1000.0, clock.gaps, clock.lostMs / 1000.0),
+            )
         }
 
         val written = open.values.map { it to (it.writer.packets to it.writer.durationSeconds) }
@@ -528,7 +577,15 @@ object RecordingSaver {
                     // The recording's daemon name, not its own: with the
                     // caller in it, a file name is a name and a number, and
                     // logcat is no place for those.
-                    Log.i(TAG, "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile))
+                    // And what the capture left out inside it: a recording
+                    // shorter than its call by that, not cut wrong - what the
+                    // emulator checks allow for (tools/emulator_checks.py).
+                    val undelivered = o.undelivered
+                    Log.i(
+                        TAG,
+                        "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile) +
+                            if (undelivered > 0) ", %.2fs not delivered by the capture".format(undelivered) else "",
+                    )
                     if (ledger) {
                         FileNames.noteDirection(context, o.part.name, o.part.incoming)
                         // Before anyone can delete it: see CallLedger for why the
@@ -553,6 +610,11 @@ object RecordingSaver {
                         Log.w(TAG, "save: could not delete $recfile from the daemon; it goes next time")
                 }
                 last
+            }
+            completed && orWhole != null && seen > 0 -> {
+                Log.w(TAG, "save: none of the $seen packets of $recfile fell inside the call Telecom reported; saving it whole")
+                open.values.forEach { it.target.abandon() }
+                write(context, recfile, listOf(orWhole), ledger, message, facts = facts)
             }
             completed -> {
                 // Read the whole thing; there was simply no call audio in it.

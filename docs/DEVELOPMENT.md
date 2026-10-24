@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-659 JVM tests, no device needed - 557 for the app and 102 for the daemon:
+674 JVM tests, no device needed - 570 for the app and 104 for the daemon:
 
     ./gradlew test
 
@@ -86,12 +86,14 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.19.2):
+emulator, for each Android version it claims (12, 13 and 17 for 0.20):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 
 It installs the debug build, sets JemRec up from nothing and places simulated
-calls: the ringing cut, an unanswered call not kept, an incoming call kept to
+calls: the ringing cut, the same cut with nothing captured until the answer
+(as over Wi-Fi Calling on a Pixel, issue #40: the recorder is stopped while
+the call rings), an unanswered call not kept, an incoming call kept to
 the second, a stranger skipped before recording, two calls in quick
 succession, a caller-ID name, the self-test, and the answering machine: a
 message taken and marked with the microphone given back, a caller who hangs

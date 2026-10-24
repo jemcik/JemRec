@@ -382,8 +382,8 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
                 "for a day after you call an emergency number. If JemRec cannot tell who is " +
                 "calling, it lets the phone ring.",
             "JemRec records your greeting the way it records calls, through its recorder, so it " +
-                "never needs permission to use the microphone. Experimental: tested on one phone, an Honor, on " +
-                "2G calls. " +
+                "never needs permission to use the microphone. Experimental: tested on two phones, an Honor " +
+                "on 2G calls and a Galaxy S23 over Wi-Fi Calling. " +
                 "The test call here is how to know it works on yours.",
         )
     }

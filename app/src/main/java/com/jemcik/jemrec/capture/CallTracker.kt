@@ -235,6 +235,11 @@ class CallTracker : InCallService() {
         // then taken for one nobody answered, and deleted as such.
         activations = listOfNotNull(call.details.connectTimeMillis.takeIf { it > 0 }),
         endedAt = 0L,
+        // Both clocks read together, while the call is up and the phone
+        // cannot sleep between them: nanoTime is the monotonic clock the
+        // daemon stamps its packets with (AudioTimestamp.TIMEBASE_MONOTONIC
+        // and System.nanoTime there). Issue #40: see PacketClock.
+        clockOffset = System.currentTimeMillis() - System.nanoTime() / 1_000_000,
     )
 
     /**

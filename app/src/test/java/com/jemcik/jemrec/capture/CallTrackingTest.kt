@@ -155,8 +155,17 @@ class CallTrackingTest {
             Tracked(t, false, null, emptyList(), 0L),
             // A dial string can hold pauses and waits.
             Tracked(t, false, "+100,,22;3", listOf(t + s), t + 9 * s),
+            Tracked(t, false, "+100", listOf(t + s), t + 9 * s, clockOffset = t - 4_241 * s),
         ).forEach { assertEquals(it, CallTracking.decode(CallTracking.encode(it))) }
         assertNull(CallTracking.decode("rubbish"))
+    }
+
+    @Test fun aRecordKeptBeforeTheClockOffsetReadsBackWithout() {
+        // As 0.19.2 and before wrote it: five fields.
+        assertEquals(
+            call(t, incoming = false, t + s, ended = t + 9 * s),
+            CallTracking.decode("$t|out|+100|${t + s}|${t + 9 * s}"),
+        )
     }
 
     @Test fun secondsAreFromTheAnswer() {

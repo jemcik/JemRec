@@ -207,4 +207,20 @@ internal object SavePlan {
         }
         return if (parts.isEmpty()) Decision.LeaveOut(leftOut) else Decision.Save(parts, leftOut)
     }
+
+    /**
+     * What a recording cut to its call is saved as when the cut catches none
+     * of its packets, though it has some: whole, under the call's name,
+     * ringing and all. Telecom's account and the packets then disagree about
+     * when the call was, and a recording deleted as one with no audio cannot
+     * be made again - issue #40 deleted calls that way, a cut placed by
+     * counting packets that had not come while the call rang. Only for a
+     * recording of one call, kept: with more, the cut is what keeps them
+     * apart, and the rules may have left one of them out.
+     */
+    fun wholeIfNothingFits(decision: Decision.Save, tracked: List<CallTracking.Tracked>): RecordingSaver.Part? {
+        if (tracked.size != 1 || decision.leftOut.isNotEmpty()) return null
+        val part = decision.parts.singleOrNull() ?: return null
+        return RecordingSaver.Part.whole(part.name, part.incoming, part.startMillis)
+    }
 }

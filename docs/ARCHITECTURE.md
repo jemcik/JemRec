@@ -17,7 +17,9 @@ this one is - or to check that it does what it says.
 - The features: [recording and being asked](#recording-and-being-asked) ·
   [exact call tracking](#exact-call-tracking) ·
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
-  [messenger calls](#messenger-calls) · [the answering machine](#the-answering-machine) ·
+  [messenger calls](#messenger-calls) ·
+  [phone calls through the mixer](#phone-calls-that-play-through-the-mixer) ·
+  [the answering machine](#the-answering-machine) ·
   [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
   [playing in the background](#playing-in-the-background) · [three looks](#three-looks) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
@@ -186,7 +188,8 @@ on, the switch first asks *Turn off the answering machine too?* - until 0.19
 it turned the machine off without a word (the user found it, 2026-10-24) - and
 the machine's row in Settings then says it is off for want of tracking. JemRec keeps
 what Android said about the last 40 calls - when each began, was answered and
-ended, which way it went, and the number only with the call-log permission.
+ended, which way it went, how far apart the phone's two clocks were during it
+(below), and the number only with the call-log permission.
 
 Measured on an Honor (MagicOS 11, Android 17): an outgoing call answered 3.6
 seconds after dialling had 3.6 seconds of ringing at the start of its
@@ -198,6 +201,23 @@ Android's answer and end to a twentieth of a second; one nobody answered was
 not saved; a number the rules left out was stopped a quarter of a second after
 dialling and deleted; and all of it held after a restart. Call waiting has not
 been tried on a phone yet.
+
+**Where the call is in the recording.** The cut is made in time, and the
+recording's packets were placed in it by counting - one every 20 ms from the
+first. Over Wi-Fi Calling on a Pixel 11 Pro XL (Android 17) the capture gave
+nothing while an outgoing call rang, so counting from the dialling put the
+answer past the last packet: a call that rang for 32 seconds and lasted 20.5
+was deleted as having no audio
+([issue #40](https://github.com/jemcik/JemRec/issues/40)), and a call longer
+than its ringing would have lost its start without a word. Each packet now
+goes where its own time - which the recorder writes beside it - says it was
+captured, wherever the capture lost more than half a second; Android's times
+and the recorder's are on two clocks, which the app reads together during the
+call. A recording of one call that the cut would still leave empty is saved
+whole, ringing and all, rather than deleted. On the emulator, with the
+recorder stopped for 1.4 seconds from its first moment, the call was saved to
+within a hundredth of a second of Android's account (2026-10-24). Wi-Fi
+Calling itself has not been tried here: the emulator cannot place such a call.
 
 ## Whose calls to keep
 
@@ -287,6 +307,49 @@ both directions: both sides recorded, the caller named, and the other person
 heard the call throughout. Signal takes the same path and has not been tested
 yet.
 
+## Phone calls that play through the mixer
+
+A phone call is normally carried by the modem, and the recorder hears it
+through Android's call capture (`VOICE_CALL`). Some phones carry a Wi-Fi
+Calling call like a messenger call instead: through Android's own mixer, with
+the phone's audio in "communication" mode. The call capture then hears
+nothing at all - and such a phone call is recorded the way a messenger call is
+(above): the other person from a copy of the call's audio, you from the
+microphone, never taking it from the call.
+
+Measured on a Galaxy S23 (One UI, Android 16), 2026-10-24, over Wi-Fi Calling:
+the call ran in "communication" mode from the dialling, its far side played by
+the call stack as voice-communication audio. `VOICE_CALL` at 48 kHz stereo,
+16 and 8 kHz mono, and the downlink and uplink on their own, all delivered
+silence at the full rate for the whole call - 0.19.2 saved such calls as
+silent recordings. The copy had the other person, the microphone her; the
+call's own microphone was never silenced, and both people heard each other.
+Recorded this way - the mode read as the call went off-hook, the packets
+counted - an outgoing and an incoming call came out with both voices, each on
+its own channel, to within 0.03 seconds of Android's account. The switch below,
+and placing such a recording's packets by their stamps (exact call tracking,
+above), came after those calls; with both, an outgoing Wi-Fi call on the S23
+switched to the mixer once the mode answered, 0.37 seconds after off-hook, and
+came out at 21.45 seconds for Android's 21.49, her voice on the left and the
+other person's on the right.
+
+So a phone call is recorded through the call capture from its first moment,
+as always, while the recorder asks the audio mode on a thread of its own: if it
+says "communication", on Android 14 or newer (the copy needs the same
+permission as messenger calls), the recording switches to the mixer a few
+milliseconds in. Any other mode - every phone call measured before, on the
+Honor and the emulators - and nothing changes. The mode is never waited for:
+while Telecom moves the phone into a call, Android answers it only once the
+move is done - 0.87 seconds later for an incoming call on the Android 13
+emulator, which a recording that waited lost from its start. The copy is armed
+for that call alone, whether or not any messenger is switched on, and disarmed
+when it ends. You are on the left channel and the other person on the right,
+as the call capture has them; on speakerphone the other person is on your side
+too, as with messenger calls. The answering machine works on such calls as
+well (above, in its own section).
+
+Not known yet: which other phones carry Wi-Fi Calling this way.
+
 ## The answering machine
 
 **Off until you switch it on.** It answers the phone calls you do not take,
@@ -349,6 +412,23 @@ caller on another phone:
 - `setMicrophoneMute`: the room stays out, the greeting does not. Telecom
   adopts the mute and shows it on the call screen; it held through a switch to
   speaker and back, and the phone cleared it as the call ended.
+
+Measured on a Galaxy S23 (One UI, Android 16), 2026-10-24, over Wi-Fi Calling -
+a call that plays through the mixer (below):
+
+- The call never takes Android's in-call mode, and the machine took that for a
+  call whose audio never came up: it answered, waited, and hung up on the
+  caller. It now counts the call's own mode, as the recorder does.
+- In-call music has nothing to mix into: the call's voice does not go through
+  the modem. An audio policy that swaps the call's own microphone for the
+  greeting (the messenger route) left it on the microphone.
+- The call-screening route carried the greeting: the caller heard it, at
+  real-time pace. With it, a real unanswered call was answered after ten
+  seconds, her microphone muted, the greeting heard, and the message saved
+  with the caller's voice from its first second.
+- The machine's test filed that call under VoLTE: Android's voice network type
+  says LTE for a Wi-Fi call there. Telling them apart needs the IMS
+  registration's transport; not done yet.
 
 **A message's length** is the user's: 30 seconds to 2 minutes, then the
 recorder hangs up - or no limit, which ends the call after 30 seconds without a

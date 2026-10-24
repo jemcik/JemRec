@@ -1320,8 +1320,8 @@ public final class Main {
             AnswerMachine machine = answerMachine;
             AudioCapture capture = app != null ? Voip.newCapture()
                     : machine != null && machine.answeredThisCall()
-                    ? new LevelTap(new AudioDirectCapture(AUDIO_SOURCE), Main::onChunk)
-                    : new AudioDirectCapture(AUDIO_SOURCE);
+                    ? new LevelTap(phoneCapture(), Main::onChunk)
+                    : phoneCapture();
             if (capture == null) {
                 throw new IllegalStateException("messenger calls are not armed");
             }
@@ -1353,6 +1353,12 @@ public final class Main {
             closeQuietly(out);
             Ln.i("recording: stopped -> " + name + " (" + file.length() + " bytes)");
         }
+    }
+
+    /** A phone call's capture: VOICE_CALL at once, switched to the messenger
+     *  capture if the call plays through the mixer (PhoneCapture). */
+    private static AudioCapture phoneCapture() {
+        return new PhoneCapture(new AudioDirectCapture(AUDIO_SOURCE), callAudio);
     }
 
     /** Start capturing the current call to a file. Returns its name, or null if
@@ -2407,6 +2413,12 @@ public final class Main {
         @Override
         public boolean audioInCall() {
             return callAudio.getMode() == AudioManager.MODE_IN_CALL;
+        }
+
+        @Override
+        public boolean callAudioUp() {
+            int mode = callAudio.getMode();
+            return mode == AudioManager.MODE_IN_CALL || Checks.phoneCallInMixer(mode, Build.VERSION.SDK_INT);
         }
 
         @Override
