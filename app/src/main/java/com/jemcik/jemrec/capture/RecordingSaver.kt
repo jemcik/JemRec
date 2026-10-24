@@ -349,24 +349,27 @@ object RecordingSaver {
     /**
      * A part being written: where to, and the muxer - which writes into a
      * work file of its own, copied into place with the recording's tags when
-     * it is finished (RecordingTags: the muxer cannot write them).
+     * it is finished (RecordingTags: the muxer cannot write them). With no
+     * work file, the muxer writes into place itself, untagged, as it always
+     * used to (see write).
      */
     private class Open(
         val part: Part,
         val target: RecordingStore.Target,
         val writer: OpusOggWriter,
-        private val work: File,
-        private val workFd: ParcelFileDescriptor,
+        private val work: File?,
+        private val workFd: ParcelFileDescriptor?,
     ) {
         /** Copy the finished file into place, with [facts] in it. */
         fun copyIn(facts: RecordingTags.Facts) {
-            workFd.close()
-            RecordingTags.copyTagged(work, target.descriptor.fileDescriptor, facts)
+            val from = work ?: return
+            workFd?.close()
+            RecordingTags.copyTagged(from, target.descriptor.fileDescriptor, facts)
         }
 
         fun discardWork() {
-            runCatching { workFd.close() }
-            work.delete()
+            runCatching { workFd?.close() }
+            work?.delete()
         }
     }
 
@@ -393,6 +396,12 @@ object RecordingSaver {
             return Outcome.Failed("The recorder could not be reached.")
         }
 
+        // Tagged, unless saving this file has failed before: a work copy and
+        // then the copy into place need its size free twice, where writing
+        // into place needs it once, and a file that cannot be saved is given
+        // up on after a week. Untagged, it is saved as it always was; its
+        // marks are in the preferences still, and only a reinstall loses them.
+        val tagged = !failedBefore(context, recfile)
         val open = LinkedHashMap<Part, Open>()
         var completed = false
         var gone = false
@@ -439,20 +448,22 @@ object RecordingSaver {
                                     var work: File? = null
                                     var workFd: ParcelFileDescriptor? = null
                                     val writer = try {
-                                        work = RecordingTags.workFile(context)
-                                        workFd = ParcelFileDescriptor.open(
-                                            work,
-                                            ParcelFileDescriptor.MODE_READ_WRITE or
-                                                ParcelFileDescriptor.MODE_TRUNCATE,
-                                        )
-                                        OpusOggWriter(workFd.fileDescriptor, config.data)
+                                        if (tagged) {
+                                            work = RecordingTags.workFile(context)
+                                            workFd = ParcelFileDescriptor.open(
+                                                work,
+                                                ParcelFileDescriptor.MODE_READ_WRITE or
+                                                    ParcelFileDescriptor.MODE_TRUNCATE,
+                                            )
+                                        }
+                                        OpusOggWriter((workFd ?: target.descriptor).fileDescriptor, config.data)
                                     } catch (t: Throwable) {
                                         runCatching { workFd?.close() }
                                         work?.delete()
                                         target.abandon()
                                         throw t
                                     }
-                                    Open(part, target, writer, work!!, workFd!!).also { open[part] = it }
+                                    Open(part, target, writer, work, workFd).also { open[part] = it }
                                 }
                             } ?: break
                             into.writer.write(packet.data, packet.pts)
@@ -642,6 +653,11 @@ object RecordingSaver {
     }
 
     private const val KEY_FAILING = "save_failing"
+
+    /** Whether saving [recfile] has failed before, noting nothing. */
+    private fun failedBefore(context: Context, recfile: String): Boolean =
+        com.jemcik.jemrec.Prefs.of(context).getStringSet(KEY_FAILING, emptySet()).orEmpty()
+            .any { it.substringBefore('|') == recfile }
 
     /** When saving [recfile] first failed (noted now, if this is the first);
      *  [clear] forgets it. Kept in the preferences as "recfile|millis". */

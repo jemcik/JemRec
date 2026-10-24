@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.capture
 
 import androidx.core.content.FileProvider
-import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.OggSamples.recording
 import com.jemcik.jemrec.capture.OggSamples.splice
 import org.junit.Assert.assertEquals
@@ -88,8 +87,19 @@ class RecordingTagsRecoverTest {
         listed()
         File(folder, telegram).delete()
         listed()
-        assertFalse(telegram in Prefs.of(app).getStringSet("tags_read", emptySet())!!)
-        assertTrue(message in Prefs.of(app).getStringSet("tags_read", emptySet())!!)
+        assertFalse(telegram in RecordingTags.readNames(app))
+        assertTrue(message in RecordingTags.readNames(app))
+    }
+
+    @Test fun aFileThatCouldNotBeReadIsTriedAgain() {
+        val gone = File(folder, message)
+        val recording = Recordings.describe(message, android.net.Uri.fromFile(gone), 1, 1).copy(filePath = gone.absolutePath)
+        RecordingTags.recover(app, listOf(recording))
+        assertFalse(message in RecordingTags.readNames(app))
+        save(message, RecordingTags.Facts(message = true, incoming = true))
+        RecordingTags.recover(app, listOf(recording))
+        assertTrue(message in RecordingTags.readNames(app))
+        assertEquals(setOf(message), MessageMarks.all(app))
     }
 
     @Test fun aRowsTimeIsTheCallsNotTheFilesDate() {
@@ -105,13 +115,26 @@ class RecordingTagsRecoverTest {
     @Test fun theKeepMarkIsWrittenIntoTheFile() {
         save(message, RecordingTags.Facts(message = true, incoming = true))
         val recording = listed().getValue(message)
-        assertEquals(1, RecordingTags.writeKept(app, listOf(recording), kept = true))
+        KeepMarks.set(app, listOf(message), kept = true)
+        assertEquals(1, RecordingTags.writeKept(app, listOf(recording)))
         assertEquals(
             RecordingTags.Facts(message = true, incoming = true, kept = true),
             RecordingTags.read(File(folder, message).inputStream()),
         )
         // A file with no room - from before - keeps its mark in the app only.
         save(untagged, null)
-        assertEquals(0, RecordingTags.writeKept(app, listOf(listed().getValue(untagged)), kept = true))
+        KeepMarks.set(app, listOf(untagged), kept = true)
+        assertEquals(0, RecordingTags.writeKept(app, listOf(listed().getValue(untagged))))
+    }
+
+    @Test fun theFileEndsAsThePreferencesWhateverOrderTheWritesRunIn() {
+        save(message, RecordingTags.Facts(message = true, incoming = true))
+        val recording = listed().getValue(message)
+        // Kept, then not: the second tap's write runs first, the first's last.
+        KeepMarks.set(app, listOf(message), kept = true)
+        KeepMarks.set(app, listOf(message), kept = false)
+        RecordingTags.writeKept(app, listOf(recording))
+        RecordingTags.writeKept(app, listOf(recording))
+        assertFalse(RecordingTags.read(File(folder, message).inputStream())!!.kept)
     }
 }

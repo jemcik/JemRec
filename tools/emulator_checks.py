@@ -633,13 +633,8 @@ def digits(text):
 
 
 def tap_text(digits_in):
-    """Tap the middle of the first node on screen whose text holds [digits_in]."""
-    for m in re.finditer(r'<node [^>]*text="([^"]*)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', ui()):
-        if digits_in in digits(m.group(1)):
-            x1, y1, x2, y2 = (int(v) for v in m.groups()[1:])
-            sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
-            return True
-    return False
+    """Tap the first node on screen whose text holds [digits_in]."""
+    return tap_node(lambda node: digits_in in digits(re.search(r' text="([^"]*)"', node).group(1)))
 
 
 def background_playback():
@@ -674,26 +669,24 @@ def background_playback():
     return f"{after - before} ms played in 5 s with the screen off, as \"{title}\"; held back by a call, then on"
 
 
-def tap(label):
-    """Tap the middle of the first node on screen whose text or content
-    description is [label]."""
+def tap_node(found):
+    """Tap the middle of the first node on screen that [found] picks."""
     for node in re.findall(r"<node [^>]*>", ui()):
-        said = re.findall(r'(?:text|content-desc)="([^"]*)"', node)
-        if label in said:
+        if found(node):
             x1, y1, x2, y2 = (int(v) for v in re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node).groups())
             sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
             return True
     return False
+
+
+def tap(label):
+    """Tap the first node whose text or content description is [label]."""
+    return tap_node(lambda node: label in re.findall(r'(?:text|content-desc)="([^"]*)"', node))
 
 
 def tap_id(resource_id):
-    """Tap the middle of the first node on screen with [resource_id]."""
-    for node in re.findall(r"<node [^>]*>", ui()):
-        if f'resource-id="{resource_id}"' in node:
-            x1, y1, x2, y2 = (int(v) for v in re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node).groups())
-            sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
-            return True
-    return False
+    """Tap the first node with [resource_id]."""
+    return tap_node(lambda node: f'resource-id="{resource_id}"' in node)
 
 
 def on_screen(label):

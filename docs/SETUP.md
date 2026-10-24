@@ -59,9 +59,10 @@ digest the release workflow prints in its log on every run.
 
 1. Open **JemRec**.
 2. It asks for **notifications**. Allow them.
-3. It also offers to read audio files (on Android 12, photos and media: it has
-   no choice for audio alone), which lets it list recordings made before a
-   reinstall. Refusing that is fine; only the old ones are hidden.
+3. It also offers to read audio files, which lets it list recordings made
+   before a reinstall. Refusing that is fine; only the old ones are hidden. (On
+   Android 12 the recordings list asks instead, for photos and media: Android
+   12 has no choice for audio alone.)
 
 Notifications are not decoration here. They are how the app tells you a call is
 being recorded, how it asks whether to record one, and where you will type the

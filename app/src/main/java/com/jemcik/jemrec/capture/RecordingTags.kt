@@ -3,7 +3,6 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import com.jemcik.jemrec.Prefs
 import java.io.File
 import java.io.FileDescriptor
 import java.io.FileInputStream
@@ -89,7 +88,7 @@ internal object RecordingTags {
         add("$MARK=$VERSION")
         if (facts.message) add("$MESSAGE=1")
         facts.incoming?.let { add("$DIRECTION=${if (it) "in" else "out"}") }
-        facts.caller?.trim()?.ifEmpty { null }?.let { add("$CALLER=${shorten(it)}") }
+        facts.caller?.trim()?.ifEmpty { null }?.let { add("$CALLER=${FileNames.shorten(it, LONGEST_CALLER)}") }
         if (facts.kept) add("$KEPT=1")
     }
 
@@ -115,13 +114,6 @@ internal object RecordingTags {
     internal fun withKept(fields: List<String>, kept: Boolean): List<String> =
         fields.filterNot { it.substringBefore('=').equals(KEPT, ignoreCase = true) } +
             (if (kept) listOf("$KEPT=1") else emptyList())
-
-    /** Never cutting an emoji's surrogate pair in two. */
-    private fun shorten(name: String): String {
-        if (name.length <= LONGEST_CALLER) return name
-        val end = if (Character.isHighSurrogate(name[LONGEST_CALLER - 1])) LONGEST_CALLER - 1 else LONGEST_CALLER
-        return name.take(end)
-    }
 
     // --- Ogg -----------------------------------------------------------------
 
@@ -217,12 +209,21 @@ internal object RecordingTags {
     private fun parseTags(packet: ByteArray): Tags? = runCatching {
         val b = ByteBuffer.wrap(packet).order(ByteOrder.LITTLE_ENDIAN)
         b.position(OPUS_TAGS.size)
-        val vendor = ByteArray(b.int).also { b.get(it) }
+        val vendor = b.lengthPrefixed()
         val count = b.int
         require(count in 0..(b.remaining() / 4))
-        val fields = List(count) { ByteArray(b.int).also { b.get(it) }.toString(Charsets.UTF_8) }
+        val fields = List(count) { b.lengthPrefixed().toString(Charsets.UTF_8) }
         Tags(vendor, fields, packet.size)
     }.getOrNull()
+
+    /** A length, then that many bytes - the length checked against what is
+     *  left first: another program's tags can say anything, and a length
+     *  taken on trust is an allocation of up to 2 GB. */
+    private fun ByteBuffer.lengthPrefixed(): ByteArray {
+        val length = int
+        require(length in 0..remaining())
+        return ByteArray(length).also { get(it) }
+    }
 
     /** The packet for [fields] at [size] bytes, zeros after the fields; null
      *  if they do not fit. */
@@ -318,9 +319,13 @@ internal object RecordingTags {
         }
     }
 
-    /** Where the muxer writes a recording before it is copied into place. */
+    /**
+     * Where the muxer writes a recording before it is copied into place. Not
+     * the cache: Android empties that when storage runs low - the moment a
+     * save is already at risk - and the copy reopens this file by name.
+     */
     fun workFile(context: Context): File {
-        val dir = File(context.cacheDir, "saving").apply { mkdirs() }
+        val dir = File(context.noBackupFilesDir, "saving").apply { mkdirs() }
         // Any left from a save that was killed half way: a day is far past
         // the longest copy, so none of these is one in progress.
         dir.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > DAY_MS }?.forEach { it.delete() }
@@ -329,23 +334,31 @@ internal object RecordingTags {
 
     private const val DAY_MS = 24 * 60 * 60 * 1000L
 
-    /** What [recording]'s own file says; null if nothing, or unreadable. */
-    fun read(context: Context, recording: Recording): Facts? = runCatching {
+    /** What [recording]'s own file says - null if nothing of ours - or a
+     *  failure, if it could not be read. */
+    fun read(context: Context, recording: Recording): Result<Facts?> = runCatching {
         val input = recording.filePath?.let { FileInputStream(it) }
             ?: context.contentResolver.openInputStream(recording.uri)
-            ?: return null
+            ?: error("no stream")
         input.buffered().use { read(it) }
-    }.getOrNull()
+    }
+
+    private val keeping = Any()
 
     /**
-     * Write the keep mark into each of [recordings]' files. Those with no room
-     * for it, and those this app may not write - after a reinstall Android
-     * counts the files the old install made as nobody's - keep it in the
-     * preferences alone, as before. How many took it.
+     * Write each of [recordings]' keep marks into its file, as the
+     * preferences have it now - not as the tap that asked for the write had
+     * it: two taps in quick succession are two writes on other threads, in
+     * either order, and the file must end as the list does. Those with no
+     * room for it, and those this app may not write - after a reinstall
+     * Android counts the files the old install made as nobody's - keep it in
+     * the preferences alone, as before. How many took it.
      */
-    fun writeKept(context: Context, recordings: List<Recording>, kept: Boolean): Int {
+    fun writeKept(context: Context, recordings: List<Recording>): Int = synchronized(keeping) {
+        val marked = KeepMarks.all(context)
         var written = 0
         for (recording in recordings) {
+            val kept = recording.name in marked
             val ok = runCatching { writeKept(context, recording, kept) }
                 .onFailure { Log.w(TAG, "tags: could not write the keep mark into ${FileNames.forLog(recording.name)}: ${it.javaClass.simpleName}") }
                 .getOrDefault(false)
@@ -393,29 +406,42 @@ internal object RecordingTags {
 
     // --- reading them back ---------------------------------------------------
 
-    private const val KEY_READ = "tags_read"
+    /**
+     * The names read, in a file of their own: one per recording, with no cap,
+     * and the one preferences file is rewritten whole at every write anywhere
+     * in the app (MessageMarks caps its set at 2000 for that reason).
+     */
+    private const val READ_FILE = "jemrec_tags_read"
+    private const val KEY_READ = "names"
+
+    internal fun readNames(context: Context): Set<String> =
+        context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).getStringSet(KEY_READ, emptySet()).orEmpty()
 
     /**
      * For each of [recordings] whose file has not been read yet, what it says,
      * noted where the list looks: the preferences. After a reinstall that is
      * every recording, once; after that, only one that came from somewhere
      * else. Each is read once - a mark changed since is the preferences' to
-     * say - and forgotten when it is no longer listed, so this does not grow
+     * say - unless reading it failed, when it is tried again at the next
+     * list; and forgotten when it is no longer listed, so this does not grow
      * with every recording ever deleted.
      */
     @Synchronized
     fun recover(context: Context, recordings: List<Recording>) {
-        val prefs = Prefs.of(context)
-        val read = prefs.getStringSet(KEY_READ, emptySet()).orEmpty()
+        val seen = readNames(context)
         val names = recordings.map { it.name }.toSet()
-        val unread = recordings.filter { it.name !in read && it.parsedName != null }
-        val found = unread.mapNotNull { r -> read(context, r)?.let { r.name to it } }
-        if (found.isNotEmpty()) {
+        val unread = recordings.filter { it.name !in seen && it.parsedName != null }
+        val results = unread.map { it.name to read(context, it) }
+        val found = results.mapNotNull { (name, result) -> result.getOrNull()?.let { name to it } }
+        val failed = results.count { it.second.isFailure }
+        if (found.isNotEmpty() || failed > 0) {
             note(context, found)
-            Log.i(TAG, "tags: read ${unread.size} recording(s), ${found.size} with JemRec's tags")
+            Log.i(TAG, "tags: read ${unread.size - failed} recording(s), ${found.size} with JemRec's tags, $failed to try again")
         }
-        val now = (read intersect names) + unread.map { it.name }
-        if (now != read) prefs.edit().putStringSet(KEY_READ, now).apply()
+        val now = (seen intersect names) + results.filter { it.second.isSuccess }.map { it.first }
+        if (now != seen) {
+            context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).edit().putStringSet(KEY_READ, now).apply()
+        }
     }
 
     /** What [found] says, into the preferences each mark has always lived in. */

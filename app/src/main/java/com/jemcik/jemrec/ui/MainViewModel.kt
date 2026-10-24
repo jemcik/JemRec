@@ -907,14 +907,15 @@ class MainViewModel @JvmOverloads constructor(
     fun toggleKept(recording: Recording) {
         KeepMarks.set(getApplication(), listOf(recording.name), !recording.kept)
         refresh()
-        keepInFiles(listOf(recording), !recording.kept)
+        keepInFiles(listOf(recording))
     }
 
-    /** The mark into the files too, so a reinstall finds it (RecordingTags).
-     *  After the list has it: the preferences say it at once, the files take
-     *  a write each. */
-    private fun keepInFiles(recordings: List<Recording>, kept: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) { RecordingTags.writeKept(getApplication(), recordings, kept) }
+    /** The mark into the files too, so a reinstall finds it (RecordingTags):
+     *  as the preferences have it when the write runs, which is after the
+     *  list has it - the preferences say it at once, the files take a write
+     *  each. */
+    private fun keepInFiles(recordings: List<Recording>) {
+        viewModelScope.launch(Dispatchers.IO) { RecordingTags.writeKept(getApplication(), recordings) }
     }
 
     /** The selection toolbar's keep: marks every picked recording, or - when
@@ -927,7 +928,7 @@ class MainViewModel @JvmOverloads constructor(
         KeepMarks.set(getApplication(), picked.map { it.name }, kept = kept)
         _state.update { it.copy(selecting = false, selected = emptySet()) }
         refresh()
-        keepInFiles(picked.filter { it.kept != kept }, kept)
+        keepInFiles(picked.filter { it.kept != kept })
     }
 
     /** Back out of the trash, as it was. */

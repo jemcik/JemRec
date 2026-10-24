@@ -136,11 +136,12 @@ object FileNames {
     private const val FORBIDDEN = "/\\:*?\"<>|@%_"
     private const val LONGEST = 60
 
-    /** At most [LONGEST] characters, never cutting an emoji's surrogate pair
-     *  in two: half of one is not a character any file system will take. */
-    private fun shorten(name: String): String {
-        if (name.length <= LONGEST) return name
-        val end = if (Character.isHighSurrogate(name[LONGEST - 1])) LONGEST - 1 else LONGEST
+    /** At most [longest] characters, never cutting an emoji's surrogate pair
+     *  in two: half of one is not a character any file system will take, nor
+     *  any tag reader (RecordingTags). */
+    internal fun shorten(name: String, longest: Int = LONGEST): String {
+        if (name.length <= longest) return name
+        val end = if (Character.isHighSurrogate(name[longest - 1])) longest - 1 else longest
         return name.take(end)
     }
 

@@ -231,16 +231,20 @@ internal object Recordings {
         uri: Uri,
         sizeBytes: Long,
         durationMillis: Long,
-        whenMillis: Long = startOf(name),
-    ) = Recording(
-        name = name,
-        uri = uri,
-        whenLabel = whenLabel(FileNames.parse(name)?.startedAt ?: whenMillis),
-        incoming = FileNames.parse(name)?.incoming ?: RecordingStore.isIncoming(name),
-        durationLabel = duration(durationMillis),
-        sizeLabel = size(sizeBytes),
-        durationMillis = durationMillis.coerceAtLeast(0),
-    )
+        whenMillis: Long = 0L,
+    ): Recording {
+        // Once: every row of every list comes through here.
+        val parsed = FileNames.parse(name)
+        return Recording(
+            name = name,
+            uri = uri,
+            whenLabel = whenLabel(parsed?.startedAt ?: whenMillis),
+            incoming = parsed?.incoming ?: RecordingStore.isIncoming(name),
+            durationLabel = duration(durationMillis),
+            sizeLabel = size(sizeBytes),
+            durationMillis = durationMillis.coerceAtLeast(0),
+        )
+    }
 
     /** The same, for a source that does not know the duration: the file is
      *  opened to ask. */
@@ -249,11 +253,8 @@ internal object Recordings {
         name: String,
         uri: Uri,
         sizeBytes: Long,
-        whenMillis: Long = startOf(name),
+        whenMillis: Long = 0L,
     ) = describe(name, uri, sizeBytes, durationOf(context, uri), whenMillis)
-
-    /** When the call started, from the name, or 0. */
-    private fun startOf(name: String): Long = FileNames.parse(name)?.startedAt ?: 0L
 
     /** One file in the folder the user picked. */
     internal class Document(val name: String, val uri: Uri, val sizeBytes: Long, val modifiedMillis: Long)

@@ -675,13 +675,18 @@ recording now carries its own marks.
   section 5.2): a vendor string, then `NAME=value` fields, then optional
   zeros. MediaMuxer writes it with "libopus" and no fields, and cannot be
   told to write any (read from a recording's first bytes on the Honor). So
-  the muxer writes each recording into a work file in the app's cache, and
+  the muxer writes each recording into a work file in the app's private
+  storage (not its cache, which Android empties when storage runs low), and
   the file is copied into place with that one page swapped for JemRec's:
   `JEMREC=1`, and `JEMREC_MESSAGE`, `JEMREC_DIRECTION`, `JEMREC_CALLER`,
   `JEMREC_KEEP` as they apply. Every other page is the muxer's, byte for
   byte, and the tests hold the checksum to the two the Honor's own file
   carries. A copy that fails is a recording not saved: the recorder's copy
-  is kept for a retry, as when the muxer cannot finish.
+  is kept for a retry, as when the muxer cannot finish. A work copy and then
+  the copy into place need the recording's size free twice, so a recording
+  whose save has failed once is saved the old way at the retry - straight
+  into place, untagged, its marks in the app alone - rather than risk a
+  week of failures and the recorder giving it up.
 - **Measured on the Honor** (2026-10-24, a 20 s tone, not a call): Android's
   media scanner read a copy tagged this way as 20 s, as it did the untagged
   one; with a standard `ARTIST` field added it showed that artist, so it
@@ -786,9 +791,10 @@ permission a call recorder does not explain is one its user has to guess at:
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
 | `WAKE_LOCK` | Not declared here: WorkManager brings it, so the keep-alive job can finish its few seconds of work. |
 
-Three more (`READ_PHONE_STATE` and two storage permissions) are actively
+Two more (`READ_PHONE_STATE` and `WRITE_EXTERNAL_STORAGE`) are actively
 **removed** from the manifest, because the ADB library's own manifest would
-otherwise pull them in. One more that cannot be removed and means nothing:
+otherwise pull them in; the third it pulls in, `READ_EXTERNAL_STORAGE`, is
+declared instead, capped at Android 12, for the row above. One more that cannot be removed and means nothing:
 `com.jemcik.jemrec.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, which AndroidX
 defines for this app alone when it registers a receiver as not-exported.
 
