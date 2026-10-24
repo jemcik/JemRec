@@ -41,6 +41,10 @@ through the real app and daemon, checking what each one leaves behind:
               it, from Android's own trash as well, its file with it
   looks       the app, started again in Deck (dark), Multitrack and Memo,
               opens in each, its own header drawn
+  reinstall   a message, kept from its row, is a kept message again once the
+              app is uninstalled and installed again and the empty list's
+              Allow is answered in Android's own dialog: the marks are read
+              back from the recording's own tags
 
 Every call is the emulator's own simulation - nothing leaves the machine -
 and the script refuses to touch anything that is not an emulator. It needs a
@@ -682,6 +686,16 @@ def tap(label):
     return False
 
 
+def tap_id(resource_id):
+    """Tap the middle of the first node on screen with [resource_id]."""
+    for node in re.findall(r"<node [^>]*>", ui()):
+        if f'resource-id="{resource_id}"' in node:
+            x1, y1, x2, y2 = (int(v) for v in re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node).groups())
+            sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
+            return True
+    return False
+
+
 def on_screen(label):
     return f'"{label}"' in ui()
 
@@ -769,6 +783,69 @@ def looks():
     return "it opened in Deck (dark), Multitrack and Memo"
 
 
+def head(name):
+    """The first bytes of a saved recording: its header pages, tags and all."""
+    return adb("exec-out", f"head -c 2048 '{RECORDINGS}/{name}'", text=False)
+
+
+def media_row(name):
+    """What Android's media index has of a recording: (date_modified, duration)."""
+    out = sh(f"content query --uri content://media/external/audio/media --projection date_modified:duration "
+             f"--where \"_display_name='{name}'\"")
+    m = re.search(r"date_modified=(\d+), duration=(\d+)", out)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def marks(key):
+    xml = adb("exec-out", f"run-as {PKG} cat {PREFS}")
+    m = re.search(rf'<set name="{key}">(.*?)</set>', xml, re.S)
+    return set(re.findall(r"<string>(.*?)</string>", m.group(1), re.S)) if m else set()
+
+
+def reinstall():
+    """A message, kept from its row, is shown as a kept message again after
+    the app is uninstalled and installed again: the marks are in the file
+    (RecordingTags), and the app's preferences go with an uninstall."""
+    answering()
+    _, seconds, name = saved()
+    assert b"JEMREC_MESSAGE=1" in head(name), f"{name} was saved without its message tag"
+    before = wait_for(lambda: media_row(name), 10, "the message in Android's media index")
+    try:
+        sh(f"am start -n {PKG}/.MainActivity")
+        # The newest row is the message's: its keep button is the first.
+        wait_for(lambda: tap("Keep: never auto-delete"), 30, "the message's keep button")
+        wait_for(lambda: b"JEMREC_KEEP=1" in head(name), 10, "the keep mark to be written into the file")
+    finally:
+        sh(f"am force-stop {PKG}")
+    after = wait_for(lambda: media_row(name), 10, "the message in Android's media index")
+    # The recorder first: a running one, its app gone, turns debugging off.
+    sh("pkill -f com.jemcik.jemrec.shell.Main")
+    adb("uninstall", PKG, check=True)
+    set_up(reinstall.apk)
+    assert not marks("message_recordings") and not marks("kept_recordings"), "the reinstall kept the old marks"
+    try:
+        # As a person does it: the empty list's card, then Android's own
+        # question - READ_MEDIA_AUDIO, or READ_EXTERNAL_STORAGE before 13 -
+        # whose words are kept for the report.
+        sh(f"am force-stop {PKG}")
+        sh(f"am start -n {PKG}/.MainActivity")
+        wait_for(lambda: tap("Allow"), 30, "the card asking to show the older recordings")
+        question = wait_for(lambda: re.search(
+            r'<node [^>]*text="([^"]*)"[^>]*resource-id="com.android.permissioncontroller:id/permission_message"', ui()),
+            15, "Android's question").group(1)
+        wait_for(lambda: tap_id("com.android.permissioncontroller:id/permission_allow_button"), 10, "Android's Allow")
+        wait_for(lambda: name in marks("message_recordings") and name in marks("kept_recordings"), 30,
+                 "the list to read the marks back from the file")
+        wait_for(lambda: on_screen("Kept - tap to stop keeping") and on_screen("Message"), 15,
+                 "the row to show it kept and a message")
+    finally:
+        sh(f"am force-stop {PKG}")
+    _, duration = media_row(name)
+    assert abs(duration / 1000 - seconds) < 1, f"Android's index reads {duration} ms of {seconds:.1f} s"
+    moved = "" if after[0] == before[0] else f"; the keep write moved its date {after[0] - before[0]} s"
+    return f"{name}: a kept message again after the reinstall, {duration} ms in Android's index{moved}; asked \"{question}\""
+
+
 def self_test():
     report = diag("selftest")
     assert "PASS" in report, report
@@ -779,7 +856,7 @@ def self_test():
 CHECKS = [ringing, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, waveform, background_playback,
-          recently_deleted, looks]
+          recently_deleted, looks, reinstall]
 
 
 def nothing_pending():
@@ -812,6 +889,7 @@ def main():
     sdk = sh("getprop ro.build.version.sdk").strip()
     print(f"{serial}: Android API {sdk}")
     set_up(args.apk)
+    reinstall.apk = args.apk
     checks = [c for c in CHECKS if not args.only or c.__name__ in args.only.split(",")]
     if args.only and "succession" in args.only and "rules" not in args.only:
         set_prefs(rules_other_numbers=False)  # what the rules check leaves behind

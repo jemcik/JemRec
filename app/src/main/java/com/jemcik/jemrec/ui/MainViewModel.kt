@@ -49,6 +49,7 @@ import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.DeleteResult
 import com.jemcik.jemrec.capture.BulkDeleteResult
 import com.jemcik.jemrec.capture.Recording
+import com.jemcik.jemrec.capture.RecordingTags
 import com.jemcik.jemrec.capture.Recordings
 import com.jemcik.jemrec.capture.Transcoder
 import androidx.core.content.FileProvider
@@ -906,6 +907,14 @@ class MainViewModel @JvmOverloads constructor(
     fun toggleKept(recording: Recording) {
         KeepMarks.set(getApplication(), listOf(recording.name), !recording.kept)
         refresh()
+        keepInFiles(listOf(recording), !recording.kept)
+    }
+
+    /** The mark into the files too, so a reinstall finds it (RecordingTags).
+     *  After the list has it: the preferences say it at once, the files take
+     *  a write each. */
+    private fun keepInFiles(recordings: List<Recording>, kept: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) { RecordingTags.writeKept(getApplication(), recordings, kept) }
     }
 
     /** The selection toolbar's keep: marks every picked recording, or - when
@@ -914,9 +923,11 @@ class MainViewModel @JvmOverloads constructor(
         val current = _state.value
         val picked = current.recordings.filter { it.name in current.selected }
         if (picked.isEmpty()) return
-        KeepMarks.set(getApplication(), picked.map { it.name }, kept = !picked.all { it.kept })
+        val kept = !picked.all { it.kept }
+        KeepMarks.set(getApplication(), picked.map { it.name }, kept = kept)
         _state.update { it.copy(selecting = false, selected = emptySet()) }
         refresh()
+        keepInFiles(picked.filter { it.kept != kept }, kept)
     }
 
     /** Back out of the trash, as it was. */

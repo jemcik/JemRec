@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Date
 
 /**
@@ -259,7 +261,10 @@ object RecordingSaver {
                 } else {
                     kept
                 }
-                val written = write(context, recfile, parts, ledger = true, message = messageStart != null)
+                val message = messageStart != null
+                val written = write(context, recfile, parts, ledger = true, message = message) { part ->
+                    RecordingTags.Facts(message = message, incoming = part.incoming)
+                }
                 if (messageStart != null && written == Outcome.Empty) {
                     // Nothing from the message's start on: the sound the
                     // recorder took for the caller came as the line went down
@@ -306,7 +311,9 @@ object RecordingSaver {
         val note = VoipCallNotes.find(context, app.pkg, startedAt.time)
         val format = FileNames.format(context)
         val name = FileNames.buildVoip(format, startedAt.time, note?.incoming, app.tag, note?.name)
-        val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), ledger = false)
+        val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), ledger = false) {
+            RecordingTags.Facts(incoming = note?.incoming, caller = note?.name)
+        }
         if (outcome is Outcome.Saved && note?.name != null && format == FileNames.Format.DATE) {
             FileNames.noteCaller(context, name, note.name)
         }
@@ -339,15 +346,36 @@ object RecordingSaver {
         }
     }
 
-    /** A part being written: where to, and the muxer. */
-    private class Open(val part: Part, val target: RecordingStore.Target, val writer: OpusOggWriter)
+    /**
+     * A part being written: where to, and the muxer - which writes into a
+     * work file of its own, copied into place with the recording's tags when
+     * it is finished (RecordingTags: the muxer cannot write them).
+     */
+    private class Open(
+        val part: Part,
+        val target: RecordingStore.Target,
+        val writer: OpusOggWriter,
+        private val work: File,
+        private val workFd: ParcelFileDescriptor,
+    ) {
+        /** Copy the finished file into place, with [facts] in it. */
+        fun copyIn(facts: RecordingTags.Facts) {
+            workFd.close()
+            RecordingTags.copyTagged(work, target.descriptor.fileDescriptor, facts)
+        }
+
+        fun discardWork() {
+            runCatching { workFd.close() }
+            work.delete()
+        }
+    }
 
     /**
      * Fetch the daemon's file and mux it into [parts], each packet into the
      * part that holds it; a packet none holds is dropped. A part's file is
      * opened at its first packet, so a part with none leaves nothing behind.
      * [ledger]: note each saved part for the missed-call check - phone calls
-     * only.
+     * only. [facts]: what each part's file says of itself (RecordingTags).
      */
     private suspend fun write(
         context: Context,
@@ -355,6 +383,7 @@ object RecordingSaver {
         parts: List<Part>,
         ledger: Boolean,
         message: Boolean = false,
+        facts: (Part) -> RecordingTags.Facts,
     ): Outcome {
         val socket = try {
             CaptureDaemon.fetch(context, recfile)
@@ -407,13 +436,23 @@ object RecordingSaver {
                                 } else {
                                     // A writer that cannot be made must not
                                     // leave its target open behind it.
+                                    var work: File? = null
+                                    var workFd: ParcelFileDescriptor? = null
                                     val writer = try {
-                                        OpusOggWriter(target.descriptor.fileDescriptor, config.data)
+                                        work = RecordingTags.workFile(context)
+                                        workFd = ParcelFileDescriptor.open(
+                                            work,
+                                            ParcelFileDescriptor.MODE_READ_WRITE or
+                                                ParcelFileDescriptor.MODE_TRUNCATE,
+                                        )
+                                        OpusOggWriter(workFd.fileDescriptor, config.data)
                                     } catch (t: Throwable) {
+                                        runCatching { workFd?.close() }
+                                        work?.delete()
                                         target.abandon()
                                         throw t
                                     }
-                                    Open(part, target, writer).also { open[part] = it }
+                                    Open(part, target, writer, work!!, workFd!!).also { open[part] = it }
                                 }
                             } ?: break
                             into.writer.write(packet.data, packet.pts)
@@ -433,6 +472,14 @@ object RecordingSaver {
         // one - kept for a retry, not deleted as saved.
         val finished = open.values.map { runCatching { it.writer.finish() }.getOrDefault(false) }.all { it }
         val anything = written.any { (_, counts) -> counts.first > 0L }
+        // Into place, tags and all - only what will be published: a copy that
+        // fails is a file not written, and the daemon's copy is kept for it.
+        val copied = finished && !gone && !nowhere && completed && anything && open.values.all { o ->
+            o.writer.packets == 0L || runCatching { o.copyIn(facts(o.part)) }
+                .onFailure { Log.e(TAG, "save: a file from $recfile could not be copied into place", it) }
+                .isSuccess
+        }
+        open.values.forEach { it.discardWork() }
 
         return when {
             gone -> {
@@ -444,7 +491,7 @@ object RecordingSaver {
                 open.values.forEach { it.target.abandon() }
                 Outcome.Failed("There was nowhere to save it.")
             }
-            completed && anything && !finished -> {
+            completed && anything && !copied -> {
                 Log.e(TAG, "save: a file from $recfile could not be finished; keeping the daemon's copy")
                 open.values.forEach { it.target.abandon() }
                 Outcome.Failed("The recording could not be written. Is the storage full?")

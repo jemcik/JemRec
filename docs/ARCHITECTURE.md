@@ -21,6 +21,7 @@ this one is - or to check that it does what it says.
   [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
   [playing in the background](#playing-in-the-background) · [three looks](#three-looks) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
+  [marks inside the recording](#marks-inside-the-recording) ·
   [notifications](#after-the-call-and-when-something-is-wrong)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
   [what stays switched on](#what-stays-switched-on)
@@ -659,6 +660,76 @@ only from medium height up in their example; the width is where the room is.
   that dialog. The daily auto-delete pass has nobody to ask, so it leaves them
   alone.
 
+## Marks inside the recording
+
+What a row shows beyond its file name - that it is a message, that it is
+kept, who a messenger call was with, and for Honor's names which way the
+call went - used to live only in the app's preferences, by file name. An
+uninstall deletes those and leaves the recordings, so after a reinstall on
+the Honor (2026-10-24) the Messages chip found none and every messenger call
+was "Telegram call". The file is the one thing that outlives the app, and
+the one thing the three places a recording can live have in common, so each
+recording now carries its own marks.
+
+- **Where.** An Ogg Opus file's second page is its tags (OpusTags, RFC 7845
+  section 5.2): a vendor string, then `NAME=value` fields, then optional
+  zeros. MediaMuxer writes it with "libopus" and no fields, and cannot be
+  told to write any (read from a recording's first bytes on the Honor). So
+  the muxer writes each recording into a work file in the app's cache, and
+  the file is copied into place with that one page swapped for JemRec's:
+  `JEMREC=1`, and `JEMREC_MESSAGE`, `JEMREC_DIRECTION`, `JEMREC_CALLER`,
+  `JEMREC_KEEP` as they apply. Every other page is the muxer's, byte for
+  byte, and the tests hold the checksum to the two the Honor's own file
+  carries. A copy that fails is a recording not saved: the recorder's copy
+  is kept for a retry, as when the muxer cannot finish.
+- **Measured on the Honor** (2026-10-24, a 20 s tone, not a call): Android's
+  media scanner read a copy tagged this way as 20 s, as it did the untagged
+  one; with a standard `ARTIST` field added it showed that artist, so it
+  reads the page, zeros and all; the `JEMREC_*` fields show in no music app.
+  A message JemRec saved and tagged on an emulator, put in
+  `Sounds/CallRecord` under the Honor name of a real call, got that call its
+  Play button in Honor's Phone app, which played it to the end in Honor's
+  Recorder. And the 0.19.2 debug build, installed fresh beside 50 older
+  recordings and two tagged ones, read all 52 once its audio access was
+  allowed in setup, and noted the tagged message as a kept message and the
+  Telegram call's caller by name.
+- **Keep, after the save.** The tags are written at a fixed size (512 bytes,
+  more for a long name) with room for the keep mark, so marking a recording
+  kept, or not, rewrites that one page in place at the same length - a few
+  hundred bytes, not the file. A recording from before this has no room,
+  and after a reinstall Android counts the old install's files as nobody's
+  and will not let JemRec write them without asking (a
+  `RecoverableSecurityException`, on the Android 17 emulator, 2026-10-24);
+  for those the mark is kept in the app only, as every mark was before - so
+  a mark changed on such a file goes back to what the file says at the next
+  reinstall.
+- **Reading back.** The list reads the first two pages of any recording it
+  has not read before - every one, after a reinstall; afterwards, only one
+  copied in from elsewhere - and notes what they say where the marks have
+  always been read, before auto-delete can ask. Each file is read once. An
+  emulator check saves a message, keeps it from its row, uninstalls and
+  installs again: on Android 17 and 13 the row is a kept message again
+  (2026-10-24), and Android's index still reads the file's full length.
+- **A row's time is the call's.** Writing the keep mark moves the file's
+  date (by 4 s on the Android 17 emulator), and a row with no caller showed
+  that date: it would have jumped to the moment of the tap. It now shows the
+  call's start, from the name - as the day it is listed under, and a named
+  row's time, already did. Only a file whose name is not JemRec's still
+  shows its own date.
+- **Seeing them at all.** After a reinstall Android counts the old
+  install's files as nobody's, and an app sees those only with a permission:
+  `READ_MEDIA_AUDIO` from Android 13. Android 12 has only
+  `READ_EXTERNAL_STORAGE`, which reads every photo, video and audio file;
+  JemRec did not ask for it, and on 12 listed no recording from before a
+  reinstall, tags or none (the emulator check, 2026-10-24). The user chose to
+  ask for it there too, on the same card, capped at 12 in the manifest.
+- **What it does not cover.** A phone call's caller is still the
+  call log's, as it always was. A folder you chose must be chosen again: its
+  address was in the preferences too, and until then its recordings are not
+  listed. Recordings in the app's own storage - only ever a last resort -
+  are deleted with the app. Multitrack's caller colours belong to callers,
+  not recordings, and are given out again.
+
 ## After the call, and when something is wrong
 
 A recorder that stops recording without saying so is worse than none: you find
@@ -709,6 +780,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | To play a recording on with the screen off, in `PlaybackService` ([playing in the background](#playing-in-the-background)). It plays; it never records. |
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
+| `READ_EXTERNAL_STORAGE` | Android 12 only, which has no `READ_MEDIA_AUDIO`: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
 | `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine's answering is the recorder's, as the shell. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |

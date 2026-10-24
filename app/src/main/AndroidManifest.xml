@@ -54,17 +54,15 @@
         READ_PHONE_STATE
           IMPLIED ... reason: io.github.muntashirakon.adb has a targetSdkVersion < 4
 
-      None is wanted. Writing needs no permission at all - MediaStore lets an
-      app create its own media - and blanket read access to every file on the
-      phone is exactly what a call recorder should not be asking for. Phone
-      state is read by the shell-side daemon, never by this app; the app used
-      to declare this one itself, for a call listener it no longer has, and
-      when that declaration went the merger quietly put it back. Every user
-      was asked to allow it either way.
+      None is wanted as the merger has it. Writing needs no permission at all
+      - MediaStore lets an app create its own media. Phone state is read by
+      the shell-side daemon, never by this app; the app used to declare this
+      one itself, for a call listener it no longer has, and when that
+      declaration went the merger quietly put it back. Every user was asked
+      to allow it either way. READ_EXTERNAL_STORAGE is declared below instead,
+      for Android 12 alone.
     -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        tools:node="remove" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         tools:node="remove" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE"
         tools:node="remove" />
@@ -90,8 +88,19 @@
       in the empty list, with the reason beside it - and refusing costs nothing
       but the older recordings: JemRec still records, and still sees everything
       it makes from here on.
+
+      READ_EXTERNAL_STORAGE is the same thing on Android 12, which has no
+      READ_MEDIA_AUDIO: there it reads every photo, video and audio file, not
+      audio alone. It used to be left out on 12 for that, and 12 then listed
+      no recording from before a reinstall at all; the user chose to ask for
+      it there (2026-10-24), the same way and for the same reason. Capped at
+      12 (maxSdkVersion 32), so 13 and later never see it, and "replace" so
+      the merger's own, uncapped one (above) does not come back with it.
     -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"
+        tools:node="replace" />
 
     <!--
       NOT here, deliberately: RECORD_AUDIO, and the microphone

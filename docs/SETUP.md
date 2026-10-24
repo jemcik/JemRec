@@ -59,8 +59,9 @@ digest the release workflow prints in its log on every run.
 
 1. Open **JemRec**.
 2. It asks for **notifications**. Allow them.
-3. It also offers to read audio files, which lets it list recordings made
-   before a reinstall. Refusing that is fine; only the old ones are hidden.
+3. It also offers to read audio files (on Android 12, photos and media: it has
+   no choice for audio alone), which lets it list recordings made before a
+   reinstall. Refusing that is fine; only the old ones are hidden.
 
 Notifications are not decoration here. They are how the app tells you a call is
 being recorded, how it asks whether to record one, and where you will type the
@@ -421,6 +422,11 @@ than the app's — so if you want them gone, delete them **before** you
 uninstall. Recently deleted ones in the standard folder are still emptied by
 Android on time. In a folder you chose, they stay behind as hidden files,
 because removing them is JemRec's job.
+
+Installed again, JemRec shows your recordings as they were, once you allow it
+to read them: which are messages, which you kept, and who each messenger call
+was with are written inside each recording, not only in the app. A folder you
+chose has to be chosen again, and until then its recordings are not listed.
 
 ## The Calls tab
 

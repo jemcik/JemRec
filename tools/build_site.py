@@ -414,10 +414,11 @@ main.home { max-width: none; padding: 0 0 2rem; }
   position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block;
 }
 .video-frame img { object-fit: cover; }
-/* Not dead centre: the still's centre is the pairing code's heading, and a
-   button there hid half of it. Under the code panel the picture is empty. */
+/* Dead centre, whatever the still shows: off to one side under the code
+   panel it read as misplaced, not as the video's button (the user,
+   2026-10-24). */
 .video-frame .play {
-  position: absolute; left: 67.7%; top: 86%; width: clamp(40px, 9%, 72px);
+  position: absolute; left: 50%; top: 50%; width: clamp(40px, 9%, 72px);
   aspect-ratio: 1; border-radius: 50%; background: rgba(13, 15, 18, .72);
   transform: translate(-50%, -50%);
   box-shadow: 0 6px 20px rgba(0, 0, 0, .35); transition: transform .2s, background .2s;
@@ -923,7 +924,8 @@ SETUP = [
     ("ol", [
         "Open **JemRec**.",
         "It asks for **notifications**. Allow them.",
-        "It also offers to read audio files, which lets it list recordings made "
+        "It also offers to read audio files (on Android 12, photos and media: "
+        "it has no choice for audio alone), which lets it list recordings made "
         "before a reinstall. Refusing that is fine; only the old ones are hidden.",
     ]),
     ("p", "Notifications are not decoration here. They are how the app tells you "
@@ -1269,6 +1271,11 @@ SETUP = [
           "you uninstall. Recently deleted ones in the standard folder are still "
           "emptied by Android on time. In a folder you chose, they stay behind as "
           "hidden files, because removing them is JemRec's job."),
+    ("p", "Installed again, JemRec shows your recordings as they were, once you "
+          "allow it to read them: which are messages, which you kept, and who "
+          "each messenger call was with are written inside each recording, not "
+          "only in the app. A folder you chose has to be chosen again, and until "
+          "then its recordings are not listed."),
 
     ("h2", "The Calls tab"),
     ("p", "The **Calls** tab, beside Recordings, is your phone's call log, under "
@@ -2010,7 +2017,10 @@ FAQ = [
      "also convert one to <code>.m4a</code> for iPhones and Macs. They are "
      "yours rather than the app&rsquo;s, so they stay when JemRec is "
      "uninstalled &mdash; delete them first if you want them gone. Deleted ones "
-     "wait in Recently deleted for 30 days."),
+     "wait in Recently deleted for 30 days. Installed again, JemRec shows them "
+     "as they were, once you let it read them (it asks): each recording "
+     "carries its own marks &mdash; a message, kept, who a messenger call was "
+     "with &mdash; inside the file."),
     ("How do I turn debugging off for good?",
      "Uninstall JemRec first. If the recorder is running, it notices the "
      "uninstall within a few minutes, turns both debugging switches off and "
@@ -2347,6 +2357,7 @@ HOW_BODY = f"""
     <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>
     <tr><td><code>READ_MEDIA_AUDIO</code></td><td>To list recordings made before a reinstall. Refusing it only hides those.</td></tr>
+    <tr><td><code>READ_EXTERNAL_STORAGE</code></td><td>Android 12 only, which has no <code>READ_MEDIA_AUDIO</code>: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
     <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
     <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
@@ -2395,8 +2406,9 @@ PRIVACY_BODY = f"""
             folder you chose, it waits as a hidden file that JemRec removes.
             <em>Delete all for good</em> removes them all at once, when you ask.
             Messages the answering machine took are recordings too; which ones
-            are messages is kept by file name in the app&rsquo;s private
-            storage.</td></tr>
+            are messages, and which you marked to keep, is kept by file name in
+            the app&rsquo;s private storage, and written inside each recording
+            as well, so that a reinstall still knows.</td></tr>
     <tr><td>Caller colours</td>
         <td>Only once you use the Multitrack look: which of its six colours
             each caller has, so a caller keeps theirs, also after you change the
@@ -2420,7 +2432,8 @@ PRIVACY_BODY = f"""
             happens each time it is needed. Two choices change that, and only
             when you make them: a file name with the caller in it puts their name
             or number in the recording&rsquo;s file name, and for those JemRec
-            keeps which way each call went, by file name, in its private storage;
+            keeps which way each call went, by file name, in its private storage
+            and inside the recording;
             and the contacts you pick under Whose calls to keep are stored there
             as your contacts app&rsquo;s own links to them. Exact call tracking,
             below, keeps numbers too.</td></tr>
@@ -2437,7 +2450,10 @@ PRIVACY_BODY = f"""
             caller&rsquo;s name, the time, and whether the call rang first, for
             the last 30 calls, in the app&rsquo;s private storage. A recording
             named by date alone keeps its caller&rsquo;s name there too, by file
-            name; one named with the caller has it in the file name.</td></tr>
+            name; one named with the caller has it in the file name. Either
+            way the name is also written inside the recording, where no music
+            app shows it, so that a reinstall still knows who it was &mdash;
+            and a recording you share carries it.</td></tr>
     <tr><td>Call times</td>
         <td>When each recorded call started, which way it went and how long it
             lasted, the time of any call the app told you was not recorded,

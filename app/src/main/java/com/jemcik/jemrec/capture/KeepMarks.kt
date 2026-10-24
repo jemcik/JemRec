@@ -13,13 +13,17 @@ import com.jemcik.jemrec.Prefs
  * Kept by name, which is the call's start time and direction and does not
  * change for the life of the file: not through a restore from Recently
  * deleted, and not when the folder setting changes. Kept in the app's
- * preferences, not in the file, because the three places a recording can
- * live have no metadata in common - and a mark that only worked in one of
- * them would be a mark the user could not trust.
+ * preferences, where the list and auto-delete read it - and written into the
+ * recording's own tags as well (RecordingTags), the one thing the three
+ * places a recording can live have in common, so that an uninstall, which
+ * deletes the preferences, does not take the mark with it: a reinstall reads
+ * it back from the file. A file the app may not write - one an earlier
+ * install made, which Android counts as nobody's after an uninstall - or
+ * one from before tags, keeps its mark here alone.
  *
- * Gone with the app's data on an uninstall; Start fresh leaves it alone. The
- * auto-delete settings it protects against live in the same place and default
- * to off, so a reinstall can never find the marks gone and auto-delete on.
+ * Start fresh leaves it alone. The auto-delete settings it protects against
+ * default to off after a reinstall, and the list reads the marks back before
+ * auto-delete can ask.
  */
 object KeepMarks {
 

@@ -20,15 +20,31 @@ import android.os.Build
 object AudioAccess {
 
     /**
-     * Empty below Android 13, where the equivalent is READ_EXTERNAL_STORAGE:
-     * blanket access to every file on the phone, which is not a trade this app
-     * makes. There the list simply keeps its pre-reinstall behaviour.
+     * Below Android 13 the one permission that shows them is
+     * READ_EXTERNAL_STORAGE, which reads every photo, video and audio file,
+     * not audio alone. It was not asked for there, and Android 12 then listed
+     * no recording from before a reinstall at all; the user chose to ask for
+     * it, the same way and for the same reason (2026-10-24). The manifest
+     * caps it at 12.
      */
     val PERMISSIONS: Array<String> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             arrayOf(Manifest.permission.READ_MEDIA_AUDIO)
         } else {
-            emptyArray()
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+
+    /**
+     * What the card asks to be allowed, in the words of Android's own
+     * question after it: "music and audio" from 13, "photos and media" on 12
+     * (both read off the emulators' dialogs, 2026-10-24) - with why it is
+     * more than audio there.
+     */
+    val askFor: String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            "Allow access to audio files to show them."
+        } else {
+            "Allow access to photos and media to show them: Android 12 has no choice for audio alone."
         }
 
     /** True when there is nothing left to ask for - including having nothing to ask. */

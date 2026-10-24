@@ -36,15 +36,17 @@ import java.util.Locale
  * it is not known. Honor's format does not apply: its dialer has no messenger
  * calls to match. In the date format the caller is noted here by name instead
  * ([noteCaller]), since nothing else can say it: messenger calls are not in
- * the phone's call log.
+ * the phone's call log. The recording's own tags carry it too
+ * (RecordingTags), and a reinstall notes it here again from them.
  *
  * READING A NAME BACK
  *
  * The list, auto-delete and the Calls tab all need a recording's start time,
  * and the list its direction; both come from the name ([parse]), in every
  * format. Honor's format has no direction in it, so for those the saver
- * notes it here, by name ([noteDirection]) - and the list falls back to the
- * call log, matched on the number the name does carry.
+ * notes it here, by name ([noteDirection]), and in the file's tags for a
+ * reinstall (RecordingTags) - and the list falls back to the call log,
+ * matched on the number the name does carry.
  */
 object FileNames {
 
@@ -218,13 +220,18 @@ object FileNames {
 
     /** The saver just saved [name]: if its name will not say which way the
      *  call went, remember it here. */
+    fun noteDirection(context: Context, name: String, incoming: Boolean) =
+        noteDirections(context, mapOf(name to incoming))
+
+    /** The same, for many at once: one write of the preferences. */
     @Synchronized
-    fun noteDirection(context: Context, name: String, incoming: Boolean) {
-        if (parse(name)?.incoming != null) return
+    fun noteDirections(context: Context, directions: Map<String, Boolean>) {
+        val unsaid = directions.filterKeys { parse(it)?.incoming == null }
+        if (unsaid.isEmpty()) return
         val prefs = Prefs.of(context)
         val entries = (prefs.getStringSet(KEY_DIRECTIONS, emptySet()) ?: emptySet()).toMutableSet()
-        entries.removeAll { it.drop(2) == name }
-        entries += "${if (incoming) "i" else "o"}:$name"
+        entries.removeAll { it.drop(2) in unsaid }
+        unsaid.forEach { (name, incoming) -> entries += "${if (incoming) "i" else "o"}:$name" }
         // The newest only: a direction outlives its file here at the cost of a
         // few bytes, and a bound keeps that from adding up.
         val kept = if (entries.size <= KEEP_DIRECTIONS) {
@@ -237,12 +244,16 @@ object FileNames {
 
     /** A messenger call's caller, by the recording's name, when the name
      *  itself does not carry it (the date format). */
+    fun noteCaller(context: Context, name: String, caller: String) = noteCallers(context, mapOf(name to caller))
+
+    /** The same, for many at once: one write of the preferences. */
     @Synchronized
-    fun noteCaller(context: Context, name: String, caller: String) {
+    fun noteCallers(context: Context, callers: Map<String, String>) {
+        if (callers.isEmpty()) return
         val prefs = Prefs.of(context)
         val entries = (prefs.getStringSet(KEY_CALLERS, emptySet()) ?: emptySet()).toMutableSet()
-        entries.removeAll { it.substringBefore('\u0000') == name }
-        entries += "$name\u0000$caller"
+        entries.removeAll { it.substringBefore('\u0000') in callers }
+        callers.forEach { (name, caller) -> entries += "$name\u0000$caller" }
         val kept = if (entries.size <= KEEP_DIRECTIONS) {
             entries
         } else {

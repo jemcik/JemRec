@@ -473,8 +473,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier,
                         // before, and saying there is would be false.
                         Text(
                             "If JemRec was installed on this phone before, the calls " +
-                                "it recorded then are still here. Allow access to audio " +
-                                "files to show them.",
+                                "it recorded then are still here. " + AudioAccess.askFor,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,

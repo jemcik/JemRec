@@ -6,12 +6,12 @@ import com.jemcik.jemrec.Prefs
 /**
  * The recordings that are messages: calls the answering machine took.
  *
- * Kept by name, like KeepMarks and for the same reason - the three places a
- * recording can live have no metadata in common - so the file keeps the name
- * the user's File names setting gives it, and Honor's Phone app still finds
- * it by that name. The recorder's own file says it is a message ("_msg" in
- * the daemon's name, see RecordingStore.messageStartMs); this is where that
- * survives the save.
+ * Kept by name, like KeepMarks, so the file keeps the name the user's File
+ * names setting gives it, and Honor's Phone app still finds it by that name.
+ * The recorder's own file says it is a message ("_msg" in the daemon's name,
+ * see RecordingStore.messageStartMs); this is where the list reads that after
+ * the save, and the saved file's tags (RecordingTags) are where it outlives
+ * an uninstall.
  */
 object MessageMarks {
 
@@ -24,9 +24,11 @@ object MessageMarks {
     fun all(context: Context): Set<String> =
         Prefs.of(context).getStringSet(KEY, emptySet())?.toSet() ?: emptySet()
 
+    fun mark(context: Context, name: String) = mark(context, listOf(name))
+
     @Synchronized
-    fun mark(context: Context, name: String) {
-        val marks = all(context) + name
+    fun mark(context: Context, names: Collection<String>) {
+        val marks = all(context) + names
         val kept = if (marks.size <= KEEP) {
             marks
         } else {
