@@ -18,6 +18,18 @@
     <issue id="ComposeViewModelForwarding" severity="ignore" />
 
     <!--
+      Asks for @ReadOnlyComposable on any composable that calls only
+      read-only ones - and asked it of the tap modifiers (recordToggle,
+      instructionTap, rowTaps), whose click lambdas the compiler caches in
+      slots. The compiler takes the mark there and drops the function's
+      group, so those slots land in the caller's: instructionTap's came and
+      went with the recorder's state (the bytecode, 2026-10-26). In a gate
+      where every warning fails, each new tap modifier would be pushed to that
+      mark. The 16 functions marked store nothing, and keep it.
+    -->
+    <issue id="ComposeReadOnlyComposable" severity="ignore" />
+
+    <!--
       These compare the build with whatever is newest on the internet today:
       a library, AGP or an API level released next week would fail a build
       that did not change. Versions are chosen by hand and written down where
@@ -27,6 +39,20 @@
     <issue id="GradleDependency" severity="ignore" />
     <issue id="AndroidGradlePluginVersion" severity="ignore" />
     <issue id="OldTargetApi" severity="ignore" />
+
+    <!--
+      The same, from Google Play's SDK index, which lint downloads at each
+      clean build (lint-cache/*/sdk_index/snapshot.gz): a library marked
+      outdated, deprecated or against Play's policy today would fail a build
+      that did not change - for a store JemRec is not in (README, "Why isn't
+      it on Google Play?"). PlaySdkIndexVulnerability and RiskyLibrary stay
+      on: a dependency known to be unsafe should stop the build, changed or
+      not. None of these is fatal, so a release build never waits on them.
+    -->
+    <issue id="OutdatedLibrary" severity="ignore" />
+    <issue id="PlaySdkIndexDeprecated" severity="ignore" />
+    <issue id="PlaySdkIndexNonCompliant" severity="ignore" />
+    <issue id="PlaySdkIndexGenericIssues" severity="ignore" />
 
     <!--
       Found inside two libraries, not in JemRec's code: BouncyCastle's PKIX

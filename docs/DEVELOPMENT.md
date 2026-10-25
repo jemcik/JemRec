@@ -139,9 +139,12 @@ time.
   `UseKtx`, most by lint's own fixes, read through one by one) or are allowed
   with the reason beside them. `app/lint.xml` says what is off by design: the
   view model handed down to the screens, the checks that compare with the
-  newest versions online, trust-all managers inside two libraries, and the
-  app's own `CompositionLocal`s, each named. A single place allowed says so
-  where it stands (`tools:ignore`, `@SuppressLint`).
+  newest versions online or with Google Play's SDK index of the day (a known
+  vulnerability still fails), trust-all managers inside two libraries, the
+  app's own `CompositionLocal`s, each named, and the `@ReadOnlyComposable`
+  hint, which would put that mark on functions whose cached lambdas need a
+  group. A single place allowed says so where it stands (`tools:ignore`,
+  `@SuppressLint`).
 - **Compose rules.** Slack's [compose-lints](https://slackhq.github.io/compose-lints/)
   run inside lint (`lintChecks` in `app/build.gradle.kts`): modifiers passed
   on and placed right, parameter order, new `CompositionLocal`s.
