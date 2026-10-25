@@ -1,0 +1,9 @@
+com.genymobile.scrcpy.daemon-lint-pngs-0 /Users/jemcik/Public/code/jemrec/shellserver/lint/build/generated/res/pngs/release
+com.genymobile.scrcpy.daemon-lint-updated_navigation_xml-1 /Users/jemcik/Public/code/jemrec/shellserver/lint/build/generated/updated_navigation_xml/release
+com.genymobile.scrcpy.daemon-lint-mergeReleaseResources-2 /Users/jemcik/Public/code/jemrec/shellserver/lint/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
+com.genymobile.scrcpy.daemon-lint-mergeReleaseResources-3 /Users/jemcik/Public/code/jemrec/shellserver/lint/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
+com.genymobile.scrcpy.daemon-lint-release-4 /Users/jemcik/Public/code/jemrec/shellserver/lint/build/intermediates/merged_res/release/mergeReleaseResources
+com.genymobile.scrcpy.daemon-lint-release-5 /Users/jemcik/Public/code/jemrec/shellserver/lint/build/intermediates/packaged_res/release/packageReleaseResources
+com.genymobile.scrcpy.daemon-lint-main-6 /Users/jemcik/Public/code/jemrec/shellserver/lint/src/main/res
+com.genymobile.scrcpy.daemon-lint-release-7 /Users/jemcik/Public/code/jemrec/shellserver/lint/src/release/res
+gradleHome-0 /Users/jemcik/.gradle

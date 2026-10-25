@@ -22,3 +22,8 @@ include(":app")
 // itself is built by shellserver/build.sh; see shellserver/tests.
 include(":daemon-tests")
 project(":daemon-tests").projectDir = file("shellserver/tests")
+
+// Lint's Android API-level check over the daemon's sources, at its own floor
+// (Android 12). Nothing is built from it; see shellserver/lint.
+include(":daemon-lint")
+project(":daemon-lint").projectDir = file("shellserver/lint")

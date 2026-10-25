@@ -1,0 +1,23 @@
+<libraries>
+  <library
+      name=":@@:daemon-lint::debug"
+      jars="/Users/jemcik/.gradle/caches/9.7.1/transforms/5ee935b0fc566f32753be2a0deb32a9a/transformed/out/jars/classes.jar:/Users/jemcik/.gradle/caches/9.7.1/transforms/5ee935b0fc566f32753be2a0deb32a9a/transformed/out/jars/libs/R.jar"
+      resolved="JemRec:daemon-lint:unspecified"
+      folder="/Users/jemcik/.gradle/caches/9.7.1/transforms/5ee935b0fc566f32753be2a0deb32a9a/transformed/out"
+      manifest="AndroidManifest.xml"
+      resFolder="res"
+      assetsFolder="assets"
+      lintJar="lint.jar"
+      publicResources="public.txt"
+      symbolFile="R.txt"
+      externalAnnotations="annotations.zip"
+      proguardRules="proguard.txt"/>
+  <library
+      name="org.jetbrains.kotlin:kotlin-stdlib:2.3.21@jar"
+      jars="/Users/jemcik/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.3.21/a2ee2c4e220fee522f0451b723bab2a43f3481a7/kotlin-stdlib-2.3.21.jar"
+      resolved="org.jetbrains.kotlin:kotlin-stdlib:2.3.21"/>
+  <library
+      name="org.jetbrains:annotations:13.0@jar"
+      jars="/Users/jemcik/.gradle/caches/modules-2/files-2.1/org.jetbrains/annotations/13.0/919f0dfe192fb4e063e7dacadee7f8bb9a2672a9/annotations-13.0.jar"
+      resolved="org.jetbrains:annotations:13.0"/>
+</libraries>

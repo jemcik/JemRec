@@ -151,10 +151,19 @@ time.
   listed in `shellserver/tests/build.gradle.kts`, and each other finding was
   fixed or suppressed where the code says why. It does not know Android's API
   levels - a replacement it suggests can be newer than Android 12, which the
-  daemon runs on (`Scanner(InputStream, Charset)` is Android 14) - so check before
-  taking one. The jar in the APK is still built by `shellserver/build.sh`
-  alone. NullAway was tried and left out: 88 warnings, nearly all because the
+  daemon runs on (`Scanner(InputStream, Charset)` is Android 14) - and the
+  next check is what catches that. The jar in the APK is still built by
+  `shellserver/build.sh` alone. NullAway was tried and left out: 88 warnings, nearly all because the
   daemon has no `@Nullable` annotations yet.
+- **Android API levels in the daemon.** The daemon runs from Android 12 but
+  compiles against 16's `android.jar`, so a call from a newer Android builds
+  fine and then crashes an older phone. `shellserver/lint` is an Android module
+  that exists only so lint's `NewApi` and `InlinedApi` checks read
+  `shellserver/src` at the daemon's floor (minSdk 31); nothing is built from
+  it. It runs inside `./gradlew lint`, or alone with
+  `./gradlew :daemon-lint:lint`. Proven on two planted calls (Android 13's
+  `ByteArrayOutputStream.toString(Charset)`, 14's `Scanner(InputStream,
+  Charset)`); the daemon itself had none.
 - **CodeQL.** `.github/workflows/codeql.yml`: GitHub's code scanning with the
   security-and-quality queries, on pushes to `main`, pull requests and weekly.
   Findings go to the Security tab.
