@@ -22,6 +22,7 @@ keystore.properties
 # shellserver build output - source and PATCHES.md are what matter
 /shellserver/build/
 /shellserver/tests/build/
+/shellserver/lint/build/
 /shellserver/*.jar
 
 # NEVER commit captured audio. Testing a call recorder produces recordings of

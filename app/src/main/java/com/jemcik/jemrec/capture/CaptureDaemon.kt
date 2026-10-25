@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.media.AudioManager
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbIdentity
 import com.jemcik.jemrec.adb.AdbTransport
@@ -836,7 +837,7 @@ object CaptureDaemon {
         prefs.getString(KEY_TOKEN, null)?.let { return it }
         val fresh = ByteArray(24).also { random.nextBytes(it) }
             .joinToString("") { "%02x".format(it) }
-        prefs.edit().putString(KEY_TOKEN, fresh).apply()
+        prefs.edit { putString(KEY_TOKEN, fresh) }
         return fresh
     }
 

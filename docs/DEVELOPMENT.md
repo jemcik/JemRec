@@ -134,13 +134,17 @@ CI runs the first four on every push and pull request; each runs locally too.
 They exist because reviews kept finding bugs by chance that a tool finds every
 time.
 
-- **Lint is a gate.** `./gradlew lint`: every warning is an error. The ones
-  still there from before the gate (103, mostly `UseKtx`) are listed in
-  `app/lint-baseline.xml`, and `app/lint.xml` says what is off by design and
-  why - the view model handed down to the screens, the checks that compare
-  with the newest versions online, trust-all managers inside two libraries.
-  So only something new fails. After fixing listed ones, run
-  `./gradlew updateLintBaseline` and commit the smaller file.
+- **Lint is a gate.** `./gradlew lint`: every warning is an error, and there
+  is no baseline - the 121 found when the gate went in were fixed (80 of them
+  `UseKtx`, most by lint's own fixes, read through one by one) or are allowed
+  with the reason beside them. `app/lint.xml` says what is off by design: the
+  view model handed down to the screens, the checks that compare with the
+  newest versions online or with Google Play's SDK index of the day (a known
+  vulnerability still fails), trust-all managers inside two libraries, the
+  app's own `CompositionLocal`s, each named, and the `@ReadOnlyComposable`
+  hint, which would put that mark on functions whose cached lambdas need a
+  group. A single place allowed says so where it stands (`tools:ignore`,
+  `@SuppressLint`).
 - **Compose rules.** Slack's [compose-lints](https://slackhq.github.io/compose-lints/)
   run inside lint (`lintChecks` in `app/build.gradle.kts`): modifiers passed
   on and placed right, parameter order, new `CompositionLocal`s.

@@ -2,6 +2,7 @@ package com.jemcik.jemrec.capture
 
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -43,7 +44,10 @@ object Retention {
 
     private fun save(context: Context, key: String, value: Int) {
         // A changed rule is applied now, not at the next daily pass.
-        Prefs.of(context).edit().putInt(key, value).putLong(KEY_LAST_RUN, 0L).apply()
+        Prefs.of(context).edit {
+            putInt(key, value)
+            putLong(KEY_LAST_RUN, 0L)
+        }
     }
 
     /**
@@ -90,7 +94,7 @@ object Retention {
         // The debug build's invented recordings are not files.
         if (Recordings.override != null) return BulkDeleteResult(0, 0, null)
         val now = System.currentTimeMillis()
-        Prefs.of(context).edit().putLong(KEY_LAST_RUN, now).apply()
+        Prefs.of(context).edit { putLong(KEY_LAST_RUN, now) }
         Trash.purgeExpired(context, now)
 
         val maxAge = maxAgeDays(context)

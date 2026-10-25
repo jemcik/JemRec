@@ -1,14 +1,15 @@
 package com.jemcik.jemrec.ui
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.core.graphics.createBitmap
 import com.jemcik.jemrec.capture.VoipApps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,7 +28,8 @@ import java.util.concurrent.ConcurrentHashMap
 @Composable
 internal fun rememberAppIcon(packages: List<String>, size: Dp): ImageBitmap? {
     val context = LocalContext.current
-    val px = (size.value * context.resources.displayMetrics.density).toInt()
+    // LocalDensity, not context.resources: it follows a configuration change.
+    val px = (size.value * LocalDensity.current.density).toInt()
     val key = "${packages.joinToString(",")}@$px"
     return produceState(initialValue = icons[key], key) {
         value = icons[key] ?: withContext(Dispatchers.IO) {
@@ -57,7 +59,7 @@ internal fun forgetAppIcons() = icons.clear()
  */
 private fun iconOf(context: Context, pkg: String, px: Int): ImageBitmap? = runCatching {
     val drawable = context.packageManager.getApplicationIcon(pkg)
-    Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888).also {
+    createBitmap(px, px).also {
         synchronized(drawable) {
             drawable.setBounds(0, 0, px, px)
             drawable.draw(Canvas(it))

@@ -9,6 +9,7 @@ import androidx.compose.ui.text.font.AndroidFont
 import androidx.compose.ui.text.font.FontLoadingStrategy
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -222,12 +223,15 @@ val MultitrackDark = MultitrackColors(
 )
 
 @Composable
+@ReadOnlyComposable
 fun deckColors(): DeckColors = if (LocalDark.current) DeckDark else DeckLight
 
 @Composable
+@ReadOnlyComposable
 fun memoColors(): MemoColors = if (LocalDark.current) MemoDark else MemoLight
 
 @Composable
+@ReadOnlyComposable
 fun multitrackColors(): MultitrackColors = if (LocalDark.current) MultitrackDark else MultitrackLight
 
 /**

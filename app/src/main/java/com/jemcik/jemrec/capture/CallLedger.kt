@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -100,7 +101,7 @@ internal object CallLedger {
             .filter { (timeOf(it) ?: 0L) > now - KEEP_MS }
             .toMutableSet()
         kept += entry
-        prefs.edit().putStringSet(KEY, kept).apply()
+        prefs.edit { putStringSet(KEY, kept) }
     }
 
     /** "r" for a recording, "s" for a call the rules skipped, "g" for a

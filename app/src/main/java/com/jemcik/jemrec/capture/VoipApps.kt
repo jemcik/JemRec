@@ -2,6 +2,7 @@ package com.jemcik.jemrec.capture
 
 import android.content.Context
 import android.content.pm.PackageManager
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -108,7 +109,7 @@ object VoipApps {
         if (!supported(context) || KNOWN.none { it.pkg == pkg }) return
         val now = enabled(context).toMutableSet()
         if (on) now += pkg else now -= pkg
-        Prefs.of(context).edit().putStringSet(KEY, now).apply()
+        Prefs.of(context).edit { putStringSet(KEY, now) }
     }
 
     /** For the daemon: "com.viber.voip,com.whatsapp", or "" for none.

@@ -170,6 +170,9 @@ internal fun SettingsGear(vm: MainViewModel, tint: Color) {
  * Round in every look, so it is clipped round here: the press ripple fills
  * whatever it is clipped to, and Multitrack's button - no shadow, which is
  * what clipped Memo's and Deck's - lit up a square on the Honor (2026-10-23).
+ *
+ * Not @ReadOnlyComposable: its lambda is cached in slots, as
+ * instructionTap's is.
  */
 @Composable
 internal fun Modifier.recordToggle(state: UiState, vm: MainViewModel): Modifier {
@@ -190,7 +193,15 @@ internal fun Modifier.recordToggle(state: UiState, vm: MainViewModel): Modifier 
  *  Memo's had no label for TalkBack. Taken while busy too, as the record
  *  control's is (allowThisWifi): the words show while the recorder is down,
  *  when each opening's check is busiest, and a tap then did nothing, the
- *  words looking as tappable as ever. */
+ *  words looking as tappable as ever.
+ *
+ *  Not @ReadOnlyComposable, which lint's compose rules would have (off in
+ *  lint.xml for this): the compiler caches the click lambda in slots, and a
+ *  read-only function gets no group of its own to keep them in. Marked,
+ *  this compiled with no group at all, so its four
+ *  slots - there only while the instruction is a tap - came and went in the
+ *  caller's group as the recorder went down and up, moving whatever the
+ *  caller remembers after it (the bytecode, 2026-10-26). */
 @Composable
 internal fun Modifier.instructionTap(vm: MainViewModel, instruction: Instruction?): Modifier {
     val label = instruction?.tap ?: return this

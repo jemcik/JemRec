@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -119,9 +120,9 @@ object AnswerDiagnostics {
     }
 
     fun rememberStageOne(context: Context, fields: Map<String, String>) {
-        Prefs.of(context).edit()
-            .putString(KEY_STAGE_ONE, fields.entries.joinToString(" ") { "${it.key}=${it.value}" })
-            .apply()
+        Prefs.of(context).edit {
+            putString(KEY_STAGE_ONE, fields.entries.joinToString(" ") { "${it.key}=${it.value}" })
+        }
     }
 
     /** The last no-call checks; null if never run. */
@@ -133,7 +134,7 @@ object AnswerDiagnostics {
     fun rawStageOne(context: Context): String? = Prefs.of(context).getString(KEY_STAGE_ONE, null)
 
     fun record(context: Context, callType: String, verdict: Verdict) {
-        Prefs.of(context).edit().putString(KEY_RESULT + callType, verdict.name).apply()
+        Prefs.of(context).edit { putString(KEY_RESULT + callType, verdict.name) }
     }
 
     /** Each call type tested, and how it came out. */

@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -67,7 +68,7 @@ object FileNames {
         runCatching { Format.valueOf(Prefs.of(context).getString(KEY, null)!!) }.getOrDefault(Format.DATE)
 
     fun setFormat(context: Context, format: Format) {
-        Prefs.of(context).edit().putString(KEY, format.name).apply()
+        Prefs.of(context).edit { putString(KEY, format.name) }
     }
 
     /** Whether this phone has Honor's Phone app, the only reason to offer [Format.HONOR]. */
@@ -240,7 +241,7 @@ object FileNames {
         } else {
             entries.sortedByDescending { parse(it.drop(2))?.startedAt ?: 0L }.take(KEEP_DIRECTIONS).toSet()
         }
-        prefs.edit().putStringSet(KEY_DIRECTIONS, kept).apply()
+        prefs.edit { putStringSet(KEY_DIRECTIONS, kept) }
     }
 
     /** A messenger call's caller, by the recording's name, when the name
@@ -260,7 +261,7 @@ object FileNames {
         } else {
             entries.sortedByDescending { parse(it.substringBefore('\u0000'))?.startedAt ?: 0L }.take(KEEP_DIRECTIONS).toSet()
         }
-        prefs.edit().putStringSet(KEY_CALLERS, kept).apply()
+        prefs.edit { putStringSet(KEY_CALLERS, kept) }
     }
 
     /** Every caller noted, by name. */
