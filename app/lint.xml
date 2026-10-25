@@ -34,6 +34,10 @@
       by the pairing, not by a certificate authority. A trust-all manager in
       JemRec's own sources is still reported.
     -->
+    <issue id="TrustAllX509TrustManager">
+        <ignore regexp="bcpkix-jdk15to18|libadb-android" />
+    </issue>
+
     <!--
       These are the app's own, each for a reason a parameter would serve
       worse: the fixed clock the screen tests draw at (LocalNow), the look
@@ -48,9 +52,5 @@
     <issue id="ComposeCompositionLocalUsage">
         <option name="allowed-composition-locals"
             value="LocalNow,LocalLook,LocalLookChoice,LocalDark,LocalCallerColours,LocalRowsSelectable,LocalPlayerHere,LocalBarSides,LocalInventedLevels,LocalLabelsShrink" />
-    </issue>
-
-    <issue id="TrustAllX509TrustManager">
-        <ignore regexp="bcpkix-jdk15to18|libadb-android" />
     </issue>
 </lint>

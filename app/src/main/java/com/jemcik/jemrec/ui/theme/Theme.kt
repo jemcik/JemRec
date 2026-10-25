@@ -204,14 +204,12 @@ object JemRecColors {
 
     /** Starts playback. */
     val play: Color
-        @Composable
-        @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFF6FDF9B) else Color(0xFF14713C)
+        @Composable @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFF6FDF9B) else Color(0xFF14713C)
 
     /** A call with a favourite contact - the gold star convention used
      *  everywhere for favourites, a touch lighter on dark for contrast. */
     val favorite: Color
-        @Composable
-        @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFFFFCA28) else Color(0xFFF9A825)
+        @Composable @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFFFFCA28) else Color(0xFFF9A825)
 
     /**
      * The favourite star on a SELECTED filter chip.
@@ -223,8 +221,7 @@ object JemRecColors {
      * the selected pill is dark, so the bright gold is kept.
      */
     val favoriteSelected: Color
-        @Composable
-        @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFF7A5900) else Color(0xFFF9A825)
+        @Composable @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFF7A5900) else Color(0xFFF9A825)
 
     /**
      * Deletes a recording - to Recently deleted, since the trash; still the
@@ -236,8 +233,7 @@ object JemRecColors {
      * where deletion is what they mean.
      */
     val delete: Color
-        @Composable
-        @ReadOnlyComposable get() = MaterialTheme.colorScheme.error
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.error
 }
 
 // Deck: warm paper under a graphite-and-aluminium recorder. Primary is the

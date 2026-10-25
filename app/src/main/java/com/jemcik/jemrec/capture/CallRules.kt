@@ -139,7 +139,7 @@ object CallRules {
                 Chosen(
                     key = key,
                     name = cursor.getString(0)?.takeIf { it.isNotBlank() } ?: "Unnamed contact",
-                    photo = cursor.getString(1)?.takeIf { it.isNotBlank() }?.let(Uri::parse),
+                    photo = cursor.getString(1)?.takeIf { it.isNotBlank() }?.toUri(),
                 )
             }
         }.getOrNull()

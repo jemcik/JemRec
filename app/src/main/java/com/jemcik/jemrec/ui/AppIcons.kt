@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.ui
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState

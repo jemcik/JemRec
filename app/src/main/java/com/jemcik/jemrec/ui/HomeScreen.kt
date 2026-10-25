@@ -1,6 +1,6 @@
 package com.jemcik.jemrec.ui
 
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -60,9 +60,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,12 +89,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color

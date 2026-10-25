@@ -126,7 +126,7 @@ internal object AfterCall {
             fun from(intent: Intent): Call? = runCatching {
                 Call(
                     name = intent.getStringExtra("name")!!,
-                    uri = (intent.getStringExtra("uri")!!).toUri(),
+                    uri = intent.getStringExtra("uri")!!.toUri(),
                     filePath = intent.getStringExtra("path"),
                     seconds = intent.getDoubleExtra("seconds", 0.0),
                     incoming = intent.getBooleanExtra("incoming", false),

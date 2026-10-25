@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.jemcik.jemrec.Prefs
 import java.io.File
 import java.text.SimpleDateFormat
@@ -144,7 +145,7 @@ object RecordingStore {
     fun treeUri(context: Context): Uri? =
         Prefs.of(context)
             .getString(KEY_TREE, null)
-            ?.let(Uri::parse)
+            ?.toUri()
 
     /** What to show the user, in words they can act on. */
     fun describe(context: Context): String {

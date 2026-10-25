@@ -8,6 +8,7 @@ import android.provider.CallLog
 import android.provider.ContactsContract
 import android.util.Log
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -308,7 +309,7 @@ object CallLogLookup {
                 )?.use { cursor ->
                     if (cursor.moveToFirst()) {
                         val name = cursor.getString(0)?.takeIf { it.isNotBlank() }
-                        val photo = cursor.getString(1)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+                        val photo = cursor.getString(1)?.takeIf { it.isNotBlank() }?.toUri()
                         val starred = cursor.getInt(2) != 0
                         val first = cursor.getLong(3)
                         // Every contact with the number, not the first the
