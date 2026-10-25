@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -52,7 +53,7 @@ object AnsweringMachine {
     fun enabled(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ON, false)
 
     fun setEnabled(context: Context, on: Boolean) {
-        Prefs.of(context).edit().putBoolean(KEY_ON, on).apply()
+        Prefs.of(context).edit { putBoolean(KEY_ON, on) }
     }
 
     fun delay(context: Context): Int =
@@ -60,7 +61,7 @@ object AnsweringMachine {
 
     fun setDelay(context: Context, seconds: Int) {
         require(seconds in DELAYS)
-        Prefs.of(context).edit().putInt(KEY_DELAY, seconds).apply()
+        Prefs.of(context).edit { putInt(KEY_DELAY, seconds) }
     }
 
     /** With Do Not Disturb silencing the call: after about two rings (true,
@@ -68,7 +69,7 @@ object AnsweringMachine {
     fun dndShort(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_DND_SHORT, true)
 
     fun setDndShort(context: Context, short: Boolean) {
-        Prefs.of(context).edit().putBoolean(KEY_DND_SHORT, short).apply()
+        Prefs.of(context).edit { putBoolean(KEY_DND_SHORT, short) }
     }
 
     fun longest(context: Context): Int =
@@ -76,13 +77,13 @@ object AnsweringMachine {
 
     fun setLongest(context: Context, seconds: Int) {
         require(seconds in LONGEST)
-        Prefs.of(context).edit().putInt(KEY_LONGEST, seconds).apply()
+        Prefs.of(context).edit { putInt(KEY_LONGEST, seconds) }
     }
 
     fun sim(context: Context): String = Prefs.of(context).getString(KEY_SIM, SIM_DEFAULT) ?: SIM_DEFAULT
 
     fun setSim(context: Context, sim: String) {
-        Prefs.of(context).edit().putString(KEY_SIM, sim).apply()
+        Prefs.of(context).edit { putString(KEY_SIM, sim) }
     }
 
     /** How the greeting reaches the caller on this phone: "music" (Qualcomm's
@@ -92,7 +93,7 @@ object AnsweringMachine {
 
     fun setRoute(context: Context, route: String) {
         require(route == ROUTE_MUSIC || route == ROUTE_SCREENING)
-        Prefs.of(context).edit().putString(KEY_ROUTE, route).apply()
+        Prefs.of(context).edit { putString(KEY_ROUTE, route) }
     }
 
     const val ROUTE_MUSIC = "music"

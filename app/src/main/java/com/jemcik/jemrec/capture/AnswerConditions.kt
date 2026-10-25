@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -53,10 +54,10 @@ internal object AnswerConditions {
      *  settings screen does, each time it opens, and the call tracker at
      *  each ring it decides on. */
     fun remember(context: Context, sims: CaptureDaemon.Sims) {
-        Prefs.of(context).edit()
-            .putString(KEY_DEFAULT_SIM, sims.defaultId)
-            .putInt(KEY_SIM_COUNT, sims.all.size)
-            .apply()
+        Prefs.of(context).edit {
+            putString(KEY_DEFAULT_SIM, sims.defaultId)
+            putInt(KEY_SIM_COUNT, sims.all.size)
+        }
     }
 
     fun defaultSim(context: Context): String? = Prefs.of(context).getString(KEY_DEFAULT_SIM, null)

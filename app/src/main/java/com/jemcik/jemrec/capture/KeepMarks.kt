@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -39,6 +40,6 @@ object KeepMarks {
     fun set(context: Context, names: Collection<String>, kept: Boolean) {
         val now = all(context).toMutableSet()
         if (kept) now += names else now -= names.toSet()
-        Prefs.of(context).edit().putStringSet(KEY, now).apply()
+        Prefs.of(context).edit { putStringSet(KEY, now) }
     }
 }

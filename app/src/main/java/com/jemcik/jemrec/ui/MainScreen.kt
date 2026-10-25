@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -434,5 +435,6 @@ internal fun HomeHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
  * past it overflows - over the header's switch, out of a connected button).
  */
 @Composable
+@ReadOnlyComposable
 internal fun oneLineAutoSize(min: Dp, max: TextUnit): TextAutoSize =
     with(LocalDensity.current) { TextAutoSize.StepBased(minFontSize = min.toSp(), maxFontSize = max) }

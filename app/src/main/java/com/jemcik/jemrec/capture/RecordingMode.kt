@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -31,7 +32,7 @@ enum class RecordingMode {
 
         fun set(context: Context, mode: RecordingMode) {
             Prefs.of(context)
-                .edit().putString(KEY, mode.name).apply()
+                .edit { putString(KEY, mode.name) }
             // Calls before this were made under the other rule.
             MissedCalls.coverageChanged(context)
         }

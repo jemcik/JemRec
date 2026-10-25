@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.telecom.Call
 import android.telephony.TelephonyManager
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -39,7 +40,10 @@ internal object EmergencyPause {
      *  from [at], whatever the user said about an earlier one - by the
      *  call, not the clock, which can be set back between the two. */
     fun noteCall(context: Context, at: Long = System.currentTimeMillis()) {
-        Prefs.of(context).edit().putLong(KEY_CALL, at).remove(KEY_RESUMED).apply()
+        Prefs.of(context).edit {
+            putLong(KEY_CALL, at)
+            remove(KEY_RESUMED)
+        }
     }
 
     /** Telecom's time of the last emergency call, from a ringing call
@@ -48,13 +52,13 @@ internal object EmergencyPause {
      *  it was set up, or with call tracking off. */
     fun noteTelecom(context: Context, telecomLast: Long) {
         val prefs = Prefs.of(context)
-        if (telecomLast > prefs.getLong(KEY_CALL, 0L)) prefs.edit().putLong(KEY_CALL, telecomLast).apply()
+        if (telecomLast > prefs.getLong(KEY_CALL, 0L)) prefs.edit { putLong(KEY_CALL, telecomLast) }
     }
 
     /** The user's word, warned: answer again from now, until the next
      *  emergency call. */
     fun resume(context: Context, at: Long = System.currentTimeMillis()) {
-        Prefs.of(context).edit().putLong(KEY_RESUMED, at).apply()
+        Prefs.of(context).edit { putLong(KEY_RESUMED, at) }
     }
 
     /** Until when the machine stands down, or null. [telecomLast] is

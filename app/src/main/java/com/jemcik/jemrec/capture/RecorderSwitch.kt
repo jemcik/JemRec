@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.service.quicksettings.TileService
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.ui.RecorderTile
 
@@ -34,7 +35,7 @@ object RecorderSwitch {
     fun set(context: Context, on: Boolean) {
         val wasOn = isOn(context)
         Prefs.of(context)
-            .edit().putBoolean(KEY, on).apply()
+            .edit { putBoolean(KEY, on) }
         MissedCalls.coverageChanged(context)
         // A stop while the switch was off cost no call: from here on only
         // newer ones count, however the switch was flipped (app or tile).

@@ -103,13 +103,12 @@ android {
 
     // Lint as a gate, not noise. Until 0.21 it ran on every build with its
     // warnings ignored - 108 of them, nobody reading. Now every warning is an
-    // error, the ones that were already there are listed in lint-baseline.xml
-    // (regenerate with ./gradlew updateLintBaseline after fixing some), and
-    // lint.xml says what is off by design and why. So a NEW warning fails the
+    // error, and there is no baseline of old ones left to hide behind: all
+    // were fixed, or are allowed where they stand with the reason beside them
+    // (lint.xml, tools:ignore, @SuppressLint). So any warning fails the
     // build, locally and in CI.
     lint {
         lintConfig = file("lint.xml")
-        baseline = file("lint-baseline.xml")
         warningsAsErrors = true
         abortOnError = true
     }

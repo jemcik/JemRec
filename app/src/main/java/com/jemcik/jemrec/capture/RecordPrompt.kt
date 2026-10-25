@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.RecordPromptActivity
 import java.security.SecureRandom
@@ -119,7 +120,7 @@ object RecordPrompt {
      *  showing has no answer left to give. */
     fun dismiss(context: Context) {
         context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
-        synchronized(this) { Prefs.of(context).edit().remove(KEY_TICKET).apply() }
+        synchronized(this) { Prefs.of(context).edit { remove(KEY_TICKET) } }
     }
 
     /**
@@ -147,14 +148,14 @@ object RecordPrompt {
         val prefs = Prefs.of(context)
         val expected = prefs.getString(KEY_TICKET, null)
         if (presented.isNullOrEmpty() || presented != expected) return false
-        prefs.edit().remove(KEY_TICKET).apply()
+        prefs.edit { remove(KEY_TICKET) }
         true
     }
 
     private fun mintTicket(context: Context): String = synchronized(this) {
         val ticket = ByteArray(16).also { random.nextBytes(it) }
             .joinToString("") { "%02x".format(it) }
-        Prefs.of(context).edit().putString(KEY_TICKET, ticket).apply()
+        Prefs.of(context).edit { putString(KEY_TICKET, ticket) }
         ticket
     }
 

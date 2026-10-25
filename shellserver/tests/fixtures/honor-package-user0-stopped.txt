@@ -1,0 +1,1 @@
+    User 0: ceDataInode=63472 deDataInode=63486 pccCeDataInode=0 pccDeDataInode=0 installed=true hidden=false suspended=false suspendedByPrivacy=false appLockEnabled=false distractionFlags=0 stopped=true lastStoppedCaller= iAwareStopped=true notLaunched=false enabled=0 instant=false virtual=false quarantined=false

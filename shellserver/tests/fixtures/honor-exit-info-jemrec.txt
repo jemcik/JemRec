@@ -1,0 +1,100 @@
+ACTIVITY MANAGER PROCESS EXIT INFO (dumpsys activity exit-info)
+Last Timestamp of Persistence Into Persistent Storage: 2026-10-25 17:56:17.951
+  package: com.jemcik.jemrec
+    Historical Process Exit for uid=10240
+        ApplicationExitInfo #0:
+          timestamp=2026-10-25 17:46:07.022 pid=22885 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=198MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #1:
+          timestamp=2026-10-25 17:33:25.670 pid=22262 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=209MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #2:
+          timestamp=2026-10-25 17:26:17.949 pid=13772 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=217MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #3:
+          timestamp=2026-10-25 16:29:27.132 pid=11274 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=213MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #4:
+          timestamp=2026-10-25 16:02:25.727 pid=7392 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=280MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #5:
+          timestamp=2026-10-25 15:45:02.932 pid=4354 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=195MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #6:
+          timestamp=2026-10-25 15:33:28.633 pid=30060 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=284MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #7:
+          timestamp=2026-10-25 14:58:43.725 pid=29097 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=0.00 state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #8:
+          timestamp=2026-10-25 14:50:50.738 pid=24390 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=282MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #9:
+          timestamp=2026-10-25 13:52:29.117 pid=21597 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=13 (OTHER KILLS BY SYSTEM) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=313MB state=empty trace=null
+          description=iAwareR[SmartClean] -1ms(fg-service)
+          anrInfo=null
+        ApplicationExitInfo #10:
+          timestamp=2026-10-25 00:35:39.074 pid=20943 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=283MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #11:
+          timestamp=2026-10-25 00:33:01.934 pid=16538 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=264MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null
+        ApplicationExitInfo #12:
+          timestamp=2026-10-25 00:07:36.367 pid=13088 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=13 (OTHER KILLS BY SYSTEM) subreason=0 (UNKNOWN) status=0
+          importance=400 pss=0.00 rss=199MB state=empty trace=null
+          description=iAwareK[cached_enhance](adj:965,type:cch-empty)
+          anrInfo=null
+        ApplicationExitInfo #13:
+          timestamp=2026-10-24 23:46:48.030 pid=9962 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=13 (OTHER KILLS BY SYSTEM) subreason=0 (UNKNOWN) status=0
+          importance=400 pss=0.00 rss=193MB state=empty trace=null
+          description=iAwareK[cached_enhance](adj:905,type:cch-empty)
+          anrInfo=null
+        ApplicationExitInfo #14:
+          timestamp=2026-10-24 23:35:35.912 pid=7605 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=10 (USER REQUESTED) subreason=22 (REMOVE TASK) status=0
+          importance=400 pss=0.00 rss=0.00 state=empty trace=null
+          description=remove task
+          anrInfo=null
+        ApplicationExitInfo #15:
+          timestamp=2026-10-24 23:30:23.544 pid=2776 realUid=10240 packageUid=10240 definingUid=10240 user=0
+          process=com.jemcik.jemrec reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=125 pss=0.00 rss=283MB state=empty trace=null
+          description=stop com.jemcik.jemrec due to killDueToPackageUpdate
+          anrInfo=null

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -119,7 +120,7 @@ class DebugNotificationCleaner : NotificationListenerService() {
             runCatching { snoozeNotification(key, RESTORE_MS) }
                 .onFailure { Log.w(TAG, "debug-notif: could not bring back $key", it) }
         }
-        prefs.edit().remove(KEY_SNOOZED).apply()
+        prefs.edit { remove(KEY_SNOOZED) }
     }
 
     companion object {
@@ -182,14 +183,14 @@ class DebugNotificationCleaner : NotificationListenerService() {
 
         /** Record the answer and act on it at once. */
         fun choose(context: Context, hide: Boolean) {
-            Prefs.of(context).edit().putBoolean(KEY_HIDE, hide).apply()
+            Prefs.of(context).edit { putBoolean(KEY_HIDE, hide) }
             apply(context)
         }
 
         /** Forget the answer, for Start fresh: setup asks again, and until
          *  then nothing is hidden. */
         fun forget(context: Context) {
-            Prefs.of(context).edit().remove(KEY_HIDE).apply()
+            Prefs.of(context).edit { remove(KEY_HIDE) }
             apply(context)
         }
 
@@ -236,7 +237,7 @@ class DebugNotificationCleaner : NotificationListenerService() {
         private fun remember(context: Context, key: String) {
             val prefs = Prefs.of(context)
             val keys = prefs.getStringSet(KEY_SNOOZED, null).orEmpty() + key
-            prefs.edit().putStringSet(KEY_SNOOZED, keys).apply()
+            prefs.edit { putStringSet(KEY_SNOOZED, keys) }
         }
     }
 }

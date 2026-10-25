@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.adb.AdbIdentity
@@ -165,7 +166,7 @@ object Setup {
      *  not say. Taken from the Developer options card; dropped by reset(). */
     fun confirmDeveloperOptions(context: Context) {
         Log.i(TAG, "setup: Developer options are on, the user says")
-        Prefs.of(context).edit().putBoolean(KEY_DEV_OPTIONS_CONFIRMED, true).apply()
+        Prefs.of(context).edit { putBoolean(KEY_DEV_OPTIONS_CONFIRMED, true) }
     }
 
     /**
@@ -207,7 +208,7 @@ object Setup {
 
     internal fun markComplete(context: Context) {
         Prefs.of(context)
-            .edit().putBoolean(KEY_COMPLETE, true).apply()
+            .edit { putBoolean(KEY_COMPLETE, true) }
     }
 
     /**
@@ -222,7 +223,7 @@ object Setup {
         Prefs.of(context).getBoolean(KEY_BACKGROUND_ASKED, false)
 
     fun markBackgroundChoice(context: Context) {
-        Prefs.of(context).edit().putBoolean(KEY_BACKGROUND_ASKED, true).apply()
+        Prefs.of(context).edit { putBoolean(KEY_BACKGROUND_ASKED, true) }
     }
 
     /**
@@ -245,7 +246,7 @@ object Setup {
 
     internal fun markPaired(context: Context) {
         Prefs.of(context)
-            .edit().putBoolean(KEY_PAIRED, true).apply()
+            .edit { putBoolean(KEY_PAIRED, true) }
     }
 
     /**
@@ -261,7 +262,10 @@ object Setup {
      */
     fun forgetPairing(context: Context) {
         Log.i(TAG, "setup: pairing again at the user's request")
-        Prefs.of(context).edit().remove(KEY_COMPLETE).remove(KEY_PAIRED).apply()
+        Prefs.of(context).edit {
+            remove(KEY_COMPLETE)
+            remove(KEY_PAIRED)
+        }
     }
 
     /**
@@ -737,9 +741,12 @@ object Setup {
         // Setup asks the background question again, so no old warning about it.
         BackgroundKill.forget(context)
         // Or the very next launch reads a flag from the setup being undone.
-        Prefs.of(context)
-            .edit().remove(KEY_COMPLETE).remove(KEY_PAIRED).remove(KEY_DEV_OPTIONS_CONFIRMED)
-            .remove(KEY_BACKGROUND_ASKED).apply()
+        Prefs.of(context).edit {
+            remove(KEY_COMPLETE)
+            remove(KEY_PAIRED)
+            remove(KEY_DEV_OPTIONS_CONFIRMED)
+            remove(KEY_BACKGROUND_ASKED)
+        }
 
         if (hasSecureSettings(context) &&
             GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)

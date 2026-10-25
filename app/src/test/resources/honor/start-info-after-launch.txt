@@ -1,0 +1,100 @@
+ACTIVITY MANAGER LRU PROCESSES (dumpsys activity start-info)
+Last Timestamp of Persistence Into Persistent Storage: 25/10/2026, 17:56
+  package: com.jemcik.jemrec
+    Historical Process Start for userId=10240
+        ApplicationStartInfo #0:
+ monotonicCreationTimeMs=5175630299
+ pid=24455 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=START ACTIVITY startType=WARM launchMode=0 wasForceStopped=false startComponent=ACTIVITY
+ intent=Intent { flg=0x10000000 xflg=0x4 cmp=com.jemcik.jemrec/.MainActivity }
+ timestamps: 0=80806265243809 4=80806463165320 6=80806457395736 7=80806475774746 
+        ApplicationStartInfo #1:
+ monotonicCreationTimeMs=5175610609
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=0 reason=SERVICE startType=COLD launchMode=0 wasForceStopped=false startComponent=SERVICE
+ intent=Intent { act=android.service.notification.NotificationListenerService cmp=com.jemcik.jemrec/.capture.DebugNotificationCleaner }
+ timestamps: 0=80786574053140 1=80786577613557 2=80786833630848 3=80786635624338 
+        ApplicationStartInfo #2:
+ monotonicCreationTimeMs=5174849139
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=0 reason=SERVICE startType=COLD launchMode=0 wasForceStopped=false startComponent=SERVICE
+ intent=Intent { act=android.service.notification.NotificationListenerService cmp=com.jemcik.jemrec/.capture.DebugNotificationCleaner }
+ timestamps: 0=80025100340514 1=80025113541139 2=80025430584159 3=80025203789264 
+        ApplicationStartInfo #3:
+ monotonicCreationTimeMs=5174421493
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=0 reason=SERVICE startType=COLD launchMode=0 wasForceStopped=false startComponent=SERVICE
+ intent=Intent { act=android.service.notification.NotificationListenerService cmp=com.jemcik.jemrec/.capture.DebugNotificationCleaner }
+ timestamps: 0=79597455630989 1=79597465292864 2=79597771522604 3=79597536419583 
+        ApplicationStartInfo #4:
+ monotonicCreationTimeMs=5171010658
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=0 reason=SERVICE startType=COLD launchMode=0 wasForceStopped=false startComponent=SERVICE
+ intent=Intent { act=android.service.notification.NotificationListenerService cmp=com.jemcik.jemrec/.capture.DebugNotificationCleaner }
+ timestamps: 0=78475602064699 1=78475603426678 2=78475881686365 3=78475665036938 
+        ApplicationStartInfo #5:
+ monotonicCreationTimeMs=5169389340
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=0 reason=SERVICE startType=COLD launchMode=0 wasForceStopped=false startComponent=SERVICE
+ intent=Intent { act=android.service.notification.NotificationListenerService cmp=com.jemcik.jemrec/.capture.DebugNotificationCleaner }
+ timestamps: 0=76854283640265 1=76854289533963 2=76854524502244 3=76854345498702 
+        ApplicationStartInfo #6:
+ monotonicCreationTimeMs=5168996634
+ pid=7392 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=START ACTIVITY startType=HOT launchMode=0 wasForceStopped=false startComponent=ACTIVITY
+ intent=Intent { act=com.jemcik.jemrec.OPEN flg=0x34000000 xflg=0x4 hwFlg=0x2000000 cmp=com.jemcik.jemrec/.MainActivity (has extras) }
+ timestamps: 0=76461578874633 4=76461648038279 6=76461624204321 7=76461649889112 
+        ApplicationStartInfo #7:
+ monotonicCreationTimeMs=5168228214
+ pid=4354 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=LAUNCHER startType=HOT launchMode=0 wasForceStopped=false startComponent=ACTIVITY
+ intent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.jemcik.jemrec/.MainActivity bnds=[341,1593][620,1984] (has extras) }
+ timestamps: 0=75888264297821 4=75888418524279 6=75888412350529 7=75888429344122 
+        ApplicationStartInfo #8:
+ monotonicCreationTimeMs=5167832725
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=0 reason=SERVICE startType=COLD launchMode=0 wasForceStopped=false startComponent=SERVICE
+ intent=Intent { act=com.jemcik.jemrec.CABLE cmp=com.jemcik.jemrec/.capture.CallMonitorService }
+ timestamps: 0=75677645653318 1=75677646758266 2=75677782155974 3=75677686562276 
+        ApplicationStartInfo #9:
+ monotonicCreationTimeMs=5167294943
+ pid=30060 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=LAUNCHER startType=HOT launchMode=0 wasForceStopped=false startComponent=ACTIVITY
+ intent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.jemcik.jemrec/.MainActivity bnds=[339,1649][618,2040] (has extras) }
+ timestamps: 0=75139863779356 4=75139932118054 6=75139915741700 7=75139949424252 
+        ApplicationStartInfo #10:
+ monotonicCreationTimeMs=5165132252
+ pid=29097 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=LAUNCHER startType=HOT launchMode=0 wasForceStopped=false startComponent=ACTIVITY
+ intent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.jemcik.jemrec/.MainActivity bnds=[340,2206][619,2597] (has extras) }
+ timestamps: 0=73462027183278 4=73462192394632 6=73462186312548 7=73462202832027 
+        ApplicationStartInfo #11:
+ monotonicCreationTimeMs=5165094282
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=0 reason=SERVICE startType=COLD launchMode=0 wasForceStopped=false startComponent=SERVICE
+ intent=Intent { act=android.service.notification.NotificationListenerService cmp=com.jemcik.jemrec/.capture.DebugNotificationCleaner }
+ timestamps: 0=73424056165896 1=73424057467719 2=73424211567980 3=73424109714073 
+        ApplicationStartInfo #12:
+ monotonicCreationTimeMs=5162053577
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=LAUNCHER startType=COLD launchMode=0 wasForceStopped=true startComponent=ACTIVITY
+ intent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.jemcik.jemrec/.MainActivity bnds=[340,1873][619,2264] (has extras) }
+ timestamps: 0=70510730854664 1=70510744621904 2=70510872880497 3=70510777571487 4=70511021799091 6=70511016403258 7=70511034311955 
+        ApplicationStartInfo #13:
+ monotonicCreationTimeMs=5112144595
+ pid=21597 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=LAUNCHER startType=WARM launchMode=0 wasForceStopped=false startComponent=ACTIVITY
+ intent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 xflg=0x4 cmp=com.jemcik.jemrec/.MainActivity bnds=[340,1580][619,1971] (has extras) }
+ timestamps: 0=50973599583627 4=50973660063263 6=50973656940867 7=50973674766335 
+        ApplicationStartInfo #14:
+ monotonicCreationTimeMs=5110025505
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=START ACTIVITY startType=COLD launchMode=0 wasForceStopped=false startComponent=ACTIVITY
+ intent=Intent { flg=0x10000000 xflg=0x4 cmp=com.jemcik.jemrec/.MainActivity }
+ timestamps: 0=48975238080796 1=48975258515796 2=48975404211629 3=48975297568035 4=48975561880900 6=48975556400744 7=48975576446941 
+        ApplicationStartInfo #15:
+ monotonicCreationTimeMs=5108541635
+ pid=0 realUid=10240 packageUid=10240 definingUid=10240 user=0
+ package=com.jemcik.jemrec process=com.jemcik.jemrec startupState=2 reason=START ACTIVITY startType=COLD launchMode=0 wasForceStopped=false startComponent=ACTIVITY
+ intent=Intent { flg=0x10000000 xflg=0x4 cmp=com.jemcik.jemrec/.MainActivity }
+ timestamps: 0=47723176315284 1=47723226663357 2=47723363247055 3=47723264841378 4=47723533084138 6=47723526871117 7=47723543762315 

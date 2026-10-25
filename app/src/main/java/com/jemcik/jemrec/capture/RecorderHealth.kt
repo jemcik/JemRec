@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.Prefs
@@ -77,13 +78,17 @@ internal object RecorderHealth {
             AdbTransport.lastConnect == AdbTransport.ConnectOutcome.NONE -> prefs.getInt(KEY_REFUSED, 0)
             else -> 0
         }
-        prefs.edit().putInt(KEY_REFUSED, refused).apply()
+        prefs.edit { putInt(KEY_REFUSED, refused) }
 
         val watching = CaptureDaemon.isSetUp(context) && RecorderSwitch.isOn(context)
         if (alive || !watching) {
             if (prefs.contains(KEY_DOWN_SINCE) || prefs.contains(KEY_ALERTED)) {
                 if (alive) Log.i(TAG, "health: recorder is back")
-                prefs.edit().remove(KEY_DOWN_SINCE).remove(KEY_ALERTED).remove(KEY_CAUSE).apply()
+                prefs.edit {
+                    remove(KEY_DOWN_SINCE)
+                    remove(KEY_ALERTED)
+                    remove(KEY_CAUSE)
+                }
                 cancel(context)
             }
             return@runCatching
@@ -91,18 +96,18 @@ internal object RecorderHealth {
 
         val now = System.currentTimeMillis()
         val since = prefs.getLong(KEY_DOWN_SINCE, 0L).takeIf { it > 0 }
-            ?: now.also { prefs.edit().putLong(KEY_DOWN_SINCE, it).apply() }
+            ?: now.also { prefs.edit { putLong(KEY_DOWN_SINCE, it) } }
         val unadvertised = AdbTransport.lastConnect == AdbTransport.ConnectOutcome.NOT_FOUND &&
             GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED)
         val problem = diagnose(NetworkRevive.onWifi(context), refused, unadvertised)
         // Kept at every failed revive, not only once alerted: the home screen
         // shows it straight away, where the alert waits out the grace.
-        prefs.edit().putString(KEY_CAUSE, problem.name).apply()
+        prefs.edit { putString(KEY_CAUSE, problem.name) }
         val alerted = prefs.getString(KEY_ALERTED, null)
         if (shouldAlert(now, since, alerted, problem)) {
             Log.w(TAG, "health: recorder down since $since, telling the user ($problem)")
             post(context, problem)
-            prefs.edit().putString(KEY_ALERTED, problem.name).apply()
+            prefs.edit { putString(KEY_ALERTED, problem.name) }
         }
     }.onFailure { Log.w(TAG, "health: could not judge the recorder", it) }
 
@@ -165,9 +170,12 @@ internal object RecorderHealth {
      * step once setup was done, before any revive had read the new state.
      */
     fun pairingAgain(context: Context) {
-        Prefs.of(context).edit()
-            .remove(KEY_REFUSED).remove(KEY_DOWN_SINCE).remove(KEY_ALERTED).remove(KEY_CAUSE)
-            .apply()
+        Prefs.of(context).edit {
+            remove(KEY_REFUSED)
+            remove(KEY_DOWN_SINCE)
+            remove(KEY_ALERTED)
+            remove(KEY_CAUSE)
+        }
         cancel(context)
     }
 

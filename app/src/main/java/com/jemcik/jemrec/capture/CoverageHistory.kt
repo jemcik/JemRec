@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -42,7 +43,7 @@ internal object CoverageHistory {
         val entries = parse(prefs.getStringSet(KEY, emptySet()) ?: emptySet()).toMutableList()
         entries += now to current(context)
         val kept = entries.sortedBy { it.first }.takeLast(KEEP)
-        prefs.edit().putStringSet(KEY, kept.map { "${it.first}:${it.second.name}" }.toSet()).apply()
+        prefs.edit { putStringSet(KEY, kept.map { "${it.first}:${it.second.name}" }.toSet()) }
     }
 
     /** Begins the history if it has not begun: everything before now stays unknown. */

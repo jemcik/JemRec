@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import androidx.core.content.edit
 import java.io.File
 import java.io.FileDescriptor
 import java.io.FileInputStream
@@ -440,7 +441,7 @@ internal object RecordingTags {
         }
         val now = (seen intersect names) + results.filter { it.second.isSuccess }.map { it.first }
         if (now != seen) {
-            context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).edit().putStringSet(KEY_READ, now).apply()
+            context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).edit { putStringSet(KEY_READ, now) }
         }
     }
 

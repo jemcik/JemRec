@@ -31,15 +31,23 @@ public class CallStatesTest {
             did.add("end");
         }
 
+        /** End checks scheduled and not yet cancelled: never more than one,
+         *  or a stale one would end the next call. */
+        int checksPending;
+
         @Override
         public void scheduleEndCheck(long delayMs) {
             assertEquals(CallStates.END_CHECK_MS, delayMs);
             checkScheduled = true;
+            checksPending++;
         }
 
         @Override
         public void cancelEndCheck() {
             checkScheduled = false;
+            if (checksPending > 0) {
+                checksPending--;
+            }
         }
 
         @Override
@@ -154,5 +162,19 @@ public class CallStatesTest {
         checkDue();
         states.offHook();
         assertDid("start out", "end", "start in");
+    }
+
+    @Test
+    public void aSecondIdleReplacesTheEndCheckRatherThanAddingOne() {
+        states.offHook();
+        states.idle();
+        states.idle();
+        assertEquals(1, world.checksPending);
+    }
+
+    @Test
+    public void anOutgoingCallDidNotRing() {
+        states.offHook();
+        assertFalse(states.rang());
     }
 }

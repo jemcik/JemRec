@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -729,12 +730,12 @@ object RecordingSaver {
         val all = prefs.getStringSet(KEY_FAILING, emptySet()).orEmpty()
         val mine = all.firstOrNull { it.substringBefore('|') == recfile }
         if (clear) {
-            if (mine != null) prefs.edit().putStringSet(KEY_FAILING, all - mine).apply()
+            if (mine != null) prefs.edit { putStringSet(KEY_FAILING, all - mine) }
             return 0L
         }
         mine?.substringAfter('|')?.toLongOrNull()?.let { return it }
         val now = System.currentTimeMillis()
-        prefs.edit().putStringSet(KEY_FAILING, all + "$recfile|$now").apply()
+        prefs.edit { putStringSet(KEY_FAILING, all + "$recfile|$now") }
         return now
     }
 

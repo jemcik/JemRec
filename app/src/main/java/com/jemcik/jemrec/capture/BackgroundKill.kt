@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Process
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.ui.AutoStart
@@ -238,7 +239,7 @@ object BackgroundKill {
         val lastWarned = if (prefs.contains(KEY_LAST)) prefs.getLong(KEY_LAST, 0L) else null
         val since = countFrom(lastWarned, fromDaemon, System.currentTimeMillis()) ?: run {
             val baseline = exits.maxOfOrNull { it.timestampMs } ?: System.currentTimeMillis()
-            prefs.edit().putLong(KEY_LAST, baseline).apply()
+            prefs.edit { putLong(KEY_LAST, baseline) }
             return
         }
         // The daemon's wake has judged with the stopped flag already.
@@ -252,7 +253,7 @@ object BackgroundKill {
         if (kill == null) return
         // Advanced before the screen check, so a phone with no vendor screen
         // (nothing to point at, so no warning) does not look again every time.
-        prefs.edit().putLong(KEY_LAST, kill.timestampMs).apply()
+        prefs.edit { putLong(KEY_LAST, kill.timestampMs) }
         val screen = AutoStart.screen(context) ?: return
         Log.i(TAG, "backgroundkill: system killed JemRec at ${kill.timestampMs} (reason ${kill.reason}, $where); warning")
         post(
@@ -327,7 +328,7 @@ object BackgroundKill {
     fun recordingSwitchedOn(context: Context) {
         val prefs = Prefs.of(context)
         val now = System.currentTimeMillis()
-        if (prefs.getLong(KEY_LAST, 0L) < now) prefs.edit().putLong(KEY_LAST, now).apply()
+        if (prefs.getLong(KEY_LAST, 0L) < now) prefs.edit { putLong(KEY_LAST, now) }
     }
 
     /** Start fresh (Setup.reset): no warning left in the shade for a setup the
@@ -335,6 +336,6 @@ object BackgroundKill {
      *  baseline. */
     fun forget(context: Context) {
         cancel(context)
-        Prefs.of(context).edit().remove(KEY_LAST).apply()
+        Prefs.of(context).edit { remove(KEY_LAST) }
     }
 }

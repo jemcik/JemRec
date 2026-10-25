@@ -242,8 +242,7 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:label="@string/app_name">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -298,6 +297,7 @@
         <service
             android:name=".capture.PlaybackService"
             android:exported="true"
+            tools:ignore="ExportedService"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
@@ -320,6 +320,7 @@
         <service
             android:name=".capture.CallMonitorService"
             android:exported="true"
+            tools:ignore="ExportedService"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

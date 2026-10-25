@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -93,7 +94,7 @@ internal object CableWatch {
      *  and on, which starts adbd, or found the recorder up. */
     fun forget(context: Context) {
         val prefs = Prefs.of(context)
-        if (prefs.getBoolean(KEY_STOPPED_ADBD, false)) prefs.edit().remove(KEY_STOPPED_ADBD).apply()
+        if (prefs.getBoolean(KEY_STOPPED_ADBD, false)) prefs.edit { remove(KEY_STOPPED_ADBD) }
     }
 
     /** The daemon said a cable went in or came out ([what]). Returns when the
@@ -119,7 +120,7 @@ internal object CableWatch {
                 }
                 Step.REVIVE -> {
                     Log.w(TAG, "cable: the recorder went ${since / 1000.0} s into the watch; starting adbd and the recorder again")
-                    Prefs.of(context).edit().putBoolean(KEY_STOPPED_ADBD, true).apply()
+                    Prefs.of(context).edit { putBoolean(KEY_STOPPED_ADBD, true) }
                     // Not to be cut off half way by a STOP to the service -
                     // the recorder switched off, say: between Wireless
                     // debugging's off and on, or between the old recorder's
