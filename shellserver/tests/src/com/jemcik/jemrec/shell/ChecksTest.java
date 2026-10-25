@@ -460,9 +460,8 @@ public class ChecksTest {
 
     @Test
     public void aPolicyDumpThatBeginsWithItsOutputsIsRead() {
-        String policy = "Available output devices:\n  AUDIO_DEVICE_OUT_TELEPHONY_TX\n"
-                + "Available input devices:\n  AUDIO_DEVICE_IN_BUILTIN_MIC\n  AUDIO_OUTPUT_FLAG_INCALL_MUSIC";
-        assertEquals(1, Checks.inCallMusic(policy));
+        // The Honor's cut with its leading space gone: the outputs' heading at 0.
+        assertEquals(1, Checks.inCallMusic(HONOR_POLICY.trim()));
     }
 
     private static byte[] pcm16(int frames, int amplitude) {

@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.function.BooleanSupplier;
@@ -26,8 +27,11 @@ public class ChecksHonorRecordsTest {
     private static final BooleanSupplier STOPPED = () -> true;
 
     private static String dump(String name) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                ChecksHonorRecordsTest.class.getResourceAsStream("/" + name), StandardCharsets.UTF_8))) {
+        InputStream stream = ChecksHonorRecordsTest.class.getResourceAsStream("/" + name);
+        if (stream == null) {
+            throw new IllegalStateException(name + " is not on the test classpath (shellserver/tests/fixtures)");
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             return reader.lines().collect(Collectors.joining(" | ")).trim();
         }
     }
