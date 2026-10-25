@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import android.provider.ContactsContract
 import android.util.Log
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -50,14 +52,14 @@ object CallRules {
             .getOrDefault(Contacts.ALL)
 
     fun setContacts(context: Context, contacts: Contacts) {
-        Prefs.of(context).edit().putString(KEY_CONTACTS, contacts.name).apply()
+        Prefs.of(context).edit { putString(KEY_CONTACTS, contacts.name) }
     }
 
     /** Calls with numbers not in the contacts, and hidden ones. */
     fun otherNumbers(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_OTHERS, true)
 
     fun setOtherNumbers(context: Context, on: Boolean) {
-        Prefs.of(context).edit().putBoolean(KEY_OTHERS, on).apply()
+        Prefs.of(context).edit { putBoolean(KEY_OTHERS, on) }
     }
 
     /** Whether anything is left out at all. With nothing, a call is saved
@@ -114,19 +116,19 @@ object CallRules {
         val lookup = runCatching {
             ContactsContract.Contacts.getLookupUri(context.contentResolver, contact)
         }.onFailure { Log.w(TAG, "rules: could not read the picked contact", it) }.getOrNull() ?: return false
-        Prefs.of(context).edit().putStringSet(KEY_CHOSEN, chosenKeys(context) + lookup.toString()).apply()
+        Prefs.of(context).edit { putStringSet(KEY_CHOSEN, chosenKeys(context) + lookup.toString()) }
         return true
     }
 
     @Synchronized
     fun remove(context: Context, key: String) {
-        Prefs.of(context).edit().putStringSet(KEY_CHOSEN, chosenKeys(context) - key).apply()
+        Prefs.of(context).edit { putStringSet(KEY_CHOSEN, chosenKeys(context) - key) }
     }
 
     /** The chosen contacts that still exist, by name. Blocking. */
     fun chosen(context: Context): List<Chosen> = chosenKeys(context).mapNotNull { key ->
         runCatching {
-            val contact = ContactsContract.Contacts.lookupContact(context.contentResolver, Uri.parse(key))
+            val contact = ContactsContract.Contacts.lookupContact(context.contentResolver, key.toUri())
                 ?: return@runCatching null
             context.contentResolver.query(
                 contact,
@@ -152,7 +154,7 @@ object CallRules {
         val ids = mutableSetOf<Long>()
         for (key in chosenKeys(context)) {
             val id = runCatching {
-                ContactsContract.Contacts.lookupContact(context.contentResolver, Uri.parse(key))
+                ContactsContract.Contacts.lookupContact(context.contentResolver, key.toUri())
                     ?.let(ContentUris::parseId)
             }.getOrElse { return null }
             if (id != null) ids += id

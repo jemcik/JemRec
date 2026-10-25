@@ -1,6 +1,6 @@
 package com.jemcik.jemrec.ui
 
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.text.TextAutoSize
@@ -38,10 +38,11 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -186,12 +187,14 @@ private fun Modifier.toTheEdges(margin: Dp) = layout { measurable, constraints -
  *  on the Honor (2026-10-23). At 12sp, unspaced - Multitrack's size - it is
  *  a line shorter, as short as in the phone's font, and still Deck's. */
 @Composable
+@ReadOnlyComposable
 private fun rowTitle(): TextStyle = when (LocalLook.current) {
     Look.MULTITRACK -> TextStyle(fontFamily = LookFonts.grotesk, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 22.sp)
     else -> MaterialTheme.typography.bodyLarge
 }
 
 @Composable
+@ReadOnlyComposable
 private fun rowSummary(): TextStyle = when (LocalLook.current) {
     Look.MEMO -> MaterialTheme.typography.bodyMedium
     Look.DECK -> TextStyle(fontFamily = LookFonts.engraved, fontSize = 12.sp, lineHeight = 17.sp)

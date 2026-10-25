@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui
 
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import android.content.Context
 import android.annotation.SuppressLint
@@ -51,7 +52,7 @@ class RecorderTile : TileService() {
         fun isAdded(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ADDED, false)
 
         fun setAdded(context: Context, added: Boolean) {
-            Prefs.of(context).edit().putBoolean(KEY_ADDED, added).apply()
+            Prefs.of(context).edit { putBoolean(KEY_ADDED, added) }
         }
     }
 

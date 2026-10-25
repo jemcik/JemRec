@@ -6,6 +6,8 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.util.Log
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.jemcik.jemrec.capture.CallHistory
 import com.jemcik.jemrec.capture.OpusOggWriter
 import com.jemcik.jemrec.capture.Recording
@@ -62,7 +64,7 @@ internal object DemoRecordings {
     /** Installs or removes the override, and remembers the choice. */
     fun set(context: Context, on: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY, on).apply()
+            .edit { putBoolean(KEY, on) }
         install(on)
         Log.i(TAG, "demo: invented recordings ${if (on) "on" else "off"}")
     }
@@ -191,14 +193,14 @@ internal object DemoRecordings {
                 // The first plays - silence - so the screenshots can show its
                 // waveform; the rest are names alone.
                 uri = (if (call === CALLS.first()) silentCall(context, call.seconds) else null)
-                    ?: Uri.parse("jemrec-demo://call/${call.minutesAgo}"),
+                    ?: "jemrec-demo://call/${call.minutesAgo}".toUri(),
                 whenLabel = whenLabel(at),
                 incoming = call.incoming,
                 durationLabel = "%d:%02d".format(call.seconds / 60, call.seconds % 60),
                 sizeLabel = size(call.bytes),
                 caller = call.caller,
                 callerPhoto = call.photo?.let {
-                    Uri.parse("android.resource://${context.packageName}/drawable/$it")
+                    "android.resource://${context.packageName}/drawable/$it".toUri()
                 },
                 number = call.number,
                 callerFavorite = call.favorite,

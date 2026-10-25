@@ -2,6 +2,7 @@ package com.jemcik.jemrec
 
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,7 +74,7 @@ object DeepLink {
         val prefs = Prefs.of(context)
         prefs.getString(KEY_TOKEN, null)?.let { return it }
         val fresh = ByteArray(16).also { random.nextBytes(it) }.joinToString("") { "%02x".format(it) }
-        prefs.edit().putString(KEY_TOKEN, fresh).apply()
+        prefs.edit { putString(KEY_TOKEN, fresh) }
         return fresh
     }
 }

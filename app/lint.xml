@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   What lint is told, and why. Everything lint reports is an error here
-  (warningsAsErrors in app/build.gradle.kts), and what was already there when
-  the gate went in is listed in lint-baseline.xml, so only something NEW fails
-  the build. This file is for what is wrong for this app by design, or not
-  about this app's code at all.
+  (warningsAsErrors in app/build.gradle.kts), with no baseline. This file is
+  for what is wrong for this app by design, or not about this app's code at
+  all; a single place that is allowed says so where it stands
+  (tools:ignore, @SuppressLint).
 -->
 <lint>
     <!--
@@ -34,6 +34,22 @@
       by the pairing, not by a certificate authority. A trust-all manager in
       JemRec's own sources is still reported.
     -->
+    <!--
+      These are the app's own, each for a reason a parameter would serve
+      worse: the fixed clock the screen tests draw at (LocalNow), the look
+      and the dark mode every piece reads (LocalLook, LocalLookChoice,
+      LocalDark), each caller's colour on the Calls tab (LocalCallerColours),
+      the side panel's rows and player (LocalRowsSelectable, LocalPlayerHere),
+      a bar's insets (LocalBarSides), the screen tests' invented waveforms
+      (LocalInventedLevels) and ButtonPair's shrinking labels
+      (LocalLabelsShrink). A NEW one is still reported, so it gets the same
+      thought before it is added here.
+    -->
+    <issue id="ComposeCompositionLocalUsage">
+        <option name="allowed-composition-locals"
+            value="LocalNow,LocalLook,LocalLookChoice,LocalDark,LocalCallerColours,LocalRowsSelectable,LocalPlayerHere,LocalBarSides,LocalInventedLevels,LocalLabelsShrink" />
+    </issue>
+
     <issue id="TrustAllX509TrustManager">
         <ignore regexp="bcpkix-jdk15to18|libadb-android" />
     </issue>

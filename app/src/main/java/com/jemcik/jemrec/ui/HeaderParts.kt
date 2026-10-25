@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
@@ -30,8 +30,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -172,6 +173,7 @@ internal fun SettingsGear(vm: MainViewModel, tint: Color) {
  * what clipped Memo's and Deck's - lit up a square on the Honor (2026-10-23).
  */
 @Composable
+@ReadOnlyComposable
 internal fun Modifier.recordToggle(state: UiState, vm: MainViewModel): Modifier {
     val haptics = LocalHapticFeedback.current
     return this
@@ -192,6 +194,7 @@ internal fun Modifier.recordToggle(state: UiState, vm: MainViewModel): Modifier 
  *  when each opening's check is busiest, and a tap then did nothing, the
  *  words looking as tappable as ever. */
 @Composable
+@ReadOnlyComposable
 internal fun Modifier.instructionTap(vm: MainViewModel, instruction: Instruction?): Modifier {
     val label = instruction?.tap ?: return this
     val haptics = LocalHapticFeedback.current

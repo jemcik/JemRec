@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui.theme
 
 import android.app.UiModeManager
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,10 +60,10 @@ object Looks {
 
     fun set(context: Context, choice: LookChoice) {
         val before = state(context).value
-        Prefs.of(context).edit()
-            .putString(KEY_LOOK, choice.look.name)
-            .putString(KEY_LIGHT_DARK, choice.lightDark.name)
-            .apply()
+        Prefs.of(context).edit {
+            putString(KEY_LOOK, choice.look.name)
+            putString(KEY_LIGHT_DARK, choice.lightDark.name)
+        }
         state(context).value = choice
         if (choice.lightDark != before.lightDark) tellAndroid(context, choice.lightDark)
     }

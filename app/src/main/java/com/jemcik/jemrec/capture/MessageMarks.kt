@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -37,6 +38,6 @@ object MessageMarks {
             marks.associateWith { FileNames.parse(it)?.startedAt ?: 0L }
                 .entries.sortedByDescending { it.value }.take(KEEP).map { it.key }.toSet()
         }
-        Prefs.of(context).edit().putStringSet(KEY, kept).apply()
+        Prefs.of(context).edit { putStringSet(KEY, kept) }
     }
 }

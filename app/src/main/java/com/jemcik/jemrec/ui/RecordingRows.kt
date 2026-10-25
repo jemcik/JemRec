@@ -34,11 +34,12 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,6 +138,7 @@ internal val LocalPlayerHere = staticCompositionLocalOf { true }
  *  Selection, read 2026-10-23). Which is why a long press is not a menu. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
+@ReadOnlyComposable
 internal fun Modifier.rowTaps(recording: Recording, state: UiState, vm: MainViewModel): Modifier {
     val haptics = LocalHapticFeedback.current
     if (!LocalRowsSelectable.current) {
@@ -390,6 +392,7 @@ internal fun RowActions(recording: Recording, vm: MainViewModel, tint: Color, ke
  *  long, the list is not selecting - where the row's taps pick instead -
  *  and the player opens here (LocalPlayerHere). */
 @Composable
+@ReadOnlyComposable
 private fun playerShows(recording: Recording, state: UiState) =
     LocalPlayerHere.current && !state.selecting && state.playingName == recording.name && state.durationMs > 0
 
@@ -825,12 +828,14 @@ private fun DeckPlaying(recording: Recording, day: Day, state: UiState, vm: Main
 /** A caller's colour: theirs, so a caller's clips are one colour all down
  *  the list; a bare number's is the neutral one. */
 @Composable
+@ReadOnlyComposable
 internal fun hueOf(recording: Recording, c: MultitrackColors): Color = hueFor(recording.caller, c)
 
 /** The colour for [caller], a name or a number: the one CallerColours gave
  *  the name, so the Calls tab's rows wear the same colour as the caller's
  *  recordings - or, not given one yet, the name's hash's. */
 @Composable
+@ReadOnlyComposable
 internal fun hueFor(caller: String?, c: MultitrackColors): Color {
     val name = caller?.takeIf { CallerColours.named(it) } ?: return c.unknown
     val index = LocalCallerColours.current[CallerColours.keyOf(name)] ?: CallerColours.legacyIndex(name, c.hues.size)

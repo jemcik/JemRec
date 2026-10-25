@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.diag
 
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -7,6 +8,7 @@ import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.adb.ResultFile
 import com.jemcik.jemrec.capture.SelfTest
@@ -188,6 +190,9 @@ class SpikeReceiver : BroadcastReceiver() {
                     "pref" -> {
                         val key = intent.getStringExtra("key").orEmpty()
                         val edit = com.jemcik.jemrec.Prefs.of(appContext).edit()
+                        // commit, not apply: the value is on disk before the
+                        // reply, which the tools act on at once.
+                        @SuppressLint("ApplySharedPref")
                         val text = when {
                             key.isEmpty() -> "no key"
                             intent.hasExtra("bool") -> {
@@ -324,7 +329,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     "hidesettings" -> {
                         val on = intent.getBooleanExtra("on", true)
                         appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                            .edit().putBoolean(HIDE_SETTINGS_KEY, on).apply()
+                            .edit { putBoolean(HIDE_SETTINGS_KEY, on) }
                         com.jemcik.jemrec.capture.GlobalSettings.actAsHidden = on
                         report(appContext, "hidesettings", "acting as if hidden: $on")
                     }
@@ -521,7 +526,7 @@ class SpikeReceiver : BroadcastReceiver() {
         prefs.getString(KEY_TOKEN, null)?.let { return it }
         val bytes = ByteArray(8).also { SecureRandom().nextBytes(it) }
         val token = bytes.joinToString("") { "%02x".format(it) }
-        prefs.edit().putString(KEY_TOKEN, token).apply()
+        prefs.edit { putString(KEY_TOKEN, token) }
         return token
     }
 }

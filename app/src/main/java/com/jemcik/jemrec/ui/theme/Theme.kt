@@ -13,6 +13,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
@@ -203,12 +204,14 @@ object JemRecColors {
 
     /** Starts playback. */
     val play: Color
-        @Composable get() = if (LocalDark.current) Color(0xFF6FDF9B) else Color(0xFF14713C)
+        @Composable
+        @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFF6FDF9B) else Color(0xFF14713C)
 
     /** A call with a favourite contact - the gold star convention used
      *  everywhere for favourites, a touch lighter on dark for contrast. */
     val favorite: Color
-        @Composable get() = if (LocalDark.current) Color(0xFFFFCA28) else Color(0xFFF9A825)
+        @Composable
+        @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFFFFCA28) else Color(0xFFF9A825)
 
     /**
      * The favourite star on a SELECTED filter chip.
@@ -220,7 +223,8 @@ object JemRecColors {
      * the selected pill is dark, so the bright gold is kept.
      */
     val favoriteSelected: Color
-        @Composable get() = if (LocalDark.current) Color(0xFF7A5900) else Color(0xFFF9A825)
+        @Composable
+        @ReadOnlyComposable get() = if (LocalDark.current) Color(0xFF7A5900) else Color(0xFFF9A825)
 
     /**
      * Deletes a recording - to Recently deleted, since the trash; still the
@@ -232,7 +236,8 @@ object JemRecColors {
      * where deletion is what they mean.
      */
     val delete: Color
-        @Composable get() = MaterialTheme.colorScheme.error
+        @Composable
+        @ReadOnlyComposable get() = MaterialTheme.colorScheme.error
 }
 
 // Deck: warm paper under a graphite-and-aluminium recorder. Primary is the
@@ -416,6 +421,7 @@ internal fun typographyFor(look: Look): Typography = when (look) {
  *  file name's example: the phone's in Memo, Deck's engraved face,
  *  Multitrack's readouts' face. It was the phone's in every look. */
 @Composable
+@ReadOnlyComposable
 internal fun lookMono(): FontFamily = when (LocalLook.current) {
     Look.MEMO -> FontFamily.Monospace
     Look.DECK -> LookFonts.engraved

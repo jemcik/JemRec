@@ -5,6 +5,7 @@ import android.app.Person
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
 /**
@@ -63,8 +64,10 @@ internal object VoipCallNotes {
     fun enabled(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ON, false)
 
     fun setEnabled(context: Context, on: Boolean) {
-        Prefs.of(context).edit().putBoolean(KEY_ON, on).apply()
-        if (!on) Prefs.of(context).edit().remove(KEY_NOTES).apply()
+        Prefs.of(context).edit {
+            putBoolean(KEY_ON, on)
+            if (!on) remove(KEY_NOTES)
+        }
     }
 
     /** From the listener: a notification was posted. Kept only if it is a
@@ -73,7 +76,13 @@ internal object VoipCallNotes {
         if (!enabled(context) || pkg !in VoipApps.enabled(context)) return
         val extras = notification.extras ?: return
         if (extras.getString(Notification.EXTRA_TEMPLATE)?.endsWith("MediaStyle") == true) return
-        val callType = extras.getInt(Notification.EXTRA_CALL_TYPE, 0)
+        // Android 14's key; before it the extra is simply not there (and
+        // messenger calls are recorded only from 14 on anyway).
+        val callType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            extras.getInt(Notification.EXTRA_CALL_TYPE, 0)
+        } else {
+            0
+        }
         val runningCall = notification.flags and ONGOING_SERVICE == ONGOING_SERVICE
         val isCall = notification.category == Notification.CATEGORY_CALL ||
             callType != 0 || extras.containsKey(Notification.EXTRA_CALL_PERSON) ||
@@ -159,7 +168,7 @@ internal object VoipCallNotes {
         val existing = read(context)
         if (isRepeat(existing, note)) return
         val notes = (existing + note).sortedBy { it.at }.takeLast(KEEP)
-        Prefs.of(context).edit().putStringSet(KEY_NOTES, notes.map(::encode).toSet()).apply()
+        Prefs.of(context).edit { putStringSet(KEY_NOTES, notes.map(::encode).toSet()) }
     }
 
     private fun read(context: Context): List<Note> =

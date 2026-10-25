@@ -5,6 +5,7 @@ import android.os.Build
 import android.app.StatusBarManager
 import android.app.Application
 import android.util.Log
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jemcik.jemrec.Prefs
@@ -1735,7 +1736,6 @@ class MainViewModel @JvmOverloads constructor(
             release()
         }
         connecting?.let(MediaController::releaseFuture)
-        super.onCleared()
     }
 
     /**
@@ -1867,7 +1867,7 @@ class MainViewModel @JvmOverloads constructor(
 
     /** The tap-a-photo hint has done its job once selection has been used. */
     private fun rememberSelectHintSeen() {
-        Prefs.of(getApplication()).edit().putBoolean("select_hint_seen", true).apply()
+        Prefs.of(getApplication()).edit { putBoolean("select_hint_seen", true) }
     }
 
     fun toggleSelected(recording: Recording) = _state.update { current ->

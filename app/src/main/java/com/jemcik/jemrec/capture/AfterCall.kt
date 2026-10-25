@@ -11,6 +11,8 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.Prefs
@@ -89,7 +91,7 @@ internal object AfterCall {
     fun enabled(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ENABLED, true)
 
     fun setEnabled(context: Context, on: Boolean) {
-        Prefs.of(context).edit().putBoolean(KEY_ENABLED, on).apply()
+        Prefs.of(context).edit { putBoolean(KEY_ENABLED, on) }
         if (!on) cancel(context)
     }
 
@@ -124,7 +126,7 @@ internal object AfterCall {
             fun from(intent: Intent): Call? = runCatching {
                 Call(
                     name = intent.getStringExtra("name")!!,
-                    uri = Uri.parse(intent.getStringExtra("uri")!!),
+                    uri = (intent.getStringExtra("uri")!!).toUri(),
                     filePath = intent.getStringExtra("path"),
                     seconds = intent.getDoubleExtra("seconds", 0.0),
                     incoming = intent.getBooleanExtra("incoming", false),

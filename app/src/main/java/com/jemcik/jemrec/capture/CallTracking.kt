@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
+import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import kotlin.math.abs
 
@@ -45,9 +46,10 @@ object CallTracking {
     fun enabled(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ON, true)
 
     fun setEnabled(context: Context, on: Boolean) {
-        val edit = Prefs.of(context).edit().putBoolean(KEY_ON, on)
-        if (!on) edit.remove(KEY_CALLS)
-        edit.apply()
+        Prefs.of(context).edit {
+            putBoolean(KEY_ON, on)
+            if (!on) remove(KEY_CALLS)
+        }
     }
 
     /** One call as Telecom told it. Times are wall-clock millis, 0 for not yet. */
@@ -79,7 +81,7 @@ object CallTracking {
         // policy says so): taken back, they go.
         if (calls.any { it.number != null } && !CallLogLookup.granted(context)) {
             val stripped = calls.map { it.copy(number = null) }
-            Prefs.of(context).edit().putStringSet(KEY_CALLS, stripped.map(::encode).toSet()).apply()
+            Prefs.of(context).edit { putStringSet(KEY_CALLS, stripped.map(::encode).toSet()) }
             return stripped
         }
         return calls
@@ -91,7 +93,7 @@ object CallTracking {
         val all = calls(context).associateBy { it.id }.toMutableMap()
         all[id] = change(all[id])
         val kept = all.values.sortedBy { it.id }.takeLast(KEEP)
-        Prefs.of(context).edit().putStringSet(KEY_CALLS, kept.map(::encode).toSet()).apply()
+        Prefs.of(context).edit { putStringSet(KEY_CALLS, kept.map(::encode).toSet()) }
     }
 
     /** Not in any phone number, and plain in the preferences' XML - which

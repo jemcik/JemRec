@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.Prefs
 import java.text.SimpleDateFormat
@@ -62,7 +63,7 @@ internal object MissedCalls {
     /** The recorder switch or the mode changed: calls before now were made
      *  under other rules and are not this check's business. */
     fun coverageChanged(context: Context) {
-        Prefs.of(context).edit().putLong(KEY_COVERED_SINCE, System.currentTimeMillis()).apply()
+        Prefs.of(context).edit { putLong(KEY_COVERED_SINCE, System.currentTimeMillis()) }
         // The Calls tab's record of it, for saying why a call went unrecorded.
         CoverageHistory.note(context)
     }
@@ -74,7 +75,7 @@ internal object MissedCalls {
         // First run of this check on this phone: nothing before it was ever
         // promised, so nothing before it is reported.
         val now = System.currentTimeMillis()
-        prefs.edit().putLong(KEY_COVERED_SINCE, now).apply()
+        prefs.edit { putLong(KEY_COVERED_SINCE, now) }
         return now
     }
 
@@ -179,7 +180,7 @@ internal object MissedCalls {
     const val ACTION_SEEN = "com.jemcik.jemrec.missed.SEEN"
 
     fun markSeen(context: Context) {
-        Prefs.of(context).edit().putLong(KEY_SEEN_UNTIL, System.currentTimeMillis()).apply()
+        Prefs.of(context).edit { putLong(KEY_SEEN_UNTIL, System.currentTimeMillis()) }
     }
 
     /** The user acted on it - its Self-test button does not take it down on

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The demo callers' photos are named in a string (DemoRecordings: photo =
+  "demo_face_1") and opened as android.resource:// URIs, which lint cannot
+  follow. They are used; this says so.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/demo_face_1,@drawable/demo_face_2" />
