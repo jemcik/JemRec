@@ -790,6 +790,23 @@ def on_screen(label):
     return f'"{label}"' in ui()
 
 
+def tap_until(label, shown, timeout, what):
+    """Tap [label] until [shown] is on screen. A tap can be lost: on the
+    Android 17 AVD, the gear tapped at the first dump that showed it, ~3 s
+    after `am start`, opened nothing six times in six, and one dump later ten
+    in ten (2026-10-25); and a tap on a list still moving after a swipe only
+    stops it."""
+    end = time.time() + timeout
+    while time.time() < end:
+        if tap(label):
+            try:
+                return wait_for(lambda: on_screen(shown), 3, what)
+            except TimeoutError:
+                continue
+        time.sleep(0.5)
+    raise TimeoutError(what)
+
+
 def open_trash():
     """Recently deleted, reached as a person reaches it: the gear, then its
     row in Settings, scrolled to."""
@@ -797,11 +814,11 @@ def open_trash():
     sh("wm dismiss-keyguard")
     sh(f"am force-stop {PKG}")
     sh(f"am start -n {PKG}/.MainActivity")
-    wait_for(lambda: tap("Settings"), 30, "the Settings gear")
+    tap_until("Settings", "Back", 30, "the Settings gear")
     width, height = (int(v) for v in re.findall(r"(\d+)x(\d+)", sh("wm size"))[-1])
     for _ in range(8):
-        if tap("Recently deleted"):
-            return wait_for(lambda: on_screen("Restore all"), 15, "Recently deleted, with Restore all")
+        if on_screen("Recently deleted"):
+            return tap_until("Recently deleted", "Restore all", 15, "Recently deleted, with Restore all")
         sh(f"input swipe {width // 2} {height * 3 // 4} {width // 2} {height // 4} 300")
         time.sleep(0.5)
     raise TimeoutError("Recently deleted in Settings")
