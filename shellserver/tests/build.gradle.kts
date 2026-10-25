@@ -23,6 +23,8 @@ sourceSets {
     }
     test {
         java { setSrcDirs(listOf("src")) }
+        // Records real phones printed, for the tests to read (ChecksHonorRecordsTest).
+        resources { setSrcDirs(listOf("fixtures")) }
     }
 }
 
