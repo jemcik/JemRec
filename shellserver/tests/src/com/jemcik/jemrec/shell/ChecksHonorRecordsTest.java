@@ -42,7 +42,7 @@ public class ChecksHonorRecordsTest {
 
     @Test
     public void aWeekOfAnotherAppsRoutineCleanUpsIsNoStop() throws IOException {
-        // Sixteen exits over a week, ten of them reason 13, every one at
+        // Sixteen exits over a week, eleven of them reason 13, every one at
         // importance 400: Android cleaning up an idle app. Nothing to tell -
         // the false alarm the rule was changed for.
         assertNull(Checks.backgroundKillStamp(dump("honor-exit-info-idle-app.txt"), RUNNING));

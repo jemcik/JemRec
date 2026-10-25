@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-783 JVM tests, no device needed - 621 for the app and 162 for the daemon:
+786 JVM tests, no device needed - 621 for the app and 165 for the daemon:
 
     ./gradlew test
 
@@ -183,11 +183,13 @@ Reports, not gates - run them when wanted:
 - **Mutation testing:** `./gradlew :daemon-tests:pitest`, then
   `shellserver/tests/build/reports/pitest`. [PIT](https://pitest.org) changes
   the daemon's decision classes one small way at a time and runs the tests on
-  each. 425 of its 478 changes now fail a test (89%, up from 79% when it
-  went in): the 53 left are log messages (37) and changes no input can make
-  (16) - a bound the buffer never reaches, equality where none can occur -
-  so no decision there is left unpinned. Some tests read records the Honor
-  itself printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
+  each. 427 of its 478 changes now fail a test (89%, up from 79% when it
+  went in). Of the 51 left, 38 change only what is logged, and 13 change
+  nothing a call can meet or a listener hear: a bound the chime's loop never
+  reaches, an equality that cannot occur (a ring in the first three seconds
+  after boot), the whole chime's sign or its octave's phase - each one read
+  in the report (2026-10-26). Some tests read records the Honor itself
+  printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
 
 None of this changes what ships: built with all of it in place, the release
 APK and the daemon jar were byte-for-byte those of `main` (2026-10-25).

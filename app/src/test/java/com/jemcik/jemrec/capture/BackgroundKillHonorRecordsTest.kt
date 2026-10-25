@@ -51,10 +51,12 @@ class BackgroundKillHonorRecordsTest {
         assertTrue(BackgroundKill.ownStartWasStopped(asAt("start-info-after-launch.txt", 12), myPid = 4242))
     }
 
-    @Test fun warmStartsMarkedStoppedDoNotDecide() {
-        // Newest process start: an activity's COLD start, not stopped. Newer
-        // WARM starts (and an older COLD one) say stopped; none is this
-        // process's own start.
+    @Test fun aStoppedWarmStartWithThisPidDoesNotDecide() {
+        // Newest process start: an activity's COLD start, not stopped. Older
+        // WARM starts of process 30914 - the pid this test gives itself - say
+        // stopped, after their process's state: a start is this process's by
+        // being the newest process start, not by carrying its pid. (A newer
+        // warm start never deciding is thisProcessesOwnColdStartDecides.)
         assertFalse(BackgroundKill.ownStartWasStopped(asAt("start-info-after-wake.txt", 4), myPid = 30914))
     }
 

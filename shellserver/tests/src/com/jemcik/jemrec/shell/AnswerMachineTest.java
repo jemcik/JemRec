@@ -1464,6 +1464,28 @@ public class AnswerMachineTest {
     }
 
     @Test
+    public void aTestCallWhoseMuteFailsAfterTheCheckToneStopsTheToneAndHangsUp() {
+        // The one way a hang-up meets the greeting still playing: a test
+        // call's check tone goes out unmuted, and then the mute does not take.
+        testCallGreeting();
+        world.muteTakes = false;
+        world.did.clear();
+        machine.checkToneDone();
+        assertDid("mute", "stop greeting", "hang up");
+    }
+
+    @Test
+    public void aGoAheadDuringAnAnsweredCallIsIgnored() {
+        // The app's lookup can finish after the machine has answered: its
+        // word comes too late to change anything.
+        answeredWithGreeting();
+        world.did.clear();
+        machine.goAhead(20_000L, world.now);
+        assertEquals(AnswerMachine.State.GREETING, machine.state());
+        assertDid();
+    }
+
+    @Test
     public void aTestCallsUnmutedCheckToneIsNotTheUserTakingTheCall() {
         testCallGreeting();
         world.advance(3 * AnswerMachine.MUTE_WATCH_MS);

@@ -572,6 +572,19 @@ public class ChecksTest {
     }
 
     @Test
+    public void theLastNoteRingsOnUntilItsLastTwentyMilliseconds() {
+        // Only the last 20 ms fade: until then the C dies away as a bell does,
+        // by its own time constant (0.22 s), not by a fade spread over the
+        // note. Both windows lie past the E (which ends at 450 ms) and before
+        // the fade (800 to 820 ms), 260 ms apart.
+        int rate = 16000;
+        short[] s = chimeSamples(rate);
+        int ms = rate / 1000;
+        double ratio = windowRms(s, 760 * ms, 800 * ms) / windowRms(s, 500 * ms, 540 * ms);
+        assertEquals(Math.exp(-0.26 / 0.22), ratio, 0.03);
+    }
+
+    @Test
     public void localLogsAndInputThreadsNeverCountEvenFirstInTheDump() {
         // What AudioFlinger lists under "Local log:" are past tracks, and an
         // input thread holds no output: neither says a greeting is playing
