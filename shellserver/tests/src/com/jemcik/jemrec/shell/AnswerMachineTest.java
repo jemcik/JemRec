@@ -1265,4 +1265,240 @@ public class AnswerMachineTest {
         machine.talk();
         assertEquals(spoke - AnswerMachine.PRE_ROLL_MS, machine.callEnded().takenStart());
     }
+
+    // EDGES AND LEFTOVERS THE TESTS ABOVE DID NOT PIN - each a change PIT made
+    // to the machine that no test noticed (./gradlew :daemon-tests:pitest).
+
+    /** In the message: the beep just past, the clock exactly SETTLE_MS past
+     *  the mute (answeredWithGreeting leaves it at the mute). */
+    private void inMessage() {
+        answeredWithGreeting();
+        machine.greetingDone();
+        world.advance(AnswerMachine.SETTLE_MS);
+    }
+
+    /** A machine with no message limit, answered and its greeting done. */
+    private void inMessageWithNoLimit() {
+        machine.configure(true, 0L);
+        world.audioInCall = false;
+        machine.ringing();
+        machine.goAhead(20_000L, world.now);
+        world.advance(20_000L);
+        machine.offHook(true);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        machine.greetingDone();
+    }
+
+    private void armed() {
+        on();
+        machine.ringing();
+        machine.goAhead(20_000L, world.now);
+        assertEquals(AnswerMachine.State.ARMED, machine.state());
+    }
+
+    @Test
+    public void aWithdrawnGoAheadLeavesNoTimerBehind() {
+        armed();
+        machine.cancelGoAhead();
+        assertFalse(world.timersPending());
+    }
+
+    @Test
+    public void aRingThatStopsLeavesNoTimerBehind() {
+        armed();
+        machine.idleSignal();
+        assertFalse(world.timersPending());
+    }
+
+    @Test
+    public void theUserAnsweringFirstLeavesNoTimerBehind() {
+        armed();
+        machine.offHook(true);
+        assertEquals(AnswerMachine.State.IDLE, machine.state());
+        assertFalse(world.timersPending());
+    }
+
+    @Test
+    public void aCallThatEndsWhileArmedLeavesNoTimerBehind() {
+        armed();
+        assertNull(machine.callEnded());
+        assertFalse(world.timersPending());
+    }
+
+    @Test
+    public void takingTheCallDuringTheGreetingStopsItsWatches() {
+        answeredWithGreeting();
+        machine.talk();
+        assertFalse(world.timersPending());
+    }
+
+    @Test
+    public void takingTheCallStopsTheSilenceWatchToo() {
+        inMessageWithNoLimit();
+        machine.talk();
+        assertFalse(world.timersPending());
+    }
+
+    @Test
+    public void soundExactlyAtTheLevelIsSound() {
+        inMessage();
+        world.advance(1_000L);
+        machine.level(AnswerMachine.SOUND_RMS, AnswerMachine.SPEECH_MS);
+        assertEquals(world.now - AnswerMachine.PRE_ROLL_MS, machine.callEnded().takenStart());
+    }
+
+    @Test
+    public void soundRightAtTheEndOfTheSettlingCounts() {
+        inMessage();
+        machine.level(2 * AnswerMachine.SOUND_RMS, AnswerMachine.SPEECH_MS);
+        assertEquals(world.now - AnswerMachine.PRE_ROLL_MS, machine.callEnded().takenStart());
+    }
+
+    @Test
+    public void exactlyEnoughSoundIsWords() {
+        inMessage();
+        world.advance(1_000L);
+        machine.level(2 * AnswerMachine.SOUND_RMS, AnswerMachine.SPEECH_MS);
+        assertEquals(world.now - AnswerMachine.PRE_ROLL_MS, machine.callEnded().takenStart());
+    }
+
+    @Test
+    public void aPauseOfExactlyTheRunGapKeepsTheWordsTogether() {
+        inMessage();
+        world.advance(1_000L);
+        long first = world.now;
+        machine.level(2 * AnswerMachine.SOUND_RMS, 300L);
+        world.advance(AnswerMachine.RUN_GAP_MS);
+        machine.level(2 * AnswerMachine.SOUND_RMS, 200L);
+        assertEquals(first - AnswerMachine.PRE_ROLL_MS, machine.callEnded().takenStart());
+    }
+
+    @Test
+    public void exactlyThirtySecondsOfSilenceEndsAMessageWithNoLimit() {
+        inMessageWithNoLimit();
+        world.did.clear();
+        world.advance(AnswerMachine.SILENCE_HANGUP_MS);
+        assertDid("hang up");
+    }
+
+    @Test
+    public void theAnswerGivesUpOnAudioAtExactlyItsWait() {
+        on();
+        world.audioInCall = false;
+        world.audioComes = false;
+        machine.ringing();
+        machine.goAhead(5_000L, world.now);
+        world.advance(5_000L);
+        machine.offHook(true);
+        world.advance(AnswerMachine.AUDIO_WAIT_MS);
+        assertDid("answer", "hang up");
+    }
+
+    @Test
+    public void aRingAtTheVeryEndOfTheTestWindowIsNotTheTest() {
+        machine.armTest(true, 10_000L);
+        world.advance(10_000L);
+        machine.ringing();
+        assertEquals(AnswerMachine.State.RINGING, machine.state());
+        assertFalse(world.timersPending());
+    }
+
+    @Test
+    public void anOutgoingCallAtTheVeryEndOfTheTestWindowIsNotTheTest() {
+        machine.armTest(false, 10_000L);
+        world.advance(10_000L);
+        machine.offHook(false);
+        assertEquals(AnswerMachine.State.IDLE, machine.state());
+        assertFalse(world.timersPending());
+    }
+
+    @Test
+    public void aGoAheadExactlyItsHoldBeforeTheRingStillCounts() {
+        on();
+        machine.goAhead(20_000L, 0L);
+        world.advance(AnswerMachine.GO_AHEAD_EARLY_MS);
+        machine.ringing();
+        assertEquals(AnswerMachine.State.ARMED, machine.state());
+    }
+
+    @Test
+    public void takingTheCallBeforeItIsAnsweredDoesNothing() {
+        on();
+        machine.ringing();
+        machine.talk();
+        assertDid();
+        assertEquals(AnswerMachine.State.RINGING, machine.state());
+    }
+
+    @Test
+    public void takingACallThatWasNeverMutedUnmutesNothing() {
+        on();
+        world.audioInCall = false;
+        world.audioComes = false;
+        machine.ringing();
+        machine.goAhead(5_000L, world.now);
+        world.advance(5_000L);
+        machine.offHook(true);
+        machine.talk();
+        assertFalse(world.did.contains("unmute"));
+    }
+
+    @Test
+    public void unmutingFromTheCallScreenDuringTheGreetingTakesTheCall() {
+        answeredWithGreeting();
+        world.muted = false;
+        world.advance(2 * AnswerMachine.MUTE_WATCH_MS);
+        assertTrue(world.did.contains("call taken"));
+    }
+
+    /** A test call, answered, its greeting and check tone playing UNMUTED -
+     *  the phone's own recording can carry the tone only before the mute. */
+    private void testCallGreeting() {
+        machine.armTest(true, 180_000L);
+        world.audioInCall = false;
+        machine.ringing();
+        world.advance(AnswerMachine.TEST_ANSWER_MS);
+        machine.offHook(true);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertTrue(world.did.contains("greeting with check tone"));
+    }
+
+    @Test
+    public void aTestCallsUnmutedCheckToneIsNotTheUserTakingTheCall() {
+        testCallGreeting();
+        world.advance(3 * AnswerMachine.MUTE_WATCH_MS);
+        assertFalse(world.did.contains("call taken"));
+    }
+
+    @Test
+    public void aTestCallEndedDuringItsUnmutedToneLeftSomething() {
+        testCallGreeting();
+        assertFalse(machine.callEnded().nothingLeft());
+    }
+
+    @Test
+    public void aCallTakenWithoutWordsStartsHalfASecondBeforeTheTaking() {
+        answeredWithGreeting();
+        world.advance(3_000L);
+        long takenAt = world.now;
+        machine.talk();
+        assertEquals(takenAt - AnswerMachine.PRE_ROLL_MS, machine.callEnded().takenStart());
+    }
+
+    @Test
+    public void aTestThatCouldNotAnswerDoesNotMakeTheNextCallATest() {
+        // A test ring with no greeting to play: not answered, and the caller
+        // gives up - an unanswered ring never reaches callEnded, so only the
+        // next ring's reset clears what the test set.
+        world.greetingPresent = false;
+        machine.armTest(true, 180_000L);
+        machine.ringing();
+        world.advance(AnswerMachine.TEST_ANSWER_MS);
+        machine.idleSignal();
+        world.greetingPresent = true;
+        world.did.clear();
+        answeredWithGreeting();
+        assertTrue(world.did.contains("greeting"));
+        assertFalse(world.did.contains("greeting with check tone"));
+    }
 }

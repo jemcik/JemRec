@@ -40,4 +40,12 @@ public class AnswerSettingsTest {
         assertSame(AnswerSettings.OFF, AnswerSettings.parse("1,6000,music"));
         assertFalse(AnswerSettings.OFF.on);
     }
+
+    @Test
+    public void tenSecondsAndTenMinutesAreTheLimitsAndBothAreAllowed() {
+        assertEquals(10, AnswerSettings.parse("1,10,music").maxMessageSeconds);
+        assertEquals(600, AnswerSettings.parse("1,600,music").maxMessageSeconds);
+        assertSame(AnswerSettings.OFF, AnswerSettings.parse("1,9,music"));
+        assertSame(AnswerSettings.OFF, AnswerSettings.parse("1,601,music"));
+    }
 }

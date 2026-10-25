@@ -440,4 +440,144 @@ public class ChecksTest {
         assertTrue(Checks.packageStopped(String.format(line, "true", "false")));
         assertFalse(Checks.packageStopped(null));
     }
+
+    // EDGES THE TESTS ABOVE DID NOT PIN - each one a change PIT made to the
+    // code that no test noticed (./gradlew :daemon-tests:pitest).
+
+    @Test
+    public void aDumpThatBeginsWithItsFirstRecordIsReadFromTheStart() {
+        String atZero = "ApplicationExitInfo #0: | timestamp=2026-10-25 13:52:29.117 pid=1 | "
+                + "process=com.jemcik.jemrec reason=13 (OTHER KILLS BY SYSTEM) status=0 | importance=125";
+        assertEquals("2026-10-25 13:52:29.117", Checks.backgroundKillStamp(atZero, RUNNING));
+    }
+
+    @Test
+    public void anAppUidOfZeroLetsNoOneElseIn() {
+        // Only a NEGATIVE app uid means "not known yet, let the handshake
+        // decide"; 0 is root's, and is no wildcard.
+        assertFalse(Checks.callerAllowed(10200, 0));
+    }
+
+    @Test
+    public void aPolicyDumpThatBeginsWithItsOutputsIsRead() {
+        String policy = "Available output devices:\n  AUDIO_DEVICE_OUT_TELEPHONY_TX\n"
+                + "Available input devices:\n  AUDIO_DEVICE_IN_BUILTIN_MIC\n  AUDIO_OUTPUT_FLAG_INCALL_MUSIC";
+        assertEquals(1, Checks.inCallMusic(policy));
+    }
+
+    private static byte[] pcm16(int frames, int amplitude) {
+        byte[] pcm = new byte[2 * frames];
+        for (int i = 0; i < frames; i++) {
+            pcm[2 * i] = (byte) amplitude;
+            pcm[2 * i + 1] = (byte) (amplitude >> 8);
+        }
+        return pcm;
+    }
+
+    private static byte[] concat(byte[] a, byte[] b) {
+        byte[] out = java.util.Arrays.copyOf(a, a.length + b.length);
+        System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+
+    @Test
+    public void aBlockExactlyAtTheThresholdIsLoud() {
+        // "At or above", so a constant 1000 against a 1000 threshold counts.
+        assertArrayEquals(new boolean[]{true}, Checks.loudBlocks(pcm16(100, 1000), 100, 1000));
+    }
+
+    @Test
+    public void eachBlockIsMeasuredOverItsOwnFrames() {
+        // The second block, as loud as the first, must not read quieter for
+        // where it starts; and a quiet block stays quiet.
+        byte[] loudLoud = concat(pcm16(100, 1000), pcm16(100, 1000));
+        assertArrayEquals(new boolean[]{true, true}, Checks.loudBlocks(loudLoud, 100, 1000));
+        assertArrayEquals(new boolean[]{false}, Checks.loudBlocks(pcm16(100, 10), 100, 1000));
+    }
+
+    @Test
+    public void loudnessReachesBackAsFarAsForward() {
+        boolean[] loud = new boolean[10];
+        loud[3] = true;
+        // Block 5 with a margin of 2 looks at 3..7.
+        assertTrue(Checks.loudAround(loud, 5, 2));
+    }
+
+    @Test
+    public void aTakeOverBeforeAnyCaptureStartsAtZero() {
+        // No capture start known (0): the call is kept from its first sample.
+        assertEquals("jemrec_rec_1_from0_in.dat", Checks.takenRecfile("jemrec_rec_1_in.dat", 5000, 0));
+    }
+
+    @Test
+    public void rmsCountsEveryChannelOfEveryFrame() {
+        // Two stereo frames, one sample loud: the root mean square of four.
+        assertEquals(500, Checks.rms(new short[]{1000, 0, 0, 0}, 2, 2), 1e-9);
+    }
+
+    @Test
+    public void aCleanToneIsAllOneTone() {
+        short[] pcm = stereo(4800, 1400, 0, 8000);
+        double share = Checks.toneShare(pcm, 2, 0, 4800, 1400, 48000);
+        assertEquals(1.0, share, 0.05);
+    }
+
+    private static short[] chimeSamples(int rate) {
+        byte[] pcm = Checks.chime(rate, 4000);
+        short[] s = new short[pcm.length / 2];
+        for (int i = 0; i < s.length; i++) {
+            s[i] = (short) ((pcm[2 * i] & 0xff) | (pcm[2 * i + 1] << 8));
+        }
+        return s;
+    }
+
+    private static double windowRms(short[] s, int from, int to) {
+        double sum = 0;
+        for (int i = from; i < to; i++) {
+            sum += (double) s[i] * s[i];
+        }
+        return Math.sqrt(sum / (to - from));
+    }
+
+    @Test
+    public void theChimesFirstNoteStrikesThenDecays() {
+        int rate = 16000;
+        short[] s = chimeSamples(rate);
+        int ms = rate / 1000;
+        // A 5 ms attack: the first millisecond is far quieter than the
+        // strike just after it...
+        assertTrue(windowRms(s, 0, ms) < 0.5 * windowRms(s, 6 * ms, 20 * ms));
+        // ...then a bell's decay, before the second note comes in at 220 ms.
+        assertTrue(windowRms(s, 150 * ms, 210 * ms) < 0.7 * windowRms(s, 10 * ms, 70 * ms));
+        // It is the first note's E, and no C has started yet.
+        short[] early = java.util.Arrays.copyOfRange(s, 10 * ms, 200 * ms);
+        assertTrue(Checks.toneShare(early, 1, 0, early.length, 659.25, rate) > 0.6);
+        assertTrue(Checks.toneShare(early, 1, 0, early.length, 523.25, rate) < 0.05);
+    }
+
+    @Test
+    public void theChimesLastNoteFadesOutAndRingsWithItsOctave() {
+        int rate = 16000;
+        short[] s = chimeSamples(rate);
+        int ms = rate / 1000;
+        // The C runs 220 to 820 ms and fades over its last 20 ms, so it
+        // never ends on a click: its last 5 ms are far quieter than the
+        // 40 ms before the fade.
+        assertTrue(windowRms(s, 815 * ms, 820 * ms) < 0.4 * windowRms(s, 760 * ms, 800 * ms));
+        // Each note carries its octave at a quarter of its strength - a bell,
+        // not a sine: about 6% of the E's energy.
+        short[] early = java.util.Arrays.copyOfRange(s, 10 * ms, 200 * ms);
+        double octave = Checks.toneShare(early, 1, 0, early.length, 2 * 659.25, rate);
+        assertTrue(octave > 0.03 && octave < 0.12);
+    }
+
+    @Test
+    public void localLogsAndInputThreadsNeverCountEvenFirstInTheDump() {
+        // What AudioFlinger lists under "Local log:" are past tracks, and an
+        // input thread holds no output: neither says a greeting is playing
+        // now, wherever in the dump it stands.
+        String track = "\n   2 yes 31494/   2000 AUDIO_OUTPUT_FLAG_INCALL_MUSIC\n";
+        assertEquals(-1, Checks.trackOutput("Local log:" + track, 31494));
+        assertEquals(-1, Checks.trackOutput("\nInput thread 0x7a:" + track, 31494));
+    }
 }
