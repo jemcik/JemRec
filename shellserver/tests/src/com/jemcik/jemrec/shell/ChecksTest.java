@@ -3,6 +3,7 @@ package com.jemcik.jemrec.shell;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -281,5 +282,162 @@ public class ChecksTest {
         assertTrue(Checks.toneShare(s, 1, 0, head, 659.25, rate) > Checks.toneShare(s, 1, 0, head, 523.25, rate));
         short[] tail = java.util.Arrays.copyOfRange(s, rate / 2, s.length);
         assertTrue(Checks.toneShare(tail, 1, 0, tail.length, 523.25, rate) > Checks.toneShare(tail, 1, 0, tail.length, 659.25, rate));
+    }
+
+    private static final java.util.function.BooleanSupplier RUNNING = () -> false;
+    private static final java.util.function.BooleanSupplier STOPPED = () -> true;
+
+    // A background system kill (reason 13), as the Honor reported it, the
+    // newest record - at importance 125, a foreground service running; the
+    // older USER_REQUESTED exit below it is no kill.
+    private static final String EXIT_INFO_SYSTEM_KILL =
+            "  Historical Process Exit for com.jemcik.jemrec: | "
+                + "    ApplicationExitInfo #0: | "
+                + "      timestamp=2026-10-25 13:52:29.117 pid=21597 realUid=10240 | "
+                + "      process=com.jemcik.jemrec reason=13 (OTHER KILLS BY SYSTEM) subreason=0 status=0 | "
+                + "      importance=125 pss=0.00 rss=313MB state=empty trace=null | "
+                + "      description=iAwareR[SmartClean] -1ms(fg-service) | "
+                + "    ApplicationExitInfo #1: | "
+                + "      timestamp=2026-10-24 23:35:35.912 pid=7605 realUid=10240 | "
+                + "      process=com.jemcik.jemrec reason=10 (USER REQUESTED) subreason=22 status=0 | "
+                + "      importance=100 pss=0.00 rss=0.00 state=empty trace=null";
+
+    // Android's routine clean-up of an idle app, as the Honor printed it for
+    // 601 others on 2026-10-25.
+    private static final String IDLE_KILL =
+            "    ApplicationExitInfo #0: | "
+                + "      timestamp=2026-10-25 18:00:00.000 pid=3 | "
+                + "      process=com.jemcik.jemrec reason=13 (OTHER KILLS BY SYSTEM) subreason=3 (TOO MANY EMPTY PROCS) status=0 | "
+                + "      importance=400 pss=0.00 rss=90MB state=empty trace=null | "
+                + "      description=too many empty | ";
+
+    @Test
+    public void aKillWhileWorkingIsReportedWithItsTimestamp() {
+        assertEquals("2026-10-25 13:52:29.117", Checks.backgroundKillStamp(EXIT_INFO_SYSTEM_KILL, RUNNING));
+    }
+
+    @Test
+    public void anIdleAppCleanedUpIsNotAStopToTellAbout() {
+        assertNull(Checks.backgroundKillStamp(IDLE_KILL, RUNNING));
+        // ...and an older stop that was one is still the one found.
+        assertEquals("2026-10-25 13:52:29.117",
+                Checks.backgroundKillStamp(IDLE_KILL + EXIT_INFO_SYSTEM_KILL.replace("#0", "#1"), RUNNING));
+    }
+
+    @Test
+    public void anIdleKillThatLeftTheAppStoppedIsOne() {
+        // As the Honor's iAwareR left four idle apps: stopped, so no job and
+        // no boot broadcast would bring a recorder back.
+        assertEquals("2026-10-25 18:00:00.000", Checks.backgroundKillStamp(IDLE_KILL, STOPPED));
+    }
+
+    @Test
+    public void stoppedIsAskedOnlyAboutAnIdleNewestKill() {
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.function.BooleanSupplier counting = () -> {
+            asked.incrementAndGet();
+            return true;
+        };
+        Checks.backgroundKillStamp(EXIT_INFO_SYSTEM_KILL, counting);
+        assertEquals("not for a kill that counts anyway", 0, asked.get());
+        Checks.backgroundKillStamp(IDLE_KILL, counting);
+        assertEquals(1, asked.get());
+    }
+
+    @Test
+    public void theUsersForceStopDoesNotLendItsStoppedToAnOlderIdleKill() {
+        // Force stop leaves the app stopped too; the idle kill under it is
+        // still routine.
+        String forceStopOverIdle =
+                "    ApplicationExitInfo #0: | "
+                    + "      timestamp=2026-10-25 19:00:00.000 pid=4 | "
+                    + "      process=com.jemcik.jemrec reason=10 (USER REQUESTED) subreason=22 status=0 | "
+                    + "      importance=100 | "
+                    + IDLE_KILL.replace("#0", "#1");
+        assertNull(Checks.backgroundKillStamp(forceStopOverIdle, STOPPED));
+    }
+
+    @Test
+    public void theUsersOwnForceStopIsNotABackgroundKill() {
+        String forceStopOnly =
+                "    ApplicationExitInfo #0: | "
+                    + "      timestamp=2026-10-25 14:00:00.000 pid=1 | "
+                    + "      process=com.jemcik.jemrec reason=10 (USER REQUESTED) subreason=22 status=0 | "
+                    + "      importance=100";
+        assertNull(Checks.backgroundKillStamp(forceStopOnly, STOPPED));
+    }
+
+    @Test
+    public void aKillBehindALaterExitIsStillFound() {
+        // Killed at 13:52, then swiped away before the daemon's next look:
+        // the kill is still the one to report, as the app's own check sees it.
+        String killThenSwipe =
+                "    ApplicationExitInfo #0: | "
+                    + "      timestamp=2026-10-25 14:00:00.000 pid=1 | "
+                    + "      process=com.jemcik.jemrec reason=10 (USER REQUESTED) subreason=22 status=0 | "
+                    + "    ApplicationExitInfo #1: | "
+                    + "      timestamp=2026-10-25 13:52:29.117 pid=2 | "
+                    + "      process=com.jemcik.jemrec reason=13 (OTHER KILLS BY SYSTEM) status=0 | "
+                    + "      importance=125";
+        assertEquals("2026-10-25 13:52:29.117", Checks.backgroundKillStamp(killThenSwipe, RUNNING));
+    }
+
+    @Test
+    public void aSubreasonIsNotReadAsTheReason() {
+        // subreason printed first, as another build might: reason=10 is the
+        // reason, and subreason=13 must not pass for a system kill.
+        String subreasonFirst = "    ApplicationExitInfo #0: | "
+                + "      timestamp=2026-10-25 14:00:00.000 pid=1 | "
+                + "      process=com.jemcik.jemrec subreason=13 (UNKNOWN) reason=10 (USER REQUESTED) status=0";
+        assertNull(Checks.backgroundKillStamp(subreasonFirst, STOPPED));
+    }
+
+    @Test
+    public void aFreezerKillWhileWorkingCounts() {
+        String freezer = "    ApplicationExitInfo #0: | "
+                + "      timestamp=2026-10-25 09:00:00.500 pid=9 | "
+                + "      process=com.jemcik.jemrec reason=14 (FREEZER) status=0 | "
+                + "      importance=300";
+        assertEquals("2026-10-25 09:00:00.500", Checks.backgroundKillStamp(freezer, RUNNING));
+    }
+
+    @Test
+    public void aKillWithNoImportancePrintedStillCounts() {
+        String unprinted = "    ApplicationExitInfo #0: | "
+                + "      timestamp=2026-10-25 09:00:00.500 pid=9 | "
+                + "      process=com.jemcik.jemrec reason=13 (OTHER KILLS BY SYSTEM) status=0";
+        assertEquals("2026-10-25 09:00:00.500", Checks.backgroundKillStamp(unprinted, RUNNING));
+    }
+
+    @Test
+    public void noExitRecordsIsNull() {
+        assertNull(Checks.backgroundKillStamp("  Historical Process Exit for com.jemcik.jemrec: (none)", STOPPED));
+        assertNull(Checks.backgroundKillStamp(null, STOPPED));
+    }
+
+    @Test
+    public void aStopIsToldOnceEvenWhenTheNewestFallsBackToAnOlderOne() {
+        java.util.Set<String> told = new java.util.HashSet<>();
+        // The baseline: the 13:52 kill, from before the watch began.
+        assertTrue(Checks.newStop(told, "2026-10-25 13:52:29.117"));
+        // An idle kill that left the app stopped: new, told.
+        assertTrue(Checks.newStop(told, "2026-10-25 19:30:00.000"));
+        // The wake started the app, so that kill no longer counts and the
+        // newest that does is 13:52 again: not new.
+        assertFalse(Checks.newStop(told, "2026-10-25 13:52:29.117"));
+        assertFalse(Checks.newStop(told, "2026-10-25 19:30:00.000"));
+        assertFalse(Checks.newStop(told, null));
+    }
+
+    @Test
+    public void stoppedIsReadFromUserZerosLineNotHonorsOwnFlag() {
+        // The Honor's line, 2026-10-25, joined as Main.slurp joins lines.
+        String line = "  Package [com.jemcik.jemrec] (abc): | "
+                + "    User 0: ceDataInode=284428 installed=true hidden=false suspended=false "
+                + "distractionFlags=0 stopped=%s iAwareStopped=%s notLaunched=false enabled=0 | "
+                + "    User 0: ";
+        assertFalse(Checks.packageStopped(String.format(line, "false", "true")));
+        assertTrue(Checks.packageStopped(String.format(line, "true", "false")));
+        assertFalse(Checks.packageStopped(null));
     }
 }

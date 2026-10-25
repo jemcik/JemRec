@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-684 JVM tests, no device needed - 576 for the app and 108 for the daemon:
+737 JVM tests, no device needed - 616 for the app and 121 for the daemon:
 
     ./gradlew test
 
@@ -111,10 +111,16 @@ for good by Delete all for good, from Android's own trash and the disk;
 the app started again in Deck (dark), Multitrack and Memo, opening in each;
 and a message, kept from its row, a kept message again after the app is
 uninstalled and installed again - its marks read back from the file.
-Last, a USB cable on the emulator's simulated port: pulled out, the daemon
+Then a USB cable on the emulator's simulated port: pulled out, the daemon
 wakes the app and the app leaves a recorder that lived alone; plugged in with
 the recorder killed during the watch, as unplugging an Honor from a computer
 does, the app switches Wireless debugging off and on and starts it again.
+Last, the daemon's watch for the phone stopping JemRec in the background:
+that it runs and reads the device's own exit records; and on Android 15 and
+later, that the app reads its own start record - a Force stop, then an open,
+read as "started stopped" and, being the user's own stop, not warned of. The
+phone's stop itself cannot be made on an emulator, which never kills apps the
+way a vendor power manager does.
 It refuses to run on anything but an emulator, and needs a `google_apis`
 image.
 

@@ -343,6 +343,120 @@ final class Checks {
         return false;
     }
 
+    /**
+     * The timestamp of the newest background stop worth telling the user
+     * about, among the process-exit records in `dumpsys activity exit-info`
+     * output: a system kill - reason 13 (OTHER KILLS BY SYSTEM, which is how
+     * a vendor power manager's kill reads: the Honor's was
+     * iAwareR[SmartClean]) or 14 (FREEZER) - that cost something. Null when
+     * there is none.
+     *
+     * COST, BECAUSE REASON 13 IS ALSO ROUTINE. It is how Android and the
+     * vendors reclaim an idle app too, and JemRec is idle between calls by
+     * design. Measured on the Honor (2026-10-25): 2,015 of its 2,062 reason-13
+     * records were of apps idle in the background (importance 400: "iAwareK",
+     * "too many empty"), and none of the 136 apps last killed that way was
+     * left stopped. Such a kill costs JemRec nothing - the recorder runs on as
+     * shell and wakes the app for the next call - and warning of it would be a
+     * false alarm after nearly every call. So a kill counts when JemRec was
+     * WORKING (importance below {@link #IMPORTANCE_CACHED}: the Honor's harmful
+     * kill was 125, a foreground service), or when the phone LEFT IT STOPPED,
+     * which [stopped] answers: a stopped app loses its scheduled jobs and the
+     * boot broadcast, so nothing would bring a recorder back once it goes. On
+     * the Honor only iAwareR kills left apps stopped: the four such apps not
+     * running again were all stopped=true. [stopped] is asked only when the
+     * newest record is an idle kill, and lends to that record alone: the
+     * user's own Force stop leaves the app stopped too, and must not make an
+     * older idle kill look like one.
+     *
+     * The user's own Force stop (10), a crash (4), an app update (16) and the
+     * rest are passed over, not stopped at: a kill followed within the
+     * daemon's minute by a swipe-away is still a kill to tell about, as the
+     * app's own check (BackgroundKill.systemKill) sees it.
+     *
+     * Records come newest first (measured on the Honor: #0 an update at
+     * 14:58, #2 the kill at 13:52), so the first match is the newest. The
+     * timestamp string is the daemon's handle for "have I already reported
+     * this one": it changes only when a newer stop lands.
+     *
+     * Tolerant of Main.slurp joining lines with " | ": the work is regex within
+     * each record's text, and the record markers and key=value pairs survive
+     * the join.
+     */
+    static String backgroundKillStamp(String dumpsys, java.util.function.BooleanSupplier stopped) {
+        if (dumpsys == null) {
+            return null;
+        }
+        boolean newest = true;
+        int start = dumpsys.indexOf(EXIT_RECORD);
+        while (start >= 0) {
+            int next = dumpsys.indexOf(EXIT_RECORD, start + 1);
+            String record = next < 0 ? dumpsys.substring(start) : dumpsys.substring(start, next);
+            java.util.regex.Matcher reason = EXIT_REASON.matcher(record);
+            if (reason.find()) {
+                int code = Integer.parseInt(reason.group(1));
+                if (code == 13 || code == 14) {
+                    // Every Android since 11 prints it; one that did not
+                    // would leave the kill counted, as before this rule.
+                    java.util.regex.Matcher importance = EXIT_IMPORTANCE.matcher(record);
+                    boolean working = !importance.find() || Integer.parseInt(importance.group(1)) < IMPORTANCE_CACHED;
+                    if (working || (newest && stopped.getAsBoolean())) {
+                        java.util.regex.Matcher stamp = EXIT_STAMP.matcher(record);
+                        return stamp.find() ? stamp.group(1) : null;
+                    }
+                }
+            }
+            newest = false;
+            start = next;
+        }
+        return null;
+    }
+
+    /**
+     * Whether `dumpsys package <app>` says the app is stopped for user 0 -
+     * the state a Force stop leaves, and the Honor's iAwareR kills too (see
+     * backgroundKillStamp). Read from the "User 0:" line, where the Honor
+     * also prints an iAwareStopped= of its own, which is not this. False when
+     * the dump could not be read.
+     */
+    static boolean packageStopped(String dumpsys) {
+        if (dumpsys == null) {
+            return false;
+        }
+        java.util.regex.Matcher m = USER0_STOPPED.matcher(dumpsys);
+        return m.find() && m.group(1).equals("true");
+    }
+
+    /**
+     * Whether [stamp] (backgroundKillStamp) is a stop not yet told, noting it
+     * in [told] if so. Every stamp told is kept, not only the last: the newest
+     * stop that counts can go BACK to an older one. An idle kill counts only
+     * while the app is stopped, the wake that tells of it starts the app and
+     * clears the flag, and the next look then finds the stop before it -
+     * which, compared with the last stamp alone, read as new and woke the app
+     * a second time. A handful of stamps a year; nothing to bound.
+     */
+    static boolean newStop(java.util.Set<String> told, String stamp) {
+        return stamp != null && told.add(stamp);
+    }
+
+    /** ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED: an exit at or
+     *  above it found the process idle in the background. */
+    static final int IMPORTANCE_CACHED = 400;
+
+    private static final String EXIT_RECORD = "ApplicationExitInfo #";
+    /** "reason=", not the "reason=" inside "subreason=": printed after it on
+     *  the Honor, but nothing promises that order everywhere. */
+    private static final java.util.regex.Pattern EXIT_REASON =
+            java.util.regex.Pattern.compile("(?<![A-Za-z])reason=(\\d+)");
+    private static final java.util.regex.Pattern EXIT_IMPORTANCE =
+            java.util.regex.Pattern.compile("(?<![A-Za-z])importance=(\\d+)");
+    private static final java.util.regex.Pattern EXIT_STAMP =
+            java.util.regex.Pattern.compile("timestamp=(\\d{4}-\\d{2}-\\d{2} [\\d:.]+)");
+    /** Within the line: Main.slurp joins lines with " | ". */
+    private static final java.util.regex.Pattern USER0_STOPPED =
+            java.util.regex.Pattern.compile("User 0:[^|\\n]*?(?<![A-Za-z])stopped=(true|false)");
+
     /** Root mean square of the first [frames] frames of interleaved [pcm],
      *  every channel together. */
     static double rms(short[] pcm, int channels, int frames) {

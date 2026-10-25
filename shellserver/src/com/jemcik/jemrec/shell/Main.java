@@ -250,6 +250,13 @@ public final class Main {
             tracking.setDaemon(true);
             tracking.start();
 
+            // The daemon survives the app being killed in the background, so it
+            // is where the app's own death can be seen and the user told. See
+            // watchBackgroundKill.
+            Thread killWatch = new Thread(Main::watchBackgroundKill, "jemrec-killwatch");
+            killWatch.setDaemon(true);
+            killWatch.start();
+
             // The main thread loops instead of blocking in accept(), so the
             // fake ActivityThread's handler has a thread to run on. The
             // acceptor quits this loop if it cannot carry on.
@@ -642,6 +649,60 @@ public final class Main {
             Ln.w("custodian: could not check whether the app is installed");
             return true;
         }
+    }
+
+    /** How often to look for the app having been killed in the background. A
+     *  minute: the read is cheap and the warning is advisory, not time-critical
+     *  the way the cable watch is. */
+    private static final long BG_KILL_CHECK_INTERVAL_MS = 60_000L;
+
+    /**
+     * Watch for THIS PHONE killing the app in the background and, when it
+     * happens, wake the app so it can tell the user how to stop it (see
+     * BackgroundKill on the app side).
+     *
+     * Measured on the Honor (2026-10-25): with App launch on "Manage
+     * automatically", the screen going off had the system kill the app
+     * mid-service and then mark it stopped, so nothing brought the recorder
+     * back until the app was next opened. The daemon runs as shell in its own
+     * session and is NOT frozen or killed by that - it is the one part left
+     * running that can notice and raise the alarm at once.
+     *
+     * `dumpsys activity exit-info` lists the app's past exits, newest first;
+     * Checks.backgroundKillStamp picks out the newest system kill that cost
+     * something - one while the app was working, or one that left it stopped -
+     * passing over Android's routine clean-up of an idle app and the user's
+     * own Force stop. This side reads the stopped flag straight away; the app,
+     * running again, has only Android 15's record of its own start, so it
+     * trusts the wake's judgement. The newest stop seen at startup is the baseline - one
+     * from before the daemon began watching is not news - and any newer one is
+     * reported once, keyed by its timestamp (Checks.newStop). The app dedups again its own way,
+     * so a stop the app also notices on next open is not told twice.
+     */
+    private static void watchBackgroundKill() {
+        java.util.Set<String> told = new java.util.HashSet<>();
+        String baseline = backgroundKillStamp();
+        Checks.newStop(told, baseline);
+        Ln.i("killwatch: watching every " + (BG_KILL_CHECK_INTERVAL_MS / 1000)
+                + "s, baseline " + baseline);
+        while (true) {
+            sleep(BG_KILL_CHECK_INTERVAL_MS);
+            String stamp = backgroundKillStamp();
+            if (Checks.newStop(told, stamp)) {
+                Ln.w("killwatch: the system killed JemRec in the background (exit " + stamp
+                        + ") - waking the app to warn");
+                wake(ACTION_BACKGROUND_KILLED, false, null, null);
+            }
+        }
+    }
+
+    /** Checks.backgroundKillStamp on a fresh `dumpsys activity exit-info`, or
+     *  null if the dump could not be read (runQuietly logs why). The package
+     *  dump (36 ms on the Honor) is read only when the newest exit is an idle
+     *  kill, the one case where stopped decides. */
+    private static String backgroundKillStamp() {
+        return Checks.backgroundKillStamp(runQuietly("dumpsys", "activity", "exit-info", APP_PACKAGE),
+                () -> Checks.packageStopped(runQuietly("dumpsys", "package", APP_PACKAGE)));
     }
 
     /**
@@ -1121,6 +1182,7 @@ public final class Main {
     private static final String ACTION_CALL_ENDED = "com.jemcik.jemrec.CALL_ENDED";
     /** A USB cable went in or came out: adbd may be about to go. See watchCable. */
     private static final String ACTION_CABLE = "com.jemcik.jemrec.CABLE";
+    private static final String ACTION_BACKGROUND_KILLED = "com.jemcik.jemrec.BACKGROUND_KILLED";
     private static final String TOKEN_ENV = "JEMREC_TOKEN";
     private static final String JAR_PATH = "/data/local/tmp/jemrec-capture.jar";
     private static final String LOG_PATH = "/data/local/tmp/jemrec-capture.out";

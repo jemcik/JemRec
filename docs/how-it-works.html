@@ -113,8 +113,16 @@
      start the ADB daemon &mdash; and starts the recorder: recording again 12 to
      16 seconds after the cable came out, nothing tapped. With the screen off
      that needs the app allowed to start by itself: left to the phone, an
-     Honor froze it until it was woken, about four minutes. A charger stops
-     nothing.</p>
+     Honor froze it until it was woken &mdash; about four minutes, once 8.5
+     &mdash; and JemRec says so the moment it may run again, with a button to
+     the setting. A charger stops nothing.</p>
+  <p>Some phones also stop apps in the background to save power, and a stopped
+     JemRec cannot start the recorder again once it goes. JemRec cannot change
+     that setting, so setup asks you to, on the phone&rsquo;s own screen for
+     it; if the phone stops JemRec anyway &mdash; while it was working, or
+     leaving it stopped &mdash; a notification says so. Android&rsquo;s routine
+     clean-up of an idle app is not counted: on an Honor, 2,015 of 2,062 such
+     records were that, and none had left the app stopped.</p>
 
   <h2 id="what-it-does">What it does</h2>
 
@@ -190,7 +198,7 @@
     <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing.</td></tr>
     <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it.</td></tr>
     <tr><td><code>POST_NOTIFICATIONS</code></td><td>The recording notice, the ask-first prompt, the pairing code box.</td></tr>
-    <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
+    <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>
     <tr><td><code>READ_MEDIA_AUDIO</code></td><td>To list recordings made before a reinstall. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_EXTERNAL_STORAGE</code></td><td>Android 12 only, which has no <code>READ_MEDIA_AUDIO</code>: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those.</td></tr>

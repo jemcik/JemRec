@@ -1,10 +1,8 @@
 package com.jemcik.jemrec.capture
 
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.graphics.drawable.Icon
 import android.util.Log
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.Prefs
@@ -143,7 +141,6 @@ internal object MissedCalls {
             .filter { it.at in reported && it.at > seenUntil && it.at > now - LIST_FOR_MS }
             .sortedByDescending { it.at }
         if (listed.isEmpty()) return
-        AfterCall.ensureChannels(context)
 
         val title = if (listed.size == 1) "A call was not recorded" else "${listed.size} calls were not recorded"
         val lines = listed.map { "${it.label}, ${at(it.at)}, ${AfterCall.length(it.seconds.toDouble())}" }
@@ -154,15 +151,11 @@ internal object MissedCalls {
             context, 3201, DeepLink.intent(context, DeepLink.Kind.SELF_TEST),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = Notification.Builder(context, AfterCall.PROBLEM_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle(title)
-            .setContentText(lines.first())
-            .setStyle(Notification.BigTextStyle().bigText(body))
-            .setContentIntent(selfTest)
+        val notification = AfterCall.problem(context, title, body, selfTest, "Self-test", collapsed = lines.first())
             .setDeleteIntent(seen(context))
-            .setAutoCancel(true)
             .setOnlyAlertOnce(true)
+            // Callers' names are not for the lock screen: there it says only
+            // how many calls went unrecorded.
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setPublicVersion(
                 Notification.Builder(context, AfterCall.PROBLEM_CHANNEL_ID)
@@ -170,11 +163,8 @@ internal object MissedCalls {
                     .setContentTitle(title)
                     .build(),
             )
-            .addAction(Notification.Action.Builder(null as Icon?, "Self-test", selfTest).build())
             .build()
-        runCatching {
-            context.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
-        }.onFailure { Log.w(TAG, "missed: could not post", it) }
+        AfterCall.notifyProblem(context, NOTIFICATION_ID, notification, "missed")
     }
 
     /** Dismissing the notification clears its list; the next miss starts a
@@ -196,7 +186,7 @@ internal object MissedCalls {
      *  its own the way a tap on its body does. */
     fun dismiss(context: Context) {
         markSeen(context)
-        runCatching { context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID) }
+        AfterCall.cancelProblem(context, NOTIFICATION_ID)
     }
 
     /** "14:05" today, "3 Oct 14:05" before that. */

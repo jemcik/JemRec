@@ -26,6 +26,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.capture.AfterCall
+import com.jemcik.jemrec.capture.BackgroundKill
 import com.jemcik.jemrec.capture.MissedCalls
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asSharedFlow
@@ -186,6 +187,12 @@ data class UiState(
     /** Setup is on its pairing step because Wireless debugging turned JemRec
      *  away (pairAgain): the step says so, as nobody chose to set up again. */
     val pairingLost: Boolean = false,
+    /** On the background step, the screen its button opens: the name
+     *  (AutoStart.Screen.label) and what to do there. Found with the step, on
+     *  IO - each candidate screen is a call into the package manager - and
+     *  null on every other step. */
+    val backgroundLabel: String? = null,
+    val backgroundInstruction: String? = null,
     /**
      * Whether JemRec's notifications are off, or the pairing channel muted, so
      * the pairing code would have nowhere to appear. Only read on the pairing
@@ -448,6 +455,29 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /**
+     * The background-start setup card's "Not now": mark the question asked and
+     * move on. JemRec cannot read the vendor setting, so the only thing ever
+     * recorded is that it was offered (see [openBackgroundSettings] for the
+     * other button).
+     */
+    fun confirmBackgroundChoice() = launchAction("check setup") {
+        Setup.markBackgroundChoice(getApplication())
+        recheckSetup()
+    }
+
+    /**
+     * The card's other button: open the vendor screen, and count that as the
+     * answer - JemRec cannot read the setting, so going there is all it can
+     * know. Setup moves on when the user comes back, because the step is
+     * worked out again every time the app returns to the foreground.
+     */
+    fun openBackgroundSettings() {
+        val app = getApplication<Application>()
+        Setup.markBackgroundChoice(app)
+        AutoStart.open(app)
+    }
+
+    /**
      * Work out where setup stands and act on it.
      *
      * Extracted so that anything which changes the world can finish by asking
@@ -481,7 +511,19 @@ class MainViewModel @JvmOverloads constructor(
         // is how the daemon learns automatic vs ask-first after a plain reopen.
         pushDaemonMode()
         val step = Setup.currentStep(getApplication())
-        _state.update { it.copy(step = step, pairingLost = it.pairingLost && step != SetupStep.READY) }
+        val background = if (step == SetupStep.NEEDS_BACKGROUND_CHOICE) {
+            withContext(Dispatchers.IO) { AutoStart.screen(getApplication()) }
+        } else {
+            null
+        }
+        _state.update {
+            it.copy(
+                step = step,
+                pairingLost = it.pairingLost && step != SetupStep.READY,
+                backgroundLabel = background?.label,
+                backgroundInstruction = background?.instruction,
+            )
+        }
 
         // THE REPLY FIELD HAS TO BE THERE BEFORE THE USER NEEDS IT.
         //
@@ -868,6 +910,14 @@ class MainViewModel @JvmOverloads constructor(
                     allowThisWifi()
                 }
                 DeepLink.Kind.PAIR_AGAIN -> pairAgain()
+                // From the "stopped in the background" warning: open the vendor
+                // auto-start screen. JemRec cannot change the setting itself,
+                // so the button only takes the user there. BackgroundKill.cancel
+                // clears the notification now that it has been acted on.
+                DeepLink.Kind.BACKGROUND_SETTINGS -> {
+                    BackgroundKill.cancel(app)
+                    AutoStart.open(app)
+                }
             }
         }
     }

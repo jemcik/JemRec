@@ -32,9 +32,13 @@ object RecorderSwitch {
         Prefs.of(context).getBoolean(KEY, true)
 
     fun set(context: Context, on: Boolean) {
+        val wasOn = isOn(context)
         Prefs.of(context)
             .edit().putBoolean(KEY, on).apply()
         MissedCalls.coverageChanged(context)
+        // A stop while the switch was off cost no call: from here on only
+        // newer ones count, however the switch was flipped (app or tile).
+        if (on && !wasOn) BackgroundKill.recordingSwitchedOn(context)
         // The Quick Settings tile shows this switch; ask it to look again, so
         // a change made in the app is not contradicted the next time the
         // panel is pulled down.

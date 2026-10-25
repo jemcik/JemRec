@@ -972,6 +972,48 @@ def cable():
             print(f"     (the recorder could not be started again afterwards: {e})")
 
 
+def background():
+    """The daemon watches `dumpsys activity exit-info` for this phone killing
+    JemRec in the background, and wakes the app to warn when it sees a new one
+    (Checks.backgroundKillStamp picks a system kill out of the record).
+
+    What is checkable here is that the watch runs and parses the device's real
+    exit-info at this API level - the log line with its baseline. The kill
+    itself cannot be simulated: a stock emulator never kills an app the way a
+    vendor power manager does (reason OTHER/FREEZER), and the app-side warning
+    is gated on there being a vendor auto-start screen, which an emulator has
+    none of. The filter that passes over the user's own Force stop is
+    unit-tested (ChecksTest), and the parser reads the Honor's real exit
+    records (the 13:52 kill, 2026-10-25). The stop WARNING itself has not been
+    seen on a phone yet: in every later try the Honor froze JemRec instead of
+    killing it - the freeze warning is the one shown live.
+
+    From Android 15, the open check's other source too: the app's own start
+    record says whether it began stopped. A Force stop makes one to read,
+    and checks it is not taken for the phone's doing."""
+    daemon_log = "cat /data/local/tmp/jemrec-capture.out"
+    start_recorder()  # the kill-watch starts with the daemon, like the others
+    wait_for(lambda: "killwatch: watching" in sh(daemon_log), 15,
+             "the kill-watch to read exit-info")
+    line = next(l for l in sh(daemon_log).splitlines() if "killwatch: watching" in l)
+    watching = line.split("] ", 1)[-1] if "] " in line else line.strip()
+    if int(sh("getprop ro.build.version.sdk").strip()) < 35:
+        return watching + "; no start records before Android 15"
+    # Android 15's record of the app's own start, which the open check reads
+    # to tell a stop that left JemRec stopped (BackgroundKill.startedStopped).
+    # A Force stop leaves it stopped too, so the next open is marked - and as
+    # the user's own (reason 10) it must not be warned of.
+    revive = f"run-as {PKG} cat files/revive.log"
+    opens = lambda: [l for l in sh(revive).splitlines() if "backgroundkill: on open" in l]
+    before = len(opens())
+    sh(f"am force-stop {PKG}")
+    sh(f"am start -n {PKG}/.MainActivity")
+    wait_for(lambda: len(opens()) > before, 20, "the open check to run")
+    seen = opens()[-1]
+    assert "started stopped true" in seen and "newest exit reason 10 " in seen and "nothing new" in seen, seen
+    return watching + "; a Force stop's open read as started stopped, not warned of"
+
+
 def self_test():
     report = diag("selftest")
     assert "PASS" in report, report
@@ -982,7 +1024,7 @@ def self_test():
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, waveform, background_playback,
-          recently_deleted, looks, reinstall, cable]
+          recently_deleted, looks, reinstall, cable, background]
 
 
 def nothing_pending():

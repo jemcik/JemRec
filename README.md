@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-684-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-737-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -60,8 +60,12 @@ the phone sets itself up.
    phone pairs with itself. Type the six-digit code into JemRec's
    *notification*, not the app: leaving Settings closes the code window. Once;
    the pairing survives restarts.
-3. **Let it start by itself after a restart:** Settings → *Survive a restart*,
-   on phones that keep such a list.
+3. **Let it keep running:** on phones that stop apps in the background
+   (Honor, Huawei, Xiaomi, Samsung and others), setup asks you to allow JemRec
+   in the phone's own screen for it, and tells you what to tap there. If the
+   phone stops JemRec anyway, or holds it back while it restarts the recorder,
+   a notification says so. The same screen is in Settings → *Survive a
+   restart*.
 
 <a href="https://www.youtube.com/watch?v=rt25pZd8R9M"><img src="docs/video/setup.jpg" alt="The setup video: the pairing code, in step 4" width="560"></a>
 
@@ -147,7 +151,7 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 | **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. Search either list, or narrow it with a tap. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
 | **Name files your way** | By date and time, with the caller, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
 | **Play, keep, clean up** | A call plays as its waveform, to see where people talk, and plays on with the screen off, under the phone's media controls; a keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
-| **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, or a call went unrecorded. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
+| **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, a call went unrecorded, or the phone stopped JemRec or held it back in the background. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
 | **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
 | **Three looks** | Memo, calm and simple; Deck, a pocket recorder with an LCD and a REC key; Multitrack, a sound editor with a colour for each caller. Each light, dark or as the phone, in Settings → Theme. → [more](docs/ARCHITECTURE.md#three-looks) |
 
@@ -253,7 +257,7 @@ recorder does not explain is one its user has to guess at:
 | `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing. |
 | `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
-| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | To play a recording on with the screen off, under the phone's media controls. It plays; it never records. |
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
@@ -309,10 +313,12 @@ with Wi-Fi off, on mobile data, anywhere. A reboot stops it, and the next few
 seconds of Wi-Fi bring it back by themselves (see
 [Get started](#get-started), step 3). Unplugging the phone from a computer can
 stop it too (a charger does not); on Wi-Fi it is back within seconds, by
-itself. With the screen off, step 3 matters here as well: without it, the
-phone's battery manager kept the recorder down for about four minutes in two
-tests of three. Until then nothing is recorded - the header says so, and after
-two minutes a notification does too.
+itself. With the screen off, step 3 matters here as well: without it, an
+Honor's battery manager kept the recorder down for about four minutes in two
+tests of three, and 8.5 minutes in another. Until then nothing is recorded -
+the header says so, a notification says the phone held JemRec back the moment
+it lets JemRec run again, and one says the recorder is down if it stays down
+two minutes.
 
 </details>
 
@@ -378,7 +384,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 684 tests, screenshots of the screens included
+    ./gradlew test              # 737 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

@@ -14,7 +14,8 @@ this one is - or to check that it does what it says.
   [the authenticated socket](#the-socket-is-authenticated-in-both-directions) ·
   [staying alive without Wi-Fi](#staying-alive-without-wi-fi) ·
   [unplugged from a computer](#unplugged-from-a-computer) ·
-  [after a restart](#after-a-restart)
+  [after a restart](#after-a-restart) ·
+  [stopped in the background](#stopped-in-the-background)
 - The features: [recording and being asked](#recording-and-being-asked) ·
   [exact call tracking](#exact-call-tracking) ·
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
@@ -195,6 +196,86 @@ fallback, and it always works.
 
 Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 recording carries on with Wi-Fi off, on mobile data, anywhere.
+
+## Stopped in the background
+
+The same App launch setting decides more than a reboot. Some phones stop apps
+in the background to save power. The recorder runs on as the shell user, but a
+stopped JemRec cannot start it again once it goes — after an unplug or a
+restart — so calls go unrecorded until the app is opened.
+
+**Measured on an Honor (MagicOS 11, Android 17, 2026-10-25).** With App launch
+on *Manage automatically*, turning the screen off had the system **kill**
+JemRec eight seconds later — mid-service, `reason=13 (OTHER KILLS BY SYSTEM)`,
+`iAwareR[SmartClean]` — and then mark it *stopped*, which cancels its keep-alive
+job, so nothing brought the recorder back. On *Manage manually* the same test
+left it running and the recorder returned on its own in **fifteen seconds**.
+
+JemRec cannot read or change that setting, so it does three things around it,
+each only on a phone that has such a screen (never a Pixel):
+
+- **Asks during setup.** A step offers to open the phone's own screen for it,
+  before the first call rather than after the first lost one. It is asked once
+  — JemRec has no way to check the setting — and blocks nothing. The card and
+  the warnings name that screen and say what to do on it in its maker's words
+  ([`AutoStart.instructionFor`](../app/src/main/java/com/jemcik/jemrec/ui/AutoStart.kt)):
+  *Manage manually* in an Honor's or Huawei's App launch, a switch in a
+  Xiaomi's Autostart, OPPO's startup manager or vivo's, *Never sleeping apps*
+  on a Samsung's battery page. Honor's is measured; the others follow
+  dontkillmyapp.com and have not been tried on those phones.
+- **Warns the moment it happens.** The daemon runs as the shell user in its own
+  session, which the power manager does not freeze, so it is left watching when
+  the app is killed. It reads `dumpsys activity exit-info`
+  ([`Checks.backgroundKillStamp`](../shellserver/src/com/jemcik/jemrec/shell/Checks.java)):
+  a newest exit that was a system kill while JemRec was working, or one that
+  left it *stopped*, wakes the app to post a notification. Not every system
+  kill: reason 13 is also how Android reclaims an idle app, and on the same
+  Honor 2,015 of its 2,062 such records were idle apps cleaned up
+  (importance 400, "iAwareK", "too many empty"), none left stopped. That costs
+  JemRec nothing — the recorder runs on and wakes it for the next call — so
+  it is not told. A stopped app loses its scheduled jobs and the boot
+  broadcast. The daemon reads that flag directly; an app running again is no
+  longer stopped, so the app trusts its wake. The user's own Force stop never
+  counts.
+- **Warns when JemRec next starts.** At every start of its process, and
+  again at every open, the app reads its *own* exit records
+  (`getHistoricalProcessExitReasons`, the same decision in
+  [`BackgroundKill`](../app/src/main/java/com/jemcik/jemrec/capture/BackgroundKill.kt)),
+  as a net for a stop the daemon's wake did not land — the recorder down, say.
+  Starting clears the stopped flag, but from Android 15 Android's record of
+  the process's own start says whether it began stopped
+  (`ApplicationStartInfo.wasForceStopped`). Measured on the same Honor: the
+  open at about 14:00, eight minutes after the 13:52 kill and with no exit
+  between, was marked so. And after a Force stop, Android started JemRec
+  again for its notification listener within a second, with no activity and
+  the flag already clear before the daemon could look — which is why the
+  check runs when the process starts, not only when the app is opened. Before
+  Android 15 there is no such record, so an idle JemRec stopped while the
+  recorder was down is not told. The two share one "last warned" time, so a
+  stop is reported once.
+- **Warns when it is held back.** More often the phone does not kill JemRec
+  but freezes it, which leaves no exit record. Tried twice on the same Honor
+  (2026-10-25), it froze JemRec both times and killed it in neither; after an
+  unplug with the screen off, the recorder stayed down **8.5 minutes**, until
+  the screen was touched. The cable watch times its own restart, and one that
+  took longer than a restart can by itself — the 90 seconds its wake lock is
+  sized for, against 12–16 s measured on *Manage manually* —
+  ([`CableWatch.heldBack`](../app/src/main/java/com/jemcik/jemrec/capture/CableWatch.kt))
+  posts the same warning. It does not wait for the restart to finish: on the
+  Honor the phone froze JemRec again mid-restart, so the recorder came back
+  only when the app was opened, seven minutes on. Instead the warning goes up
+  the moment JemRec runs at all - two of its looks, half a second apart in
+  intent, found minutes apart - and the finished restart then updates it with
+  the whole time. Measured on the Honor after that change (2026-10-25): frozen
+  three seconds after the unplug, the warning went up 3.5 minutes in, on the
+  lock screen, waking it; the recorder was back half a minute later, and the
+  notification read "about 4 min". (Before it, the same freeze showed nothing
+  until the app was opened seven minutes on.)
+  A restart that fails quickly, off Wi-Fi, leaves no gap and no warning, so a
+  missing network is never taken for this.
+
+The notification points at App launch; it does not claim JemRec can fix the
+setting, because it cannot.
 
 ## Recording, and being asked
 
@@ -913,7 +994,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing. |
 | `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
-| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | To play a recording on with the screen off, in `PlaybackService` ([playing in the background](#playing-in-the-background)). It plays; it never records. |
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |

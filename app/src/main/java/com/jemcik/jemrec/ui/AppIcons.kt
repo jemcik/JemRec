@@ -46,10 +46,21 @@ private val icons = ConcurrentHashMap<String, ImageBitmap>()
  *  would otherwise see an app's icon after it was "uninstalled". */
 internal fun forgetAppIcons() = icons.clear()
 
+/**
+ * Locked on the drawable because the same one can be handed out twice: the
+ * home screen asks for an icon at two sizes at once (its chip, 18 dp, and the
+ * row, 16 dp), each on an IO thread, and one's setBounds landed between the
+ * other's setBounds and draw - a circle cut off at the right and foot, seen in
+ * a screen test on 2026-10-25, whose fake package manager returns one
+ * instance. A phone's normally gives a fresh drawable per call; the lock costs
+ * nothing then.
+ */
 private fun iconOf(context: Context, pkg: String, px: Int): ImageBitmap? = runCatching {
     val drawable = context.packageManager.getApplicationIcon(pkg)
     Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888).also {
-        drawable.setBounds(0, 0, px, px)
-        drawable.draw(Canvas(it))
+        synchronized(drawable) {
+            drawable.setBounds(0, 0, px, px)
+            drawable.draw(Canvas(it))
+        }
     }.asImageBitmap()
 }.getOrNull()

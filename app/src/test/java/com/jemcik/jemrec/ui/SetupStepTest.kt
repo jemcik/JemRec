@@ -17,6 +17,7 @@ class SetupStepTest {
     private class World(
         var permissionsMissing: Boolean = false,
         var debuggingChoice: Boolean = true,
+        var backgroundChoice: Boolean = false,
         var recorderOn: Boolean = true,
         var complete: Boolean = false,
         var identity: Boolean = false,
@@ -33,6 +34,7 @@ class SetupStepTest {
 
         override fun missingPermissions() = permissionsMissing
         override fun debuggingChoiceMade() = debuggingChoice
+        override fun needsBackgroundChoice() = backgroundChoice
         override fun recorderOn() = recorderOn
         override fun isComplete() = complete
         override fun markComplete() { markedComplete++; complete = true }
@@ -71,6 +73,32 @@ class SetupStepTest {
         assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, stepOf(upgraded))
         assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, stepOf(World(debuggingChoice = false, recorderOn = false, complete = true)))
         assertEquals(0, upgraded.retired)
+    }
+
+    @Test fun theBackgroundQuestionComesRightAfterTheDebuggingOne() {
+        // A phone with a vendor auto-start screen, never asked.
+        val world = World(backgroundChoice = true, wirelessDebugging = true)
+        assertEquals(SetupStep.NEEDS_BACKGROUND_CHOICE, stepOf(world))
+        assertEquals(0, world.connectAttempts)
+        // The debugging question still leads it.
+        assertEquals(
+            SetupStep.NEEDS_DEBUGGING_CHOICE,
+            stepOf(World(debuggingChoice = false, backgroundChoice = true)),
+        )
+    }
+
+    @Test fun anInstallSetUpBeforeTheBackgroundQuestionExistedIsAskedToo() {
+        // Recording, set up - and a phone that restricts background start.
+        val upgraded = World(backgroundChoice = true, daemon = true, identity = true, complete = true)
+        assertEquals(SetupStep.NEEDS_BACKGROUND_CHOICE, stepOf(upgraded))
+        assertEquals(0, upgraded.retired)
+    }
+
+    @Test fun aPhoneWithNoAutoStartScreenIsNeverAskedAboutBackground() {
+        // backgroundChoice defaults false: needsBackgroundChoice folds in
+        // AutoStart.available, so a Pixel or the emulator skips the step.
+        assertEquals(SetupStep.READY, stepOf(World(recorderOn = false, complete = true)))
+        assertEquals(SetupStep.READY, stepOf(World(daemon = true, identity = true, complete = true)))
     }
 
     @Test fun switchedOffIsReadyOnlyOnceSetupHasFinished() {

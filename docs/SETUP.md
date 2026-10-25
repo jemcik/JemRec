@@ -537,6 +537,33 @@ which is how a cable usually comes out, only if JemRec may start automatically
 it, the phone's battery manager froze JemRec until the phone was woken or
 charged, about four minutes.
 
+## Stopped in the background
+
+Some phones stop apps in the background to save power. The recorder runs on,
+but a stopped JemRec cannot start it again once it goes - after an unplug or a
+restart - so calls go unrecorded until the app is opened. The same **App
+launch** setting as above decides it. Measured on an Honor with App launch on
+*Manage automatically*: turning the screen off had the phone stop JemRec eight
+seconds later, and nothing brought the recorder back until the app was opened.
+On *Manage manually* the recorder came back on its own in fifteen seconds.
+
+JemRec cannot read or change that setting, so it does what it can, only on a
+phone that restricts apps this way. **Setup asks you**, once, with a button
+that opens the phone's own screen for it and a line saying what to do there in
+that phone's words: *Manage manually* on an Honor or Huawei, a switch in
+Autostart on a Xiaomi, *Never sleeping apps* on a Samsung. And if the phone
+stops JemRec anyway, **it tells you** — the moment it happens if it can,
+otherwise the next time JemRec starts — with a notification that says the same
+and has the same button. It never claims to have changed the setting, because
+it cannot.
+
+More often the phone does not stop JemRec but **freezes** it. Tried twice on
+that Honor, it froze JemRec both times: after an unplug with the screen off,
+the recorder stayed down 8.5 minutes, until the screen was touched. JemRec
+times its own restart after a cable: the first moment it is allowed to run and
+finds minutes gone instead of seconds, it puts up the same notification, and
+says how long it was held back once the recorder is back.
+
 ## What the app tells you
 
 The header is the honest indicator:
@@ -565,6 +592,8 @@ And when the app is closed, in notifications:
 | **Taking a message** | The answering machine has a caller. **Talk to them** takes the call; **Hang up** ends it. |
 | **Message from** the caller | A message, with a sound, Play, Share and Delete. It stays until you dismiss it, whether or not each call is shown when it ends. |
 | The caller, with pause and a seek bar | A recording you played, going on with the screen off. On the lock screen it says only **Call recording**. It goes when the recording is stopped. |
+| **JemRec was stopped in the background** | This phone stopped JemRec in the background, so a call could go unrecorded. Its button opens the phone's own screen for it, and the notification says what to do there (on an Honor: **App launch**, **Manage manually**). Only on phones that stop apps that way — see *Stopped in the background*. |
+| **JemRec was held back in the background** | The phone froze JemRec while it was restarting the recorder after a cable, for the minutes it says. The same button and the same fix. |
 
 ## Settings
 

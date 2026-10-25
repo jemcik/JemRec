@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.jemcik.jemrec.capture.BackgroundKill
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.RecorderSwitch
@@ -34,6 +35,18 @@ class MainActivity : ComponentActivity() {
         // Hide Android's debugging notification only if the user said to, and
         // rebind the listener if the ROM dropped it. See apply().
         DebugNotificationCleaner.apply(this)
+
+        // If this phone's power management stopped JemRec in the background
+        // since we last said so, tell the user and point them at the setting
+        // that prevents it. JemRecApp looks at every start of the process;
+        // this looks again on each open, for a check the start could not make
+        // (setup or the recorder switch finished since). No-op where there is
+        // no such restriction. See BackgroundKill. Off the main thread: it asks
+        // the package manager about each vendor screen and reads the exit and
+        // start records, binder calls all, and the first frame should not wait
+        // for them.
+        val app = applicationContext
+        Thread({ BackgroundKill.checkOwnRecords(app, "on open") }, "jemrec-killcheck").start()
 
         // A notification's button - play this call, run the self-test. Only
         // on a fresh start: a recreated activity carries the same intent, and

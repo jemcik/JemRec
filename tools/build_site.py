@@ -1380,6 +1380,33 @@ SETUP = [
           "it; without it, the phone's battery manager froze JemRec until the "
           "phone was woken or charged, about four minutes."),
 
+    ("h2", "Stopped in the background"),
+    ("p", "Some phones stop apps in the background to save power. The recorder "
+          "runs on, but a stopped JemRec cannot start it again once it goes - "
+          "after an unplug or a restart - so calls go unrecorded until the app "
+          "is opened. The same **App launch** setting as above decides it. Measured on an Honor with App "
+          "launch on *Manage automatically*: turning the screen off had the "
+          "phone stop JemRec eight seconds later, and nothing brought the "
+          "recorder back until the app was opened. On *Manage manually* the "
+          "recorder came back on its own in fifteen seconds."),
+    ("p", "JemRec cannot read or change that setting, so it does what it can, "
+          "only on a phone that restricts apps this way. **Setup asks you**, "
+          "once, with a button that opens the phone's own screen for it and a "
+          "line saying what to do there in that phone's words: *Manage manually* "
+          "on an Honor or Huawei, a switch in Autostart on a Xiaomi, *Never "
+          "sleeping apps* on a Samsung. And if the phone stops JemRec anyway, "
+          "**it tells you** — the moment it happens if it can, otherwise the "
+          "next time JemRec starts — with a notification that says the same "
+          "and has the same button. It never claims to have "
+          "changed the setting, because it cannot."),
+    ("p", "More often the phone does not stop JemRec but **freezes** it. Tried "
+          "twice on that Honor, it froze JemRec both times: after an unplug with "
+          "the screen off, the recorder stayed down 8.5 minutes, until the screen "
+          "was touched. JemRec times its own restart after a cable: the first "
+          "moment it is allowed to run and finds minutes gone instead of "
+          "seconds, it puts up the same notification, and says how long it was "
+          "held back once the recorder is back."),
+
     ("h2", "What the app tells you"),
     ("p", "The header is the honest indicator:"),
     ("table", (["It says", "Meaning"], [
@@ -1431,6 +1458,14 @@ SETUP = [
         ["The caller, with pause and a seek bar", "A recording you played, going "
          "on with the screen off. On the lock screen it says only **Call "
          "recording**. It goes when the recording is stopped."],
+        ["**JemRec was stopped in the background**", "This phone stopped JemRec "
+         "in the background, so a call could go unrecorded. Its button opens the "
+         "phone's own screen for it, and the notification says what to do there "
+         "(on an Honor: **App launch**, **Manage manually**). Only on phones "
+         "that stop apps that way — see *Stopped in the background*."],
+        ["**JemRec was held back in the background**", "The phone froze JemRec "
+         "while it was restarting the recorder after a cable, for the minutes it "
+         "says. The same button and the same fix."],
     ])),
 
     ("h2", "Settings"),
@@ -1904,11 +1939,11 @@ STEPS = [
      "phone pairs with itself. Type the six-digit code into JemRec&rsquo;s "
      "<em>notification</em>, not the app.",
      "setup.html#step-1-open-jemrec-and-allow-notifications", "The setup, step by step"),
-    ("Let it start by itself",
-     "A restart stops the recorder. Allow auto-start (Settings &rarr; "
-     "<em>Survive a restart</em>) and it is back seconds after Wi-Fi returns; "
-     "without it, open JemRec once.",
-     "setup.html#after-a-restart", "After a restart"),
+    ("Let it keep running",
+     "On phones that stop apps in the background, setup asks you to allow "
+     "JemRec there, and a notification says so if the phone stops it anyway "
+     "or holds back its restart. Allowed, the recorder is back seconds after a restart and Wi-Fi.",
+     "setup.html#stopped-in-the-background", "Stopped in the background"),
 ]
 
 # (screen, title, caption)
@@ -1955,7 +1990,8 @@ FEATURES = [
      "playing-sharing-and-deleting"),
     ("Hear about problems",
      "A notification after each call, and one when a recording is silent, the "
-     "recorder is down, or a call went unrecorded.",
+     "recorder is down, a call went unrecorded, or the phone stopped JemRec or "
+     "held it back in the background.",
      "what-the-app-tells-you"),
     # Across the whole grid, these two, so the eight above stay four by two.
     ("Answering machine",
@@ -2017,10 +2053,12 @@ FAQ = [
      "(see <a href=\"#get-started\">Get started</a>, step 3). Unplugging the "
      "phone from a computer can stop it too (a charger does not); on Wi-Fi it "
      "is back within seconds, by itself. With the screen off, step 3 matters "
-     "here as well: without it, the phone&rsquo;s battery manager kept the "
-     "recorder down for about four minutes in two tests of three. Until then nothing "
-     "is recorded &mdash; the header says so, and after two minutes a "
-     "notification does too."),
+     "here as well: without it, an Honor&rsquo;s battery manager kept the "
+     "recorder down for about four minutes in two tests of three, and 8.5 "
+     "minutes in another. Until then nothing is recorded &mdash; the header says "
+     "so, a notification says the phone held JemRec back the moment it lets "
+     "JemRec run again, and one says the recorder is down if it stays down two "
+     "minutes."),
     ("Why isn&rsquo;t it on Google Play?",
      "Play removed call recorders in 2022 by forbidding the Accessibility API "
      "for recording, and no policy change since has re-opened the door. That is "
@@ -2311,8 +2349,16 @@ HOW_BODY = f"""
      start the ADB daemon &mdash; and starts the recorder: recording again 12 to
      16 seconds after the cable came out, nothing tapped. With the screen off
      that needs the app allowed to start by itself: left to the phone, an
-     Honor froze it until it was woken, about four minutes. A charger stops
-     nothing.</p>
+     Honor froze it until it was woken &mdash; about four minutes, once 8.5
+     &mdash; and JemRec says so the moment it may run again, with a button to
+     the setting. A charger stops nothing.</p>
+  <p>Some phones also stop apps in the background to save power, and a stopped
+     JemRec cannot start the recorder again once it goes. JemRec cannot change
+     that setting, so setup asks you to, on the phone&rsquo;s own screen for
+     it; if the phone stops JemRec anyway &mdash; while it was working, or
+     leaving it stopped &mdash; a notification says so. Android&rsquo;s routine
+     clean-up of an idle app is not counted: on an Honor, 2,015 of 2,062 such
+     records were that, and none had left the app stopped.</p>
 
   <h2 id="what-it-does">What it does</h2>
 
@@ -2388,7 +2434,7 @@ HOW_BODY = f"""
     <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing.</td></tr>
     <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it.</td></tr>
     <tr><td><code>POST_NOTIFICATIONS</code></td><td>The recording notice, the ask-first prompt, the pairing code box.</td></tr>
-    <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
+    <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>
     <tr><td><code>READ_MEDIA_AUDIO</code></td><td>To list recordings made before a reinstall. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_EXTERNAL_STORAGE</code></td><td>Android 12 only, which has no <code>READ_MEDIA_AUDIO</code>: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those.</td></tr>
@@ -2454,6 +2500,15 @@ PRIVACY_BODY = f"""
         <td>Only if you record one for the answering machine: in the app&rsquo;s
             private storage, and a copy the recorder plays from. Deleting it in
             the app deletes both, and so does uninstalling.</td></tr>
+    <tr><td>Background stops</td>
+        <td>Only on phones that stop apps in the background: whether setup has
+            asked you to let JemRec keep running, and the time of the last
+            warning that the phone stopped it, so one stop is told once. To
+            notice a stop, JemRec reads Android&rsquo;s own records of when
+            and why JemRec&rsquo;s process ended and how it started, and
+            whether Android has marked JemRec stopped, which hold no names and
+            no numbers. In the app&rsquo;s private storage; uninstalling deletes
+            it.</td></tr>
     <tr><td>Answering machine tests</td>
         <td>What its checks found about the phone, and the result of each test
             call by call type (2G, VoLTE, Wi-Fi Calling). No numbers, no

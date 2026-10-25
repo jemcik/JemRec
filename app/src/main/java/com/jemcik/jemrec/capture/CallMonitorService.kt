@@ -92,6 +92,16 @@ class CallMonitorService : Service() {
     @Volatile
     private var checkingRecorder = false
 
+    /** Started only to post the background-kill warning (see BackgroundKill):
+     *  there is no call, so the service's own notification must not claim one,
+     *  and it ends in a moment, so it waits like the cable watch's. */
+    @Volatile
+    private var warningOnly = false
+
+    /** That warning's job: the service is not idle until it is done. */
+    @Volatile
+    private var warningJob: Job? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -117,11 +127,15 @@ class CallMonitorService : Service() {
      * the daemon is what brings it back, once, for the next call.
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Read once: every guarded action below and the two notification
+        // states here hang on it.
+        val fromDaemon = intent?.getStringExtra(EXTRA_TOKEN) == CaptureDaemon.token(this)
         // A cable watch says so, rather than "Call in progress" - and only
         // the daemon's, carrying the token, gets to change what this says.
-        if (intent?.action == ACTION_CABLE && intent.getStringExtra(EXTRA_TOKEN) == CaptureDaemon.token(this)) {
-            checkingRecorder = true
-        }
+        if (intent?.action == ACTION_CABLE && fromDaemon) checkingRecorder = true
+        // The same for the daemon's background-kill wake, which without this
+        // fell through to "Call in progress" with no call at all.
+        if (intent?.action == ACTION_BACKGROUND_KILLED && fromDaemon) warningOnly = true
         // Owed within seconds whatever the action, because every start of this
         // service is a startForegroundService.
         startForegroundCompat()
@@ -151,8 +165,8 @@ class CallMonitorService : Service() {
             // fetches the finished file to save. It is no longer on the audio
             // path, so a freeze here cannot cost a single packet.
             ACTION_CALL_STARTED, ACTION_CALL_ENDED, ACTION_STOP, ACTION_MESSAGE_STARTED, ACTION_MESSAGE_TAKEN,
-            ACTION_CABLE -> {
-                if (intent.getStringExtra(EXTRA_TOKEN) != CaptureDaemon.token(this)) {
+            ACTION_CABLE, ACTION_BACKGROUND_KILLED -> {
+                if (!fromDaemon) {
                     Log.w(TAG, "monitor: ${intent.action} with a bad token, ignoring")
                     finishIfIdle()
                     return START_NOT_STICKY
@@ -175,6 +189,21 @@ class CallMonitorService : Service() {
                     ACTION_MESSAGE_STARTED -> onMessageStarted(intent.getBooleanExtra(EXTRA_TEST, false))
                     ACTION_MESSAGE_TAKEN -> onMessageTaken()
                     ACTION_CABLE -> watchCable(intent.getStringExtra(EXTRA_CABLE))
+                    // The daemon saw this phone kill JemRec in the background.
+                    // Warn once (BackgroundKill dedups against the app's own
+                    // on-open check), then let this service go - there is no
+                    // call, nothing to hold the notification for.
+                    // On the service's IO scope: it asks the package manager
+                    // and reads the exit records, binder calls all, and the
+                    // main thread may be needed by a call's wake meanwhile.
+                    ACTION_BACKGROUND_KILLED -> warningJob = scope.launch {
+                        try {
+                            BackgroundKill.warnFromDaemon(this@CallMonitorService)
+                        } finally {
+                            warningOnly = false
+                            finishIfIdle(ending = coroutineContext[Job])
+                        }
+                    }
                     else -> stopSelf()
                 }
             }
@@ -259,8 +288,7 @@ class CallMonitorService : Service() {
                 if (callInProgress || recording?.isActive == true) {
                     runCatching { startForegroundCompat() }
                 } else {
-                    // This job is still active until this block returns.
-                    stopSelf()
+                    finishIfIdle(ending = coroutineContext[Job])
                 }
             }
         }
@@ -459,8 +487,17 @@ class CallMonitorService : Service() {
 
     /** Nothing left to do this start, and no recording running: stand down
      *  rather than sit as a foreground service between calls. */
-    private fun finishIfIdle() {
-        if (recording?.isActive != true && !callInProgress && cableWatch?.isActive != true) stopSelf()
+    /**
+     * Stops the service unless something still needs it. [ending] is the job
+     * calling this as it finishes - still active until it returns - so it does
+     * not count. The background-kill warning counts like the rest: on an
+     * Honor left to "Manage automatically" JemRec was frozen two seconds after
+     * its service ended (measured 2026-10-25), so a warning stopped under
+     * would wait for the next thaw.
+     */
+    private fun finishIfIdle(ending: Job? = null) {
+        fun running(job: Job?) = job?.isActive == true && job !== ending
+        if (!running(recording) && !callInProgress && !running(cableWatch) && !running(warningJob)) stopSelf()
     }
 
     private fun startForegroundCompat() {
@@ -476,7 +513,11 @@ class CallMonitorService : Service() {
         // Only the cable watch, no call: a check that ends in seconds when the
         // cable changed nothing, and so the one notification here that waits.
         val cableOnly = checkingRecorder && !callInProgress && !recordingNow && ticket == null
+        // The background-kill warning's wake, no call and no cable watch: over
+        // as soon as the warning is posted, so it waits, and is never seen.
+        val warningWake = warningOnly && !checkingRecorder && !callInProgress && !recordingNow && ticket == null
         val title = when {
+            warningWake -> "Checking JemRec"
             cableOnly -> "Checking the recorder"
             ticket != null && testing -> "Testing the answering machine"
             ticket != null -> "Taking a message"
@@ -485,6 +526,7 @@ class CallMonitorService : Service() {
             else -> "Call in progress"
         }
         val text = when {
+            warningWake -> "Making sure it keeps running"
             cableOnly -> "A USB cable went in or came out"
             ticket != null && testing -> "Your greeting is playing to the caller"
             ticket != null -> "Your greeting is playing; your microphone is muted"
@@ -519,7 +561,8 @@ class CallMonitorService : Service() {
             // seconds, so a phone put on a charger shows nothing at all. One
             // that took the recorder down takes longer, and then it shows.
             .setForegroundServiceBehavior(
-                if (cableOnly) Notification.FOREGROUND_SERVICE_DEFERRED else Notification.FOREGROUND_SERVICE_IMMEDIATE,
+                if (cableOnly || warningWake) Notification.FOREGROUND_SERVICE_DEFERRED
+                else Notification.FOREGROUND_SERVICE_IMMEDIATE,
             )
             .build()
 
@@ -586,14 +629,10 @@ class CallMonitorService : Service() {
         }
         manager.createNotificationChannel(channel)
 
-        // DEFAULT, not LOW: a call that was not recorded is worth one sound.
-        manager.createNotificationChannel(
-            NotificationChannel(
-                PROBLEM_CHANNEL_ID,
-                "Recording problems",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            )
-        )
+        // "Recording problems" - DEFAULT, not LOW: a call that was not
+        // recorded is worth one sound - defined once, in AfterCall, which
+        // every problem notification goes through.
+        AfterCall.ensureChannels(this)
     }
 
     companion object {
@@ -611,7 +650,6 @@ class CallMonitorService : Service() {
         private val LEGACY_CHANNEL_IDS =
             listOf("jemrec.monitor", "jemrec.ask", "jemrec.pairing")
         private const val NOTIFICATION_ID = 1
-        private const val PROBLEM_CHANNEL_ID = AfterCall.PROBLEM_CHANNEL_ID
         private const val PROBLEM_NOTIFICATION_ID = 31
 
         /** Why an answered call kept nothing: the greeting would not play. */
@@ -622,22 +660,14 @@ class CallMonitorService : Service() {
          *  from a collection that found out later (RecordingSaver.reconcile). */
         internal fun postNotRecorded(context: Context, reason: String) {
             runCatching {
-                // A collection can get here before this service ever ran.
-                AfterCall.ensureChannels(context)
+                // A collection can get here before this service ever ran:
+                // AfterCall.problem makes sure the channel exists.
                 val tap = PendingIntent.getActivity(
                     context, 0, Intent(context, MainActivity::class.java),
                     PendingIntent.FLAG_IMMUTABLE,
                 )
-                val notification = Notification.Builder(context, PROBLEM_CHANNEL_ID)
-                    .setContentTitle("Call not recorded")
-                    .setContentText(reason)
-                    .setStyle(Notification.BigTextStyle().bigText(reason))
-                    .setSmallIcon(android.R.drawable.stat_notify_error)
-                    .setContentIntent(tap)
-                    .setAutoCancel(true)
-                    .build()
-                context.getSystemService(NotificationManager::class.java)
-                    .notify(PROBLEM_NOTIFICATION_ID, notification)
+                val notification = AfterCall.problem(context, "Call not recorded", reason, tap).build()
+                AfterCall.notifyProblem(context, PROBLEM_NOTIFICATION_ID, notification, "monitor")
             }.onFailure { Log.w(TAG, "monitor: could not report the failure", it) }
         }
         const val ACTION_STOP = "com.jemcik.jemrec.STOP_MONITOR"
@@ -658,6 +688,7 @@ class CallMonitorService : Service() {
         /** Sent by the daemon when a USB cable goes in or comes out; [EXTRA_CABLE]
          *  says which. See CableWatch. */
         const val ACTION_CABLE = "com.jemcik.jemrec.CABLE"
+        const val ACTION_BACKGROUND_KILLED = "com.jemcik.jemrec.BACKGROUND_KILLED"
         const val EXTRA_CABLE = "cable"
         /** Sent by the daemon when the answering machine has answered and its
          *  greeting is playing; [EXTRA_TEST] for a diagnostics test call. */

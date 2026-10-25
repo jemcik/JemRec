@@ -185,6 +185,66 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
                 }
             }
 
+            // Only reached on a phone with a vendor auto-start screen (the gate
+            // folds in AutoStart.available), whose name and instruction the
+            // setup check found off the main thread (UiState). The fallback is
+            // for a screen gone between the step's look and that one. See
+            // SetupStep.NEEDS_BACKGROUND_CHOICE.
+            SetupStep.NEEDS_BACKGROUND_CHOICE -> Card(Modifier.fillMaxWidth()) {
+                val generic = AutoStart.screenFor(null, null)
+                val launch = state.backgroundLabel ?: generic.label
+                val instruction = state.backgroundInstruction ?: generic.instruction
+                Column(
+                    Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Let JemRec keep running",
+                        style = MaterialTheme.typography.titleMedium)
+                    // What it is, before where to tap: the worry is "will this
+                    // drain my battery or do something odd", and the answer is
+                    // that it only lets JemRec come back after the phone puts it
+                    // to sleep, which is what a call recorder has to do.
+                    Text(
+                        "This phone can stop apps in the background to save power. " +
+                            "If it stops JemRec, a call can go unrecorded until you " +
+                            "open the app again.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    // The middle step is this phone's own: what to do on the
+                    // screen the button opens, in its words (AutoStart).
+                    Steps(
+                        "Tap $launch below.",
+                        instruction,
+                        "Come back to JemRec - it moves on by itself.",
+                    )
+                    Text(
+                        "JemRec cannot check this setting, so it only asks once. " +
+                            "You can change it later from Settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // ONE ROW, TWO EQUAL BUTTONS, as the debugging card just
+                    // before this one - the user found a lone button over a
+                    // full-width pair unbalanced (2026-10-25). The destination
+                    // is the label, as on the Developer options card. There is
+                    // no "Done": opening the screen IS the answer (JemRec cannot
+                    // read the setting either way), so coming back moves setup
+                    // on, the way Developer options does. "Not now" skips; the
+                    // warning built for a background kill brings the ask back.
+                    val labels = listOf("Not now", launch)
+                    ButtonPair(labels) { i, modifier ->
+                        FilledTonalButton(
+                            onClick = {
+                                haptics.tap()
+                                if (i == 1) vm.openBackgroundSettings() else vm.confirmBackgroundChoice()
+                            },
+                            enabled = !state.busy,
+                            modifier = modifier,
+                        ) { ButtonLabel(labels[i]) }
+                    }
+                }
+            }
+
             SetupStep.NEEDS_DEVELOPER_OPTIONS -> Card(Modifier.fillMaxWidth()) {
                 Column(
                     Modifier.padding(16.dp),

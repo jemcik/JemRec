@@ -12,7 +12,7 @@ In an ADB session of a few seconds the app starts a small shell-privileged daemo
 
 <b>Answering machine</b>, off until you switch it on: it answers phone calls you don't take, plays your greeting with your microphone muted and keeps the caller's message, by the same rules as recording; you can still take the call. It pauses for a day after an emergency call. Experimental, tested on one Snapdragon phone: built-in checks and a test call tell whether it works on yours.
 
-<b>Setup</b> takes two things by hand, once: turn on Developer options, then USB debugging and Wireless debugging, and type the pairing code into JemRec's notification. The pairing survives reboots; the recorder does not, and is rebuilt by itself on the next Wi-Fi, if the phone lets JemRec start on its own. Wi-Fi is needed only to rebuild the recorder, never to record.
+<b>Setup</b> takes two things by hand, once: turn on Developer options, then USB debugging and Wireless debugging, and type the pairing code into JemRec's notification. The pairing survives reboots; the recorder is rebuilt on the next Wi-Fi if the phone lets JemRec run on its own - setup asks, and JemRec warns if the phone stops it. Wi-Fi is only needed to rebuild it.
 
 <b>What stays on.</b> USB and Wireless debugging stay on while JemRec is installed, turned back on if they go off: the recorder needs them. While they are on, a computer paired with the phone can connect to it on the same Wi-Fi. To turn debugging off for good, uninstall JemRec first.
 

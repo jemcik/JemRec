@@ -9,6 +9,7 @@ import android.util.Log
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.adb.AdbIdentity
+import com.jemcik.jemrec.capture.BackgroundKill
 import com.jemcik.jemrec.capture.CallMonitorService
 import android.net.Uri
 import com.jemcik.jemrec.capture.AudioAccess
@@ -60,6 +61,31 @@ enum class SetupStep {
      */
     NEEDS_DEBUGGING_CHOICE,
 
+    /**
+     * This phone has a vendor "App launch" / auto-start screen (Honor, Huawei,
+     * Xiaomi and the like), and the user has not yet been asked to let JemRec
+     * run in the background there.
+     *
+     * Measured on the Honor (2026-10-25): with App launch on "Manage
+     * automatically", unplugging from a computer and turning the screen off had
+     * the system KILL JemRec eight seconds later - mid-service, reason "OTHER
+     * KILLS BY SYSTEM", description iAwareR[SmartClean] - and then mark it
+     * stopped, which cancels its keep-alive job, so the recorder stayed down
+     * until the app was opened. On "Manage manually" the same test left it
+     * running and the recorder came back on its own in fifteen seconds.
+     *
+     * So this is the one setting that most decides whether recording survives
+     * in the field, and asking during setup is how it gets set before the first
+     * call rather than after the first lost one. Shown only where AutoStart has
+     * a screen to offer - never on a Pixel or the emulator - and asked once:
+     * JemRec cannot read the setting, so opening the screen or "Not now" is all
+     * there is to go on. Placed before the READY branches so an install set up
+     * before the question existed is asked too. It blocks nothing: skip it and
+     * the recorder still runs; if the system then kills JemRec, the warning
+     * built for that brings the ask back (see BackgroundKill).
+     */
+    NEEDS_BACKGROUND_CHOICE,
+
     /** Developer options are off, so the Wireless debugging screen does not
      *  exist to send anyone to. Its own step, because the intent that opens
      *  Developer options silently does nothing while they are disabled - so
@@ -102,6 +128,7 @@ object Setup {
     private const val KEY_COMPLETE = "setup_complete"
     private const val KEY_PAIRED = "setup_paired"
     private const val KEY_DEV_OPTIONS_CONFIRMED = "setup_dev_options_confirmed"
+    private const val KEY_BACKGROUND_ASKED = "setup_background_asked"
     private const val PERMISSION = android.Manifest.permission.WRITE_SECURE_SETTINGS
 
     fun hasSecureSettings(context: Context): Boolean =
@@ -181,6 +208,21 @@ object Setup {
     internal fun markComplete(context: Context) {
         Prefs.of(context)
             .edit().putBoolean(KEY_COMPLETE, true).apply()
+    }
+
+    /**
+     * Whether the user has been asked, once, to let JemRec run in the
+     * background on a phone whose vendor restricts that (see
+     * NEEDS_BACKGROUND_CHOICE). Only an answer is recorded, not what the
+     * setting is: JemRec cannot read "App launch", so opening that screen and
+     * "Not now" both count as asked. A phone with no such screen never needs asking, so
+     * the gate pairs this with AutoStart.available.
+     */
+    fun backgroundChoiceMade(context: Context): Boolean =
+        Prefs.of(context).getBoolean(KEY_BACKGROUND_ASKED, false)
+
+    fun markBackgroundChoice(context: Context) {
+        Prefs.of(context).edit().putBoolean(KEY_BACKGROUND_ASKED, true).apply()
     }
 
     /**
@@ -374,6 +416,7 @@ object Setup {
     internal interface Probe {
         fun missingPermissions(): Boolean
         fun debuggingChoiceMade(): Boolean
+        fun needsBackgroundChoice(): Boolean
         fun recorderOn(): Boolean
         fun isComplete(): Boolean
         fun markComplete()
@@ -390,6 +433,10 @@ object Setup {
     private class LiveProbe(private val context: Context) : Probe {
         override fun missingPermissions() = missingRuntimePermissions(context).isNotEmpty()
         override fun debuggingChoiceMade() = DebugNotificationCleaner.asked(context)
+        // The preference first: once answered, no walk of the vendor screens
+        // (a package-manager call each) at every return to the app.
+        override fun needsBackgroundChoice() =
+            !backgroundChoiceMade(context) && AutoStart.available(context)
         override fun recorderOn() = RecorderSwitch.isOn(context)
         override fun isComplete() = Setup.isComplete(context)
         override fun markComplete() = Setup.markComplete(context)
@@ -431,6 +478,15 @@ object Setup {
         // existed is asked too. See NEEDS_DEBUGGING_CHOICE.
         if (!world.debuggingChoiceMade()) {
             return SetupStep.NEEDS_DEBUGGING_CHOICE
+        }
+
+        // Also before the READY branches, and for the same migration reason,
+        // but only where there is a vendor screen to send the user to -
+        // needsBackgroundChoice folds in AutoStart.available, so this is skipped
+        // outright on a phone with no such restriction. Asked once; it blocks
+        // nothing. See NEEDS_BACKGROUND_CHOICE.
+        if (world.needsBackgroundChoice()) {
+            return SetupStep.NEEDS_BACKGROUND_CHOICE
         }
 
         // SWITCHED OFF IS NOT "NOT SET UP".
@@ -678,9 +734,12 @@ object Setup {
         RecordingMode.set(context, RecordingMode.AUTOMATIC)
         // Setup asks again; until then the banner is back and nothing hides it.
         DebugNotificationCleaner.forget(context)
+        // Setup asks the background question again, so no old warning about it.
+        BackgroundKill.forget(context)
         // Or the very next launch reads a flag from the setup being undone.
         Prefs.of(context)
-            .edit().remove(KEY_COMPLETE).remove(KEY_PAIRED).remove(KEY_DEV_OPTIONS_CONFIRMED).apply()
+            .edit().remove(KEY_COMPLETE).remove(KEY_PAIRED).remove(KEY_DEV_OPTIONS_CONFIRMED)
+            .remove(KEY_BACKGROUND_ASKED).apply()
 
         if (hasSecureSettings(context) &&
             GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)

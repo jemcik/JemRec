@@ -1,0 +1,4 @@
+Phones that cut apps off in the background (Honor, Huawei, Xiaomi, Samsung and others) can stop or
+freeze JemRec and leave a call unrecorded. Setup now asks you to let it keep
+running, and if the phone stops it or holds it back anyway, JemRec says so and
+points you at the setting.

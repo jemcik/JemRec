@@ -213,6 +213,7 @@
     </queries>
 
     <application
+        android:name=".JemRecApp"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
@@ -324,7 +325,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Shows that a call is being recorded and, when it
                     ends, collects the finished recording from a shell-privileged
-                    capture process over a loopback socket. The app holds no
+                    capture process over a loopback socket. Also runs briefly
+                    when that process asks: to restart it after a computer's
+                    cable is unplugged, and to warn the user that the phone
+                    stopped the app in the background. The app holds no
                     audio permission and opens no audio device itself." />
         </service>
 

@@ -126,12 +126,63 @@ internal object AutoStart {
      * hunting. Falls back to the generic phrasing, which is what the phone's
      * own page in Settings will show them.
      */
-    fun label(context: Context): String = when (candidate(context)?.component?.packageName) {
+    fun label(context: Context): String =
+        labelFor(candidate(context)?.component?.packageName) ?: "the app's start-up settings"
+
+    /** The screen's own name, or null for one whose name is not known here. */
+    internal fun labelFor(pkg: String?): String? = when (pkg) {
         "com.hihonor.systemmanager", "com.huawei.systemmanager" -> "App launch"
         "com.miui.securitycenter" -> "Autostart"
         "com.coloros.safecenter", "com.oppo.safe" -> "Startup manager"
         "com.vivo.permissionmanager", "com.iqoo.secure" -> "Background start-up"
         "com.samsung.android.lool" -> "Battery"
-        else -> "the app's start-up settings"
+        else -> null
+    }
+
+    /**
+     * What to do on the screen [open] takes the user to, in that screen's own
+     * words - one line, for the setup card's steps and the background-kill
+     * notification, both of which follow it with nothing else.
+     *
+     * Keyed on the screen actually opened, not the make: one maker's screens
+     * differ (Huawei's App launch against its older Protected apps).
+     *
+     * WHERE THE WORDS COME FROM. Honor's is measured on the phone this was
+     * built on (MagicOS 11, 2026-10-25): App launch, JemRec switched to
+     * "Manage manually", which leaves its switches on. The rest are from
+     * dontkillmyapp.com's pages for each maker, read 2026-10-25, and have not
+     * been tried on a phone: Huawei "Manage manually ... make sure all toggles
+     * are enabled"; Xiaomi's Security > Permissions > Auto-start, OPPO's
+     * startup manager and vivo's Autostart are a switch per app; Samsung's
+     * battery page has Background usage limits > Never sleeping apps, from One
+     * UI 3 on - every Samsung this app runs on, Android 12 or newer.
+     */
+    data class Screen(val label: String, val instruction: String)
+
+    /** The screen [open] goes to: its name and what to do on it, from one walk
+     *  of the candidates (each resolve is a call into the package manager).
+     *  Null on a phone with no such screen. */
+    fun screen(context: Context): Screen? = candidate(context)?.component?.let { screenFor(it.packageName, it.className) }
+
+    /**
+     * [label] fits a button and the step that names it ("Tap App launch
+     * below."); a screen whose name is not known here - an Asus's, a Meizu's -
+     * gets a capitalised generic one, where Settings' sentence ("Allow JemRec
+     * in the app's start-up settings") reads [label]'s lower-case fallback.
+     */
+    internal fun screenFor(pkg: String?, activity: String?): Screen =
+        Screen(labelFor(pkg) ?: "Start-up settings", instructionFor(pkg, activity))
+
+    internal fun instructionFor(pkg: String?, activity: String?): String = when {
+        activity?.endsWith(".ProtectActivity") == true ->
+            "Find JemRec and switch it on, so it is protected."
+        pkg == "com.hihonor.systemmanager" || pkg == "com.huawei.systemmanager" ->
+            "Find JemRec, switch it to Manage manually, and leave its switches on."
+        pkg == "com.miui.securitycenter" || pkg == "com.coloros.safecenter" || pkg == "com.oppo.safe" ||
+            pkg == "com.vivo.permissionmanager" || pkg == "com.letv.android.letvsafe" ->
+            "Find JemRec and turn its switch on."
+        pkg == "com.samsung.android.lool" ->
+            "Open Background usage limits, then Never sleeping apps, and add JemRec."
+        else -> "Find JemRec and allow it to start and run in the background."
     }
 }

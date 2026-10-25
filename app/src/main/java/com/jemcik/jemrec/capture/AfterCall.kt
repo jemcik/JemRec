@@ -338,6 +338,51 @@ internal object AfterCall {
         Notification.Action.Builder(null as Icon?, label, intent).build()
 
     /**
+     * A notification on the "Recording problems" channel, in the shape every
+     * one of them shares - the recorder down (RecorderHealth), a call not
+     * recorded (CallMonitorService), calls missed (MissedCalls), the phone
+     * stopping JemRec (BackgroundKill): the error icon, [title], [text] shown
+     * whole when expanded, a tap that opens [open] and clears it, and at most
+     * one button, [button], that goes where the tap does. [collapsed] is the
+     * one folded line when that is not simply the start of [text], as for a
+     * list of missed calls. Callers add only what is theirs - quiet updates, a
+     * delete intent, a lock-screen version - and post with [notifyProblem].
+     *
+     * One recipe, so a change to how problems look is made once: four copies
+     * of it had grown, the same in all but the details.
+     */
+    internal fun problem(
+        context: Context,
+        title: String,
+        text: String,
+        open: PendingIntent,
+        button: String? = null,
+        collapsed: String = text,
+    ): Notification.Builder {
+        ensureChannels(context)
+        val builder = Notification.Builder(context, PROBLEM_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle(title)
+            .setContentText(collapsed)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+        if (button != null) builder.addAction(action(button, open))
+        return builder
+    }
+
+    /** Posts a [problem] notification as [id], logging as [what] if it cannot. */
+    internal fun notifyProblem(context: Context, id: Int, notification: Notification, what: String) {
+        runCatching { context.getSystemService(NotificationManager::class.java).notify(id, notification) }
+            .onFailure { Log.w(TAG, "$what: could not post", it) }
+    }
+
+    /** Takes down the [problem] notification posted as [id]; never throws. */
+    internal fun cancelProblem(context: Context, id: Int) {
+        runCatching { context.getSystemService(NotificationManager::class.java).cancel(id) }
+    }
+
+    /**
      * The recording rides in the intent's identifier as well as its extras.
      * Android tells PendingIntents apart by the intent without its extras, so
      * with the name only in those, every notification's Play was one and the

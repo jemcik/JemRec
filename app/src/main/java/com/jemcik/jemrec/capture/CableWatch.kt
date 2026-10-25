@@ -63,6 +63,22 @@ internal object CableWatch {
 
     enum class Step { WAIT, REVIVE, DONE }
 
+    /**
+     * Whether the phone held this app back: the recorder came back [tookMs]
+     * after the cable, later than the slowest a restart takes by itself -
+     * [AWAKE_MS], which the watch's wake lock is sized for. Measured on the
+     * Honor, 2026-10-25: 12-16 s on App launch "Manage manually"; on "Manage
+     * automatically" its power manager froze JemRec mid-restart and the
+     * recorder came back 8.5 minutes later, when the screen was touched. A
+     * restart that never comes back (off Wi-Fi, handed to the keep-alive) is
+     * not timed at all, so a missing network never reads as this.
+     */
+    internal fun heldBack(tookMs: Long): Boolean = tookMs > AWAKE_MS
+
+    /** Whether a [gapMs] between two looks warns: only with the recorder down
+     *  ([recorderDown]) - see [warnIfHeldBack]. */
+    internal fun warnsAfterGap(gapMs: Long, recorderDown: Boolean): Boolean = recorderDown && heldBack(gapMs)
+
     /** One look at the recorder, [sinceMs] into the watch. */
     internal fun next(sinceMs: Long, recorderUp: Boolean): Step = when {
         !recorderUp -> Step.REVIVE
@@ -86,6 +102,7 @@ internal object CableWatch {
         Log.i(TAG, "cable: ${what ?: "changed"}; watching the recorder")
         ReviveLog.note(context, "cable: ${what ?: "changed"}; watching")
         val start = SystemClock.elapsedRealtime()
+        var lastLook = start
         while (true) {
             val since = SystemClock.elapsedRealtime() - start
             // Confirmed, not one ping: a ping that fails against a live
@@ -93,6 +110,7 @@ internal object CableWatch {
             // nothing watching when it does.
             val up = CaptureDaemon.isRunningConfirmed(context)
             ReviveLog.note(context, "cable: ${since} ms in, recorder ${if (up) "up" else "gone"}")
+            lastLook = warnIfHeldBack(context, start, lastLook, recorderDown = !up)
             when (next(since, up)) {
                 Step.WAIT -> delay(CHECK_MS)
                 Step.DONE -> {
@@ -106,21 +124,60 @@ internal object CableWatch {
                     // the recorder switched off, say: between Wireless
                     // debugging's off and on, or between the old recorder's
                     // end and the new one's start.
-                    withContext(NonCancellable) { bringBack(context) }
+                    withContext(NonCancellable) { bringBack(context, start) }
                     return
                 }
             }
         }
     }
 
-    private suspend fun bringBack(context: Context) {
+    /**
+     * Warn the moment this process runs again after the phone held it back,
+     * and return the time of this look for the next.
+     *
+     * Looks come every [CHECK_MS] and each takes a few seconds at most, so two
+     * of them further apart than a whole restart may take ([heldBack]) can
+     * only mean this app was not allowed to run between them. Measured on the
+     * Honor, 2026-10-25 15:36-15:43: frozen three seconds after the cable,
+     * thawed for half a minute at 15:38, frozen again mid-restart - so
+     * waiting for the restart to finish before warning meant no warning
+     * until the app was opened, seven minutes on. Warning at the first thaw
+     * says so while it is happening; the finished restart then updates the
+     * same notification with the whole time, without a second sound.
+     *
+     * Only with the recorder down ([recorderDown]): a watch frozen after a
+     * cable that changed nothing - a charger pulled with the screen off, on
+     * "Manage automatically" - held nothing back that mattered, and saying a
+     * restart was held up when the recorder ran all along would be false.
+     */
+    private fun warnIfHeldBack(context: Context, start: Long, lastLook: Long, recorderDown: Boolean): Long {
+        val now = SystemClock.elapsedRealtime()
+        if (warnsAfterGap(now - lastLook, recorderDown)) {
+            Log.w(TAG, "cable: ${(now - lastLook) / 1000} s went by between two looks; the phone held JemRec back")
+            ReviveLog.note(context, "cable: held back ${now - lastLook} ms between looks")
+            BackgroundKill.warnHeldBack(context, now - start)
+        }
+        return now
+    }
+
+    /** [start] is when the watch began (elapsedRealtime), so the restart can
+     *  be timed - see [heldBack]. */
+    private suspend fun bringBack(context: Context, start: Long) {
+        var lastLook = SystemClock.elapsedRealtime()
         repeat(ATTEMPTS) { attempt ->
             ReviveLog.note(context, "cable: attempt ${attempt + 1}")
             if (CaptureDaemon.revive(context)) {
-                Log.i(TAG, "cable: the recorder is back (attempt ${attempt + 1})")
-                ReviveLog.note(context, "cable: back (attempt ${attempt + 1})")
+                // The whole time, from the cable: a restart thawed part-way is
+                // in it too, so this one warning covers that case.
+                val took = SystemClock.elapsedRealtime() - start
+                Log.i(TAG, "cable: the recorder is back (attempt ${attempt + 1}, ${took / 1000} s after the cable)")
+                ReviveLog.note(context, "cable: back (attempt ${attempt + 1}, ${took} ms)")
+                if (heldBack(took)) BackgroundKill.warnHeldBack(context, took)
                 return
             }
+            // A failed attempt that was frozen part-way returns here when
+            // thawed, the recorder still down: say so now.
+            lastLook = warnIfHeldBack(context, start, lastLook, recorderDown = true)
             if (attempt < ATTEMPTS - 1) delay(RETRY_MS)
         }
         // Off Wi-Fi, most likely. The keep-alive retries with backoff, the

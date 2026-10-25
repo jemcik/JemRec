@@ -1,11 +1,8 @@
 package com.jemcik.jemrec.capture
 
-import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.drawable.Icon
 import android.util.Log
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.MainActivity
@@ -132,7 +129,6 @@ internal object RecorderHealth {
         now - downSince >= GRACE_MS && alerted != problem.name
 
     private fun post(context: Context, problem: Problem) {
-        AfterCall.ensureChannels(context)
         val (text, button) = when (problem) {
             Problem.NEEDS_WIFI ->
                 "Calls are not being recorded until the phone is on Wi-Fi for a few seconds. " +
@@ -155,18 +151,10 @@ internal object RecorderHealth {
             button?.second ?: Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val builder = Notification.Builder(context, AfterCall.PROBLEM_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle("JemRec is not recording calls")
-            .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
-            .setContentIntent(open)
+        val notification = AfterCall.problem(context, "JemRec is not recording calls", text, open, button?.first)
             .setOnlyAlertOnce(true)
-            .setAutoCancel(true)
-        button?.let { builder.addAction(Notification.Action.Builder(null as Icon?, it.first, open).build()) }
-        runCatching {
-            context.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, builder.build())
-        }.onFailure { Log.w(TAG, "health: could not post", it) }
+            .build()
+        AfterCall.notifyProblem(context, NOTIFICATION_ID, notification, "health")
     }
 
     /**
@@ -183,7 +171,5 @@ internal object RecorderHealth {
         cancel(context)
     }
 
-    fun cancel(context: Context) {
-        runCatching { context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID) }
-    }
+    fun cancel(context: Context) = AfterCall.cancelProblem(context, NOTIFICATION_ID)
 }
