@@ -2424,12 +2424,13 @@ public final class Main {
                         + " voice=" + testVoice
                         + " played=" + testPlayed);
                 break;
-            case 'F':
+            case 'F': {
                 client.setSoTimeout(60_000);
-                TelephonyManager forwardingPhone = phone;
-                reply(client, "FWD " + (forwardingPhone == null
-                        ? "error no-telephony" : Forwarding.readNoReply(forwardingPhone)));
+                TelephonyManager telephony = phone;
+                reply(client, "FWD " + (telephony == null
+                        ? "error no-telephony" : Forwarding.readNoReply(telephony)));
                 break;
+            }
             case 'P':
                 reply(client, sims());
                 break;
@@ -2440,9 +2441,9 @@ public final class Main {
                     break;
                 }
                 client.setSoTimeout(90_000);
-                TelephonyManager settingPhone = phone;
-                reply(client, "FWD " + (settingPhone == null
-                        ? "error no-telephony" : Forwarding.setNoReply(settingPhone, seconds)));
+                TelephonyManager telephony = phone;
+                reply(client, "FWD " + (telephony == null
+                        ? "error no-telephony" : Forwarding.setNoReply(telephony, seconds)));
                 break;
             }
             default:
