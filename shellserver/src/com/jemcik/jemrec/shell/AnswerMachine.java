@@ -260,12 +260,12 @@ final class AnswerMachine {
     private boolean refused;
     private long goAheadAt;
     private long goAheadDelayMs;
-    private Object answerTimer;
-    private Object audioPoll;
+    private @Nullable Object answerTimer;
+    private @Nullable Object audioPoll;
     private long answeredAt;
-    private Object muteWatch;
-    private Object messageLimit;
-    private Object silenceWatch;
+    private @Nullable Object muteWatch;
+    private @Nullable Object messageLimit;
+    private @Nullable Object silenceWatch;
 
     /** Armed by the diagnostics: answer the next ring, or take the next call
      *  this phone places, before [testUntil]. */
@@ -728,7 +728,7 @@ final class AnswerMachine {
      * the mute above all - and what happened is returned for the recording,
      * or null if this machine had no part in the call.
      */
-    Outcome callEnded() {
+    @Nullable Outcome callEnded() {
         cancelTimers();
         Outcome outcome = null;
         if (answered) {
@@ -842,7 +842,7 @@ final class AnswerMachine {
         answerTimer = audioPoll = muteWatch = messageLimit = silenceWatch = null;
     }
 
-    private void cancel(Object handle) {
+    private void cancel(@Nullable Object handle) {
         if (handle != null) {
             effects.cancel(handle);
         }

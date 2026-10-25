@@ -374,7 +374,7 @@ public final class Main {
                 Ln.w("answer: could not rebind the telecom context: " + e);
             }
             telecom = telecomManager;
-            answerMachine = new AnswerMachine(new AnswerEffects());
+            answerMachine = new AnswerMachine(new AnswerEffects(handler, audio, telecomManager, telephony));
             AnswerSettings settings = answerSettings;
             answerMachine.configure(settings.on, settings.maxMessageSeconds * 1000L);
             Ln.i("answer: " + (settings.on
@@ -414,7 +414,7 @@ public final class Main {
      * on an Honor running Android 17, with real calls. Held here, the watch
      * survived every forced GC and heard every call.
      */
-    private static CallWatch callWatch;
+    private static @Nullable CallWatch callWatch;
 
     /**
      * WHAT THE CALL WATCH HAS HEARD, FOR THE APP'S SELF-TEST. See COMMAND_WATCH.
@@ -697,7 +697,7 @@ public final class Main {
      *  null if the dump could not be read (runQuietly logs why). The package
      *  dump (36 ms on the Honor) is read only when the newest exit is an idle
      *  kill, the one case where stopped decides. */
-    private static String backgroundKillStamp() {
+    private static @Nullable String backgroundKillStamp() {
         return Checks.backgroundKillStamp(runQuietly("dumpsys", "activity", "exit-info", APP_PACKAGE),
                 () -> Checks.packageStopped(runQuietly("dumpsys", "package", APP_PACKAGE)));
     }
@@ -840,7 +840,7 @@ public final class Main {
     /** One check: put adb_enabled back to 1 if it is anything else, logging
      *  the restore with its time. With a non-null why, also a heartbeat line
      *  with both switches; otherwise a quiet check stays quiet. */
-    private static void checkShield(String why) {
+    private static void checkShield(@Nullable String why) {
         try {
             String usb = readGlobal("adb_enabled");
             if (why != null) {
@@ -865,7 +865,7 @@ public final class Main {
     }
 
     /** `settings get global name`, trimmed; null if it could not be read. */
-    private static String readGlobal(String name) {
+    private static @Nullable String readGlobal(String name) {
         try {
             Process process = new ProcessBuilder("settings", "get", "global", name)
                     .redirectErrorStream(true)
@@ -966,6 +966,11 @@ public final class Main {
                 sleep(CABLE_PORTS_RETRY_MS);
             }
         }
+        if (usb == null || status == null || mode == null) {
+            // Cannot be: ports fills only once all three were found.
+            Ln.w("cable: the USB service went before its ports could be watched");
+            return;
+        }
         Ln.i("cable: watching USB port(s) " + ports + " every " + CABLE_CHECK_INTERVAL_MS / 1000 + "s");
         Boolean before = null;
         while (true) {
@@ -1020,7 +1025,7 @@ public final class Main {
         }
     }
 
-    private static String property(String name) {
+    private static @Nullable String property(String name) {
         try {
             return (String) Class.forName("android.os.SystemProperties")
                     .getMethod("get", String.class).invoke(null, name);
@@ -1286,7 +1291,7 @@ public final class Main {
     private static volatile int recordingMode = MODE_OFF;
 
     /** The call being recorded right now, or null between calls. */
-    private static volatile RecordingSession activeRecording;
+    private static volatile @Nullable RecordingSession activeRecording;
 
     /** Whether a call is up, and its direction - so an on-demand yes that
      *  arrives mid-call knows what it is starting. */
@@ -1327,11 +1332,11 @@ public final class Main {
     private static final String VOIP_TAG = "_voip-";
 
     /** The messenger app of the call in progress; null for a phone call or none. */
-    private static volatile String callVoipApp;
+    private static volatile @Nullable String callVoipApp;
 
     /** For Voip.configure from a session thread: set once the watcher starts. */
-    private static Handler voipHandler;
-    private static AudioManager voipAudio;
+    private static @Nullable Handler voipHandler;
+    private static @Nullable AudioManager voipAudio;
 
     private static final Voip.Listener VOIP_LISTENER = new Voip.Listener() {
         @Override
@@ -1395,11 +1400,11 @@ public final class Main {
     /** The microphone can be muted from here (the audio context rebound).
      *  Without that, nothing is answered: the caller would hear the room. */
     private static volatile boolean muteReady;
-    private static AnswerMachine answerMachine;
-    private static Handler mainHandler;
-    private static AudioManager callAudio;
-    private static TelecomManager telecom;
-    private static TelephonyManager phone;
+    private static @Nullable AnswerMachine answerMachine;
+    private static @Nullable Handler mainHandler;
+    private static @Nullable AudioManager callAudio;
+    private static @Nullable TelecomManager telecom;
+    private static @Nullable TelephonyManager phone;
     private static final GreetingPlayer greetingPlayer = new GreetingPlayer();
     /** When the recording in progress captured its first sample, on the
      *  answering machine's clock (SystemClock.elapsedRealtime): the
@@ -1451,12 +1456,12 @@ public final class Main {
     }
 
     /** See Checks.uidAllowed. */
-    static boolean uidAllowed(String said) {
+    static boolean uidAllowed(@Nullable String said) {
         return Checks.uidAllowed(said);
     }
 
     /** Run a command, return what it printed, or null if it could not run. */
-    private static String runQuietly(String... command) {
+    private static @Nullable String runQuietly(String... command) {
         try {
             Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
             String said = slurp(process);
@@ -1503,12 +1508,12 @@ public final class Main {
         final boolean incoming;
         final long startedAt;
         /** The messenger whose call this is, or null for a phone call. */
-        final String app;
+        final @Nullable String app;
         private final File file;
         private final FileOutputStream out;
         private final AsyncProcessor recorder;
 
-        private RecordingSession(String name, boolean incoming, long startedAt, String app, File file,
+        private RecordingSession(String name, boolean incoming, long startedAt, @Nullable String app, File file,
                                  FileOutputStream out, AsyncProcessor recorder) {
             this.name = name;
             this.incoming = incoming;
@@ -1519,7 +1524,7 @@ public final class Main {
             this.recorder = recorder;
         }
 
-        static RecordingSession start(boolean incoming, String app) throws Exception {
+        static RecordingSession start(boolean incoming, @Nullable String app) throws Exception {
             // in/out is baked into the name so an orphan collected after a
             // reboot - when the daemon no longer remembers the call - still
             // knows which it was. A messenger call carries its app instead:
@@ -1577,7 +1582,7 @@ public final class Main {
 
     /** Start capturing the current call to a file. Returns its name, or null if
      *  it could not start or one is already running. Does NOT wake the app. */
-    private static synchronized String beginRecording(boolean incoming, String app) {
+    private static synchronized @Nullable String beginRecording(boolean incoming, @Nullable String app) {
         if (activeRecording != null) {
             Ln.w("recording: a call is already being recorded");
             return activeRecording.name;
@@ -1624,7 +1629,7 @@ public final class Main {
      * way round, leaves the first one's recording running and is not recorded
      * itself, and neither one's end can stop the other's recording.
      */
-    private static void onCallStart(boolean incoming, String app) {
+    private static void onCallStart(boolean incoming, @Nullable String app) {
         synchronized (Main.class) {
             if (callActive && (app != null || callVoipApp != null)) {
                 Ln.w("recording: a " + (app != null ? "messenger" : "phone") + " call started during "
@@ -1722,7 +1727,7 @@ public final class Main {
         wake(ACTION_CALL_STARTED, callIncoming, "", null);
     }
 
-    private static synchronized void stopRecording(AnswerMachine.Outcome outcome) {
+    private static synchronized void stopRecording(@Nullable AnswerMachine.Outcome outcome) {
         RecordingSession rec = activeRecording;
         if (rec == null) {
             return;
@@ -1870,7 +1875,8 @@ public final class Main {
             });
 
     /** Off the main thread: `am` takes a moment, and the looper must not wait for it. */
-    private static void wake(String action, boolean incoming, String recfile, String app, String... extras) {
+    private static void wake(String action, boolean incoming, @Nullable String recfile, @Nullable String app,
+            String... extras) {
         java.util.List<String> command = new java.util.ArrayList<>(java.util.Arrays.asList(
                 "am", "start-foreground-service",
                 "-n", APP_SERVICE,
@@ -1954,7 +1960,7 @@ public final class Main {
     }
 
     /** A rec-file name the app sent is only ever one of ours in REC_DIR. */
-    private static File recFileFor(String name) {
+    private static @Nullable File recFileFor(String name) {
         if (name == null || !name.startsWith(REC_PREFIX) || !name.endsWith(REC_SUFFIX)
                 || name.contains("/") || name.contains("..")) {
             return null;
@@ -2420,7 +2426,9 @@ public final class Main {
                 break;
             case 'F':
                 client.setSoTimeout(60_000);
-                reply(client, "FWD " + Forwarding.readNoReply(phone));
+                TelephonyManager forwardingPhone = phone;
+                reply(client, "FWD " + (forwardingPhone == null
+                        ? "error no-telephony" : Forwarding.readNoReply(forwardingPhone)));
                 break;
             case 'P':
                 reply(client, sims());
@@ -2432,7 +2440,9 @@ public final class Main {
                     break;
                 }
                 client.setSoTimeout(90_000);
-                reply(client, "FWD " + Forwarding.setNoReply(phone, seconds));
+                TelephonyManager settingPhone = phone;
+                reply(client, "FWD " + (settingPhone == null
+                        ? "error no-telephony" : Forwarding.setNoReply(settingPhone, seconds)));
                 break;
             }
             default:
@@ -2449,8 +2459,13 @@ public final class Main {
     /** Whether [number] is an emergency number here - or might be: one that
      *  cannot be checked is never dialled for a test either. */
     private static boolean mayBeEmergencyNumber(String number) {
+        TelephonyManager telephony = phone;
+        if (telephony == null) {
+            Ln.w("answer: could not tell whether the test's number is an emergency number: no telephony");
+            return true;
+        }
         try {
-            return phone.isEmergencyNumber(number);
+            return telephony.isEmergencyNumber(number);
         } catch (Throwable t) {
             Ln.w("answer: could not tell whether the test's number is an emergency number: " + t);
             return true;
@@ -2481,10 +2496,14 @@ public final class Main {
             // Not a permission, but as final: no mute, no answering.
             missing.add("mute");
         }
+        AudioManager audioNow = callAudio;
         try {
             // What a ring is refused on when it cannot be read: a phone where
             // it always throws would refuse every call, checks passed or not.
-            Voip.callingUids(callAudio, true);
+            if (audioNow == null) {
+                throw new IllegalStateException("the call watch is not up");
+            }
+            Voip.callingUids(audioNow, true);
         } catch (Throwable t) {
             missing.add("calls");
         }
@@ -2501,8 +2520,11 @@ public final class Main {
         line.append(" route=").append(answerSettings.route);
         line.append(" sdk=").append(Build.VERSION.SDK_INT);
         int voice = -1;
+        TelephonyManager phoneNow = phone;
         try {
-            voice = phone.getVoiceNetworkType();
+            if (phoneNow != null) {
+                voice = phoneNow.getVoiceNetworkType();
+            }
         } catch (Throwable ignored) {
             // unknown
         }
@@ -2520,6 +2542,11 @@ public final class Main {
      */
     private static String sims() {
         StringBuilder line = new StringBuilder("SIMS");
+        TelecomManager telecom = Main.telecom;
+        if (telecom == null) {
+            Ln.w("answer: could not list the SIMs: no telecom");
+            return line.toString();
+        }
         try {
             android.telecom.PhoneAccountHandle preferred = telecom.getDefaultOutgoingPhoneAccount("tel");
             line.append(" default=").append(preferred == null ? "" : word(preferred.getId()));
@@ -2549,6 +2576,22 @@ public final class Main {
      * callbacks come from its own thread and are posted back here.
      */
     private static final class AnswerEffects implements AnswerMachine.Effects {
+
+        // The same names as the fields of Main they are taken from, on
+        // purpose: inside this class every use is of the copy, which cannot
+        // be null - startCallWatcher makes this only once it has all four,
+        // and Main's own stay null if anything before them fails.
+        private final Handler mainHandler;
+        private final AudioManager callAudio;
+        private final TelecomManager telecom;
+        private final TelephonyManager phone;
+
+        AnswerEffects(Handler mainHandler, AudioManager callAudio, TelecomManager telecom, TelephonyManager phone) {
+            this.mainHandler = mainHandler;
+            this.callAudio = callAudio;
+            this.telecom = telecom;
+            this.phone = phone;
+        }
 
         @Override
         public long now() {
@@ -2686,6 +2729,9 @@ public final class Main {
         @Override
         public void playGreeting(boolean checkTone) {
             AnswerMachine machine = answerMachine;
+            if (machine == null) {
+                return; // cannot be: the machine is what asks
+            }
             String route = answerSettings.route;
             greetingPlayer.play(callAudio, route, checkTone, Greeting.FILE, new GreetingPlayer.Listener() {
                 @Override
@@ -2857,7 +2903,7 @@ public final class Main {
 
     /** The whole of `dumpsys <service>`, newlines kept, for the parsers;
      *  null if it could not be run - not an answer to read as "none". */
-    private static String dump(String service) {
+    private static @Nullable String dump(String service) {
         try {
             Process process = new ProcessBuilder("dumpsys", service).redirectErrorStream(true).start();
             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
@@ -2878,17 +2924,21 @@ public final class Main {
 
     /** Run [task] on the main looper, where the answering machine lives, and
      *  wait for it. */
-    private static <T> T onMain(java.util.concurrent.Callable<T> task) throws Exception {
+    private static @Nullable <T> T onMain(java.util.concurrent.Callable<T> task) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return task.call();
         }
+        Handler handler = mainHandler;
+        if (handler == null) {
+            throw new IllegalStateException("the call watch is not up, so no answering machine");
+        }
         java.util.concurrent.FutureTask<T> future = new java.util.concurrent.FutureTask<>(task);
-        mainHandler.post(future);
+        handler.post(future);
         return future.get(2, TimeUnit.SECONDS);
     }
 
     /** The name of the file being recorded into, or null. */
-    private static String activeName() {
+    private static @Nullable String activeName() {
         RecordingSession active = activeRecording;
         return active == null ? null : active.name;
     }

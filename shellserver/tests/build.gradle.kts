@@ -19,6 +19,8 @@ sourceSets {
             include("com/jemcik/jemrec/shell/AnswerSettings.java")
             include("com/jemcik/jemrec/shell/CallStates.java")
             include("com/jemcik/jemrec/shell/Checks.java")
+            // The daemon's own @Nullable, which these classes use (NullAway).
+            include("com/jemcik/jemrec/shell/Nullable.java")
         }
     }
     test {
@@ -48,10 +50,20 @@ dependencies {
 // The jar in the APK is still built by build.sh alone, so its bytes - which
 // F-Droid's reproducible build compares - cannot change. Run it with
 // ./gradlew :daemon-tests:errorProne; CI does on every build.
+//
+// NullAway rides along: in com.jemcik.jemrec.shell, what may be null is
+// marked with the daemon's own @Nullable (../src/.../Nullable.java), and a
+// marked value used before it is checked fails the run, as does null given
+// where nothing is marked. When it went in (2026-10-25) it reported 88
+// places, nearly all a value that could be null with no mark saying so;
+// marking them showed the uses that went unchecked.
+// What scrcpy's package and Android return is taken as never null:
+// android.jar carries no nullness marks for it to read.
 val errorprone: Configuration = configurations.create("errorprone")
 
 dependencies {
     errorprone("com.google.errorprone:error_prone_core:2.51.0")
+    errorprone("com.uber.nullaway:nullaway:0.14.3")
 }
 
 // Where shellserver/build.sh looks, in the same order.
@@ -113,6 +125,7 @@ tasks.register<JavaCompile>("errorProne") {
         // indexing over toCharArray.
         "-Werror",
         "-Xplugin:ErrorProne" +
+            " -Xep:NullAway:ERROR -XepOpt:NullAway:AnnotatedPackages=com.jemcik.jemrec.shell" +
             " -Xep:StatementSwitchToExpressionSwitch:OFF" +
             " -Xep:PatternMatchingInstanceof:OFF" +
             " -Xep:JavaUtilDate:OFF" +

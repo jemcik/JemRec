@@ -83,14 +83,14 @@ final class Voip {
 
     /** The packages whose calls are recorded. Empty: nothing is watched. */
     private static volatile Set<String> apps = Collections.emptySet();
-    private static Policy policy;
-    private static Watch watch;
+    private static @Nullable Policy policy;
+    private static @Nullable Watch watch;
     /** What configure was last given, so a recording's end can disarm. */
-    private static Handler wiredHandler;
-    private static AudioManager wiredAudio;
-    private static Listener wiredListener;
+    private static @Nullable Handler wiredHandler;
+    private static @Nullable AudioManager wiredAudio;
+    private static @Nullable Listener wiredListener;
     /** The capture of the call being recorded, for the guard. */
-    private static volatile Capture current;
+    private static volatile @Nullable Capture current;
 
     static Set<String> apps() {
         return apps;
@@ -160,13 +160,15 @@ final class Voip {
     /** A recording just ended: if the list emptied while it ran, disarm now. */
     private static void recordingEnded() {
         Handler handler = wiredHandler;
-        if (handler != null && apps.isEmpty()) {
-            handler.post(() -> configure(apps, wiredHandler, wiredAudio, wiredListener));
+        AudioManager audio = wiredAudio;
+        Listener listener = wiredListener;
+        if (handler != null && audio != null && listener != null && apps.isEmpty()) {
+            handler.post(() -> configure(apps, handler, audio, listener));
         }
     }
 
     /** A capture for the call that just started, or null if not armed. */
-    static AudioCapture newCapture() {
+    static @Nullable AudioCapture newCapture() {
         Policy p = policy;
         return p == null ? null : new Capture(p, false);
     }
@@ -178,7 +180,7 @@ final class Voip {
      * with none on the list (recordingEnded). Null when Android refuses the
      * copy; the call is then recorded as any other.
      */
-    static synchronized AudioCapture newPhoneCapture() {
+    static synchronized @Nullable AudioCapture newPhoneCapture() {
         if (policy == null) {
             try {
                 policy = Policy.register();
@@ -290,10 +292,10 @@ final class Voip {
         /** The mode as Android last said; read once at the start. */
         private int mode;
         /** Null when Android would not take it: then the mode is polled. */
-        private AudioManager.OnModeChangedListener modeChanges;
+        private @Nullable AudioManager.OnModeChangedListener modeChanges;
         /** A tick is posted, so a mode change does not start a second loop. */
         private boolean ticking;
-        private String active;
+        private @Nullable String active;
         /** The uid of [active]'s app, to ask whether it is still in its call. */
         private int activeUid = -1;
         /** The mode left "communication" while the app still talked; said once. */
@@ -301,7 +303,7 @@ final class Voip {
         private long leftAt;
         /** The app last reported as calling but not switched on, so it is
          *  said once per call, not twice a second. */
-        private String noted;
+        private @Nullable String noted;
 
         Watch(Handler handler, AudioManager audio, Listener listener) {
             this.handler = handler;
@@ -425,7 +427,7 @@ final class Voip {
 
         /** An app on the list that is playing voice-call audio and capturing:
          *  a call, not a voice message. */
-        private String callingApp() {
+        private @Nullable String callingApp() {
             for (int uid : callingUids(audio, false)) {
                 String[] packages = FakeContext.get().getPackageManager().getPackagesForUid(uid);
                 if (packages == null) {
@@ -493,7 +495,7 @@ final class Voip {
     /** The uid of an active capture Android has silenced - not this
      *  process's - that [which] picks; null for none. The guards' one look:
      *  a call's own microphone silenced while we record means ours goes. */
-    private static Integer silencedCapture(AudioManager audio, java.util.function.IntPredicate which) {
+    private static @Nullable Integer silencedCapture(AudioManager audio, java.util.function.IntPredicate which) {
         for (AudioRecordingConfiguration r : audio.getActiveRecordingConfigurations()) {
             Integer uid = uidOf(r);
             if (uid != null && uid != android.os.Process.myUid() && r.isClientSilenced() && which.test(uid)) {
@@ -503,7 +505,7 @@ final class Voip {
         return null;
     }
 
-    private static Integer uidOf(Object config) {
+    private static @Nullable Integer uidOf(Object config) {
         try {
             return (Integer) config.getClass().getMethod("getClientUid").invoke(config);
         } catch (Throwable t) {
@@ -538,11 +540,11 @@ final class Voip {
         private final boolean phone;
         private int reads;
         /** For phoneGuard: looked up once, at start. */
-        private AudioManager audio;
-        private AudioRecord far;
-        private volatile AudioRecord near;
-        private Pump farPump;
-        private Pump nearPump;
+        private @Nullable AudioManager audio;
+        private @Nullable AudioRecord far;
+        private volatile @Nullable AudioRecord near;
+        private @Nullable Pump farPump;
+        private @Nullable Pump nearPump;
         private volatile boolean running;
         private long framesOut;
         private long startUs;
@@ -650,8 +652,12 @@ final class Voip {
                     SystemClock.sleep(wait / 1000 + 1);
                 }
             }
-            farPump.dropBeyond(MAX_AHEAD * 2);
-            farPump.take(theirs, FRAMES * 2, false);
+            Pump fp = farPump;
+            if (fp == null) {
+                return -1; // start() sets it before running, or throws
+            }
+            fp.dropBeyond(MAX_AHEAD * 2);
+            fp.take(theirs, FRAMES * 2, false);
 
             // PCM in the platform's byte order, as AudioRecord writes it; a
             // ByteBuffer starts out big-endian, which would be noise.
@@ -687,8 +693,12 @@ final class Voip {
             if (near == null) {
                 return;
             }
+            AudioManager am = audio;
             try {
-                Integer uid = silencedCapture(audio, u -> u < android.os.Process.FIRST_APPLICATION_UID);
+                if (am == null) {
+                    throw new IllegalStateException("no audio service");
+                }
+                Integer uid = silencedCapture(am, u -> u < android.os.Process.FIRST_APPLICATION_UID);
                 if (uid != null) {
                     Ln.w("recording: the call's microphone (uid " + uid + ") was silenced while recording - dropping ours");
                     dropMic();

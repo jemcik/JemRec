@@ -40,7 +40,7 @@ final class Greeting {
     private Greeting() {
     }
 
-    private static volatile Thread recording;
+    private static volatile @Nullable Thread recording;
     private static volatile boolean stopRequested;
 
     /** Start recording a take from the microphone, for up to MAX_MS. */

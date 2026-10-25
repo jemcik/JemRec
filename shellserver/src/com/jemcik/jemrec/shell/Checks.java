@@ -20,7 +20,7 @@ final class Checks {
      * enough - so "allow" anywhere in the output proves nothing. Lines may
      * come joined with " | " (Main.slurp) or with newlines.
      */
-    static boolean uidAllowed(String said) {
+    static boolean uidAllowed(@Nullable String said) {
         if (said == null) {
             return false;
         }
@@ -52,7 +52,7 @@ final class Checks {
      * only for the devices, and said yes on an Honor for a route the caller
      * never heard; the emulator has the devices and no such output.
      */
-    static int inCallMusic(String policy) {
+    static int inCallMusic(@Nullable String policy) {
         if (policy == null) {
             return -1;
         }
@@ -76,7 +76,7 @@ final class Checks {
      * are read; the "Local log" under each thread is history, not state, and
      * the input threads are another table, both skipped.
      */
-    static int trackOutput(String flinger, int pid) {
+    static int trackOutput(@Nullable String flinger, int pid) {
         if (flinger == null) {
             return -1;
         }
@@ -319,7 +319,7 @@ final class Checks {
      * "plugged in", or null for nothing new. The first reading ([before] null)
      * is how things are, not a change.
      */
-    static String cableChange(Boolean before, boolean now) {
+    static @Nullable String cableChange(@Nullable Boolean before, boolean now) {
         if (before == null || before == now) {
             return null;
         }
@@ -331,7 +331,7 @@ final class Checks {
      * "hisuite,mtp,mass_storage,adb" on the Honor plugged into a computer:
      * "adb" as one of its comma-separated names. Honor's own "hdb" is not it.
      */
-    static boolean usbAdb(String config) {
+    static boolean usbAdb(@Nullable String config) {
         if (config == null) {
             return false;
         }
@@ -383,7 +383,7 @@ final class Checks {
      * each record's text, and the record markers and key=value pairs survive
      * the join.
      */
-    static String backgroundKillStamp(String dumpsys, java.util.function.BooleanSupplier stopped) {
+    static @Nullable String backgroundKillStamp(@Nullable String dumpsys, java.util.function.BooleanSupplier stopped) {
         if (dumpsys == null) {
             return null;
         }
@@ -419,7 +419,7 @@ final class Checks {
      * also prints an iAwareStopped= of its own, which is not this. False when
      * the dump could not be read.
      */
-    static boolean packageStopped(String dumpsys) {
+    static boolean packageStopped(@Nullable String dumpsys) {
         if (dumpsys == null) {
             return false;
         }
@@ -436,7 +436,7 @@ final class Checks {
      * which, compared with the last stamp alone, read as new and woke the app
      * a second time. A handful of stamps a year; nothing to bound.
      */
-    static boolean newStop(java.util.Set<String> told, String stamp) {
+    static boolean newStop(java.util.Set<String> told, @Nullable String stamp) {
         return stamp != null && told.add(stamp);
     }
 

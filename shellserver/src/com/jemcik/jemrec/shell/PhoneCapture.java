@@ -32,13 +32,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class PhoneCapture implements AudioCapture {
 
     private final AudioCapture voice;
-    private final AudioManager audio;
+    private final @Nullable AudioManager audio;
     /** The messenger capture, once the mode called for it and it started. */
-    private volatile AudioCapture mixer;
+    private volatile @Nullable AudioCapture mixer;
     private final AtomicBoolean voiceStopped = new AtomicBoolean();
     private volatile boolean stopped;
 
-    PhoneCapture(AudioCapture voice, AudioManager audio) {
+    PhoneCapture(AudioCapture voice, @Nullable AudioManager audio) {
         this.voice = voice;
         this.audio = audio;
     }
@@ -60,10 +60,14 @@ final class PhoneCapture implements AudioCapture {
     }
 
     private void askMode() {
+        AudioManager am = audio;
+        if (am == null) {
+            return; // start() does not run this then
+        }
         long asked = SystemClock.elapsedRealtime();
         int mode;
         try {
-            mode = audio.getMode();
+            mode = am.getMode();
         } catch (Throwable t) {
             Ln.w("recording: could not read the audio mode; the call's voice path: " + t);
             return;

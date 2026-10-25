@@ -83,12 +83,12 @@ final class GreetingPlayer {
      */
     private static final class Session {
         volatile boolean stopped;
-        volatile AudioTrack track;
+        volatile @Nullable AudioTrack track;
         /** Which 20 ms blocks of what has been written are loud, in order. */
         volatile boolean[] loud = new boolean[0];
     }
 
-    private volatile Session current;
+    private volatile @Nullable Session current;
 
     void play(AudioManager audio, String route, boolean checkTone, File greeting, Listener listener) {
         stop();
@@ -124,7 +124,10 @@ final class GreetingPlayer {
      */
     boolean loudNow() {
         Session session = current;
-        AudioTrack tr = session == null || session.stopped ? null : session.track;
+        if (session == null || session.stopped) {
+            return false;
+        }
+        AudioTrack tr = session.track;
         if (tr == null) {
             return false;
         }

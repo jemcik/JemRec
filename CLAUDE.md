@@ -27,7 +27,8 @@ Wireless debugging and starts a recorder that runs as the shell user
   `app/lint-baseline.xml` (`./gradlew updateLintBaseline` after fixing some);
   `app/lint.xml` says what is off and why. It also checks the daemon's calls
   against Android 12 (`:daemon-lint`). `./gradlew :daemon-tests:errorProne`
-  is Error Prone over the daemon, analysis only. Reports:
+  is Error Prone and NullAway over the daemon, analysis only: what may be
+  null there is marked with the daemon's own `@Nullable`. Reports:
   [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#checks-beyond-the-tests).
 
 ## Generated files - edit the source, then regenerate

@@ -45,7 +45,7 @@ final class Forwarding {
     static String setNoReply(TelephonyManager telephony, int seconds) {
         Object now = read(telephony);
         try {
-            if (!isInfo(now) || !(boolean) call(now, "isEnabled")) {
+            if (now == null || !isInfo(now) || !(boolean) call(now, "isEnabled")) {
                 return "unchanged " + describe(now);
             }
             Class<?> infoClass = Class.forName("android.telephony.CallForwardingInfo");
@@ -68,7 +68,7 @@ final class Forwarding {
         }
     }
 
-    private static Object read(TelephonyManager telephony) {
+    private static @Nullable Object read(TelephonyManager telephony) {
         try {
             Object[] answer = new Object[1];
             CountDownLatch done = new CountDownLatch(1);
@@ -90,9 +90,9 @@ final class Forwarding {
         }
     }
 
-    private static String describe(Object answer) {
+    private static String describe(@Nullable Object answer) {
         try {
-            if (isInfo(answer)) {
+            if (answer != null && isInfo(answer)) {
                 boolean on = (boolean) call(answer, "isEnabled");
                 return (on ? "on " : "off ") + call(answer, "getTimeoutSeconds")
                         + (on ? " *" + tail((String) call(answer, "getNumber")) : "");
@@ -106,7 +106,7 @@ final class Forwarding {
         return answer == null ? "none" : "error " + answer.getClass().getSimpleName();
     }
 
-    private static boolean isInfo(Object answer) {
+    private static boolean isInfo(@Nullable Object answer) {
         return answer != null && answer.getClass().getName().equals("android.telephony.CallForwardingInfo");
     }
 

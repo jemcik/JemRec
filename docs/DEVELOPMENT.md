@@ -153,8 +153,16 @@ time.
   levels - a replacement it suggests can be newer than Android 12, which the
   daemon runs on (`Scanner(InputStream, Charset)` is Android 14) - and the
   next check is what catches that. The jar in the APK is still built by
-  `shellserver/build.sh` alone. NullAway was tried and left out: 88 warnings, nearly all because the
-  daemon has no `@Nullable` annotations yet.
+  `shellserver/build.sh` alone.
+- **NullAway, in the same run.** What may be null in the daemon's package is
+  marked `@Nullable` - the daemon's own (`shellserver/src/.../Nullable.java`),
+  source only, so the jar gains that one type and nothing else - and
+  [NullAway](https://github.com/uber/NullAway) fails the run on a marked value
+  used before it is checked, and on null given where nothing is marked. Two
+  planted dereferences both failed it. What it cannot see: what scrcpy's files
+  and Android's methods return is taken as never null - `android.jar` carries
+  none of the platform's nullness marks (the SDK keeps them apart, in
+  `annotations.zip`, for lint and the IDE).
 - **Android API levels in the daemon.** The daemon runs from Android 12 but
   compiles against 16's `android.jar`, so a call from a newer Android builds
   fine and then crashes an older phone. `shellserver/lint` is an Android module
