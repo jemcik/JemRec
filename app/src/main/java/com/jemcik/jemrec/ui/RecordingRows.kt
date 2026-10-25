@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -135,10 +136,12 @@ internal val LocalPlayerHere = staticCompositionLocalOf { true }
 /** What a tap means: play - or, selecting, pick; a long press starts
  *  selecting, as Material's selection pattern has it: "On touch devices,
  *  select an item by pressing and holding it" (m1.material.io, Patterns >
- *  Selection, read 2026-10-23). Which is why a long press is not a menu. */
+ *  Selection, read 2026-10-23). Which is why a long press is not a menu.
+ *  Not @ReadOnlyComposable, though lint asks for it: its lambdas are cached
+ *  in slots, which need a group of their own (instructionTap, HeaderParts). */
 @OptIn(ExperimentalFoundationApi::class)
+@SuppressLint("ComposeReadOnlyComposable")
 @Composable
-@ReadOnlyComposable
 internal fun Modifier.rowTaps(recording: Recording, state: UiState, vm: MainViewModel): Modifier {
     val haptics = LocalHapticFeedback.current
     if (!LocalRowsSelectable.current) {

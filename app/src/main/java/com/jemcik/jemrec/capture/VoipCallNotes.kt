@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.capture
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.Person
 import android.content.Context
@@ -76,13 +77,12 @@ internal object VoipCallNotes {
         if (!enabled(context) || pkg !in VoipApps.enabled(context)) return
         val extras = notification.extras ?: return
         if (extras.getString(Notification.EXTRA_TEMPLATE)?.endsWith("MediaStyle") == true) return
-        // Android 14's key; before it the extra is simply not there (and
-        // messenger calls are recorded only from 14 on anyway).
-        val callType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            extras.getInt(Notification.EXTRA_CALL_TYPE, 0)
-        } else {
-            0
-        }
+        // Public from Android 14, but the key is older: Android 12's CallStyle
+        // already writes "android.callType" (a hidden constant then - AOSP
+        // android12-release, Notification.CallStyle.addExtras), and the
+        // constant is compiled in as that string. So read on every version.
+        @SuppressLint("InlinedApi")
+        val callType = extras.getInt(Notification.EXTRA_CALL_TYPE, 0)
         val runningCall = notification.flags and ONGOING_SERVICE == ONGOING_SERVICE
         val isCall = notification.category == Notification.CATEGORY_CALL ||
             callType != 0 || extras.containsKey(Notification.EXTRA_CALL_PERSON) ||
