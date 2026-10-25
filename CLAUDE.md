@@ -10,9 +10,6 @@ Wireless debugging and starts a recorder that runs as the shell user
 
 - JDK 21 exactly - the daemon's bytes depend on it. Point `JEMREC_JAVA_HOME` at
   one if the default java is another.
-- `./gradlew assembleDebug`; `./gradlew test` runs the app's and the daemon's
-  tests; `./gradlew :daemon-tests:test` the daemon's alone. Gradle builds the
-  daemon jar itself (`shellserver/build.sh`).
 - The daemon's decisions live in plain Java (`AnswerMachine`, `CallStates`,
   `Checks`, ...) so they can be tested off the phone: keep Android out of them.
 - Screen tests compare against `app/src/test/screenshots`. After a meant change:
@@ -22,7 +19,6 @@ Wireless debugging and starts a recorder that runs as the shell user
   the Android 12, 13 and 17 AVDs (`jemrec-api31-0.14`, `jemrec-api33`,
   `jemrec-api37.2`; boot with `-no-snapshot-save`). Ask before creating or
   deleting an AVD.
-- Pre-push hook (tests and lint): `git config core.hooksPath tools/hooks`.
 - `./gradlew lint` is a gate: any warning fails it, and there is no baseline;
   `app/lint.xml` says what is off and why. It also checks the daemon's calls
   against Android 12 (`:daemon-lint`). `./gradlew :daemon-tests:errorProne`
@@ -64,9 +60,7 @@ They must all say the same thing; a feature is not done until they do.
 
 - `fastlane/.../full_description.txt` at most 4000 characters (it sits close);
   `changelogs/<versionCode>.txt` at most 500.
-- The version lives only in `gradle.properties`; versionCode is
-  MAJOR*10000 + MINOR*100 + PATCH. Merging a version bump to main IS the
-  release - no tags by hand.
+- Merging a version bump to main IS the release - no tags by hand.
 - Never commit captured call audio or recordings of real calls.
 - Commit, push or open a PR only when asked.
 
