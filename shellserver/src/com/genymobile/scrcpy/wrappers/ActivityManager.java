@@ -36,7 +36,7 @@ public final class ActivityManager {
             IInterface am = (IInterface) getDefaultMethod.invoke(null);
             return new ActivityManager(am);
         } catch (ReflectiveOperationException e) {
-            throw new AssertionError(e);
+            throw new LinkageError(e.getMessage(), e);
         }
     }
 

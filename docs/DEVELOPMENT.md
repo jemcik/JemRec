@@ -135,7 +135,7 @@ They exist because reviews kept finding bugs by chance that a tool finds every
 time.
 
 - **Lint is a gate.** `./gradlew lint`: every warning is an error. The ones
-  already there when the gate went in (121, mostly `UseKtx`) are listed in
+  still there from before the gate (103, mostly `UseKtx`) are listed in
   `app/lint-baseline.xml`, and `app/lint.xml` says what is off by design and
   why - the view model handed down to the screens, the checks that compare
   with the newest versions online, trust-all managers inside two libraries.
@@ -146,8 +146,13 @@ time.
   on and placed right, parameter order, new `CompositionLocal`s.
 - **Error Prone on the daemon.** `./gradlew :daemon-tests:errorProne` compiles
   all of `shellserver/src` with [Error Prone](https://errorprone.info) into
-  `shellserver/tests/build/errorprone` and throws the classes away; an error
-  fails the build. The jar in the APK is still built by `shellserver/build.sh`
+  `shellserver/tests/build/errorprone` and throws the classes away. Warnings
+  fail too: the checks off by design (style the daemon does not use) are
+  listed in `shellserver/tests/build.gradle.kts`, and each other finding was
+  fixed or suppressed where the code says why. It does not know Android's API
+  levels - a replacement it suggests can be newer than Android 12, which the
+  daemon runs on (`Scanner(InputStream, Charset)` is Android 14) - so check before
+  taking one. The jar in the APK is still built by `shellserver/build.sh`
   alone. NullAway was tried and left out: 88 warnings, nearly all because the
   daemon has no `@Nullable` annotations yet.
 - **CodeQL.** `.github/workflows/codeql.yml`: GitHub's code scanning with the

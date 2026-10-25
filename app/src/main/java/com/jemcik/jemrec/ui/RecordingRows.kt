@@ -399,7 +399,7 @@ private fun playerShows(recording: Recording, state: UiState) =
  * top, at the user's word: the photo is the row's, not its first line's.
  */
 @Composable
-internal fun RowHead(modifier: Modifier, avatar: @Composable () -> Unit, gap: Dp = 12.dp, lines: @Composable ColumnScope.() -> Unit) {
+internal fun RowHead(avatar: @Composable () -> Unit, modifier: Modifier = Modifier, gap: Dp = 12.dp, lines: @Composable ColumnScope.() -> Unit) {
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -455,7 +455,7 @@ private fun Seeker(
     played: Color,
     rest: Color,
     head: Color,
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
 ) {
     val waveform = state.waveform
     if (waveform != null) {
@@ -631,7 +631,7 @@ private fun MemoRow(recording: Recording, day: Day, state: UiState, vm: MainView
         ),
     ) {
         RowHead(
-            Modifier.memoHead(taps = Modifier.rowTaps(recording, state, vm), bottom = if (shows) 6.dp else 4.dp),
+            modifier = Modifier.memoHead(taps = Modifier.rowTaps(recording, state, vm), bottom = if (shows) 6.dp else 4.dp),
             avatar = { RowAvatar(recording, state, vm) },
         ) {
             RowName(recording, MaterialTheme.typography.bodyLarge)
@@ -703,7 +703,7 @@ private fun DeckRow(recording: Recording, day: Day, state: UiState, vm: MainView
     val current = !state.selecting && state.playingName == recording.name
     val mono = deckMono
     RowHead(
-        Modifier.deckTrack(ground = if (current) c.rowPlaying else Color.Transparent, taps = Modifier.rowTaps(recording, state, vm)),
+        modifier = Modifier.deckTrack(ground = if (current) c.rowPlaying else Color.Transparent, taps = Modifier.rowTaps(recording, state, vm)),
         avatar = { RowAvatar(recording, state, vm) },
     ) {
         RowName(recording, MaterialTheme.typography.bodyLarge)
@@ -772,7 +772,7 @@ private fun DeckPlaying(recording: Recording, day: Day, state: UiState, vm: Main
             .border(1.dp, c.faceEdge, faceShape),
     ) {
         RowHead(
-            Modifier
+            modifier = Modifier
                 .rowTaps(recording, state, vm)
                 .padding(start = 10.dp, end = 2.dp, top = 8.dp, bottom = 6.dp),
             avatar = { RowAvatar(recording, state, vm) },
@@ -861,7 +861,7 @@ private fun MultitrackRow(recording: Recording, day: Day, state: UiState, vm: Ma
     val current = !state.selecting && state.playingName == recording.name
     val clip = RoundedCornerShape(8.dp)
     RowHead(
-        Modifier.multitrackRow(c, ground = if (current) c.lanePlaying else Color.Transparent, taps = Modifier.rowTaps(recording, state, vm)),
+        modifier = Modifier.multitrackRow(c, ground = if (current) c.lanePlaying else Color.Transparent, taps = Modifier.rowTaps(recording, state, vm)),
         avatar = {
             RowAvatar(recording, state, vm, container = hue.copy(alpha = c.tint), content = hue, edge = hue.copy(alpha = c.edge))
         },
@@ -924,7 +924,7 @@ private fun MultitrackPlaying(recording: Recording, day: Day, state: UiState, vm
                 .padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 4.dp),
         ) {
             RowHead(
-                Modifier.rowTaps(recording, state, vm),
+                modifier = Modifier.rowTaps(recording, state, vm),
                 avatar = { RowAvatar(recording, state, vm, container = c.panel, content = hue, edge = hue.copy(alpha = c.edge)) },
                 gap = 10.dp,
             ) {

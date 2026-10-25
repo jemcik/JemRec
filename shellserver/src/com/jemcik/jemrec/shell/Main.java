@@ -151,7 +151,10 @@ public final class Main {
      * and the shell reports only "Killed", because the crash handler ITSELF
      * then fails trying to reach the activity manager to report the crash.
      */
+    // Looper's own lock: Android's prepareMainLooper sets sMainLooper holding
+    // Looper.class, and this does the same job by reflection.
     @SuppressLint("DiscouragedPrivateApi")
+    @SuppressWarnings("LockOnNonEnclosingClassLiteral")
     private static void prepareMainLooper() {
         Looper.prepare();
         synchronized (Looper.class) {
@@ -160,7 +163,7 @@ public final class Main {
                 field.setAccessible(true);
                 field.set(null, Looper.myLooper());
             } catch (ReflectiveOperationException e) {
-                throw new AssertionError(e);
+                throw new LinkageError(e.getMessage(), e);
             }
         }
     }
@@ -381,7 +384,7 @@ public final class Main {
             giveBackStaleMute();
             // Into a field, never inline: the framework only holds it weakly.
             // See callWatch.
-            callWatch = new CallWatch(token, telephony, audio, handler);
+            callWatch = new CallWatch(audio, handler);
             telephony.registerTelephonyCallback(handler::post, callWatch);
             watching = true;
             Ln.i("callwatch: watching call state as uid " + android.os.Process.myUid());
@@ -430,10 +433,7 @@ public final class Main {
     private static final class CallWatch extends TelephonyCallback
             implements TelephonyCallback.CallStateListener {
 
-        private final String token;
-        private final TelephonyManager telephony;
         private final AudioManager audio;
-        private final Handler handler;
         /** What the events mean - see CallStates; this class only feeds it. */
         private final CallStates states;
 
@@ -446,11 +446,8 @@ public final class Main {
         }
         private final Runnable endCheck;
 
-        CallWatch(String token, TelephonyManager telephony, AudioManager audio, Handler handler) {
-            this.token = token;
-            this.telephony = telephony;
+        CallWatch(AudioManager audio, Handler handler) {
             this.audio = audio;
-            this.handler = handler;
             this.states = new CallStates(new CallStates.Effects() {
                 @Override
                 public void callStarted(boolean incoming) {
@@ -1057,7 +1054,7 @@ public final class Main {
                 // "dead" and "port free" and answered by spawning a duplicate
                 // that then died on EADDRINUSE. Eight covers every caller the
                 // app has, several times over, and costs nothing.
-                return new ServerSocket(port, 8, InetAddress.getByName("127.0.0.1"));
+                return new ServerSocket(port, 8, InetAddress.getByAddress(new byte[] {127, 0, 0, 1}));
             } catch (BindException e) {
                 last = e;
                 Ln.w("port " + port + " still held, retrying");
@@ -1944,7 +1941,7 @@ public final class Main {
     private static String slurp(Process process) throws IOException {
         StringBuilder out = new StringBuilder();
         try (BufferedReader reader =
-                     new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                     new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (out.length() > 0) {
@@ -2010,7 +2007,7 @@ public final class Main {
                 Ln.w("session: quit requested during a call or a fetch, refused");
                 return;
             }
-            client.getOutputStream().write("BYE\n".getBytes("UTF-8"));
+            client.getOutputStream().write("BYE\n".getBytes(StandardCharsets.UTF_8));
             client.getOutputStream().flush();
             Ln.i("session: quit requested, exiting");
             // Flushed and acknowledged first, so the app learns it worked
@@ -2065,7 +2062,7 @@ public final class Main {
             OutputStream os = client.getOutputStream();
             int count = 0;
             for (String name : names) {
-                os.write((name + "\n").getBytes("UTF-8"));
+                os.write((name + "\n").getBytes(StandardCharsets.UTF_8));
                 count++;
             }
             os.flush();
@@ -2082,7 +2079,7 @@ public final class Main {
                 // never guess AUTOMATIC, which is what this used to do.
                 Ln.w("session: ignoring unusable recording mode " + value + ", still " + recordingMode);
             }
-            client.getOutputStream().write((recordingMode + "\n").getBytes("UTF-8"));
+            client.getOutputStream().write((recordingMode + "\n").getBytes(StandardCharsets.UTF_8));
             client.getOutputStream().flush();
             return;
         }
@@ -2101,7 +2098,7 @@ public final class Main {
             } else {
                 Ln.w("session: on-demand start refused (no call in progress, or it could not start)");
             }
-            client.getOutputStream().write(((name != null ? name : "") + "\n").getBytes("UTF-8"));
+            client.getOutputStream().write(((name != null ? name : "") + "\n").getBytes(StandardCharsets.UTF_8));
             client.getOutputStream().flush();
             return;
         }
@@ -2196,7 +2193,7 @@ public final class Main {
             File file = recFileFor(name);
             boolean ok = !name.equals(activeName()) && file != null && file.delete();
             Ln.i("session: delete " + name + " -> " + ok);
-            client.getOutputStream().write((ok ? "OK\n" : "NO\n").getBytes("UTF-8"));
+            client.getOutputStream().write((ok ? "OK\n" : "NO\n").getBytes(StandardCharsets.UTF_8));
             client.getOutputStream().flush();
             return;
         }
@@ -2800,6 +2797,9 @@ public final class Main {
     /** Every captured chunk of a phone call this process answered: a level
      *  for the message's start, and in a test, a look for the check tone on
      *  the uplink side (left). */
+    // testToneRun++ below is not atomic, and need not be: only this thread
+    // counts, and the TEST command zeroes it only while no test is running.
+    @SuppressWarnings("NonAtomicVolatileUpdate")
     private static void onChunk(short[] pcm, int frames, long atMs) {
         long chunkMs = frames * 1000L / AudioConfig.SAMPLE_RATE;
         if (captureStartedAt == 0) {
@@ -2869,7 +2869,7 @@ public final class Main {
                 }
             }
             process.waitFor();
-            return out.toString("UTF-8");
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
         } catch (Throwable t) {
             Ln.w("could not run dumpsys " + service + ": " + t);
             return null;
@@ -3045,7 +3045,8 @@ public final class Main {
     private static int peerUid(Socket client) {
         int clientPort = client.getPort();
         for (String table : new String[]{"/proc/net/tcp", "/proc/net/tcp6"}) {
-            try (BufferedReader reader = new BufferedReader(new FileReader(table))) {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(new FileInputStream(table), StandardCharsets.UTF_8))) {
                 String line = reader.readLine(); // the header
                 while ((line = reader.readLine()) != null) {
                     String[] f = line.trim().split("\\s+");
@@ -3108,7 +3109,7 @@ public final class Main {
         }
         byte[] b = new byte[len];
         in.readFully(b);
-        return new String(b, "UTF-8");
+        return new String(b, StandardCharsets.UTF_8);
     }
 
     private static void closeQuietly(AutoCloseable c) {

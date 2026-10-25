@@ -11,7 +11,9 @@ import android.system.OsConstants;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
 
 public final class IO {
@@ -61,7 +63,9 @@ public final class IO {
 
     public static String toString(InputStream inputStream) {
         StringBuilder builder = new StringBuilder();
-        Scanner scanner = new Scanner(inputStream);
+        // Through a reader: Scanner(InputStream, Charset) is Android 14 and
+        // later, and the daemon runs from 12.
+        Scanner scanner = new Scanner(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
         while (scanner.hasNextLine()) {
             builder.append(scanner.nextLine()).append('\n');
         }

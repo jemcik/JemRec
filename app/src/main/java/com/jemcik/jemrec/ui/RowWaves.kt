@@ -58,7 +58,7 @@ internal fun rememberRowLevels(recording: Recording): List<Float>? {
  * from 2dp up to the strip's height, drawn as the player's are (drawBars).
  */
 @Composable
-internal fun MiniWave(levels: List<Float>, color: Color, modifier: Modifier) {
+internal fun MiniWave(levels: List<Float>, color: Color, modifier: Modifier = Modifier) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val loudness = remember(levels) { BarLoudness(levels) }
     Canvas(modifier) {

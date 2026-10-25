@@ -338,7 +338,7 @@ final class AnswerMachine {
         reset();
         state = State.RINGING;
         ringAt = effects.now();
-        if (otherAppCall || !enabled && !testRing) {
+        if (otherAppCall || (!enabled && !testRing)) {
             if (otherAppCall) {
                 effects.log("answer: a call rings during a messenger or meeting call; not answering it");
             }
@@ -581,7 +581,7 @@ final class AnswerMachine {
 
     private void watchMute() {
         muteWatch = null;
-        if (state != State.GREETING && state != State.MESSAGE || ending) {
+        if ((state != State.GREETING && state != State.MESSAGE) || ending) {
             return;
         }
         if (!over && mutedAt > 0 && !effects.muted() && effects.callAudioUp()) {
@@ -768,6 +768,11 @@ final class AnswerMachine {
      * notes the first words, for the message's start, and the last sound,
      * for a message with no limit to end on silence.
      */
+    // runSoundMs += below is not atomic, and need not be: only this thread
+    // adds to it, and reset() - on the call watch's thread, at a ring or a
+    // call's end - zeroes it while this one is not counting (level returns
+    // at once until the greeting has muted the phone, and reset clears that).
+    @SuppressWarnings("NonAtomicVolatileUpdate")
     void level(double rms, long chunkMs) {
         if (mutedAt == 0 || over || rms < SOUND_RMS) {
             return;

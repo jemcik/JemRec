@@ -105,7 +105,20 @@ tasks.register<JavaCompile>("errorProne") {
         "-Xmaxwarns", "10000",
         // NOT -Xlint:none or -nowarn, as build.sh has: they silence Error
         // Prone's warnings too (tried - a planted ReferenceEquality vanished).
-        "-Xplugin:ErrorProne",
+        // Warnings fail too, so only a reviewed suppression lets one stay.
+        // Off: style the daemon does not use - classic switch statements,
+        // instanceof without patterns, Date in log lines, String.split on
+        // formats of its own and dumps whose trailing empty fields mean
+        // nothing (checked, 2026-10-25), private-in-effect members, and
+        // indexing over toCharArray.
+        "-Werror",
+        "-Xplugin:ErrorProne" +
+            " -Xep:StatementSwitchToExpressionSwitch:OFF" +
+            " -Xep:PatternMatchingInstanceof:OFF" +
+            " -Xep:JavaUtilDate:OFF" +
+            " -Xep:StringSplitter:OFF" +
+            " -Xep:EffectivelyPrivate:OFF" +
+            " -Xep:LoopOverCharArray:OFF",
     ))
 }
 

@@ -58,7 +58,6 @@ internal fun WaveformScrubber(
     durationMs: Int,
     onDrag: (Int?) -> Unit,
     onSeek: (Int) -> Unit,
-    modifier: Modifier,
     // Each look's own: Memo's are the slider's, Deck draws in its LCD's ink,
     // Multitrack in the caller's colour.
     played: Color,
@@ -66,6 +65,7 @@ internal fun WaveformScrubber(
     head: Color,
     // While it plays, the playhead glides between the player's readings.
     playing: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val duration by rememberUpdatedState(durationMs)

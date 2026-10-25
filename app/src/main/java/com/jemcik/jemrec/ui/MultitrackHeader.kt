@@ -212,7 +212,7 @@ internal fun MultitrackMark(mark: HeaderMark, c: MultitrackColors) {
 /** RECORDINGS | CALLS in the editor's capitals, the chosen one underlined in
  *  the record red; RECORDINGS with the number of them after it. */
 @Composable
-private fun MultiTabs(state: UiState, c: MultitrackColors, modifier: Modifier, onSelect: (HomeTab) -> Unit) {
+private fun MultiTabs(state: UiState, c: MultitrackColors, modifier: Modifier = Modifier, onSelect: (HomeTab) -> Unit) {
     val selected = state.homeTab
     Row(modifier.fillMaxWidth().selectableGroup()) {
         for (tab in HomeTab.entries) {

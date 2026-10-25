@@ -48,7 +48,7 @@ import com.jemcik.jemrec.capture.GlobalSettings
  * control that cannot work is worse than no control at all.
  */
 @Composable
-fun SetupScreen(state: UiState, vm: MainViewModel) {
+fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
     // The Settings screens are opened from HERE, the foreground Activity, not
     // through the ViewModel's Application context. A brand-new install has no
@@ -62,7 +62,7 @@ fun SetupScreen(state: UiState, vm: MainViewModel) {
     // permanently" need different words, and only the real state knows.
     val permissionLauncher = rememberPermissionRequest { vm.refreshSetup() }
 
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
         // An install set up before the debugging question existed lands here
         // for that one question, and is not setting anything up - so it is

@@ -90,7 +90,7 @@ internal fun DeckHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
 }
 
 @Composable
-private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColors, modifier: Modifier) {
+private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColors, modifier: Modifier = Modifier) {
     val status = recorderStatus(state)
     val off = status == RecorderStatus.OFF
     val ink = if (off) c.inkOff else c.ink
@@ -216,7 +216,7 @@ internal fun DeckMark(mark: HeaderMark, small: TextStyle) {
 /** Recordings | Calls, as two keys on the face; the lit one has an LED, and
  *  Recordings the number of them, printed as the key's legend is. */
 @Composable
-private fun DeckTabs(state: UiState, c: DeckColors, modifier: Modifier, onSelect: (HomeTab) -> Unit) {
+private fun DeckTabs(state: UiState, c: DeckColors, modifier: Modifier = Modifier, onSelect: (HomeTab) -> Unit) {
     val selected = state.homeTab
     Row(modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for (tab in HomeTab.entries) {

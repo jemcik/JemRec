@@ -46,6 +46,8 @@ public final class Ln {
         threshold = level;
     }
 
+    // Level is declared in order of severity, so its ordinal is that order.
+    @SuppressWarnings("EnumOrdinal")
     public static boolean isEnabled(Level level) {
         return level.ordinal() >= threshold.ordinal();
     }

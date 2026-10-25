@@ -211,6 +211,7 @@ private fun rowSummary(): TextStyle = when (LocalLook.current) {
 @Composable
 internal fun SettingsRow(
     title: String,
+    modifier: Modifier = Modifier,
     summary: String? = null,
     icon: ImageVector? = null,
     summaryColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -218,7 +219,6 @@ internal fun SettingsRow(
     iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
-    rowModifier: Modifier = Modifier,
     mark: HeaderMark? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -234,7 +234,7 @@ internal fun SettingsRow(
                     Modifier
                 },
             )
-            .then(rowModifier)
+            .then(modifier)
             .heightIn(min = if (summary != null) 72.dp else 56.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -288,7 +288,7 @@ internal fun SwitchRow(
         enabled = enabled,
         mark = mark,
         leading = leading,
-        rowModifier = Modifier.toggleable(
+        modifier = Modifier.toggleable(
             value = checked,
             enabled = enabled,
             role = Role.Switch,
@@ -614,8 +614,8 @@ internal fun <T> ConnectedChoices(
     selected: T,
     label: (T) -> String,
     onChoose: (T) -> Unit,
-    enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val haptics = LocalHapticFeedback.current
     Row(

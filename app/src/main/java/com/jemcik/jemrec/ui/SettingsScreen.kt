@@ -83,7 +83,7 @@ private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT, TRACKING_OFF
  * to take something back - not part of the list you use every day.
  */
 @Composable
-fun SettingsScreen(state: UiState, vm: MainViewModel) {
+fun SettingsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
 
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -175,7 +175,7 @@ fun SettingsScreen(state: UiState, vm: MainViewModel) {
         null -> Unit
     }
 
-    Column {
+    Column(modifier) {
 
         // Only while it is worth offering. Once granted there is nothing to
         // do here, and the recordings list shows the result better than a
@@ -693,14 +693,14 @@ private fun FileNamesDialog(
  * and offers the permission, rather than showing switches that cannot work.
  */
 @Composable
-fun WhoseCallsScreen(state: UiState, vm: MainViewModel) {
+fun WhoseCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
     val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
     val contactPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickContact()
     ) { uri -> if (uri != null) vm.addRuleContact(uri) }
 
-    Column {
+    Column(modifier) {
         if (!state.canReadCallLog || !state.canReadContacts) {
             Text(
                 "Every call is kept. To leave some out - keep only your contacts' " +
@@ -813,8 +813,8 @@ fun WhoseCallsScreen(state: UiState, vm: MainViewModel) {
  * notifications - which needs notification access, said plainly.
  */
 @Composable
-fun MessengerCallsScreen(state: UiState, vm: MainViewModel) {
-    Column {
+fun MessengerCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
+    Column(modifier) {
         if (!state.voipSupported) {
             Text(
                 "WhatsApp, Telegram, Signal and Viber calls cannot be recorded on this " +
@@ -931,9 +931,9 @@ private fun AppIcon(pkg: String) {
  * Troubleshooting group, where it used to sit at the foot of the one long page.
  */
 @Composable
-fun DiagnosticsScreen(state: UiState, vm: MainViewModel) {
+fun DiagnosticsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SettingsGroup {
             row {
                 SettingsRow(

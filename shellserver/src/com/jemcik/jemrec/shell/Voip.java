@@ -489,7 +489,7 @@ final class Voip {
         return calling;
     }
 
-    /** getClientUid is a system API: by reflection, or null. */
+    // getClientUid is a system API: by reflection, or null.
     /** The uid of an active capture Android has silenced - not this
      *  process's - that [which] picks; null for none. The guards' one look:
      *  a call's own microphone silenced while we record means ours goes. */

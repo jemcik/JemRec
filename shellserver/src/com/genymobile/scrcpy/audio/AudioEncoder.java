@@ -215,6 +215,9 @@ public final class AudioEncoder implements AsyncProcessor {
     }
 
     @TargetApi(AndroidVersions.API_23_ANDROID_6_0)
+    // Upstream scrcpy's: its cleanup throws on an interrupt it says should
+    // never happen, from inside finally. Kept as upstream wrote it.
+    @SuppressWarnings("Finally")
     private void encode() throws IOException, ConfigurationException, AudioCaptureException {
         if (Build.VERSION.SDK_INT < AndroidVersions.API_30_ANDROID_11) {
             Ln.w("Audio disabled: it is not supported before Android 11");

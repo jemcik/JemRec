@@ -79,8 +79,7 @@ public final class FakeContext extends ContextWrapper {
         return builder.build();
     }
 
-    // @Override to be added on SDK upgrade for Android 14
-    @SuppressWarnings("unused")
+    @Override
     public int getDeviceId() {
         return 0;
     }

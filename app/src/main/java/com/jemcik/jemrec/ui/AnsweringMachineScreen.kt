@@ -52,7 +52,7 @@ private enum class AnswerDialog { DELAY, DND, LONGEST, NO_LIMIT, SIM, TEST, CARR
  * how a phone goes from "possible" to "works".
  */
 @Composable
-fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
+fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     val a by vm.answer.state.collectAsState()
     val haptics = LocalHapticFeedback.current
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
@@ -163,7 +163,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel) {
         )
     }
 
-    Column {
+    Column(modifier) {
         SettingsGroup {
             row {
                 val blocked = a.blocked

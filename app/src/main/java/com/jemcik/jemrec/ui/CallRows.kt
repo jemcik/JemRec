@@ -151,7 +151,7 @@ private fun MemoCallRow(call: CallHistory.Call, day: Day) {
     val scheme = MaterialTheme.colorScheme
     Column(Modifier.memoCard(c.card, c.cardEdge)) {
         RowHead(
-            Modifier.memoHead(),
+            modifier = Modifier.memoHead(),
             avatar = { CallerAvatar(call.label, call.photo, size = RowPhoto) },
         ) {
             NameLine(call.label, call.favorite, MaterialTheme.typography.bodyLarge)
@@ -166,7 +166,7 @@ private fun DeckCallRow(call: CallHistory.Call, day: Day) {
     val scheme = MaterialTheme.colorScheme
     val mono = deckMono
     RowHead(
-        Modifier.deckTrack(),
+        modifier = Modifier.deckTrack(),
         avatar = { CallerAvatar(call.label, call.photo, size = RowPhoto) },
     ) {
         NameLine(call.label, call.favorite, MaterialTheme.typography.bodyLarge)
@@ -185,7 +185,7 @@ private fun MultitrackCallRow(call: CallHistory.Call, day: Day) {
     val c = multitrackColors()
     val hue = hueFor(call.label, c)
     RowHead(
-        Modifier.multitrackRow(c),
+        modifier = Modifier.multitrackRow(c),
         avatar = {
             CallerAvatar(call.label, call.photo, size = RowPhoto, container = hue.copy(alpha = c.tint), content = hue, edge = hue.copy(alpha = c.edge))
         },
