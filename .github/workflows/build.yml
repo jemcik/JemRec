@@ -62,6 +62,11 @@ jobs:
       - name: Tests
         run: ./gradlew test
 
+      # Error Prone over all of the daemon's Java, an analysis only: the jar in
+      # the APK is still built by shellserver/build.sh (shellserver/tests).
+      - name: Error Prone on the daemon
+        run: ./gradlew :daemon-tests:errorProne
+
       - name: Lint
         run: ./gradlew lint
 

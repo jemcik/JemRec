@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What lint is told, and why. Everything lint reports is an error here
+  (warningsAsErrors in app/build.gradle.kts), and what was already there when
+  the gate went in is listed in lint-baseline.xml, so only something NEW fails
+  the build. This file is for what is wrong for this app by design, or not
+  about this app's code at all.
+-->
+<lint>
+    <!--
+      The screens take MainViewModel and hand it to the parts they draw - the
+      way JemRec's UI is built, and what the screen tests rely on: they give
+      the real composables a real view model that only the taps reach
+      (ui/screens/ScreenTest.kt). The rule wants every screen hoisted into
+      state and callbacks instead; that is a rewrite of the whole UI, not a
+      fix, and a new screen should look like the ones beside it.
+    -->
+    <issue id="ComposeViewModelForwarding" severity="ignore" />
+
+    <!--
+      These compare the build with whatever is newest on the internet today:
+      a library, AGP or an API level released next week would fail a build
+      that did not change. Versions are chosen by hand and written down where
+      they are set (targetSdk 36: see app/build.gradle.kts).
+    -->
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="OldTargetApi" severity="ignore" />
+
+    <!--
+      Found inside two libraries, not in JemRec's code: BouncyCastle's PKIX
+      jar and libadb, whose TLS to adbd on the phone itself is authenticated
+      by the pairing, not by a certificate authority. A trust-all manager in
+      JemRec's own sources is still reported.
+    -->
+    <issue id="TrustAllX509TrustManager">
+        <ignore regexp="bcpkix-jdk15to18|libadb-android" />
+    </issue>
+</lint>

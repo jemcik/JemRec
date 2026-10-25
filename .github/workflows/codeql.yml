@@ -1,0 +1,72 @@
+name: codeql
+
+# GitHub's code scanning over the app's Kotlin and the daemon's Java, with the
+# security-and-quality queries. Why here: every review of a feature so far has
+# turned up bugs by chance, and one of them was a security advisory about an
+# exported component (GHSA-hf4v-7hwh-hx7w) - the kind of thing a data-flow
+# query finds every time instead. Free for a public repository. Findings go to
+# the Security tab, and to pull requests as annotations.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly as well: the query packs grow, and old code can fail a new query.
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # As in build.yml: JDK 21 exactly, and the SDK the daemon's build.sh
+      # compiles against.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install the SDK the app and the daemon need
+        run: |
+          sdkmanager --install "platforms;android-37.0" || sdkmanager --install "platforms;android-37"
+          sdkmanager --install "platforms;android-36" || sdkmanager --install "platforms;android-36.0"
+          sdkmanager --install "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          # Manual, not autobuild: the daemon is compiled by shellserver/build.sh
+          # from a Gradle task, and only a traced build of our own sees it.
+          build-mode: manual
+          queries: security-and-quality
+
+      # CodeQL reads the code by watching the compilers run, so every compile
+      # has to happen here, in this process tree: no Gradle daemon, no build
+      # cache, nothing up to date, and Kotlin compiled in-process rather than
+      # in its own daemon.
+      - name: Build, watched by CodeQL
+        run: >
+          ./gradlew --no-daemon --no-build-cache --rerun-tasks
+          -Pkotlin.compiler.execution.strategy=in-process
+          assembleDebug
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:java-kotlin

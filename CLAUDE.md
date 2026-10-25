@@ -23,6 +23,11 @@ Wireless debugging and starts a recorder that runs as the shell user
   `jemrec-api37.2`; boot with `-no-snapshot-save`). Ask before creating or
   deleting an AVD.
 - Pre-push hook (tests and lint): `git config core.hooksPath tools/hooks`.
+- `./gradlew lint` is a gate: a new warning fails it. Old ones sit in
+  `app/lint-baseline.xml` (`./gradlew updateLintBaseline` after fixing some);
+  `app/lint.xml` says what is off and why. `./gradlew :daemon-tests:errorProne`
+  is Error Prone over the daemon, analysis only. Reports:
+  [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#checks-beyond-the-tests).
 
 ## Generated files - edit the source, then regenerate
 

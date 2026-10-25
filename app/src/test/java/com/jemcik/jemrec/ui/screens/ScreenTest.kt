@@ -32,6 +32,10 @@ import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.LookChoice
 import com.jemcik.jemrec.ui.theme.Looks
 import org.junit.After
+import androidx.lifecycle.viewModelScope
+import android.os.Looper
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
 import com.google.common.util.concurrent.SettableFuture
 import org.junit.Before
 import org.junit.Rule
@@ -93,6 +97,32 @@ abstract class ScreenTest {
      *  answers, and no further. */
     fun viewModel(state: UiState = UiState(), answer: AnswerUi? = null) =
         MainViewModel(RuntimeEnvironment.getApplication(), state, answer, connectSession = { SettableFuture.create() })
+            .also { models += it }
+
+    private val models = mutableListOf<MainViewModel>()
+
+    /**
+     * Each view model's work stopped, and waited for, before Robolectric
+     * takes the app down. Left running, a refresh on the IO dispatcher
+     * outlived its test and called into a context already gone - measured
+     * under JaCoCo (-Pcoverage), whose slower run made BehaviourTest fail
+     * with "activityThread is null" in CallLogLookup.granted.
+     *
+     * The waiting keeps the main looper turning: part of that work finishes
+     * on the main thread, and blocking it to join (runBlocking) hung the
+     * whole run. Capped, so a stuck job cannot hang it either.
+     */
+    @After fun stopViewModels() {
+        models.forEach { it.viewModelScope.cancel() }
+        val main = shadowOf(Looper.getMainLooper())
+        val until = System.currentTimeMillis() + 5_000
+        while (models.any { !it.viewModelScope.coroutineContext.job.isCompleted } &&
+            System.currentTimeMillis() < until
+        ) {
+            main.idle()
+            Thread.sleep(5)
+        }
+    }
 
     /**
      * Whether WhatsApp, Telegram and Viber are "installed", so their icons

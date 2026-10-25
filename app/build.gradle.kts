@@ -1,3 +1,4 @@
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -83,6 +84,14 @@ android {
             // once and can never be upgraded by a properly signed one.
             if (signingReady) signingConfig = signingConfigs.getByName("release")
         }
+        debug {
+            // Coverage of the unit and screen tests, only when asked for:
+            // ./gradlew createDebugUnitTestCoverageReport -Pcoverage. A report
+            // to read, not a gate, and JaCoCo slows every test it watches -
+            // so a plain build, and the release build F-Droid reproduces,
+            // carry none of it.
+            enableUnitTestCoverage = providers.gradleProperty("coverage").isPresent
+        }
     }
 
     compileOptions {
@@ -91,6 +100,19 @@ android {
     }
 
     buildFeatures { compose = true }
+
+    // Lint as a gate, not noise. Until 0.21 it ran on every build with its
+    // warnings ignored - 108 of them, nobody reading. Now every warning is an
+    // error, the ones that were already there are listed in lint-baseline.xml
+    // (regenerate with ./gradlew updateLintBaseline after fixing some), and
+    // lint.xml says what is off by design and why. So a NEW warning fails the
+    // build, locally and in CI.
+    lint {
+        lintConfig = file("lint.xml")
+        baseline = file("lint-baseline.xml")
+        warningsAsErrors = true
+        abortOnError = true
+    }
 
     // No Google Play dependency metadata. By default AGP writes an encrypted
     // list of the app's dependencies into the APK Signing Block at signing
@@ -159,6 +181,13 @@ android {
             // Robolectric's Android 16 sets up a file descriptor through a
             // JDK internal that Java 21 keeps closed unless asked.
             test.jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
+            // With -Pcoverage: Robolectric loads the app's classes through a
+            // class loader of its own, which JaCoCo skips unless told - and
+            // then the screens the screen tests draw count as never run.
+            test.extensions.findByType(JacocoTaskExtension::class.java)?.apply {
+                isIncludeNoLocationClasses = true
+                excludes = listOf("jdk.internal.*")
+            }
         }
     }
 }
@@ -242,6 +271,13 @@ dependencies {
     // Keeps the shell-side recorder alive without a permanent foreground
     // service: a periodic job revives it when it is down and Wi-Fi is around.
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Compose's own pitfalls, which Android Lint does not know: Slack's rules
+    // for modifiers (passed on, in the right place), state hoisting, unstable
+    // parameters and the like. Only lint loads it - the release build's
+    // lintVital included, which reads the sources and writes nothing into the
+    // APK, so the reproducible bytes are untouched.
+    lintChecks("com.slack.lint.compose:compose-lint-checks:1.6.1")
 
     testImplementation("junit:junit:4.13.2")
     // Mockito stands in for the two Android types the pure-logic tests cannot
