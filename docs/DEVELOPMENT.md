@@ -186,9 +186,9 @@ Reports, not gates - run them when wanted:
   each. 427 of its 478 changes now fail a test (89%, up from 79% when it
   went in). Of the 51 left, 38 change only what is logged, and 13 change
   nothing a call can meet or a listener hear: a bound the chime's loop never
-  reaches, an equality that cannot occur (a ring in the first three seconds
-  after boot), the whole chime's sign or its octave's phase - each one read
-  in the report (2026-10-26). Some tests read records the Honor itself
+  reaches, an equality that cannot occur, a go-ahead counted from 0 (which
+  needs a ring in the first three seconds after boot), the whole chime's
+  sign or its octave's phase - each one read in the report (2026-10-26). Some tests read records the Honor itself
   printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
 
 None of this changes what ships: built with all of it in place, the release

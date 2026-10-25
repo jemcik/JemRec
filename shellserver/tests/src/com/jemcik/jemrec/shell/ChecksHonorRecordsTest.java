@@ -2,6 +2,7 @@ package com.jemcik.jemrec.shell;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -61,8 +62,18 @@ public class ChecksHonorRecordsTest {
 
     @Test
     public void stoppedIsReadFromTheRealUserZeroLines() throws IOException {
+        String running = dump("honor-package-user0-running.txt");
+        String stopped = dump("honor-package-user0-stopped.txt");
+        assertFalse(Checks.packageStopped(running));
+        assertTrue(Checks.packageStopped(stopped));
         // The Honor also prints iAwareStopped= on that line, which is not it.
-        assertFalse(Checks.packageStopped(dump("honor-package-user0-running.txt")));
-        assertTrue(Checks.packageStopped(dump("honor-package-user0-stopped.txt")));
+        // On these two lines the flags agree, so each is read again with its
+        // iAwareStopped turned the other way: stopped= still decides.
+        String runningMarked = running.replace("iAwareStopped=false", "iAwareStopped=true");
+        String stoppedUnmarked = stopped.replace("iAwareStopped=true", "iAwareStopped=false");
+        assertNotEquals(running, runningMarked);
+        assertNotEquals(stopped, stoppedUnmarked);
+        assertFalse(Checks.packageStopped(runningMarked));
+        assertTrue(Checks.packageStopped(stoppedUnmarked));
     }
 }
