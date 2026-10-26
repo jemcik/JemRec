@@ -592,4 +592,18 @@ public class ChecksTest {
         assertEquals(-1, Checks.trackOutput("Local log:" + track, 31494));
         assertEquals(-1, Checks.trackOutput("\nInput thread 0x7a:" + track, 31494));
     }
+
+    @Test
+    public void aRecfileSaysWhichWayAnAppsCallWentOnlyWhereTelecomSaid() {
+        assertEquals("_in", Checks.recfileTag(true, null, null));
+        assertEquals("_out", Checks.recfileTag(false, null, null));
+        // WhatsApp: not through Telecom, the way left to its notification.
+        assertEquals("_voip-com.whatsapp", Checks.recfileTag(false, "com.whatsapp", null));
+        // Google Meet, through Telecom.
+        assertEquals("_in_voip-com.google.android.apps.tachyon",
+                Checks.recfileTag(true, "com.google.android.apps.tachyon", true));
+        assertEquals("_out_voip-com.google.android.apps.tachyon",
+                Checks.recfileTag(false, "com.google.android.apps.tachyon", false));
+    }
 }
+

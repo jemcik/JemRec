@@ -57,8 +57,15 @@ import java.util.Set;
  * both sides recorded clearly, both directions, and the other person heard
  * the user throughout every call.
  *
+ * GOOGLE MEET is one of these too, though Android's call service carries its
+ * calls and the call state reports them as phone calls: CallStates leaves
+ * them here. On the same Honor, 2026-10-26, Meet played its calls as voice-call
+ * audio (AAudio, flags 0) and this copy had the other side of two calls and a
+ * meeting, while Meet's own microphone stayed unsilenced.
+ *
  * WHEN IS IT A CALL: the audio mode at MODE_IN_COMMUNICATION, which every VoIP
- * app sets and TelephonyCallback never reports - AND an app on the list both
+ * app sets and TelephonyCallback reports for none of them but those whose
+ * calls go through Telecom, Meet's (above) - AND an app on the list both
  * playing voice-call audio and capturing at once. Mode alone also comes from
  * a voice message played at the ear; capturing is what a call has and a
  * message does not. Its end is the mode leaving, confirmed after a moment,
@@ -98,6 +105,15 @@ final class Voip {
 
     static boolean armed() {
         return policy != null;
+    }
+
+    /** The switched-on app whose call the watch is following, or null. A
+     *  call that began while a phone call was recorded is followed but not
+     *  recorded; Main records it when the phone call ends. On the handler's
+     *  thread, as the watch is. */
+    static @Nullable String followedApp() {
+        Watch w = watch;
+        return w == null ? null : w.active;
     }
 
     /** "com.whatsapp,com.viber.voip" - the environment's form and the command's. */

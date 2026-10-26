@@ -176,7 +176,7 @@ internal object DemoRecordings {
         Call(26 * 60, false, "Priya Raman", "+919820098200", 158, 1_258_291),
         Call(2 * 24 * 60 + 3 * 60, true, "Daniel Okafor", "+2348031234567", 2462, 18_664_653),
         Call(4 * 24 * 60 + 90, false, "477", "477", 79, 618_496),
-        Call(9 * 24 * 60 + 5 * 60, true, "Sofia Marchetti", "+390612345678", 534, 4_089_446),
+        Call(9 * 24 * 60 + 5 * 60, true, "Sofia Marchetti", "+390612345678", 534, 4_089_446, app = "meet"),
         Call(23 * 24 * 60 + 7 * 60, false, null, null, 15, 120_832),
     )
 

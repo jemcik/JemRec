@@ -21,6 +21,7 @@ this one is - or to check that it does what it says.
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
   [messenger calls](#messenger-calls) ·
   [phone calls through the mixer](#phone-calls-that-play-through-the-mixer) ·
+  [Google Meet and other apps' calls](#google-meet-and-other-apps-calls-through-telecom) ·
   [the answering machine](#the-answering-machine) ·
   [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
   [playing in the background](#playing-in-the-background) · [three looks](#three-looks) ·
@@ -396,8 +397,9 @@ another app.
 ## Messenger calls
 
 WhatsApp, Telegram, Signal and Viber calls can be recorded too, both sides,
-each app switched on separately in Settings. Nothing is recorded from any of
-them until you do.
+each app switched on separately in Settings - and Google Meet's calls and
+meetings, though Meet reaches the recorder another way (below). Nothing is
+recorded from any of them until you do.
 
 **Android 14 or newer.** Copying another app's call audio takes
 `CAPTURE_VOICE_COMMUNICATION_OUTPUT`, and stock Android gives the shell that
@@ -426,8 +428,9 @@ is on the left channel, you on the right.
 - **An app can refuse.** Android lets an app mark its audio as not capturable,
   and honours that whatever the recorder holds. JemRec does not try to get
   round it.
-- **Not in the call log.** Android's call log has no messenger calls, so their
-  recordings are in Recordings, marked with the app's icon, and not in the Calls tab.
+- **Not phone calls.** Android's call log has no messenger calls - Google
+  Meet's are in it, and JemRec leaves them out (below) - so their recordings
+  are in Recordings, marked with the app's icon, and not in the Calls tab.
   *Whose calls to keep* does not apply to them: the app's switch is the rule.
 - **Who called.** Only the app's own call notification says. *Show who
   called* reads it, with notification access, which Android grants to all
@@ -439,8 +442,8 @@ is on the left channel, you on the right.
 
 Tested on an Honor (MagicOS 11, Android 17) with Viber, Telegram and WhatsApp,
 both directions: both sides recorded, the caller named, and the other person
-heard the call throughout. Signal takes the same path and has not been tested
-yet.
+heard the call throughout; and with Google Meet, calls both ways and a meeting
+(below). Signal takes the same path and has not been tested yet.
 
 ## Phone calls that play through the mixer
 
@@ -484,6 +487,83 @@ too, as with messenger calls. The answering machine works on such calls as
 well (above, in its own section).
 
 Not known yet: which other phones carry Wi-Fi Calling this way.
+
+Only a phone call goes this way: a call Telecom holds as the phone's own.
+Google Meet's calls are in "communication" mode too, and up to 0.21 they were
+recorded through here as phone calls (next).
+
+## Google Meet, and other apps' calls through Telecom
+
+Google Meet does not play its calls the messengers' way. It puts them through
+Telecom, Android's call service, on a "self-managed" account of its own - so do
+Gmail and Slack, and `dumpsys telecom` on the Honor lists all three. Telecom
+then reports Meet's calls in the call state the recorder watches: ringing,
+off-hook, idle, as for a phone call. Meet even writes them into the phone's
+call log, with the other person's number.
+
+So 0.21 took them for phone calls. Measured on the Honor (MagicOS 11,
+Android 17), 2026-10-26, with Meet on another phone: an incoming and an
+outgoing call and a meeting were each recorded as a phone call - both sides,
+through the mixer (above), since Telecom put the phone in "communication"
+mode for them - with no switch for it, named like phone calls, nothing saying
+they were Meet's. And a Meet call the other person declined, followed at once
+by their phone call back, came out as one recording: their call rang before
+the call state ever went idle, the recording set up for Meet ran on, and their
+side of the phone call was not in it.
+
+Telecom knows which of its calls are the phone's own ("managed"):
+`TelecomManager.isInManagedCall`, which the shell may ask. Now a ring or an
+off-hook while Telecom holds no phone call is another app's call, and the
+recorder leaves it to the messenger watch (above), which records it only if
+that app is switched on - Google Meet is on the list, off until you turn it
+on; Gmail and Slack are not. The answering machine never counts such a ring
+either - nor could it act on one: JemRec's call tracker is not bound for
+self-managed calls (`dumpsys telecom`, the same day), so no go-ahead comes.
+
+- **A phone call during an app's call** is a phone call: it rings with
+  Telecom holding it, and is recorded on its own - once the Meet call ends, if
+  that one is being recorded, as with any messenger call.
+- **A phone call hung up while the app's call goes on** gets no idle: the
+  call state stays off-hook for the app's call. The audio mode changes, though,
+  and a change with no phone call left in Telecom ends the phone call's
+  recording, confirmed as any end is. The same holds for a WhatsApp call taken
+  over a phone call: its "communication" mode used to count as the phone call
+  still being up (found reading the code). The app's call, if switched on, is
+  recorded from then.
+- **Which way.** Meet's ring reaches the recorder through Telecom, so it
+  knows whether a Meet call rang before it began, and writes that into the
+  recording's name; the app takes it over Meet's notifications, and for a
+  call that rang, the caller's name from the ring. Those notifications name
+  one caller two ways - the ring by the person's name, the in-call
+  notification by their account (the Honor, 2026-10-26) - which the
+  notification rule read as a missed ring and a call placed to someone else:
+  every incoming Meet call came out outgoing.
+- **The call log.** The Calls tab, the names of phone recordings, the
+  missed-recording check and the self-test read only the rows of the phone's
+  own account (Telephony's, `com.android.phone`); a Meet call in the call log
+  was otherwise a phone call that was "not recorded".
+- **Telecom cannot be asked** - an exception, a phone without it: every call
+  is a phone call, as before.
+
+Measured on the Honor with 0.22, 2026-10-26, Meet switched on: an incoming
+and an outgoing Meet call and a meeting were each recorded as Meet's, both
+sides (-23 to -26 dB in speech), each named from Meet's notification, the
+incoming one incoming - Telecom's ring - and Meet's microphone never
+silenced. A Meet call the other person declined, then their phone call back,
+made two recordings, the phone call with both sides (theirs -26 dB). The
+Calls tab listed only the phone calls, and no call was reported unrecorded.
+A meeting's notification names no person; its recording is called what Meet
+calls it, "Your video call".
+
+Measured on the emulators, Android 12, 13 and 17, with a stand-in from the
+debug build - a call of its own on a self-managed account, as Meet's are: the
+call state went off-hook for it there too, and the recorder left it alone; a
+contact's phone call rung in over it was recorded on its own, and ended where
+it was hung up - on 17, its log showed, with the stand-in call holding the
+audio mode and no phone call left in Telecom; and the
+stand-in's row in the call log was not counted as a call that went
+unrecorded - a row Android 12 and 13 wrote, and the check wrote on 17, whose
+emulator logs no such call (`tools/emulator_checks.py`, app-call).
 
 ## The answering machine
 
@@ -668,8 +748,9 @@ recording says why, where JemRec knows:
   past that, a recording deleted or a call left out looks exactly the same.
 - **No recording** - from before that record began, with no guess at why.
 
-Missed, declined and blocked calls are marked as such. The tab needs call-log
-access, the same optional permission that names callers in the list.
+Missed, declined and blocked calls are marked as such. Calls Google Meet puts
+in the call log are not listed: they are not phone calls (above). The tab needs
+call-log access, the same optional permission that names callers in the list.
 
 **Finding a call.** Both tabs can be searched - by name or number, and on
 Recordings by the time the row shows - and narrowed by chips: favourites,

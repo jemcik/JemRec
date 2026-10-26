@@ -308,14 +308,15 @@ object RecordingSaver {
     }
 
     /** A messenger call, named for its app and - when its notification said
-     *  - its caller and direction. See VoipCallNotes. */
+     *  - its caller and direction; the direction the recorder's, where it
+     *  knew (VoipApps.directionOf). See VoipCallNotes. */
     private suspend fun saveMessenger(
         context: Context,
         recfile: String,
         startedAt: Date,
         app: VoipApps.App,
     ): Outcome {
-        val note = VoipCallNotes.find(context, app.pkg, startedAt.time)
+        val note = VoipCallNotes.find(context, app.pkg, startedAt.time, VoipApps.directionOf(recfile))
         val format = FileNames.format(context)
         val name = FileNames.buildVoip(format, startedAt.time, note?.incoming, app.tag, note?.name)
         val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), ledger = false) {

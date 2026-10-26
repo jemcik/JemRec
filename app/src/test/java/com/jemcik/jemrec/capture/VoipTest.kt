@@ -19,6 +19,36 @@ class VoipTest {
         assertNull(VoipApps.forRecfile("jemrec_rec_1795000000000_in.dat"))
         // Not on the list, and still saved as a messenger call.
         assertEquals("Messenger", VoipApps.forRecfile("jemrec_rec_1_voip-org.example.chat.dat")?.label)
+        // Google Meet: its package is its old name, from Duo.
+        val meet = VoipApps.forRecfile("jemrec_rec_1_voip-com.google.android.apps.tachyon.dat")
+        assertEquals("Google Meet", meet?.label)
+        assertEquals("meet", meet?.tag)
+        assertEquals("meet", FileNames.parse("20261026_132924_out_meet_Priya Raman.ogg")?.app)
+        // Which way, where the recorder knew (Meet's calls, through Telecom).
+        assertEquals(true, VoipApps.directionOf("jemrec_rec_1_in_voip-com.google.android.apps.tachyon.dat"))
+        assertEquals(false, VoipApps.directionOf("jemrec_rec_1_out_voip-com.google.android.apps.tachyon.dat"))
+        assertEquals("Google Meet", VoipApps.forRecfile("jemrec_rec_1_in_voip-com.google.android.apps.tachyon.dat")?.label)
+        assertEquals(1L, RecordingSaver.startMillis("jemrec_rec_1_in_voip-com.google.android.apps.tachyon.dat"))
+        assertNull(VoipApps.directionOf("jemrec_rec_1_voip-com.whatsapp.dat"))
+    }
+
+    @Test fun anIncomingMeetCallIsIncomingThoughItsNotesNameTwoPeople() {
+        // As the Honor stored them, 2026-10-26: the ring 7 s before the
+        // recording named the caller, the in-call notification their account.
+        val meet = "com.google.android.apps.tachyon"
+        val notes = listOf(
+            Note(meet, start - 7 * second, "Priya Raman", true),
+            Note(meet, start - 1 * second, "priyar", null),
+        )
+        assertEquals("the notes alone read it as outgoing", false, VoipCallNotes.pick(notes, meet, start)?.incoming)
+        val call = VoipCallNotes.pick(notes, meet, start, incoming = true)!!
+        assertEquals(true, call.incoming)
+        assertEquals("the name the phone showed as it rang", "Priya Raman", call.name)
+        // Placed by the user: the ring before it was another call's.
+        assertEquals("priyar", VoipCallNotes.pick(notes, meet, start, incoming = false)?.name)
+        // No notes - Show who called off - and still the way the recorder knew.
+        assertEquals(true, VoipCallNotes.pick(emptyList(), meet, start, incoming = true)?.incoming)
+        assertNull(VoipCallNotes.pick(emptyList(), meet, start))
     }
 
     @Test fun aCallThatRangFirstWasIncoming() {

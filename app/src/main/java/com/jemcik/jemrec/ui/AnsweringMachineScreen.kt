@@ -377,8 +377,9 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                 "then a beep. Their message is saved like any recording, marked as a message, " +
                 "and a notification tells you. While they speak you can still take the call: " +
                 "Talk to them in the notification, or unmute on the call screen.",
-            "It answers phone calls only - not WhatsApp, Telegram or Viber calls - and never " +
-                "while you are on another call, a messenger call or in a meeting, or roaming, or " +
+            "It answers phone calls only - not WhatsApp, Telegram, Viber or Google Meet " +
+                "calls - and never while you are on another call, a messenger call or in a " +
+                "meeting, or roaming, or " +
                 "for a day after you call an emergency number. If JemRec cannot tell who is " +
                 "calling, it lets the phone ring.",
             "JemRec records your greeting the way it records calls, through its recorder, so it " +

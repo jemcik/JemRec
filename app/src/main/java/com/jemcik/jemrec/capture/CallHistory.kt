@@ -213,11 +213,15 @@ object CallHistory {
                 CallLog.Calls.TYPE,
                 CallLog.Calls.NUMBER,
                 CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
             ),
             null, null,
             "${CallLog.Calls.DATE} DESC",
         )?.use { cursor ->
             while (cursor.moveToNext()) {
+                // Phone calls only: Meet's, in the call log too, are under
+                // Messenger calls, and are not in this tab (CallLogLookup.isPhoneCall).
+                if (!CallLogLookup.isPhoneCall(cursor.getString(5))) continue
                 val name = cursor.getString(4)?.takeIf { it.isNotBlank() }
                 val number = cursor.getString(3)?.takeIf { it.isNotBlank() }
                 out += Logged(

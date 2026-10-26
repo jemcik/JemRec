@@ -32,6 +32,11 @@ through the real app and daemon, checking what each one leaves behind:
   answer-takeover-ask-first  in Ask first, taking over a call the machine
               answered keeps what was said as the message, and asks before
               recording the rest
+  app-call    another app's call through Telecom, as Google Meet's are (a
+              stand-in from the debug build) is not taken for a phone call; a
+              contact's phone call rung in over it is recorded, exactly, and
+              ends where it is hung up though the app's call goes on; and the
+              app's call, in the call log, is not counted as a missed recording
   waveform    a call's 800 levels are worked out and kept as it is saved,
               so its row has its waveform the first time it is drawn
   background-playback  a recording played from its row goes on with the
@@ -635,6 +640,78 @@ def answer_during_voip():
     return "rang on, unanswered (audio modes seen during it: " + ",".join(modes) + ")"
 
 
+def stand_in_down():
+    """No stand-in call in Telecom. phone_idle cannot say: telephony's own
+    state stays idle through a self-managed call (the Android 17 AVD,
+    2026-10-26), while Telecom lists it."""
+    return f"tpac=ComponentInfo{{{PKG}/" not in sh("dumpsys telecom")
+
+
+def end_app_call():
+    """End the stand-in call - and if it will not end, stop the app, whose
+    calls Telecom then drops (measured). Left up, it holds Telecom's call
+    state off-hook, so a later phone call's off-hook never reaches the
+    recorder, and no_call_left cannot reach it."""
+    try:
+        diag("appcall", "--es", "do", "end")
+        wait_for(stand_in_down, 10, "")
+    except Exception:  # a diag that never answers too: the app may be gone
+        sh(f"am force-stop {PKG}")
+        wait_for(stand_in_down, 10, "the stand-in call to end with the app stopped")
+        sh(f"am start -n {PKG}/.MainActivity")
+
+
+def app_call():
+    since = device_ms() - 60_000
+    try:
+        # Inside the try: an "already up" is a stand-in left from before, which
+        # the finally ends.
+        report = diag("appcall", "--es", "do", "start")
+        assert "placed" in report, report
+        # The Honor, 2026-10-26: the call state went off-hook for Meet's calls,
+        # and each was recorded as a phone call.
+        wait_log(r"another app's call through Telecom is off-hook", 15, "the app's call to be left alone")
+        time.sleep(3)
+        assert "recording: started" not in log(), "the app's call was recorded as a phone call"
+        rings, answers = count(r"callwatch: ringing"), count(r"off-hook \(")
+        adb("emu", "gsm", "call", CONTACT)
+        wait_more(r"callwatch: ringing", rings, 15, f"{CONTACT} to ring over the app's call")
+        time.sleep(3)
+        sh("input keyevent KEYCODE_CALL")
+        wait_more(r"off-hook \(", answers, 15, f"the call from {CONTACT} to be answered")
+        time.sleep(6)
+        # Hung up from the far end; the app's call, held for it, stays up, and
+        # with it the call state's off-hook: only the audio mode says it ended.
+        adb("emu", "gsm", "cancel", CONTACT)
+        recorded = exact("_in_TestKept")
+    except Exception as e:
+        # Before the finally: ending the stand-in clears the log.
+        raise RuntimeError(f"{e}\n{what_happened()}") from e
+    finally:
+        end_app_call()
+    # In the call log under its own account, as Meet's calls are - and not
+    # among the calls the missed-recording check holds to a recording.
+    def logged():  # this call's row: an earlier stand-in's may be there too
+        return f"{PKG}/" in sh("content query --uri content://call_log/calls --projection subscription_component_name "
+                              f"--where \"date>={since + 60_000}\"")
+    try:
+        wait_for(logged, 10, "")
+        row = "logged by Android"
+    except TimeoutError:
+        # The Android 17 AVD logs none of this stand-in's calls (2026-10-26),
+        # though 12 and 13 do, and Meet's are logged on an Honor running 17:
+        # the row is written here the way Telecom writes one.
+        sh(f"content insert --uri content://call_log/calls --bind number:s:5550100 --bind type:i:2 "
+           f"--bind date:l:{since + 60_000} --bind duration:i:20 "
+           f"--bind subscription_component_name:s:{PKG}/{PKG}.diag.FakeAppCallService")
+        wait_for(logged, 10, "the app's call written into the call log")
+        row = "written into the call log by the check"
+    answered = diag("answered", "--el", "since", str(since))
+    assert "TestKept" in answered, f"the phone call is not among the answered calls: {answered}"
+    assert "5550100" not in answered, f"the app's call was taken for a phone call: {answered}"
+    return recorded + f"; the app's own call left alone, and its row ({row}) too"
+
+
 def device_ms():
     """The emulator's own clock, in milliseconds, as the app reads it."""
     return int(sh("date +%s").strip()) * 1000
@@ -1195,7 +1272,7 @@ def self_test():
 
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
-          answer_after_emergency, answer_takeover_ask_first, waveform, background_playback,
+          answer_after_emergency, answer_takeover_ask_first, app_call, waveform, background_playback,
           recently_deleted, recently_deleted_folder, looks, reinstall, cable, background]
 
 

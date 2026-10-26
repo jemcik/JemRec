@@ -125,7 +125,7 @@ abstract class ScreenTest {
     }
 
     /**
-     * Whether WhatsApp, Telegram and Viber are "installed", so their icons
+     * Whether WhatsApp, Telegram, Viber and Google Meet are "installed", so their icons
      * mark messenger calls as they do on a phone. A test of the rarer case -
      * an app uninstalled since, its name in words instead - turns it off.
      */
@@ -145,6 +145,7 @@ abstract class ScreenTest {
                 "com.whatsapp" to 0xFF25D366.toInt(),
                 "org.telegram.messenger" to 0xFF2AABEE.toInt(),
                 "com.viber.voip" to 0xFF7360F2.toInt(),
+                "com.google.android.apps.tachyon" to 0xFF00897B.toInt(),
             )) {
                 pm.installPackage(PackageInfo().apply { packageName = pkg; applicationInfo = ApplicationInfo().apply { packageName = pkg } })
                 pm.setApplicationIcon(pkg, ShapeDrawable(OvalShape()).apply { paint.color = colour })

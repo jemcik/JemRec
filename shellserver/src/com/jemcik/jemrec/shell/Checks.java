@@ -276,6 +276,22 @@ final class Checks {
         return mode == MODE_IN_COMMUNICATION && sdk >= SDK_VOICE_COPY;
     }
 
+    /**
+     * What follows the start in a rec-file name: "_in" or "_out" for a phone
+     * call; for an app's call "_voip-" and the app, after "_in" or "_out" where
+     * Telecom said which way it went - Google Meet's, whose ring the call watch
+     * hears: jemrec_rec_1793017768333_in_voip-com.google.android.apps.tachyon.dat.
+     * The app reads the app back from after "_voip-", and the way from before
+     * it (VoipApps); a messenger outside Telecom leaves the way to its
+     * notification, as before.
+     */
+    static String recfileTag(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming) {
+        if (app == null) {
+            return incoming ? "_in" : "_out";
+        }
+        return (appIncoming == null ? "" : appIncoming ? "_in" : "_out") + "_voip-" + app;
+    }
+
     /** Root mean square of one [channel] of the first [frames] frames of
      *  interleaved [pcm]. */
     static double channelRms(short[] pcm, int channels, int channel, int frames) {

@@ -84,4 +84,19 @@ class CallLogMatchTest {
         assertFalse(CallLogLookup.sameNumber(null, "477"))
         assertFalse(CallLogLookup.sameNumber("", ""))
     }
+
+    @Test fun onlyThePhonesOwnCallsArePhoneCalls() {
+        // As the Honor's call log has them, 2026-10-26.
+        assertTrue(CallLogLookup.isPhoneCall("com.android.phone/com.android.services.telephony.TelephonyConnectionService"))
+        assertFalse(
+            "Google Meet's calls are Meet's",
+            CallLogLookup.isPhoneCall(
+                "com.google.android.apps.tachyon/com.google.android.apps.tachyon.telecom.TachyonTelecomConnectionService",
+            ),
+        )
+        // A row from before Android kept the account: a phone call's, as all were.
+        assertTrue(CallLogLookup.isPhoneCall(null))
+        assertTrue(CallLogLookup.isPhoneCall(""))
+        assertFalse("not a prefix match", CallLogLookup.isPhoneCall("com.android.phonex/x"))
+    }
 }

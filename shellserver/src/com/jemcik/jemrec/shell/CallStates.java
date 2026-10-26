@@ -21,6 +21,20 @@ package com.jemcik.jemrec.shell;
  * current state being handed over at registration, which used to fire a
  * CALL_ENDED at every daemon start. And a real idle is confirmed against the
  * AUDIO MODE rather than the call state - see {@link #endCheck}.
+ *
+ * NOT EVERY CALL THE STATE REPORTS IS A PHONE CALL.
+ *
+ * An app can put its calls through Telecom, Android's call service, and the
+ * call state then rings and goes off-hook for them as for a phone call.
+ * Google Meet does (its own "self-managed" account; so do Gmail and Slack):
+ * on an Honor, Android 17, 2026-10-26, every Meet call and a meeting was taken
+ * for a phone call and recorded as one, with no switch for it. And when the
+ * other person declined a Meet call and phoned back at once, their call rang
+ * before the state ever went idle - so the declined Meet call and their phone
+ * call were one recording, and their side of the phone call was not in it.
+ * Telecom knows which calls are the phone's own ("managed"), so a ring or an
+ * off-hook while it holds none is another app's call: left to the messenger
+ * watch (Voip), which records it only if the user switched that app on.
  */
 final class CallStates {
 
@@ -41,6 +55,11 @@ final class CallStates {
         /** Whether telecom still holds a call's audio mode. */
         boolean audioInCall();
 
+        /** Whether Telecom holds a phone call - the phone's own, not an
+         *  app's (TelecomManager.isInManagedCall); null when it cannot be
+         *  asked, which counts as yes, as everything did before. */
+        @Nullable Boolean phoneCallInTelecom();
+
         /** An idle came, and the call is still up after it: whatever else
          *  took that idle for the end can think again. */
         void callGoesOn();
@@ -58,9 +77,72 @@ final class CallStates {
     private boolean sawRinging;
     private boolean inCall;
     private boolean endCheckPending;
+    /** Another app's call through Telecom rang, and has not gone off-hook. */
+    private boolean appRang;
+    /** Which way the app's call that is up went: whether it rang first. Null
+     *  with none up since the last idle. */
+    private @Nullable Boolean appCallIncoming;
 
     CallStates(Effects effects) {
         this.effects = effects;
+    }
+
+    /** Whether a ring is another app's call (appsCall). One that is, rang. */
+    boolean appsRinging() {
+        if (!appsCall("ringing")) {
+            return false;
+        }
+        appRang = true;
+        return true;
+    }
+
+    /** Whether an off-hook is another app's call (appsCall), and if it is,
+     *  which way it went: incoming if Telecom rang for it first. */
+    boolean appsOffHook() {
+        if (!appsCall("off-hook")) {
+            return false;
+        }
+        appCallIncoming = appRang;
+        appRang = false;
+        return true;
+    }
+
+    /**
+     * Which way the app's call that is up went - for Google Meet, which the
+     * app's own notifications cannot say: its ring names the caller by one
+     * name and its in-call notification by another (the Honor, 2026-10-26),
+     * and an incoming call read as a missed ring and a call placed to someone
+     * else. Null for none, and for an app's call that began during a phone
+     * call: the state, off-hook already, said nothing of it. Incoming, too,
+     * while an app's ring is up and its off-hook not yet heard: the
+     * messenger watch could find the call answered - the audio mode, the app
+     * playing and capturing - before telephony's off-hook reaches this
+     * thread, the two coming from different system services (read in the
+     * code, not seen: on the Honor, 2026-10-26, the off-hook came first in
+     * every Meet call), and a call it finds while the app's ring is up is
+     * that ring, answered.
+     */
+    @Nullable Boolean appCallIncoming() {
+        if (appCallIncoming != null) {
+            return appCallIncoming;
+        }
+        return appRang ? Boolean.TRUE : null;
+    }
+
+    /**
+     * Whether the call the state speaks of now - [event], "ringing" or
+     * "off-hook" - is another app's, not a phone call: Telecom holds no phone
+     * call. Asked before the event goes anywhere, the answering machine
+     * included. Said once each time, in the log, as nothing else will.
+     */
+    private boolean appsCall(String event) {
+        if (!Boolean.FALSE.equals(effects.phoneCallInTelecom())) {
+            return false;
+        }
+        // Worded so that tools/emulator_checks.py, counting "callwatch:
+        // ringing" and "off-hook (", never takes it for a phone call's.
+        effects.log("callwatch: another app's call through Telecom is " + event + " - not a phone call");
+        return true;
     }
 
     void ringing() {
@@ -76,6 +158,9 @@ final class CallStates {
     }
 
     void idle() {
+        // Nothing is up, an app's call included: its ring and its way go.
+        appRang = false;
+        appCallIncoming = null;
         if (!inCall) {
             if (sawRinging) {
                 // It rang and was never answered - missed, or declined.
@@ -123,7 +208,11 @@ final class CallStates {
             return;
         }
         endCheckPending = false;
-        if (effects.audioInCall()) {
+        // The audio mode is also a messenger's, or Meet's: a phone call hung up
+        // while one of those goes on leaves the mode in a call. Telecom saying
+        // it holds no phone call any more is the end, whatever the mode.
+        boolean audioUp = effects.audioInCall();
+        if (audioUp && !Boolean.FALSE.equals(effects.phoneCallInTelecom())) {
             // Still up. Telephony won't tell us again; keep watching the
             // audio mode, which will.
             endCheckPending = true;
@@ -132,8 +221,26 @@ final class CallStates {
             return;
         }
         inCall = false;
-        effects.log("callwatch: end confirmed (audio mode left in-call)");
+        // Which of the two, said: the audio mode's own line has just called
+        // the call still up.
+        effects.log(audioUp
+                ? "callwatch: end confirmed (no phone call left in Telecom; the audio mode is another app's call)"
+                : "callwatch: end confirmed (audio mode left in-call)");
         effects.callEnded();
+    }
+
+    /**
+     * The audio mode changed. A phone call hung up while another app's call
+     * goes on - Meet's, taken while the phone call was up - never gets an
+     * idle: the state stays off-hook for the app's call, and the phone call's
+     * recording would run on into it. So a change of mode with no phone call
+     * left in Telecom stands in for that idle, confirmed as any idle is.
+     */
+    void audioModeChanged() {
+        if (inCall && !endCheckPending && Boolean.FALSE.equals(effects.phoneCallInTelecom())) {
+            effects.log("callwatch: no phone call left in Telecom, though the state is still off-hook");
+            idle();
+        }
     }
 
     /** A phone call is up: off-hook, its end not yet confirmed. */

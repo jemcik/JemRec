@@ -59,6 +59,25 @@ object CallLogLookup {
         Manifest.permission.READ_CONTACTS,
     )
 
+    /**
+     * Whether a call log row is a phone call's - the phone's own calling,
+     * whose account is Telephony's (com.android.phone) - and not one an app
+     * put in the call log through Android's call service. Google Meet logs
+     * its calls that way, with the other person's number (the Honor,
+     * 2026-10-26); they are not phone calls: the recorder records them only
+     * as Meet's, under Messenger calls, and never as a phone call. Taken for
+     * phone calls, they named phone recordings, and each looked like a call
+     * that was never recorded. A row with no account at all - from before
+     * Android kept one - is a phone call's, as every row was. Pure.
+     */
+    internal fun isPhoneCall(account: String?): Boolean =
+        account.isNullOrBlank() || account.substringBefore('/') == TELEPHONY
+
+    /** The package of Telephony's own account, on stock Android and on the
+     *  Honor alike (com.android.phone/com.android.services.telephony.
+     *  TelephonyConnectionService, the Honor's call log, 2026-10-26). */
+    private const val TELEPHONY = "com.android.phone"
+
     /** Ringing can be long. Being answered cannot happen before dialling. */
     internal const val BEFORE_MS = 3 * 60 * 1000L
     internal const val AFTER_MS = 30 * 1000L
@@ -191,6 +210,7 @@ object CallLogLookup {
             CallLog.Calls.NUMBER,
             CallLog.Calls.CACHED_NAME,
             CallLog.Calls.DURATION,
+            CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
         )
         val out = mutableListOf<Entry>()
         context.contentResolver.query(
@@ -218,7 +238,9 @@ object CallLogLookup {
             val numberCol = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
             val nameCol = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
             val durationCol = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
+            val accountCol = cursor.getColumnIndexOrThrow(CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME)
             while (cursor.moveToNext()) {
+                if (!isPhoneCall(cursor.getString(accountCol))) continue
                 val type = cursor.getInt(typeCol)
                 val name = cursor.getString(nameCol)?.takeIf { it.isNotBlank() }
                 val number = cursor.getString(numberCol)?.takeIf { it.isNotBlank() }
@@ -253,7 +275,7 @@ object CallLogLookup {
         val out = mutableListOf<Long>()
         context.contentResolver.query(
             CallLog.Calls.CONTENT_URI,
-            arrayOf(CallLog.Calls.DATE),
+            arrayOf(CallLog.Calls.DATE, CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME),
             "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.TYPE} IN (?, ?)",
             arrayOf(
                 since.toString(),
@@ -262,7 +284,7 @@ object CallLogLookup {
             ),
             null,
         )?.use { cursor ->
-            while (cursor.moveToNext()) out += cursor.getLong(0)
+            while (cursor.moveToNext()) if (isPhoneCall(cursor.getString(1))) out += cursor.getLong(0)
         }
         return out
     }
@@ -452,6 +474,7 @@ object CallLogLookup {
                 CallLog.Calls.TYPE,
                 CallLog.Calls.NUMBER,
                 CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
             ),
             "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.TYPE} IN (?, ?)",
             arrayOf(
@@ -462,6 +485,7 @@ object CallLogLookup {
             "${CallLog.Calls.DATE} ASC",
         )?.use { cursor ->
             while (cursor.moveToNext()) {
+                if (!isPhoneCall(cursor.getString(5))) continue
                 val name = cursor.getString(4)?.takeIf { it.isNotBlank() }
                 val number = cursor.getString(3)?.takeIf { it.isNotBlank() }
                 out += LoggedCall(

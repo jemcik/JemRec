@@ -60,6 +60,10 @@ class SettingsSummaryTest {
         val on = installed.copy(voipEnabled = setOf("com.viber.voip", "com.whatsapp"))
         // In the order the apps are listed, not the order they were switched on.
         assertEquals("WhatsApp, Viber", messengerSummary(on))
+        assertEquals(
+            "WhatsApp, Google Meet",
+            messengerSummary(installed.copy(voipEnabled = setOf("com.google.android.apps.tachyon", "com.whatsapp"))),
+        )
     }
 
     @Test fun fileNamesSayWhatIsMissing() {

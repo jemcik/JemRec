@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-792 JVM tests, no device needed - 627 for the app and 165 for the daemon:
+806 JVM tests, no device needed - 629 for the app and 177 for the daemon:
 
     ./gradlew test
 
@@ -86,7 +86,7 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.21.1):
+emulator, for each Android version it claims (12, 13 and 17 for 0.22):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 
@@ -102,7 +102,11 @@ call ringing over a messenger call left to ring (a stand-in call from
 `shellserver/probe`, built by the script if need be), a caller left to ring
 in the day after an emergency call (the pause set as the call tracker sets it;
 no emergency number is dialled), and, in Ask first, a call taken over: the
-message kept and the rest asked about. Then a call's waveform, kept as it is
+message kept and the rest asked about. Then another app's call through
+Telecom, as Google Meet's are (a stand-in call of the debug build's own): left
+alone, a contact's phone call rung in over it recorded on its own and ended
+where it was hung up, and the stand-in's row in the call log not counted as a
+call gone unrecorded. Then a call's waveform, kept as it is
 saved; a recording played from its row going on with the screen off, named
 only "Call recording" while locked and by its caller again once unlocked,
 held back by a ringing call and playing on after it; a deleted recording

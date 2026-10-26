@@ -179,6 +179,29 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "voipanswer", "armed: the next messenger call is answered after $after s, for $minutes min; see files/voip-answer.log")
                     }
 
+                    // A stand-in for a Google Meet call, for tools/emulator_checks.py:
+                    //   --es op appcall --es do start|end
+                    "appcall" -> {
+                        val text = runCatching {
+                            if (intent.getStringExtra("do") == "end") FakeAppCall.end() else FakeAppCall.start(appContext)
+                        }.getOrElse { "failed: $it" }
+                        report(appContext, "appcall", text)
+                    }
+
+                    // The calls since [since] that the missed-recording check and
+                    // the self-test take for phone calls that went off-hook here,
+                    // for tools/emulator_checks.py:
+                    //   --es op answered --el since 1793016000000
+                    "answered" -> {
+                        val since = intent.getLongExtra("since", 0L)
+                        val calls = com.jemcik.jemrec.capture.CallLogLookup.answeredCallsSince(appContext, since)
+                        report(
+                            appContext, "answered",
+                            calls.joinToString("\n") { "${it.at} ${if (it.incoming) "in" else "out"} ${it.label}" }
+                                .ifEmpty { "none" },
+                        )
+                    }
+
                     // Set one of the app's preferences, for tools/emulator_checks.py:
                     //   --es op pref --es key file_names --es value DATE_AND_CALLER
                     //   --es op pref --es key rules_other_numbers --ez bool false

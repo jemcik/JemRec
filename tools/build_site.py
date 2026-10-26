@@ -1111,9 +1111,10 @@ SETUP = [
 
     ("h2", "Messenger calls"),
     ("p", "**Messenger calls**, in Settings, records WhatsApp, Telegram, Signal "
-          "and Viber calls too — both sides, the other person on the left channel "
-          "and you on the right. Each app has its own switch, and all are off "
-          "until you turn one on. The ones installed on your phone are listed."),
+          "and Viber calls too, and Google Meet calls and meetings — both sides, "
+          "the other person on the left channel and you on the right. Each app "
+          "has its own switch, and all are off until you turn one on. The ones "
+          "installed on your phone are listed."),
     ("p", "It needs **Android 14 or newer**. Before it, Android does not let the "
           "recorder copy another app's call audio, and Settings says so instead "
           "of offering switches that would record nothing."),
@@ -1123,22 +1124,31 @@ SETUP = [
           "speakerphone the other person is heard on your side as well. JemRec "
           "never takes the microphone from the call: if Android ever silences "
           "the app's own, JemRec lets go of its own at once."),
-    ("p", "These calls are not in the phone's call log, so their recordings are "
-          "in Recordings, marked with the app's icon, and not in the Calls tab. Whose "
-          "calls to keep does not apply to them — the app's switch is the rule."),
+    ("p", "These are not phone calls, so their recordings are in Recordings, "
+          "marked with the app's icon, and not in the Calls tab. Whose calls to "
+          "keep does not apply to them — the app's switch is the rule."),
+    ("p", "**Google Meet** puts its calls in the phone's call log, through "
+          "Android's own call service, and up to JemRec 0.21 they were taken for "
+          "phone calls: every Meet call and meeting was recorded, with no switch "
+          "for it. Now Meet is recorded only if you switch it on here, and its "
+          "calls stay out of the Calls tab. A phone call during a Meet call is "
+          "a phone call of its own, recorded on its own - from when the Meet call "
+          "ends, if that one is being recorded. Calls other apps put through "
+          "that service — Gmail's, Slack's — are not recorded."),
     ("p", "**Show who called** reads the caller's name, and whether the call rang "
           "first, from the app's own call notification — the only place it is "
           "said. That needs notification access, which Android grants to all "
           "notifications; JemRec keeps only that from the call notifications of "
           "the apps you switched on. It is granted over JemRec's own ADB "
           "session, so turning it on needs Wi-Fi, once."),
-    ("p", "Tested on an Honor with Viber, Telegram and WhatsApp, both directions. "
-          "Signal takes the same path and has not been tested yet."),
+    ("p", "Tested on an Honor with Viber, Telegram and WhatsApp, both directions, "
+          "and with Google Meet: calls both ways and a meeting. Signal takes the "
+          "same path and has not been tested yet."),
 
     ("h2", "The answering machine"),
     ("p", "**Answering machine**, in Settings, answers the phone calls you do not "
           "take, plays a greeting you recorded, and keeps what the caller says as "
-          "a recording. Phone calls only: not WhatsApp, Telegram or Viber calls. It is off until you turn it on, and it needs two things "
+          "a recording. Phone calls only: not WhatsApp, Telegram, Viber or Google Meet calls. It is off until you turn it on, and it needs two things "
           "first: your greeting, and the checks under *Test on this phone*."),
     ("p", "**Your greeting.** Tap **Record**, say it, and tap **Stop** — 30 "
           "seconds at most. JemRec trims the silence at both ends and evens the "
@@ -1296,7 +1306,9 @@ SETUP = [
           "its test call. JemRec remembers deleted and left-out calls for a "
           "week, so it says this only for the last week. **No recording** is an "
           "older call, or one from before JemRec kept track, with no guess at "
-          "why. Missed, declined and blocked calls are marked as such."),
+          "why. Missed, declined and blocked calls are marked as such. Calls "
+          "Google Meet puts in the call log are not phone calls and are not "
+          "listed: see Messenger calls."),
     ("p", "Its chips work as the Recordings tab's, with **Not recorded** for "
           "the calls that connected and were not recorded; its search finds a "
           "name or a number. When nothing matches, it says so."),
@@ -1485,7 +1497,8 @@ SETUP = [
         "**Answering machine** — off until you turn it on; see The answering "
         "machine.",
         "**Messenger calls** — a switch for each supported messenger installed, "
-        "and whether to show who called from their call notifications.",
+        "Google Meet included, and whether to show who called from their call "
+        "notifications.",
         "**Exact call tracking** — recordings start at the answer, and calls "
         "nobody answered are not kept. The answering machine needs it: with the "
         "machine on, turning it off asks whether to turn both off.",
@@ -1908,7 +1921,8 @@ def diagram() -> str:
 
 WHY = [
     ("both", "Both sides of every call",
-     "Phone calls, and WhatsApp, Telegram and Viber calls on Android 14 or newer."),
+     "Phone calls, and WhatsApp, Telegram, Viber and Google Meet calls on Android "
+     "14 or newer."),
     ("self", "No root, no computer, no second app",
      "The phone pairs with its own Wireless debugging and sets itself up, once, "
      "in a few minutes."),
@@ -1971,9 +1985,9 @@ FEATURES = [
      "numbers on their own switch.",
      "whose-calls-to-keep"),
     ("Messenger calls",
-     "WhatsApp, Telegram and Viber, both sides, each switched on separately, "
-     "with the caller&rsquo;s name from the app&rsquo;s notification. "
-     "Android 14+.",
+     "WhatsApp, Telegram, Viber, and Google Meet calls and meetings, both "
+     "sides, each switched on separately, with the caller&rsquo;s name from "
+     "the app&rsquo;s notification. Android 14+.",
      "messenger-calls"),
     ("See every call",
      "The Calls tab is your call log, each call with its recording &mdash; or, "
@@ -2035,6 +2049,13 @@ FAQ = [
      "about a second. On speakerphone, a messenger call&rsquo;s other person is "
      "heard on your side too: your side is the plain microphone, without the "
      "call app&rsquo;s echo cancellation."),
+    ("Does it record Google Meet?",
+     "Yes, calls and meetings, both sides, on Android 14 or newer &mdash; once "
+     "you switch Google Meet on under <em>Messenger calls</em>. Like the "
+     "messengers, it is off until you do. Meet puts its calls through "
+     "Android&rsquo;s own call service, and up to 0.21 JemRec took them for "
+     "phone calls and recorded every one, meetings included. Now a call is a "
+     "phone call only when Android says the phone itself is in one."),
     ("Will callers hear my greeting?",
      "On the two phones it has been tried on, yes. No app can play sound into a "
      "call, so the recorder does it as the shell: on the Honor through an output "
@@ -2106,7 +2127,7 @@ INDEX_BODY = f"""
   <div>
     <span class="eyebrow">Call recorder for Android 12 and newer</span>
     <h1>Both sides of every call. <span>No root.</span></h1>
-    <p class="lead">Phone calls, and WhatsApp, Telegram and Viber calls. No
+    <p class="lead">Phone calls, and WhatsApp, Telegram, Viber and Google Meet calls. No
        computer and no second app &mdash; the phone pairs with its own Wireless
        debugging and sets itself up.</p>
     {STORES}
@@ -2222,7 +2243,7 @@ INDEX_BODY = f"""
             <td><span class="no" aria-hidden="true">&ndash;</span>Android does not allow it</td></tr>
         <tr><td><strong>Android 14 and newer</strong></td>
             <td><span class="yes" aria-label="Yes">&#10003;</span></td>
-            <td><span class="yes" aria-hidden="true">&#10003;</span>WhatsApp, Telegram, Viber</td></tr>
+            <td><span class="yes" aria-hidden="true">&#10003;</span>WhatsApp, Telegram, Viber, Google Meet</td></tr>
       </table>
     </div>
     <ul class="table-card devices tested">
@@ -2232,8 +2253,9 @@ INDEX_BODY = f"""
       <li>OnePlus<span>LineageOS 23</span></li>
     </ul>
   </div>
-  <p class="muted works-note">Signal takes the same path as the other messengers
-     and has not been tested yet.</p>
+  <p class="muted works-note">Google Meet was tested on the Honor: calls both ways
+     and a meeting. Signal takes the same path as the other messengers and has
+     not been tested yet.</p>
   <div class="note info">
     <p><strong>Four is not a compatibility list.</strong> The one thing nobody
        can promise for a phone they have not held is its audio hardware: some
@@ -2362,10 +2384,10 @@ HOW_BODY = f"""
 
   <h2 id="what-it-does">What it does</h2>
 
-  <h3>WhatsApp, Telegram and Viber calls too</h3>
-  <p>Messenger calls, both sides, each app switched on separately &mdash; and
+  <h3>WhatsApp, Telegram, Viber and Google Meet calls too</h3>
+  <p>Messenger calls and Google Meet, both sides, each app switched on separately &mdash; and
      the caller&rsquo;s name, if you let JemRec read the app&rsquo;s call
-     notification. Tested with WhatsApp, Telegram and Viber; Signal takes the
+     notification. Tested with WhatsApp, Telegram, Viber and Google Meet; Signal takes the
      same path and is not tested yet. Android allows this from version 14; on
      an older one, Settings says so.</p>
 
@@ -2537,7 +2559,8 @@ PRIVACY_BODY = f"""
             name it. Turning tracking off deletes it.</td></tr>
     <tr><td>Messenger callers</td>
         <td>Only if you turn on Show who called for messenger calls: from the
-            call notifications of the messengers whose calls you record, the
+            call notifications of the apps whose calls you record &mdash; the
+            messengers and Google Meet &mdash; the
             caller&rsquo;s name, the time, and whether the call rang first, for
             the last 30 calls, in the app&rsquo;s private storage. A recording
             named by date alone keeps its caller&rsquo;s name there too, by file

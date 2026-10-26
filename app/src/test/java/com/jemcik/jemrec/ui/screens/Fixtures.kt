@@ -106,7 +106,9 @@ object Fixtures {
         autoDeleteAfterDays = 90,
         autoDeleteShorterThan = 10,
         voipSupported = true,
-        voipInstalled = VoipApps.KNOWN.filter { it.pkg in setOf("com.whatsapp", "org.telegram.messenger", "com.viber.voip") },
+        voipInstalled = VoipApps.KNOWN.filter {
+            it.pkg in setOf("com.whatsapp", "org.telegram.messenger", "com.viber.voip", "com.google.android.apps.tachyon")
+        },
         voipEnabled = setOf("com.whatsapp", "org.telegram.messenger"),
         voipNames = true,
     )

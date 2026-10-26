@@ -817,9 +817,9 @@ fun MessengerCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier =
     Column(modifier) {
         if (!state.voipSupported) {
             Text(
-                "WhatsApp, Telegram, Signal and Viber calls cannot be recorded on this " +
-                    "phone: its Android does not let the recorder copy another app's call " +
-                    "audio. Android allows it from version 14.",
+                "WhatsApp, Telegram, Signal, Viber and Google Meet calls cannot be recorded " +
+                    "on this phone: its Android does not let the recorder copy another app's " +
+                    "call audio. Android allows it from version 14.",
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -827,7 +827,7 @@ fun MessengerCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier =
         }
         if (state.voipInstalled.isEmpty()) {
             Text(
-                "None of WhatsApp, Telegram, Signal or Viber is on this phone.",
+                "None of WhatsApp, Telegram, Signal, Viber or Google Meet is on this phone.",
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -876,10 +876,10 @@ fun MessengerCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier =
                 "Android honours that. Their recordings are in Recordings, marked with " +
                 "the app's icon; Whose calls to keep does not apply to them - the switch for " +
                 "each app is the rule.",
-            "These calls are not in the phone's call log; only the app's own call " +
-                "notification says who it was. Reading it takes notification access, " +
-                "which Android grants to all notifications - JemRec keeps just the " +
-                "caller's name, from these apps' call notifications.",
+            "These are not phone calls, so JemRec does not look them up in the call " +
+                "log; only the app's own call notification says who it was. Reading it " +
+                "takes notification access, which Android grants to all notifications - " +
+                "JemRec keeps just the caller's name, from these apps' call notifications.",
         )
     }
 }

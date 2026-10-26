@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      The stand-in for Google Meet's calls (diag/FakeAppCall): a self-managed
+      call through Telecom, which this permission allows. A normal permission,
+      and in debug builds only.
+    -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+
     <application>
         <!--
           DEBUG BUILDS ONLY. This source set does not exist in a release APK,
@@ -18,6 +25,19 @@
             android:name=".diag.SpikeReceiver"
             android:exported="true"
             tools:ignore="ExportedReceiver" />
+
+        <!--
+          Telecom's way into that stand-in call. Exported only to Telecom:
+          BIND_TELECOM_CONNECTION_SERVICE is a system permission.
+        -->
+        <service
+            android:name=".diag.FakeAppCallService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
 
         <!--
           Fills the recordings list with invented calls for the README's

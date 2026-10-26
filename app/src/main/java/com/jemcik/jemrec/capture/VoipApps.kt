@@ -23,6 +23,15 @@ import com.jemcik.jemrec.Prefs
  * Signal uses the same path; an app can still mark its audio as not to be
  * captured, which Android honours - the recording then has the user's side
  * only.
+ *
+ * Google Meet is here too, calls and meetings alike, though it is no
+ * messenger: its calls go through Android's call service, which reported them
+ * to the recorder as phone calls - and 0.21 recorded every one, meetings
+ * included, with no switch for it (the Honor, 2026-10-26: two calls and a
+ * meeting, both sides, Meet's own microphone never silenced). Now the
+ * recorder leaves an app's calls to this list, and Meet is off until turned
+ * on, like the rest - and recorded this way on the same Honor with 0.22:
+ * calls both ways and a meeting, both sides, each named and the right way.
  */
 object VoipApps {
 
@@ -37,6 +46,7 @@ object VoipApps {
         App("org.thunderdog.challegram", "Telegram X", "telegram"),
         App("org.thoughtcrime.securesms", "Signal", "signal"),
         App("com.viber.voip", "Viber", "viber"),
+        App("com.google.android.apps.tachyon", "Google Meet", "meet"),
     )
 
     /** For a package not on the list, which should never be recording - but
@@ -52,6 +62,19 @@ object VoipApps {
     internal fun forRecfile(recfile: String): App? {
         val pkg = recfile.substringAfter("_voip-", "").removeSuffix(".dat").ifEmpty { return null }
         return byPackage(pkg) ?: OTHER.copy(pkg = pkg)
+    }
+
+    /**
+     * Which way a messenger call went, where the recorder could tell: an
+     * app's call through Android's call service - Google Meet's - rings
+     * there first or not, and the recorder puts it in the file's name,
+     * jemrec_rec_<ms>_in_voip-<pkg>.dat. Null where only the app's
+     * notification can say - every other messenger.
+     */
+    internal fun directionOf(recfile: String): Boolean? = when {
+        recfile.contains("_in_voip-") -> true
+        recfile.contains("_out_voip-") -> false
+        else -> null
     }
 
     /** "Viber", for a name's tag. */

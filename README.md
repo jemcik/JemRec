@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-792-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-806-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -36,8 +36,8 @@ the phone sets itself up.
 
 ## Why JemRec
 
-- **Both sides of every call.** Phone calls, and WhatsApp, Telegram and Viber
-  calls on Android 14 or newer.
+- **Both sides of every call.** Phone calls, and WhatsApp, Telegram, Viber and
+  Google Meet calls on Android 14 or newer.
 - **No root, no computer, no second app.** The phone pairs with its own
   Wireless debugging and sets itself up, once, in a few minutes.
 - **Nothing leaves your phone.** No account, no cloud, no analytics. The only
@@ -147,7 +147,7 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 | **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record. A Quick Settings tile turns recording on and off. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
 | **Start at the answer** | Exact call tracking cuts the ringing, skips calls nobody answered, and splits call waiting into one recording per call. → [more](docs/ARCHITECTURE.md#exact-call-tracking) |
 | **Keep only the calls you want** | All your contacts, all but some, only some, or none - and other numbers on their own switch. → [more](docs/ARCHITECTURE.md#whose-calls-to-keep) |
-| **Messenger calls** | WhatsApp, Telegram and Viber, both sides, each switched on separately, with the caller's name from the app's notification. Android 14+. → [more](docs/ARCHITECTURE.md#messenger-calls) |
+| **Messenger calls** | WhatsApp, Telegram, Viber, and Google Meet calls and meetings, both sides, each switched on separately, with the caller's name from the app's notification. Android 14+. → [more](docs/ARCHITECTURE.md#messenger-calls) |
 | **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. Search either list, or narrow it with a tap. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
 | **Name files your way** | By date and time, with the caller, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
 | **Play, keep, clean up** | A call plays as its waveform, to see where people talk, and plays on with the screen off, under the phone's media controls; a keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
@@ -197,9 +197,10 @@ record. **[The full design, and the measurements behind each decision →](docs/
 | | Phone calls | Messenger calls |
 | --- | :---: | :---: |
 | **Android 12 and 13** | ✓ | — Android does not allow it |
-| **Android 14 and newer** | ✓ | ✓ WhatsApp, Telegram, Viber |
+| **Android 14 and newer** | ✓ | ✓ WhatsApp, Telegram, Viber, Google Meet |
 
-Signal takes the same path as the other messengers and has not been tested yet.
+Google Meet was tested on the Honor: calls both ways and a meeting. Signal
+takes the same path as the other messengers and has not been tested yet.
 Developer options and Wireless debugging are on every Android phone, though the
 menu they live in differs by make; JemRec names the right path for yours.
 
@@ -283,6 +284,19 @@ Yes, where the phone's audio hardware hands both sides over - which it did on
 every phone above. The Self-test tells you for yours in about a second. On
 speakerphone, a messenger call's other person is heard on your side too: your
 side is the plain microphone, without the call app's echo cancellation.
+
+</details>
+
+<details>
+<summary><b>Does it record Google Meet?</b></summary>
+
+<br>
+
+Yes, calls and meetings, both sides, on Android 14 or newer - once you switch
+Google Meet on under *Messenger calls*. Like the messengers, it is off until
+you do. Meet puts its calls through Android's own call service, and up to 0.21
+JemRec took them for phone calls and recorded every one, meetings included.
+Now a call is a phone call only when Android says the phone itself is in one.
 
 </details>
 
@@ -384,7 +398,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 792 tests, screenshots of the screens included
+    ./gradlew test              # 806 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

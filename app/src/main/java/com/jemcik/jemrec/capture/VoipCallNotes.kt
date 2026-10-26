@@ -36,7 +36,10 @@ import com.jemcik.jemrec.Prefs
  *     Telegram's "Ongoing Telegram call" does - the text. Viber's title is
  *     the caller; Telegram's text is (both measured).
  *   - A ringing call asks for the full screen; a call being placed does not.
- *     That, or the call style's type, is the direction.
+ *     That, or the call style's type, is the direction - the type first:
+ *     Google Meet's in-call notification asks for the full screen too, in
+ *     calls both ways and in a meeting, and says it is ongoing (measured,
+ *     2026-10-26). Its ring is a call style with the person, as WhatsApp's.
  */
 internal object VoipCallNotes {
 
@@ -125,9 +128,11 @@ internal object VoipCallNotes {
     /**
      * The call that a recording starting at [start] came from: the name its
      * notifications gave (the one nearest the start), and incoming if any of
-     * them rang before it began. Null if there were none.
+     * them rang before it began - or as [incoming] says, where the recorder
+     * knew. Null if there were no notes and no direction.
      */
-    fun find(context: Context, pkg: String, start: Long): Note? = pick(read(context), pkg, start)
+    fun find(context: Context, pkg: String, start: Long, incoming: Boolean? = null): Note? =
+        pick(read(context), pkg, start, incoming)
 
     /** Whether [note] only repeats its app's latest note. Pure. */
     internal fun isRepeat(existing: List<Note>, note: Note): Boolean {
@@ -135,10 +140,10 @@ internal object VoipCallNotes {
         return last.name == note.name && last.incoming == note.incoming && note.at - last.at in 0..SAME_NOTE_MS
     }
 
-    /** Pure, for the tests. */
-    internal fun pick(notes: List<Note>, pkg: String, start: Long): Note? {
+    /** Pure, for the tests. [incoming]: which way, where the recorder knew. */
+    internal fun pick(notes: List<Note>, pkg: String, start: Long, incoming: Boolean? = null): Note? {
         val near = notes.filter { it.pkg == pkg && it.at in (start - BEFORE_MS)..(start + AFTER_MS) }
-        if (near.isEmpty()) return null
+        if (near.isEmpty()) return incoming?.let { Note(pkg, start, null, it) }
         val ring = near.filter { it.incoming == true && it.at in (start - RING_MS)..start }.maxByOrNull { it.at }
         // The call's own notification, from its ring on: the name it gives
         // is this call's.
@@ -147,9 +152,17 @@ internal object VoipCallNotes {
             .minByOrNull { kotlin.math.abs(it.at - start) }?.name
         // A ring is this call's - unless the call's own notification names
         // someone else: a ring from one person, missed, then a call placed to
-        // another within the minute and a half, is the user's own call.
-        val rang = ring != null && (callName == null || ring.name == null || ring.name == callName)
-        val name = callName
+        // another within the minute and a half, is the user's own call. Unless
+        // the recorder knew: Google Meet names one caller two ways, its ring
+        // by the person's name and its in-call notification by their account
+        // (the Honor, 2026-10-26), and every incoming Meet call came out
+        // outgoing.
+        val rang = incoming ?: (ring != null && (callName == null || ring.name == null || ring.name == callName))
+        // Where the recorder knew the call rang, the ring's name is the
+        // caller's - the person's name, which the phone showed as it rang,
+        // where Meet's in-call notification has their account.
+        val name = ring?.name?.takeIf { incoming == true }
+            ?: callName
             ?: ring?.name?.takeIf { rang }
             ?: near.filter { it.name != null && it.incoming != true }.minByOrNull { kotlin.math.abs(it.at - start) }?.name
         // A call with notifications and no ring before it was placed by the user.

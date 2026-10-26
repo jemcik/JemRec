@@ -444,6 +444,10 @@ public final class Main {
         boolean phoneCallRang() {
             return states.rang();
         }
+
+        @Nullable Boolean appCallIncoming() {
+            return states.appCallIncoming();
+        }
         private final Runnable endCheck;
 
         CallWatch(AudioManager audio, Handler handler) {
@@ -475,6 +479,22 @@ public final class Main {
                 }
 
                 @Override
+                public @Nullable Boolean phoneCallInTelecom() {
+                    TelecomManager t = telecom;
+                    if (t == null) {
+                        return null;
+                    }
+                    try {
+                        // READ_PHONE_STATE, the shell's: asked as the shell on
+                        // the Honor, 2026-10-26, it answered with no error.
+                        return t.isInManagedCall();
+                    } catch (Throwable e) {
+                        Ln.w("callwatch: could not ask Telecom whether a phone call is up: " + e);
+                        return null;
+                    }
+                }
+
+                @Override
                 public void callGoesOn() {
                     // The answering machine stopped listening at that idle.
                     AnswerMachine machine = answerMachine;
@@ -489,6 +509,15 @@ public final class Main {
                 }
             });
             this.endCheck = states::endCheck;
+            // A phone call that ends into another app's call never gets its
+            // idle; the audio mode changing says (CallStates.audioModeChanged).
+            // AudioManager holds its listeners itself, unlike telephony.
+            try {
+                audio.addOnModeChangedListener(handler::post, mode -> states.audioModeChanged());
+            } catch (Throwable t) {
+                Ln.w("callwatch: no audio mode callback, so a phone call that ends into an app's call "
+                        + "records on until that one ends: " + t);
+            }
         }
 
         @Override
@@ -500,6 +529,11 @@ public final class Main {
             AnswerMachine machine = answerMachine;
             switch (state) {
                 case TelephonyManager.CALL_STATE_RINGING:
+                    // Meet's ring is not the answering machine's either: it
+                    // could not play a greeting into an app's call.
+                    if (states.appsRinging()) {
+                        break;
+                    }
                     states.ringing();
                     if (machine != null) {
                         machine.ringing();
@@ -508,6 +542,9 @@ public final class Main {
                 case TelephonyManager.CALL_STATE_OFFHOOK:
                     offHooks.incrementAndGet();
                     lastOffHookAt = System.currentTimeMillis();
+                    if (states.appsOffHook()) {
+                        break;
+                    }
                     // First: the call start that follows asks whether this
                     // machine answered it.
                     if (machine != null) {
@@ -1328,11 +1365,12 @@ public final class Main {
      */
     private static final int COMMAND_SET_VOIP = 'V';
     private static final String VOIP_ENV = "JEMREC_VOIP";
-    /** In a messenger call's rec-file name, before the app: jemrec_rec_<ms>_voip-<app>.dat */
-    private static final String VOIP_TAG = "_voip-";
 
     /** The messenger app of the call in progress; null for a phone call or none. */
     private static volatile @Nullable String callVoipApp;
+    /** Which way that app's call went, where Telecom said (Google Meet's);
+     *  null where it did not, or for a phone call. */
+    private static volatile @Nullable Boolean callAppIncoming;
 
     /** For Voip.configure from a session thread: set once the watcher starts. */
     private static @Nullable Handler voipHandler;
@@ -1341,7 +1379,7 @@ public final class Main {
     private static final Voip.Listener VOIP_LISTENER = new Voip.Listener() {
         @Override
         public void onVoipCallStart(String app) {
-            onCallStart(false, app);
+            onAppCallStart(app);
         }
 
         @Override
@@ -1524,14 +1562,14 @@ public final class Main {
             this.recorder = recorder;
         }
 
-        static RecordingSession start(boolean incoming, @Nullable String app) throws Exception {
+        static RecordingSession start(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming)
+                throws Exception {
             // in/out is baked into the name so an orphan collected after a
             // reboot - when the daemon no longer remembers the call - still
-            // knows which it was. A messenger call carries its app instead:
-            // which way it went is not known here.
+            // knows which it was. A messenger call carries its app, and which
+            // way it went only where Telecom said (Checks.recfileTag).
             long startedAt = System.currentTimeMillis();
-            String name = REC_PREFIX + startedAt
-                    + (app != null ? VOIP_TAG + app : incoming ? "_in" : "_out") + REC_SUFFIX;
+            String name = REC_PREFIX + startedAt + Checks.recfileTag(incoming, app, appIncoming) + REC_SUFFIX;
             // A phone call this process answered, through the level tap: the
             // answering machine and its diagnostics look at what is recorded,
             // never change it. It answered before the off-hook that starts
@@ -1582,14 +1620,15 @@ public final class Main {
 
     /** Start capturing the current call to a file. Returns its name, or null if
      *  it could not start or one is already running. Does NOT wake the app. */
-    private static synchronized @Nullable String beginRecording(boolean incoming, @Nullable String app) {
+    private static synchronized @Nullable String beginRecording(boolean incoming, @Nullable String app,
+            @Nullable Boolean appIncoming) {
         if (activeRecording != null) {
             Ln.w("recording: a call is already being recorded");
             return activeRecording.name;
         }
         try {
             captureStartedAt = 0;
-            activeRecording = RecordingSession.start(incoming, app);
+            activeRecording = RecordingSession.start(incoming, app, appIncoming);
         } catch (Throwable t) {
             Ln.e("recording: could not start", t);
             activeRecording = null;
@@ -1620,7 +1659,7 @@ public final class Main {
     /** Off-hook handling, by mode: automatic records at once; on-demand asks
      *  first and records nothing until the yes comes back as COMMAND_START. */
     private static void onCallStart(boolean incoming) {
-        onCallStart(incoming, null);
+        onCallStart(incoming, null, null);
     }
 
     /**
@@ -1628,8 +1667,9 @@ public final class Main {
      * [app]. One at a time: a phone call during a messenger call, or the other
      * way round, leaves the first one's recording running and is not recorded
      * itself, and neither one's end can stop the other's recording.
+     * [appIncoming]: which way an app's call went, where Telecom said.
      */
-    private static void onCallStart(boolean incoming, @Nullable String app) {
+    private static void onCallStart(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming) {
         synchronized (Main.class) {
             if (callActive && (app != null || callVoipApp != null)) {
                 Ln.w("recording: a " + (app != null ? "messenger" : "phone") + " call started during "
@@ -1642,6 +1682,7 @@ public final class Main {
             callActive = true;
             callIncoming = incoming;
             callVoipApp = app;
+            callAppIncoming = app != null ? appIncoming : null;
             AnswerMachine machine = answerMachine;
             if (app == null && machine != null && machine.takingMessage()) {
                 // A call this process answered: the recording IS the message,
@@ -1650,7 +1691,7 @@ public final class Main {
                 // message's own (MESSAGE_STARTED) follows with the greeting.
                 // Not once the user took the call: an off-hook then - a
                 // waiting call - is theirs, asked about as in any call.
-                beginRecording(incoming, null);
+                beginRecording(incoming, null, null);
                 return;
             }
             if (app == null && skipUntil > System.currentTimeMillis()) {
@@ -1661,7 +1702,7 @@ public final class Main {
         }
         switch (recordingMode) {
             case MODE_AUTOMATIC:
-                String name = beginRecording(incoming, app);
+                String name = beginRecording(incoming, app, appIncoming);
                 if (name != null) {
                     // The app shows a "recording" notification; no audio needed.
                     wake(ACTION_CALL_STARTED, incoming, name, app);
@@ -1784,6 +1825,23 @@ public final class Main {
             return;
         }
         endCall();
+        // The other way round from onVoipCallEnd: a messenger or Meet call
+        // that began during the phone call - taken as the phone call was hung
+        // up - was turned away while that one ran; it is the call now.
+        String app = Voip.followedApp();
+        if (app != null) {
+            Ln.i("recording: the phone call gave way to a call in " + app + "; recording that");
+            onAppCallStart(app);
+        }
+    }
+
+    /** A messenger or Meet call starting, and which way it went: known for an
+     *  app whose calls go through Telecom - Meet's ring reaches the call
+     *  watch - and for no other. */
+    private static void onAppCallStart(String app) {
+        CallWatch watch = callWatch;
+        Boolean incoming = watch != null ? watch.appCallIncoming() : null;
+        onCallStart(Boolean.TRUE.equals(incoming), app, incoming);
     }
 
     /** A messenger call's end. Only ends a messenger call. */
@@ -1797,7 +1855,7 @@ public final class Main {
         CallWatch watch = callWatch;
         if (watch != null && watch.phoneCallUp()) {
             Ln.i("recording: the messenger call gave way to a phone call; recording that");
-            onCallStart(watch.phoneCallRang(), null);
+            onCallStart(watch.phoneCallRang(), null, null);
         }
     }
 
@@ -1823,6 +1881,7 @@ public final class Main {
             endedSeq = callSeq;
             app = callVoipApp;
             callVoipApp = null;
+            callAppIncoming = null;
             wasRecording = activeRecording != null;
             if (wasRecording) {
                 stopRecording(outcome);
@@ -2096,7 +2155,7 @@ public final class Main {
             // Locked against onCallEnd - see there.
             synchronized (Main.class) {
                 if (callActive && recordingMode != MODE_OFF) {
-                    name = beginRecording(callIncoming, callVoipApp);
+                    name = beginRecording(callIncoming, callVoipApp, callAppIncoming);
                 }
             }
             if (name != null) {

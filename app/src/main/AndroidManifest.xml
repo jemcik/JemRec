@@ -196,8 +196,8 @@
         -->
         <package android:name="com.hihonor.contacts" />
         <!--
-          The messengers whose calls can be recorded, so Settings can offer
-          the ones installed. See VoipApps.
+          The messengers - and Google Meet - whose calls can be recorded, so
+          Settings can offer the ones installed. See VoipApps.
         -->
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
@@ -205,6 +205,7 @@
         <package android:name="org.thunderdog.challegram" />
         <package android:name="org.thoughtcrime.securesms" />
         <package android:name="com.viber.voip" />
+        <package android:name="com.google.android.apps.tachyon" />
         <!--
           The shell, whose permissions decide whether messenger calls can be
           recorded at all: see VoipApps.supported.
