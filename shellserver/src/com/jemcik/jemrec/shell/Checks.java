@@ -199,6 +199,24 @@ final class Checks {
     }
 
     /**
+     * The test call's check tone: [hz] at [peak], [frames] long, with 10 ms of
+     * fade at each end - a tone that starts at full amplitude clicks. PCM16
+     * little-endian mono, as the chime. Here rather than in GreetingPlayer so
+     * a test can play it to toneShare, which listens for it on the call.
+     */
+    static byte[] tone(int rate, int hz, int frames, double peak) {
+        int fadeFrames = rate / 100;
+        byte[] pcm = new byte[frames * 2];
+        for (int i = 0; i < frames; i++) {
+            double fade = Math.min(1.0, Math.min(i, frames - 1 - i) / (double) fadeFrames);
+            short s = (short) (Math.sin(2 * Math.PI * hz * i / rate) * peak * fade);
+            pcm[2 * i] = (byte) s;
+            pcm[2 * i + 1] = (byte) (s >> 8);
+        }
+        return pcm;
+    }
+
+    /**
      * The sound that ends the greeting: a ding-dong - E5 then C5, a falling
      * third, each note with a soft second partial and its own decay - chosen
      * by the user over a plain 1000 Hz beep, which was "acute and unpleasant"

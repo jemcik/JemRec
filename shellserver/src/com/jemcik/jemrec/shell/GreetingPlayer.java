@@ -51,9 +51,6 @@ final class GreetingPlayer {
      * dBFS had the caller call the check tone "very loud" (2026-10-22).
      */
     private static final double TONE_AMPLITUDE = 4_000;
-    /** Ten milliseconds of fade at each end: a tone that starts at full
-     *  amplitude clicks. */
-    private static final int FADE_FRAMES = RATE / 100;
 
     /** The player's own sound is kept in 20 ms blocks, as the recording's
      *  levels come. */
@@ -153,10 +150,10 @@ final class GreetingPlayer {
             words = java.util.Arrays.copyOf(words, (words.length + BLOCK_FRAMES * 2 - 1) / (BLOCK_FRAMES * 2) * BLOCK_FRAMES * 2);
             tr.play();
             long started = SystemClock.elapsedRealtime();
-            long frames = write(session, tr, new byte[(int) framesOf(LEAD_IN_MS) * 2]);
+            long frames = write(session, tr, new byte[framesOf(LEAD_IN_MS) * 2]);
             if (checkTone) {
-                frames += write(session, tr, tone(CHECK_TONE_HZ, framesOf(CHECK_TONE_MS)));
-                frames += write(session, tr, new byte[(int) framesOf(AFTER_TONE_MS) * 2]);
+                frames += write(session, tr, Checks.tone(RATE, CHECK_TONE_HZ, framesOf(CHECK_TONE_MS), TONE_AMPLITUDE));
+                frames += write(session, tr, new byte[framesOf(AFTER_TONE_MS) * 2]);
                 if (!waitPlayed(session, tr, frames)) {
                     failUnlessStopped(session, listener, "the check tone did not play");
                     return;
@@ -164,7 +161,7 @@ final class GreetingPlayer {
                 listener.checkToneDone();
             }
             frames += write(session, tr, words);
-            frames += write(session, tr, new byte[(int) framesOf(GAP_MS) * 2]);
+            frames += write(session, tr, new byte[framesOf(GAP_MS) * 2]);
             frames += write(session, tr, Checks.chime(RATE, TONE_AMPLITUDE));
             if (!waitPlayed(session, tr, frames)) {
                 failUnlessStopped(session, listener, "the greeting did not play to the end");
@@ -270,19 +267,9 @@ final class GreetingPlayer {
                 .invoke(audio, mono());
     }
 
-    static long framesOf(long ms) {
-        return ms * RATE / 1000;
-    }
-
-    static byte[] tone(int hz, long frames) {
-        byte[] pcm = new byte[(int) frames * 2];
-        for (int i = 0; i < frames; i++) {
-            double fade = Math.min(1.0, Math.min(i, frames - 1 - i) / (double) FADE_FRAMES);
-            short s = (short) (Math.sin(2 * Math.PI * hz * i / RATE) * TONE_AMPLITUDE * fade);
-            pcm[2 * i] = (byte) s;
-            pcm[2 * i + 1] = (byte) (s >> 8);
-        }
-        return pcm;
+    /** Frames as every caller uses them: an array's size. */
+    static int framesOf(long ms) {
+        return (int) (ms * RATE / 1000);
     }
 
     /** The greeting as stored: raw 16-bit little-endian mono at 48 kHz. */

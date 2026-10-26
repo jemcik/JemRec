@@ -263,11 +263,7 @@ public class ChecksTest {
     @Test
     public void theBeepIsAGentleDingDong() {
         int rate = 48000;
-        byte[] pcm = Checks.chime(rate, 4000);
-        short[] s = new short[pcm.length / 2];
-        for (int i = 0; i < s.length; i++) {
-            s[i] = (short) ((pcm[2 * i] & 0xff) | (pcm[2 * i + 1] << 8));
-        }
+        short[] s = chimeSamples(rate);
         assertEquals((int) (0.85 * rate), s.length);
         int peak = 0;
         for (short v : s) {
@@ -522,12 +518,39 @@ public class ChecksTest {
     }
 
     private static short[] chimeSamples(int rate) {
-        byte[] pcm = Checks.chime(rate, 4000);
+        return samples(Checks.chime(rate, 4000));
+    }
+
+    /** PCM16 little-endian, as the player writes it, back to samples. */
+    private static short[] samples(byte[] pcm) {
         short[] s = new short[pcm.length / 2];
         for (int i = 0; i < s.length; i++) {
             s[i] = (short) ((pcm[2 * i] & 0xff) | (pcm[2 * i + 1] << 8));
         }
         return s;
+    }
+
+    @Test
+    public void theCheckToneIsWhatTheTestCallListensFor() {
+        int rate = 48000;
+        short[] s = samples(Checks.tone(rate, 1400, rate, 4000));
+        int ms = rate / 1000;
+        assertEquals(rate, s.length);
+        // Heard as the check tone in a chunk the size the daemon listens in,
+        // and not as either of the chime's notes.
+        short[] chunk = java.util.Arrays.copyOfRange(s, 400 * ms, 400 * ms + 1024);
+        assertTrue(Checks.toneShare(chunk, 1, 0, 1024, 1400, rate) > 0.8);
+        assertTrue(Checks.toneShare(chunk, 1, 0, 1024, 659.25, rate) < 0.1);
+        assertTrue(Checks.toneShare(chunk, 1, 0, 1024, 523.25, rate) < 0.1);
+        // Full level from 10 ms in to 10 ms before the end...
+        double full = windowRms(s, 10 * ms, 990 * ms);
+        assertEquals(4000 / Math.sqrt(2), full, 30);
+        // ...and faded over those 10 ms at each end, so it never clicks.
+        assertEquals(0, s[0]);
+        assertEquals(0, s[s.length - 1]);
+        assertTrue(windowRms(s, 0, ms) < 0.1 * full);
+        assertTrue(windowRms(s, 999 * ms, 1000 * ms) < 0.1 * full);
+        assertTrue(windowRms(s, 4 * ms, 6 * ms) > 0.3 * full);
     }
 
     private static double windowRms(short[] s, int from, int to) {

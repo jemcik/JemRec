@@ -325,6 +325,16 @@ public class CallStatesTest {
     }
 
     @Test
+    public void aMeetRingIsNotAPhoneCallsRing() {
+        // Main hands a ring on - to this watch and to the answering machine -
+        // only when appsRinging says no: the machine could not play a
+        // greeting into an app's call. The watch's side is what shows here.
+        world.phoneCallInTelecom = false;
+        ring();
+        assertFalse(states.rang());
+    }
+
+    @Test
     public void aMeetCallFoundBeforeItsOffHookIsHeardIsIncoming() {
         // The messenger watch can find the call answered before telephony's
         // off-hook reaches the call watch's thread.

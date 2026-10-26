@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-806 JVM tests, no device needed - 629 for the app and 177 for the daemon:
+808 JVM tests, no device needed - 629 for the app and 179 for the daemon:
 
     ./gradlew test
 
@@ -200,13 +200,13 @@ Reports, not gates - run them when wanted:
   then `app/build/reports/coverage/test/debug/index.html`. 55% of lines at
   0.21: 73% of `ui`, 99% of the themes, 36% of `capture`.
 - **Daemon coverage:** `./gradlew :daemon-tests:test -Pcoverage`, then
-  `shellserver/tests/build/reports/jacoco/test/html`. 98% of instructions,
-  90% of branches.
+  `shellserver/tests/build/reports/jacoco/test/html`. 99% of instructions,
+  93% of branches (2026-10-26).
 - **Mutation testing:** `./gradlew :daemon-tests:pitest`, then
   `shellserver/tests/build/reports/pitest`. [PIT](https://pitest.org) changes
   the daemon's decision classes one small way at a time and runs the tests on
-  each. 427 of its 478 changes now fail a test (89%, up from 79% when it
-  went in). Of the 51 left, 38 change only what is logged, and 13 change
+  each. 470 of its 524 changes now fail a test (90%, up from 79% when it
+  went in). Of the 54 left, 41 change only what is logged, and 13 change
   nothing a call can meet or a listener hear: a bound the chime's loop never
   reaches, an equality that cannot occur, a go-ahead counted from 0 (which
   needs a ring in the first three seconds after boot), the whole chime's
