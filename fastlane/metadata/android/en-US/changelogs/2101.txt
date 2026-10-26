@@ -1,0 +1,1 @@
+With recordings saved to a folder you chose, Delete now works on Android 17: a deleted recording stayed in the list, never reached Recently deleted, and was never removed. Android 17 started reporting such a file under its old name. Recordings deleted that way before now show in Recently deleted, with the days they have left. (Issue #51)

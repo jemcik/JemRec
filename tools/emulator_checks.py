@@ -41,6 +41,11 @@ through the real app and daemon, checking what each one leaves behind:
   recently-deleted  a recording deleted is brought back by Restore all in
               Recently deleted; deleted again, Delete all for good removes
               it, from Android's own trash as well, its file with it
+  recently-deleted-folder  the same in a folder picked in Settings through
+              Android's own picker, where a deleted recording waits renamed
+              in its folder (issue #51: Android 17 reports that file under
+              its old name); and one there whose 30 days are up is removed
+              by the daily pass
   looks       the app, started again in Deck (dark), Multitrack and Memo,
               opens in each, its own header drawn
   reinstall   a message, kept from its row, is a kept message again once the
@@ -52,6 +57,10 @@ through the real app and daemon, checking what each one leaves behind:
               (as unplugging an Honor from a computer does, three seconds
               later) is started again, with Wireless debugging switched off
               and on - the port is the emulator's own simulated one
+  background  the daemon's watch for this phone stopping JemRec in the
+              background runs and reads the device's own exit records; from
+              Android 15, a Force stop's open is read from the app's own
+              start record and not taken for the phone's doing
 
 Every call is the emulator's own simulation - nothing leaves the machine -
 and the script refuses to touch anything that is not an emulator. It needs a
@@ -205,6 +214,9 @@ def set_up(apk):
     # left on, the waveforms are the invented ones and nothing is kept - the
     # waveform check failed on the Android 12 and 13 AVDs, 2026-10-23.
     diag("demo", "--ez", "on", "false")
+    # And the standard folder, where the checks look: a recently_deleted_folder
+    # cut short leaves its picked folder set.
+    set_prefs(recordings_tree_uri=None)
     start_recorder()
 
 
@@ -274,12 +286,12 @@ def tracked():
 RECORDINGS = "/sdcard/Recordings/JemRec"
 
 
-def saved():
+def saved(folder=RECORDINGS):
     """The call just over, as saved: (packets, seconds, file name). The log
     line leaves the name out (a name with the caller in it is personal), so
     the name is the newest file in the recordings folder."""
     m = wait_log(r"save: wrote (\d+) packets, ([\d.]+)s from \S+", 30, "the recording to be saved")
-    newest = sh(f"ls -t {RECORDINGS}/").splitlines()
+    newest = sh(f"ls -t {folder}/").splitlines()
     return int(m.group(1)), float(m.group(2)), (newest[0].strip() if newest else "")
 
 
@@ -770,15 +782,25 @@ def tap_node(found):
     """Tap the middle of the first node on screen that [found] picks."""
     for node in re.findall(r"<node [^>]*>", ui()):
         if found(node):
-            x1, y1, x2, y2 = (int(v) for v in re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node).groups())
+            x1, y1, x2, y2 = bounds(node)
             sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
             return True
     return False
 
 
+def labels(node):
+    """What uiautomator says a node shows: its text and content description."""
+    return re.findall(r'(?:text|content-desc)="([^"]*)"', node)
+
+
+def bounds(node):
+    """A node's (left, top, right, bottom) on screen."""
+    return tuple(int(v) for v in re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node).groups())
+
+
 def tap(label):
     """Tap the first node whose text or content description is [label]."""
-    return tap_node(lambda node: label in re.findall(r'(?:text|content-desc)="([^"]*)"', node))
+    return tap_node(lambda node: label in labels(node))
 
 
 def tap_id(resource_id):
@@ -791,37 +813,97 @@ def on_screen(label):
 
 
 def tap_until(label, shown, timeout, what):
-    """Tap [label] until [shown] is on screen. A tap can be lost: on the
-    Android 17 AVD, the gear tapped at the first dump that showed it, ~3 s
-    after `am start`, opened nothing six times in six, and one dump later ten
-    in ten (2026-10-25); and a tap on a list still moving after a swipe only
-    stops it."""
+    """Tap [label] until [shown] is on screen - or, a function, says it is.
+    A tap can be lost: on the Android 17 AVD, the gear tapped at the first
+    dump that showed it, ~3 s after `am start`, opened nothing six times in
+    six, and one dump later ten in ten (2026-10-25); and a tap on a list
+    still moving after a swipe only stops it."""
     end = time.time() + timeout
     while time.time() < end:
         if tap(label):
             try:
-                return wait_for(lambda: on_screen(shown), 3, what)
+                return wait_for(shown if callable(shown) else lambda: on_screen(shown), 3, what)
             except TimeoutError:
                 continue
         time.sleep(0.5)
     raise TimeoutError(what)
 
 
-def open_trash():
-    """Recently deleted, reached as a person reaches it: the gear, then its
-    row in Settings, scrolled to."""
+def scroll_to(label):
+    """Scroll until [label] is drawn in the top two thirds of the screen,
+    where a tap reaches it. Listed is not enough: uiautomator lists a row
+    still below the edge, with no size (bounds [0,0][0,0], the Android 12
+    AVD), and a row low in Android's folder picker sits under its button
+    bar (the Honor) - a tap on either opened nothing (2026-10-26). Small
+    swipes, so a row cannot jump past that window. Never listed at all, it
+    is a failure of its own, not of the tap after it."""
+    width, height = (int(v) for v in re.findall(r"(\d+)x(\d+)", sh("wm size"))[-1])
+    seen = False
+    for _ in range(12):
+        node = next((n for n in re.findall(r"<node [^>]*>", ui()) if label in labels(n)), None)
+        if node:
+            seen = True
+            _, top, _, bottom = bounds(node)
+            if top < bottom and top < height * 2 // 3:
+                return
+        sh(f"input swipe {width // 2} {height * 2 // 3} {width // 2} {height // 3} 400")
+        time.sleep(0.5)
+    if not seen:
+        raise TimeoutError(f"{label} anywhere on the screen")
+
+
+def open_settings_row(row, shown, what):
+    """A row of Settings, reached as a person reaches it: the gear, then the
+    row, scrolled to and tapped until [shown] is on screen."""
     sh("input keyevent KEYCODE_WAKEUP")
     sh("wm dismiss-keyguard")
     sh(f"am force-stop {PKG}")
     sh(f"am start -n {PKG}/.MainActivity")
     tap_until("Settings", "Back", 30, "the Settings gear")
-    width, height = (int(v) for v in re.findall(r"(\d+)x(\d+)", sh("wm size"))[-1])
-    for _ in range(8):
-        if on_screen("Recently deleted"):
-            return tap_until("Recently deleted", "Restore all", 15, "Recently deleted, with Restore all")
-        sh(f"input swipe {width // 2} {height * 3 // 4} {width // 2} {height // 4} 300")
-        time.sleep(0.5)
-    raise TimeoutError("Recently deleted in Settings")
+    scroll_to(row)
+    return tap_until(row, shown, 15, what)
+
+
+def open_trash():
+    """Recently deleted, from its row in Settings."""
+    return open_settings_row("Recently deleted", "Restore all", "Recently deleted, with Restore all")
+
+
+def trash_place(name, move=False, purge=False):
+    """Where the recording [name] is - (in the list, in Recently deleted) - as
+    the debug build's diag 'trash' finds it: after moving it to Recently
+    deleted as the list's delete does, or after the daily pass, if asked."""
+    said = diag("trash", "--es", "name", name, *(("--ez", "move", "true") if move else ()),
+                *(("--ez", "purge", "true") if purge else ()))
+    m = re.search(r"listed=(\w+) trashed=(\w+)", said)
+    assert m, said
+    return (m.group(1) == "true", m.group(2) == "true"), said
+
+
+def files_named(name, folder):
+    return [f for f in sh(f"ls -a {folder}/").split() if name in f]
+
+
+def restore_then_delete(name, folder):
+    """[name] moved to Recently deleted comes back with Restore all, tapped
+    there; moved again, Delete all for good and its question remove it, its
+    file in [folder] with it. The file's name while it waited."""
+    place, said = trash_place(name, move=True)
+    assert place == (False, True), f"not moved to the trash: {said}"
+    open_trash()
+    tap("Restore all")
+    wait_for(lambda: trash_place(name)[0] == (True, False), 20, "Restore all to bring it back")
+    assert files_named(name, folder) == [name], f"restored, its files are {files_named(name, folder)}"
+    place, said = trash_place(name, move=True)
+    assert place == (False, True), f"not moved to the trash again: {said}"
+    trashed = files_named(name, folder)
+    open_trash()
+    tap("Delete all for good")
+    wait_for(lambda: on_screen("Delete for good"), 10, "the question")
+    tap("Delete for good")
+    wait_for(lambda: trash_place(name)[0] == (False, False), 20, "Delete all for good to remove it")
+    assert not files_named(name, folder), f"deleted for good, its files are {files_named(name, folder)}"
+    return trashed[0] if trashed else "?"
 
 
 def recently_deleted():
@@ -832,35 +914,108 @@ def recently_deleted():
     sh("logcat -c")
     dial(STRANGER_OUT, ring_s=2, talk_s=4)
     _, _, name = saved()
-
-    def where(move=False):
-        said = diag("trash", "--es", "name", name, *(("--ez", "move", "true") if move else ()))
-        m = re.search(r"listed=(\w+) trashed=(\w+)", said)
-        assert m, said
-        return (m.group(1) == "true", m.group(2) == "true"), said
-
-    def files():
-        return [f for f in sh(f"ls -a {RECORDINGS}/").split() if name in f]
-
     try:
-        place, said = where(move=True)
-        assert place == (False, True), f"not moved to the trash: {said}"
-        open_trash()
-        tap("Restore all")
-        wait_for(lambda: where()[0] == (True, False), 20, "Restore all to bring it back")
-        assert files() == [name], f"restored, its files are {files()}"
-        place, said = where(move=True)
-        assert place == (False, True), f"not moved to the trash again: {said}"
-        trashed = files()
-        open_trash()
-        tap("Delete all for good")
-        wait_for(lambda: on_screen("Delete for good"), 10, "the question")
-        tap("Delete for good")
-        wait_for(lambda: where()[0] == (False, False), 20, "Delete all for good to remove it")
-        assert not files(), f"deleted for good, its files are {files()}"
+        trashed = restore_then_delete(name, RECORDINGS)
     finally:
         sh(f"am force-stop {PKG}")
-    return f"restored by Restore all; deleted for good, {trashed[0] if trashed else '?'} gone"
+    return f"restored by Restore all; deleted for good, {trashed} gone"
+
+
+PICKED = "JemRecPicked"  # in /sdcard; recently_deleted_folder picks it
+
+
+def on_screen_any_case(label):
+    """[on_screen] in any case. Android's folder picker wrote its buttons in
+    capitals on the 12 and 17 AVDs and the Honor ("USE THIS FOLDER",
+    2026-10-26); a picker that does not still matches."""
+    return f'"{label.upper()}"' in ui().upper()
+
+
+def press(label):
+    """Tap the first node showing [label], in any case - or, where
+    uiautomator gives it no size, move the keyboard's focus to it and press
+    Enter: the Android 12 AVD draws the folder picker's button bar below
+    what it reports as the window's bottom, so the button's bounds are
+    [0,0][0,0] and a tap cannot be aimed (2026-10-26)."""
+    def node():
+        return next((n for n in re.findall(r"<node [^>]*>", ui())
+                     if label.upper() in (t.upper() for t in labels(n))), None)
+    found = node()
+    if found is None:
+        return False
+    x1, y1, x2, y2 = bounds(found)
+    if y1 < y2:
+        sh(f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
+        return True
+    for _ in range(12):
+        if 'focused="true"' in (node() or ""):
+            sh("input keyevent KEYCODE_ENTER")
+            return True
+        sh("input keyevent KEYCODE_TAB")
+        time.sleep(0.4)
+    return False
+
+
+def pick_folder(name):
+    """Settings' Saving to, Change, and /sdcard/[name] chosen in Android's own
+    folder picker, as a person chooses it: from the phone's storage, which the
+    picker may open somewhere else, then Use this folder and Allow."""
+    open_settings_row("Saving to", "Change", "the folder question")
+    tap_until("Change", lambda: on_screen_any_case("Use this folder"), 15, "Android's folder picker")
+    if not on_screen(name):
+        model = sh("getprop ro.product.model").strip()
+        tap("Show roots")
+        wait_for(lambda: tap(model), 10, f"{model} in the picker's list of places")
+    scroll_to(name)
+    tap_until(name, f"Files in {name}", 15, f"{name} in the picker")
+    wait_for(lambda: press("Use this folder"), 10, "Use this folder")
+    wait_for(lambda: on_screen_any_case("Allow"), 10, "the picker's question")
+    press("Allow")
+    wait_for(lambda: f"tree/primary%3A{name}<" in adb("exec-out", f"run-as {PKG} cat {PREFS}"), 15,
+             f"{name} kept as the folder to save to")
+
+
+def recently_deleted_folder():
+    """The same in a folder picked in Settings, through Android's own picker:
+    there a deleted recording is renamed .trashed-<expiry>-<name> where it is,
+    and Android 17 reports that file under its old name (issue #51). Then
+    another, its 30 days up as its name says, is removed by the daily pass."""
+    folder = f"/sdcard/{PICKED}"
+    old = "20200101_000000_out.ogg"
+    sh(f"rm -rf {folder}; mkdir -p {folder}")
+    try:
+        pick_folder(PICKED)
+        sh("logcat -c")
+        dial(STRANGER_OUT, ring_s=2, talk_s=4)
+        _, _, name = saved(folder)
+        assert name.endswith(".ogg"), f"no recording saved in {folder}: {files_named('', folder)}"
+        trashed = restore_then_delete(name, folder)
+        assert trashed.startswith(".trashed-"), f"it waited as {trashed}"
+        sh(f"echo not-audio > {folder}/{old}")
+        place, said = trash_place(old, move=True)
+        assert place == (False, True), f"not moved to the trash: {said}"
+        [waiting] = files_named(old, folder)
+        expired = re.sub(r"^\.trashed-\d+-", ".trashed-1000000000-", waiting)
+        sh(f"mv {folder}/{waiting} {folder}/{expired}")
+        place, said = trash_place(old, purge=True)
+        assert place == (False, False), f"its 30 days up, still somewhere: {said}"
+        assert not files_named(old, folder), f"its 30 days up, its files are {files_named(old, folder)}"
+    finally:
+        # A picker left open by a failure outlives the app's force-stop, and
+        # sat over the next screens (the Android 12 AVD, 2026-10-26).
+        for _ in range(3):
+            if "documentsui" in sh("dumpsys window | grep mCurrentFocus"):
+                sh("input keyevent KEYCODE_BACK")
+                time.sleep(1)
+        # Said, not raised: raised, it would stand in for whatever failed
+        # above, and skip the rest. set_up clears it on the next run.
+        try:
+            set_prefs(recordings_tree_uri=None)
+        except Exception as e:  # whatever went wrong: printed, not raised
+            print(f"       {PICKED} still set as the folder to save to: {e}")
+        sh(f"am force-stop {PKG}")
+        sh(f"rm -rf {folder}")
+    return f"in {PICKED}: waited as {trashed}, restored, deleted for good; one expired, gone after the daily pass"
 
 
 # What each look's header shows uiautomator, with the recorder ready. Deck's
@@ -1041,7 +1196,7 @@ def self_test():
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, waveform, background_playback,
-          recently_deleted, looks, reinstall, cable, background]
+          recently_deleted, recently_deleted_folder, looks, reinstall, cable, background]
 
 
 def nothing_pending():

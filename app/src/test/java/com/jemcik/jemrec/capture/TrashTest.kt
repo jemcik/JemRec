@@ -39,6 +39,63 @@ class TrashTest {
         assertEquals("50%@x.ogg", Trash.parse(Trash.nameFor("50%@x.ogg", expires))?.first)
     }
 
+    // A picked folder's rows, as the folder provider printed them on the
+    // Android 12, 13 and 17 emulators (2026-10-26, issue #51) - all but two,
+    // made up: a file at a volume's root (the picker refuses one) and an ID
+    // that is not a path (every one printed here was).
+
+    @Test fun inAFolderUpToAndroid16TheNameSaysSo() {
+        val trashed = ".trashed-1795000000-20261021_101010_out.ogg"
+        assertEquals(
+            "20261021_101010_out.ogg" to 1_795_000_000_000L,
+            Trash.inFolder(trashed, "primary:Calls/$trashed", restorable = false),
+        )
+    }
+
+    @Test fun inAFolderOnAndroid17TheIdSaysSoWhereTheNameNoLongerDoes() {
+        assertEquals(
+            "20261021_101010_out.ogg" to 1_795_000_000_000L,
+            Trash.inFolder(
+                "20261021_101010_out.ogg",
+                "primary:Calls/.trashed-1795000000-20261021_101010_out.ogg",
+                restorable = true,
+            ),
+        )
+    }
+
+    @Test fun onAndroid17AnHonorNameComesBackWithItsAt() {
+        assertEquals(
+            "Priya Shah@+447700900123_20261020165705.ogg" to 1_795_597_700_000L,
+            Trash.inFolder(
+                "Priya Shah%40+447700900123_20261020165705.ogg",
+                "primary:Calls/.trashed-1795597700-Priya Shah%40+447700900123_20261020165705.ogg",
+                restorable = true,
+            ),
+        )
+    }
+
+    @Test fun atAVolumesRootTheIdSaysSoToo() {
+        assertEquals(
+            "20261021_101010_out.ogg" to 1_795_000_000_000L,
+            Trash.inFolder(
+                "20261021_101010_out.ogg",
+                "primary:.trashed-1795000000-20261021_101010_out.ogg",
+                restorable = true,
+            ),
+        )
+    }
+
+    @Test fun aFileNotDeletedIsNotInTheTrash() {
+        assertNull(Trash.inFolder(name, "primary:Calls/$name", restorable = false))
+    }
+
+    @Test fun restorableWithAnIdThatDoesNotSayIsInTheTrashForATimeUnknown() {
+        assertEquals(
+            "Priya Shah@+447700900123_20261020165705.ogg" to null,
+            Trash.inFolder("Priya Shah%40+447700900123_20261020165705.ogg", "acc=1;doc=8842", restorable = true),
+        )
+    }
+
     @Test fun somethingThatOnlyLooksTrashedIsNot() {
         assertNull(Trash.parse(".trashed-soon-$name"))
         assertNull(Trash.parse(".trashed-1795000000-"))

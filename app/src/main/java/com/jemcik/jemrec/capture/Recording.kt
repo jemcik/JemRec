@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.IntentSender
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
@@ -256,8 +257,15 @@ internal object Recordings {
         whenMillis: Long = 0L,
     ) = describe(name, uri, sizeBytes, durationOf(context, uri), whenMillis)
 
-    /** One file in the folder the user picked. */
-    internal class Document(val name: String, val uri: Uri, val sizeBytes: Long, val modifiedMillis: Long)
+    /** One file in the folder the user picked; [trashed] as [Trash.inFolder]
+     *  reads it, null if it is not in the trash. */
+    internal class Document(
+        val name: String,
+        val uri: Uri,
+        val sizeBytes: Long,
+        val modifiedMillis: Long,
+        val trashed: Pair<String, Long?>?,
+    )
 
     /** Every recording-shaped file in the folder the user picked, trashed or not. */
     internal fun chosenFolderDocuments(context: Context): List<Document> = runCatching {
@@ -273,17 +281,23 @@ internal object Recordings {
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                 DocumentsContract.Document.COLUMN_SIZE,
                 DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                DocumentsContract.Document.COLUMN_FLAGS,
             ),
             null, null, null,
         )?.use { cursor ->
             while (cursor.moveToNext()) {
                 val name = cursor.getString(1) ?: continue
                 if (!name.endsWith(".${RecordingStore.EXTENSION}")) continue
+                val id = cursor.getString(0) ?: continue
+                // Before Android 17 the bit means nothing.
+                val restorable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
+                    (cursor.getInt(4) and DocumentsContract.Document.FLAG_SUPPORTS_RESTORE) != 0
                 out += Document(
                     name,
-                    DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0)),
+                    DocumentsContract.buildDocumentUriUsingTree(tree, id),
                     cursor.getLong(2),
                     cursor.getLong(3),
+                    Trash.inFolder(name, id, restorable),
                 )
             }
         }
@@ -333,7 +347,7 @@ internal object Recordings {
     /** The folder the user picked, less what is in the trash there. */
     private fun fromChosenFolder(context: Context): List<Recording> =
         chosenFolderDocuments(context)
-            .filterNot { Trash.isTrashedName(it.name) }
+            .filter { it.trashed == null }
             .map { describe(context, it.name, it.uri, it.sizeBytes, whenMillis = it.modifiedMillis) }
 
     /** Recordings made before the standard folder became the default. */

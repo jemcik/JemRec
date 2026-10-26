@@ -38,6 +38,12 @@ import java.io.IOException
  *     to the name Android's own trash uses on disk, ".trashed-<expiry>-<name>".
  *     The leading dot hides it from most file managers, the expiry is in the
  *     name, and JemRec deletes it once that passes (see [purgeExpired]).
+ *     Android 17 added a trash to folders, and its folder provider now
+ *     reports such a name stripped ([inFolder]). Its own trashDocument is no
+ *     use here: it moves the file out of the folder, to /sdcard/.trash-storage,
+ *     and restoring it from there was refused to JemRec's grant on the folder,
+ *     "not a descendant" (the Android 17 emulator, 2026-10-26). The rename
+ *     still trashes and restores there, on the emulator and the Honor.
  *   - App storage, for recordings from before the Recordings folder was the
  *     default: the same rename, on the file.
  */
@@ -72,12 +78,35 @@ object Trash {
         val rest = trashedName.removePrefix(PREFIX)
         val seconds = rest.substringBefore('-', "").toLongOrNull() ?: return null
         val name = rest.substringAfter('-', "").takeIf { it.isNotEmpty() } ?: return null
-        return ESCAPED.replace(name) { if (it.value == "%40") "@" else "%" } to seconds * 1000
+        return unescape(name) to seconds * 1000
     }
+
+    private fun unescape(name: String) = ESCAPED.replace(name) { if (it.value == "%40") "@" else "%" }
 
     private val ESCAPED = Regex("%40|%25")
 
     fun isTrashedName(name: String): Boolean = parse(name) != null
+
+    /**
+     * Whether a file in the folder the user picked is in the trash: its
+     * original name and expiry, the expiry null if nothing says it.
+     *
+     * Its name says so, as given, on the Android 12 and 13 emulators - and,
+     * with no trash in folders before Android 17, on 14 to 16. Android 17
+     * has one, and its folder provider reads the name JemRec gives a deleted
+     * file as one of its own: ".trashed-1795000000-<name>" is reported as
+     * "<name>", the prefix stripped and a %40 left as it is, and marked
+     * [restorable] - the Android 17 emulator and the Honor, 2026-10-26
+     * (issue #51: deleted recordings stayed in the list). The name as given
+     * is still at the end of the document ID there. An ID is the provider's
+     * own to shape, so where it does not say, the mark alone still keeps the
+     * file out of the list.
+     */
+    internal fun inFolder(name: String, documentId: String, restorable: Boolean): Pair<String, Long?>? =
+        parse(name)
+            // "primary:Calls/<name>", or "primary:<name>" at a volume's root.
+            ?: parse(documentId.substringAfterLast('/', documentId.substringAfter(':')))
+            ?: if (restorable) unescape(name) to null else null
 
     // --- trash and restore ----------------------------------------------------
 
@@ -242,12 +271,13 @@ object Trash {
 
     // --- what is in it --------------------------------------------------------
 
-    /** Everything in the trash, soonest to go first. Each has [Recording.name]
-     *  as it was before, and [Recording.expiresAtMillis] set. */
+    /** Everything in the trash, soonest to go first, and last what does not
+     *  say when it goes ([inFolder]). Each has [Recording.name] as it was
+     *  before, and [Recording.expiresAtMillis] set where it is known. */
     fun list(context: Context): List<Recording> {
         val found = (fromMediaStore(context) + fromChosenFolder(context) + fromAppStorage(context))
             .distinctBy { it.name }
-            .sortedBy { it.expiresAtMillis }
+            .sortedWith(compareBy(nullsLast()) { it.expiresAtMillis })
         return Recordings.withCallers(context, found)
     }
 
@@ -295,7 +325,7 @@ object Trash {
 
     private fun fromChosenFolder(context: Context): List<Recording> =
         Recordings.chosenFolderDocuments(context).mapNotNull { doc ->
-            val (name, expires) = parse(doc.name) ?: return@mapNotNull null
+            val (name, expires) = doc.trashed ?: return@mapNotNull null
             Recordings.describe(context, name, doc.uri, doc.sizeBytes, whenMillis = doc.modifiedMillis)
                 .copy(expiresAtMillis = expires)
         }
@@ -318,7 +348,8 @@ object Trash {
     fun purgeExpired(context: Context, now: Long = System.currentTimeMillis()): Int {
         var gone = 0
         Recordings.chosenFolderDocuments(context).forEach { doc ->
-            val (_, expires) = parse(doc.name) ?: return@forEach
+            // Not one whose expiry nothing says: that waits for the user.
+            val expires = doc.trashed?.second ?: return@forEach
             if (expires <= now && runCatching { DocumentsContract.deleteDocument(context.contentResolver, doc.uri) }.getOrDefault(false)) {
                 gone++
             }

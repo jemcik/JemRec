@@ -864,6 +864,20 @@ only from medium height up in their example; the width is where the room is.
   only time emptied it, by choice; the user asked for both (2026-10-23). An
   emulator check taps both in the real screen and finds the file gone from
   Android's trash and the disk; Robolectric has no MediaStore to try it on.
+  Android 17 added a trash to folders, and its folder provider reads the
+  renamed file as trashed: it reports `.trashed-<expiry>-<name>` as `<name>`,
+  marked restorable (the Android 17 emulator and the Honor, 2026-10-26), where
+  the Android 12 and 13 emulators report the name as given. Up to 0.21, JemRec
+  read only that name, so on Android 17 a recording deleted in a chosen folder
+  stayed in the list, never reached Recently deleted and was never removed
+  (issue #51). It now reads the name from the end of the document's ID, which
+  still holds it, and takes the restorable mark alone as "in the trash" where
+  the ID does not say. Android 17's own folder trash was tried and set aside:
+  `trashDocument` moves the file out of the folder, to
+  `/sdcard/.trash-storage`, and restoring it from there was refused to
+  JemRec's grant on the folder. A second emulator check repeats the first in a
+  folder picked through Android's picker, and backdates one there for the
+  daily pass to remove; on the code before the fix it fails on Android 17.
 - **Auto-delete** - off until you choose. It removes recordings older than 30
   days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30
   seconds - wrong numbers, hang-ups. A short call is caught as it is saved,
