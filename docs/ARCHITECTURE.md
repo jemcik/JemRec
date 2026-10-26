@@ -349,8 +349,10 @@ and the recorder's are on two clocks, which the app reads together during the
 call. A recording of one call that the cut would still leave empty is saved
 whole, ringing and all, rather than deleted. On the emulator, with the
 recorder stopped for 1.4 seconds from its first moment, the call was saved to
-within a hundredth of a second of Android's account (2026-10-24). Wi-Fi
-Calling itself has not been tried here: the emulator cannot place such a call.
+within a hundredth of a second of Android's account (2026-10-24). On the
+Pixel, with 0.21, the reporter's outgoing Wi-Fi call that rang about 33
+seconds was saved whole from its answer, 52 seconds with speech from the first
+second, and a second Wi-Fi call kept both voices (2026-10-26).
 
 ## Whose calls to keep
 
