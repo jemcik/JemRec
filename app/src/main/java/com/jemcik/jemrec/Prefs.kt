@@ -17,4 +17,23 @@ internal object Prefs {
 
     fun of(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+    /**
+     * Calls [onChange] whenever [key] changes, from anywhere in the process -
+     * for a screen that must hear of what the Quick Settings tile changes over
+     * it without pausing (RecorderSwitch, DebugSwitchesOff).
+     *
+     * Returns the way to stop, which also holds the listener: preferences keep
+     * only a weak reference to it. A no-op where there are no preferences, as
+     * in the JVM tests.
+     */
+    fun watch(context: Context, key: String, onChange: () -> Unit): () -> Unit = runCatching {
+        val prefs = of(context)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, changed ->
+            if (changed == key) onChange()
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        val stop: () -> Unit = { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        stop
+    }.getOrElse { {} }
 }

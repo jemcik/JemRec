@@ -40,7 +40,9 @@ internal data class Marks(
 
 internal fun marks(state: UiState, answering: Boolean) = Marks(
     automatic = state.automatic,
-    answering = answering,
+    // The machine is the recorder's, and off with all debugging there is no
+    // recorder: set, but not answering, so not lit.
+    answering = answering && !state.debuggingOff,
     messengers = state.voipSupported && state.voipInstalled.any { it.pkg in state.voipEnabled },
     autoDeleteDays = state.autoDeleteAfterDays,
 )
@@ -114,6 +116,9 @@ internal fun litMarks(marks: Marks, status: RecorderStatus): List<HeaderMark> =
 internal enum class Instruction(val tap: String? = null) {
     /** Recording is off: the record control turns it on. */
     SWITCH_ON,
+    /** Off with all debugging (When JemRec is off): the record control turns
+     *  it on, over Wi-Fi only. */
+    SWITCH_ON_OVER_WIFI,
     /** Android has not allowed this Wi-Fi: a tap asks. */
     ALLOW_WIFI("Allow this Wi-Fi"),
     /** No Wi-Fi: the recorder comes back by itself once there is one. */
@@ -134,7 +139,7 @@ internal enum class Instruction(val tap: String? = null) {
  * tap makes the second.
  */
 internal fun instruction(state: UiState): Instruction? = when (recorderStatus(state)) {
-    RecorderStatus.OFF -> Instruction.SWITCH_ON
+    RecorderStatus.OFF -> if (state.debuggingOff) Instruction.SWITCH_ON_OVER_WIFI else Instruction.SWITCH_ON
     RecorderStatus.CANNOT -> when {
         !state.onWifi -> Instruction.JOIN_WIFI
         state.networkNotAllowed -> Instruction.ALLOW_WIFI
@@ -165,7 +170,11 @@ internal fun pairingLostOnHome(state: UiState): Boolean =
 internal fun headerSpeech(state: UiState, marks: Marks): String {
     val status = recorderStatus(state)
     val first = when (status) {
-        RecorderStatus.OFF -> "Off. Calls are not recorded."
+        RecorderStatus.OFF -> if (state.debuggingOff) {
+            "Off, with debugging off. Calls are not recorded; turning on needs Wi-Fi."
+        } else {
+            "Off. Calls are not recorded."
+        }
         RecorderStatus.STARTING -> "Starting."
         RecorderStatus.READY -> if (marks.automatic) "Ready to record. Records every call." else "Ready to record. Asks before each call."
         RecorderStatus.CANNOT -> when (instruction(state)) {

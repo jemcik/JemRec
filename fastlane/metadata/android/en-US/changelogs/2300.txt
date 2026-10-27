@@ -1,0 +1,3 @@
+For banking apps that won't open while debugging is on: Settings > When JemRec is off can also hide Developer options, or turn all debugging off, whenever you turn JemRec off; turning it on puts it all back. (Issue #37)
+
+On an Honor, opening Developer options without a cable switched USB debugging off and stopped the recorder, for up to 15 minutes. JemRec now notices and starts it again, on Wi-Fi.

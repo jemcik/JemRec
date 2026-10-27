@@ -50,7 +50,7 @@ OUT = ROOT / "docs" / "screenshots"
 # dark (the user's choice, 2026-10-23).
 LOOKS = {"memo": "MEMO", "deck": "DECK", "multitrack": "MULTITRACK"}
 THEMES = {"light": "no", "dark": "yes"}
-SCREENS = ("home", "calls", "settings", "answering", "theme", "selftest")
+SCREENS = ("home", "calls", "settings", "answering", "theme", "whenoff", "selftest")
 
 # The F-Droid listing. fastlane orders screenshots by file name, so these are
 # numbered: the three looks first, then the rest in Memo, the default (the
@@ -63,6 +63,7 @@ LISTING_ORDER = (
     ("memo", "light", "calls"),
     ("memo", "light", "settings"),
     ("memo", "light", "answering"),
+    ("memo", "light", "whenoff"),
     ("memo", "light", "selftest"),
     ("memo", "light", "theme"),
 )
@@ -355,7 +356,7 @@ def shoot(look: str, theme: str, wanted: set) -> None:
         if "calls" in wanted:
             print("    !! the calls tab never opened; calls.png is unchanged")
 
-    if not wanted & {"settings", "answering", "theme", "selftest"}:
+    if not wanted & {"settings", "answering", "theme", "whenoff", "selftest"}:
         return
     if not tap("Settings", "the settings gear"):
         return
@@ -372,6 +373,14 @@ def shoot(look: str, theme: str, wanted: set) -> None:
     # Settings > Theme: the look's own preview over the looks to choose.
     if "theme" in wanted and scroll_to("Theme") and tap("Theme", "the theme row", exact=True):
         grab(into / "theme.png")
+        shell("input keyevent KEYCODE_BACK")
+        time.sleep(1)
+
+    # Settings > When JemRec is off, below Theme: the choice as this phone has
+    # it, as the answering machine's screen is.
+    if "whenoff" in wanted and scroll_to("When JemRec is off") \
+            and tap("When JemRec is off", "the when-off row", exact=True):
+        grab(into / "whenoff.png")
         shell("input keyevent KEYCODE_BACK")
         time.sleep(1)
 

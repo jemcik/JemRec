@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-808-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-834-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -26,9 +26,10 @@ the phone sets itself up.
 
 <sub>Three looks - <b>Memo</b>, <b>Deck</b> and <b>Multitrack</b> - each light, dark or as the phone, in Settings → Theme.</sub>
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/calls-dark.png"><img src="docs/screenshots/memo/calls.png" width="26%" alt="The calls tab"></picture>
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/settings-dark.png"><img src="docs/screenshots/memo/settings.png" width="26%" alt="Settings"></picture>
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/answering-dark.png"><img src="docs/screenshots/memo/answering.png" width="26%" alt="The answering machine"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/calls-dark.png"><img src="docs/screenshots/memo/calls.png" width="19%" alt="The calls tab"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/settings-dark.png"><img src="docs/screenshots/memo/settings.png" width="19%" alt="Settings"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/answering-dark.png"><img src="docs/screenshots/memo/answering.png" width="19%" alt="The answering machine"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/whenoff-dark.png"><img src="docs/screenshots/memo/whenoff.png" width="19%" alt="When JemRec is off: what else goes off with it, for banking apps"></picture>
 
 <sub>The people in these screenshots do not exist: a screenshot of a call recorder is a screenshot of someone's calls, so the debug build invents them. Everything else is real.</sub>
 
@@ -153,6 +154,7 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 | **Play, keep, clean up** | A call plays as its waveform, to see where people talk, and plays on with the screen off, under the phone's media controls; a keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
 | **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, a call went unrecorded, or the phone stopped JemRec or held it back in the background. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
 | **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
+| **Open your banking app** | Some banking apps won't open while Developer options or debugging is on. Turning JemRec off can hide Developer options too, or switch all debugging off; turning it on puts back what it switched off. Settings → When JemRec is off. → [more](docs/ARCHITECTURE.md#off-and-debugging-with-it) |
 | **Three looks** | Memo, calm and simple; Deck, a pocket recorder with an LCD and a REC key; Multitrack, a sound editor with a colour for each caller. Each light, dark or as the phone, in Settings → Theme. → [more](docs/ARCHITECTURE.md#three-looks) |
 
 Recordings are Opus files in the phone's standard `Recordings/JemRec` folder,
@@ -237,8 +239,8 @@ Honor - so the answering machine's settings hold its own checks and a test call.
 - **No caller on the lock screen.** While a recording plays, the phone's media
   controls name the caller only once it is unlocked; locked, they say *Call
   recording*.
-- **Debugging stays on while JemRec is installed**, because the recorder needs
-  it. A computer you have paired with the phone can connect to it over the
+- **Debugging stays on while JemRec is on**, because the recorder needs
+  it; while it is off, it can go too (Settings → When JemRec is off). A computer you have paired with the phone can connect to it over the
   same Wi-Fi, and one you have authorised before over a cable; an unpaired one
   cannot. Now and then, check *Wireless debugging →
   Paired devices* and remove anything you do not recognise.
@@ -256,7 +258,7 @@ recorder does not explain is one its user has to guess at:
 | --- | --- |
 | `INTERNET` | Not about the internet: Android requires it for any TCP socket, including one to `127.0.0.1`. |
 | `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing. |
-| `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. |
+| `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | To play a recording on with the screen off, under the phone's media controls. It plays; it never records. |
@@ -332,7 +334,8 @@ Honor's battery manager kept the recorder down for about four minutes in two
 tests of three, and 8.5 minutes in another. Until then nothing is recorded -
 the header says so, a notification says the phone held JemRec back the moment
 it lets JemRec run again, and one says the recorder is down if it stays down
-two minutes.
+two minutes. And if When JemRec is off is set to *Turn all debugging off*,
+turning JemRec back on needs Wi-Fi too.
 
 </details>
 
@@ -376,13 +379,39 @@ marks - a message, kept, who a messenger call was with - inside the file.
 </details>
 
 <details>
+<summary><b>My banking app won't open while debugging is on</b></summary>
+
+<br>
+
+Choose in Settings → **When JemRec is off** what goes off with JemRec, then
+turn JemRec off - with the record button or the Quick Settings tile - before
+you open the bank:
+
+- **Hide Developer options**: Developer options and Wireless debugging go off.
+  USB debugging stays on, so JemRec keeps its recorder and turns back on
+  instantly, anywhere.
+- **Turn all debugging off**: USB debugging goes off too, and the recorder with
+  it. Turning JemRec back on then needs Wi-Fi and takes about 15 seconds, and
+  the answering machine is off until then. Away from Wi-Fi, JemRec asks first.
+
+Try the first; if your bank still refuses, the second. Turning JemRec back on
+puts back what it switched off. Measured on an Honor (Android 17): with
+Developer options and Wireless debugging off, the recorder ran on through Wi-Fi
+off and on, a locked screen and a call, recorded both sides. Our own banks open
+with debugging on, so we could not test one that refuses - if yours needed the
+second choice, or neither worked, say so in [issue #37](https://github.com/jemcik/JemRec/issues/37).
+
+</details>
+
+<details>
 <summary><b>How do I turn debugging off for good?</b></summary>
 
 <br>
 
 Uninstall JemRec first. If the recorder is running, it notices the uninstall
 within a few minutes, turns both debugging switches off and exits; either way,
-once JemRec is gone nothing turns them back on.
+once JemRec is gone nothing turns them back on. To have it off only while
+JemRec is off, see the question above.
 
 </details>
 
@@ -398,7 +427,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 808 tests, screenshots of the screens included
+    ./gradlew test              # 834 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

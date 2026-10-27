@@ -28,6 +28,7 @@ import com.jemcik.jemrec.ui.LocalNow
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.UiState
 import com.jemcik.jemrec.ui.forgetAppIcons
+import com.jemcik.jemrec.ui.iconsLoadOn
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.LookChoice
 import com.jemcik.jemrec.ui.theme.Looks
@@ -91,6 +92,12 @@ abstract class ScreenTest {
         TimeZone.setDefault(zone)
     }
 
+    /** show() reads the icons inline; the next test class, a screen test or
+     *  not, gets the app's own way back. */
+    @After fun restoreIconLoading() {
+        iconsLoadOn = kotlinx.coroutines.Dispatchers.IO
+    }
+
     /** A view model over [state] - and the answering machine's [answer] -
      *  that only the taps reach. Its playback session never connects: a tap
      *  that plays changes the screen as the app does before the session
@@ -137,6 +144,8 @@ abstract class ScreenTest {
      *  [fontScale] times the phone's size. */
     fun show(fontScale: Float = 1f, look: LookChoice? = LookChoice(), content: @Composable () -> Unit) {
         forgetAppIcons()
+        // Read inline, so waitForIdle below waits for the icons too (iconsLoadOn).
+        iconsLoadOn = kotlinx.coroutines.Dispatchers.Unconfined
         if (messengersInstalled) {
             val pm = shadowOf(RuntimeEnvironment.getApplication().packageManager)
             // A plain coloured circle each, standing in for the apps' icons -

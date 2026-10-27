@@ -2,11 +2,17 @@ package com.jemcik.jemrec.capture
 
 import android.content.ComponentName
 import android.content.Context
-import android.content.SharedPreferences
 import android.service.quicksettings.TileService
+import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.ui.RecorderTile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Whether JemRec records at all.
@@ -18,6 +24,13 @@ import com.jemcik.jemrec.ui.RecorderTile
  * Wi-Fi, so an "off" in the field stranded the phone unable to record until
  * it next saw a network. The daemon's life is tied to setup instead (see
  * CaptureDaemon.isSetUp), and on is instant anywhere.
+ *
+ * Unless the user chose otherwise. Settings' When JemRec is off can also take
+ * Developer options and Wireless debugging off with it, the recorder kept, or
+ * all debugging, the recorder with it - for apps that will not open with
+ * debugging on (DebugSwitchesOff). That last one is the old field trap again,
+ * so it is the user's to choose, says so, and asks first when there is no
+ * Wi-Fi to come back on.
  *
  * The switch is read in two places that must agree: here, for the daemon's
  * mode and the wizard's "switched off is not unconfigured" rule, and in
@@ -53,23 +66,40 @@ object RecorderSwitch {
      * - measured on the Honor, where the header said "Ready to record" over a
      * switch that was off, until the app was next reopened.
      *
-     * Returns the way to stop, which also holds the listener: preferences keep
-     * only a weak reference to it. A no-op where there are no preferences, as
-     * in the JVM tests.
+     * Returns the way to stop (Prefs.watch).
      */
-    fun observe(context: Context, onChange: (Boolean) -> Unit): () -> Unit = runCatching {
-        val prefs = Prefs.of(context)
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { changed, key ->
-            if (key == KEY) onChange(changed.getBoolean(KEY, true))
-        }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        val stop: () -> Unit = { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-        stop
-    }.getOrElse { {} }
+    fun observe(context: Context, onChange: (Boolean) -> Unit): () -> Unit =
+        Prefs.watch(context, KEY) { onChange(isOn(context)) }
+
+    /** Outlives whoever asked: a tile is unbound, and a question's activity
+     *  finishes, as soon as the panel or the dialog closes - and a switch
+     *  half-turned then would leave the recorder disagreeing with it. */
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** One turn at a time, whoever asked - the app, the tile, its question.
+     *  Two at once interleave at the recorder: an off's "record nothing", or
+     *  its debugging off, arriving after the on that followed it. */
+    private val turning = Mutex()
 
     /**
-     * Switch recording on or off, and make the recorder agree. The one path
-     * the app's switch and the Quick Settings tile share.
+     * Save the switch and [turn], for a caller that will be gone before it is
+     * done: the Quick Settings tile and its question (TurnOffQuestionActivity).
+     * Saved here, at once, so a second tap reads it and turns the other way.
+     */
+    fun turnInBackground(context: Context, on: Boolean) {
+        val app = context.applicationContext
+        set(app, on)
+        background.launch {
+            runCatching { turn(app, on) }
+                .onFailure { Log.w("JemRec", "could not turn recording ${if (on) "on" else "off"}", it) }
+        }
+    }
+
+    /**
+     * Make the recorder agree with the switch, which the caller has just
+     * saved as [on]. The one path the app's switch and the Quick Settings tile
+     * share. It waits its turn, and is dropped if the switch has moved on by
+     * then - a quick off and on ends on, whichever of the two turned it.
      *
      * On is instant anywhere: off leaves the daemon running (see above), so
      * revive() finds it up and only checks it over loopback, with no Wi-Fi
@@ -82,9 +112,12 @@ object RecorderSwitch {
      * as they are - killing it here used to be a field trap, since a rebuild
      * needs Wi-Fi.
      */
-    suspend fun turn(context: Context, on: Boolean) {
-        set(context, on)
+    suspend fun turn(context: Context, on: Boolean) = turning.withLock {
+        if (isOn(context) != on) return@withLock
         if (on) {
+            // What the last off switched off, back first: the revive below
+            // stands down while it is still off (DebugSwitchesOff).
+            DebugSwitchesOff.switchBackOn(context)
             CaptureDaemon.revive(context)
             RecorderKeepAlive.schedule(context)
             NetworkRevive.arm(context)
@@ -92,6 +125,9 @@ object RecorderSwitch {
         } else {
             CaptureDaemon.setDaemonMode(context, CaptureDaemon.MODE_OFF)
             CallMonitorService.stop(context)
+            // Then whatever else the user chose to have off with it: Settings,
+            // When JemRec is off. The default switches nothing.
+            DebugSwitchesOff.switchOff(context)
         }
     }
 }

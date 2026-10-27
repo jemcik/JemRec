@@ -55,7 +55,10 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -262,6 +265,62 @@ internal fun SettingsRow(
             }
         }
         trailing?.invoke()
+    }
+}
+
+/**
+ * One of a few, picked in place on a screen of its own, as Android's settings
+ * guidelines allow for a single choice: a radio button, the choice's name, and
+ * its [lines] - each a label and what follows it, the same labels on every
+ * choice so they read across ("Switches off:", "Back on:"). The whole row is
+ * the radio button, to a tap and to a screen reader, as Material asks of a
+ * list item with one; the button sits on the name's line, as a three-line
+ * item's leading element does.
+ */
+@Composable
+internal fun ChoiceRow(
+    title: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    lines: List<Pair<String, String>>,
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton) {
+                haptics.tap()
+                if (!selected) onSelect()
+            }
+            .heightIn(min = 72.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val radioLine = with(LocalDensity.current) { rowTitle().lineHeight.toDp() }
+        Box(Modifier.width(48.dp).height(radioLine), contentAlignment = Alignment.Center) {
+            RadioButton(selected = selected, onClick = null)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = rowTitle(), color = MaterialTheme.colorScheme.onSurface)
+            // One text, not one per line: Compose trims the leading at a
+            // text's top and bottom, so separate ones sat closer to each
+            // other than a line that wrapped inside one - uneven in Deck's and
+            // Multitrack's type (screen tests, 2026-10-26).
+            val labelStyle = SpanStyle(fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                buildAnnotatedString {
+                    lines.forEachIndexed { index, (label, text) ->
+                        if (index > 0) append("\n")
+                        withStyle(labelStyle) { append(label) }
+                        append(" ")
+                        append(text)
+                    }
+                },
+                style = rowSummary(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -709,6 +768,13 @@ internal object SettingsIcons {
     // Material's Palette.
     val Palette = icon("Palette", "M12,3c-4.97,0 -9,4.03 -9,9s4.03,9 9,9c0.83,0 1.5,-0.67 1.5,-1.5 0,-0.39 -0.15,-0.74 -0.39,-1.01 -0.23,-0.26 -0.38,-0.61 -0.38,-0.99 0,-0.83 0.67,-1.5 1.5,-1.5L16,16c2.76,0 5,-2.24 5,-5 0,-4.42 -4.03,-8 -9,-8zM6.5,12c-0.83,0 -1.5,-0.67 -1.5,-1.5S5.67,9 6.5,9 8,9.67 8,10.5 7.33,12 6.5,12zM9.5,8C8.67,8 8,7.33 8,6.5S8.67,5 9.5,5s1.5,0.67 1.5,1.5S10.33,8 9.5,8zM14.5,8c-0.83,0 -1.5,-0.67 -1.5,-1.5S13.67,5 14.5,5s1.5,0.67 1.5,1.5S15.33,8 14.5,8zM17.5,12c-0.83,0 -1.5,-0.67 -1.5,-1.5S16.67,9 17.5,9s1.5,0.67 1.5,1.5 -0.67,1.5 -1.5,1.5z")
 
+    /** When JemRec is off. */
+    val Power = icon(
+        "Power",
+        "M13,3h-2v10h2L13,3zM17.83,5.17l-1.42,1.42C17.99,7.86 19,9.81 19,12c0,3.87 -3.13,7 -7,7s-7,-3.13 -7,-7" +
+            "c0,-2.19 1.01,-4.14 2.58,-5.42L6.17,5.17C4.23,6.82 3,9.26 3,12c0,4.97 4.03,9 9,9s9,-4.03 9,-9" +
+            "c0,-2.74 -1.23,-5.18 -3.17,-6.83z",
+    )
     val Mic = icon("Mic", "M12,14c1.66,0 2.99,-1.34 2.99,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zM17.3,11c0,3 -2.54,5.1 -5.3,5.1S6.7,14 6.7,11L5,11c0,3.41 2.72,6.23 6,6.72L11,21h2v-3.28c3.28,-0.48 6,-3.3 6,-6.72h-1.7z")
 
     private fun icon(name: String, path: String): ImageVector = pathIcon(name, path)

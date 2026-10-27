@@ -9,13 +9,12 @@ import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import android.util.Log
 import com.jemcik.jemrec.MainActivity
+import com.jemcik.jemrec.TurnOffQuestionActivity
+import com.jemcik.jemrec.capture.DebugSwitchesOff
+import com.jemcik.jemrec.capture.switchesOff
+import com.jemcik.jemrec.capture.takesTheRecorder
 import com.jemcik.jemrec.capture.RecorderSwitch
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 /**
  * The Quick Settings tile: JemRec's on/off switch, without opening JemRec.
@@ -35,11 +34,6 @@ import kotlinx.coroutines.launch
 class RecorderTile : TileService() {
 
     companion object {
-        /** Outlives the tile: Android unbinds it as soon as the panel closes,
-         *  and a switch half-turned when that happened would leave the daemon
-         *  recording under a switch that says off. */
-        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
         private const val KEY_ADDED = "qs_tile_added"
 
         /**
@@ -75,22 +69,44 @@ class RecorderTile : TileService() {
             return
         }
         val on = !RecorderSwitch.isOn(this)
-        // Shown at once; the recorder catches up in the background.
-        show(on)
-        val app = applicationContext
-        scope.launch {
-            runCatching { RecorderSwitch.turn(app, on) }
-                .onFailure { Log.w("JemRec", "tile: could not turn recording ${if (on) "on" else "off"}", it) }
+        // Turning off with all debugging, away from Wi-Fi: the same question
+        // the header's button asks, before anything happens.
+        if (!on && DebugSwitchesOff.asksBeforeOff(this)) {
+            openQuestion()
+            return
         }
+        // Shown at once; the recorder catches up in the background.
+        show(on, debuggingOff = !on && DebugSwitchesOff.mode(this).switchesOff().takesTheRecorder())
+        RecorderSwitch.turnInBackground(this, on)
     }
 
-    private fun show(on: Boolean) {
+    private fun show(on: Boolean, debuggingOff: Boolean = DebugSwitchesOff.recorderGone(this)) {
         val tile = qsTile ?: return
         tile.state = if (on) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.label = "JemRec"
-        tile.subtitle = if (on) "Recording calls" else "Off"
-        tile.contentDescription = if (on) "JemRec, recording calls" else "JemRec, off"
+        tile.subtitle = when {
+            on -> "Recording calls"
+            debuggingOff -> "Off, debugging off"
+            else -> "Off"
+        }
+        tile.contentDescription = when {
+            on -> "JemRec, recording calls"
+            debuggingOff -> "JemRec, off, with debugging off"
+            else -> "JemRec, off"
+        }
         tile.updateTile()
+    }
+
+    // As openApp: the PendingIntent form from Android 14, the Intent form below.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    private fun openQuestion() {
+        val intent = Intent(this, TurnOffQuestionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startActivityAndCollapse(PendingIntent.getActivity(this, 1, intent, PendingIntent.FLAG_IMMUTABLE))
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(intent)
+        }
     }
 
     // The Intent form is deprecated, and throws for apps targeting Android 14+

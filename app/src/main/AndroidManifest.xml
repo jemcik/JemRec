@@ -241,6 +241,22 @@
             android:launchMode="singleTop"
             android:showOnLockScreen="true" />
 
+        <!--
+          The Quick Settings tile's question before turning off with all
+          debugging, away from Wi-Fi. See-through, so the dialog shows over
+          whatever the panel was pulled down over; a question, not a place.
+          A task of its own (no affinity): with JemRec's, the tile's start
+          would bring JemRec's own task forward behind the question, and
+          answering would leave the user there.
+        -->
+        <activity
+            android:name=".TurnOffQuestionActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.JemRec.Question" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

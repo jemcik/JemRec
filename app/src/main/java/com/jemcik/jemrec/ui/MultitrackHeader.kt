@@ -138,6 +138,7 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
 
 private fun multiWords(instruction: Instruction): String = when (instruction) {
     Instruction.SWITCH_ON -> "TAP THE BUTTON TO RECORD CALLS"
+    Instruction.SWITCH_ON_OVER_WIFI -> "DEBUGGING OFF · ON NEEDS WI-FI"
     Instruction.ALLOW_WIFI -> "TAP TO ALLOW THIS WI-FI"
     Instruction.JOIN_WIFI -> "JOIN ANY WI-FI · RESUMES ITSELF"
     Instruction.PAIR_AGAIN -> "TAP TO PAIR AGAIN"

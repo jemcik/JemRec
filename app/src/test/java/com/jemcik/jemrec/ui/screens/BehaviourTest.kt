@@ -159,10 +159,14 @@ class BehaviourTest : ScreenTest() {
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS))
         showApp(vm)
         compose.onNodeWithText("Start fresh").performScrollTo()
-        compose.onNodeWithText("Recently deleted").performClick()
+        // Brought back into view from the bottom: the Debugging group put
+        // more than a screen between it and Start fresh.
+        compose.onNodeWithText("Recently deleted").performScrollTo().performClick()
         compose.waitForIdle()
         back()
-        compose.onNodeWithText("Start fresh").assertIsDisplayed()
+        // Where it was left: the row tapped still in view, not the top.
+        compose.onNodeWithText("Recently deleted").assertIsDisplayed()
+        compose.onNodeWithText("Record every call").assertIsNotDisplayed()
     }
 
     @Test fun aSelfTestResultThatLandsElsewhereIsNotSavedUp() {

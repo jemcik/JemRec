@@ -14,6 +14,7 @@ import com.jemcik.jemrec.capture.VoipApps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.CoroutineContext
 
 /**
  * A messenger's own icon, as installed on this phone, or null if none of the
@@ -32,7 +33,7 @@ internal fun rememberAppIcon(packages: List<String>, size: Dp): ImageBitmap? {
     val px = (size.value * LocalDensity.current.density).toInt()
     val key = "${packages.joinToString(",")}@$px"
     return produceState(initialValue = icons[key], key) {
-        value = icons[key] ?: withContext(Dispatchers.IO) {
+        value = icons[key] ?: withContext(iconsLoadOn) {
             packages.firstNotNullOfOrNull { iconOf(context, it, px) }
         }?.also { icons[key] = it }
     }.value
@@ -43,6 +44,15 @@ internal fun rememberAppIcon(packages: List<String>, size: Dp): ImageBitmap? {
 internal fun packagesForTag(tag: String): List<String> = VoipApps.KNOWN.filter { it.tag == tag }.map { it.pkg }
 
 private val icons = ConcurrentHashMap<String, ImageBitmap>()
+
+/**
+ * Where an icon is read: off the main thread on a phone. The screen tests load
+ * them inline instead, so waiting for the screen to be idle waits for them
+ * too: on Dispatchers.IO a snapshot raced the read, and Multitrack's playing
+ * row came out with "WhatsApp" in words for its icon whenever the order the
+ * tests ran in left the cache empty before it (2026-10-26).
+ */
+internal var iconsLoadOn: CoroutineContext = Dispatchers.IO
 
 /** Empties the cache - for the screen tests, which share one process and
  *  would otherwise see an app's icon after it was "uninstalled". */

@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-808 JVM tests, no device needed - 629 for the app and 179 for the daemon:
+834 JVM tests, no device needed - 655 for the app and 179 for the daemon:
 
     ./gradlew test
 
@@ -86,7 +86,7 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.22):
+emulator, for each Android version it claims (12, 13 and 17 for 0.23):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 
@@ -122,6 +122,16 @@ Then a USB cable on the emulator's simulated port: pulled out, the daemon
 wakes the app and the app leaves a recorder that lived alone; plugged in with
 the recorder killed during the watch, as unplugging an Honor from a computer
 does, the app switches Wireless debugging off and on and starts it again.
+Then USB debugging switched off by the shell with the app in the background,
+as an Honor's own Settings app does whenever Developer options is shown: the
+app is woken by the change, switches it back on and has the recorder
+answering again. Then When JemRec is off: set to Hide Developer options, off
+takes Developer options and Wireless debugging off and the recorder keeps its
+process, and on puts them back; set to Turn all debugging off, the recorder
+switches Wireless and USB debugging off and goes, adbd with it, and on - sent
+by the debug build after a delay, since adb is gone - puts it all back and
+starts the recorder. This check and the USB-debugging one take a snapshot
+through the emulator's console first, and load it if adb never comes back.
 Last, the daemon's watch for the phone stopping JemRec in the background:
 that it runs and reads the device's own exit records; and on Android 15 and
 later, that the app reads its own start record - a Force stop, then an open,

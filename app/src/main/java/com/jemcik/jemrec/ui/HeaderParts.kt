@@ -181,7 +181,7 @@ internal fun Modifier.recordToggle(state: UiState, vm: MainViewModel): Modifier 
         .clip(CircleShape)
         .toggleable(value = state.enabled, role = Role.Switch) {
             haptics.toggle(it)
-            vm.setEnabled(it)
+            vm.toggleRecording(it)
         }
         .semantics { contentDescription = "Record calls" }
 }
@@ -212,7 +212,7 @@ internal fun Modifier.instructionTap(vm: MainViewModel, instruction: Instruction
             Instruction.ALLOW_WIFI -> vm.allowThisWifi()
             Instruction.PAIR_AGAIN -> vm.pairAgain()
             Instruction.START_AGAIN -> vm.startAgain()
-            Instruction.SWITCH_ON, Instruction.JOIN_WIFI -> Unit
+            Instruction.SWITCH_ON, Instruction.SWITCH_ON_OVER_WIFI, Instruction.JOIN_WIFI -> Unit
         }
     }
 }

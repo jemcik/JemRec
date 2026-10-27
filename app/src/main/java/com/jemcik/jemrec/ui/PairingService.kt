@@ -33,7 +33,10 @@ import kotlinx.coroutines.launch
  * hold after being flipped in Settings. USB debugging in particular switches
  * ITSELF off shortly after being turned on with no cable attached, in whatever
  * order the two are flipped (measured across several fresh-install runs), and
- * with it gone Wireless debugging drops. Pairing itself always succeeds; only
+ * with it gone Wireless debugging drops. The cause, found later: the phone's
+ * Settings app switches it off each time the Developer options screen is
+ * shown, which a user coming back from Wireless debugging always does (see
+ * UsbDebuggingWatch). Pairing itself always succeeds; only
  * the connect finds nothing to reach. Every miss then cost the user a whole
  * re-pair: the dialog, a fresh code, the notification again.
  *

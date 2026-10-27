@@ -6,6 +6,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.jemcik.jemrec.capture.CallRules.Contacts
 import com.jemcik.jemrec.capture.FileNames
+import com.jemcik.jemrec.capture.OffMode
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.Screen
@@ -66,13 +67,13 @@ class SettingsScreenshots : ScreenTest() {
     // The rest of the app in the other looks: Material's own pieces in each
     // look's colours, as Settings will be drawn.
 
-    @Config(qualifiers = "+h1500dp")
+    @Config(qualifiers = "+h1800dp")
     @Test fun overviewDeck() {
         settings(Fixtures.ready(), look = LookChoice(Look.DECK))
         snap("settings-deck")
     }
 
-    @Config(qualifiers = "+h1500dp-night")
+    @Config(qualifiers = "+h1800dp-night")
     @Test fun overviewMultitrackDark() {
         settings(Fixtures.ready(), look = LookChoice(Look.MULTITRACK))
         snap("settings-multitrack-dark")
@@ -81,26 +82,26 @@ class SettingsScreenshots : ScreenTest() {
     // Each look in light and dark: Deck dark (the user's own) and
     // Multitrack light, beside Memo's two above and the two over these.
 
-    @Config(qualifiers = "+h1500dp-night")
+    @Config(qualifiers = "+h1800dp-night")
     @Test fun overviewDeckDark() {
         settings(Fixtures.ready(), look = LookChoice(Look.DECK))
         snap("settings-deck-dark")
     }
 
-    @Config(qualifiers = "+h1500dp")
+    @Config(qualifiers = "+h1800dp")
     @Test fun overviewMultitrack() {
         settings(Fixtures.ready(), look = LookChoice(Look.MULTITRACK))
         snap("settings-multitrack")
     }
 
     // The whole overview, so the screen is taller than a phone's.
-    @Config(qualifiers = "+h1500dp")
+    @Config(qualifiers = "+h1800dp")
     @Test fun overview() {
         settings(Fixtures.ready())
         snap("settings")
     }
 
-    @Config(qualifiers = "+h1500dp-night")
+    @Config(qualifiers = "+h1800dp-night")
     @Test fun overviewDark() {
         settings(Fixtures.ready())
         snap("settings-dark")
@@ -164,6 +165,48 @@ class SettingsScreenshots : ScreenTest() {
     @Test fun messengerCalls() {
         settings(Fixtures.ready().copy(screen = Screen.MESSENGER_CALLS))
         snap("messenger-calls-dark")
+    }
+
+    // When JemRec is off (issue #37): three choices, each with the same two
+    // lines so they read across - the user could not tell the second from the
+    // third in an earlier draft. In each look, with JemRec off (a new choice
+    // waits for the next off), and at twice the text size.
+
+    @Test fun whenOff() {
+        settings(Fixtures.ready().copy(screen = Screen.WHEN_OFF, offMode = OffMode.HIDE_DEVELOPER_OPTIONS))
+        snap("when-off")
+    }
+
+    @Config(qualifiers = "+night")
+    @Test fun whenOffDeckDark() {
+        settings(
+            Fixtures.ready().copy(screen = Screen.WHEN_OFF, offMode = OffMode.ALL_DEBUGGING_OFF),
+            look = LookChoice(Look.DECK),
+        )
+        snap("when-off-deck-dark")
+    }
+
+    @Test fun whenOffMultitrack() {
+        settings(Fixtures.ready().copy(screen = Screen.WHEN_OFF), look = LookChoice(Look.MULTITRACK))
+        snap("when-off-multitrack")
+    }
+
+    @Test fun whenOffWhileOff() {
+        settings(
+            Fixtures.ready().copy(
+                screen = Screen.WHEN_OFF,
+                enabled = false,
+                offMode = OffMode.ALL_DEBUGGING_OFF,
+                debuggingOff = true,
+            ),
+        )
+        snap("when-off-while-off")
+    }
+
+    @Config(qualifiers = "+h1500dp")
+    @Test fun whenOffLargeText() {
+        settings(Fixtures.ready().copy(screen = Screen.WHEN_OFF, offMode = OffMode.ALL_DEBUGGING_OFF), fontScale = 2f)
+        snap("when-off-large-text")
     }
 
     @Test fun messengerCallsBeforeAndroid14() {

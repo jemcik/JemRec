@@ -78,7 +78,7 @@
     <li>In JemRec, tap <strong>Open settings</strong>, then search Settings for <strong>Developer options</strong>. The app also names the menu it usually lives in on your phone — though on a custom ROM such as LineageOS it is under <strong>System</strong>, whoever made the handset.</li>
     <li>Turn on <strong>USB debugging</strong> and <strong>Wireless debugging</strong>. Either order. No cable is needed and none should be plugged in.</li>
     <li>If Android asks whether to allow wireless debugging on this network, tick <strong>Always allow</strong> and tap <strong>Allow</strong>.</li>
-    <li>Look at both switches once more. One of them can switch itself off the first time; turn it on again and it holds.</li>
+    <li>Look at both switches once more. Some phones switch USB debugging off each time Developer options opens, so if it is off again when you come back to that screen, turn it on again. Once JemRec is set up, it turns it back on by itself.</li>
   </ol>
   <p><strong>Why both.</strong> Wireless debugging is the channel JemRec uses to start its recorder. USB debugging — the setting, with no cable involved — is what keeps Android's debugging service alive, and without it Wireless debugging switches itself off again before the app can connect.</p>
   <div class="note info"><p>If you see an old <strong>JemRec</strong> under <em>Paired devices</em>, tap the gear beside it and forget it. It is left over from a previous install and cannot be used: a reinstalled app has a new key and must pair again.</p></div>
@@ -187,6 +187,15 @@
   <h2 id="turning-jemrec-off">Turning JemRec off</h2>
   <p>The record button in the header - Memo's round button, Deck's REC key, Multitrack's armed button - is the on/off control for the whole app. Off means no call is recorded and no notification appears. Your recordings and your pairing are untouched, and the recorder itself keeps running in the background doing nothing — which is what makes turning it back on instant, anywhere, with no network.</p>
   <p>The same switch is a <strong>Quick Settings tile</strong>, so you can flip it without opening the app. Settings has a row that adds it, on Android 13 and later; on 12, edit the Quick Settings panel and drag JemRec in. On a locked phone the tile asks for your unlock first.</p>
+  <h2 id="off-and-debugging-with-it">Off, and debugging with it</h2>
+  <p>Some banking apps won't open while Developer options or debugging is on. <strong>Settings → When JemRec is off</strong> chooses what else goes off when you turn JemRec off, from the record button or the tile:</p>
+  <table>
+    <tr><th>Choice</th><th>Switches off</th><th>Back on</th></tr>
+    <tr><td><strong>Keep debugging on</strong> (the default)</td><td>nothing else</td><td>instantly, anywhere</td></tr>
+    <tr><td><strong>Hide Developer options</strong></td><td>Developer options, Wireless debugging</td><td>instantly, anywhere</td></tr>
+    <tr><td><strong>Turn all debugging off</strong></td><td>Developer options, Wireless debugging, USB debugging</td><td>needs Wi-Fi, about 15 seconds; no answering machine until then</td></tr>
+  </table>
+  <p>Try <strong>Hide Developer options</strong> first: USB debugging stays on, so the recorder keeps running and JemRec is back the moment you turn it on. If your bank still refuses, <strong>Turn all debugging off</strong> - which stops the recorder too, so away from Wi-Fi JemRec asks before it does. Turning JemRec back on puts back what it switched off. A new choice applies the next time you turn JemRec off.</p>
   <h2 id="after-a-restart">After a restart</h2>
   <p>A reboot kills the recorder, and building it again takes a few seconds of Wi-Fi. Until that has happened, calls are not recorded and the header says so — and if it lasts more than two minutes, a notification does too. Whether it happens without you comes down to one setting on your phone.</p>
   <h3 id="allow-jemrec-to-start-automatically">Allow JemRec to start automatically</h3>
@@ -214,6 +223,7 @@
     <tr><td><strong>Cannot record, tap to pair again</strong></td><td>Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before.</td></tr>
     <tr><td><strong>Starting…</strong></td><td>Rebuilding the recorder. A few seconds.</td></tr>
     <tr><td><strong>Off</strong></td><td>You turned the switch off.</td></tr>
+    <tr><td><strong>Off</strong>, debugging off too</td><td>You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi.</td></tr>
   </table>
   <p>And when the app is closed, in notifications:</p>
   <table>
@@ -255,7 +265,11 @@
   <ul>
     <li><strong>Show each call when it ends</strong> — the silent notification after every recorded call. Off hides it; a recording that came out silent is reported either way.</li>
     <li><strong>Quick Settings tile</strong> — adds the on/off tile to the Quick Settings panel.</li>
-    <li><strong>Hide the debugging notification</strong> — the answer to the question in step 1, changeable. Debugging stays on either way; this is only about whether Android's notification saying so is shown. Turning it on after setup needs Wi-Fi.</li>
+  </ul>
+  <p><strong>Debugging</strong></p>
+  <ul>
+    <li><strong>When JemRec is off</strong> — what else goes off when you turn JemRec off: nothing, Developer options and Wireless debugging, or all debugging; see Off, and debugging with it.</li>
+    <li><strong>Hide the debugging notification</strong> — the answer to the question in step 1, changeable. Debugging stays on either way while JemRec is on; this is only about whether Android's notification saying so is shown. Turning it on after setup needs Wi-Fi.</li>
   </ul>
   <p><strong>Troubleshooting</strong></p>
   <ul>
@@ -265,7 +279,7 @@
   </ul>
   <h2 id="if-something-goes-wrong">If something goes wrong</h2>
   <p><strong>Pairing fails every time.</strong> Almost always the dialog closed. It survives only while Settings is on screen, which is why step 4 uses the notification shade rather than switching back to the app. Reopen the dialog for a fresh code each attempt.</p>
-  <p><strong>A debugging switch keeps turning itself off.</strong> Some phones do that the first time one is enabled without a cable, and Android turns Wireless debugging off whenever Wi-Fi drops. Turn it on again with Wi-Fi connected; it holds the second time.</p>
+  <p><strong>A debugging switch keeps turning itself off.</strong> Android turns Wireless debugging off whenever Wi-Fi drops; JemRec needs it only to start its recorder, and turns it back on then. Some phones also switch USB debugging off each time the Developer options screen opens without a cable — an Honor does, every time — and that stops the recorder. JemRec turns the switch back on and starts the recorder again by itself, on Wi-Fi: at once if you open JemRec, and within about half a minute once the phone is locked. Away from Wi-Fi it has to wait for Wi-Fi, so leave Developer options alone there.</p>
   <p><strong>It says it cannot record.</strong> Off Wi-Fi, join any Wi-Fi and leave it a few seconds; the app rebuilds its recorder without being asked. On Wi-Fi, the header's line says what to do: tap it to start the recorder again, or to allow this Wi-Fi.</p>
   <p><strong>Android asks to allow wireless debugging on this network.</strong> That is JemRec restarting the recorder after a reboot, on a Wi-Fi network you have not used it on before. Tick <strong>Always allow on this network</strong> and tap <strong>Allow</strong>: Android lets Wireless debugging work only on networks you allowed, and JemRec needs it for a few seconds. If you tapped Cancel, the notification and the app's header offer to ask again.</p>
   <p><strong>Recordings have only your voice.</strong> Your phone's audio hardware does not expose the other side to apps. Nothing in any app can change that, and the self-test will tell you plainly.</p>

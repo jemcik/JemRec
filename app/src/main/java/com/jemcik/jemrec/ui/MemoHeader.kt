@@ -128,6 +128,7 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
  *  recording is off. */
 private fun memoWords(instruction: Instruction): String = when (instruction) {
     Instruction.SWITCH_ON -> "Tap the button to record calls"
+    Instruction.SWITCH_ON_OVER_WIFI -> "Debugging off · turn on over Wi-Fi"
     Instruction.ALLOW_WIFI -> "Tap to allow this Wi-Fi"
     // Short enough for one line on the Honor: "Join any Wi-Fi - it resumes
     // on its own" took two there, and its line kept room for both.

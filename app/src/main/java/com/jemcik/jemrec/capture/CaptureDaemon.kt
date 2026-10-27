@@ -136,6 +136,10 @@ object CaptureDaemon {
     private const val COMMAND_GREETING = 'G'.code.toByte()
     private const val COMMAND_DIAGNOSE = 'X'.code.toByte()
 
+    /** Switch Wireless and USB debugging off and go - "Turn all debugging
+     *  off" (DebugSwitchesOff). 1 goes, 0 calls off a go still waiting. */
+    private const val COMMAND_DEBUGGING_OFF = 'O'.code.toByte()
+
     /**
      * How long a BUSY is given to come true. A daemon really recording a call
      * lets go within a couple of seconds of the call's audio being released -
@@ -411,6 +415,22 @@ object CaptureDaemon {
      * an ADB session and an ADB session needs Wi-Fi.
      */
     suspend fun revive(context: Context): Boolean = withContext(Dispatchers.IO) {
+        // Switched off with debugging, by choice: every revive stands down
+        // here, or one of them would have debugging back on within seconds.
+        // Not a failure either, so RecorderHealth is not told of one.
+        if (DebugSwitchesOff.stayingOff(context)) {
+            ReviveLog.note(context, "revive: debugging is off with JemRec; nothing to do until it is on")
+            return@withContext false
+        }
+        // With JemRec on, any record is an On cut short - the switch saved,
+        // the process gone before the switches came back - finished here.
+        // Any, not only one that took the recorder: Developer options would
+        // otherwise stay hidden, and Wireless debugging go off after this
+        // revive, with JemRec on.
+        if (RecorderSwitch.isOn(context) && DebugSwitchesOff.switchedOff(context).isNotEmpty()) {
+            ReviveLog.note(context, "revive: JemRec is on with debugging still recorded off; putting it back")
+            DebugSwitchesOff.switchBackOn(context)
+        }
         AdbTransport.forgetLastConnect()
         ReviveLog.note(context, "revive: start")
         val alive = lifecycle.withLock { reviveLocked(context) }
@@ -529,6 +549,8 @@ object CaptureDaemon {
             // Wireless debugging was turned on a moment ago to make this
             // possible. It is not needed again until the next revive.
             standDown(context)
+            // And off again, if JemRec is off with Developer options hidden.
+            DebugSwitchesOff.afterRecorderStarted(context)
         }
         return ok
     }
@@ -592,6 +614,19 @@ object CaptureDaemon {
                 }
             }.getOrNull()
         }
+
+    /**
+     * Have the recorder switch Wireless and USB debugging off and go, or call
+     * off a go still waiting (see DebugSwitchesOff). The recorder does it
+     * rather than the app: it is never frozen, it waits out a call or a fetch
+     * in progress, and it gives the microphone back first. "OFF NOW", "OFF
+     * AFTER CALL", "OFF CANCELLED", or "OFF TOO LATE" for a call-off that
+     * came while it was writing the switches; null if no recorder answered,
+     * or one from before this command.
+     */
+    suspend fun debuggingOff(context: Context, go: Boolean): String? =
+        ask(context, COMMAND_DEBUGGING_OFF, byteArrayOf(if (go) 1 else 0), readMs = 2_000)
+            ?.takeIf { it.startsWith("OFF") }
 
     /** The answering machine's settings, to the daemon. Best-effort, like the mode. */
     suspend fun setAnswering(context: Context): Boolean =

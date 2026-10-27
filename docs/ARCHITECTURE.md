@@ -29,7 +29,8 @@ this one is - or to check that it does what it says.
   [marks inside the recording](#marks-inside-the-recording) ·
   [notifications](#after-the-call-and-when-something-is-wrong)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
-  [what stays switched on](#what-stays-switched-on)
+  [what stays switched on](#what-stays-switched-on) ·
+  [off, and debugging with it](#off-and-debugging-with-it)
 
 ## The fact and the obstacle
 
@@ -110,6 +111,23 @@ seconds, because this phone turns it off on its own.
 
 Proven on the device: no cable, Wi-Fi off, a real call recorded while `adbd` and
 the daemon kept their process IDs across the outage.
+
+**Why it turns off on its own** was found on 2026-10-26, on the Honor (Android
+17) with no cable: the phone's own Settings app writes USB debugging off each
+time the Developer options screen is shown — 21 to 60 ms after it opens, again
+on coming back to it from Wireless debugging, and again on unlocking the phone
+onto it. Four times out of four. On this phone that stops `adbd` at once,
+Wireless debugging on or not, and the recorder with it, so the daemon's own
+ten-second check never gets to answer. So the app asks Android to wake it when
+the setting changes (`UsbDebuggingWatch`), and then turns the switch back on and
+starts the recorder itself - not by kicking the keep-alive, which a keep-alive
+still waiting out a failed attempt's backoff ignores (found on the Android 17
+emulator). With a cable in, that took about six seconds.
+Without one, Honor holds every background app's scheduled work while the phone
+is in use and lets it run for the app in front: the recorder came back when
+JemRec was opened, or — with the phone locked straight after — 37 seconds after
+the switch went off. Off Wi-Fi nothing can bring it back until there is Wi-Fi,
+so on such a phone Developer options is best left alone away from it.
 
 When the daemon does die — a reboot kills it outright, unplugging the phone
 from a computer can (see the next section), and the system reclaims it
@@ -1089,7 +1107,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | --- | --- |
 | `INTERNET` | Not about the internet: Android requires it for any TCP socket, including one to `127.0.0.1`. |
 | `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing. |
-| `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. |
+| `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | To play a recording on with the screen off, in `PlaybackService` ([playing in the background](#playing-in-the-background)). It plays; it never records. |
@@ -1110,11 +1128,17 @@ defines for this app alone when it registers a receiver as not-exported.
 
 ## What stays switched on
 
-**USB debugging and Wireless debugging stay on for as long as JemRec is
-installed.** Turning Wireless debugging off restarts `adbd`, which kills the
-recorder, and USB debugging is what keeps `adbd` alive when Wi-Fi drops. So the
-daemon puts USB debugging back on within ten seconds if it goes off, and the app
-turns Wireless debugging back on the next time it rebuilds the recorder.
+**USB debugging and Wireless debugging stay on while JemRec is on** - and
+while it is off too, unless you choose otherwise (see [Off, and debugging with
+it](#off-and-debugging-with-it)). USB debugging is what keeps `adbd` alive
+when Wi-Fi drops or Wireless debugging goes off; with both off, `adbd` stops and
+the recorder with it. (Measured on the Honor, 2026-10-26: Wireless debugging switched off with USB
+debugging on left `adbd` and the recorder running, the same process IDs two and
+a half minutes later.) So the daemon puts USB debugging back on within ten
+seconds if it goes off while `adbd` lives, the app does when the switch-off took
+`adbd` with it (see [Staying alive without Wi-Fi](#staying-alive-without-wi-fi)),
+and the app turns Wireless debugging back on the next time it rebuilds the
+recorder.
 
 What that means for the phone: while debugging is on, a computer that has been
 paired with it can open an ADB shell on it from the same Wi-Fi, and one you have
@@ -1135,6 +1159,76 @@ notifications and reads nothing else.
 To switch debugging off for good, uninstall JemRec first. If the recorder is
 running, it notices the uninstall within a few minutes, turns both switches off
 and exits; either way, once JemRec is gone nothing turns them back on.
+
+
+## Off, and debugging with it
+
+**Some banking apps will not open while Developer options or debugging is on**
+(issue #37). Settings → *When JemRec is off* chooses what goes off with JemRec,
+by the record button or the Quick Settings tile (`DebugSwitchesOff`):
+
+| Choice | Switches off | Back on |
+| --- | --- | --- |
+| Keep debugging on (the default) | nothing else | instantly, anywhere |
+| Hide Developer options | Developer options, Wireless debugging | instantly, anywhere |
+| Turn all debugging off | Developer options, Wireless debugging, USB debugging | needs Wi-Fi, about 15 s; no answering machine until then |
+
+The three are what each switch costs, measured on the Honor (Android 17),
+2026-10-26:
+
+- **Developer options' own switch** (`development_settings_enabled`) is only
+  the menu. Written off, `adbd` and the recorder went on as before, and the menu
+  was gone from Settings - which, on this phone, also means nobody opens it and
+  has its Settings switch USB debugging off (see [Staying alive without
+  Wi-Fi](#staying-alive-without-wi-fi)).
+- **Wireless debugging** is needed only to start the recorder. Written off with
+  USB debugging on and no cable, the recorder kept its process from 20:51 to
+  21:01 through Wi-Fi off and on, almost six minutes locked and a real call,
+  recorded both sides (-32 and -30 dB). Nothing switched it back on, not
+  Android when Wi-Fi returned and not JemRec. With the cable in, two heartbeats
+  2.5 minutes apart said the same.
+- **USB debugging** is what keeps `adbd` up, and the recorder lives in `adbd`'s
+  cgroup. Off, both go - on the Honor even with Wireless debugging on - and
+  starting the recorder again needs Wireless debugging, so Wi-Fi.
+
+So the first two keep the recorder and are instant both ways; the third takes
+the recorder with it, which is the one an off in the field used to cost before
+the switch was made soft. On then took 6 seconds to have it recording again,
+twice, on the Honor (2026-10-26); the app's "about 15 s" is the slow end, a
+revive that has to switch Wireless debugging off and on having taken 12 to 16
+seconds. That is why the third says what it costs on its own line, and why,
+away from Wi-Fi, turning off with it asks first - the only off that does
+(`TurnOffAwayFromWifiDialog`, the same dialog in the app and, through a
+see-through activity, from the tile).
+
+**What goes off, and what comes back.** The app writes Developer options off
+itself (it holds `WRITE_SECURE_SETTINGS`). For the third choice the recorder
+writes Wireless and then USB debugging off, after a new command
+(`COMMAND_DEBUGGING_OFF`): the recorder is never frozen, so it is the one that
+waits out a call or a fetch in progress, gives the microphone back if a message
+left it muted, and stops its own shield from putting USB debugging back. The
+second write stops `adbd`, and the recorder goes with it. JemRec writes down
+what it switched off - only what was on, so Wireless debugging already off away
+from Wi-Fi is not switched on for nothing later - and On puts back exactly
+that, USB debugging before Wireless debugging, then starts the recorder. A new
+choice made while JemRec is off applies from the next off.
+
+**Nothing brings debugging back behind the user's back.** Every way the
+recorder is revived - the keep-alive job, the Wi-Fi and cable watches, boot,
+opening the app, and the USB-debugging watch - goes through one function, and
+it stands down while the third choice is in force. While JemRec is off with
+Developer options hidden, a revive (after a reboot, or a cable from a computer)
+turns Wireless debugging on to start the recorder and off again once it is up.
+A recorder that dies while it waits out a call - a computer's cable pulled -
+leaves its off unfinished; the next revive or keep-alive run that finds no
+recorder finishes it, once. USB debugging the user switches on themselves while
+JemRec is off stays on. Start fresh puts Developer options back, since setup
+sends the user there.
+
+Not measured: a banking app that refuses. Ours open with debugging on, so what
+any one bank looks at is not known here; the order to try is the order above.
+The emulator checks `hide_developer_options` and `debugging_off` run both
+choices end to end on Android 12, 13 and 17.
 
 ---
 

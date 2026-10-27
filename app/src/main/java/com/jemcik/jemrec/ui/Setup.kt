@@ -15,6 +15,7 @@ import com.jemcik.jemrec.capture.CallMonitorService
 import android.net.Uri
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.capture.DebugSwitchesOff
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.GlobalSettings
 import com.jemcik.jemrec.capture.RecorderSwitch
@@ -356,8 +357,10 @@ object Setup {
      * longer prescribe one - both on, any order - and the real fix is
      * PairingService: after the code it watches both switches, says which is
      * off, and connects the moment both are on. The reason for the auto-off
-     * is not in the log - this ROM emits no AdbService lines unless a
-     * computer is attached.
+     * was found on 2026-10-26 with the log enlarged: the Honor's own Settings
+     * app writes adb_enabled=0 each time the Developer options screen is
+     * shown without a cable - opened, come back to, or unlocked onto (see
+     * UsbDebuggingWatch).
      *
      * UNKNOWN where Android 17 hides it (see GlobalSettings). Nothing may wait
      * on it then: it would wait for ever.
@@ -740,6 +743,9 @@ object Setup {
         DebugNotificationCleaner.forget(context)
         // Setup asks the background question again, so no old warning about it.
         BackgroundKill.forget(context)
+        // When JemRec is off back to its default, and Developer options back
+        // if it hid them: setup's second step goes there.
+        DebugSwitchesOff.forget(context)
         // Or the very next launch reads a flag from the setup being undone.
         Prefs.of(context).edit {
             remove(KEY_COMPLETE)

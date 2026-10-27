@@ -142,6 +142,32 @@ class HomeScreenshots : ScreenTest() {
         snap("home-off-dark")
     }
 
+    // Off with all debugging (When JemRec is off, issue #37): the header says
+    // turning on needs Wi-Fi, in each look's words, and the answering
+    // machine's mark goes dark - set, but there is no recorder to answer.
+    @Test fun switchedOffWithDebugging() {
+        home(Fixtures.ready().copy(enabled = false, debuggingOff = true))
+        snap("home-off-debugging-off")
+    }
+
+    @Config(qualifiers = "+night")
+    @Test fun deckOffWithDebuggingDark() {
+        home(Fixtures.ready().copy(enabled = false, debuggingOff = true), look = deck)
+        snap("deck-off-debugging-off-dark")
+    }
+
+    @Test fun multitrackOffWithDebugging() {
+        home(Fixtures.ready().copy(enabled = false, debuggingOff = true), look = multitrack)
+        snap("multitrack-off-debugging-off")
+    }
+
+    // The one question turning off asks: all debugging off, and no Wi-Fi to
+    // turn back on over.
+    @Test fun turnOffAwayFromWifi() {
+        home(Fixtures.ready().copy(askingToTurnOff = true, onWifi = false))
+        snapWithDialog("dialog-turn-off-away-from-wifi")
+    }
+
     @Test fun cannotRecord() {
         home(Fixtures.ready().copy(daemonRunning = false, onWifi = false))
         snap("home-cannot-record")

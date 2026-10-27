@@ -362,6 +362,26 @@ class SpikeReceiver : BroadcastReceiver() {
                         if (CaptureDaemon.isRunning(appContext)) "running" else "not running",
                     )
 
+                    // JemRec off or on, as the record control and the tile turn
+                    // it, with When JemRec is off as the prefs set it - and on
+                    // again by itself after a delay, for the emulator check of
+                    // Turn all debugging off, whose off takes adb away with it
+                    // (tools/emulator_checks.py, debugging_off):
+                    //   --es op switch --ez on false [--ei back_after_s 30]
+                    "switch" -> {
+                        val on = intent.getBooleanExtra("on", true)
+                        val backAfter = intent.getIntExtra("back_after_s", 0)
+                        if (!on && backAfter > 0) TurnOnLater.schedule(appContext, backAfter)
+                        report(
+                            appContext, "switch",
+                            "turning ${if (on) "on" else "off"}" +
+                                (if (!on && backAfter > 0) ", on again in $backAfter s" else "") +
+                                ", with ${com.jemcik.jemrec.capture.DebugSwitchesOff.mode(appContext)}",
+                        )
+                        com.jemcik.jemrec.capture.RecorderSwitch.set(appContext, on)
+                        com.jemcik.jemrec.capture.RecorderSwitch.turn(appContext, on)
+                    }
+
                     // Arm the keep-alive job that revives the daemon, the way
                     // app-open and boot do. The permanent monitor service is
                     // gone; the daemon watches for calls itself.

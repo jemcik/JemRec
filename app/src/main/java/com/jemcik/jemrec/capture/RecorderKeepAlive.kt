@@ -50,7 +50,20 @@ class RecorderKeepAlive(
             Log.i(TAG, "keepalive: not set up, nothing to do")
             return Result.success()
         }
+        // Off with debugging, by choice: no recorder to keep, and a retry
+        // would only back off and come again. Only an off the recorder left
+        // unfinished is worth a look - and the day's auto-delete, which needs
+        // no recorder.
+        if (DebugSwitchesOff.stayingOff(applicationContext)) {
+            Log.i(TAG, "keepalive: debugging is off with JemRec, no recorder to keep")
+            retention()
+            return Result.success()
+        }
         ReviveLog.note(applicationContext, "keepalive: run (attempt ${runAttemptCount + 1})")
+        // A force-stop clears the system's trigger with every other job; this
+        // run is the next chance to put it back. KEEP, so a watch already
+        // waiting is left alone.
+        UsbDebuggingWatch.arm(applicationContext)
         val alive = CaptureDaemon.revive(applicationContext)
         // Off Wi-Fi is exactly when the Wi-Fi watch must be armed, and the
         // one place it reliably can be: armed on Wi-Fi it fires at once and
@@ -68,14 +81,19 @@ class RecorderKeepAlive(
             runCatching { MissedCalls.check(applicationContext) }
                 .onFailure { Log.w(TAG, "keepalive: missed-call check failed", it) }
         }
-        // Auto-delete and the trash's expiry, once a day at most. Needs no
-        // recorder, so it runs either way.
-        runCatching { Retention.runIfDue(applicationContext) }
-            .onFailure { Log.w(TAG, "keepalive: auto-delete failed", it) }
+        retention()
         // retry(), not failure(): failure is terminal for a one-off, and a
         // daemon that could not be revived now - almost always no Wi-Fi - is
         // exactly the thing worth trying again shortly with backoff.
         return if (alive) Result.success() else Result.retry()
+    }
+
+    /** Auto-delete and the trash's expiry, once a day at most. Needs no
+     *  recorder, so it runs either way - alive, not revivable, or off with
+     *  debugging. */
+    private fun retention() {
+        runCatching { Retention.runIfDue(applicationContext) }
+            .onFailure { Log.w(TAG, "keepalive: auto-delete failed", it) }
     }
 
     companion object {
@@ -83,8 +101,11 @@ class RecorderKeepAlive(
         private const val PERIODIC = "jemrec.keepalive.periodic"
         private const val IMMEDIATE = "jemrec.keepalive.now"
 
-        /** The steady heartbeat. Idempotent - safe to call on every app open. */
+        /** The steady heartbeat, and the watch on USB debugging that cuts it
+         *  short when the phone switches that off (see UsbDebuggingWatch).
+         *  Idempotent - safe to call on every app open. */
         fun schedule(context: Context) {
+            UsbDebuggingWatch.arm(context)
             val work = PeriodicWorkRequestBuilder<RecorderKeepAlive>(
                 15, TimeUnit.MINUTES,
             ).build()
@@ -114,6 +135,7 @@ class RecorderKeepAlive(
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(PERIODIC)
             WorkManager.getInstance(context).cancelUniqueWork(IMMEDIATE)
+            UsbDebuggingWatch.cancel(context)
         }
     }
 }

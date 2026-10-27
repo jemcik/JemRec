@@ -96,7 +96,10 @@
   <h3>It keeps itself alive</h3>
   <p>Losing Wi-Fi restarts the ADB daemon and kills what it spawned, so the
      recorder keeps one debugging switch on to survive it, and minds that switch
-     itself. That is what lets a call be recorded in a field with no network.</p>
+     itself. That is what lets a call be recorded in a field with no network.
+     Some phones switch it off themselves &mdash; an Honor&rsquo;s Settings app
+     does each time Developer options opens &mdash; and the app is woken the
+     moment that happens, to switch it back on.</p>
   <p>A reboot is one thing it cannot survive, because starting the recorder
      is the single operation that needs ADB. A scheduled job and a system-held
      Wi-Fi watcher rebuild it without you within seconds of the phone joining a
@@ -178,6 +181,14 @@
      A Quick Settings tile turns recording on and off without opening the
      app.</p>
 
+  <h3>Off, and debugging with it, for banking apps</h3>
+  <p>Some banking apps won&rsquo;t open while Developer options or debugging is
+     on. Turning JemRec off can hide Developer options and Wireless debugging
+     too &mdash; the recorder keeps running on USB debugging, so it is back
+     the moment JemRec is on &mdash; or switch all debugging off, the recorder
+     with it, so that turning it on needs Wi-Fi. Turning it on puts back what it
+     switched off. Settings &rarr; When JemRec is off.</p>
+
   <h2 id="permissions">What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never records &mdash; the shell-side
      process does the capturing, your answering-machine greeting included
@@ -196,7 +207,7 @@
     <tr><th>Permission</th><th>Why</th></tr>
     <tr><td><code>INTERNET</code></td><td>Not about the internet: Android requires it for any TCP socket, including one to <code>127.0.0.1</code>.</td></tr>
     <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing.</td></tr>
-    <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it.</td></tr>
+    <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to.</td></tr>
     <tr><td><code>POST_NOTIFICATIONS</code></td><td>The recording notice, the ask-first prompt, the pairing code box.</td></tr>
     <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>

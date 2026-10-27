@@ -375,9 +375,12 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .after-steps { margin: 1.4rem 0 0; color: var(--ink-mid); max-width: 46rem; }
 @media (max-width: 54rem) { .steps { grid-template-columns: minmax(0, 1fr); } }
 
-/* A row of six, or on a phone a strip that scrolls sideways and stops on each
-   one - six phones stacked would be six screens of scrolling. */
-.gallery { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1.2rem; }
+/* One row of every screen, however many SCREENS has - a column each, so a
+   new one cannot wrap alone - or below 62rem a strip that scrolls sideways
+   and stops on each one: seven phones stacked would be seven screens of
+   scrolling. 62rem, so seven phones in the row are never narrower than six
+   were at the 54rem this used to change at: about 120px. */
+.gallery { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1.2rem; }
 .gallery figure { margin: 0; text-align: center; }
 .gallery figcaption { margin-top: 1rem; }
 .gallery figcaption strong { display: block; }
@@ -392,7 +395,7 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .shot:hover { transform: translateY(-3px); }
 .shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .gallery-note { color: var(--ink-mid); font-size: .92rem; margin: 1.6rem 0 0; max-width: 46rem; }
-@media (max-width: 54rem) {
+@media (max-width: 62rem) {
   .gallery {
     display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
     gap: 1rem; margin: 0 -1.4rem; padding: .4rem 1.4rem 1rem;
@@ -970,8 +973,10 @@ SETUP = [
         "cable is needed and none should be plugged in.",
         "If Android asks whether to allow wireless debugging on this network, "
         "tick **Always allow** and tap **Allow**.",
-        "Look at both switches once more. One of them can switch itself off the "
-        "first time; turn it on again and it holds.",
+        "Look at both switches once more. Some phones switch USB debugging off "
+        "each time Developer options opens, so if it is off again when you come "
+        "back to that screen, turn it on again. Once JemRec is set up, it turns "
+        "it back on by itself.",
     ]),
     ("p", "**Why both.** Wireless debugging is the channel JemRec uses to start "
           "its recorder. USB debugging — the setting, with no cable involved — is "
@@ -1350,6 +1355,25 @@ SETUP = [
           "Android 13 and later; on 12, edit the Quick Settings panel and drag "
           "JemRec in. On a locked phone the tile asks for your unlock first."),
 
+    ("h2", "Off, and debugging with it"),
+    ("p", "Some banking apps won't open while Developer options or debugging is "
+          "on. **Settings → When JemRec is off** chooses what else goes off when "
+          "you turn JemRec off, from the record button or the tile:"),
+    ("table", (["Choice", "Switches off", "Back on"], [
+        ["**Keep debugging on** (the default)", "nothing else", "instantly, anywhere"],
+        ["**Hide Developer options**", "Developer options, Wireless debugging",
+         "instantly, anywhere"],
+        ["**Turn all debugging off**", "Developer options, Wireless debugging, "
+         "USB debugging", "needs Wi-Fi, about 15 seconds; no answering machine "
+         "until then"],
+    ])),
+    ("p", "Try **Hide Developer options** first: USB debugging stays on, so the "
+          "recorder keeps running and JemRec is back the moment you turn it on. "
+          "If your bank still refuses, **Turn all debugging off** - which stops "
+          "the recorder too, so away from Wi-Fi JemRec asks before it does. "
+          "Turning JemRec back on puts back what it switched off. A new choice "
+          "applies the next time you turn JemRec off."),
+
     ("h2", "After a restart"),
     ("p", "A reboot kills the recorder, and building it again takes a few seconds "
           "of Wi-Fi. Until that has happened, calls are not recorded and the "
@@ -1437,6 +1461,8 @@ SETUP = [
          "there for the moment before."],
         ["**Starting…**", "Rebuilding the recorder. A few seconds."],
         ["**Off**", "You turned the switch off."],
+        ["**Off**, debugging off too", "You turned the switch off with When JemRec "
+         "is off set to Turn all debugging off. Turning it on needs Wi-Fi."],
     ])),
     ("p", "And when the app is closed, in notifications:"),
     ("table", (["It says", "Meaning"], [
@@ -1528,10 +1554,16 @@ SETUP = [
         "reported either way.",
         "**Quick Settings tile** — adds the on/off tile to the Quick Settings "
         "panel.",
+    ]),
+    ("p", "**Debugging**"),
+    ("ul", [
+        "**When JemRec is off** — what else goes off when you turn JemRec off: "
+        "nothing, Developer options and Wireless debugging, or all debugging; "
+        "see Off, and debugging with it.",
         "**Hide the debugging notification** — the answer to the question in "
-        "step 1, changeable. Debugging stays on either way; this is only about "
-        "whether Android's notification saying so is shown. Turning it on after "
-        "setup needs Wi-Fi.",
+        "step 1, changeable. Debugging stays on either way while JemRec is on; "
+        "this is only about whether Android's notification saying so is shown. "
+        "Turning it on after setup needs Wi-Fi.",
     ]),
     ("p", "**Troubleshooting**"),
     ("ul", [
@@ -1550,10 +1582,15 @@ SETUP = [
           "survives only while Settings is on screen, which is why step 4 uses "
           "the notification shade rather than switching back to the app. Reopen "
           "the dialog for a fresh code each attempt."),
-    ("p", "**A debugging switch keeps turning itself off.** Some phones do that "
-          "the first time one is enabled without a cable, and Android turns "
-          "Wireless debugging off whenever Wi-Fi drops. Turn it on again with "
-          "Wi-Fi connected; it holds the second time."),
+    ("p", "**A debugging switch keeps turning itself off.** Android turns "
+          "Wireless debugging off whenever Wi-Fi drops; JemRec needs it only to "
+          "start its recorder, and turns it back on then. Some phones also switch "
+          "USB debugging off each time the Developer options screen opens without "
+          "a cable — an Honor does, every time — and that stops the recorder. "
+          "JemRec turns the switch back on and starts the recorder again by "
+          "itself, on Wi-Fi: at once if you open JemRec, and within about half a "
+          "minute once the phone is locked. Away from Wi-Fi it has to wait for "
+          "Wi-Fi, so leave Developer options alone there."),
     ("p", "**It says it cannot record.** Off Wi-Fi, join any Wi-Fi and leave it "
           "a few seconds; the app rebuilds its recorder without being asked. On "
           "Wi-Fi, the header's line says what to do: tap it to start the "
@@ -1967,6 +2004,7 @@ SCREENS = [
     ("settings", "Settings", "Every choice at a glance, each one a tap away."),
     ("theme", "Theme", "Three looks, each light or dark, and the one you pick, shown."),
     ("answering", "Answering machine", "Your greeting, when it answers, and a test call to prove it."),
+    ("whenoff", "When JemRec is off", "For banking apps: what else goes off with JemRec."),
     ("selftest", "Self-test", "Whether your phone hands over both sides, in a second."),
 ]
 
@@ -2007,7 +2045,7 @@ FEATURES = [
      "recorder is down, a call went unrecorded, or the phone stopped JemRec or "
      "held it back in the background.",
      "what-the-app-tells-you"),
-    # Across the whole grid, these two, so the eight above stay four by two.
+    # Across the whole grid, these three, so the eight above stay four by two.
     ("Answering machine",
      "Off until you switch it on. Answers a phone call you have not taken after 5 to "
      "30 seconds &mdash; after two rings when Do Not Disturb would silence the "
@@ -2022,6 +2060,12 @@ FEATURES = [
      "Multitrack, a sound editor with a colour for each caller. Each light, dark "
      "or as the phone, in Settings &rarr; Theme.",
      "three-looks", "wide"),
+    ("Open your banking app",
+     "Some banking apps won&rsquo;t open while Developer options or debugging "
+     "is on. Turning JemRec off can hide Developer options too, or switch all "
+     "debugging off; turning it on puts back what it switched off. Settings "
+     "&rarr; When JemRec is off.",
+     "off-and-debugging-with-it", "wide"),
 ]
 
 PRIVACY_POINTS = [
@@ -2036,8 +2080,9 @@ PRIVACY_POINTS = [
     ("lock", "No caller on the lock screen",
      "While a recording plays, the phone&rsquo;s media controls name the caller "
      "only once it is unlocked; locked, they say <em>Call recording</em>."),
-    ("shield", "Debugging stays on while JemRec is installed",
-     "The recorder needs it. A computer you have paired can connect over the "
+    ("shield", "Debugging stays on while JemRec is on",
+     "The recorder needs it; while JemRec is off it can go too (Settings &rarr; "
+     "When JemRec is off). A computer you have paired can connect over the "
      "same Wi-Fi, so now and then check <em>Wireless debugging &rarr; Paired "
      "devices</em>."),
 ]
@@ -2079,7 +2124,8 @@ FAQ = [
      "minutes in another. Until then nothing is recorded &mdash; the header says "
      "so, a notification says the phone held JemRec back the moment it lets "
      "JemRec run again, and one says the recorder is down if it stays down two "
-     "minutes."),
+     "minutes. And if When JemRec is off is set to <em>Turn all debugging "
+     "off</em>, turning JemRec back on needs Wi-Fi too."),
     ("Why isn&rsquo;t it on Google Play?",
      "Play removed call recorders in 2022 by forbidding the Accessibility API "
      "for recording, and no policy change since has re-opened the door. That is "
@@ -2102,10 +2148,26 @@ FAQ = [
      "as they were, once you let it read them (it asks): each recording "
      "carries its own marks &mdash; a message, kept, who a messenger call was "
      "with &mdash; inside the file."),
+    ("My banking app won&rsquo;t open while debugging is on",
+     "Choose in Settings &rarr; <em>When JemRec is off</em> what goes off with "
+     "JemRec, then turn JemRec off &mdash; with the record button or the Quick "
+     "Settings tile &mdash; before you open the bank. <em>Hide Developer "
+     "options</em> switches Developer options and Wireless debugging off; USB "
+     "debugging stays on, so JemRec keeps its recorder and turns back on "
+     "instantly, anywhere. <em>Turn all debugging off</em> switches USB "
+     "debugging off too, and the recorder with it: turning JemRec back on then "
+     "needs Wi-Fi and takes about 15 seconds, the answering machine is off until "
+     "then, and away from Wi-Fi JemRec asks first. Try the first; if your bank "
+     "still refuses, the second. Turning JemRec back on puts back what it "
+     "switched off. Our own banks open with debugging on, so we could not test "
+     "one that refuses &mdash; if yours needed the second choice, or neither "
+     "worked, say so in <a href=\"https://github.com/jemcik/JemRec/issues/37\">"
+     "issue #37</a>."),
     ("How do I turn debugging off for good?",
      "Uninstall JemRec first. If the recorder is running, it notices the "
      "uninstall within a few minutes, turns both debugging switches off and "
-     "exits; either way, once JemRec is gone nothing turns them back on."),
+     "exits; either way, once JemRec is gone nothing turns them back on. To "
+     "have it off only while JemRec is off, see the question above."),
 ]
 
 
@@ -2354,7 +2416,10 @@ HOW_BODY = f"""
   <h3>It keeps itself alive</h3>
   <p>Losing Wi-Fi restarts the ADB daemon and kills what it spawned, so the
      recorder keeps one debugging switch on to survive it, and minds that switch
-     itself. That is what lets a call be recorded in a field with no network.</p>
+     itself. That is what lets a call be recorded in a field with no network.
+     Some phones switch it off themselves &mdash; an Honor&rsquo;s Settings app
+     does each time Developer options opens &mdash; and the app is woken the
+     moment that happens, to switch it back on.</p>
   <p>A reboot is one thing it cannot survive, because starting the recorder
      is the single operation that needs ADB. A scheduled job and a system-held
      Wi-Fi watcher rebuild it without you within seconds of the phone joining a
@@ -2436,6 +2501,14 @@ HOW_BODY = f"""
      A Quick Settings tile turns recording on and off without opening the
      app.</p>
 
+  <h3>Off, and debugging with it, for banking apps</h3>
+  <p>Some banking apps won&rsquo;t open while Developer options or debugging is
+     on. Turning JemRec off can hide Developer options and Wireless debugging
+     too &mdash; the recorder keeps running on USB debugging, so it is back
+     the moment JemRec is on &mdash; or switch all debugging off, the recorder
+     with it, so that turning it on needs Wi-Fi. Turning it on puts back what it
+     switched off. Settings &rarr; When JemRec is off.</p>
+
   <h2 id="permissions">What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never records &mdash; the shell-side
      process does the capturing, your answering-machine greeting included
@@ -2454,7 +2527,7 @@ HOW_BODY = f"""
     <tr><th>Permission</th><th>Why</th></tr>
     <tr><td><code>INTERNET</code></td><td>Not about the internet: Android requires it for any TCP socket, including one to <code>127.0.0.1</code>.</td></tr>
     <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing.</td></tr>
-    <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it.</td></tr>
+    <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to.</td></tr>
     <tr><td><code>POST_NOTIFICATIONS</code></td><td>The recording notice, the ask-first prompt, the pairing code box.</td></tr>
     <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>

@@ -616,7 +616,10 @@ private fun debuggingSwitchesStep(
         }
     )
     if (mayLookOn) append(" If a switch already looks on, turn it off and on once.")
-    append(" If one switches itself off, turn it on again - it holds the second time.")
+    append(
+        " Some phones switch USB debugging off each time Developer options opens - if it is " +
+            "off again when you come back to that screen, turn it on again."
+    )
     if (!wirelessOn) append(" If asked to allow this network, tick Always allow.")
 }
 

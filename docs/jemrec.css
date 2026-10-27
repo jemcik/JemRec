@@ -339,9 +339,12 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .after-steps { margin: 1.4rem 0 0; color: var(--ink-mid); max-width: 46rem; }
 @media (max-width: 54rem) { .steps { grid-template-columns: minmax(0, 1fr); } }
 
-/* A row of six, or on a phone a strip that scrolls sideways and stops on each
-   one - six phones stacked would be six screens of scrolling. */
-.gallery { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1.2rem; }
+/* One row of every screen, however many SCREENS has - a column each, so a
+   new one cannot wrap alone - or below 62rem a strip that scrolls sideways
+   and stops on each one: seven phones stacked would be seven screens of
+   scrolling. 62rem, so seven phones in the row are never narrower than six
+   were at the 54rem this used to change at: about 120px. */
+.gallery { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1.2rem; }
 .gallery figure { margin: 0; text-align: center; }
 .gallery figcaption { margin-top: 1rem; }
 .gallery figcaption strong { display: block; }
@@ -356,7 +359,7 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .shot:hover { transform: translateY(-3px); }
 .shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .gallery-note { color: var(--ink-mid); font-size: .92rem; margin: 1.6rem 0 0; max-width: 46rem; }
-@media (max-width: 54rem) {
+@media (max-width: 62rem) {
   .gallery {
     display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
     gap: 1rem; margin: 0 -1.4rem; padding: .4rem 1.4rem 1rem;

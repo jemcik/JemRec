@@ -656,6 +656,82 @@ public final class Main {
         }
     }
 
+    /**
+     * Mid-call - recording, ringing with an answer on its way, or waiting on
+     * an ask-first answer - or a file being fetched: what a QUIT, or
+     * debugging off, waits out. A fetch cut short by the exit reads as a
+     * complete, shorter recording. Call with Main.class held.
+     */
+    private static boolean busyLocked() {
+        AnswerMachine machine = answerMachine;
+        return activeRecording != null || callActive || fetches.get() > 0
+                || (machine != null && machine.state() != AnswerMachine.State.IDLE
+                    && machine.state() != AnswerMachine.State.RINGING);
+    }
+
+    /** Start the wait for debugging off, unless one is waiting already. */
+    private static void goOffWhenFree() {
+        synchronized (Main.class) {
+            if (offWaiter != null) {
+                return;
+            }
+            Thread waiter = new Thread(Main::waitThenGoOff, "jemrec-off");
+            waiter.setDaemon(true);
+            offWaiter = waiter;
+            waiter.start();
+        }
+    }
+
+    /**
+     * Wait for nothing to be in progress, then switch Wireless debugging off
+     * and USB debugging after it. The second write stops adbd, and adbd's
+     * cgroup goes with it - this process included, so nothing after it is
+     * expected to run unless adbd lived on.
+     */
+    private static void waitThenGoOff() {
+        while (true) {
+            synchronized (Main.class) {
+                if (!goingOff) {
+                    offWaiter = null;
+                    Ln.i("debugging off: called off before it happened");
+                    return;
+                }
+                if (!busyLocked()) {
+                    break;
+                }
+            }
+            sleep(1_000L);
+        }
+        // A mute a message left behind is given back before anything goes.
+        giveBackStaleMute();
+        // And asked once more, last thing: an On whose cancel came after the
+        // wait above ended would otherwise find debugging switched off under
+        // it, the switches it had just put back gone again.
+        synchronized (Main.class) {
+            if (!goingOff) {
+                offWaiter = null;
+                Ln.i("debugging off: called off just before it happened");
+                return;
+            }
+            switchingOff = true;
+        }
+        Ln.i("debugging off: Wireless debugging, then USB debugging - adbd stops, and this process with it");
+        for (String setting : new String[]{"adb_wifi_enabled", "adb_enabled"}) {
+            try {
+                new ProcessBuilder("settings", "put", "global", setting, "0")
+                        .redirectErrorStream(true)
+                        .start()
+                        .waitFor();
+            } catch (Throwable t) {
+                Ln.w("debugging off: could not turn " + setting + " off");
+            }
+        }
+        // Still here: adbd lived on. The app asked for the recorder gone too.
+        sleep(3_000L);
+        Ln.i("debugging off: still running after both switches, exiting");
+        System.exit(0);
+    }
+
     private static boolean appIsInstalled() {
         try {
             Process process = new ProcessBuilder("pm", "path", APP_PACKAGE)
@@ -885,7 +961,9 @@ public final class Main {
                         + readGlobal("adb_wifi_enabled") + " pings=" + pings.getAndSet(0)
                         + " sessions=" + sessions.get() + " at " + new java.util.Date());
             }
-            if (usb != null && !"1".equals(usb)) {
+            // Not while debugging is going off by the user's choice
+            // (COMMAND_DEBUGGING_OFF): putting it back would undo that.
+            if (usb != null && !"1".equals(usb) && !switchingOff) {
                 new ProcessBuilder("settings", "put", "global", "adb_enabled", "1")
                         .redirectErrorStream(true)
                         .start()
@@ -1356,6 +1434,33 @@ public final class Main {
      * that is always there, which is the entire premise of this daemon.
      */
     private static final int COMMAND_QUIT = 'Q';
+
+    /**
+     * Switch Wireless and USB debugging off, and go: "Turn all debugging off"
+     * in the app's When JemRec is off, for apps that will not open while
+     * debugging is on (issue #37). One byte follows: 1 to go, 0 to call off a
+     * go still waiting. It waits, as QUIT does, while a call or a fetch is in
+     * progress - so this process, never frozen, is the one that waits, rather
+     * than an app that may be. USB debugging going off stops adbd, and adbd
+     * takes this process with it (see keepShieldUp): starting it again is the
+     * app's, on its On, over Wi-Fi. Replies OFF NOW, OFF AFTER CALL, OFF
+     * CANCELLED, or OFF TOO LATE for a 0 that came once the switches were
+     * being written: the app's On then waits for this process to be gone
+     * before it puts them back, or these writes would land on its.
+     */
+    private static final int COMMAND_DEBUGGING_OFF = 'O';
+
+    /** Set by COMMAND_DEBUGGING_OFF: the switches go off the first moment
+     *  nothing is in progress. */
+    private static volatile boolean goingOff;
+
+    /** Set once that moment has come and the switches are being written: only
+     *  then does the shield stand down. Not for the call waited out before -
+     *  USB debugging is what keeps adbd, and that call's recording, alive. */
+    private static volatile boolean switchingOff;
+
+    /** The thread waiting for that moment, while there is one. */
+    private static @Nullable Thread offWaiter;
 
     /**
      * The messenger apps whose calls to record - see Voip. In the environment
@@ -2055,16 +2160,9 @@ public final class Main {
         if (command == COMMAND_QUIT) {
             boolean busy;
             synchronized (Main.class) {
-                // Not mid-call - recording, ringing, or waiting on an
-                // ask-first answer - and not while a file is being fetched:
-                // a fetch cut short by the exit reads as a complete, shorter
-                // recording. The app asks this to replace an older build, and
-                // will ask again; the call is worth more than a prompt update.
-                // A ring with an answer on its way counts as mid-call.
-                AnswerMachine machine = answerMachine;
-                busy = activeRecording != null || callActive || fetches.get() > 0
-                        || (machine != null && machine.state() != AnswerMachine.State.IDLE
-                            && machine.state() != AnswerMachine.State.RINGING);
+                // The app asks this to replace an older build, and will ask
+                // again; the call is worth more than a prompt update.
+                busy = busyLocked();
             }
             if (busy) {
                 client.getOutputStream().write("BUSY\n".getBytes(StandardCharsets.UTF_8));
@@ -2078,6 +2176,34 @@ public final class Main {
             // Flushed and acknowledged first, so the app learns it worked
             // rather than seeing a dropped connection and having to guess.
             System.exit(0);
+        }
+        if (command == COMMAND_DEBUGGING_OFF) {
+            int go = client.getInputStream().read();
+            if (go != 0 && go != 1) {
+                // Only an explicit 1 switches debugging off: a byte that
+                // never came reads as -1, and must not count as a go.
+                refuse(client, "debugging off without a 0 or 1 (" + go + ")");
+                return;
+            }
+            String reply;
+            synchronized (Main.class) {
+                if (go == 0 && switchingOff) {
+                    reply = "OFF TOO LATE";
+                } else if (go == 0) {
+                    goingOff = false;
+                    reply = "OFF CANCELLED";
+                } else {
+                    goingOff = true;
+                    reply = busyLocked() ? "OFF AFTER CALL" : "OFF NOW";
+                }
+            }
+            client.getOutputStream().write((reply + "\n").getBytes(StandardCharsets.UTF_8));
+            client.getOutputStream().flush();
+            Ln.i("session: debugging off - " + reply);
+            if (go == 1) {
+                goOffWhenFree();
+            }
+            return;
         }
         if (command == COMMAND_RECORD) {
             // Live capture straight to the socket. Calls no longer use this - the

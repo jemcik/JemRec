@@ -186,6 +186,15 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AppScaffold(state: UiState, vm: MainViewModel) {
+    // The record control's question, when turning off would leave JemRec
+    // needing Wi-Fi it has not got (MainViewModel.toggleRecording). Here, not
+    // in MainScreen, so the screen tests draw it as the app does.
+    if (state.askingToTurnOff) {
+        TurnOffAwayFromWifiDialog(
+            onTurnOff = { vm.answerTurnOff(true) },
+            onCancel = { vm.answerTurnOff(false) },
+        )
+    }
     val ready = state.step == SetupStep.READY
     val offHome = ready && state.screen != Screen.HOME
     val inTrash = ready && state.screen == Screen.TRASH
@@ -345,6 +354,7 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                             Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
                             Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
                             Screen.ANSWERING_MACHINE -> AnsweringMachineScreen(state, vm)
+                            Screen.WHEN_OFF -> WhenOffScreen(state, vm)
                             else -> SettingsScreen(state, vm)
                         }
                     }
@@ -409,6 +419,7 @@ internal fun AppHeader(state: UiState, vm: MainViewModel, panel: (@Composable ()
             Screen.ANSWERING_MACHINE -> "Answering machine"
             Screen.TRASH -> "Recently deleted"
             Screen.THEME -> "Theme"
+            Screen.WHEN_OFF -> "When JemRec is off"
             else -> "Settings"
         },
         busy = state.busy,

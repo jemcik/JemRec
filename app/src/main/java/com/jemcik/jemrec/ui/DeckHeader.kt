@@ -150,6 +150,7 @@ private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColo
 
 private fun deckWords(instruction: Instruction): String = when (instruction) {
     Instruction.SWITCH_ON -> "PRESS REC TO RECORD CALLS"
+    Instruction.SWITCH_ON_OVER_WIFI -> "DEBUGGING OFF · REC NEEDS WI-FI"
     Instruction.ALLOW_WIFI -> "TAP TO ALLOW THIS WI-FI"
     Instruction.JOIN_WIFI -> "JOIN ANY WI-FI · RESUMES ITSELF"
     Instruction.PAIR_AGAIN -> "TAP TO PAIR AGAIN"

@@ -44,8 +44,10 @@ import com.jemcik.jemrec.capture.VoipCallNotes
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
+import com.jemcik.jemrec.capture.DebugSwitchesOff
 import com.jemcik.jemrec.capture.GlobalSettings
 import com.jemcik.jemrec.capture.NetworkRevive
+import com.jemcik.jemrec.capture.OffMode
 import com.jemcik.jemrec.capture.RecorderHealth
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.DeleteResult
@@ -94,6 +96,11 @@ private const val PAGE = 20
  *  the moment gets its waveform the same day. */
 private const val RETRY_UNDECODABLE_MS = 30 * 60_000L
 
+/** How long the header says "Starting..." for a recorder started from the
+ *  tile before it takes a fresh reading anyway: the Honor's took 6 s, and
+ *  one that needs Wi-Fi there is none of will not come at all. */
+private const val RECORDER_ELSEWHERE_MS = 30_000L
+
 /** How much diagnostics log to keep. Roughly a screen or two of history,
  *  which is as far back as anyone reads. */
 private const val LOG_LIMIT = 8_000
@@ -109,12 +116,12 @@ private const val LOG_LIMIT = 8_000
 enum class Screen {
     HOME, SETTINGS,
     // Reached from Settings, and back to it.
-    WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE, THEME;
+    WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE, THEME, WHEN_OFF;
 
     /** Where Back goes from here. */
     val up: Screen get() = when (this) {
         HOME, SETTINGS -> HOME
-        WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE, THEME -> SETTINGS
+        WHOSE_CALLS, MESSENGER_CALLS, DIAGNOSTICS, TRASH, ANSWERING_MACHINE, THEME, WHEN_OFF -> SETTINGS
     }
 }
 
@@ -222,6 +229,14 @@ data class UiState(
     val offerCallLog: Boolean = false,
     /** Whether JemRec is switched on at all. */
     val enabled: Boolean = true,
+    /** What turning JemRec off switches off besides: Settings, When JemRec
+     *  is off (DebugSwitchesOff). */
+    val offMode: OffMode = OffMode.KEEP_DEBUGGING,
+    /** Off with all debugging, so with the recorder gone: On needs Wi-Fi. */
+    val debuggingOff: Boolean = false,
+    /** The question before turning off with all debugging, away from Wi-Fi,
+     *  is on screen (TurnOffAwayFromWifiDialog). */
+    val askingToTurnOff: Boolean = false,
     /**
      * Switching on, and not yet finished.
      *
@@ -352,7 +367,43 @@ class MainViewModel @JvmOverloads constructor(
     /** The switch can be flipped from the Quick Settings tile while this
      *  screen is up, without the screen ever pausing. See RecorderSwitch.observe. */
     private val stopWatchingSwitch = RecorderSwitch.observe(app) { on ->
+        val was = _state.value.enabled
         _state.update { it.copy(enabled = on) }
+        // On from elsewhere - the tile - with this screen up: the header's
+        // last reading of the recorder is from before it went, and said
+        // "Ready" six seconds before the recorder was back (the Honor,
+        // 2026-10-26). A flip from this screen is handled by setEnabled.
+        if (on && !was) awaitRecorderStartedElsewhere()
+    }
+
+    /** What went off with the switch, as it changes - from the tile too. */
+    private val stopWatchingDebugSwitches = DebugSwitchesOff.observe(app) { gone ->
+        _state.update { it.copy(debuggingOff = gone) }
+    }
+
+    private val awaitingRecorder = AtomicBoolean(false)
+
+    /**
+     * "Starting..." until the recorder answers, then a fresh reading. Only
+     * waits: whoever switched JemRec on is starting the recorder, and a
+     * second revive here could run before the switches are back and be
+     * turned away by them (DebugSwitchesOff.recorderGone). Thirty seconds at
+     * most - off Wi-Fi it will not come, and the reading then says so.
+     */
+    private fun awaitRecorderStartedElsewhere() {
+        if (!awaitingRecorder.compareAndSet(false, true)) return
+        _state.update { it.copy(starting = true) }
+        viewModelScope.launch {
+            try {
+                kotlinx.coroutines.withTimeoutOrNull(RECORDER_ELSEWHERE_MS) {
+                    while (!CaptureDaemon.isRunning(getApplication())) kotlinx.coroutines.delay(1_000)
+                }
+                refreshNow()
+            } finally {
+                _state.update { it.copy(starting = false) }
+                awaitingRecorder.set(false)
+            }
+        }
     }
 
     /**
@@ -763,6 +814,32 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /**
+     * The record control. Turning off asks first in the one case it costs
+     * more than it says: all debugging off, and no Wi-Fi to come back on
+     * over (OffMode.asksFirst). Everything else goes straight to [setEnabled].
+     */
+    fun toggleRecording(on: Boolean) {
+        if (!on && DebugSwitchesOff.asksBeforeOff(getApplication())) {
+            _state.update { it.copy(askingToTurnOff = true) }
+            return
+        }
+        setEnabled(on)
+    }
+
+    /** The question's answer: [turnOff], or leave JemRec on. */
+    fun answerTurnOff(turnOff: Boolean) {
+        _state.update { it.copy(askingToTurnOff = false) }
+        if (turnOff) setEnabled(false)
+    }
+
+    /** When JemRec is off: applies from the next off, and On puts back what
+     *  the last off really switched off whatever this says by then. */
+    fun setOffMode(mode: OffMode) {
+        DebugSwitchesOff.setMode(getApplication(), mode)
+        _state.update { it.copy(offMode = mode) }
+    }
+
+    /**
      * Turn JemRec on or off.
      *
      * A soft switch, see RecorderSwitch: off tells the daemon to capture
@@ -772,15 +849,18 @@ class MainViewModel @JvmOverloads constructor(
      * Wi-Fi - and stranded an "off" in the field until the next network.
      */
     fun setEnabled(on: Boolean) {
-        // Saved at once, outside the action below, which waits its turn.
-        RecorderSwitch.set(getApplication(), on)
         // `starting` matters as much as `enabled` here. The switch flips at
         // once, but the recorder takes a couple of seconds to come up, and in
         // between the screen still held the reading from when it was off - so
         // it announced in red that the phone could not record and needed Wi-Fi,
         // while the recorder was starting normally. An error shown for a normal
-        // operation in progress is how people learn to ignore errors.
+        // operation in progress is how people learn to ignore errors. And
+        // shown before the switch is saved, so the switch's own listener
+        // (stopWatchingSwitch) takes this flip for this screen's, not the
+        // tile's.
         _state.update { it.copy(enabled = on, starting = on) }
+        // Saved at once, outside the action below, which waits its turn.
+        RecorderSwitch.set(getApplication(), on)
         // Waits its turn rather than being dropped: the record control takes
         // a tap while the app is busy - each opening's check holds busy for
         // seconds - and the tap was dropped without a sign, the control
@@ -1229,6 +1309,8 @@ class MainViewModel @JvmOverloads constructor(
                 debugNotificationHidden = DebugNotificationCleaner.hiding(app),
                 afterCallNotice = AfterCall.enabled(app),
                 enabled = RecorderSwitch.isOn(app),
+                offMode = DebugSwitchesOff.mode(app),
+                debuggingOff = DebugSwitchesOff.recorderGone(app),
                 canReadCallLog = CallLogLookup.granted(app),
                 canReadAudio = AudioAccess.granted(app),
                 offerCallLog = CallLogLookup.anythingLeftToOffer(app) &&
@@ -1282,6 +1364,8 @@ class MainViewModel @JvmOverloads constructor(
                 debugNotificationHidden = snapshot.debugNotificationHidden,
                 afterCallNotice = snapshot.afterCallNotice,
                 enabled = snapshot.enabled,
+                offMode = snapshot.offMode,
+                debuggingOff = snapshot.debuggingOff,
                 canReadCallLog = snapshot.canReadCallLog,
                 canReadAudio = snapshot.canReadAudio,
                 offerCallLog = snapshot.offerCallLog,
@@ -1416,6 +1500,8 @@ class MainViewModel @JvmOverloads constructor(
         val debugNotificationHidden: Boolean,
         val afterCallNotice: Boolean,
         val enabled: Boolean,
+        val offMode: OffMode,
+        val debuggingOff: Boolean,
         val canReadCallLog: Boolean,
         val canReadAudio: Boolean,
         val offerCallLog: Boolean,
@@ -1730,6 +1816,7 @@ class MainViewModel @JvmOverloads constructor(
      *  under the system's controls, until they stop it. */
     override fun onCleared() {
         stopWatchingSwitch()
+        stopWatchingDebugSwitches()
         ticker?.cancel()
         controller?.run {
             removeListener(sessionEvents)

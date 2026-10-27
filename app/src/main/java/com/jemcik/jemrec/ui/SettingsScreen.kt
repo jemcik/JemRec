@@ -394,10 +394,24 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modif
                     },
                 )
             }
+        }
+
+        // Debugging, and what JemRec does with it: Android's reminder that it is
+        // on, and what else goes off when JemRec does (issue #37).
+        SettingsGroup("Debugging") {
+            row {
+                SettingsRow(
+                    title = "When JemRec is off",
+                    summary = offModeTitle(state.offMode),
+                    icon = SettingsIcons.Power,
+                    onClick = { vm.showScreen(Screen.WHEN_OFF) },
+                )
+            }
             // Setup's debugging question, answerable again. Debugging itself is
-            // not a choice here - the recorder needs it - so the summary says
-            // what stays on whichever way the switch is set, and the switch is
-            // only about Android's reminder of it. See DebugNotificationCleaner.
+            // not a choice while JemRec is on - the recorder needs it - so the
+            // summary says what stays on whichever way the switch is set, and
+            // the switch is only about Android's reminder of it. See
+            // DebugNotificationCleaner.
             row {
                 SwitchRow(
                     title = "Hide the debugging notification",

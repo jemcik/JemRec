@@ -62,6 +62,15 @@ through the real app and daemon, checking what each one leaves behind:
               (as unplugging an Honor from a computer does, three seconds
               later) is started again, with Wireless debugging switched off
               and on - the port is the emulator's own simulated one
+  usb-debugging  USB debugging switched off, as an Honor's Settings app does
+              whenever Developer options is shown, wakes the app, which
+              switches it back on and has the recorder answering again
+  hide-developer-options  When JemRec is off set to Hide Developer options:
+              off takes Developer options and Wireless debugging off and keeps
+              the recorder; on puts them back
+  debugging-off  set to Turn all debugging off: off has the recorder switch
+              Wireless and USB debugging off and go, adb with it; on puts all
+              of it back and starts the recorder again
   background  the daemon's watch for this phone stopping JemRec in the
               background runs and reads the device's own exit records; from
               Android 15, a Force stop's open is read from the app's own
@@ -87,6 +96,7 @@ CONTACT = "5557777"      # made a contact here, as "TestKept"
 STRANGER_IN = "5554321"  # rings in; no contact
 STRANGER_OUT = "5551234"  # dialled; no contact
 CALLER_ID = ("3034997111", "NIST Radio Station WWV")  # issue #30's call
+USB_GUARD = "jemrec_usb_guard"  # the snapshot usb_debugging comes back to
 
 serial = "emulator-5554"
 
@@ -195,6 +205,11 @@ def set_up(apk):
     adb("install", "-r", apk, check=True)
     for permission in ("READ_CALL_LOG", "READ_CONTACTS", "POST_NOTIFICATIONS"):
         sh(f"pm grant {PKG} android.permission.{permission}")  # NOTIFICATIONS fails before 13: fine
+    # Setup grants this to the app over its own ADB session, and these checks
+    # skip setup. Without it the app cannot put USB debugging back: the
+    # usb_debugging check locked the Android 12 and 13 AVDs out until this
+    # line (2026-10-26, "cannot write adb_enabled - SecurityException").
+    sh(f"pm grant {PKG} android.permission.WRITE_SECURE_SETTINGS")
     # A contact, if this emulator has none with the number yet.
     if CONTACT not in sh("content query --uri content://com.android.contacts/data/phones --projection data1"):
         sh("content insert --uri content://com.android.contacts/raw_contacts --bind account_type:n: --bind account_name:n:")
@@ -1221,6 +1236,167 @@ def cable():
             print(f"     (the recorder could not be started again afterwards: {e})")
 
 
+def revive_log():
+    return sh(f"run-as {PKG} cat files/revive.log")
+
+
+def revive_since(before):
+    """What the app has noted in its revive log since [before] was read. Read
+    as what follows it, not by looking for a line: the log outlives a run, and
+    an earlier run's lines would pass for this one's. It is appended to, and
+    moved to revive.log.1 once past 64 kB (ReviveLog)."""
+    now = revive_log()
+    if now.startswith(before):
+        return now[len(before):]
+    older = sh(f"run-as {PKG} cat files/revive.log.1")
+    return (older[len(before):] if older.startswith(before) else older) + now
+
+
+def usb_debugging():
+    """On an Honor, showing Developer options without a cable has the phone's
+    own Settings app switch USB debugging off; adbd stops, and the recorder
+    with it. Android wakes the app on that change (UsbDebuggingWatch, a
+    content trigger on the setting), and the keep-alive turns the switch back
+    on and starts the recorder again. Here the shell switches it off instead,
+    with the app in the background - which takes this adb connection down with
+    adbd until the app has put the switch back.
+
+    If the app never does, nothing over adb can reach the emulator again - the
+    Android 12 and 13 AVDs stayed locked out through a cold boot on 2026-10-26,
+    when these checks did not yet grant the app WRITE_SECURE_SETTINGS (see
+    set_up). So the emulator's console, which needs no adbd, takes a snapshot
+    first, and loads it if the switch is not back in time."""
+    start_recorder()
+    before = daemon_pid()
+    log_before = revive_log()
+    sh("input keyevent KEYCODE_HOME")
+    if "OK" not in adb("emu", "avd", "snapshot", "save", USB_GUARD):
+        raise RuntimeError("no snapshot to come back to; not switching USB debugging off")
+    try:
+        try:
+            adb("shell", "settings put global adb_enabled 0", timeout=15)
+        except subprocess.TimeoutExpired:
+            pass  # adbd going away under the command is the point
+
+        def switched_back_on():
+            try:
+                return (adb("get-state", timeout=5).strip() == "device"
+                        and sh("settings get global adb_enabled").strip() == "1")
+            except subprocess.TimeoutExpired:
+                return False
+
+        try:
+            wait_for(switched_back_on, 60, "")
+        except TimeoutError:
+            adb("emu", "avd", "snapshot", "load", USB_GUARD)
+            adb("wait-for-device", timeout=60)
+            raise TimeoutError("the app never switched USB debugging back on; "
+                               "the emulator was put back from the snapshot")
+    finally:
+        adb("emu", "avd", "snapshot", "delete", USB_GUARD)
+    wait_for(lambda: "usbwatch: USB debugging changed" in revive_since(log_before), 10,
+             "the app woken by the change")
+    after = wait_for(daemon_pid, 30, "a recorder process")
+    wait_for(lambda: "PONG" in sh("printf P | toybox nc -w 2 127.0.0.1 28472"), 30,
+             "the recorder answering")
+    if after == before:
+        return "woken by the change, switch back on; adbd kept the recorder here"
+    return "woken by the change, switch back on, recorder started again"
+
+
+def global_setting(name):
+    return sh(f"settings get global {name}").strip()
+
+
+def hide_developer_options():
+    """When JemRec is off, Hide Developer options: off switches Developer
+    options and Wireless debugging off and leaves USB debugging - so adbd and
+    the recorder - alone; on puts back what it switched off. On the Honor
+    (2026-10-26) the recorder lived through that off the cable, through Wi-Fi
+    off and on, a locked phone and a real call; here, that the switches go and
+    come back and the recorder keeps its process."""
+    set_prefs(off_mode="HIDE_DEVELOPER_OPTIONS")
+    try:
+        start_recorder()
+        sh("settings put global development_settings_enabled 1")  # as on any phone set up
+        before = daemon_pid()
+        wireless = global_setting("adb_wifi_enabled") == "1"
+        diag("switch", "--ez", "on", "false")
+        wait_for(lambda: global_setting("development_settings_enabled") == "0", 15, "Developer options off")
+        if wireless:
+            wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 15, "Wireless debugging off")
+        assert global_setting("adb_enabled") == "1", "USB debugging went off too"
+        time.sleep(3)
+        assert daemon_pid() == before, "the recorder went with them"
+        assert "PONG" in sh("printf P | toybox nc -w 2 127.0.0.1 28472"), "the recorder stopped answering"
+        diag("switch", "--ez", "on", "true")
+        wait_for(lambda: global_setting("development_settings_enabled") == "1", 15, "Developer options back")
+        if wireless:
+            wait_for(lambda: global_setting("adb_wifi_enabled") == "1", 15, "Wireless debugging back")
+        assert daemon_pid() == before, "the recorder was restarted for nothing"
+        return (f"Developer options{' and Wireless debugging' if wireless else ''} off and back on, "
+                f"the recorder kept (pid {before})")
+    finally:
+        # On again whatever failed, or every check after this one runs with
+        # recording off. A second on puts back nothing and finds the recorder up.
+        try:
+            diag("switch", "--ez", "on", "true")
+        except Exception as e:  # not in place of whatever failed the check
+            print(f"     (JemRec could not be turned back on afterwards: {e})")
+        set_prefs(off_mode=None)
+
+
+def debugging_off():
+    """When JemRec is off, Turn all debugging off: off has the recorder switch
+    Wireless and USB debugging off and go, and adbd - this adb connection with
+    it - goes away. On, here a debug-build delay (TurnOnLater) since the adb
+    that would send it is gone, puts all of it back and starts the recorder.
+    Guarded as usb_debugging is: a snapshot the console loads if adb never
+    comes back."""
+    log_before = revive_log()
+    set_prefs(off_mode="ALL_DEBUGGING_OFF")
+    start_recorder()
+    sh("settings put global development_settings_enabled 1")
+    before = daemon_pid()
+    adbd_before = sh("pidof adbd").strip()
+    if "OK" not in adb("emu", "avd", "snapshot", "save", USB_GUARD):
+        raise RuntimeError("no snapshot to come back to; not switching debugging off")
+    try:
+        diag("switch", "--ez", "on", "false", "--ei", "back_after_s", "30")
+        # Not "adb gone": on the 13 and 17 AVDs the Mac's adb went on calling
+        # the emulator a device while adbd was down (2026-10-26). adbd's new
+        # process ID, below, is the proof it stopped.
+        time.sleep(5)
+
+        def all_back():
+            try:
+                return (adb("get-state", timeout=5).strip() == "device"
+                        and global_setting("adb_enabled") == "1"
+                        and global_setting("development_settings_enabled") == "1")
+            except subprocess.TimeoutExpired:
+                return False
+
+        try:
+            wait_for(all_back, 120, "")
+        except TimeoutError:
+            adb("emu", "avd", "snapshot", "load", USB_GUARD)
+            adb("wait-for-device", timeout=60)
+            raise TimeoutError("debugging never came back on; the emulator was put back from the snapshot")
+    finally:
+        adb("emu", "avd", "snapshot", "delete", USB_GUARD)
+        set_prefs(off_mode=None)
+    after = wait_for(daemon_pid, 60, "a recorder process")
+    wait_for(lambda: "PONG" in sh("printf P | toybox nc -w 2 127.0.0.1 28472"), 30, "the recorder answering")
+    log_text = revive_since(log_before)
+    assert "debugging off: the recorder says OFF NOW" in log_text, "the recorder was not the one to switch it off"
+    assert "debugging off: Wireless debugging, then USB debugging" in sh("cat /data/local/tmp/jemrec-capture.out.1"), \
+        "the old recorder never switched them off"
+    assert sh("pidof adbd").strip() != adbd_before, "adbd never stopped: USB debugging did not go off"
+    assert "debugging back on: USB_DEBUGGING" in log_text, "On did not put USB debugging back"
+    assert after != before, "the same recorder: it never went"
+    return "adbd stopped with USB debugging, all of it back on, recorder started again"
+
+
 def background():
     """The daemon watches `dumpsys activity exit-info` for this phone killing
     JemRec in the background, and wakes the app to warn when it sees a new one
@@ -1273,7 +1449,8 @@ def self_test():
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, app_call, waveform, background_playback,
-          recently_deleted, recently_deleted_folder, looks, reinstall, cable, background]
+          recently_deleted, recently_deleted_folder, looks, reinstall, cable, usb_debugging, hide_developer_options,
+          debugging_off, background]
 
 
 def nothing_pending():

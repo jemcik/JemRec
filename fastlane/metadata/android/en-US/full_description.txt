@@ -6,7 +6,7 @@ In an ADB session of a few seconds the app starts a small shell-privileged daemo
 
 <b>Recordings</b> are Ogg Opus files in the phone's Recordings/JemRec folder. A recording starts when the call is answered: no ringing, and a call nobody answered is not kept. Automatic mode records every call; ask-first mode records nothing until you tap Record. Messenger calls (WhatsApp, Telegram, Signal, Viber) and Google Meet can be recorded too, both sides, app by app, on Android 14+; all but Signal tested. It tells you when something is wrong: a silent recording, a recorder that is down, a call that went unrecorded.
 
-<b>Playing, finding, keeping.</b> A call plays as its waveform, and goes on with the screen off, its caller kept off the lock screen. A Calls tab shows the call log: each recording, or why there is none; both lists can be searched and filtered. Deleted recordings wait 30 days in Recently deleted; auto-delete, off by default, clears old and very short recordings, never ones marked to keep. You can keep only some people's calls, and name files with the caller - or so Honor's Phone app plays them from its call history.
+<b>Playing, finding, keeping.</b> A call plays as its waveform, and goes on with the screen off, its caller kept off the lock screen. A Calls tab shows the call log: each recording, or why there is none; both lists can be searched and filtered. Deleted recordings wait 30 days in Recently deleted; auto-delete, off by default, clears old and very short recordings, never ones marked to keep. You can keep only some people's calls, and name files with the caller, or as Honor's Phone app plays them.
 
 <b>Three looks</b>: Memo; Deck, a pocket recorder; Multitrack, a sound editor - each light, dark or as the phone.
 
@@ -14,9 +14,9 @@ In an ADB session of a few seconds the app starts a small shell-privileged daemo
 
 <b>Setup</b> takes two things by hand, once: turn on Developer options, then USB debugging and Wireless debugging, and type the pairing code into JemRec's notification. The pairing survives reboots; the recorder is rebuilt on the next Wi-Fi if the phone lets JemRec run on its own - setup asks, and JemRec warns if the phone stops it. Wi-Fi is only needed to rebuild it.
 
-<b>What stays on.</b> USB and Wireless debugging stay on while JemRec is installed, turned back on if they go off: the recorder needs them. While they are on, a computer paired with the phone can connect to it on the same Wi-Fi. To turn debugging off for good, uninstall JemRec first.
+<b>What stays on.</b> USB and Wireless debugging stay on while JemRec is on, turned back on if they go off: the recorder needs them. For banking apps, turning JemRec off can also hide Developer options, or turn all debugging off. While debugging is on, a paired computer can connect on the same Wi-Fi. To turn it off for good, uninstall JemRec.
 
-<b>Requirements.</b> Android 12 or newer, and a phone whose audio hardware hands over the voice-call source. Both sides have been recorded on an Honor Magic 8 Pro, Galaxy S20 and S23, and a OnePlus on LineageOS. The self-test in Settings → Diagnostics answers it for your phone.
+<b>Requirements.</b> Android 12 or newer, and a phone whose audio hardware hands over the voice-call source. Both sides have been recorded on an Honor Magic 8 Pro, Galaxy S20 and S23, and a OnePlus on LineageOS. Settings → Diagnostics has a self-test for yours.
 
 <b>Recording calls is your responsibility.</b> Consent law differs by country and state. This app records what you tell it to and warns nobody on your behalf.
 

@@ -10,4 +10,14 @@
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+
+    <!--
+      TurnOffQuestionActivity: only its dialog is drawn, over whatever was
+      open when the tile was tapped, so the window itself is see-through.
+    -->
+    <style name="Theme.JemRec.Question" parent="Theme.JemRec">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>
