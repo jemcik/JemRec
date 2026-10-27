@@ -423,6 +423,25 @@ final class Checks {
     }
 
     /**
+     * The two sides of a call as stereo PCM (Voip.Capture): [mine], the
+     * microphone, on the left, and [theirs], the stereo copy of the call made
+     * mono, on the right - for every call, so the sides never swap with its
+     * kind: where the call capture has them on a phone that splits the sides
+     * (the Honor: its left all zeros while muted, 2026-10-22), and where the
+     * answering machine reads its own side (Main.onChunk). Up to 0.24 a
+     * messenger call had them the other way round. In the
+     * platform's byte order, as AudioRecord writes it; a ByteBuffer starts out
+     * big-endian, which would be noise.
+     */
+    static void stereo(short[] mine, short[] theirs, int frames, java.nio.ByteBuffer out) {
+        out.order(java.nio.ByteOrder.nativeOrder());
+        for (int i = 0; i < frames; i++) {
+            out.putShort(mine[i]);
+            out.putShort((short) ((theirs[2 * i] + theirs[2 * i + 1]) / 2));
+        }
+    }
+
+    /**
      * Whether a USB port's current mode (UsbPortStatus.getCurrentMode) means
      * a cable is in. 0 is MODE_NONE, nothing attached; measured on the Honor,
      * 2026-10-24: 1 plugged into a computer, 8 into a wall charger, 0 with

@@ -1,0 +1,1 @@
+Messenger calls are now recorded with you on the left channel and the other person on the right, the order phone calls have on phones that keep the two sides apart, so the sides no longer swap with the kind of call. Recordings made before keep their order. (Issue #20)

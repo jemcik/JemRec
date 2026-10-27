@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-852-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-853-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -285,12 +285,15 @@ What is left out, and why, is in
 <br>
 
 Yes, where the phone's audio hardware hands both sides over - which it did on
-every phone above. The Self-test tells you for yours in about a second. On
-speakerphone, a messenger call's other person is heard on your side too: your
-side is the plain microphone, without the call app's echo cancellation. A call
-that still comes out with one side - over Wi-Fi Calling, say - is worth an
-issue on GitHub: tap *Copy a report* in Diagnostics right after it and paste
-that in.
+every phone above. The Self-test tells you for yours in about a second. In a
+messenger call each side has a channel of its own, you on the left and the
+other person on the right; a phone call has them so where the phone keeps the
+two apart, as the Honor does, and on others - a Pixel, by one report - both
+channels carry the same mix. On speakerphone, a messenger call's other person
+is heard on your side too: your side is the plain microphone, without the call
+app's echo cancellation. A call that still comes out with one side - over
+Wi-Fi Calling, say - is worth an issue on GitHub: tap *Copy a report* in
+Diagnostics right after it and paste that in.
 
 </details>
 
@@ -432,7 +435,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 852 tests, screenshots of the screens included
+    ./gradlew test              # 853 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

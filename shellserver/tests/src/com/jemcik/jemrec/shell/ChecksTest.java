@@ -328,6 +328,21 @@ public class ChecksTest {
     }
 
     @Test
+    public void ownSideLeftTheCopyMadeMonoRight() {
+        // The microphone, and the call's copy in stereo: the copy's two
+        // channels averaged, each frame's own side first.
+        short[] mine = {100, -200};
+        short[] theirs = {1000, 3000, -1000, -3001};
+        java.nio.ByteBuffer out = java.nio.ByteBuffer.allocate(8);
+        Checks.stereo(mine, theirs, 2, out);
+        out.flip();
+        assertEquals(java.nio.ByteOrder.nativeOrder(), out.order());
+        short[] pcm = new short[4];
+        out.asShortBuffer().get(pcm);
+        assertArrayEquals(new short[] {100, 2000, -200, -2000}, pcm);
+    }
+
+    @Test
     public void aMessengerCallGoesOnThroughAPhoneRing() {
         // In communication: the call, as ever.
         assertTrue(Checks.messengerCallGoesOn(Checks.MODE_IN_COMMUNICATION, false));

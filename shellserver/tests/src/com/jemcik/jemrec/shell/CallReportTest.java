@@ -52,15 +52,16 @@ public class CallReportTest {
         CallReport r = report();
         r.route(CallReport.Route.MESSENGER, -1);
         short[] pcm = stereo(100, 1000, 1000);
+        // The copy, on the right, mostly missing: what a far side the copy
+        // did not reach looks like.
         for (int f = 0; f < 70; f++) {
-            pcm[2 * f] = 0;
+            pcm[2 * f + 1] = 0;
         }
         r.chunk(pcm, 100, 2);
         String text = r.text();
-        assertTrue(text, text.contains("left (the other side, the copy) -35.5 dB (peak -30.3 dB), 70% of it exact zeros"));
+        assertTrue(text, text.contains("right (the other side, the copy) -35.5 dB (peak -30.3 dB), 70% of it exact zeros"));
         // The other channel had none: nothing said about zeros.
-        assertTrue(text, text.contains("right (you, the microphone) -30.3 dB (peak -30.3 dB)\n")
-                || text.endsWith("right (you, the microphone) -30.3 dB (peak -30.3 dB)"));
+        assertTrue(text, text.contains("left (you, the microphone) -30.3 dB (peak -30.3 dB); "));
     }
 
     @Test

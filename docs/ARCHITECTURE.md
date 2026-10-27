@@ -308,6 +308,25 @@ Recordings are Opus in an Ogg container, in the phone's standard
 `Recordings/JemRec` folder, where any file manager or music app can open them.
 You can point the app somewhere else.
 
+**Two channels.** Every recording is stereo. A messenger call, and a phone call
+that plays through the mixer (both below), have you on the left channel and the
+other person on the right: JemRec takes the two sides from two sources and puts
+them there itself. An ordinary phone call has what the phone's own audio driver
+gives the call capture (`VOICE_CALL`, asked for in stereo). On the Honor
+(MagicOS 11, Android 17) that is the two sides apart, you on the left: the left
+was all zeros while the answering machine had the microphone muted
+(2026-10-22); the 7 phone calls among the recordings checked on 2026-10-26 and
+27 all had channels too different to be one mix copied twice (an eighth, an
+answering-machine message, had its left silent, muted); and played on
+the phone's two speakers, its owner's voice came from one and the other
+person's from the other (2026-10-27). One call of ten checked on 2026-10-20
+had nearly all its sound on one channel, both voices in it; why is not known.
+On a Pixel with Android 17 both channels carry the same mix (reported in
+[issue #20](https://github.com/jemcik/JemRec/issues/20), 2026-10-27, not
+measured here). Splitting such a call would take two captures at once, the
+call's uplink and downlink, which other recorders report working only on some
+phones; it is not built.
+
 A Quick Settings tile turns recording on and off without opening the app. It
 is the same switch as the one in the app's header.
 
@@ -441,8 +460,15 @@ the microphone, opened so that it never takes the microphone from the call app;
 if Android ever reports the call app's own capture silenced while JemRec
 records, JemRec drops its microphone at once. A call is the phone's audio in
 "communication" mode with a switched-on app both playing call audio and
-capturing - so a voice message played at the ear is not one. The other person
-is on the left channel, you on the right.
+capturing - so a voice message played at the ear is not one. You are on the
+left channel and the other person on the right, where a phone call's recording
+has them on a phone that splits the two sides
+([two channels](#recording-and-being-asked)), so the sides never swap with the
+kind of call. Up to 0.24 a messenger call had them the other way
+round, and recordings made then stay so. Measured on the Honor, 2026-10-27,
+played on its speakers: a Telegram call recorded by 0.24.1 had its owner's
+voice from the same speaker as the phone calls, and one recorded by 0.24 from
+the other.
 
 - **An app can refuse.** Android lets an app mark its audio as not capturable,
   and honours that whatever the recorder holds. JemRec does not try to get

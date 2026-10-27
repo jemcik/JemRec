@@ -259,9 +259,10 @@ no other app can add one to its call history.
 ## Messenger calls
 
 **Messenger calls**, in Settings, records WhatsApp, Telegram, Signal and Viber
-calls too, and Google Meet calls and meetings — both sides, the other person on
-the left channel and you on the right. Each app has its own switch, and all are
-off until you turn one on. The ones installed on your phone are listed.
+calls too, and Google Meet calls and meetings — both sides, you on the left
+channel and the other person on the right (up to JemRec 0.24, the other way
+round). Each app has its own switch, and all are off until you turn one on. The
+ones installed on your phone are listed.
 
 It needs **Android 14 or newer**. Before it, Android does not let the recorder
 copy another app's call audio, and Settings says so instead of offering

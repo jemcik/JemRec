@@ -22,7 +22,6 @@ import android.os.SystemClock;
 
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -564,8 +563,8 @@ final class Voip {
     // --- the capture -----------------------------------------------------------------
 
     /**
-     * Both sides as one stereo stream, the shape every other recording has:
-     * the other person on the left, the user on the right.
+     * Both sides as one stereo stream: the user on the left, the other person
+     * on the right (Checks.stereo says why).
      *
      * The microphone is the clock. Each read takes the next block of it and
      * whatever the copy of the call has delivered: silence where the copy is
@@ -706,18 +705,7 @@ final class Voip {
             }
             fp.dropBeyond(MAX_AHEAD * 2);
             fp.take(theirs, FRAMES * 2, false);
-
-            // PCM in the platform's byte order, as AudioRecord writes it; a
-            // ByteBuffer starts out big-endian, which would be noise.
-            out.order(ByteOrder.nativeOrder());
-            for (int i = 0; i < FRAMES; i++) {
-                short far = (short) ((theirs[2 * i] + theirs[2 * i + 1]) / 2);
-                // A phone call's own side on the left, where the call capture
-                // has it and the answering machine reads it (Main.onChunk); a
-                // messenger call's on the right, as it always was.
-                out.putShort(phone ? mine[i] : far);
-                out.putShort(phone ? far : mine[i]);
-            }
+            Checks.stereo(mine, theirs, FRAMES, out);
             int bytes = FRAMES * AudioConfig.CHANNELS * AudioConfig.BYTES_PER_SAMPLE;
             long pts = startUs + framesOut * 1_000_000L / SAMPLE_RATE;
             framesOut += FRAMES;

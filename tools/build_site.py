@@ -1117,7 +1117,8 @@ SETUP = [
     ("h2", "Messenger calls"),
     ("p", "**Messenger calls**, in Settings, records WhatsApp, Telegram, Signal "
           "and Viber calls too, and Google Meet calls and meetings — both sides, "
-          "the other person on the left channel and you on the right. Each app "
+          "you on the left channel and the other person on the right (up to "
+          "JemRec 0.24, the other way round). Each app "
           "has its own switch, and all are off until you turn one on. The ones "
           "installed on your phone are listed."),
     ("p", "It needs **Android 14 or newer**. Before it, Android does not let the "
@@ -2103,7 +2104,11 @@ FAQ = [
     ("Does it really record both sides?",
      "Yes, where the phone&rsquo;s audio hardware hands both sides over &mdash; "
      "which it did on every phone above. The Self-test tells you for yours in "
-     "about a second. On speakerphone, a messenger call&rsquo;s other person is "
+     "about a second. In a messenger call each side has a channel of its own, "
+     "you on the left and the other person on the right; a phone call has them "
+     "so where the phone keeps the two apart, as the Honor does, and on others "
+     "&mdash; a Pixel, by one report &mdash; both channels carry the same mix. "
+     "On speakerphone, a messenger call&rsquo;s other person is "
      "heard on your side too: your side is the plain microphone, without the "
      "call app&rsquo;s echo cancellation. A call that still comes out with one "
      "side &mdash; over Wi-Fi Calling, say &mdash; is worth an issue on GitHub: "

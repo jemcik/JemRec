@@ -29,13 +29,16 @@ import java.util.function.LongSupplier;
  */
 final class CallReport {
 
+    /** The channels of the two ways that take a copy of the call's audio:
+     *  both put the sides there (Checks.stereo), so both say it alike. */
+    private static final String COPY_LEFT = "left (you, the microphone)";
+    private static final String COPY_RIGHT = "right (the other side, the copy)";
+
     /** The ways a call is recorded, and whose voice each channel holds. */
     enum Route {
         CALL_CAPTURE("the call capture (VOICE_CALL)", "left", "right"),
-        PHONE_MIXER("the mixer: a copy of the call's audio, and the microphone",
-                "left (you, the microphone)", "right (the other side, the copy)"),
-        MESSENGER("the messenger capture: a copy of the call's audio, and the microphone",
-                "left (the other side, the copy)", "right (you, the microphone)");
+        PHONE_MIXER("the mixer: a copy of the call's audio, and the microphone", COPY_LEFT, COPY_RIGHT),
+        MESSENGER("the messenger capture: a copy of the call's audio, and the microphone", COPY_LEFT, COPY_RIGHT);
 
         final String words;
         final String left;
