@@ -22,10 +22,13 @@ import java.lang.reflect.Field;
  * checked to leave a phone call ringing over it. NOT shipped.
  *
  *   CLASSPATH=/data/local/tmp/voip-probe.jar app_process / \
- *       com.jemcik.jemrec.probe.FakeCallProbe <seconds>
+ *       com.jemcik.jemrec.probe.FakeCallProbe <seconds> [tone]
  *
  * Prints the audio mode once a second, so a check can see whether a phone call
- * ringing over it takes the mode away.
+ * ringing over it takes the mode away. With "tone" its call audio is a 440 Hz
+ * tone at -12 dBFS instead of silence, for a check that a copy of the call's
+ * audio has something in it (mode_switch: a phone call turned "communication"
+ * by this, mid-call).
  */
 public final class FakeCallProbe {
 
@@ -36,6 +39,7 @@ public final class FakeCallProbe {
 
     public static void main(String[] args) throws Exception {
         int seconds = args.length > 0 ? Integer.parseInt(args[0]) : 60;
+        boolean tone = args.length > 1 && args[1].equals("tone");
         // Before ANY mention of Workarounds - see VoipProbe.
         Looper.prepare();
         Field mainLooper = Looper.class.getDeclaredField("sMainLooper");
@@ -76,7 +80,15 @@ public final class FakeCallProbe {
         mic.startRecording();
         System.out.println("fakecall: up, mode=" + audio.getMode());
 
+        // A tenth of a second: 44 whole cycles of 440 Hz, so it loops clean.
         byte[] quiet = new byte[RATE / 10 * 2];
+        if (tone) {
+            for (int i = 0; i < quiet.length / 2; i++) {
+                short v = (short) (Math.sin(2 * Math.PI * 440 * i / RATE) * 32768 * 0.25);
+                quiet[2 * i] = (byte) v;
+                quiet[2 * i + 1] = (byte) (v >> 8);
+            }
+        }
         byte[] in = new byte[RATE / 10 * 2];
         long until = SystemClock.elapsedRealtime() + seconds * 1000L;
         long nextSay = 0;

@@ -1,0 +1,5 @@
+A call whose audio changes path in the middle - a Wi-Fi call put through after it connects, or one handed between mobile and Wi-Fi - is now followed, so the other side is not lost from then on. (Issue #37)
+
+Settings > Diagnostics > Copy a report: this phone and how its last call was recorded, with no numbers or names, to paste into an issue on GitHub when a call comes out wrong.
+
+Android 12: the answering machine could answer a call that rang during a messenger call. It now lets it ring.

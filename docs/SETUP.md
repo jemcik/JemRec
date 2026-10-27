@@ -615,7 +615,7 @@ And when the app is closed, in notifications:
 | It says | Meaning |
 |---|---|
 | The caller's name, **Recorded** | After every recorded call, silently, with Play, Share and Delete. Can be switched off in Settings. |
-| **Last call recorded, but silent** | The file has the right length and no sound in it. Usually Wi-Fi calling, or a phone that does not hand calls over at all. Run the self-test. |
+| **Last call recorded, but silent** | The file has the right length and no sound in it. Usually Wi-Fi calling, or a phone that does not hand calls over at all. Run the self-test, or copy a report for GitHub (Settings → Diagnostics). |
 | **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with **Allow this Wi-Fi**), or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back. |
 | **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test. |
 | **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. |
@@ -688,8 +688,10 @@ everything still works, with the time as each recording's headline.
 - **Survive a restart** — on phones that have one, opens the list of apps
   allowed to start by themselves after a reboot.
 - **Diagnostics** — whether the recorder is running, a self-test that proves a
-  call would be recorded, and a way to start the recorder by hand. It is what a
-  bug report wants.
+  call would be recorded, a way to start the recorder by hand, and **Copy a
+  report**: this phone and how its last call was recorded — which way, how loud
+  each side came out, what was playing — with no numbers or names in it. It is
+  what a bug report wants.
 - **Start fresh** — puts JemRec back to how it was the day you installed it, so
   setup runs again from step 1. The app closes when you confirm. **Your
   recordings are not deleted.**
@@ -722,9 +724,12 @@ lets Wireless debugging work only on networks you allowed, and JemRec needs it
 for a few seconds. If you tapped Cancel, the notification and the app's header
 offer to ask again.
 
-**Recordings have only your voice.** Your phone's audio hardware does not
-expose the other side to apps. Nothing in any app can change that, and the
-self-test will tell you plainly.
+**Recordings have only your voice.** Some phones' audio hardware does not hand
+the other side to apps at all, and the self-test says so plainly. If it passes
+and a call still came out with one side — over Wi-Fi Calling, say — tap **Copy
+a report** in Diagnostics right after that call and paste it into an issue on
+GitHub. It says which way the call was recorded and what the phone was playing,
+which is what it takes to fix it for a phone the developer has never held.
 
 **JemRec is back on its pairing step, or a notification says it cannot
 connect.** The phone has most likely forgotten its pairing — Wireless debugging

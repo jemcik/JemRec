@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-834-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-852-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -152,7 +152,7 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 | **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. Search either list, or narrow it with a tap. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
 | **Name files your way** | By date and time, with the caller, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
 | **Play, keep, clean up** | A call plays as its waveform, to see where people talk, and plays on with the screen off, under the phone's media controls; a keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
-| **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, a call went unrecorded, or the phone stopped JemRec or held it back in the background. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
+| **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, a call went unrecorded, or the phone stopped JemRec or held it back in the background. A call that came out wrong? *Copy a report* in Diagnostics says how it was recorded, for an issue on GitHub. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
 | **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
 | **Open your banking app** | Some banking apps won't open while Developer options or debugging is on. Turning JemRec off can hide Developer options too, or switch all debugging off; turning it on puts back what it switched off. Settings → When JemRec is off. → [more](docs/ARCHITECTURE.md#off-and-debugging-with-it) |
 | **Three looks** | Memo, calm and simple; Deck, a pocket recorder with an LCD and a REC key; Multitrack, a sound editor with a colour for each caller. Each light, dark or as the phone, in Settings → Theme. → [more](docs/ARCHITECTURE.md#three-looks) |
@@ -232,7 +232,9 @@ Honor - so the answering machine's settings hold its own checks and a test call.
 
 - **No microphone permission.** The app never records; the recorder does the
   capturing - calls, and your answering-machine greeting.
-- **Nothing leaves the phone**, and nothing is collected about you.
+- **Nothing leaves the phone**, and nothing is collected about you. *Copy a
+  report* in Diagnostics puts how the last call was recorded on the clipboard,
+  with no number, name or sound in it, only when you tap it.
 - **Calls and contacts only if you allow them** - to name callers, keep calls
   by who they were with, and notice a call that went unrecorded. Everything
   works without them.
@@ -285,7 +287,10 @@ What is left out, and why, is in
 Yes, where the phone's audio hardware hands both sides over - which it did on
 every phone above. The Self-test tells you for yours in about a second. On
 speakerphone, a messenger call's other person is heard on your side too: your
-side is the plain microphone, without the call app's echo cancellation.
+side is the plain microphone, without the call app's echo cancellation. A call
+that still comes out with one side - over Wi-Fi Calling, say - is worth an
+issue on GitHub: tap *Copy a report* in Diagnostics right after it and paste
+that in.
 
 </details>
 
@@ -427,7 +432,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 834 tests, screenshots of the screens included
+    ./gradlew test              # 852 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

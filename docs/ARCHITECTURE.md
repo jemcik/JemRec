@@ -27,7 +27,8 @@ this one is - or to check that it does what it says.
   [playing in the background](#playing-in-the-background) · [three looks](#three-looks) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [marks inside the recording](#marks-inside-the-recording) ·
-  [notifications](#after-the-call-and-when-something-is-wrong)
+  [notifications](#after-the-call-and-when-something-is-wrong) ·
+  [the last call's report](#the-last-calls-report)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
   [what stays switched on](#what-stays-switched-on) ·
   [off, and debugging with it](#off-and-debugging-with-it)
@@ -504,6 +505,46 @@ as the call capture has them; on speakerphone the other person is on your side
 too, as with messenger calls. The answering machine works on such calls as
 well (above, in its own section).
 
+**The mode is followed to the end of the call** (0.24). Up to 0.23 it was
+read that once, and a call whose mode changed afterwards stayed where the first
+answer put it: one that turned "communication" only after the off-hook, or was
+handed over between mobile and Wi-Fi, lost the other person from then on. A
+Galaxy M34 (Exynos, Android 16) recorded a Wi-Fi call with its owner's voice
+alone ([issue #37](https://github.com/jemcik/JemRec/issues/37), 2026-10-26) -
+not measured there, but it is what this would do on that phone: Samsung's
+Exynos audio code turns a call capture outside the in-call mode into an
+ordinary microphone capture (the open SLSI `audio_hw.c`, read 2026-10-27). Now
+each change of mode that holds for half a second moves the recording: to the
+mixer when it says "communication", back to the call capture when it says "in
+call", nothing for any other. The new capture is started first and takes over
+between two reads.
+
+**Only on top of what 0.23 did.** A call that began on the mixer stays there as
+0.23 kept it, and leaves it only for the modem's voice path, where the mixer
+has nothing. A call that began on the call capture goes to the mixer only while
+no app is in a call of its own through Telecom, and only while Telecom holds a
+phone call. In the middle of a call, "communication" can also be another app's
+call brought to the front over a phone call on hold - Telecom gives Google
+Meet's that mode - and the mixer would record it with the phone call. Telecom
+is asked app by app, whatever each plays: on a Galaxy S23, Samsung's Routines
+and Viber played voice-call audio all through a Wi-Fi call with no call of their
+own (2026-10-24), so what plays cannot tell. A call that went to the mixer this
+way is asked again every second. Whatever Android will not answer, the call
+stays as 0.23 recorded it.
+
+On the Android 17 emulator (2026-10-27), with a stand-in call taking the mode
+from a phone call for five seconds and playing a tone: the recording went to
+the mixer 0.6 seconds after the change, the tone at -13 dB in its copy, and
+back to the call capture half a second after the mode was - saved as 10.96
+seconds for Android's 10.97. The copy there was armed after the tone's player
+had started, and still had it: Android re-routes the players already playing
+when a policy is registered. And with a stand-in app call of the debug build
+placed over a phone call being recorded, as a Meet call taken with the phone
+call on hold, the recording stayed on the call capture each time, half a second
+after the mode changed - also when the stand-in could not make a sound. Both
+held on the Android 15 and 16 emulators too (16 is what the Galaxy M34 runs),
+where Telecom answered the shell the same way.
+
 Not known yet: which other phones carry Wi-Fi Calling this way.
 
 Only a phone call goes this way: a call Telecom holds as the phone's own.
@@ -598,7 +639,14 @@ already up, roaming, recording switched off. So does a messenger or meeting
 call in progress, which the tracker cannot see - Telecom shows it only calls it
 manages - and which the mute would silence: the audio mode says one is up, and
 the recorder asks again before answering, by the app playing and capturing
-call audio, because a phone call ringing over it may take the mode. Recording keeps a call when unsure,
+call audio, because a phone call ringing over it may take the mode. On Android
+12 the shell is not told whose each player and capture is (it lacks
+`MODIFY_AUDIO_ROUTING` there; 13 grants it), and up to 0.23 that second look
+found nothing: on the Android 12 emulator (2026-10-27) the machine answered a
+call ringing over a stand-in messenger call in four runs of five, whenever the
+ringtone got the mode first. Where Android hides the owners, call audio playing
+and a call's kind of capture (voice communication, the microphone) now count as
+a call between them, and the phone rings on. Recording keeps a call when unsure,
 because a recording can be deleted later; an answered call cannot be unanswered.
 The tracker sends the recorder a go-ahead with the delay - 5 to 30 seconds, about
 two rings when Do Not Disturb would silence the caller - and the recorder runs
@@ -1092,6 +1140,37 @@ out on the day you need the call. So JemRec says so, in four notifications.
   the app notes each call as it saves it.
 
 None of it needs a permission the app did not already have.
+
+## The last call's report
+
+A call that comes out wrong on a phone nobody here has held can only be
+understood from that phone. A Galaxy M34's Wi-Fi call came out with one side
+([issue #37](https://github.com/jemcik/JemRec/issues/37)), and nothing on the
+phone could say why: the recorder's log says which way each call was recorded,
+but it is out of reach without a computer, and replaced at the recorder's next
+start.
+
+So the recorder keeps an account of the last call it recorded, and
+*Settings → Diagnostics → Copy a report* puts it on the clipboard, after this
+phone's make, model and Android build and the settings that decide how a call
+is recorded (messenger calls, exact call tracking, the answering machine):
+
+- which way the call was recorded - the call capture, the mixer, or a
+  messenger's - from when, and how loud each channel came out each way, with
+  digital silence (every sample zero) said as such;
+- the audio mode as it changed, and what the recorder did about it;
+- what was playing and capturing three seconds in, and three seconds after
+  each change of way: which app or system uid, for what (voice call, media...),
+  whether it lets the system capture it, by what kind of player, to or from
+  which device.
+
+Nothing about the call itself: no number, no name, no sound. The account is
+kept in `/data/local/tmp/jemrec-lastcall.txt` until the next call replaces
+it, so a recorder started again since still has it, and it leaves the phone
+only if you copy it and paste it somewhere. Android 13 and later confirm a copy
+themselves; on 12 the app says *Report copied*, as Android's guidance asks
+("Copy and paste", developer.android.com) - which the answering machine's
+*Copy a report* had not said until then.
 
 ## What it does not ask for
 

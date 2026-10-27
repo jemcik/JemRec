@@ -43,6 +43,7 @@ import com.jemcik.jemrec.capture.VoipApps
 import com.jemcik.jemrec.capture.VoipCallNotes
 import com.jemcik.jemrec.capture.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.capture.LastCallReport
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.DebugSwitchesOff
 import com.jemcik.jemrec.capture.GlobalSettings
@@ -423,6 +424,16 @@ class MainViewModel @JvmOverloads constructor(
         say(result.report.trimEnd())
         // For Diagnostics to scroll down to it - this, not every log line.
         _state.update { it.copy(selfTestShown = System.currentTimeMillis()) }
+    }
+
+    /** Copy a report, on Diagnostics: this phone, its settings and the
+     *  recorder's account of the last call (LastCallReport). */
+    fun copyCallReport() {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val text = LastCallReport.text(app, appVersion(app), CaptureDaemon.callReport(app))
+            reportToClipboard(app, "JemRec call report", text)
+        }
     }
 
     /** Diagnostics scrolled to the self-test's result; not again on returning. */

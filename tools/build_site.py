@@ -1470,7 +1470,8 @@ SETUP = [
          "with Play, Share and Delete. Can be switched off in Settings."],
         ["**Last call recorded, but silent**", "The file has the right length and "
          "no sound in it. Usually Wi-Fi calling, or a phone that does not hand "
-         "calls over at all. Run the self-test."],
+         "calls over at all. Run the self-test, or copy a report for GitHub "
+         "(Settings → Diagnostics)."],
         ["**JemRec is not recording calls**", "The recorder has been down for two "
          "minutes. The notification says why: it needs a few seconds of Wi-Fi, "
          "or this Wi-Fi is not allowed for Wireless debugging (with **Allow "
@@ -1570,8 +1571,10 @@ SETUP = [
         "**Survive a restart** — on phones that have one, opens the list of apps "
         "allowed to start by themselves after a reboot.",
         "**Diagnostics** — whether the recorder is running, a self-test that "
-        "proves a call would be recorded, and a way to start the recorder by "
-        "hand. It is what a bug report wants.",
+        "proves a call would be recorded, a way to start the recorder by "
+        "hand, and **Copy a report**: this phone and how its last call was "
+        "recorded — which way, how loud each side came out, what was playing "
+        "— with no numbers or names in it. It is what a bug report wants.",
         "**Start fresh** — puts JemRec back to how it was the day you installed "
         "it, so setup runs again from step 1. The app closes when you confirm. "
         "**Your recordings are not deleted.**",
@@ -1602,9 +1605,13 @@ SETUP = [
           "networks you allowed, and JemRec needs it for a few seconds. If you "
           "tapped Cancel, the notification and the app's header offer to ask "
           "again."),
-    ("p", "**Recordings have only your voice.** Your phone's audio hardware does "
-          "not expose the other side to apps. Nothing in any app can change that, "
-          "and the self-test will tell you plainly."),
+    ("p", "**Recordings have only your voice.** Some phones' audio hardware does "
+          "not hand the other side to apps at all, and the self-test says so "
+          "plainly. If it passes and a call still came out with one side — over "
+          "Wi-Fi Calling, say — tap **Copy a report** in Diagnostics right after "
+          "that call and paste it into an issue on GitHub. It says which way the "
+          "call was recorded and what the phone was playing, which is what it "
+          "takes to fix it for a phone the developer has never held."),
     ("p", "**JemRec is back on its pairing step, or a notification says it "
           "cannot connect.** The phone has most likely forgotten its pairing — "
           "Wireless debugging → Paired devices no longer lists JemRec, as after "
@@ -2043,7 +2050,9 @@ FEATURES = [
     ("Hear about problems",
      "A notification after each call, and one when a recording is silent, the "
      "recorder is down, a call went unrecorded, or the phone stopped JemRec or "
-     "held it back in the background.",
+     "held it back in the background. A call that came out wrong? <em>Copy a "
+     "report</em> in Diagnostics says how it was recorded, for an issue on "
+     "GitHub.",
      "what-the-app-tells-you"),
     # Across the whole grid, these three, so the eight above stay four by two.
     ("Answering machine",
@@ -2073,7 +2082,10 @@ PRIVACY_POINTS = [
      "The app never records; the recorder does the capturing &mdash; calls, "
      "and your answering-machine greeting."),
     ("cloud", "Nothing leaves the phone",
-     "No account, no server, no analytics, and nothing is collected about you."),
+     "No account, no server, no analytics, and nothing is collected about you. "
+     "<em>Copy a report</em> in Diagnostics puts how the last call was recorded "
+     "on the clipboard, with no number, name or sound in it, only when you tap "
+     "it."),
     ("person", "Calls and contacts only if you allow them",
      "To name callers, keep calls by who they were with, and notice a call that "
      "went unrecorded. Everything works without them."),
@@ -2093,7 +2105,10 @@ FAQ = [
      "which it did on every phone above. The Self-test tells you for yours in "
      "about a second. On speakerphone, a messenger call&rsquo;s other person is "
      "heard on your side too: your side is the plain microphone, without the "
-     "call app&rsquo;s echo cancellation."),
+     "call app&rsquo;s echo cancellation. A call that still comes out with one "
+     "side &mdash; over Wi-Fi Calling, say &mdash; is worth an issue on GitHub: "
+     "tap <em>Copy a report</em> in Diagnostics right after it and paste that "
+     "in."),
     ("Does it record Google Meet?",
      "Yes, calls and meetings, both sides, on Android 14 or newer &mdash; once "
      "you switch Google Meet on under <em>Messenger calls</em>. Like the "
@@ -2604,6 +2619,13 @@ PRIVACY_BODY = f"""
             whether Android has marked JemRec stopped, which hold no names and
             no numbers. In the app&rsquo;s private storage; uninstalling deletes
             it.</td></tr>
+    <tr><td>The last call&rsquo;s report</td>
+        <td>How the recorder recorded the last call: which way, how loud each
+            side came out, and which apps were playing or capturing sound then.
+            No numbers, no names, no sound. Kept by the recorder until the next
+            call replaces it, and deleted with it when you uninstall.
+            <em>Copy a report</em> in Diagnostics puts it on the clipboard, only
+            when you tap it.</td></tr>
     <tr><td>Answering machine tests</td>
         <td>What its checks found about the phone, and the result of each test
             call by call type (2G, VoLTE, Wi-Fi Calling). No numbers, no

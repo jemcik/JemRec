@@ -37,6 +37,17 @@ through the real app and daemon, checking what each one leaves behind:
               contact's phone call rung in over it is recorded, exactly, and
               ends where it is hung up though the app's call goes on; and the
               app's call, in the call log, is not counted as a missed recording
+  mode-switch  a phone call whose audio mode turns "communication" in the
+              middle (the stand-in call takes it, playing a tone) is
+              recorded through the mixer from then, the tone in its copy, and
+              through the call capture again once the mode is back; it is
+              saved exactly, and Diagnostics' Copy a report says each way.
+              Before Android 14, where there is no copy, it stays on the
+              call capture
+  app-call-in-front  the stand-in app call placed over a phone call being
+              recorded, as a Meet call taken with the phone call on hold:
+              its "communication" mode keeps the phone call on the call
+              capture, so the app's call is not recorded with it
   waveform    a call's 800 levels are worked out and kept as it is saved,
               so its row has its waveform the first time it is drawn
   background-playback  a recording played from its row goes on with the
@@ -615,9 +626,10 @@ PROBE_SOURCE = "shellserver/probe/com/jemcik/jemrec/probe/FakeCallProbe.java"
 FAKE_CALL_LOG = "/data/local/tmp/fakecall.txt"
 
 
-def fake_call_up():
+def fake_call_up(tone=False):
     """A stand-in for a messenger call, run as the shell: the audio mode at
-    MODE_IN_COMMUNICATION, call audio playing, the microphone open."""
+    MODE_IN_COMMUNICATION, call audio playing - silence, or a tone - the
+    microphone open."""
     import os
     if not os.path.exists(PROBE_JAR) or os.path.getmtime(PROBE_JAR) < os.path.getmtime(PROBE_SOURCE):
         built = subprocess.run(["bash", "shellserver/probe/build-probe.sh"], capture_output=True, text=True)
@@ -627,7 +639,7 @@ def fake_call_up():
     adb("push", PROBE_JAR, "/data/local/tmp/voip-probe.jar", check=True)
     sh(f"rm -f {FAKE_CALL_LOG}")
     sh("CLASSPATH=/data/local/tmp/voip-probe.jar setsid nohup app_process / "
-       f"com.jemcik.jemrec.probe.FakeCallProbe 60 < /dev/null > {FAKE_CALL_LOG} 2>&1 &")
+       f"com.jemcik.jemrec.probe.FakeCallProbe 60{' tone' if tone else ''} < /dev/null > {FAKE_CALL_LOG} 2>&1 &")
     wait_for(lambda: "mode=3" in sh(f"cat {FAKE_CALL_LOG}"), 15, "the stand-in call's audio mode")
 
 
@@ -725,6 +737,109 @@ def app_call():
     assert "TestKept" in answered, f"the phone call is not among the answered calls: {answered}"
     assert "5550100" not in answered, f"the app's call was taken for a phone call: {answered}"
     return recorded + f"; the app's own call left alone, and its row ({row}) too"
+
+
+def mode_switch():
+    """A phone call whose audio mode turns "communication" in the middle, as
+    a Wi-Fi call put through after the off-hook may (issue #37): the
+    stand-in call takes the mode, as the shell, over the emulator's own.
+    Before Android 14 the shell may not copy a call's audio: there the call
+    stays on the call capture."""
+    copies = int(sh("getprop ro.build.version.sdk").strip()) >= 34
+    rings, answers = count(r"callwatch: ringing"), count(r"off-hook \(")
+    try:
+        adb("emu", "gsm", "call", CONTACT)
+        wait_more(r"callwatch: ringing", rings, 15, f"{CONTACT} to ring")
+        time.sleep(2)
+        sh("input keyevent KEYCODE_CALL")
+        wait_more(r"off-hook \(", answers, 15, f"the call from {CONTACT} to be answered")
+        wait_log(r"recording: the call's voice path \(audio mode 2", 10, "the call to start on its voice path")
+        time.sleep(2)
+        fake_call_up(tone=True)
+        if copies:
+            wait_log(r"recording: the call plays through the mixer now \(audio mode 3\)", 10,
+                     "the switch to the mixer")
+            time.sleep(4)
+            fake_call_down()
+            wait_log(r"recording: the call is back on the modem's voice path \(audio mode 2\)", 10,
+                     "the switch back to the call capture")
+        else:
+            wait_log(r"recording: audio mode 3 during the call", 10, "the mode change to be heard")
+            time.sleep(4)
+            assert "through the mixer" not in log(), "switched to the mixer, which Android does not allow here"
+            fake_call_down()
+        time.sleep(2)
+        adb("emu", "gsm", "cancel", CONTACT)
+        if copies:
+            recorded = exact("_in_TestKept")
+        else:
+            # Kept on the call capture, which the mode flipping under it
+            # costs a moment of: 0.15 s more than the cut accounts for on the
+            # Android 13 AVD (2026-10-27), not this check's subject there.
+            _, seconds, name = saved()
+            assert "_in_TestKept" in name, f"saved as {name}"
+            recorded = f"{name}: {seconds:.2f} s"
+    except Exception as e:
+        raise RuntimeError(f"{e}\n{what_happened()}") from e
+    finally:
+        fake_call_down()
+        adb("emu", "gsm", "cancel", CONTACT)
+        try:
+            wait_for(phone_idle, 10, "")
+        except TimeoutError:
+            # Said, not raised: raised here it would replace the failure
+            # above, and the recorder's lines that came with it.
+            print("     (the call would not end after mode_switch)")
+    # Diagnostics' Copy a report, as the app builds it.
+    report = diag("callreport")
+    stretches = re.findall(r"\d s  (the call capture|the mixer)", report)
+    assert "audio mode 3" in report, f"no mode change in the report:\n{report}"
+    if not copies:
+        assert stretches == ["the call capture"], f"stretches {stretches}:\n{report}"
+        return f"{recorded}; the mode change heard, the call capture kept (no copy before Android 14)"
+    assert stretches == ["the call capture", "the mixer", "the call capture"], f"stretches {stretches}:\n{report}"
+    copy = re.search(r"right \(the other side, the copy\) (-[\d.]+) dB", report)
+    assert copy and float(copy.group(1)) > -40, f"the copy did not have the tone in it:\n{report}"
+    assert "voice call" in report and "What was playing" in report, f"no look at what was playing:\n{report}"
+    return f"{recorded}; call capture, mixer, call capture, the copy's tone at {copy.group(1)} dB"
+
+
+def app_call_in_front():
+    """Another app's call through Telecom placed over a phone call being
+    recorded, as a Google Meet call taken with the phone call on hold: its
+    "communication" mode must not move the phone call's recording to the
+    mixer, where the app's call would be recorded with it."""
+    copies = int(sh("getprop ro.build.version.sdk").strip()) >= 34
+    rings, answers = count(r"callwatch: ringing"), count(r"off-hook \(")
+    try:
+        adb("emu", "gsm", "call", CONTACT)
+        wait_more(r"callwatch: ringing", rings, 15, f"{CONTACT} to ring")
+        time.sleep(2)
+        sh("input keyevent KEYCODE_CALL")
+        wait_more(r"off-hook \(", answers, 15, f"the call from {CONTACT} to be answered")
+        wait_log(r"recording: the call's voice path \(audio mode 2", 10, "the call to start on its voice path")
+        time.sleep(2)
+        report = diag("appcall", "--es", "do", "start")
+        assert "placed" in report, report
+        # Asked for is not up: Telecom has to hold the phone call for it.
+        wait_for(lambda: not stand_in_down(), 10, "the stand-in call to come up over the phone call")
+        if copies:
+            wait_log(r"recording: audio mode 3, but another app's call is up; the call capture stays", 15,
+                     "the app's call in front to keep the phone call off the mixer")
+        else:
+            wait_log(r"recording: audio mode 3 during the call", 15, "the app's call to take the mode")
+        time.sleep(3)
+        assert "through the mixer" not in log(), "the phone call went to the mixer under the app's call"
+    except Exception as e:
+        raise RuntimeError(f"{e}\n{what_happened()}") from e
+    finally:
+        end_app_call()
+        adb("emu", "gsm", "cancel", CONTACT)
+        try:
+            wait_for(phone_idle, 10, "")
+        except TimeoutError:
+            print("     (the call would not end after app_call_in_front)")
+    return "the phone call kept on the call capture under the app's call" + ("" if copies else " (no copy before 14)")
 
 
 def device_ms():
@@ -1296,7 +1411,11 @@ def usb_debugging():
         adb("emu", "avd", "snapshot", "delete", USB_GUARD)
     wait_for(lambda: "usbwatch: USB debugging changed" in revive_since(log_before), 10,
              "the app woken by the change")
-    after = wait_for(daemon_pid, 30, "a recorder process")
+    # Sixty: on the Android 16 AVD (2026-10-27) the app's first start after
+    # the switch connected while adbd was still coming back and lost the link
+    # copying the jar ("Stream closed"); the keep-alive's next try, 20 s
+    # later, had the recorder up 44 s after the change.
+    after = wait_for(daemon_pid, 60, "a recorder process")
     wait_for(lambda: "PONG" in sh("printf P | toybox nc -w 2 127.0.0.1 28472"), 30,
              "the recorder answering")
     if after == before:
@@ -1448,7 +1567,8 @@ def self_test():
 
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
-          answer_after_emergency, answer_takeover_ask_first, app_call, waveform, background_playback,
+          answer_after_emergency, answer_takeover_ask_first, app_call, mode_switch, app_call_in_front, waveform,
+          background_playback,
           recently_deleted, recently_deleted_folder, looks, reinstall, cable, usb_debugging, hide_developer_options,
           debugging_off, background]
 

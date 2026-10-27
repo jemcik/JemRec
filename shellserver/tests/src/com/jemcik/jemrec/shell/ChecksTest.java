@@ -25,6 +25,93 @@ public class ChecksTest {
     }
 
     @Test
+    public void aModeChangeDuringTheCallMovesItBetweenTheTwoCaptures() {
+        int inCall = Checks.MODE_IN_CALL;
+        int comms = Checks.MODE_IN_COMMUNICATION;
+        // A call whose mode turned "communication" after the off-hook goes to
+        // the mixer (issue #37's Galaxy M34, one of the ways it can happen).
+        assertTrue(Checks.mixerAfterModeChange(false, false, comms, 36, true, false));
+        // Telecom could not be asked: the mode is taken at its word.
+        assertTrue(Checks.mixerAfterModeChange(false, false, comms, 36, null, false));
+        // Handed back to the modem: the call capture again - a call that
+        // began on the mixer too, which 0.23 left there with nothing in it.
+        assertFalse(Checks.mixerAfterModeChange(true, false, inCall, 36, true, false));
+        assertFalse(Checks.mixerAfterModeChange(true, true, inCall, 36, true, false));
+        assertFalse(Checks.mixerAfterModeChange(false, false, inCall, 36, true, false));
+        // Before Android 14 the shell may not copy a call's audio.
+        assertFalse(Checks.mixerAfterModeChange(false, false, comms, 33, true, false));
+    }
+
+    @Test
+    public void anotherAppsCallInFrontIsNeverRecordedThroughThePhoneCall() {
+        int comms = Checks.MODE_IN_COMMUNICATION;
+        // A phone call on hold behind Google Meet's: Telecom gives Meet's call
+        // "communication" too, and the mixer would record it.
+        assertFalse(Checks.mixerAfterModeChange(false, false, comms, 36, true, true));
+        // Asked again while on the mixer: back to the call capture.
+        assertFalse(Checks.mixerAfterModeChange(true, false, comms, 36, true, true));
+        // The phone call gone from Telecom, ending into an app's call.
+        assertFalse(Checks.mixerAfterModeChange(false, false, comms, 36, false, false));
+        assertFalse(Checks.mixerAfterModeChange(true, false, comms, 36, false, false));
+    }
+
+    @Test
+    public void aCallThatBeganOnTheMixerStaysThereAs023KeptIt() {
+        int comms = Checks.MODE_IN_COMMUNICATION;
+        // The S23's Wi-Fi calls: whatever else is up, the mode still saying
+        // "communication" keeps them on the mixer - after a flicker, and back
+        // from a stretch on the modem.
+        assertTrue(Checks.mixerAfterModeChange(true, true, comms, 36, true, true));
+        assertTrue(Checks.mixerAfterModeChange(true, true, comms, 36, false, false));
+        assertTrue(Checks.mixerAfterModeChange(false, true, comms, 36, true, true));
+        assertTrue(Checks.mixerAfterModeChange(true, true, 1, 36, true, true));
+    }
+
+    @Test
+    public void aModeThatSaysNoCallChangesNothing() {
+        for (int mode : new int[] {0, 1, 4, 5, 6}) {
+            assertTrue("mode " + mode, Checks.mixerAfterModeChange(true, false, mode, 36, true, false));
+            assertFalse("mode " + mode, Checks.mixerAfterModeChange(false, false, mode, 36, true, false));
+        }
+    }
+
+    @Test
+    public void aCallIsOneAppPlayingCallAudioAndCapturing() {
+        // Android 13 and later name the owners: the emulator check's
+        // stand-in, as the shell, plays and captures.
+        assertTrue(Checks.someoneInCall(new int[] {2000}, new int[] {2000}, new int[] {7}));
+        // A player of call audio with no call (Samsung's Routines on the S23)
+        // and someone else's capture are no call.
+        assertFalse(Checks.someoneInCall(new int[] {10041}, new int[] {10150}, new int[] {1}));
+        // Nothing playing call audio: no call, whatever captures.
+        assertFalse(Checks.someoneInCall(new int[0], new int[] {-1}, new int[] {7}));
+        assertFalse(Checks.someoneInCall(new int[] {10041}, new int[0], new int[0]));
+    }
+
+    @Test
+    public void whereAndroid12HidesTheOwnersACallsKindOfAudioIsEnough() {
+        // What the Android 12 AVD gave the shell during the stand-in call.
+        assertTrue(Checks.someoneInCall(new int[] {-1}, new int[] {-1}, new int[] {7}));
+        assertTrue(Checks.someoneInCall(new int[] {-1}, new int[] {-1}, new int[] {1}));
+        // Only one side hidden: the same.
+        assertTrue(Checks.someoneInCall(new int[] {10041}, new int[] {-1}, new int[] {7}));
+        assertTrue(Checks.someoneInCall(new int[] {-1}, new int[] {10150}, new int[] {7}));
+        // A hotword's listening is no call's capture.
+        assertFalse(Checks.someoneInCall(new int[] {-1}, new int[] {-1}, new int[] {1999}));
+    }
+
+    @Test
+    public void aReportSaysWhatKindOfCallItIsAbout() {
+        assertEquals("a phone call, incoming", Checks.callInWords(true, null, null, false));
+        assertEquals("a phone call, outgoing", Checks.callInWords(false, null, null, false));
+        assertEquals("a phone call, incoming, answered by the answering machine",
+                Checks.callInWords(true, null, null, true));
+        assertEquals("a call in com.whatsapp", Checks.callInWords(false, "com.whatsapp", null, false));
+        assertEquals("a call in com.google.android.apps.tachyon, incoming",
+                Checks.callInWords(true, "com.google.android.apps.tachyon", true, false));
+    }
+
+    @Test
     public void theUidsOwnLineDecides() {
         // As Main.slurp joins it, and as the device prints it.
         assertTrue(Checks.uidAllowed("Uid mode: MANAGE_ONGOING_CALLS: allow | MANAGE_ONGOING_CALLS: allow; time=+1m"));

@@ -2,6 +2,9 @@ package com.jemcik.jemrec.diag
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.net.Uri
 import android.os.Bundle
 import android.telecom.Connection
@@ -21,7 +24,10 @@ import android.telecom.TelecomManager
  * and has that recorded as a phone call of its own. It asks to be in the call
  * log, as Meet's calls are, so the app's call-log readers meet one too: the
  * Android 12 and 13 emulators log it, the Android 17 one does not (2026-10-26),
- * and the check writes the row there itself. NOT in a release build.
+ * and the check writes the row there itself. While up it plays voice-call
+ * audio, silence, as Meet plays the other side: placed over a phone call
+ * being recorded, the recorder must see an app's call in front and keep the
+ * phone call off the mixer (app_call_in_front). NOT in a release build.
  *
  *   --es op appcall --es do start
  *   --es op appcall --es do end
@@ -31,6 +37,55 @@ object FakeAppCall {
     private const val ACCOUNT = "jemrec-stand-in-app-call"
 
     @Volatile internal var connection: Connection? = null
+
+    /** The call's audio, while it is up. */
+    private var sound: AudioTrack? = null
+
+    /** Silence, looped, as voice-call audio. A sound that will not play is
+     *  said, never thrown: Telecom calls this on the app's main thread,
+     *  where a throw would end the app and the call with it. */
+    @Synchronized
+    internal fun soundOn() {
+        if (sound != null) return
+        runCatching { newSound() }
+            .onSuccess { sound = it }
+            .onFailure { android.util.Log.w("JemRec", "appcall: no sound: $it") }
+    }
+
+    private fun newSound(): AudioTrack {
+        val frames = 1600
+        return AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(16000)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build(),
+            )
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setBufferSizeInBytes(frames * 2)
+            .build()
+            .apply {
+                write(ShortArray(frames), 0, frames)
+                setLoopPoints(0, frames, -1)
+                play()
+            }
+    }
+
+    @Synchronized
+    internal fun soundOff() {
+        sound?.run {
+            runCatching { stop() }
+            release()
+        }
+        sound = null
+    }
 
     /** A call was asked of Telecom and has not ended: set before Telecom
      *  creates the connection, so a second start in between is turned away
@@ -88,6 +143,7 @@ class FakeAppCallService : ConnectionService() {
             override fun onUnhold() = setActive()
 
             override fun onDisconnect() {
+                FakeAppCall.soundOff()
                 setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
                 destroy()
                 FakeAppCall.connection = null
@@ -103,6 +159,7 @@ class FakeAppCallService : ConnectionService() {
         call.setAddress(request?.address, TelecomManager.PRESENTATION_ALLOWED)
         call.setActive()
         FakeAppCall.connection = call
+        FakeAppCall.soundOn()
         return call
     }
 

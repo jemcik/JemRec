@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -989,6 +990,20 @@ fun DiagnosticsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Mo
                     enabled = !state.busy && !state.daemonRunning,
                     modifier = modifier,
                 ) { ButtonLabel("Start recorder") }
+            }
+        }
+
+        // The answering machine's report row, for the last call: on when the
+        // recorder is not, as that one is, and saying so in the report.
+        SettingsGroup {
+            row {
+                SettingsRow(
+                    title = "Copy a report",
+                    summary = "This phone and how its last call was recorded, to paste into a report " +
+                        "on GitHub. No numbers or names in it",
+                    icon = Icons.Filled.Share,
+                    onClick = { haptics.tap(); vm.copyCallReport() },
+                )
             }
         }
 

@@ -117,6 +117,9 @@ object CaptureDaemon {
     private const val COMMAND_LIST = 'L'.code.toByte()
     private const val COMMAND_START = 'S'.code.toByte()
     private const val COMMAND_WATCH = 'W'.code.toByte()
+    /** The recorder's account of the last call it recorded - see the
+     *  daemon's CallReport. A daemon older than this hangs up on it. */
+    private const val COMMAND_REPORT = 'C'.code.toByte()
     /** The messenger apps whose calls to record - see VoipApps and the
      *  daemon's Voip. A daemon older than this hangs up on it. */
     private const val COMMAND_SET_VOIP = 'V'.code.toByte()
@@ -1413,6 +1416,17 @@ object CaptureDaemon {
         runCatching {
             open(context, COMMAND_WATCH).use { socket ->
                 parseWatch(socket.getInputStream().bufferedReader().readLine())
+            }
+        }.getOrNull()
+    }
+
+    /** The recorder's account of the last call it recorded, for Copy a
+     *  report (LastCallReport); null if there is none to be had - no
+     *  recorder, or one too old to know the command. */
+    internal suspend fun callReport(context: Context): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            open(context, COMMAND_REPORT).use { socket ->
+                socket.getInputStream().bufferedReader().readText().trim().ifBlank { null }
             }
         }.getOrNull()
     }

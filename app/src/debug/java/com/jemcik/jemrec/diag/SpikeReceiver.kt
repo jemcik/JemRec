@@ -13,6 +13,8 @@ import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.adb.ResultFile
 import com.jemcik.jemrec.capture.SelfTest
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.capture.LastCallReport
+import com.jemcik.jemrec.ui.appVersion
 import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import io.github.muntashirakon.adb.android.AdbMdns
@@ -168,6 +170,12 @@ class SpikeReceiver : BroadcastReceiver() {
                         val text = SelfTest.run(appContext).report
                         ResultFile.write(appContext, text)
                         report(appContext, "selftest", text)
+                    }
+
+                    // What Copy a report on Diagnostics copies (LastCallReport).
+                    "callreport" -> {
+                        val recorder = CaptureDaemon.callReport(appContext)
+                        report(appContext, "callreport", LastCallReport.text(appContext, appVersion(appContext), recorder))
                     }
 
                     // The messenger-call answering spike (docs/VOIP-ANSWER-SPIKE.md):

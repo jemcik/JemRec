@@ -295,6 +295,92 @@ final class Checks {
     }
 
     /**
+     * Whether a phone call goes on through the mixer (Voip.Capture) or the
+     * call capture (VOICE_CALL), asked when its audio mode changed during the
+     * call, and again each second while a change put it on the mixer.
+     * [onMixer]: what it is on now; [startedOnMixer]: the mode said so as the
+     * call went off-hook.
+     *
+     * The mode is read once as the call goes off-hook (PhoneCapture), and
+     * that was all until 0.24. A call whose mode turns "communication" only
+     * after that - a Wi-Fi call put through after the off-hook, or a call
+     * handed over from mobile to Wi-Fi - stayed on the call capture, which
+     * there hears nothing (the S23) or only the microphone: Samsung's Exynos
+     * audio code makes a VOICE_CALL capture outside MODE_IN_CALL an ordinary
+     * microphone capture (the open SLSI audio_hw.c, read 2026-10-27), and a
+     * Galaxy M34's Wi-Fi call came out with its owner's voice alone (issue
+     * #37). The way back, MODE_IN_CALL, is a call handed to the modem, which
+     * the call capture records on every phone measured.
+     *
+     * ONLY ON TOP OF WHAT 0.23 DID. A call that began on the mixer is left
+     * there whatever else plays, as 0.23 left it, and leaves it only for the
+     * modem's voice path. A call that began on the call capture goes to the
+     * mixer only while no app's own call is up [appInCall] - in the middle of
+     * a call, "communication" can also be another app's call brought to the
+     * front over a phone call on hold, as Telecom gives Google Meet's that
+     * mode, and the mixer would record it - and only while Telecom holds a
+     * phone call [phoneCallInTelecom] (not one ending into an app's call,
+     * CallStates.audioModeChanged). Null: Telecom could not be asked, and
+     * the mode is taken at its word. Kept off the mixer by these, the call is
+     * recorded as 0.23 recorded it. Any other mode - normal at the end,
+     * ringtone, call screening - changes nothing.
+     */
+    static boolean mixerAfterModeChange(boolean onMixer, boolean startedOnMixer, int mode, int sdk,
+                                        @Nullable Boolean phoneCallInTelecom, boolean appInCall) {
+        if (mode == MODE_IN_CALL) {
+            return false;
+        }
+        if (!phoneCallInMixer(mode, sdk)) {
+            return onMixer;
+        }
+        return startedOnMixer || (!appInCall && !Boolean.FALSE.equals(phoneCallInTelecom));
+    }
+
+    /**
+     * Whether anyone is in a call, from what plays and captures: the owners'
+     * uids of the voice-call players [voicePlayerUids], and of every capture
+     * with its source - -1 where Android does not say whose it is. A call is
+     * one app playing voice-call audio and capturing at once.
+     *
+     * ANDROID 12 DOES NOT SAY. The shell lacks MODIFY_AUDIO_ROUTING there
+     * (granted from 13), and Android hands it every player as uid -1 and no
+     * capture's owner at all (the Android 12 AVD, 2026-10-27). Asked for one
+     * app doing both, the answering machine found none, and went by the audio
+     * mode alone - which the ringtone of a phone call ringing over a messenger
+     * call takes: on that AVD it answered such a call whenever the ringtone
+     * got the mode first (answer_during_voip, four runs of five). So where
+     * an owner is hidden, a voice-call player and a call
+     * app's kind of capture - voice communication or the microphone, not a
+     * hotword's - count as a call together: left ringing is the safe side.
+     */
+    static boolean someoneInCall(int[] voicePlayerUids, int[] captureUids, int[] captureSources) {
+        if (voicePlayerUids.length == 0) {
+            return false;
+        }
+        boolean hidden = false;
+        for (int uid : voicePlayerUids) {
+            hidden |= uid < 0;
+        }
+        for (int i = 0; i < captureUids.length; i++) {
+            int uid = captureUids[i];
+            boolean callCapture = captureSources[i] == SOURCE_VOICE_COMMUNICATION || captureSources[i] == SOURCE_MIC;
+            if ((hidden || uid < 0) && callCapture) {
+                return true;
+            }
+            for (int player : voicePlayerUids) {
+                if (uid >= 0 && uid == player) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** MediaRecorder.AudioSource's. */
+    static final int SOURCE_MIC = 1;
+    static final int SOURCE_VOICE_COMMUNICATION = 7;
+
+    /**
      * What follows the start in a rec-file name: "_in" or "_out" for a phone
      * call; for an app's call "_voip-" and the app, after "_in" or "_out" where
      * Telecom said which way it went - Google Meet's, whose ring the call watch
@@ -308,6 +394,18 @@ final class Checks {
             return incoming ? "_in" : "_out";
         }
         return (appIncoming == null ? "" : appIncoming ? "_in" : "_out") + "_voip-" + app;
+    }
+
+    /** What kind of call a report is about, the way recfileTag tells it:
+     *  "a phone call, incoming", "a call in com.whatsapp". [answered]: by
+     *  this process's answering machine. */
+    static String callInWords(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming,
+                              boolean answered) {
+        if (app == null) {
+            return "a phone call, " + (incoming ? "incoming" : "outgoing")
+                    + (answered ? ", answered by the answering machine" : "");
+        }
+        return "a call in " + app + (appIncoming == null ? "" : appIncoming ? ", incoming" : ", outgoing");
     }
 
     /** Root mean square of one [channel] of the first [frames] frames of

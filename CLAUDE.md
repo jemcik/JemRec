@@ -16,9 +16,9 @@ Wireless debugging and starts a recorder that runs as the shell user
   `./gradlew testDebugUnitTest --tests '*.ui.screens.*' -PrecordScreens=true`,
   then look at every PNG that changed.
 - Before a release: `python3 tools/emulator_checks.py --serial emulator-5554` on
-  the Android 12, 13 and 17 AVDs (`jemrec-api31-0.14`, `jemrec-api33`,
-  `jemrec-api37.2`; boot with `-no-snapshot-save`). Ask before creating or
-  deleting an AVD.
+  the Android 12, 13, 16 and 17 AVDs (`jemrec-api31-0.14`, `jemrec-api33`,
+  `jemrec-api36`, `jemrec-api37.2`; boot with `-no-snapshot-save`), two at a
+  time: more at once makes calls flaky. Ask before creating or deleting an AVD.
 - `./gradlew lint` is a gate: any warning fails it, and there is no baseline;
   `app/lint.xml` says what is off and why. It also checks the daemon's calls
   against Android 12 (`:daemon-lint`). `./gradlew :daemon-tests:errorProne`

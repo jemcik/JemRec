@@ -40,11 +40,16 @@ import java.util.Set;
  * usage needs CAPTURE_VOICE_COMMUNICATION_OUTPUT, which the shell holds, and
  * voiceCommunicationCaptureAllowed on the rule - set BEFORE build(); scrcpy's
  * playback capture sets it after, where it does nothing. The policy is
- * registered when the list stops being empty, long before any call: Android
- * routes a stream when the app creates it, so a policy registered mid-call
- * copies nothing. An app that marks its audio ALLOW_CAPTURE_BY_NONE is not
- * copied whatever this holds - Android honouring the app, and nothing here
- * tries to get round it.
+ * registered when the list stops being empty, long before any call, on the
+ * belief that Android routes a stream only when the app creates it. Not so on
+ * the Android 17 emulator (2026-10-27): a policy registered mid-call copied a
+ * player already playing (AudioPolicyManager re-checks the players then,
+ * checkSecondaryOutputs), and on a Galaxy S23 one registered at the answer
+ * had the far side from the first half second. Armed early all the same: a
+ * low-latency (MMAP) player opened before it would never be copied, and one
+ * opened after it is refused that path. An app that marks its audio
+ * ALLOW_CAPTURE_BY_NONE is not copied whatever this holds - Android
+ * honouring the app, and nothing here tries to get round it.
  *
  * THE USER: the microphone, opened NOT privacy-sensitive, so it never takes
  * the input from the call app - a recorder that leaves the other person unable
@@ -507,6 +512,33 @@ final class Voip {
         return calling;
     }
 
+    /**
+     * Whether anyone is in a call - playing voice-call audio and capturing at
+     * once, this process too - for the answering machine, which must never
+     * answer a phone call ringing over one (Main's otherAppCallUp). The rule
+     * is Checks.someoneInCall; this reads the phone into it, -1 for an owner
+     * Android does not name.
+     */
+    static boolean someoneInCall(AudioManager audio) {
+        java.util.List<Integer> players = new java.util.ArrayList<>();
+        for (AudioPlaybackConfiguration p : audio.getActivePlaybackConfigurations()) {
+            if (p.getAudioAttributes().getUsage() == AudioAttributes.USAGE_VOICE_COMMUNICATION) {
+                Integer uid = uidOf(p);
+                players.add(uid == null ? -1 : uid);
+            }
+        }
+        java.util.List<AudioRecordingConfiguration> records = audio.getActiveRecordingConfigurations();
+        int[] captureUids = new int[records.size()];
+        int[] captureSources = new int[records.size()];
+        for (int i = 0; i < records.size(); i++) {
+            Integer uid = uidOf(records.get(i));
+            captureUids[i] = uid == null ? -1 : uid;
+            captureSources[i] = records.get(i).getClientAudioSource();
+        }
+        return Checks.someoneInCall(players.stream().mapToInt(Integer::intValue).toArray(), captureUids,
+                captureSources);
+    }
+
     // getClientUid is a system API: by reflection, or null.
     /** The uid of an active capture Android has silenced - not this
      *  process's - that [which] picks; null for none. The guards' one look:
@@ -521,7 +553,7 @@ final class Voip {
         return null;
     }
 
-    private static @Nullable Integer uidOf(Object config) {
+    static @Nullable Integer uidOf(Object config) {
         try {
             return (Integer) config.getClass().getMethod("getClientUid").invoke(config);
         } catch (Throwable t) {

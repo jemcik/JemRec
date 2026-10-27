@@ -50,6 +50,9 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.Mac;
@@ -480,18 +483,7 @@ public final class Main {
 
                 @Override
                 public @Nullable Boolean phoneCallInTelecom() {
-                    TelecomManager t = telecom;
-                    if (t == null) {
-                        return null;
-                    }
-                    try {
-                        // READ_PHONE_STATE, the shell's: asked as the shell on
-                        // the Honor, 2026-10-26, it answered with no error.
-                        return t.isInManagedCall();
-                    } catch (Throwable e) {
-                        Ln.w("callwatch: could not ask Telecom whether a phone call is up: " + e);
-                        return null;
-                    }
+                    return Main.phoneCallInTelecom();
                 }
 
                 @Override
@@ -844,6 +836,8 @@ public final class Main {
         leftovers.add(Greeting.FILE);
         leftovers.add(Greeting.TAKE);
         leftovers.add(MUTE_MARKER);
+        // The last call's report (Copy a report).
+        leftovers.add(REPORT_FILE);
         File[] recordings = new File(REC_DIR).listFiles((d, n) -> n.startsWith(REC_PREFIX) && n.endsWith(REC_SUFFIX));
         if (recordings != null) {
             leftovers.addAll(java.util.Arrays.asList(recordings));
@@ -1655,9 +1649,11 @@ public final class Main {
         private final File file;
         private final FileOutputStream out;
         private final AsyncProcessor recorder;
+        /** What Copy a report says about this call (CallReport). */
+        final CallReport report;
 
         private RecordingSession(String name, boolean incoming, long startedAt, @Nullable String app, File file,
-                                 FileOutputStream out, AsyncProcessor recorder) {
+                                 FileOutputStream out, AsyncProcessor recorder, CallReport report) {
             this.name = name;
             this.incoming = incoming;
             this.app = app;
@@ -1665,6 +1661,7 @@ public final class Main {
             this.file = file;
             this.out = out;
             this.recorder = recorder;
+            this.report = report;
         }
 
         static RecordingSession start(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming)
@@ -1675,18 +1672,28 @@ public final class Main {
             // way it went only where Telecom said (Checks.recfileTag).
             long startedAt = System.currentTimeMillis();
             String name = REC_PREFIX + startedAt + Checks.recfileTag(incoming, app, appIncoming) + REC_SUFFIX;
-            // A phone call this process answered, through the level tap: the
-            // answering machine and its diagnostics look at what is recorded,
-            // never change it. It answered before the off-hook that starts
-            // this, so it is known now; any other call is not looked at.
+            // Every call through the level tap, for its report's levels; a
+            // phone call this process answered for the answering machine and
+            // its diagnostics too. They look at what is recorded, never change
+            // it. The machine answered before the off-hook that starts this,
+            // so that is known now.
             AnswerMachine machine = answerMachine;
-            AudioCapture capture = app != null ? Voip.newCapture()
-                    : machine != null && machine.answeredThisCall()
-                    ? new LevelTap(phoneCapture(), Main::onChunk)
-                    : phoneCapture();
-            if (capture == null) {
+            boolean answered = app == null && machine != null && machine.answeredThisCall();
+            CallReport report = new CallReport(Checks.callInWords(incoming, app, appIncoming, answered),
+                    SystemClock::elapsedRealtime);
+            AudioCapture inner = app != null ? Voip.newCapture() : phoneCapture(report);
+            if (inner == null) {
                 throw new IllegalStateException("messenger calls are not armed");
             }
+            if (app != null) {
+                report.route(CallReport.Route.MESSENGER, -1);
+            }
+            AudioCapture capture = new LevelTap(inner, (pcm, frames, atMs) -> {
+                report.chunk(pcm, frames, AudioConfig.CHANNELS);
+                if (answered) {
+                    onChunk(pcm, frames, atMs);
+                }
+            });
             File file = new File(REC_DIR, name);
             FileOutputStream out = new FileOutputStream(file);
             // Fails fast and loudly on a device whose HAL will not give us this
@@ -1700,7 +1707,11 @@ public final class Main {
                 }
             });
             Ln.i("recording: started -> " + name);
-            return new RecordingSession(name, incoming, startedAt, app, file, out, recorder);
+            lastReport = report;
+            // The first look at what plays: by then a call's players are up.
+            ScheduledFuture<?> unused = LOOKS.schedule(() -> lookAround(report), PhoneCapture.LOOK_AFTER_MS,
+                    TimeUnit.MILLISECONDS);
+            return new RecordingSession(name, incoming, startedAt, app, file, out, recorder, report);
         }
 
         void stop() {
@@ -1714,13 +1725,163 @@ public final class Main {
             }
             closeQuietly(out);
             Ln.i("recording: stopped -> " + name + " (" + file.length() + " bytes)");
+            report.ended();
+            keepReport(report);
         }
     }
 
     /** A phone call's capture: VOICE_CALL at once, switched to the messenger
-     *  capture if the call plays through the mixer (PhoneCapture). */
-    private static AudioCapture phoneCapture() {
-        return new PhoneCapture(new AudioDirectCapture(AUDIO_SOURCE), callAudio);
+     *  capture while the call plays through the mixer (PhoneCapture). */
+    private static AudioCapture phoneCapture(CallReport report) {
+        return new PhoneCapture(new PhoneCapture.Call() {
+            @Override
+            public AudioCapture voice() {
+                return new AudioDirectCapture(AUDIO_SOURCE);
+            }
+
+            @Override
+            public @Nullable AudioCapture mixer() {
+                return Voip.newPhoneCapture();
+            }
+
+            @Override
+            public @Nullable Boolean phoneCallInTelecom() {
+                return Main.phoneCallInTelecom();
+            }
+
+            @Override
+            public boolean appInCall() {
+                return Main.appInCall();
+            }
+
+            @Override
+            public void lookAround() {
+                Main.lookAround(report);
+            }
+        }, callAudio, report);
+    }
+
+    /**
+     * Whether an app is in a call of its own through Telecom (a self-managed
+     * call, as Google Meet's are): what "communication" mode means in the
+     * middle of a phone call when it is not the phone call's - an app outside
+     * Telecom cannot take the mode from Telecom. Every app with an account in
+     * Telecom is asked, whatever it plays: the stand-in call of the emulator
+     * check could not always make a sound (the Android 17 AVD, 2026-10-27),
+     * and an app's call held off the mixer by what it plays alone would have
+     * left the microphone recording it. True when it cannot be told - the
+     * call then stays as 0.23 recorded it.
+     */
+    static boolean appInCall() {
+        TelecomManager t = telecom;
+        if (t == null) {
+            return true;
+        }
+        try {
+            // SystemApis: the accounts under MODIFY_PHONE_STATE, the calls
+            // from Android 14 under READ_PRIVILEGED_PHONE_STATE - the
+            // shell's both; the mixer is never asked about before 14.
+            java.util.List<?> accounts = (java.util.List<?>) TelecomManager.class
+                    .getMethod("getAllPhoneAccountHandles").invoke(t);
+            java.lang.reflect.Method inCall = TelecomManager.class.getMethod("isInSelfManagedCall",
+                    String.class, android.os.UserHandle.class);
+            if (accounts == null) {
+                return true;
+            }
+            for (Object account : accounts) {
+                android.telecom.PhoneAccountHandle handle = (android.telecom.PhoneAccountHandle) account;
+                String pkg = handle.getComponentName().getPackageName();
+                if (Boolean.TRUE.equals(inCall.invoke(t, pkg, handle.getUserHandle()))) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Throwable e) {
+            Throwable why = e instanceof java.lang.reflect.InvocationTargetException && e.getCause() != null
+                    ? e.getCause() : e;
+            Ln.w("recording: could not tell whether another app's call is up: " + why);
+            return true;
+        }
+    }
+
+    /** Whether Telecom holds a phone call - not an app's through it, as
+     *  Google Meet's are; null if it cannot be asked. */
+    static @Nullable Boolean phoneCallInTelecom() {
+        TelecomManager t = telecom;
+        if (t == null) {
+            return null;
+        }
+        try {
+            // READ_PHONE_STATE, the shell's: asked as the shell on the Honor,
+            // 2026-10-26, it answered with no error.
+            return t.isInManagedCall();
+        } catch (Throwable e) {
+            Ln.w("callwatch: could not ask Telecom whether a phone call is up: " + e);
+            return null;
+        }
+    }
+
+    // --- the last call's report (Copy a report) ----------------------------------------
+
+    /**
+     * The last call's report, for Copy a report in the app's Diagnostics: see
+     * CallReport. Kept in a file as well, from the moment its recording
+     * stops, so a recorder started again since - an update, a revive -
+     * still has it.
+     */
+    private static final int COMMAND_REPORT = 'C';
+    private static final File REPORT_FILE = new File(REC_DIR, "jemrec-lastcall.txt");
+    private static volatile @Nullable CallReport lastReport;
+    /** Its own thread for the looks: they ask Android for several lists,
+     *  and the main looper has the calls to follow. Posted there, the first
+     *  look of a call on the Android 17 emulator came five seconds late, once
+     *  in four calls (2026-10-27). */
+    private static final ScheduledExecutorService LOOKS = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "jemrec-report");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** What is playing and capturing, into [report], while its call is
+     *  still the one recorded. */
+    private static void lookAround(CallReport report) {
+        AudioManager audio = callAudio;
+        RecordingSession rec = activeRecording;
+        if (audio != null && rec != null && rec.report == report) {
+            AudioScene.lookInto(report, audio);
+        }
+    }
+
+    private static void keepReport(CallReport report) {
+        try (FileOutputStream file = new FileOutputStream(REPORT_FILE)) {
+            // With the build that recorded it: read back by a recorder
+            // updated since, the header's build is not this call's.
+            file.write(("Recorded by build " + BUILD + "\n" + report.text()).getBytes(StandardCharsets.UTF_8));
+        } catch (Throwable t) {
+            Ln.w("report: could not keep the last call's report: " + t);
+        }
+    }
+
+    /** The answer to COMMAND_REPORT: this recorder's build, then the call in
+     *  memory, or the one kept. */
+    private static String reportText() {
+        return "Recorder: build " + BUILD + "\n" + lastCallText();
+    }
+
+    private static String lastCallText() {
+        CallReport report = lastReport;
+        if (report != null) {
+            return report.text();
+        }
+        try {
+            String kept = new String(java.nio.file.Files.readAllBytes(REPORT_FILE.toPath()), StandardCharsets.UTF_8);
+            if (!kept.isEmpty()) {
+                return kept;
+            }
+        } catch (Throwable ignored) {
+            // None kept: said below.
+        }
+        return "Last call: none recorded yet.";
     }
 
     /** Start capturing the current call to a file. Returns its name, or null if
@@ -2343,6 +2504,11 @@ public final class Main {
             client.getOutputStream().flush();
             return;
         }
+        if (command == COMMAND_REPORT) {
+            client.getOutputStream().write((reportText() + "\n").getBytes(StandardCharsets.UTF_8));
+            client.getOutputStream().flush();
+            return;
+        }
         if (command == COMMAND_FETCH) {
             String name = readName(client);
             File file = recFileFor(name);
@@ -2689,7 +2855,7 @@ public final class Main {
             if (audioNow == null) {
                 throw new IllegalStateException("the call watch is not up");
             }
-            Voip.callingUids(audioNow, true);
+            Voip.someoneInCall(audioNow);
         } catch (Throwable t) {
             missing.add("calls");
         }
@@ -2816,7 +2982,7 @@ public final class Main {
                 // The shell's own uid counts too: this process never plays call
                 // audio, and the emulator check's stand-in call runs as the shell.
                 return callAudio.getMode() == AudioManager.MODE_IN_COMMUNICATION
-                        || !Voip.callingUids(callAudio, true).isEmpty();
+                        || Voip.someoneInCall(callAudio);
             } catch (Throwable t) {
                 Ln.w("answer: could not tell whether another app is in a call: " + t);
                 return true;

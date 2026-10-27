@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-834 JVM tests, no device needed - 655 for the app and 179 for the daemon:
+852 JVM tests, no device needed - 657 for the app and 195 for the daemon:
 
     ./gradlew test
 
@@ -86,7 +86,8 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13 and 17 for 0.23):
+emulator, for each Android version it claims (12, 13, 16 and 17 for 0.24 -
+16 is what the Galaxy phones of the issues run):
 
     python3 tools/emulator_checks.py --serial emulator-5554
 
@@ -106,7 +107,14 @@ message kept and the rest asked about. Then another app's call through
 Telecom, as Google Meet's are (a stand-in call of the debug build's own): left
 alone, a contact's phone call rung in over it recorded on its own and ended
 where it was hung up, and the stand-in's row in the call log not counted as a
-call gone unrecorded. Then a call's waveform, kept as it is
+call gone unrecorded. Then a phone call whose audio mode turns "communication"
+in the middle (the stand-in call from `shellserver/probe` takes the mode and
+plays a tone): recorded through the mixer from then, the tone in its copy, and
+through the call capture again once the mode is back, saved exactly, and
+Diagnostics' *Copy a report* saying each way (before Android 14, kept on the
+call capture); and the stand-in app call placed over a phone call being
+recorded, as a Meet call taken with the phone call on hold, keeping that phone
+call on the call capture. Then a call's waveform, kept as it is
 saved; a recording played from its row going on with the screen off, named
 only "Call recording" while locked and by its caller again once unlocked,
 held back by a ringing call and playing on after it; a deleted recording

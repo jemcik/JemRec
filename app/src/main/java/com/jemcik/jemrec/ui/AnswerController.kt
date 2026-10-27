@@ -1,8 +1,6 @@
 package com.jemcik.jemrec.ui
 
 import android.app.Application
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.media.AudioTrack
 import android.util.Log
 import com.jemcik.jemrec.capture.AnswerConditions
@@ -438,10 +436,9 @@ class AnswerController(
     fun copyReport() {
         val text = AnswerDiagnostics.report(
             AnswerDiagnostics.rawStageOne(app), AnswerDiagnostics.results(app), AnsweringMachine.route(app),
-            runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "?",
+            appVersion(app),
         )
-        app.getSystemService(ClipboardManager::class.java)
-            .setPrimaryClip(ClipData.newPlainText("JemRec answering machine report", text))
+        reportToClipboard(app, "JemRec answering machine report", text)
     }
 
     private companion object {
