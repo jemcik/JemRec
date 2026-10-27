@@ -16,8 +16,8 @@
     btn.querySelector('.theme-name').textContent = name;
   }
 
-  // The screenshots' look, as the theme: Memo, Deck, Multitrack, round. Memo,
-  // the app's default, is no attribute at all.
+  // The look, as the theme: Memo, Deck, Multitrack, round - the whole site's,
+  // screenshots included. Memo, the app's default, is no attribute at all.
   var LOOK_KEY = 'jemrec-look', LOOKS = ['memo', 'deck', 'multitrack'];
   function readLook() {
     try {
@@ -32,22 +32,32 @@
   }
   function labelLook(btn, v) {
     var name = v.charAt(0).toUpperCase() + v.slice(1);
-    btn.setAttribute('aria-label', 'Screenshots in the ' + name + ' look. Click to change.');
+    btn.setAttribute('aria-label', 'Look: ' + name + '. Click to change.');
     btn.querySelector('.look-name').textContent = name;
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    // The header's button and the three phones under Three looks set the
+    // same thing, and each says which look is on.
     var lookBtn = document.querySelector('.look');
+    var lookPicks = [].slice.call(document.querySelectorAll('[data-set-look]'));
+    var curLook = readLook();
+    function setLook(v, keep) {
+      curLook = v;
+      if (keep) { try { localStorage.setItem(LOOK_KEY, v); } catch (e) {} }
+      applyLook(v);
+      if (lookBtn) labelLook(lookBtn, v);
+      lookPicks.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.setLook === v)); });
+    }
+    setLook(curLook, false);
     if (lookBtn) {
-      var curLook = readLook();
-      labelLook(lookBtn, curLook);
       lookBtn.addEventListener('click', function () {
-        curLook = LOOKS[(LOOKS.indexOf(curLook) + 1) % LOOKS.length];
-        try { localStorage.setItem(LOOK_KEY, curLook); } catch (e) {}
-        applyLook(curLook);
-        labelLook(lookBtn, curLook);
+        setLook(LOOKS[(LOOKS.indexOf(curLook) + 1) % LOOKS.length], true);
       });
     }
+    lookPicks.forEach(function (b) {
+      b.addEventListener('click', function () { setLook(b.dataset.setLook, true); });
+    });
 
     var btn = document.querySelector('.theme');
     if (btn) {
@@ -82,6 +92,142 @@
       });
     });
 
+    // A look around: the strip picks the screen in the phone.
+    var tour = document.querySelector('.tour');
+    function pick(name) {
+      if (!tour) return;
+      tour.querySelectorAll('.tour-screen').forEach(function (s) { s.hidden = s.dataset.screen !== name; });
+      tour.querySelectorAll('.thumbs button').forEach(function (b) {
+        var on = b.dataset.screen === name;
+        b.setAttribute('aria-pressed', String(on));
+        if (on) {
+          tour.querySelector('.tour-title').textContent = b.dataset.title;
+          tour.querySelector('.tour-text').textContent = b.dataset.text;
+        }
+      });
+    }
+    if (tour) {
+      tour.querySelectorAll('.thumbs button').forEach(function (b) {
+        b.addEventListener('click', function () { pick(b.dataset.screen); });
+      });
+    }
+
+    // How it works: pointing at a step lights its part of the diagram, and the
+    // first time the diagram is in view it walks through the four once, in the
+    // order the recorder is built - unless the reader asked for less motion.
+    document.querySelectorAll('.how-box').forEach(function (box) {
+      var parts = box.querySelectorAll('.dg-step');
+      var items = box.querySelectorAll('.numbered li');
+      var timer = null;
+      // The pointer that pressed, for the click after it: Safari's clicks
+      // carry no pointerType of their own.
+      var pressed = '';
+      function light(n) {
+        n = String(n || '');
+        box.classList.toggle('walking', n !== '');
+        parts.forEach(function (g) { g.classList.toggle('lit', g.getAttribute('data-step') === n); });
+        items.forEach(function (li) { li.classList.toggle('lit', li.dataset.step === n); });
+      }
+      function stop() { if (timer) { clearTimeout(timer); timer = null; } }
+      items.forEach(function (li) {
+        li.addEventListener('pointerdown', function (e) { pressed = e.pointerType; });
+        li.addEventListener('pointerenter', function (e) {
+          if (e.pointerType === 'mouse') { stop(); light(li.dataset.step); }
+        });
+        li.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') light(''); });
+        // A tap, where there is no pointing: lights it, or puts it out again.
+        li.addEventListener('click', function () {
+          if (pressed === 'mouse') return;
+          stop();
+          light(li.classList.contains('lit') ? '' : li.dataset.step);
+        });
+      });
+      if (!('IntersectionObserver' in window) ||
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      var seen = new IntersectionObserver(function (es) {
+        if (!es[0].isIntersecting) return;
+        seen.disconnect();
+        var n = 0;
+        (function next() {
+          n += 1;
+          if (n > 4) { timer = null; light(''); return; }
+          light(n);
+          timer = setTimeout(next, 1600);
+        })();
+      }, { threshold: 0.6 });
+      seen.observe(box.querySelector('.diagram'));
+    });
+
+    // The manual's contents: open beside the text in a wide window, folded
+    // above it in a narrow one, and the section being read marked.
+    var toc = document.querySelector('.toc details');
+    if (toc) {
+      var wide = window.matchMedia('(min-width: 70rem)');
+      var fit = function () { toc.open = wide.matches; };
+      fit();
+      if (wide.addEventListener) wide.addEventListener('change', fit);
+      toc.addEventListener('click', function (e) {
+        if (e.target.closest('a') && !wide.matches) toc.open = false;
+      });
+      var links = {}, current = null, list = toc.parentNode;
+      toc.querySelectorAll('a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+      var mark = function (id) {
+        var link = links[id] || null;
+        if (link === current) return;
+        if (current) current.removeAttribute('aria-current');
+        current = link;
+        if (!current) return;
+        current.setAttribute('aria-current', 'true');
+        // Keep it in view inside the contents, without moving the page.
+        if (current.offsetTop < list.scrollTop + 40 ||
+            current.offsetTop > list.scrollTop + list.clientHeight - 60) {
+          list.scrollTop = current.offsetTop - list.clientHeight / 3;
+        }
+      };
+      // The section being read is the one whose heading is the last above a
+      // line under the header. An observer of headings crossing a band missed
+      // the way back: scrolled up into an earlier section, with its heading
+      // off the top, the later one stayed marked.
+      var heads = [].slice.call(document.querySelectorAll('main h2[id]'))
+        .filter(function (h) { return links[h.id]; });
+      // Each heading counts as reached a little below where a jump to it
+      // lands - the page's scroll padding and the heading's own margin, which
+      // a setup step's is larger by, for its progress bar. A fixed 120px
+      // missed a step's 122px, and a jump to Step 4 marked Step 3.
+      var pad = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+      var lines = heads.map(function (h) {
+        return pad + (parseFloat(getComputedStyle(h).scrollMarginTop) || 0) + 40;
+      });
+      var queued = false;
+      var spy = function () {
+        queued = false;
+        // Above the first heading - the title, the lead, the video - nothing.
+        var at = null;
+        for (var i = 0; i < heads.length && heads[i].getBoundingClientRect().top <= lines[i]; i++) at = heads[i];
+        // At the very bottom the last sections cannot scroll up to that line.
+        var d = document.documentElement;
+        if (window.innerHeight + window.scrollY >= d.scrollHeight - 2) at = heads[heads.length - 1];
+        mark(at ? at.id : '');
+      };
+      window.addEventListener('scroll', function () {
+        if (!queued) { queued = true; requestAnimationFrame(spy); }
+      }, { passive: true });
+      spy();
+    }
+
+    // The privacy policy's rows fold, and a printer leaves a folded row's
+    // words out - the words that are the policy. So they open to print, and
+    // fold back as they were.
+    var folded = [];
+    window.addEventListener('beforeprint', function () {
+      folded = [].slice.call(document.querySelectorAll('details.datum:not([open])'));
+      folded.forEach(function (d) { d.open = true; });
+    });
+    window.addEventListener('afterprint', function () {
+      folded.forEach(function (d) { d.open = false; });
+      folded = [];
+    });
+
     // Click a screenshot to see it properly. The thumbnail on the page is a
     // 420px copy; the viewer loads the full capture, which is the only place it
     // is worth a quarter of a megabyte. Escape closes, and so does clicking
@@ -94,9 +240,11 @@
     var viewer = document.querySelector('.viewer');
     var all = [].slice.call(document.querySelectorAll('.shot'));
     if (!viewer || !all.length) return;
-    // Each screen is on the page once per theme and the theme hides one, so the
-    // set is the ones showing, taken when the viewer opens - the theme may have
-    // changed since the last time.
+    // Each screen is on the page once per look and theme, and the strip shows
+    // one screen at a time, so the set is every screen the stylesheet shows
+    // in the page's look and theme - its own display, which a screen the
+    // strip has not picked keeps - taken when the viewer opens, as either may
+    // have changed since.
     var shots = [];
 
     var img = viewer.querySelector('img');
@@ -144,14 +292,19 @@
       // Back to the thumbnail SHOWING, not the one clicked: after three arrow
       // presses the picture on screen is not the one that opened the viewer,
       // and landing the keyboard back on that one is disorienting.
+      // The phone follows: it shows the screen the viewer was on.
       var b = shots[at];
       at = -1;
-      if (b) b.focus();
+      if (b) {
+        var screen = b.closest('.tour-screen');
+        if (screen && screen.hidden) pick(screen.dataset.screen);
+        b.focus();
+      }
     }
 
     all.forEach(function (b) {
       b.addEventListener('click', function () {
-        shots = all.filter(function (s) { return s.offsetParent !== null; });
+        shots = all.filter(function (s) { return getComputedStyle(s).display !== 'none'; });
         viewer.classList.toggle('solo', shots.length < 2);
         viewer.hidden = false;
         lock(true);

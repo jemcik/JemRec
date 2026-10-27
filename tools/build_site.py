@@ -9,8 +9,11 @@ for the reason written above the palette.
 
 Run from anywhere:  python3 tools/build_site.py
 """
+import functools
+import html
 import pathlib
 import re
+import shutil
 import textwrap
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -29,8 +32,8 @@ VIDEO = "rt25pZd8R9M"
 VIDEO_URL = f"https://www.youtube.com/watch?v={VIDEO}"
 VIDEO_LENGTH = "2:22"       # 141.5 s; YouTube's player shows 2:22
 
-# THE THEME HAS THREE STATES, NOT TWO, and the palette is written twice because
-# of it:
+# THE THEME HAS THREE STATES, NOT TWO, and each palette is written twice
+# because of it:
 #
 #   bare :root                          light, and the default
 #   @media (prefers-color-scheme: dark) the reader's system says dark
@@ -38,17 +41,184 @@ VIDEO_LENGTH = "2:22"       # 141.5 s; YouTube's player shows 2:22
 #
 # The media query is guarded with :not([data-theme="light"]) so that choosing
 # light on a system set to dark actually wins, and the stamped rule comes last
-# so it beats both. The values live here rather than in the stylesheet text so
-# the two copies cannot drift.
-DARK_VARS = """    --surface: #22262B;
-    --raise:   #2C3137;
-    --line:    #3B4149;
-    --ink:     #E4E7EB;
-    --ink-mid: #B2BAC4;
-    --accent:  #9ECAFF;
-    --record:  #FF7A6B;
-    --play:    #6FDF9B;
-    --code-bg: #1B1F23;"""
+# so it beats both.
+#
+# AND THE SITE HAS THE APP'S THREE LOOKS. The Look button in the header picks
+# Memo, Deck or Multitrack, and the whole site takes it - colours, type and
+# shapes - not only its screenshots. A site that looked like every other
+# product page was the user's complaint (2026-10-27); the app's looks are
+# what JemRec looks like. Each look's colours are the app's own
+# (app/src/main/java/com/jemcik/jemrec/ui/theme/LookColors.kt and Theme.kt),
+# moved a step in from black and white for the reason above the stylesheet's
+# first rule. Memo is the page the site always had.
+#
+# Six palettes, so they live here as one table and the stylesheet's blocks are
+# written from it: every look has every name Memo's has, and its light and dark
+# the same names, Deck's own LCD and keys included (palettes_css checks).
+PALETTES = {
+    "memo": {
+        "light": {
+            "surface": "#F1F4F8", "raise": "#FAFBFD", "line": "#D5DCE5",
+            "ink": "#161A20", "ink-mid": "#4C555F", "accent": "#2C5AA0",
+            "record": "#C0392F", "play": "#14713C", "code-bg": "#E7ECF3",
+            "head": "#F1F4F8", "band": "#FAFBFD", "marker": "#2C5AA0",
+            # MemoLight: the header's state words, and its button's disc.
+            "st-ready": "#1E6B34", "st-alarm": "#BE3A2D", "st-idle": "#43474E",
+            "disc": "#FFFFFF", "disc-edge": "#DCE1E9", "rec": "#E8564B",
+        },
+        "dark": {
+            "surface": "#22262B", "raise": "#2C3137", "line": "#3B4149",
+            "ink": "#E4E7EB", "ink-mid": "#B2BAC4", "accent": "#9ECAFF",
+            "record": "#FF7A6B", "play": "#6FDF9B", "code-bg": "#1B1F23",
+            "head": "#22262B", "band": "#2C3137", "marker": "#9ECAFF",
+            "st-ready": "#6FDF9B", "st-alarm": "#FF7A6B", "st-idle": "#C3C7CF",
+            "disc": "#2A2E34", "disc-edge": "#3A3F46", "rec": "#E8564B",
+        },
+    },
+    # Paper under a graphite-and-aluminium recorder: the header and the bands
+    # are the recorder's face, the cards its panels, the links the LCD's olive.
+    "deck": {
+        "light": {
+            "surface": "#EFEEEA", "raise": "#E6E8EB", "line": "#CCD0D5",
+            "ink": "#1A1C1E", "ink-mid": "#50555C", "accent": "#4E6B26",
+            "record": "#BE3A2D", "play": "#276E35", "code-bg": "#E4E6E9",
+            "head": "#E4E6E9", "band": "#E4E6E9", "marker": "#50555C",
+            "st-ready": "#276E35", "st-alarm": "#BE3A2D", "st-idle": "#50555C",
+            "disc": "#C4C9CF", "disc-edge": "#AEB4BA", "rec": "#E8564B",
+            "lcd": "#C9D6A3", "lcd-ink": "#1E2A12", "lcd-edge": "#6E747B",
+            "lcd-off": "#A7B092", "lcd-ink-off": "#39422C", "lcd-glow": "transparent",
+            "key": "#FFFFFF", "key-edge": "#AEB4BA",
+            "key-idle": "#F4F5F6", "key-idle-mid": "#C9CDD2", "key-idle-rim": "#9DA3AA",
+        },
+        # The LCD negative, glowing segments on black, as the app's at night.
+        "dark": {
+            "surface": "#15181B", "raise": "#1F2327", "line": "#343A41",
+            "ink": "#E3E5E8", "ink-mid": "#A3A9B0", "accent": "#B6F27A",
+            "record": "#FF7A6B", "play": "#7CF29A", "code-bg": "#111315",
+            "head": "#1C1F23", "band": "#1C1F23", "marker": "#9AA3AD",
+            "st-ready": "#7CF29A", "st-alarm": "#FF7A6B", "st-idle": "#A3A9B0",
+            "disc": "#0E1013", "disc-edge": "#3A4047", "rec": "#E8564B",
+            "lcd": "#0E140B", "lcd-ink": "#B6F27A", "lcd-edge": "#565D66",
+            "lcd-off": "#0B0F09", "lcd-ink-off": "#6E8E50",
+            "lcd-glow": "rgba(182, 242, 122, .45)",
+            "key": "#343A41", "key-edge": "#0E1013",
+            "key-idle": "#7A8189", "key-idle-mid": "#4A5057", "key-idle-rim": "#2A2E33",
+        },
+    },
+    # A sound editor: white panels on grey, LED green for what works, the
+    # day markers' amber for labels - and for "no link", as the app has it.
+    "multitrack": {
+        "light": {
+            "surface": "#EEF0F3", "raise": "#FFFFFF", "line": "#DCE0E5",
+            "ink": "#1B1F24", "ink-mid": "#555D68", "accent": "#2460C4",
+            "record": "#BE3A2D", "play": "#12803F", "code-bg": "#E7EAEE",
+            "head": "#FFFFFF", "band": "#FFFFFF", "marker": "#8A6400",
+            "st-ready": "#128A45", "st-alarm": "#8A6400", "st-idle": "#555D68",
+            "disc": "#F3F4F6", "disc-edge": "#C9CED6", "rec": "#E8463B",
+        },
+        "dark": {
+            "surface": "#12151A", "raise": "#191D23", "line": "#262C35",
+            "ink": "#E6E9EE", "ink-mid": "#A3ABB6", "accent": "#7DB2FF",
+            "record": "#FF7A6B", "play": "#3DDC84", "code-bg": "#0E1014",
+            "head": "#161A20", "band": "#161A20", "marker": "#F5C542",
+            "st-ready": "#7CF29A", "st-alarm": "#F5C542", "st-idle": "#A3ABB6",
+            "disc": "#1B1F26", "disc-edge": "#3A404A", "rec": "#FF4D42",
+        },
+    },
+}
+
+# Type and shape, by look, the same in light and dark: the app's typography
+# (Theme.kt, typographyFor). Memo the system's; Deck engraved throughout, as
+# its keys and screens are, with Doto for the LCD alone; Multitrack Space
+# Grotesk for names and titles and JetBrains Mono for the rest.
+LOOK_TYPE = {
+    "memo": {
+        "display": "var(--sans)", "body": "var(--sans)", "label": "var(--sans)",
+        "mono": "ui-monospace, SFMono-Regular, Menlo, monospace",
+        "radius": "18px", "radius-sm": "999px",
+        # A step's number - Get started, the list beside the diagram, the
+        # diagram's own - and the same number lit. The shared rules read
+        # these, so a look sets them once and the lit rule always wins.
+        "num-bg": "var(--accent)", "num-ink": "var(--surface)", "num-edge": "transparent",
+        "num-font": "var(--label)", "num-weight": "700", "num-glow": "transparent",
+        "num-lit-bg": "var(--record)", "num-lit-edge": "transparent",
+    },
+    "deck": {
+        "display": "var(--engraved)", "body": "var(--engraved)", "label": "var(--engraved)",
+        "mono": "var(--engraved)", "radius": "12px", "radius-sm": "8px",
+        # Read off an LCD, as the player's time is; lit, its frame goes red.
+        "num-bg": "var(--lcd)", "num-ink": "var(--lcd-ink)", "num-edge": "var(--lcd-edge)",
+        "num-font": "var(--lcdface)", "num-weight": "800", "num-glow": "var(--lcd-glow)",
+        "num-lit-bg": "var(--lcd)", "num-lit-edge": "var(--record)",
+    },
+    "multitrack": {
+        "display": "var(--grotesk)", "body": "var(--grotesk)", "label": "var(--jbmono)",
+        "mono": "var(--jbmono)", "radius": "6px", "radius-sm": "4px",
+        "num-bg": "var(--ink)", "num-ink": "var(--surface)", "num-edge": "transparent",
+        "num-font": "var(--label)", "num-weight": "700", "num-glow": "transparent",
+        "num-lit-bg": "var(--record)", "num-lit-edge": "transparent",
+    },
+}
+
+# The looks' typefaces, the app's own files (app/src/main/res/font), copied
+# into docs/fonts unmodified with their licences beside them - the OFL asks
+# for that, and Share Tech Mono's Reserved Font Name rules out cutting it
+# down. Served from the site itself: this site fetches nothing from anywhere
+# else (the privacy policy says so). A browser fetches a face only when text
+# on screen is set in it, so Memo, the default, loads none of them.
+# (family, file, licence, weight range, characters it is used for)
+FONTS = (
+    # All but the full stop: Doto draws it as a cross of five dots, and on the
+    # Honor "EVERY CALL." read as "EVERY CALL+" (2026-10-27). The LCD's stack
+    # falls back to Share Tech Mono, whose stop is one square dot.
+    ("Doto", "doto.ttf", "OFL-Doto.txt", "100 900", "U+0000-002D, U+002F-10FFFF"),
+    ("Share Tech Mono", "share_tech_mono.ttf", "OFL-ShareTechMono.txt", "400", ""),
+    ("JetBrains Mono", "jetbrains_mono.ttf", "OFL-JetBrainsMono.txt", "100 800", ""),
+    ("Space Grotesk", "space_grotesk.ttf", "OFL-SpaceGrotesk.txt", "300 700", ""),
+)
+
+
+def _vars(values: dict, indent: str) -> str:
+    return "\n".join(f"{indent}--{k}: {v};" for k, v in values.items())
+
+
+def palettes_css() -> str:
+    """Every look's palette in the three states, and its fonts."""
+    looks = {look for look, _ in LOOKS}
+    assert set(PALETTES) == looks == set(LOOK_TYPE), "LOOKS, PALETTES and LOOK_TYPE name different looks"
+    names = set(PALETTES["memo"]["light"])
+    for look, themes in PALETTES.items():
+        light, dark = set(themes["light"]), set(themes["dark"])
+        assert light == dark, f"{look}: light and dark differ in {sorted(light ^ dark)}"
+        assert names <= light, f"{look}: no {sorted(names - light)}"
+    blocks = [
+        "\n".join(
+            f'@font-face {{ font-family: "{family}"; src: url("fonts/{file}") format("truetype"); '
+            f"font-weight: {weights}; font-display: swap;{f' unicode-range: {chars};' if chars else ''} }}"
+            for family, file, _, weights, chars in FONTS
+        )
+    ]
+    for look, themes in PALETTES.items():
+        sel = ":root" if look == "memo" else f':root[data-look="{look}"]'
+        light = dict(LOOK_TYPE[look], **themes["light"])
+        blocks.append(f"{sel} {{\n{_vars(light, '  ')}\n}}")
+        blocks.append(
+            "@media (prefers-color-scheme: dark) {\n"
+            f'  {sel}:not([data-theme="light"]) {{\n{_vars(themes["dark"], "    ")}\n  }}\n}}'
+        )
+        blocks.append(f'{sel}[data-theme="dark"] {{\n{_vars(themes["dark"], "  ")}\n}}')
+    # Paper is white whatever the screen was. Browsers drop backgrounds when
+    # printing, so a dark palette printed its light text on white, too faint
+    # to read - the privacy policy opens its rows to be printed. Each look
+    # prints in its own light palette; the selectors match the dark ones'
+    # weight and come after them.
+    prints = []
+    for look, themes in PALETTES.items():
+        sel = ":root" if look == "memo" else f':root[data-look="{look}"]'
+        prints.append(f'  {sel}, {sel}[data-theme], {sel}:not([data-theme="light"]) {{\n'
+                      f'{_vars(themes["light"], "    ")}\n  }}')
+    blocks.append("@media print {\n" + "\n".join(prints) + "\n}")
+    return "\n\n".join(blocks)
 
 CSS = """/* Generated by tools/build_site.py - edit there, not here. */
 
@@ -58,35 +228,25 @@ CSS = """/* Generated by tools/build_site.py - edit there, not here. */
    image glowed like a light box. The light end started at #FBFCFE, near enough
    to paper that the cards on it had nothing to lift off. So the page sits a step
    in from both: a soft grey-blue in light, a lifted charcoal in dark, with the
-   cards and the code blocks moving the other way in each. */
+   cards and the code blocks moving the other way in each. The looks' own
+   palettes follow the same rule (tools/build_site.py, PALETTES). */
 :root {
-  --surface:  #F1F4F8;
-  --raise:    #FAFBFD;
-  --line:     #D5DCE5;
-  --ink:      #161A20;
-  --ink-mid:  #4C555F;
-  --accent:   #2C5AA0;
-  --record:   #C0392F;
-  --play:     #14713C;
-  --code-bg:  #E7ECF3;
   --wrap:     44rem;
   --wide:     70rem;
-  --body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Deck's chain, as the app's: Share Tech Mono, then JetBrains Mono for
+     what it has no glyph for. */
+  --engraved: "Share Tech Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --grotesk: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --jbmono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --lcdface: "Doto", "Share Tech Mono", ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-__DARK__
-  }
-}
-
-:root[data-theme="dark"] {
-__DARK__
-}
+__PALETTES__
 
 * { box-sizing: border-box; }
-/* scroll-padding: the header is sticky, so a jump to a heading - a feature
-   tile into the manual, say - would otherwise put the heading under it. */
+/* scroll-padding: the header is sticky, so a jump to a heading - a feature's
+   More into the manual, say - would otherwise put the heading under it. */
 html { font-size: 17px; scroll-behavior: smooth; scroll-padding-top: 5rem; }
 body {
   margin: 0;
@@ -107,7 +267,7 @@ body {
 .bar {
   padding: .9rem 0;
   border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; background: var(--surface); z-index: 5;
+  position: sticky; top: 0; background: var(--head); z-index: 5;
 }
 .column { max-width: var(--wide); margin: 0 auto; padding: 0 1.4rem; }
 .bar .column {
@@ -118,14 +278,14 @@ body {
 .brand img { border-radius: 22%; }
 .bar-end { display: flex; align-items: center; gap: .9rem; }
 .bar nav a { color: var(--ink-mid); text-decoration: none; margin-left: 1.1rem;
-             font-size: .92rem; }
+             font-size: .92rem; font-family: var(--label); }
 .bar nav a:first-child { margin-left: 0; }
 .bar nav a:hover { color: var(--accent); }
 
 .theme, .look {
   display: inline-flex; align-items: center; gap: .35rem;
-  font: inherit; font-size: .92rem; color: var(--ink-mid);
-  background: var(--raise); border: 1px solid var(--line); border-radius: 999px;
+  font: inherit; font-family: var(--label); font-size: .92rem; color: var(--ink-mid);
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--radius-sm);
   padding: .2rem .66rem; cursor: pointer;
 }
 .theme:hover, .look:hover { color: var(--accent); border-color: var(--accent); }
@@ -137,7 +297,7 @@ body {
   font-size: .92rem; font-weight: 600; text-decoration: none; color: var(--record);
   background: color-mix(in srgb, var(--record) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--record) 35%, transparent);
-  border-radius: 999px; padding: .2rem .75rem;
+  border-radius: var(--radius-sm); padding: .2rem .75rem; font-family: var(--label);
   transition: background-color .15s;
 }
 .support-btn:hover { background: color-mix(in srgb, var(--record) 18%, transparent); }
@@ -163,6 +323,7 @@ body {
 
 main { max-width: var(--wrap); margin: 0 auto; padding: 2.6rem 1.4rem 5rem; }
 
+h1, h2, h3 { font-family: var(--display); }
 h1 { font-size: 2.1rem; line-height: 1.18; letter-spacing: -.02em; margin: 0 0 .8rem; }
 h2 { font-size: 1.28rem; margin: 2.6rem 0 .7rem; letter-spacing: -.01em; }
 h3 { font-size: 1.02rem; margin: 1.6rem 0 .4rem; }
@@ -177,7 +338,7 @@ pre {
   background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
   padding: .8rem 1rem; overflow-x: auto; font-size: .86rem; line-height: 1.5;
 }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+code { font-family: var(--mono); font-size: .88em; }
 p code, li code, td code { background: var(--code-bg); padding: .1rem .32rem; border-radius: 5px; }
 /* The manual quotes a 64-character signing digest and a whole Honor file name
    inline; unbroken, either one made the page wider than a phone. */
@@ -201,6 +362,171 @@ th { color: var(--ink-mid); font-weight: 600; }
    accent keeps the second from reading as a second alarm. */
 .note.info { border-left-color: var(--accent); }
 .note strong { color: var(--ink); }
+
+/* WHAT STAYS ON THE PHONE, a row each: its answers as chips to scan, and
+   the policy's own words a tap away (PRIVACY_DATA). It was a table of
+   paragraphs, thirteen of them, and nothing to find your way by. */
+.datamap { margin: 1.2rem 0 2rem; border-top: 1px solid var(--line); }
+.datamap-head, .datum summary {
+  display: grid; grid-template-columns: 9.5rem repeat(3, minmax(0, 1fr));
+  gap: .5rem .7rem; padding-right: 2rem;
+}
+.datamap-head {
+  padding-top: .6rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line);
+  font: 600 .7rem var(--label); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-mid);
+}
+.datum { border-bottom: 1px solid var(--line); }
+.datum summary {
+  list-style: none; cursor: pointer; position: relative; align-items: start;
+  padding-top: .8rem; padding-bottom: .8rem;
+}
+.datum summary::-webkit-details-marker { display: none; }
+.datum summary::after {
+  content: ""; position: absolute; right: .5rem; top: 1.15rem; width: .5rem; height: .5rem;
+  border-right: 2px solid var(--ink-mid); border-bottom: 2px solid var(--ink-mid);
+  transform: rotate(45deg); transition: transform .2s;
+}
+.datum[open] summary::after { transform: translateY(.2rem) rotate(-135deg); }
+/* Hover only where a pointer hovers: on a touchscreen it sticks after a tap,
+   and an opened row kept its accent title (the Honor, 2026-10-27). */
+@media (hover: hover) { .datum summary:hover .what { color: var(--accent); } }
+.datum .what { font-weight: 700; line-height: 1.35; }
+.chip {
+  justify-self: start; padding: .12rem .6rem; font-size: .8rem; line-height: 1.4;
+  border-radius: min(var(--radius-sm), 10px); background: var(--code-bg); color: var(--ink);
+}
+/* The column heads say what each chip is in a wide window; a screen reader,
+   which skips them, hears the chip's own word instead. */
+.chip b {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+.chip.long { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); }
+.chip.when.if { background: color-mix(in srgb, var(--play) 14%, transparent); color: var(--play); }
+.datum p {
+  margin: 0 0 1rem; padding: .9rem 1rem; border-radius: var(--radius);
+  background: var(--raise); color: var(--ink-mid); font-size: .94rem;
+}
+@media (max-width: 40rem) {
+  .datamap-head { display: none; }
+  .datum summary { grid-template-columns: minmax(0, 1fr); gap: .35rem; }
+  .chip b { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-weight: 600; margin-right: .3rem; }
+}
+
+/* THE MANUAL, FINDABLE. Thirty sections, some 13,000px of text, and no
+   contents at all. In a wide window the contents stay in view beside the
+   text and mark the section being read; in a narrow one they sit folded
+   under the title (the script opens them only where there is room, so
+   nothing on a phone jumps when it runs). The title comes first in the
+   page, for a phone and for a screen reader alike. */
+main.manual {
+  max-width: calc(var(--wrap) + 17.4rem); display: grid; align-items: start;
+  grid-template-columns: 14rem minmax(0, 1fr); gap: 0 3.4rem;
+}
+main.manual > :not(.toc) { grid-column: 2; }
+main.manual > .toc { grid-column: 1; grid-row: 1 / span 3; }
+.toc {
+  position: sticky; top: 4.6rem; max-height: calc(100vh - 5.6rem); overflow-y: auto;
+  overscroll-behavior: contain; font-size: .86rem; padding: 1.2rem 0 1rem;
+}
+.toc summary { cursor: pointer; font-weight: 600; font-family: var(--label); }
+.toc p {
+  margin: 1.2rem 0 .35rem; font: 600 .7rem var(--label); color: var(--ink-mid);
+  text-transform: uppercase; letter-spacing: .12em;
+}
+.toc p:first-of-type { margin-top: .4rem; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc a {
+  display: block; padding: .24rem .65rem; line-height: 1.35; text-decoration: none;
+  color: var(--ink-mid); border-left: 2px solid var(--line);
+}
+.toc a:hover { color: var(--ink); }
+.toc a[aria-current="true"] {
+  color: var(--ink); font-weight: 700; border-left-color: var(--record);
+  background: color-mix(in srgb, var(--record) 8%, transparent);
+}
+.toc .n { font: 700 .8rem var(--label); color: var(--accent); margin-right: .15rem; }
+@media (min-width: 70rem) { .toc details[open] > summary { display: none; } }
+@media (max-width: 69.99rem) {
+  main.manual { display: block; max-width: var(--wrap); }
+  .toc {
+    position: static; max-height: none; overflow: visible; margin: 0 0 2rem;
+    padding: .8rem 1rem; background: var(--raise); border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+}
+
+/* On paper, the page alone: not the header and its buttons, nor the
+   manual's contents column, which narrowed every printed page's text. */
+@media print {
+  .bar, .toc, .viewer { display: none; }
+  main.manual { display: block; max-width: var(--wrap); }
+}
+
+/* A step's place in the setup, over its heading: done, this one, to come. */
+.step-rail { display: flex; align-items: center; gap: 4px; max-width: 17rem; margin: 3rem 0 -1.7rem; }
+/* A jump from the contents lands on the heading; this much more keeps the
+   bar above it out from under the header. */
+.step-rail + h2 { scroll-margin-top: 2.2rem; }
+.step-rail i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.step-rail i.d { background: var(--play); }
+.step-rail i.c { background: var(--record); }
+.step-rail span { margin-left: .6rem; font: 600 .74rem var(--label); color: var(--ink-mid); white-space: nowrap; }
+
+/* WHAT THE HEADER SAYS, AS IT SAYS IT - in the page's look, from the app's
+   own words (header_words), each look's header drawn small: Memo's disc,
+   Deck's REC key and LCD, Multitrack's ring and spaced capitals. */
+.status-list { margin: 1.2rem 0 .6rem; border-top: 1px solid var(--line); }
+.status {
+  display: grid; grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+  gap: .6rem 1.5rem; align-items: center; padding: .95rem 0; border-bottom: 1px solid var(--line);
+}
+.status p { margin: 0; color: var(--ink-mid); font-size: .95rem; }
+@media (max-width: 38rem) { .status { grid-template-columns: minmax(0, 1fr); } }
+.hd { display: inline-flex; align-items: center; gap: .75rem; min-width: 0; }
+.hd b { display: block; font-weight: 600; line-height: 1.2; }
+.hd small { display: block; margin-top: .15rem; font-size: .78rem; line-height: 1.3; color: var(--st-idle); }
+.hd .ready { color: var(--st-ready); }
+.hd .alarm { color: var(--st-alarm); }
+.hd .idle { color: var(--st-idle); }
+.hd-disc, .hd-ring, .hd-key { flex: none; width: 2.4rem; height: 2.4rem; border-radius: 50%; }
+.hd-disc, .hd-ring { display: grid; place-items: center; background: var(--disc); }
+.hd-disc { border: 1px solid var(--disc-edge); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
+.hd-ring { border: 2px solid var(--disc-edge); }
+.hd-disc i, .hd-ring i { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--rec); }
+.hd-disc.off i { background: none; border: 2px solid var(--disc-edge); }
+.hd-ring.off i { background: color-mix(in srgb, var(--rec) 28%, var(--disc)); }
+.hd-memo b { font-size: 1.12rem; font-family: var(--sans); }
+.hd-memo small { font-family: var(--sans); }
+/* As Memo draws them: a line you can tap in its primary colour, and while
+   it starts, a ring round the button (the app's spins; this one holds). */
+.hd-memo small.tap { color: var(--accent); }
+.hd-disc.busy { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* The REC key as the app domes it (HeaderParts.kt, domed): lit from up-left,
+   light, mid, dark at 0, 46% and the rim, over 0.78 of its width - LitRed
+   when on, the theme's keyIdle greys when off. */
+.hd-key {
+  background: radial-gradient(78% 78% at 38% 32%, #FF9184 0, #E8564B 46%, #A8322A 100%);
+  box-shadow: 0 0 0 3px var(--disc), 0 0 0 4px var(--disc-edge);
+}
+.hd-key.off {
+  background: radial-gradient(78% 78% at 38% 32%, var(--key-idle) 0, var(--key-idle-mid) 46%, var(--key-idle-rim) 100%);
+}
+.hd-lcd {
+  min-width: 12.5rem; padding: .3rem .65rem .35rem; border-radius: 8px;
+  background: var(--lcd); color: var(--lcd-ink); border: 2px solid var(--lcd-edge);
+  text-shadow: 0 0 8px var(--lcd-glow);
+}
+.hd-lcd b, .hd-lcd b.ready, .hd-lcd b.alarm, .hd-lcd b.idle { font: 800 1.2rem var(--lcdface); letter-spacing: .04em; color: inherit; }
+.hd-lcd small { color: inherit; font: .64rem var(--engraved); letter-spacing: .03em; }
+.hd-lcd.off { background: var(--lcd-off); color: var(--lcd-ink-off); }
+.hd-multitrack b { font: 600 1.05rem var(--jbmono); letter-spacing: .14em; }
+.hd-multitrack small { font: .64rem var(--jbmono); letter-spacing: .06em; }
+.hd-notif {
+  padding: .5rem .85rem; border-radius: 14px; background: var(--raise);
+  border: 1px solid var(--line); font-family: var(--sans);
+}
+.hd-notif img { width: 18px; height: 18px; border-radius: 50%; }
 
 footer {
   border-top: 1px solid var(--line); margin-top: 3rem; padding: 1.6rem 0 3rem;
@@ -243,7 +569,7 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .eyebrow {
   display: inline-block; font-size: .86rem; font-weight: 600; color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  padding: .28rem .8rem; border-radius: 999px;
+  padding: .28rem .8rem; border-radius: var(--radius-sm); font-family: var(--label);
 }
 .hero h1 {
   font-size: clamp(2.35rem, 5.4vw, 3.75rem); line-height: 1.04;
@@ -342,49 +668,93 @@ main.home { max-width: none; padding: 0 0 2rem; }
   }
 }
 
-.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-.card {
-  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
-  padding: 1.35rem 1.35rem 1.25rem;
-}
-.card p { margin: 0; color: var(--ink-mid); font-size: .96rem; }
-.icon {
-  width: 44px; height: 44px; border-radius: 13px; margin-bottom: 1rem;
-  display: grid; place-items: center; color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-}
-.icon svg { width: 23px; height: 23px; }
-@media (max-width: 62rem) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 38rem) { .cards { grid-template-columns: minmax(0, 1fr); } }
+/* REASONS, NOT CARDS. Four sections of the home page were the same box - an
+   icon in a rounded square, a bold title, grey words - and that box is what
+   made the site read as a template (the user, 2026-10-27). A list of reasons
+   is a list: a rule over each, the icon beside its title. The icons are
+   Material's, the set the app draws from (ICONS). */
+.reasons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.4rem 2.6rem; }
+.reason { border-top: 2px solid var(--ink); padding-top: 1.05rem; }
+.reason h3 { display: flex; align-items: flex-start; gap: .6rem; margin: 0 0 .45rem; }
+.reason h3 svg { width: 22px; height: 22px; flex: none; color: var(--accent); margin-top: .05rem; }
+.reason p { margin: 0; color: var(--ink-mid); font-size: .96rem; }
+@media (max-width: 62rem) { .reasons { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 38rem) { .reasons { grid-template-columns: minmax(0, 1fr); gap: 1.8rem; } }
 
+/* Three steps on one line, because they are one road: numbered, joined, no
+   boxes. On a phone the line runs down the left. */
 .steps {
   list-style: none; padding: 0; margin: 0; counter-reset: step;
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.6rem 2.6rem;
 }
-.steps li {
-  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
-  padding: 1.35rem; display: flex; flex-direction: column;
-}
+.steps li { position: relative; padding-top: 3.6rem; display: flex; flex-direction: column; }
 .steps li::before {
   counter-increment: step; content: counter(step);
-  width: 2.2rem; height: 2.2rem; border-radius: 50%; margin-bottom: 1rem;
-  display: grid; place-items: center; font-weight: 700;
-  background: var(--accent); color: var(--surface);
+  position: absolute; left: 0; top: 0; width: 2.5rem; height: 2.5rem;
+  border-radius: var(--radius-sm); display: grid; place-items: center;
+  font: var(--num-weight) 1.05rem var(--num-font); background: var(--num-bg); color: var(--num-ink);
+  border: 2px solid var(--num-edge); text-shadow: 0 0 6px var(--num-glow);
 }
+.steps li::after {
+  content: ""; position: absolute; top: 1.2rem; left: 3.3rem; right: -1.9rem;
+  height: 2px; background: var(--line);
+}
+.steps li:last-child::after { display: none; }
 .steps p { margin: 0 0 .9rem; color: var(--ink-mid); font-size: .96rem; flex: 1; }
 .after-steps { margin: 1.4rem 0 0; color: var(--ink-mid); max-width: 46rem; }
-@media (max-width: 54rem) { .steps { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 54rem) {
+  .steps { grid-template-columns: minmax(0, 1fr); gap: 1.8rem; }
+  .steps li { padding: 0 0 0 3.6rem; }
+  .steps li::after { left: 1.2rem; top: 3.1rem; right: auto; bottom: -1.3rem; width: 2px; height: auto; }
+}
 
-/* One row of every screen, however many SCREENS has - a column each, so a
-   new one cannot wrap alone - or below 62rem a strip that scrolls sideways
-   and stops on each one: seven phones stacked would be seven screens of
-   scrolling. 62rem, so seven phones in the row are never narrower than six
-   were at the 54rem this used to change at: about 120px. */
-.gallery { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1.2rem; }
-.gallery figure { margin: 0; text-align: center; }
-.gallery figcaption { margin-top: 1rem; }
-.gallery figcaption strong { display: block; }
-.gallery figcaption span { color: var(--ink-mid); font-size: .92rem; }
+/* A LOOK AROUND: one screen large enough to read, and the rest as a strip
+   that picks it. Seven phones in a row were about 120px wide each - a
+   picture of a screen, not one you could read (2026-10-27). Without script
+   the first screen shows and the strip does nothing. */
+.tour {
+  display: grid; grid-template-columns: minmax(0, 19rem) minmax(0, 1fr);
+  gap: 2rem 4rem; align-items: center;
+}
+/* The strip and its words come first in the page, as a phone shows them
+   and a keyboard reaches them; a wide window puts the phone on the left. */
+.tour-phone { width: 100%; max-width: 19rem; margin: 0 auto; grid-column: 1; grid-row: 1; }
+.tour-side { grid-column: 2; grid-row: 1; }
+.tour-side h3 { font-size: 1.7rem; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 .5rem; }
+.tour-text { color: var(--ink-mid); margin: 0 0 1.6rem; min-height: 3.3em; max-width: 30rem; }
+.thumbs { display: flex; flex-wrap: wrap; gap: .7rem; }
+.thumbs button {
+  width: 5.4rem; padding: 3px; border: 2px solid transparent; border-radius: 14px;
+  background: #0D0F12; cursor: pointer; transition: transform .15s;
+}
+/* Under the phone's picture, the seven share one row: fixed thumbnails
+   left one or two alone on a second row between about 650 and 920px. */
+@media (max-width: 54rem) {
+  .thumbs { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); max-width: 44rem; margin: 0 auto; }
+  .thumbs button { width: auto; }
+}
+/* Four to a row on a phone, sharing the width: fixed 4.4rem thumbnails came
+   out three, three and one on the Honor (359px wide, 2026-10-27). */
+@media (max-width: 38rem) {
+  .thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+  .thumbs button { width: auto; }
+}
+.thumbs img {
+  display: block; width: 100%; height: auto; aspect-ratio: 420 / 520;
+  object-fit: cover; object-position: top; border-radius: 10px;
+}
+@media (hover: hover) { .thumbs button:hover { transform: translateY(-2px); } }
+.thumbs button[aria-pressed="true"] { border-color: var(--record); }
+.thumbs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 54rem) {
+  .tour { grid-template-columns: minmax(0, 1fr); }
+  /* The strip above the phone: below it, a screen picked on a phone changed
+     a picture already scrolled out of view (the Honor, 2026-10-27). */
+  .tour-phone, .tour-side { grid-column: auto; grid-row: auto; }
+  .tour-phone { max-width: 16rem; }
+  .tour-side { text-align: center; }
+  .tour-text { margin-left: auto; margin-right: auto; }
+}
 .shot {
   display: block; width: 100%; padding: 6px; border: 0; border-radius: 30px;
   background: #0D0F12; cursor: zoom-in;
@@ -392,24 +762,16 @@ main.home { max-width: none; padding: 0 0 2rem; }
   transition: transform .2s;
 }
 .shot img { display: block; width: 100%; height: auto; border-radius: 24px; }
-.shot:hover { transform: translateY(-3px); }
+@media (hover: hover) { .shot:hover { transform: translateY(-3px); } }
 .shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.gallery-note { color: var(--ink-mid); font-size: .92rem; margin: 1.6rem 0 0; max-width: 46rem; }
-@media (max-width: 62rem) {
-  .gallery {
-    display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
-    gap: 1rem; margin: 0 -1.4rem; padding: .4rem 1.4rem 1rem;
-    scroll-padding: 0 1.4rem;
-  }
-  .gallery figure { flex: 0 0 min(62%, 15rem); scroll-snap-align: start; }
-}
+.gallery-note { color: var(--ink-mid); font-size: .92rem; margin: 2.2rem 0 0; max-width: 46rem; }
 
 /* The setup video: a still of it with a play button until someone presses
    play (see the script). 16:9 whether still or player, so nothing below it
    jumps when the one replaces the other. */
 .video { margin: 2rem 0 0; max-width: 46rem; }
 .video-frame {
-  position: relative; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden;
+  position: relative; aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden;
   background: #0D0F12;
   box-shadow: 0 0 0 1px var(--line), 0 22px 40px -26px rgba(10, 20, 40, .55);
 }
@@ -438,20 +800,101 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .video figcaption { margin-top: .7rem; color: var(--ink-mid); font-size: .92rem; }
 .video figcaption strong { color: var(--ink); }
 
-.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
-.tile {
-  display: flex; flex-direction: column; padding: 1.15rem 1.2rem;
-  background: var(--raise); border: 1px solid var(--line); border-radius: 16px;
-  color: var(--ink); text-decoration: none;
-  transition: border-color .15s, transform .15s;
+/* WHAT YOU CAN DO, BESIDE WHAT IT LOOKS LIKE. Eleven tiles of words were
+   eleven more boxes; each row now puts a few features beside the screen,
+   notification or measurement they are about (FEATURE_ROWS). */
+.rows { display: flex; flex-direction: column; gap: 4.5rem; }
+.row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2rem 4.5rem; align-items: center;
 }
-.tile:hover { border-color: var(--accent); transform: translateY(-2px); }
-.tile.wide { grid-column: 1 / -1; }
-.tile span { color: var(--ink-mid); font-size: .93rem; margin-top: .4rem; flex: 1; }
-.tile em { font-style: normal; font-weight: 600; font-size: .88rem; color: var(--accent); margin-top: .9rem; }
-.tiles-note { color: var(--ink-mid); margin: 1.4rem 0 0; }
-@media (max-width: 62rem) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 38rem) { .tiles { grid-template-columns: minmax(0, 1fr); } }
+.row:nth-child(even) .row-pic { order: -1; }
+.row-text { display: flex; flex-direction: column; gap: 1.6rem; }
+.feature h3 { font-size: 1.15rem; margin: 0 0 .35rem; }
+.feature p { margin: 0 0 .35rem; color: var(--ink-mid); }
+.row-pic { min-width: 0; display: flex; justify-content: center; }
+.tiles-note { color: var(--ink-mid); margin: 3.5rem 0 0; max-width: 46rem; }
+@media (max-width: 54rem) {
+  .rows { gap: 3.5rem; }
+  .row { grid-template-columns: minmax(0, 1fr); }
+  .row:nth-child(even) .row-pic { order: 0; }
+}
+
+/* A part of a screenshot: the image, moved up inside a window cut to the
+   part's height. Every look and theme has its own window (CROPS), because
+   the looks lay the same screen out differently. */
+.crop {
+  width: 100%; max-width: 24rem; overflow: hidden; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--surface);
+  box-shadow: 0 22px 40px -28px rgba(10, 20, 40, .55);
+}
+.crop img { display: block; width: 100%; height: auto; }
+
+/* The three looks, side by side in the page's light or dark - each a button
+   that puts the site in that look. */
+.trio-box { width: 100%; }
+.trio { display: flex; gap: .9rem; justify-content: center; width: 100%; }
+.trio-note { margin: .9rem 0 0; text-align: center; font-size: .86rem; color: var(--ink-mid); }
+.trio button {
+  flex: 1 1 0; max-width: 9.5rem; padding: 0; border: 0; background: none;
+  color: var(--ink-mid); cursor: pointer; font: .84rem var(--label);
+}
+.trio .mini {
+  display: block; padding: 4px; border-radius: 20px; background: #0D0F12;
+  border: 2px solid transparent; margin-bottom: .55rem; transition: transform .15s;
+}
+.trio img { display: block; width: 100%; height: auto; border-radius: 15px; }
+@media (hover: hover) { .trio button:hover .mini { transform: translateY(-3px); } }
+.trio button[aria-pressed="true"] { color: var(--ink); font-weight: 700; }
+.trio button[aria-pressed="true"] .mini { border-color: var(--record); }
+.trio button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+/* Notifications are Android's, not the app's: drawn in the phone's own
+   type in every look. Their words are the app's (NOTIFICATIONS). */
+.shade {
+  width: 100%; max-width: 25rem; padding: .75rem; border-radius: 24px;
+  background: var(--code-bg); display: flex; flex-direction: column; gap: .5rem;
+  font-family: var(--sans);
+}
+.notif {
+  background: var(--raise); border-radius: 18px; padding: .75rem 1rem .7rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .1);
+}
+.notif .app { display: flex; align-items: center; gap: .4rem; font-size: .74rem; color: var(--ink-mid); }
+.notif .app img { width: 16px; height: 16px; border-radius: 50%; }
+.notif strong { display: block; font-size: .93rem; margin-top: .3rem; }
+.notif p { margin: .1rem 0 0; font-size: .85rem; line-height: 1.42; color: var(--ink-mid); }
+.notif .acts { display: flex; flex-wrap: wrap; gap: .3rem 1.3rem; margin-top: .55rem; font-size: .82rem; font-weight: 600; color: var(--accent); }
+
+/* MEASURED, DRAWN TO SCALE. Each chart is a measurement the docs already
+   give with its phone and date (MEASURES), every bar placed by its own
+   numbers. HTML rather than an SVG, so its words stay readable on a phone. */
+.chart { width: 100%; max-width: 31rem; margin: 0; }
+.chart-title { font: 700 1rem/1.35 var(--display); margin: 0 0 1rem; }
+.tl-row + .tl-row { margin-top: .85rem; }
+.tl-label { display: block; font: 600 .82rem var(--label); margin-bottom: .3rem; }
+.tl-track { position: relative; height: 2.1rem; }
+.seg {
+  position: absolute; top: 0; bottom: 0; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; white-space: nowrap; padding: 0 .3rem;
+  font: 600 .78rem var(--label); border-radius: min(var(--radius-sm), 6px);
+}
+.seg.ring { background: var(--line); color: var(--ink-mid); }
+.seg.talk, .seg.down { background: var(--record); color: var(--surface); }
+.seg.ok { background: var(--play); color: var(--surface); }
+.seg.range { background: color-mix(in srgb, var(--record) 30%, transparent); color: var(--ink); }
+.seg.lost, .seg.none { background: none; border: 1.5px dashed var(--ink-mid); color: var(--ink-mid); }
+.seg.none { border-color: var(--line); }
+.tl-axis {
+  position: relative; height: 1.5rem; margin-top: .55rem; border-top: 1px solid var(--line);
+  font: .74rem var(--label); color: var(--ink-mid);
+}
+.tl-axis span { position: absolute; top: .3rem; transform: translateX(-50%); white-space: nowrap; }
+.tl-axis span:first-child { transform: none; }
+.tl-axis span:last-child { transform: translateX(-100%); }
+.chart figcaption { margin-top: .9rem; font-size: .9rem; color: var(--ink-mid); }
+.chart .src { display: block; margin-top: .35rem; font: .74rem/1.4 var(--label); opacity: .85; }
+main:not(.home) .chart { margin: 1.6rem 0; max-width: none; }
 
 .how { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem 3.5rem; align-items: center; }
 @media (max-width: 54rem) { .how { grid-template-columns: minmax(0, 1fr); } }
@@ -461,7 +904,8 @@ main.home { max-width: none; padding: 0 0 2rem; }
   counter-increment: n; content: counter(n);
   position: absolute; left: 0; top: .1rem; width: 1.8rem; height: 1.8rem;
   border-radius: 50%; display: grid; place-items: center;
-  font-weight: 700; font-size: .88rem; background: var(--accent); color: var(--surface);
+  font: var(--num-weight) .88rem var(--num-font); background: var(--num-bg); color: var(--num-ink);
+  border: 2px solid var(--num-edge); text-shadow: 0 0 6px var(--num-glow);
 }
 
 /* The diagram's colours are the page's, so it changes theme with it. */
@@ -475,8 +919,21 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .dg-label { fill: var(--ink-mid); font: 15px var(--body); }
 .dg-line { stroke: var(--ink-mid); stroke-width: 2; fill: none; }
 .dg-head { fill: var(--ink-mid); }
-.dg-num { fill: var(--accent); }
-.dg-num-text { fill: var(--surface); font: 700 15px var(--body); text-anchor: middle; dominant-baseline: central; }
+.dg-num { fill: var(--num-bg); stroke: var(--num-edge); stroke-width: 2; }
+.dg-num-text { fill: var(--num-ink); font: var(--num-weight) 15px var(--num-font); text-anchor: middle; dominant-baseline: central; }
+/* The step being read, lit, and the others stepped back: pointing at a step
+   in the list lights its part, and the first time the diagram comes into
+   view it walks through the four once (the script). The movement is the
+   order the recorder is built in, nothing else. */
+.dg-head.lit { fill: var(--record); }
+.dg-step, .numbered li { transition: opacity .25s, color .25s; }
+.how-box.walking .dg-step:not(.lit) { opacity: .32; }
+.dg-step.lit .dg-node { stroke: var(--record); stroke-width: 3; }
+.dg-step.lit .dg-line { stroke: var(--record); marker-end: url(#dg-arrow-lit); }
+.dg-step.lit .dg-num { fill: var(--num-lit-bg); stroke: var(--num-lit-edge); }
+.how-box.walking .numbered li:not(.lit) { color: var(--ink-mid); }
+.numbered li.lit::before { background: var(--num-lit-bg); border-color: var(--num-lit-edge); }
+.how-box.solo .diagram { margin-bottom: 2rem; }
 
 /* TWO CARDS THAT LINE UP. The headings are a row of their own, sitting on its
    bottom edge, so a heading that wraps does not push its card below the other;
@@ -505,7 +962,7 @@ main.home { max-width: none; padding: 0 0 2rem; }
   .devices.tested { order: 4; }
 }
 .table-card {
-  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--radius);
   overflow: hidden;
 }
 .table-card table { margin: 0; }
@@ -515,12 +972,24 @@ main.home { max-width: none; padding: 0 0 2rem; }
   .table-card table { font-size: .88rem; }
   .table-card th, .table-card td { padding: .8rem .65rem; }
 }
-.yes, .no {
-  display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem;
-  border-radius: 50%; font-weight: 700; margin-right: .45rem; vertical-align: middle;
+/* Android's versions as a strip, a band for each answer: what was a table of
+   "12 and 13" and "14 and newer" shows where the line falls. */
+.strip { table-layout: fixed; }
+.strip th:first-child { width: 31%; }
+.strip th { text-align: center; font-family: var(--label); }
+.strip th:first-child, .strip th[scope="row"] { text-align: left; color: var(--ink); }
+.strip td { text-align: center; font-weight: 600; font-size: .9rem; line-height: 1.35; }
+.strip td.y { background: color-mix(in srgb, var(--play) 14%, transparent); color: var(--play); }
+.strip td.n { background: color-mix(in srgb, var(--ink-mid) 9%, transparent); color: var(--ink-mid); font-weight: 400; }
+/* On a phone the labels take less and the cells pad less: two versions'
+   width was too narrow for "Android does not allow it", which broke over five
+   lines on the Honor (2026-10-27). */
+@media (max-width: 38rem) {
+  .strip th { font-size: .8rem; }
+  .strip td { font-size: .8rem; }
+  .strip th:first-child { width: 28%; }
+  .strip th, .strip td { padding-left: .35rem; padding-right: .35rem; }
 }
-.yes { color: var(--play); background: color-mix(in srgb, var(--play) 15%, transparent); }
-.no { color: var(--ink-mid); background: color-mix(in srgb, var(--ink-mid) 12%, transparent); }
 .devices { list-style: none; padding: 0; margin: 0; display: grid; grid-template-rows: repeat(3, 1fr); }
 .devices li {
   padding: .75rem 1.1rem; font-weight: 600; border-bottom: 1px solid var(--line);
@@ -531,9 +1000,8 @@ main.home { max-width: none; padding: 0 0 2rem; }
 
 .band {
   margin-top: 5.5rem; padding-bottom: 4rem;
-  background: var(--raise); border-block: 1px solid var(--line);
+  background: var(--band); border-block: 1px solid var(--line);
 }
-.band .card { background: var(--surface); }
 .band .links { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: 1.8rem 0 0; }
 
 .faq { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.6fr); gap: 1rem 3.5rem; align-items: start; }
@@ -569,9 +1037,96 @@ main.home { max-width: none; padding: 0 0 2rem; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .shot, .tile, .faq summary::after { transition: none; }
-  .shot:hover, .tile:hover { transform: none; }
+  .shot, .thumbs button, .trio .mini, .faq summary::after, .datum summary::after,
+  .dg-step, .numbered li { transition: none; }
+  .shot:hover, .thumbs button:hover, .trio button:hover .mini { transform: none; }
 }
+
+/* ── Deck: a pocket recorder ──
+   The app's Deck, on the page (Theme.kt, LookColors.kt): engraved type
+   throughout, the screen titles on an LCD in Doto - lit green in light, a
+   negative that glows at night - keys that stand up off the face, and
+   section labels in capitals with a rule to the edge. */
+:root[data-look="deck"] h1, :root[data-look="deck"] h2 {
+  text-transform: uppercase; letter-spacing: .03em; font-weight: 400;
+}
+/* The rule runs on from the heading's last line to the edge: an inline line
+   as wide as the heading, cut off by it. Not a flex row - that would pull a
+   heading's <code> or <em> apart into items of their own. */
+:root[data-look="deck"] h2 { overflow: hidden; }
+:root[data-look="deck"] h2::after {
+  content: ""; display: inline-block; vertical-align: middle; width: 100%; height: 1px;
+  margin: 0 -100% 0 1rem; background: var(--line);
+}
+:root[data-look="deck"] .faq h2::after, :root[data-look="deck"] .closing h2::after { display: none; }
+:root[data-look="deck"] .hero .lcd, :root[data-look="deck"] main:not(.home) h1 {
+  background: var(--lcd); color: var(--lcd-ink); border: 3px solid var(--lcd-edge);
+  border-radius: 12px; box-shadow: inset 0 2px 10px rgba(0, 0, 0, .22);
+  text-shadow: 0 0 9px var(--lcd-glow);
+}
+:root[data-look="deck"] main:not(.home) h1 {
+  font-family: var(--lcdface); font-weight: 800; letter-spacing: .02em;
+  padding: .55rem 1rem .45rem; line-height: 1.15;
+}
+:root[data-look="deck"] .hero .lcd { padding: 1.15rem 1.35rem 1.3rem; margin-bottom: 1.5rem; }
+:root[data-look="deck"] .hero h1 {
+  font-family: var(--lcdface); font-weight: 800; letter-spacing: .01em;
+  margin: .8rem 0 0; font-size: clamp(2.1rem, 4.8vw, 3.3rem); line-height: 1.08;
+}
+:root[data-look="deck"] .hero h1 span { color: inherit; opacity: .62; }
+/* The eyebrow as the LCD's small print: a boxed legend, as AUTO ANS MSG are. */
+:root[data-look="deck"] .hero .eyebrow {
+  background: none; color: var(--lcd-ink); border: 1.5px solid currentColor;
+  border-radius: 3px; padding: .05rem .4rem; font-weight: 400; font-size: .76rem;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+:root[data-look="deck"] .theme, :root[data-look="deck"] .look {
+  background: var(--key); border-color: var(--key-edge); box-shadow: 0 2px 0 var(--key-edge);
+}
+:root[data-look="deck"] .store { border-radius: 10px; }
+:root[data-look="deck"] .store.github { background: var(--key); border-color: var(--key-edge); box-shadow: 0 3px 0 var(--key-edge); }
+:root[data-look="deck"] .store.fdroid { box-shadow: 0 3px 0 #0D47A1; }
+:root[data-look="deck"] .store strong { font-weight: 400; letter-spacing: .02em; }
+:root[data-look="deck"] th { text-transform: uppercase; letter-spacing: .05em; font-weight: 400; font-size: .84rem; }
+:root[data-look="deck"] .reason h3 svg { color: var(--ink); }
+:root[data-look="deck"] .dg-node.key { stroke: var(--lcd-edge); }
+
+/* ── Multitrack: a sound editor ──
+   Space Grotesk for names and titles, JetBrains Mono for the rest; screen
+   titles and labels in spaced capitals, the day markers' amber for table
+   heads, a red tab line under what you point at, square-cornered lanes. */
+:root[data-look="multitrack"] main:not(.home) h1 {
+  font-family: var(--label); text-transform: uppercase; letter-spacing: .14em;
+  font-weight: 600; font-size: clamp(1.35rem, 3.4vw, 1.75rem);
+}
+:root[data-look="multitrack"] .hero h1 span { color: var(--play); }
+/* What is said about a thing in the editor's mono, as the app's smaller
+   text is; the manual's running text stays in Space Grotesk. */
+:root[data-look="multitrack"] :is(.intro, .reason p, .feature p, .steps p, .tour-text,
+  .gallery-note, .tiles-note, .muted, .lead, figcaption, .faq details > div, .status p) {
+  font-family: var(--label); font-size: .9rem; line-height: 1.6;
+}
+:root[data-look="multitrack"] .bar nav a, :root[data-look="multitrack"] .theme,
+:root[data-look="multitrack"] .look, :root[data-look="multitrack"] .support-btn {
+  text-transform: uppercase; letter-spacing: .1em; font-size: .74rem;
+}
+:root[data-look="multitrack"] .bar nav a { padding-bottom: .2rem; }
+:root[data-look="multitrack"] .bar nav a:hover { color: var(--ink); box-shadow: 0 2px 0 var(--record); }
+:root[data-look="multitrack"] .eyebrow {
+  text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; font-weight: 600;
+  color: var(--play); background: color-mix(in srgb, var(--play) 13%, transparent);
+}
+:root[data-look="multitrack"] th {
+  font-family: var(--label); text-transform: uppercase; letter-spacing: .1em;
+  font-size: .72rem; color: var(--marker);
+}
+:root[data-look="multitrack"] .strip th[scope="row"], :root[data-look="multitrack"] .strip th:first-child { color: var(--marker); }
+:root[data-look="multitrack"] .reason { border-top-width: 1px; border-top-color: var(--line); }
+:root[data-look="multitrack"] .reason h3 svg { color: var(--play); }
+:root[data-look="multitrack"] .store { border-radius: 6px; }
+:root[data-look="multitrack"] .store small, :root[data-look="multitrack"] .faq summary,
+:root[data-look="multitrack"] .tour-side h3 { letter-spacing: .02em; }
+:root[data-look="multitrack"] .more { font-family: var(--label); font-size: .86rem; letter-spacing: .02em; }
 
 /* EACH SCREEN IS ON THE PAGE TWICE, once per theme, and the page's theme
    decides which shows - the three states again, as with the palette. Both are
@@ -652,8 +1207,8 @@ JS = """// Generated by tools/build_site.py - edit there, not here.
     btn.querySelector('.theme-name').textContent = name;
   }
 
-  // The screenshots' look, as the theme: Memo, Deck, Multitrack, round. Memo,
-  // the app's default, is no attribute at all.
+  // The look, as the theme: Memo, Deck, Multitrack, round - the whole site's,
+  // screenshots included. Memo, the app's default, is no attribute at all.
   var LOOK_KEY = 'jemrec-look', LOOKS = ['memo', 'deck', 'multitrack'];
   function readLook() {
     try {
@@ -668,22 +1223,32 @@ JS = """// Generated by tools/build_site.py - edit there, not here.
   }
   function labelLook(btn, v) {
     var name = v.charAt(0).toUpperCase() + v.slice(1);
-    btn.setAttribute('aria-label', 'Screenshots in the ' + name + ' look. Click to change.');
+    btn.setAttribute('aria-label', 'Look: ' + name + '. Click to change.');
     btn.querySelector('.look-name').textContent = name;
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    // The header's button and the three phones under Three looks set the
+    // same thing, and each says which look is on.
     var lookBtn = document.querySelector('.look');
+    var lookPicks = [].slice.call(document.querySelectorAll('[data-set-look]'));
+    var curLook = readLook();
+    function setLook(v, keep) {
+      curLook = v;
+      if (keep) { try { localStorage.setItem(LOOK_KEY, v); } catch (e) {} }
+      applyLook(v);
+      if (lookBtn) labelLook(lookBtn, v);
+      lookPicks.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.setLook === v)); });
+    }
+    setLook(curLook, false);
     if (lookBtn) {
-      var curLook = readLook();
-      labelLook(lookBtn, curLook);
       lookBtn.addEventListener('click', function () {
-        curLook = LOOKS[(LOOKS.indexOf(curLook) + 1) % LOOKS.length];
-        try { localStorage.setItem(LOOK_KEY, curLook); } catch (e) {}
-        applyLook(curLook);
-        labelLook(lookBtn, curLook);
+        setLook(LOOKS[(LOOKS.indexOf(curLook) + 1) % LOOKS.length], true);
       });
     }
+    lookPicks.forEach(function (b) {
+      b.addEventListener('click', function () { setLook(b.dataset.setLook, true); });
+    });
 
     var btn = document.querySelector('.theme');
     if (btn) {
@@ -718,6 +1283,142 @@ JS = """// Generated by tools/build_site.py - edit there, not here.
       });
     });
 
+    // A look around: the strip picks the screen in the phone.
+    var tour = document.querySelector('.tour');
+    function pick(name) {
+      if (!tour) return;
+      tour.querySelectorAll('.tour-screen').forEach(function (s) { s.hidden = s.dataset.screen !== name; });
+      tour.querySelectorAll('.thumbs button').forEach(function (b) {
+        var on = b.dataset.screen === name;
+        b.setAttribute('aria-pressed', String(on));
+        if (on) {
+          tour.querySelector('.tour-title').textContent = b.dataset.title;
+          tour.querySelector('.tour-text').textContent = b.dataset.text;
+        }
+      });
+    }
+    if (tour) {
+      tour.querySelectorAll('.thumbs button').forEach(function (b) {
+        b.addEventListener('click', function () { pick(b.dataset.screen); });
+      });
+    }
+
+    // How it works: pointing at a step lights its part of the diagram, and the
+    // first time the diagram is in view it walks through the four once, in the
+    // order the recorder is built - unless the reader asked for less motion.
+    document.querySelectorAll('.how-box').forEach(function (box) {
+      var parts = box.querySelectorAll('.dg-step');
+      var items = box.querySelectorAll('.numbered li');
+      var timer = null;
+      // The pointer that pressed, for the click after it: Safari's clicks
+      // carry no pointerType of their own.
+      var pressed = '';
+      function light(n) {
+        n = String(n || '');
+        box.classList.toggle('walking', n !== '');
+        parts.forEach(function (g) { g.classList.toggle('lit', g.getAttribute('data-step') === n); });
+        items.forEach(function (li) { li.classList.toggle('lit', li.dataset.step === n); });
+      }
+      function stop() { if (timer) { clearTimeout(timer); timer = null; } }
+      items.forEach(function (li) {
+        li.addEventListener('pointerdown', function (e) { pressed = e.pointerType; });
+        li.addEventListener('pointerenter', function (e) {
+          if (e.pointerType === 'mouse') { stop(); light(li.dataset.step); }
+        });
+        li.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') light(''); });
+        // A tap, where there is no pointing: lights it, or puts it out again.
+        li.addEventListener('click', function () {
+          if (pressed === 'mouse') return;
+          stop();
+          light(li.classList.contains('lit') ? '' : li.dataset.step);
+        });
+      });
+      if (!('IntersectionObserver' in window) ||
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      var seen = new IntersectionObserver(function (es) {
+        if (!es[0].isIntersecting) return;
+        seen.disconnect();
+        var n = 0;
+        (function next() {
+          n += 1;
+          if (n > 4) { timer = null; light(''); return; }
+          light(n);
+          timer = setTimeout(next, 1600);
+        })();
+      }, { threshold: 0.6 });
+      seen.observe(box.querySelector('.diagram'));
+    });
+
+    // The manual's contents: open beside the text in a wide window, folded
+    // above it in a narrow one, and the section being read marked.
+    var toc = document.querySelector('.toc details');
+    if (toc) {
+      var wide = window.matchMedia('(min-width: 70rem)');
+      var fit = function () { toc.open = wide.matches; };
+      fit();
+      if (wide.addEventListener) wide.addEventListener('change', fit);
+      toc.addEventListener('click', function (e) {
+        if (e.target.closest('a') && !wide.matches) toc.open = false;
+      });
+      var links = {}, current = null, list = toc.parentNode;
+      toc.querySelectorAll('a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+      var mark = function (id) {
+        var link = links[id] || null;
+        if (link === current) return;
+        if (current) current.removeAttribute('aria-current');
+        current = link;
+        if (!current) return;
+        current.setAttribute('aria-current', 'true');
+        // Keep it in view inside the contents, without moving the page.
+        if (current.offsetTop < list.scrollTop + 40 ||
+            current.offsetTop > list.scrollTop + list.clientHeight - 60) {
+          list.scrollTop = current.offsetTop - list.clientHeight / 3;
+        }
+      };
+      // The section being read is the one whose heading is the last above a
+      // line under the header. An observer of headings crossing a band missed
+      // the way back: scrolled up into an earlier section, with its heading
+      // off the top, the later one stayed marked.
+      var heads = [].slice.call(document.querySelectorAll('main h2[id]'))
+        .filter(function (h) { return links[h.id]; });
+      // Each heading counts as reached a little below where a jump to it
+      // lands - the page's scroll padding and the heading's own margin, which
+      // a setup step's is larger by, for its progress bar. A fixed 120px
+      // missed a step's 122px, and a jump to Step 4 marked Step 3.
+      var pad = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+      var lines = heads.map(function (h) {
+        return pad + (parseFloat(getComputedStyle(h).scrollMarginTop) || 0) + 40;
+      });
+      var queued = false;
+      var spy = function () {
+        queued = false;
+        // Above the first heading - the title, the lead, the video - nothing.
+        var at = null;
+        for (var i = 0; i < heads.length && heads[i].getBoundingClientRect().top <= lines[i]; i++) at = heads[i];
+        // At the very bottom the last sections cannot scroll up to that line.
+        var d = document.documentElement;
+        if (window.innerHeight + window.scrollY >= d.scrollHeight - 2) at = heads[heads.length - 1];
+        mark(at ? at.id : '');
+      };
+      window.addEventListener('scroll', function () {
+        if (!queued) { queued = true; requestAnimationFrame(spy); }
+      }, { passive: true });
+      spy();
+    }
+
+    // The privacy policy's rows fold, and a printer leaves a folded row's
+    // words out - the words that are the policy. So they open to print, and
+    // fold back as they were.
+    var folded = [];
+    window.addEventListener('beforeprint', function () {
+      folded = [].slice.call(document.querySelectorAll('details.datum:not([open])'));
+      folded.forEach(function (d) { d.open = true; });
+    });
+    window.addEventListener('afterprint', function () {
+      folded.forEach(function (d) { d.open = false; });
+      folded = [];
+    });
+
     // Click a screenshot to see it properly. The thumbnail on the page is a
     // 420px copy; the viewer loads the full capture, which is the only place it
     // is worth a quarter of a megabyte. Escape closes, and so does clicking
@@ -730,9 +1431,11 @@ JS = """// Generated by tools/build_site.py - edit there, not here.
     var viewer = document.querySelector('.viewer');
     var all = [].slice.call(document.querySelectorAll('.shot'));
     if (!viewer || !all.length) return;
-    // Each screen is on the page once per theme and the theme hides one, so the
-    // set is the ones showing, taken when the viewer opens - the theme may have
-    // changed since the last time.
+    // Each screen is on the page once per look and theme, and the strip shows
+    // one screen at a time, so the set is every screen the stylesheet shows
+    // in the page's look and theme - its own display, which a screen the
+    // strip has not picked keeps - taken when the viewer opens, as either may
+    // have changed since.
     var shots = [];
 
     var img = viewer.querySelector('img');
@@ -780,14 +1483,19 @@ JS = """// Generated by tools/build_site.py - edit there, not here.
       // Back to the thumbnail SHOWING, not the one clicked: after three arrow
       // presses the picture on screen is not the one that opened the viewer,
       // and landing the keyboard back on that one is disorienting.
+      // The phone follows: it shows the screen the viewer was on.
       var b = shots[at];
       at = -1;
-      if (b) b.focus();
+      if (b) {
+        var screen = b.closest('.tour-screen');
+        if (screen && screen.hidden) pick(screen.dataset.screen);
+        b.focus();
+      }
     }
 
     all.forEach(function (b) {
       b.addEventListener('click', function () {
-        shots = all.filter(function (s) { return s.offsetParent !== null; });
+        shots = all.filter(function (s) { return getComputedStyle(s).display !== 'none'; });
         viewer.classList.toggle('solo', shots.length < 2);
         viewer.hidden = false;
         lock(true);
@@ -833,8 +1541,7 @@ THEME_BUTTON = """<button class="theme" type="button" aria-label="Theme">
         </svg><span class="theme-name">System</span>
       </button>"""
 
-# The look of the screenshots, on the one page that has them: elsewhere it
-# would change nothing.
+# The look - the site's and its screenshots' - on every page, beside the theme.
 LOOK_BUTTON = """<button class="look" type="button" aria-label="Look">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1446,25 +2153,27 @@ SETUP = [
 
     ("h2", "What the app tells you"),
     ("p", "The header is the honest indicator:"),
-    ("table", (["It says", "Meaning"], [
-        ["**Ready to record**", "A call would be recorded right now."],
-        ["**Recording call**", "In the notification, during a call."],
-        ["**Cannot record, needs Wi-Fi**", "Join any Wi-Fi and it resumes on its "
-         "own. Usually a reboot, or a long stretch away from a network."],
-        ["**Cannot record, tap to start it again**", "On Wi-Fi, the recorder did "
-         "not come back. Tap the line to try now."],
-        ["**Cannot record, tap to allow this Wi-Fi**", "You are on a Wi-Fi network "
-         "Android has not allowed Wireless debugging on. Tap the line, tick "
-         "**Always allow on this network** and tap **Allow**."],
-        ["**Cannot record, tap to pair again**", "Wireless debugging turns JemRec "
-         "away, as it does once its pairing is deleted. JemRec goes to the "
-         "pairing step by itself as soon as the home screen shows; the line is "
-         "there for the moment before."],
-        ["**Starting…**", "Rebuilding the recorder. A few seconds."],
-        ["**Off**", "You turned the switch off."],
-        ["**Off**, debugging off too", "You turned the switch off with When JemRec "
-         "is off set to Turn all debugging off. Turning it on needs Wi-Fi."],
-    ])),
+    # (the header's state, the line under it, meaning): the words are the
+    # app's, read from its header files (header_words).
+    ("status", [
+        ("READY", None, "A call would be recorded right now."),
+        ("notification", "Recording call", "In the notification, during a call."),
+        ("CANNOT", "JOIN_WIFI", "Join any Wi-Fi and it resumes on its own. Usually a "
+         "reboot, or a long stretch away from a network."),
+        ("CANNOT", "START_AGAIN", "On Wi-Fi, the recorder did not come back. Tap the "
+         "line to try now."),
+        ("CANNOT", "ALLOW_WIFI", "You are on a Wi-Fi network Android has not allowed "
+         "Wireless debugging on. Tap the line, tick **Always allow on this "
+         "network** and tap **Allow**."),
+        ("CANNOT", "PAIR_AGAIN", "Wireless debugging turns JemRec away, as it does "
+         "once its pairing is deleted. JemRec goes to the pairing step by itself "
+         "as soon as the home screen shows; the line is there for the moment "
+         "before."),
+        ("STARTING", None, "Rebuilding the recorder. A few seconds."),
+        ("OFF", "SWITCH_ON", "You turned the switch off."),
+        ("OFF", "SWITCH_ON_OVER_WIFI", "You turned the switch off with When JemRec "
+         "is off set to Turn all debugging off. Turning it on needs Wi-Fi."),
+    ]),
     ("p", "And when the app is closed, in notifications:"),
     ("table", (["It says", "Meaning"], [
         ["The caller's name, **Recorded**", "After every recorded call, silently, "
@@ -1672,15 +2381,118 @@ def _inline_html(text: str) -> str:
     return out
 
 
+def _anchor(heading: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", heading.lower()).strip("-")
+
+
+_STEP = re.compile(r"Step (\d+) — (.*)")
+
+
+@functools.cache
+def header_words() -> dict:
+    """Each look's home header, in the app's own words: the state
+    (RecorderStatus) and the line under it (Instruction), read from the three
+    header files. The manual's table of what the header says was written by
+    hand and had drifted - it gave "Cannot record, needs Wi-Fi" where the
+    phone says "Join any Wi-Fi to resume" - and Deck and Multitrack say it
+    differently again."""
+    ui = ROOT / "app/src/main/java/com/jemcik/jemrec/ui"
+    want = {"READY", "STARTING", "OFF", "CANNOT", "SWITCH_ON", "SWITCH_ON_OVER_WIFI",
+            "ALLOW_WIFI", "JOIN_WIFI", "PAIR_AGAIN", "START_AGAIN"}
+    out = {}
+    # The lines that are a tap: the Instruction entries that carry one
+    # (HeaderFacts.kt), which Memo draws in its primary colour.
+    facts = (ui / "HeaderFacts.kt").read_text()
+    enum = facts[facts.index("enum class Instruction"):]
+    out["taps"] = set(re.findall(r'^\s*(\w+)\("[^"]+"\)', enum[:enum.index("}")], re.M))
+    assert out["taps"] <= want, f"HeaderFacts.kt: unknown taps {out['taps'] - want}"
+    for look, file in (("memo", "MemoHeader.kt"), ("deck", "DeckHeader.kt"),
+                       ("multitrack", "MultitrackHeader.kt")):
+        words: dict = {}
+        for key, word in re.findall(r'(?:RecorderStatus|Instruction)\.(\w+) -> "([^"]+)"',
+                                    (ui / file).read_text()):
+            words.setdefault(key, html.escape(word, quote=False))
+        assert want <= set(words), f"{file}: no words for {sorted(want - set(words))}"
+        out[look] = words
+    return out
+
+
+def status_html(rows) -> str:
+    """What the header says, drawn as each look's header draws it; the page's
+    look shows one. A notification is Android's, the same in every look."""
+    words = header_words()
+    tone = {"READY": "ready", "STARTING": "idle", "OFF": "idle", "CANNOT": "alarm"}
+    out = []
+    for state, line, meaning in rows:
+        if state == "notification":
+            pic = (f'<span class="hd hd-notif"><img src="icon.png" alt="" width="18" height="18">'
+                   f"<b>{line}</b></span>")
+        else:
+            pics = []
+            for look, _ in LOOKS:
+                w = words[look]
+                off = " off" if state == "OFF" else ""
+                tap = ' class="tap"' if look == "memo" and line in words["taps"] else ""
+                said = f'<b class="{tone[state]}">{w[state]}</b>' + (f"<small{tap}>{w[line]}</small>" if line else "")
+                busy = " busy" if state == "STARTING" else ""
+                mark = {"memo": f'<span class="hd-disc{off}{busy}"><i></i></span>',
+                        "deck": f'<span class="hd-key{off}"></span>',
+                        "multitrack": f'<span class="hd-ring{off}"><i></i></span>'}[look]
+                inner = f'<span class="hd-lcd{off}">{said}</span>' if look == "deck" else f"<span>{said}</span>"
+                pics.append(f'<span class="hd hd-{look} look-{look}">{mark}{inner}</span>')
+            pic = "".join(pics)
+        out.append(f'    <div class="status"><div>{pic}</div><p>{_inline_html(meaning)}</p></div>')
+    return ('  <div class="status-list">\n' + "\n".join(out) + "\n  </div>\n"
+            '  <p class="muted">Drawn in the look this page is in; the Look button at '
+            "the top shows the others, each worded its own way.</p>")
+
+
+# The manual's contents come in four parts; each starts at one of these.
+TOC_PARTS = {
+    "Installing": "Setting up",
+    "Where recordings go": "Using it",
+    "After a restart": "Keeping it running",
+    "What the app tells you": "When you need it",
+}
+
+
+def toc_html(blocks) -> str:
+    """The manual's contents, every section, a step by its number."""
+    parts: list = []
+    for kind, payload in blocks:
+        if kind != "h2":
+            continue
+        if payload in TOC_PARTS:
+            parts.append((TOC_PARTS[payload], []))
+        assert parts, f"{payload} comes before the first part in TOC_PARTS"
+        step = _STEP.match(payload)
+        label = (f'<span class="n">{step.group(1)}</span> {_inline_html(step.group(2))}'
+                 if step else _inline_html(payload))
+        parts[-1][1].append(f'<li><a href="#{_anchor(payload)}">{label}</a></li>')
+    body = "".join(f"\n      <p>{name}</p><ol>{''.join(items)}</ol>" for name, items in parts)
+    return (f'<nav class="toc" aria-label="Contents">\n    <details>'
+            f"<summary>Contents</summary>{body}\n    </details>\n  </nav>")
+
+
 def render_html(blocks) -> str:
     """The manual as the page body."""
     out = []
+    steps = sum(1 for kind, payload in blocks if kind == "h2" and _STEP.match(payload))
     for kind, payload in blocks:
         if kind in ("h2", "h3"):
+            # Where a step is in the setup, before its heading: what is behind
+            # you and what is left.
+            step = _STEP.match(payload) if kind == "h2" else None
+            if step:
+                n = int(step.group(1))
+                bars = "".join('<i class="d"></i>' if i < n else '<i class="c"></i>' if i == n else "<i></i>"
+                               for i in range(1, steps + 1))
+                out.append(f'  <div class="step-rail" aria-hidden="true">{bars}<span>{n} of {steps}</span></div>')
             # An id per heading, so the landing page can link straight to a
             # section rather than to the top of a long manual.
-            anchor = re.sub(r"[^a-z0-9]+", "-", payload.lower()).strip("-")
-            out.append(f'  <{kind} id="{anchor}">{_inline_html(payload)}</{kind}>')
+            out.append(f'  <{kind} id="{_anchor(payload)}">{_inline_html(payload)}</{kind}>')
+        elif kind == "status":
+            out.append(status_html(payload))
         elif kind == "p":
             out.append(f"  <p>{_inline_html(payload)}</p>")
         elif kind in ("ol", "ul"):
@@ -1738,6 +2550,17 @@ def render_markdown(blocks) -> str:
                 f"**Prefer to watch?** The whole setup, start to finish, in "
                 f"{VIDEO_LENGTH} [on YouTube]({VIDEO_URL}), filmed on an Honor Magic 8 Pro.",
                 79) + "\n")
+        elif kind == "status":
+            # A table here, in Memo's words, the app's default.
+            words = header_words()["memo"]
+            out.append("| It says | Meaning |\n|---|---|")
+            for state, line, meaning in payload:
+                if state == "notification":
+                    said = f"**{line}**"
+                else:
+                    said = f"**{words[state]}**" + (f" · {words[line]}" if line else "")
+                out.append(f"| {said} | {meaning} |")
+            out.append("\nIn Memo's words; Deck and Multitrack word the header their own way.\n")
         elif kind == "table":
             headers, rows = payload
             out.append("| " + " | ".join(headers) + " |")
@@ -1748,7 +2571,7 @@ def render_markdown(blocks) -> str:
     return "\n".join(out)
 
 
-def shot(thumb: str, full: str, alt: str, theme: str, look: str) -> str:
+def shot(thumb: str, full: str, alt: str, theme: str, look: str, sizes: str) -> str:
     """A screenshot that opens in the viewer.
 
     A button rather than an image with a click handler on it: it is a control,
@@ -1756,7 +2579,8 @@ def shot(thumb: str, full: str, alt: str, theme: str, look: str) -> str:
     """
     return (
         f'<button class="shot look-{look} {theme}-only" type="button" data-full="{full}" aria-label="{alt}">'
-        f'<img src="{thumb}" alt="{alt}" loading="lazy" width="420" height="939"></button>'
+        f'<img src="{thumb}" srcset="{thumb} 420w, {full} 1256w" sizes="{sizes}" alt="{alt}" '
+        f'loading="lazy" width="420" height="939"></button>'
     )
 
 
@@ -1782,7 +2606,7 @@ VIDEO_CAPTION = (
 )
 
 
-def page(title: str, description: str, body: str, here: str, home: bool = False) -> str:
+def page(title: str, description: str, body: str, here: str, main_class: str = "") -> str:
     # A link to the page you are already on is furniture. The wordmark goes home
     # from anywhere, so Home only appears when you are somewhere else.
     def nav(href: str, label: str, roomy: bool = False) -> str:
@@ -1811,11 +2635,11 @@ def page(title: str, description: str, body: str, here: str, home: bool = False)
     <div class="bar-end">
       <nav>{nav("index.html", "Home", roomy=True)}{nav("how-it-works.html", "How it works", roomy=True)}{nav("setup.html", "Setup")}{nav("privacy-policy.html", "Privacy", roomy=True)}<a class="roomy" href="{REPO}">GitHub</a></nav>
       <a class="support-btn" href="{DONATE}" aria-label="Support JemRec on Donatello"><span aria-hidden="true">&#9829;</span><span class="support-name">Support</span></a>
-      {LOOK_BUTTON if home else ""}{THEME_BUTTON}
+      {LOOK_BUTTON}{THEME_BUTTON}
     </div>
   </div>
 </header>
-<main{' class="home"' if home else ""}>
+<main{f' class="{main_class}"' if main_class else ""}>
 {body}
 </main>
 <footer>
@@ -1850,26 +2674,38 @@ def page(title: str, description: str, body: str, here: str, home: bool = False)
 # deep design, which used to be most of this page, has a page of its own.
 # ---------------------------------------------------------------------------
 
-def icon(paths: str) -> str:
-    """A 24px line icon, drawn in the text colour of wherever it sits."""
-    return (
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
-        f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{paths}</svg>'
-    )
+def icon(path: str) -> str:
+    """A 24px Material icon, filled in the text colour of wherever it sits."""
+    return f'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{path}"/></svg>'
 
 
+# Material Icons, filled - the set the app's own icons come from (Compose's
+# Icons.Filled) - from github.com/google/material-design-icons, src/<group>/
+# <name>/materialicons/24px.svg, read 2026-10-27, Apache-2.0 (NOTICE.md).
+# Only each icon's shape: the files' empty 24x24 frame path is left out.
 ICONS = {
-    "both": '<path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h7A2.5 2.5 0 0 1 15 6.5v4a2.5 2.5 0 0 1-2.5 2.5H8l-3.5 3v-3A2.5 2.5 0 0 1 3 10.5Z"/>'
-            '<path d="M18 8h.5A2.5 2.5 0 0 1 21 10.5v4a2.5 2.5 0 0 1-2.5 2.5v3L15 17h-3a2.5 2.5 0 0 1-2.4-1.8"/>',
-    "self": '<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 5.5h2"/><path d="m9.5 12.5 2 2 3.5-4"/>',
-    "lock": '<rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/>',
-    "bell": '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>',
-    "rules": '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
-    "open": '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5.5l-3 13"/>',
-    "mic": '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M3.5 3.5l17 17"/>',
-    "cloud": '<path d="M7 18.5h10.5a3.5 3.5 0 0 0 .6-7A6 6 0 0 0 6.6 9.6 4.5 4.5 0 0 0 7 18.5Z"/><path d="M3.5 3.5l17 17"/>',
-    "person": '<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
-    "shield": '<path d="M12 3 5 5.8V11c0 4.4 2.9 8.3 7 9.8 4.1-1.5 7-5.4 7-9.8V5.8Z"/><path d="m9.3 12 1.9 1.9 3.6-3.8"/>',
+    "both": (  # phone_in_talk
+        "M20 15.5c-1.25 0-2.45-.2-3.57-.57-.35-.11-.74-.03-1.02.24l-2.2 2.2c-2.83-1.44-5.15-3.75-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1zM19 12h2c0-4.97-4.03-9-9-9v2c3.87 0 7 3.13 7 7zm-4 0h2c0-2.76-2.24-5-5-5v2c1.66 0 3 1.34 3 3z"),
+    "self": (  # smartphone
+        "M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"),
+    "lock": (  # lock
+        "M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"),
+    "bell": (  # notifications
+        "M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"),
+    "rules": (  # tune
+        "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"),
+    "open": (  # code
+        "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"),
+    "mic": (  # mic_off
+        "M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"),
+    "cloud": (  # cloud_off
+        "M19.35 10.04C18.67 6.59 15.64 4 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46C10.21 6.23 11.08 6 12 6c3.04 0 5.5 2.46 5.5 5.5v.5H19c1.66 0 3 1.34 3 3 0 1.13-.64 2.11-1.56 2.62l1.45 1.45C23.16 18.16 24 16.68 24 15c0-2.64-2.05-4.78-4.65-4.96zM3 5.27l2.75 2.74C2.56 8.15 0 10.77 0 14c0 3.31 2.69 6 6 6h11.73l2 2L21 20.73 4.27 4 3 5.27zM7.73 10l8 8H6c-2.21 0-4-1.79-4-4s1.79-4 4-4h1.73z"),
+    "person": (  # person, as on Settings' Whose calls to keep
+        "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"),
+    "screenlock": (  # screen_lock_portrait
+        "M10 16h4c.55 0 1-.45 1-1v-3c0-.55-.45-1-1-1v-1c0-1.11-.9-2-2-2-1.11 0-2 .9-2 2v1c-.55 0-1 .45-1 1v3c0 .55.45 1 1 1zm.8-6c0-.66.54-1.2 1.2-1.2.66 0 1.2.54 1.2 1.2v1h-2.4v-1zM17 1H7c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14z"),
+    "adb": (  # adb: the Android Debug Bridge, which is what stays on
+        "M5 16c0 3.87 3.13 7 7 7s7-3.13 7-7v-4H5v4zM16.12 4.37l2.1-2.1-.82-.83-2.3 2.31C14.16 3.28 13.12 3 12 3s-2.16.28-3.09.75L6.6 1.44l-.82.83 2.1 2.1C6.14 5.64 5 7.68 5 10v1h14v-1c0-2.32-1.14-4.36-2.88-5.63zM9 9c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm6 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"),
 }
 
 # The two ways to get it, as two buttons of one shape. F-Droid's is in
@@ -1899,11 +2735,8 @@ STORES = f"""<div class="cta">
     </div>"""
 
 
-def card(name: str, title: str, text: str) -> str:
-    return (
-        f'<div class="card"><div class="icon">{icon(ICONS[name])}</div>'
-        f"<h3>{title}</h3><p>{text}</p></div>"
-    )
+def reason(name: str, title: str, text: str) -> str:
+    return f'<div class="reason"><h3>{icon(ICONS[name])}<span>{title}</span></h3><p>{text}</p></div>'
 
 
 def themed(name: str, alt: str, width: int) -> str:
@@ -1915,12 +2748,160 @@ def themed(name: str, alt: str, width: int) -> str:
     return "".join(
         f'<img class="look-{look} {theme}-only" src="{thumb}" srcset="{thumb} 420w, {full} 1256w" '
         f'sizes="{width}px" alt="{alt}" width="420" height="939" loading="lazy">'
-        for look, _ in LOOKS
-        for theme, thumb, full in (
-            ("light", f"screenshots/{look}/{name}.png", f"screenshots/{look}/light/{name}.png"),
-            ("dark", f"screenshots/{look}/{name}-dark.png", f"screenshots/{look}/dark/{name}.png"),
-        )
+        for look, theme, thumb, full in _variants(name)
     )
+
+
+def _variants(name: str):
+    """(look, theme, thumb, full) for one screen, in every look and theme."""
+    for look, _ in LOOKS:
+        yield look, "light", f"screenshots/{look}/{name}.png", f"screenshots/{look}/light/{name}.png"
+        yield look, "dark", f"screenshots/{look}/{name}-dark.png", f"screenshots/{look}/dark/{name}.png"
+
+
+# A PART OF A SCREEN, for the rows of What you can do: the rows of a
+# screenshot to show, top and bottom, in the 420x939 copies, per look -
+# Deck's LCD header and Multitrack's lanes put the same things lower or
+# higher. Read off the screenshots of 2026-10-27; light and dark are laid out
+# alike. A new set of screenshots (tools/shoot.py) needs a look at these.
+CROPS = {
+    "home": {"memo": (392, 568), "deck": (425, 642), "multitrack": (388, 555)},
+    "calls": {"memo": (418, 765), "deck": (408, 742), "multitrack": (386, 706)},
+    "answering": {"memo": (145, 578), "deck": (150, 562), "multitrack": (148, 556)},
+    "whenoff": {"memo": (148, 550), "deck": (148, 494), "multitrack": (145, 468)},
+}
+
+
+def crop(name: str, alt: str) -> str:
+    """The CROPS part of a screen, in the page's look and theme."""
+    out = []
+    for look, theme, thumb, full in _variants(name):
+        top, bottom = CROPS[name][look]
+        out.append(
+            f'<div class="crop look-{look} {theme}-only" style="aspect-ratio: 420 / {bottom - top}">'
+            f'<img src="{thumb}" srcset="{thumb} 420w, {full} 1256w" sizes="(max-width: 54rem) 92vw, 24rem" '
+            f'style="margin-top: -{top / 420 * 100:.2f}%" alt="{alt}" width="420" height="939" loading="lazy"></div>'
+        )
+    return "".join(out)
+
+
+def trio() -> str:
+    """The home screen in each look, in the page's light or dark: each a
+    button that puts the site in that look, as the header's Look button does."""
+    def one(look: str, named: str) -> str:
+        pics = "".join(
+            f'<img class="{theme}-only" src="{thumb}" alt="" width="420" height="939" loading="lazy">'
+            for lk, theme, thumb, _ in _variants("home") if lk == look
+        )
+        return (f'<button type="button" data-set-look="{look}" aria-pressed="false">'
+                f'<span class="mini">{pics}</span>{named}</button>')
+    return ('<div class="trio-box"><div class="trio" role="group" aria-label="The site&rsquo;s look">'
+            + "".join(one(look, named) for look, named in LOOKS)
+            + '</div><p class="trio-note">Tap one to see this site in that look.</p></div>')
+
+
+# Three of the app's notifications in its own words - the one after each call
+# and a silent recording (capture/AfterCall.kt), and a recorder down on a
+# Wi-Fi Android has not allowed (capture/RecorderHealth.kt) - with two of the
+# debug build's invented people. (when, title, text, buttons)
+NOTIFICATIONS = [
+    ("now", "Olivia Bennett", "Recorded, 4:12", ["Play", "Share", "Delete"]),
+    ("2 min", "Last call recorded, but silent",
+     "Marcus Chen, 12:05. No sound came through. This happens on calls over "
+     "Wi-Fi calling, and on some phones always. Run the self-test to check "
+     "this phone.", ["Play", "Self-test", "Delete"]),
+    ("5 min", "JemRec is not recording calls",
+     "Android has not allowed Wireless debugging on this Wi-Fi, and JemRec needs "
+     "it for a few seconds to restart the recorder. Tap Allow this Wi-Fi, tick "
+     "Always allow on this network, and tap Allow.", ["Allow this Wi-Fi"]),
+]
+
+
+def shade() -> str:
+    def one(when: str, title: str, text: str, buttons: list) -> str:
+        acts = "".join(f"<span>{b}</span>" for b in buttons)
+        return (f'<div class="notif"><span class="app"><img src="icon.png" alt="" width="16" height="16">'
+                f'JemRec &middot; {when}</span><strong>{title}</strong><p>{text}</p>'
+                f'<span class="acts">{acts}</span></div>')
+    return ('<div class="shade" role="img" aria-label="Three JemRec notifications: a recorded call, '
+            'a silent recording, and the recorder down">' + "".join(one(*n) for n in NOTIFICATIONS) + "</div>")
+
+
+# THE MEASUREMENTS THE CHARTS DRAW, as docs/ARCHITECTURE.md gives each, with
+# its phone and date; every bar is placed by these numbers and no other.
+# Segments: (from, to, kind, words), in the axis's unit.
+MEASURES = {
+    # Exact call tracking: an outgoing call that rang for 45 seconds was saved
+    # as its 14 seconds of conversation, to a twentieth of a second. Measured
+    # for 0.14, merged 2026-10-21 (a4536c6), where the docs first say it.
+    "tracking": dict(
+        title="Exact call tracking keeps only the conversation",
+        axis=(60, (0, 15, 30, 45, 60), " s"),
+        rows=[
+            ("The call", [(0, 45, "ring", "ringing, 45 s"), (45, 59, "talk", "talk")]),
+            ("The recording", [(0, 45, "none", "not saved"), (45, 59, "talk", "14 s")]),
+        ],
+        caption="Cut to Android&rsquo;s own answer and end, to a twentieth of a "
+                "second. A call nobody answers is not saved at all.",
+        source="Honor Magic 8 Pro, Android 17, October 2026 (0.14) &middot; ARCHITECTURE.md, Exact call tracking",
+    ),
+    # The daemon records: while the app muxed the live audio, a 76.7-second
+    # call arrived as 14 to 44 seconds. Already in the first commit,
+    # 2026-09-10 (48e674f); the docs give no closer date.
+    "freeze": dict(
+        title="Why the recorder writes the file, not the app",
+        axis=(80, (0, 20, 40, 60, 80), " s"),
+        rows=[
+            ("A 76.7-second call, the app carrying its audio",
+             [(0, 14, "talk", "arrived"), (14, 44, "range", "sometimes"), (44, 76.7, "lost", "lost")]),
+            ("The recorder writing the file, as it does now",
+             [(0, 76.7, "ok", "the whole call")]),
+        ],
+        caption="The phone froze the app while the dialer was in front, and the "
+                "end of every call went with it. The recorder runs as the shell, "
+                "which the phone does not freeze.",
+        source="Honor Magic 8 Pro, before 2026-09-10 &middot; ARCHITECTURE.md, The daemon records; the app collects",
+    ),
+    # Unplugged from a computer: adbd, and the recorder with it, stopped three
+    # seconds after the cable came out; recording again 12 and 16 seconds
+    # after it in the two timed runs with the screen on, 13 with it off on
+    # Manage manually.
+    "unplug": dict(
+        title="Unplugged from a computer, back by itself",
+        axis=(20, (0, 3, 10, 20), " s"),
+        rows=[
+            ("Screen on", [(0, 3, "ok", ""), (3, 12, "down", "not recording"), (12, 20, "ok", "12 s")]),
+            ("Screen on, again", [(0, 3, "ok", ""), (3, 16, "down", "not recording"), (16, 20, "ok", "16 s")]),
+            ("Screen off, on Manage manually",
+             [(0, 3, "ok", ""), (3, 13, "down", "not recording"), (13, 20, "ok", "13 s")]),
+        ],
+        caption="Three seconds after the cable comes out Android stops its ADB "
+                "daemon, and the recorder goes with it. JemRec, woken in those "
+                "seconds, starts it again over Wi-Fi with nothing tapped.",
+        source="Honor Magic 8 Pro, Android 17, October 2026 &middot; ARCHITECTURE.md, Unplugged from a computer",
+    ),
+}
+
+
+def timeline(name: str) -> str:
+    """One of MEASURES, every segment placed by its numbers on the axis."""
+    m = MEASURES[name]
+    span, ticks, unit = m["axis"]
+
+    def pct(v: float) -> str:
+        return f"{v / span * 100:.2f}%"
+
+    rows = "".join(
+        f'<div class="tl-row"><span class="tl-label">{label}</span><div class="tl-track">'
+        + "".join(f'<span class="seg {kind}" style="left: {pct(a)}; width: {pct(b - a)}">{words}</span>'
+                  for a, b, kind, words in segs)
+        + "</div></div>"
+        for label, segs in m["rows"]
+    )
+    axis = "".join(f'<span style="left: {pct(t)}">{t}{unit if t == ticks[-1] else ""}</span>' for t in ticks)
+    return (f'<figure class="chart"><p class="chart-title">{m["title"]}</p>{rows}'
+            f'<div class="tl-axis" aria-hidden="true">{axis}</div>'
+            f'<figcaption>{m["caption"]}<span class="src">{m["source"]}</span></figcaption></figure>')
 
 
 def diagram() -> str:
@@ -1938,30 +2919,55 @@ def diagram() -> str:
             f'<text class="dg-num-text" x="{x}" y="{y}">{n}</text>'
         )
 
+    # Each step is a group - the part that acts, its arrow, its number and
+    # its word - so the step being read can be lit (HOW_STEPS, and the script).
     return f"""<svg class="diagram" viewBox="0 0 540 430" role="img" aria-labelledby="dg-title">
     <title id="dg-title">The app pairs with the phone&rsquo;s own Wireless debugging,
       which starts a recorder running as the shell; the recorder writes each
       call to a file, and the app collects it.</title>
     <defs><marker id="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5"
-      markerWidth="7" markerHeight="7" orient="auto"><path class="dg-head" d="M0 0L10 5L0 10z"/></marker></defs>
+      markerWidth="7" markerHeight="7" orient="auto"><path class="dg-head" d="M0 0L10 5L0 10z"/></marker>
+      <marker id="dg-arrow-lit" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="7" markerHeight="7" orient="auto"><path class="dg-head lit" d="M0 0L10 5L0 10z"/></marker></defs>
     <rect class="dg-phone" x="6" y="6" width="528" height="418" rx="40"/>
     <text class="dg-sub" x="270" y="46">Your phone &mdash; nothing leaves it</text>
-    {node(28, 78, "JemRec app", "pairs, then collects", "key")}
-    {node(316, 78, "Wireless debugging", "Android&rsquo;s own")}
-    {node(316, 300, "Recorder", "runs as the shell")}
-    {node(28, 300, "Recording", "an Opus file", "file")}
-    <path class="dg-line" d="M224 117H311" marker-end="url(#dg-arrow)"/>
-    <path class="dg-line" d="M414 156V295" marker-end="url(#dg-arrow)"/>
-    <path class="dg-line" d="M316 339H229" marker-end="url(#dg-arrow)"/>
-    <path class="dg-line" d="M126 300V161" marker-end="url(#dg-arrow)"/>
-    {step(1, 266, 117)}{step(2, 414, 226)}{step(3, 272, 339)}{step(4, 126, 230)}
-    <text class="dg-label" x="266" y="152" text-anchor="middle">pairs</text>
-    <text class="dg-label" x="436" y="231">starts it</text>
-    <text class="dg-label" x="272" y="374" text-anchor="middle">records</text>
-    <text class="dg-label" x="148" y="235">collects</text>
     <text class="dg-sub" x="270" y="216">all over</text>
     <text class="dg-sub" x="270" y="238">127.0.0.1</text>
+    <g class="dg-step" data-step="1">{node(28, 78, "JemRec app", "pairs, then collects", "key")}
+      <path class="dg-line" d="M224 117H311" marker-end="url(#dg-arrow)"/>{step(1, 266, 117)}
+      <text class="dg-label" x="266" y="152" text-anchor="middle">pairs</text></g>
+    <g class="dg-step" data-step="2">{node(316, 78, "Wireless debugging", "Android&rsquo;s own")}
+      <path class="dg-line" d="M414 156V295" marker-end="url(#dg-arrow)"/>{step(2, 414, 226)}
+      <text class="dg-label" x="436" y="231">starts it</text></g>
+    <g class="dg-step" data-step="3">{node(316, 300, "Recorder", "runs as the shell")}
+      <path class="dg-line" d="M316 339H229" marker-end="url(#dg-arrow)"/>{step(3, 272, 339)}
+      <text class="dg-label" x="272" y="374" text-anchor="middle">records</text></g>
+    <g class="dg-step" data-step="4">{node(28, 300, "Recording", "an Opus file", "file")}
+      <path class="dg-line" d="M126 300V161" marker-end="url(#dg-arrow)"/>{step(4, 126, 230)}
+      <text class="dg-label" x="148" y="235">collects</text></g>
   </svg>"""
+
+
+# The four steps, said once: the home page and How it works both show them
+# beside the diagram, the same words and the same lit parts.
+HOW_STEPS = [
+    "<strong>The app pairs with the phone&rsquo;s own Wireless debugging</strong> "
+    "&mdash; the same pairing a laptop does, with both ends on the same handset.",
+    "<strong>For a few seconds, it uses that session to start a small "
+    "recorder</strong> that runs as the shell, then closes it. The recorder "
+    "outlives the session.",
+    "<strong>The recorder watches the calls and writes each one to a "
+    "file</strong> itself, so a phone that freezes background apps cannot cut "
+    "a recording short.",
+    "<strong>The app collects the finished file</strong> over a socket on which "
+    "the recorder and the app each prove who they are.",
+]
+
+
+def how_steps() -> str:
+    """The numbered steps; pointing at one lights its part of the diagram."""
+    items = "".join(f'\n        <li data-step="{n}">{s}</li>' for n, s in enumerate(HOW_STEPS, 1))
+    return f'<ol class="numbered">{items}\n      </ol>'
 
 
 WHY = [
@@ -2016,7 +3022,7 @@ SCREENS = [
     ("selftest", "Self-test", "Whether your phone hands over both sides, in a second."),
 ]
 
-# (title, text, section of the manual)
+# (title, text, section of the manual); FEATURE_ROWS sets them beside pictures.
 FEATURES = [
     ("Record every call, or be asked",
      "Automatic mode records every call; ask-first records nothing until you "
@@ -2055,7 +3061,6 @@ FEATURES = [
      "report</em> in Diagnostics says how it was recorded, for an issue on "
      "GitHub.",
      "what-the-app-tells-you"),
-    # Across the whole grid, these three, so the eight above stay four by two.
     ("Answering machine",
      "Off until you switch it on. Answers a phone call you have not taken after 5 to "
      "30 seconds &mdash; after two rings when Do Not Disturb would silence the "
@@ -2064,18 +3069,18 @@ FEATURES = [
      "notification while they speak. It stands down for a day after you call "
      "an emergency number. A test call tells you whether it works on your "
      "phone.",
-     "the-answering-machine", "wide"),
+     "the-answering-machine"),
     ("Three looks",
      "Memo, calm and simple; Deck, a pocket recorder with an LCD and a REC key; "
      "Multitrack, a sound editor with a colour for each caller. Each light, dark "
      "or as the phone, in Settings &rarr; Theme.",
-     "three-looks", "wide"),
+     "three-looks"),
     ("Open your banking app",
      "Some banking apps won&rsquo;t open while Developer options or debugging "
      "is on. Turning JemRec off can hide Developer options too, or switch all "
      "debugging off; turning it on puts back what it switched off. Settings "
      "&rarr; When JemRec is off.",
-     "off-and-debugging-with-it", "wide"),
+     "off-and-debugging-with-it"),
 ]
 
 PRIVACY_POINTS = [
@@ -2090,10 +3095,10 @@ PRIVACY_POINTS = [
     ("person", "Calls and contacts only if you allow them",
      "To name callers, keep calls by who they were with, and notice a call that "
      "went unrecorded. Everything works without them."),
-    ("lock", "No caller on the lock screen",
+    ("screenlock", "No caller on the lock screen",
      "While a recording plays, the phone&rsquo;s media controls name the caller "
      "only once it is unlocked; locked, they say <em>Call recording</em>."),
-    ("shield", "Debugging stays on while JemRec is on",
+    ("adb", "Debugging stays on while JemRec is on",
      "The recorder needs it; while JemRec is off it can go too (Settings &rarr; "
      "When JemRec is off). A computer you have paired can connect over the "
      "same Wi-Fi, so now and then check <em>Wireless debugging &rarr; Paired "
@@ -2191,24 +3196,77 @@ FAQ = [
 ]
 
 
-def _gallery() -> str:
-    return "\n    ".join(
-        f"""<figure>
-      {"".join(
-          shot(f"screenshots/{look}/{name}.png", f"screenshots/{look}/light/{name}.png", f"{title}, in {named}", "light", look)
-          + shot(f"screenshots/{look}/{name}-dark.png", f"screenshots/{look}/dark/{name}.png", f"{title}, in {named}, dark", "dark", look)
-          for look, named in LOOKS)}
-      <figcaption><strong>{title}</strong><span>{caption}</span></figcaption>
-    </figure>"""
-        for name, title, caption in SCREENS
+def _tour() -> str:
+    """A look around: every screen in the phone, one showing, and the strip
+    that picks it (the script)."""
+    named = dict(LOOKS)
+    screens = "".join(
+        f'\n      <div class="tour-screen" data-screen="{name}"{" hidden" if i else ""}>'
+        + "".join(
+            shot(thumb, full, f"{title}, in {named[look]}{', dark' if theme == 'dark' else ''}",
+                 theme, look, "(max-width: 54rem) 16rem, 19rem")
+            for look, theme, thumb, full in _variants(name))
+        + "</div>"
+        for i, (name, title, _) in enumerate(SCREENS)
     )
+    thumbs = "".join(
+        f'\n        <button type="button" data-screen="{name}" data-title="{title}" data-text="{caption}" '
+        f'aria-pressed="{"false" if i else "true"}" aria-label="{title}: {caption}" title="{title}">'
+        + "".join(f'<img class="look-{look} {theme}-only" src="{thumb}" alt="" width="420" height="939" loading="lazy">'
+                  for look, theme, thumb, _ in _variants(name))
+        + "</button>"
+        for i, (name, title, caption) in enumerate(SCREENS)
+    )
+    return f"""<div class="tour">
+    <div class="tour-side">
+      <h3 class="tour-title">{SCREENS[0][1]}</h3>
+      <p class="tour-text" aria-live="polite">{SCREENS[0][2]}</p>
+      <div class="thumbs" role="group" aria-label="Screens">{thumbs}
+      </div>
+    </div>
+    <div class="tour-phone">{screens}
+    </div>
+  </div>"""
+
+
+# What you can do, a row each: the picture, then the FEATURES beside it.
+FEATURE_ROWS = [
+    (lambda: timeline("tracking"),
+     ["Record every call, or be asked", "Start at the answer", "Keep only the calls you want"]),
+    (lambda: crop("calls", "The Calls tab: calls that were missed, not answered, or "
+                           "hung up during the greeting"),
+     ["See every call", "Messenger calls"]),
+    (lambda: crop("home", "A recording playing, as its waveform"),
+     ["Play, keep, clean up", "Name files your way"]),
+    (shade, ["Hear about problems"]),
+    (lambda: crop("answering", "The answering machine&rsquo;s settings"), ["Answering machine"]),
+    (trio, ["Three looks"]),
+    (lambda: crop("whenoff", "When JemRec is off: its three choices"), ["Open your banking app"]),
+]
+
+
+def _features() -> str:
+    by_title = {f[0]: f for f in FEATURES}
+    shown = [t for _, titles in FEATURE_ROWS for t in titles]
+    assert sorted(shown) == sorted(by_title), "every feature in exactly one row"
+    rows = []
+    for picture, titles in FEATURE_ROWS:
+        text = "".join(
+            f'<div class="feature"><h3>{t}</h3><p>{by_title[t][1]}</p>'
+            f'<a class="more" href="setup.html#{by_title[t][2]}" aria-label="More on {t}">More &rarr;</a></div>'
+            for t in titles)
+        rows.append(f'\n    <div class="row"><div class="row-text">{text}</div>'
+                    f'<div class="row-pic">{picture()}</div></div>')
+    return '<div class="rows">' + "".join(rows) + "\n  </div>"
 
 
 INDEX_BODY = f"""
 <section class="column hero">
   <div>
-    <span class="eyebrow">Call recorder for Android 12 and newer</span>
-    <h1>Both sides of every call. <span>No root.</span></h1>
+    <div class="lcd">
+      <span class="eyebrow">Call recorder for Android 12 and newer</span>
+      <h1>Both sides of every call. <span>No root.</span></h1>
+    </div>
     <p class="lead">Phone calls, and WhatsApp, Telegram, Viber and Google Meet calls. No
        computer and no second app &mdash; the phone pairs with its own Wireless
        debugging and sets itself up.</p>
@@ -2229,12 +3287,13 @@ INDEX_BODY = f"""
   <h2>Why JemRec</h2>
   <p class="intro">Android stopped letting apps record calls years ago. JemRec
      records them anyway, both sides, without asking you to root your phone.</p>
-  <div class="cards">
-    {"".join(card(*c) for c in WHY)}
+  <div class="reasons">
+    {"".join(reason(*c) for c in WHY)}
   </div>
 </section>
 
-<section class="column" id="get-started">
+<section class="band" id="get-started">
+<div class="column">
   <h2>Get started</h2>
   <p class="intro">About three minutes, on the phone, once.</p>
   <ol class="steps">
@@ -2251,14 +3310,14 @@ INDEX_BODY = f"""
        spoken notice. JemRec records what you tell it to and warns nobody on
        your behalf.</p>
   </div>
+</div>
 </section>
 
 <section class="column" id="screens">
   <h2>A look around</h2>
-  <p class="intro">Tap one to see it properly.</p>
-  <div class="gallery">
-    {_gallery()}
-  </div>
+  <p class="intro">Pick a screen from the strip; tap the phone to see it full
+     size.</p>
+  {_tour()}
   <p class="gallery-note">The app comes in three looks, each following your
      phone&rsquo;s light or dark; these follow the page&rsquo;s &mdash; the
      buttons at the top switch the look and the theme. The people in them do
@@ -2270,16 +3329,15 @@ INDEX_BODY = f"""
 <section class="column" id="features">
   <h2>What you can do</h2>
   <p class="intro">Each of these has its section in the manual.</p>
-  <div class="tiles">
-    {"".join(f'<a class="{" ".join(["tile", *wide])}" href="setup.html#{anchor}"><strong>{t}</strong><span>{text}</span><em>More &rarr;</em></a>' for t, text, anchor, *wide in FEATURES)}
-  </div>
+  {_features()}
   <p class="tiles-note">Recordings are Opus files in the phone&rsquo;s standard
      <code>Recordings/JemRec</code> folder, where any file manager or music app
      can open them &mdash; or in a folder you choose.</p>
 </section>
 
-<section class="column" id="how">
-  <div class="how">
+<section class="band" id="how">
+<div class="column">
+  <div class="how how-box">
     <div>
       <h2>How it works</h2>
       <p>Android&rsquo;s <code>voice-call</code> audio source carries both sides
@@ -2287,19 +3345,7 @@ INDEX_BODY = f"""
          the one an ADB session runs as, the <strong>shell</strong>, is among
          them. Getting a shell normally takes a computer, root, or a helper app
          like Shizuku. JemRec makes the phone its own computer:</p>
-      <ol class="numbered">
-        <li><strong>The app pairs with the phone&rsquo;s own Wireless
-            debugging</strong> &mdash; the same pairing a laptop does, with both
-            ends on the same handset.</li>
-        <li><strong>For a few seconds, it uses that session to start a small
-            recorder</strong> that runs as the shell, then closes it. The
-            recorder outlives the session.</li>
-        <li><strong>The recorder watches the calls and writes each one to a
-            file</strong> itself, so a phone that freezes background apps cannot
-            cut a recording short.</li>
-        <li><strong>The app collects the finished file</strong> over a socket on
-            which the recorder and the app each prove who they are.</li>
-      </ol>
+      {how_steps()}
       <p>Wi-Fi is needed only to start the recorder &mdash; after a reboot, say
          &mdash; never to record.</p>
       <a class="more" href="how-it-works.html">The design, and the measurements
@@ -2307,6 +3353,7 @@ INDEX_BODY = f"""
     </div>
     {diagram()}
   </div>
+</div>
 </section>
 
 <section class="column" id="phones">
@@ -2318,14 +3365,13 @@ INDEX_BODY = f"""
     <h3 class="versions">What it records, by Android version</h3>
     <h3 class="tested">Both sides recorded on four phones</h3>
     <div class="table-card versions">
-      <table>
-        <tr><th></th><th>Phone calls</th><th>Messenger calls</th></tr>
-        <tr><td><strong>Android 12 and 13</strong></td>
-            <td><span class="yes" aria-label="Yes">&#10003;</span></td>
-            <td><span class="no" aria-hidden="true">&ndash;</span>Android does not allow it</td></tr>
-        <tr><td><strong>Android 14 and newer</strong></td>
-            <td><span class="yes" aria-label="Yes">&#10003;</span></td>
-            <td><span class="yes" aria-hidden="true">&#10003;</span>WhatsApp, Telegram, Viber, Google Meet</td></tr>
+      <table class="strip">
+        <tr><th>Android</th>{"".join(f"<th>{v}</th>" for v in range(12, 18))}</tr>
+        <tr><th scope="row">Phone calls</th>
+            <td class="y" colspan="6"><span aria-hidden="true">&#10003;</span> Android 12 and newer</td></tr>
+        <tr><th scope="row">Messenger calls</th>
+            <td class="n" colspan="2">Android does not allow it</td>
+            <td class="y" colspan="4"><span aria-hidden="true">&#10003;</span> WhatsApp, Telegram, Viber, Google Meet</td></tr>
       </table>
     </div>
     <ul class="table-card devices tested">
@@ -2356,8 +3402,8 @@ INDEX_BODY = f"""
     <h2>Privacy and permissions</h2>
     <p class="intro">JemRec has no servers, no accounts and no analytics: what it
        records stays on your phone.</p>
-    <div class="cards">
-      {"".join(card(*p) for p in PRIVACY_POINTS)}
+    <div class="reasons">
+      {"".join(reason(*p) for p in PRIVACY_POINTS)}
     </div>
     <div class="links">
       <a class="more" href="privacy-policy.html">Privacy policy &rarr;</a>
@@ -2400,7 +3446,10 @@ HOW_BODY = f"""
      alive. JemRec needs none of them, because the phone can be its own
      computer.</p>
 
-  {diagram()}
+  <div class="how-box solo">
+    {diagram()}
+    {how_steps()}
+  </div>
   <p class="muted">The whole design, with the measurement behind each decision,
      is in <a href="{REPO}/blob/main/docs/ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>
 
@@ -2422,9 +3471,11 @@ HOW_BODY = f"""
   <p>The daemon watches the call state and writes the call to a file. The app is
      never on the audio path. That split was forced by measurement: when the app
      handled live audio, the phone&rsquo;s process manager froze it while the
-     dialer was in front and a 77-second call arrived as 14. Afterwards the app
-     fetches the finished file at whatever pace the system allows, and a freeze
-     there costs a slower copy rather than a lost second.</p>
+     dialer was in front and a 76.7-second call arrived as 14 to 44 seconds.
+     Afterwards the app fetches the finished file at whatever pace the system
+     allows, and a freeze there costs a slower copy rather than a lost
+     second.</p>
+  {timeline("freeze")}
 
   <h3>The socket is authenticated both ways</h3>
   <p>The daemon listens on loopback, which every process on the phone shares, so
@@ -2459,6 +3510,7 @@ HOW_BODY = f"""
      Honor froze it until it was woken &mdash; about four minutes, once 8.5
      &mdash; and JemRec says so the moment it may run again, with a button to
      the setting. A charger stops nothing.</p>
+  {timeline("unplug")}
   <p>Some phones also stop apps in the background to save power, and a stopped
      JemRec cannot start the recorder again once it goes. JemRec cannot change
      that setting, so setup asks you to, on the phone&rsquo;s own screen for
@@ -2506,6 +3558,7 @@ HOW_BODY = f"""
      waiting, each call gets a recording of its own. Android tells JemRec when
      each call is answered; tracking only listens. The one thing that ever
      answers a call is the answering machine, when you switch it on.</p>
+  {timeline("tracking")}
 
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
@@ -2580,6 +3633,131 @@ HOW_BODY = f"""
      self-test is for.</p>
 """
 
+# WHAT STAYS ON THE PHONE, a row each: what it is, where it lives, how long
+# it is kept, and when there is any - each a chip to scan - and the policy's
+# own words for it, unfolded from the row. The chips summarise the words and
+# never add to them; where they differ, the words are the policy.
+# (data, where, how long, when, the words)
+PRIVACY_DATA = [
+    ("Call recordings", "Recordings/JemRec, or your folder", "until you delete them", "every recorded call",
+     "The phone&rsquo;s <code>Recordings/JemRec</code> folder, or a folder you "
+     "choose. Yours to play, share, move or delete like any other file. One "
+     "deleted in JemRec waits 30 days in Recently deleted, then is removed: in "
+     "the standard folder, Android&rsquo;s own trash does that; in a folder you "
+     "chose, it waits as a hidden file that JemRec removes. <em>Delete all for "
+     "good</em> removes them all at once, when you ask. Messages the answering "
+     "machine took are recordings too; which ones are messages, and which you "
+     "marked to keep, is kept by file name in the app&rsquo;s private storage, "
+     "and written inside each recording as well, so that a reinstall still "
+     "knows."),
+    ("Caller colours", "the app&rsquo;s private storage", "until you uninstall", "once you use Multitrack",
+     "Only once you use the Multitrack look: which of its six colours each "
+     "caller has, so a caller keeps theirs, also after you change the look. Kept "
+     "by a one-way code worked out from the name, not the name itself, in the "
+     "app&rsquo;s private storage, and in no backup. Uninstalling deletes it."),
+    ("Your greeting", "the app&rsquo;s private storage, and the recorder", "until you delete it", "only if you record one",
+     "Only if you record one for the answering machine: in the app&rsquo;s "
+     "private storage, and a copy the recorder plays from. Deleting it in the "
+     "app deletes both, and so does uninstalling."),
+    ("Background stops", "the app&rsquo;s private storage", "until you uninstall", "only on phones that stop apps",
+     "Only on phones that stop apps in the background: whether setup has asked "
+     "you to let JemRec keep running, and the time of the last warning that the "
+     "phone stopped it, so one stop is told once. To notice a stop, JemRec reads "
+     "Android&rsquo;s own records of when and why JemRec&rsquo;s process ended "
+     "and how it started, and whether Android has marked JemRec stopped, which "
+     "hold no names and no numbers. In the app&rsquo;s private storage; "
+     "uninstalling deletes it."),
+    ("The last call&rsquo;s report", "the recorder", "until the next call", "every call",
+     "How the recorder recorded the last call: which way, how loud each side "
+     "came out, and which apps were playing or capturing sound then. No numbers, "
+     "no names, no sound. Kept by the recorder until the next call replaces it, "
+     "and deleted with it when you uninstall. <em>Copy a report</em> in "
+     "Diagnostics puts it on the clipboard, only when you tap it."),
+    ("Answering machine tests", "the app&rsquo;s private storage", "the latest of each kind", "only if you run them",
+     "What its checks found about the phone, and the result of each test call by "
+     "call type (2G, VoLTE, Wi-Fi Calling). No numbers, no names. In the "
+     "app&rsquo;s private storage; uninstalling deletes it. <em>Copy a "
+     "report</em> puts them on the clipboard, only when you tap it."),
+    ("Contact names and photos", "read where they are", "not copied, unless you choose", "only if you allow it",
+     "Read from the phone&rsquo;s own call log and contacts, only if you allow "
+     "it, to label a recording, to show the Calls tab, to keep or leave out a "
+     "call by who it was with, and to notice a call that was not recorded. Names "
+     "and numbers are not copied or stored; the lookup happens each time it is "
+     "needed. Two choices change that, and only when you make them: a file name "
+     "with the caller in it puts their name or number in the recording&rsquo;s "
+     "file name, and for those JemRec keeps which way each call went, by file "
+     "name, in its private storage and inside the recording; and the contacts "
+     "you pick under Whose calls to keep are stored there as your contacts "
+     "app&rsquo;s own links to them. Exact call tracking, below, keeps numbers "
+     "too."),
+    ("Call tracking", "the app&rsquo;s private storage", "the last 40 phone calls", "while Exact call tracking is on",
+     "While Exact call tracking is on, which it is unless you turn it off: for "
+     "the last 40 phone calls, when each began, was answered and ended, which "
+     "way it went, and how far apart the phone&rsquo;s two clocks were during it "
+     "&mdash; and its number, only if you allowed JemRec to read the call log, "
+     "which has it anyway. In the app&rsquo;s private storage, to cut each "
+     "recording to its call and name it. Turning tracking off deletes it."),
+    ("Messenger callers", "the app&rsquo;s private storage, and the recording", "the last 30 calls", "only if Show who called is on",
+     "Only if you turn on Show who called for messenger calls: from the call "
+     "notifications of the apps whose calls you record &mdash; the messengers "
+     "and Google Meet &mdash; the caller&rsquo;s name, the time, and whether the "
+     "call rang first, for the last 30 calls, in the app&rsquo;s private "
+     "storage. A recording named by date alone keeps its caller&rsquo;s name "
+     "there too, by file name; one named with the caller has it in the file "
+     "name. Either way the name is also written inside the recording, where no "
+     "music app shows it, so that a reinstall still knows who it was &mdash; and "
+     "a recording you share carries it."),
+    ("Call times", "the app&rsquo;s private storage", "mostly 7 days", "every call",
+     "When each recorded call started, which way it went and how long it lasted, "
+     "the time of any call the app told you was not recorded, of any call your "
+     "choice of whose calls to keep left out, and of any call whose caller hung "
+     "up during your greeting, and of the answering machine&rsquo;s test calls. "
+     "No names, no numbers. Kept in the app&rsquo;s private storage for seven "
+     "days, so the missed-call check never reports a call twice or takes a "
+     "recording you deleted for a call that was missed. Also when you last "
+     "called an emergency number &mdash; noted with the answering machine on or "
+     "off &mdash; and when you last chose to answer again before a day had "
+     "passed, so the answering machine stands down for a day after such a call: "
+     "the latest time of each, no number, until the next. Also when recording "
+     "was switched on or off or changed mode, so the Calls tab can say why a "
+     "call was not recorded: times and the setting only, the last 300 changes."),
+    ("Notifications", "read on the phone", "only the IDs of ones it hid", "only if you ask for it",
+     "Only if you ask JemRec to hide Android&rsquo;s debugging notification, or "
+     "turn on Show who called for messenger calls. It then has notification "
+     "access. For the first it looks only at notifications from Android itself, "
+     "to find that one, and keeps the IDs of the ones it hid, so it can bring "
+     "them back. For the second it looks only at the call notifications of the "
+     "messengers you switched on (see Messenger callers). Nothing else is read "
+     "or kept."),
+    ("Waveforms", "the app&rsquo;s cache", "until the recording is deleted", "every recording",
+     "For each recording, its loudness: 800 numbers, no sound, worked out from "
+     "the file to draw its waveform - when a call is saved, or while the app is "
+     "open. In the app&rsquo;s cache, under a code made from the file&rsquo;s "
+     "name rather than the name itself, until the recording is deleted; Android "
+     "may clear it sooner."),
+    ("Settings", "the app&rsquo;s private storage", "until you uninstall", "always",
+     "The app&rsquo;s own private storage: whether recording is on, whether to "
+     "ask before each call, whether to show each call when it ends, where to "
+     "save, how to name files, whose calls to keep, which messengers&rsquo; "
+     "calls to record, the auto-delete rules, the answering machine&rsquo;s, "
+     "which recordings you marked to keep (by file name), and random tokens the "
+     "app uses to talk to its own recorder and to its own notifications."),
+]
+
+
+def privacy_table() -> str:
+    rows = "".join(
+        f'\n    <details class="datum"><summary><span class="what">{what}</span>'
+        f'<span class="chip where"><b>Where</b> {where}</span>'
+        f'<span class="chip long"><b>Kept</b> {kept}</span>'
+        f'<span class="chip when{" if" if when.startswith(("only", "once", "while")) else ""}">'
+        f'<b>When</b> {when}</span></summary><p>{words}</p></details>'
+        for what, where, kept, when, words in PRIVACY_DATA)
+    return ('<div class="datamap">\n    <div class="datamap-head" aria-hidden="true"><span>Data</span>'
+            '<span>Where it lives</span><span>How long</span><span>When</span></div>'
+            + rows + "\n  </div>")
+
+
 PRIVACY_BODY = f"""
   <h1>Privacy policy</h1>
   <p class="lead">JemRec has no servers, no accounts, and no analytics. Nothing it
@@ -2592,121 +3770,9 @@ PRIVACY_BODY = f"""
      or that you use the app at all.</p>
 
   <h2>What stays on the phone</h2>
-  <table>
-    <tr><th>Data</th><th>Where it lives</th></tr>
-    <tr><td>Call recordings</td>
-        <td>The phone&rsquo;s <code>Recordings/JemRec</code> folder, or a folder you
-            choose. Yours to play, share, move or delete like any other file. One
-            deleted in JemRec waits 30 days in Recently deleted, then is removed:
-            in the standard folder, Android&rsquo;s own trash does that; in a
-            folder you chose, it waits as a hidden file that JemRec removes.
-            <em>Delete all for good</em> removes them all at once, when you ask.
-            Messages the answering machine took are recordings too; which ones
-            are messages, and which you marked to keep, is kept by file name in
-            the app&rsquo;s private storage, and written inside each recording
-            as well, so that a reinstall still knows.</td></tr>
-    <tr><td>Caller colours</td>
-        <td>Only once you use the Multitrack look: which of its six colours
-            each caller has, so a caller keeps theirs, also after you change the
-            look. Kept by a one-way code worked out
-            from the name, not the name itself, in the app&rsquo;s private
-            storage, and in no backup. Uninstalling deletes it.</td></tr>
-    <tr><td>Your greeting</td>
-        <td>Only if you record one for the answering machine: in the app&rsquo;s
-            private storage, and a copy the recorder plays from. Deleting it in
-            the app deletes both, and so does uninstalling.</td></tr>
-    <tr><td>Background stops</td>
-        <td>Only on phones that stop apps in the background: whether setup has
-            asked you to let JemRec keep running, and the time of the last
-            warning that the phone stopped it, so one stop is told once. To
-            notice a stop, JemRec reads Android&rsquo;s own records of when
-            and why JemRec&rsquo;s process ended and how it started, and
-            whether Android has marked JemRec stopped, which hold no names and
-            no numbers. In the app&rsquo;s private storage; uninstalling deletes
-            it.</td></tr>
-    <tr><td>The last call&rsquo;s report</td>
-        <td>How the recorder recorded the last call: which way, how loud each
-            side came out, and which apps were playing or capturing sound then.
-            No numbers, no names, no sound. Kept by the recorder until the next
-            call replaces it, and deleted with it when you uninstall.
-            <em>Copy a report</em> in Diagnostics puts it on the clipboard, only
-            when you tap it.</td></tr>
-    <tr><td>Answering machine tests</td>
-        <td>What its checks found about the phone, and the result of each test
-            call by call type (2G, VoLTE, Wi-Fi Calling). No numbers, no
-            names. <em>Copy a report</em> puts them on the clipboard, only when
-            you tap it.</td></tr>
-    <tr><td>Contact names and photos</td>
-        <td>Read from the phone&rsquo;s own call log and contacts, only if you
-            allow it, to label a recording, to show the Calls tab, to keep or
-            leave out a call by who it was with, and to notice a call that was not
-            recorded. Names and numbers are not copied or stored; the lookup
-            happens each time it is needed. Two choices change that, and only
-            when you make them: a file name with the caller in it puts their name
-            or number in the recording&rsquo;s file name, and for those JemRec
-            keeps which way each call went, by file name, in its private storage
-            and inside the recording;
-            and the contacts you pick under Whose calls to keep are stored there
-            as your contacts app&rsquo;s own links to them. Exact call tracking,
-            below, keeps numbers too.</td></tr>
-    <tr><td>Call tracking</td>
-        <td>While Exact call tracking is on, which it is unless you turn it off:
-            for the last 40 phone calls, when each began, was answered and
-            ended, which way it went, and how far apart the phone&rsquo;s two
-            clocks were during it &mdash; and its number, only if you
-            allowed JemRec to read the call log, which has it anyway. In the
-            app&rsquo;s private storage, to cut each recording to its call and
-            name it. Turning tracking off deletes it.</td></tr>
-    <tr><td>Messenger callers</td>
-        <td>Only if you turn on Show who called for messenger calls: from the
-            call notifications of the apps whose calls you record &mdash; the
-            messengers and Google Meet &mdash; the
-            caller&rsquo;s name, the time, and whether the call rang first, for
-            the last 30 calls, in the app&rsquo;s private storage. A recording
-            named by date alone keeps its caller&rsquo;s name there too, by file
-            name; one named with the caller has it in the file name. Either
-            way the name is also written inside the recording, where no music
-            app shows it, so that a reinstall still knows who it was &mdash;
-            and a recording you share carries it.</td></tr>
-    <tr><td>Call times</td>
-        <td>When each recorded call started, which way it went and how long it
-            lasted, the time of any call the app told you was not recorded,
-            of any call your choice of whose calls to keep left out, and of any
-            call whose caller hung up during your greeting, and of the answering
-            machine&rsquo;s test calls. No names, no numbers. Kept in the
-            app&rsquo;s private storage for seven days, so the missed-call check
-            never reports a call twice or takes a recording you deleted for a
-            call that was missed. Also when you last called an emergency number
-            &mdash; noted with the answering machine on or off &mdash; and when
-            you last chose to answer again before a day had passed, so the
-            answering machine stands down for a day after such a call: the latest
-            time of each, no number, until the next. Also when recording
-            was switched on or off or changed mode, so the Calls tab can say why a
-            call was not recorded: times and the setting only, the last 300
-            changes.</td></tr>
-    <tr><td>Notifications</td>
-        <td>Only if you ask JemRec to hide Android&rsquo;s debugging notification,
-            or turn on Show who called for messenger calls. It then has
-            notification access. For the first it looks only at notifications
-            from Android itself, to find that one, and keeps the IDs of the ones
-            it hid, so it can bring them back. For the second it looks only at
-            the call notifications of the messengers you switched on (see
-            Messenger callers). Nothing else is read or kept.</td></tr>
-    <tr><td>Waveforms</td>
-        <td>For each recording, its loudness: 800 numbers, no sound, worked
-            out from the file to draw its waveform - when a call is saved, or
-            while the app is open. In the app&rsquo;s cache, under a code made
-            from the file&rsquo;s name rather than the name itself, until the
-            recording is deleted; Android may clear it sooner.</td></tr>
-    <tr><td>Settings</td>
-        <td>The app&rsquo;s own private storage: whether recording is on, whether to
-            ask before each call, whether to show each call when it ends, where to
-            save, how to name files, whose calls to keep, which messengers&rsquo;
-            calls to record, the auto-delete rules, the answering
-            machine&rsquo;s,
-            which recordings you marked to keep (by file name), and random tokens the app uses to talk to its own recorder
-            and to its own notifications.</td></tr>
-  </table>
+  <p class="muted">Each row in short, then in full: open a row for the
+     policy&rsquo;s own words, which are what counts.</p>
+  {privacy_table()}
 
   <h2>While a recording plays</h2>
   <p>The phone&rsquo;s media controls show who the call was with, as they show
@@ -2731,8 +3797,9 @@ PRIVACY_BODY = f"""
 
   <h2>This website</h2>
   <p>Static files served by GitHub Pages, with no analytics, no cookies, and no
-     fonts or scripts fetched from anywhere else. The one thing it stores is
-     whether you chose light or dark, in your own browser, where it stays. The
+     fonts or scripts fetched from anywhere else. The only things it stores
+     are whether you chose light or dark and which look, in your own browser,
+     where they stay. The
      setup video is the one exception, and only when you ask for it: the pages
      show a picture of it, and nothing from YouTube loads until you press play.
      Pressing play loads YouTube&rsquo;s player from youtube-nocookie.com, and
@@ -2776,10 +3843,21 @@ if __name__ == "__main__":
     # underscore and would rather render Markdown than serve it. Nothing here
     # needs Jekyll.
     (DOCS / ".nojekyll").write_text("")
-    (DOCS / "jemrec.css").write_text(CSS.replace("__DARK__", DARK_VARS))
+    (DOCS / "jemrec.css").write_text(CSS.replace("__PALETTES__", palettes_css()))
+    # The looks' fonts and their licences; anything else there is a font that
+    # has left FONTS, and would otherwise be served for good.
+    fonts = DOCS / "fonts"
+    fonts.mkdir(exist_ok=True)
+    keep = {name for _, file, licence, *_ in FONTS for name in (file, licence)}
+    for old in fonts.iterdir():
+        if old.name not in keep:
+            old.unlink()
+    for _, file, licence, *_ in FONTS:
+        shutil.copyfile(ROOT / "app/src/main/res/font" / file, fonts / file)
+        shutil.copyfile(ROOT / "app/src/main/assets/licenses" / licence, fonts / licence)
     (DOCS / "jemrec.js").write_text(JS)
     (DOCS / "index.html").write_text(
-        page(f"JemRec · {TAGLINE}", TAGLINE, INDEX_BODY, "index.html", home=True)
+        page(f"JemRec · {TAGLINE}", TAGLINE, INDEX_BODY, "index.html", "home")
     )
     (DOCS / "how-it-works.html").write_text(
         page(
@@ -2794,9 +3872,11 @@ if __name__ == "__main__":
         page(
             f"JemRec · {SETUP_TITLE}",
             "How to set up JemRec: three minutes, on the phone, no computer.",
-            f'  <h1>{SETUP_TITLE}</h1>\n  <p class="lead">{SETUP_LEAD}</p>\n'
-            + render_html(SETUP),
+            f'  <h1>{SETUP_TITLE}</h1>\n  <p class="lead">{SETUP_LEAD}</p>\n  '
+            + toc_html(SETUP)
+            + '\n  <div class="manual-text">\n' + render_html(SETUP) + "\n  </div>",
             "setup.html",
+            "manual",
         )
     )
     # The same manual for whoever is reading the repository rather than the site.
@@ -2815,5 +3895,6 @@ if __name__ == "__main__":
         )
     )
     for name in (".nojekyll", "jemrec.css", "jemrec.js", "index.html",
-                 "how-it-works.html", "setup.html", "privacy-policy.html", "SETUP.md"):
+                 "how-it-works.html", "setup.html", "privacy-policy.html", "SETUP.md",
+                 *(f"fonts/{name}" for name in sorted(keep))):
         print(f"wrote docs/{name}")

@@ -603,13 +603,15 @@ The header is the honest indicator:
 |---|---|
 | **Ready to record** | A call would be recorded right now. |
 | **Recording call** | In the notification, during a call. |
-| **Cannot record, needs Wi-Fi** | Join any Wi-Fi and it resumes on its own. Usually a reboot, or a long stretch away from a network. |
-| **Cannot record, tap to start it again** | On Wi-Fi, the recorder did not come back. Tap the line to try now. |
-| **Cannot record, tap to allow this Wi-Fi** | You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick **Always allow on this network** and tap **Allow**. |
-| **Cannot record, tap to pair again** | Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before. |
-| **Starting…** | Rebuilding the recorder. A few seconds. |
-| **Off** | You turned the switch off. |
-| **Off**, debugging off too | You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi. |
+| **Cannot record** · Join any Wi-Fi to resume | Join any Wi-Fi and it resumes on its own. Usually a reboot, or a long stretch away from a network. |
+| **Cannot record** · Tap to start it again | On Wi-Fi, the recorder did not come back. Tap the line to try now. |
+| **Cannot record** · Tap to allow this Wi-Fi | You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick **Always allow on this network** and tap **Allow**. |
+| **Cannot record** · Tap to pair again | Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before. |
+| **Starting...** | Rebuilding the recorder. A few seconds. |
+| **Off** · Tap the button to record calls | You turned the switch off. |
+| **Off** · Debugging off · turn on over Wi-Fi | You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi. |
+
+In Memo's words; Deck and Multitrack word the header their own way.
 
 And when the app is closed, in notifications:
 

@@ -6,51 +6,372 @@
    image glowed like a light box. The light end started at #FBFCFE, near enough
    to paper that the cards on it had nothing to lift off. So the page sits a step
    in from both: a soft grey-blue in light, a lifted charcoal in dark, with the
-   cards and the code blocks moving the other way in each. */
+   cards and the code blocks moving the other way in each. The looks' own
+   palettes follow the same rule (tools/build_site.py, PALETTES). */
 :root {
-  --surface:  #F1F4F8;
-  --raise:    #FAFBFD;
-  --line:     #D5DCE5;
-  --ink:      #161A20;
-  --ink-mid:  #4C555F;
-  --accent:   #2C5AA0;
-  --record:   #C0392F;
-  --play:     #14713C;
-  --code-bg:  #E7ECF3;
   --wrap:     44rem;
   --wide:     70rem;
-  --body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Deck's chain, as the app's: Share Tech Mono, then JetBrains Mono for
+     what it has no glyph for. */
+  --engraved: "Share Tech Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --grotesk: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --jbmono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --lcdface: "Doto", "Share Tech Mono", ui-monospace, monospace;
+}
+
+@font-face { font-family: "Doto"; src: url("fonts/doto.ttf") format("truetype"); font-weight: 100 900; font-display: swap; unicode-range: U+0000-002D, U+002F-10FFFF; }
+@font-face { font-family: "Share Tech Mono"; src: url("fonts/share_tech_mono.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/jetbrains_mono.ttf") format("truetype"); font-weight: 100 800; font-display: swap; }
+@font-face { font-family: "Space Grotesk"; src: url("fonts/space_grotesk.ttf") format("truetype"); font-weight: 300 700; font-display: swap; }
+
+:root {
+  --display: var(--sans);
+  --body: var(--sans);
+  --label: var(--sans);
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius: 18px;
+  --radius-sm: 999px;
+  --num-bg: var(--accent);
+  --num-ink: var(--surface);
+  --num-edge: transparent;
+  --num-font: var(--label);
+  --num-weight: 700;
+  --num-glow: transparent;
+  --num-lit-bg: var(--record);
+  --num-lit-edge: transparent;
+  --surface: #F1F4F8;
+  --raise: #FAFBFD;
+  --line: #D5DCE5;
+  --ink: #161A20;
+  --ink-mid: #4C555F;
+  --accent: #2C5AA0;
+  --record: #C0392F;
+  --play: #14713C;
+  --code-bg: #E7ECF3;
+  --head: #F1F4F8;
+  --band: #FAFBFD;
+  --marker: #2C5AA0;
+  --st-ready: #1E6B34;
+  --st-alarm: #BE3A2D;
+  --st-idle: #43474E;
+  --disc: #FFFFFF;
+  --disc-edge: #DCE1E9;
+  --rec: #E8564B;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --surface: #22262B;
-    --raise:   #2C3137;
-    --line:    #3B4149;
-    --ink:     #E4E7EB;
+    --raise: #2C3137;
+    --line: #3B4149;
+    --ink: #E4E7EB;
     --ink-mid: #B2BAC4;
-    --accent:  #9ECAFF;
-    --record:  #FF7A6B;
-    --play:    #6FDF9B;
+    --accent: #9ECAFF;
+    --record: #FF7A6B;
+    --play: #6FDF9B;
     --code-bg: #1B1F23;
+    --head: #22262B;
+    --band: #2C3137;
+    --marker: #9ECAFF;
+    --st-ready: #6FDF9B;
+    --st-alarm: #FF7A6B;
+    --st-idle: #C3C7CF;
+    --disc: #2A2E34;
+    --disc-edge: #3A3F46;
+    --rec: #E8564B;
   }
 }
 
 :root[data-theme="dark"] {
-    --surface: #22262B;
-    --raise:   #2C3137;
-    --line:    #3B4149;
-    --ink:     #E4E7EB;
-    --ink-mid: #B2BAC4;
-    --accent:  #9ECAFF;
-    --record:  #FF7A6B;
-    --play:    #6FDF9B;
-    --code-bg: #1B1F23;
+  --surface: #22262B;
+  --raise: #2C3137;
+  --line: #3B4149;
+  --ink: #E4E7EB;
+  --ink-mid: #B2BAC4;
+  --accent: #9ECAFF;
+  --record: #FF7A6B;
+  --play: #6FDF9B;
+  --code-bg: #1B1F23;
+  --head: #22262B;
+  --band: #2C3137;
+  --marker: #9ECAFF;
+  --st-ready: #6FDF9B;
+  --st-alarm: #FF7A6B;
+  --st-idle: #C3C7CF;
+  --disc: #2A2E34;
+  --disc-edge: #3A3F46;
+  --rec: #E8564B;
+}
+
+:root[data-look="deck"] {
+  --display: var(--engraved);
+  --body: var(--engraved);
+  --label: var(--engraved);
+  --mono: var(--engraved);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --num-bg: var(--lcd);
+  --num-ink: var(--lcd-ink);
+  --num-edge: var(--lcd-edge);
+  --num-font: var(--lcdface);
+  --num-weight: 800;
+  --num-glow: var(--lcd-glow);
+  --num-lit-bg: var(--lcd);
+  --num-lit-edge: var(--record);
+  --surface: #EFEEEA;
+  --raise: #E6E8EB;
+  --line: #CCD0D5;
+  --ink: #1A1C1E;
+  --ink-mid: #50555C;
+  --accent: #4E6B26;
+  --record: #BE3A2D;
+  --play: #276E35;
+  --code-bg: #E4E6E9;
+  --head: #E4E6E9;
+  --band: #E4E6E9;
+  --marker: #50555C;
+  --st-ready: #276E35;
+  --st-alarm: #BE3A2D;
+  --st-idle: #50555C;
+  --disc: #C4C9CF;
+  --disc-edge: #AEB4BA;
+  --rec: #E8564B;
+  --lcd: #C9D6A3;
+  --lcd-ink: #1E2A12;
+  --lcd-edge: #6E747B;
+  --lcd-off: #A7B092;
+  --lcd-ink-off: #39422C;
+  --lcd-glow: transparent;
+  --key: #FFFFFF;
+  --key-edge: #AEB4BA;
+  --key-idle: #F4F5F6;
+  --key-idle-mid: #C9CDD2;
+  --key-idle-rim: #9DA3AA;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-look="deck"]:not([data-theme="light"]) {
+    --surface: #15181B;
+    --raise: #1F2327;
+    --line: #343A41;
+    --ink: #E3E5E8;
+    --ink-mid: #A3A9B0;
+    --accent: #B6F27A;
+    --record: #FF7A6B;
+    --play: #7CF29A;
+    --code-bg: #111315;
+    --head: #1C1F23;
+    --band: #1C1F23;
+    --marker: #9AA3AD;
+    --st-ready: #7CF29A;
+    --st-alarm: #FF7A6B;
+    --st-idle: #A3A9B0;
+    --disc: #0E1013;
+    --disc-edge: #3A4047;
+    --rec: #E8564B;
+    --lcd: #0E140B;
+    --lcd-ink: #B6F27A;
+    --lcd-edge: #565D66;
+    --lcd-off: #0B0F09;
+    --lcd-ink-off: #6E8E50;
+    --lcd-glow: rgba(182, 242, 122, .45);
+    --key: #343A41;
+    --key-edge: #0E1013;
+    --key-idle: #7A8189;
+    --key-idle-mid: #4A5057;
+    --key-idle-rim: #2A2E33;
+  }
+}
+
+:root[data-look="deck"][data-theme="dark"] {
+  --surface: #15181B;
+  --raise: #1F2327;
+  --line: #343A41;
+  --ink: #E3E5E8;
+  --ink-mid: #A3A9B0;
+  --accent: #B6F27A;
+  --record: #FF7A6B;
+  --play: #7CF29A;
+  --code-bg: #111315;
+  --head: #1C1F23;
+  --band: #1C1F23;
+  --marker: #9AA3AD;
+  --st-ready: #7CF29A;
+  --st-alarm: #FF7A6B;
+  --st-idle: #A3A9B0;
+  --disc: #0E1013;
+  --disc-edge: #3A4047;
+  --rec: #E8564B;
+  --lcd: #0E140B;
+  --lcd-ink: #B6F27A;
+  --lcd-edge: #565D66;
+  --lcd-off: #0B0F09;
+  --lcd-ink-off: #6E8E50;
+  --lcd-glow: rgba(182, 242, 122, .45);
+  --key: #343A41;
+  --key-edge: #0E1013;
+  --key-idle: #7A8189;
+  --key-idle-mid: #4A5057;
+  --key-idle-rim: #2A2E33;
+}
+
+:root[data-look="multitrack"] {
+  --display: var(--grotesk);
+  --body: var(--grotesk);
+  --label: var(--jbmono);
+  --mono: var(--jbmono);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --num-bg: var(--ink);
+  --num-ink: var(--surface);
+  --num-edge: transparent;
+  --num-font: var(--label);
+  --num-weight: 700;
+  --num-glow: transparent;
+  --num-lit-bg: var(--record);
+  --num-lit-edge: transparent;
+  --surface: #EEF0F3;
+  --raise: #FFFFFF;
+  --line: #DCE0E5;
+  --ink: #1B1F24;
+  --ink-mid: #555D68;
+  --accent: #2460C4;
+  --record: #BE3A2D;
+  --play: #12803F;
+  --code-bg: #E7EAEE;
+  --head: #FFFFFF;
+  --band: #FFFFFF;
+  --marker: #8A6400;
+  --st-ready: #128A45;
+  --st-alarm: #8A6400;
+  --st-idle: #555D68;
+  --disc: #F3F4F6;
+  --disc-edge: #C9CED6;
+  --rec: #E8463B;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-look="multitrack"]:not([data-theme="light"]) {
+    --surface: #12151A;
+    --raise: #191D23;
+    --line: #262C35;
+    --ink: #E6E9EE;
+    --ink-mid: #A3ABB6;
+    --accent: #7DB2FF;
+    --record: #FF7A6B;
+    --play: #3DDC84;
+    --code-bg: #0E1014;
+    --head: #161A20;
+    --band: #161A20;
+    --marker: #F5C542;
+    --st-ready: #7CF29A;
+    --st-alarm: #F5C542;
+    --st-idle: #A3ABB6;
+    --disc: #1B1F26;
+    --disc-edge: #3A404A;
+    --rec: #FF4D42;
+  }
+}
+
+:root[data-look="multitrack"][data-theme="dark"] {
+  --surface: #12151A;
+  --raise: #191D23;
+  --line: #262C35;
+  --ink: #E6E9EE;
+  --ink-mid: #A3ABB6;
+  --accent: #7DB2FF;
+  --record: #FF7A6B;
+  --play: #3DDC84;
+  --code-bg: #0E1014;
+  --head: #161A20;
+  --band: #161A20;
+  --marker: #F5C542;
+  --st-ready: #7CF29A;
+  --st-alarm: #F5C542;
+  --st-idle: #A3ABB6;
+  --disc: #1B1F26;
+  --disc-edge: #3A404A;
+  --rec: #FF4D42;
+}
+
+@media print {
+  :root, :root[data-theme], :root:not([data-theme="light"]) {
+    --surface: #F1F4F8;
+    --raise: #FAFBFD;
+    --line: #D5DCE5;
+    --ink: #161A20;
+    --ink-mid: #4C555F;
+    --accent: #2C5AA0;
+    --record: #C0392F;
+    --play: #14713C;
+    --code-bg: #E7ECF3;
+    --head: #F1F4F8;
+    --band: #FAFBFD;
+    --marker: #2C5AA0;
+    --st-ready: #1E6B34;
+    --st-alarm: #BE3A2D;
+    --st-idle: #43474E;
+    --disc: #FFFFFF;
+    --disc-edge: #DCE1E9;
+    --rec: #E8564B;
+  }
+  :root[data-look="deck"], :root[data-look="deck"][data-theme], :root[data-look="deck"]:not([data-theme="light"]) {
+    --surface: #EFEEEA;
+    --raise: #E6E8EB;
+    --line: #CCD0D5;
+    --ink: #1A1C1E;
+    --ink-mid: #50555C;
+    --accent: #4E6B26;
+    --record: #BE3A2D;
+    --play: #276E35;
+    --code-bg: #E4E6E9;
+    --head: #E4E6E9;
+    --band: #E4E6E9;
+    --marker: #50555C;
+    --st-ready: #276E35;
+    --st-alarm: #BE3A2D;
+    --st-idle: #50555C;
+    --disc: #C4C9CF;
+    --disc-edge: #AEB4BA;
+    --rec: #E8564B;
+    --lcd: #C9D6A3;
+    --lcd-ink: #1E2A12;
+    --lcd-edge: #6E747B;
+    --lcd-off: #A7B092;
+    --lcd-ink-off: #39422C;
+    --lcd-glow: transparent;
+    --key: #FFFFFF;
+    --key-edge: #AEB4BA;
+    --key-idle: #F4F5F6;
+    --key-idle-mid: #C9CDD2;
+    --key-idle-rim: #9DA3AA;
+  }
+  :root[data-look="multitrack"], :root[data-look="multitrack"][data-theme], :root[data-look="multitrack"]:not([data-theme="light"]) {
+    --surface: #EEF0F3;
+    --raise: #FFFFFF;
+    --line: #DCE0E5;
+    --ink: #1B1F24;
+    --ink-mid: #555D68;
+    --accent: #2460C4;
+    --record: #BE3A2D;
+    --play: #12803F;
+    --code-bg: #E7EAEE;
+    --head: #FFFFFF;
+    --band: #FFFFFF;
+    --marker: #8A6400;
+    --st-ready: #128A45;
+    --st-alarm: #8A6400;
+    --st-idle: #555D68;
+    --disc: #F3F4F6;
+    --disc-edge: #C9CED6;
+    --rec: #E8463B;
+  }
 }
 
 * { box-sizing: border-box; }
-/* scroll-padding: the header is sticky, so a jump to a heading - a feature
-   tile into the manual, say - would otherwise put the heading under it. */
+/* scroll-padding: the header is sticky, so a jump to a heading - a feature's
+   More into the manual, say - would otherwise put the heading under it. */
 html { font-size: 17px; scroll-behavior: smooth; scroll-padding-top: 5rem; }
 body {
   margin: 0;
@@ -71,7 +392,7 @@ body {
 .bar {
   padding: .9rem 0;
   border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; background: var(--surface); z-index: 5;
+  position: sticky; top: 0; background: var(--head); z-index: 5;
 }
 .column { max-width: var(--wide); margin: 0 auto; padding: 0 1.4rem; }
 .bar .column {
@@ -82,14 +403,14 @@ body {
 .brand img { border-radius: 22%; }
 .bar-end { display: flex; align-items: center; gap: .9rem; }
 .bar nav a { color: var(--ink-mid); text-decoration: none; margin-left: 1.1rem;
-             font-size: .92rem; }
+             font-size: .92rem; font-family: var(--label); }
 .bar nav a:first-child { margin-left: 0; }
 .bar nav a:hover { color: var(--accent); }
 
 .theme, .look {
   display: inline-flex; align-items: center; gap: .35rem;
-  font: inherit; font-size: .92rem; color: var(--ink-mid);
-  background: var(--raise); border: 1px solid var(--line); border-radius: 999px;
+  font: inherit; font-family: var(--label); font-size: .92rem; color: var(--ink-mid);
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--radius-sm);
   padding: .2rem .66rem; cursor: pointer;
 }
 .theme:hover, .look:hover { color: var(--accent); border-color: var(--accent); }
@@ -101,7 +422,7 @@ body {
   font-size: .92rem; font-weight: 600; text-decoration: none; color: var(--record);
   background: color-mix(in srgb, var(--record) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--record) 35%, transparent);
-  border-radius: 999px; padding: .2rem .75rem;
+  border-radius: var(--radius-sm); padding: .2rem .75rem; font-family: var(--label);
   transition: background-color .15s;
 }
 .support-btn:hover { background: color-mix(in srgb, var(--record) 18%, transparent); }
@@ -127,6 +448,7 @@ body {
 
 main { max-width: var(--wrap); margin: 0 auto; padding: 2.6rem 1.4rem 5rem; }
 
+h1, h2, h3 { font-family: var(--display); }
 h1 { font-size: 2.1rem; line-height: 1.18; letter-spacing: -.02em; margin: 0 0 .8rem; }
 h2 { font-size: 1.28rem; margin: 2.6rem 0 .7rem; letter-spacing: -.01em; }
 h3 { font-size: 1.02rem; margin: 1.6rem 0 .4rem; }
@@ -141,7 +463,7 @@ pre {
   background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
   padding: .8rem 1rem; overflow-x: auto; font-size: .86rem; line-height: 1.5;
 }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+code { font-family: var(--mono); font-size: .88em; }
 p code, li code, td code { background: var(--code-bg); padding: .1rem .32rem; border-radius: 5px; }
 /* The manual quotes a 64-character signing digest and a whole Honor file name
    inline; unbroken, either one made the page wider than a phone. */
@@ -165,6 +487,171 @@ th { color: var(--ink-mid); font-weight: 600; }
    accent keeps the second from reading as a second alarm. */
 .note.info { border-left-color: var(--accent); }
 .note strong { color: var(--ink); }
+
+/* WHAT STAYS ON THE PHONE, a row each: its answers as chips to scan, and
+   the policy's own words a tap away (PRIVACY_DATA). It was a table of
+   paragraphs, thirteen of them, and nothing to find your way by. */
+.datamap { margin: 1.2rem 0 2rem; border-top: 1px solid var(--line); }
+.datamap-head, .datum summary {
+  display: grid; grid-template-columns: 9.5rem repeat(3, minmax(0, 1fr));
+  gap: .5rem .7rem; padding-right: 2rem;
+}
+.datamap-head {
+  padding-top: .6rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line);
+  font: 600 .7rem var(--label); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-mid);
+}
+.datum { border-bottom: 1px solid var(--line); }
+.datum summary {
+  list-style: none; cursor: pointer; position: relative; align-items: start;
+  padding-top: .8rem; padding-bottom: .8rem;
+}
+.datum summary::-webkit-details-marker { display: none; }
+.datum summary::after {
+  content: ""; position: absolute; right: .5rem; top: 1.15rem; width: .5rem; height: .5rem;
+  border-right: 2px solid var(--ink-mid); border-bottom: 2px solid var(--ink-mid);
+  transform: rotate(45deg); transition: transform .2s;
+}
+.datum[open] summary::after { transform: translateY(.2rem) rotate(-135deg); }
+/* Hover only where a pointer hovers: on a touchscreen it sticks after a tap,
+   and an opened row kept its accent title (the Honor, 2026-10-27). */
+@media (hover: hover) { .datum summary:hover .what { color: var(--accent); } }
+.datum .what { font-weight: 700; line-height: 1.35; }
+.chip {
+  justify-self: start; padding: .12rem .6rem; font-size: .8rem; line-height: 1.4;
+  border-radius: min(var(--radius-sm), 10px); background: var(--code-bg); color: var(--ink);
+}
+/* The column heads say what each chip is in a wide window; a screen reader,
+   which skips them, hears the chip's own word instead. */
+.chip b {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+.chip.long { background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); }
+.chip.when.if { background: color-mix(in srgb, var(--play) 14%, transparent); color: var(--play); }
+.datum p {
+  margin: 0 0 1rem; padding: .9rem 1rem; border-radius: var(--radius);
+  background: var(--raise); color: var(--ink-mid); font-size: .94rem;
+}
+@media (max-width: 40rem) {
+  .datamap-head { display: none; }
+  .datum summary { grid-template-columns: minmax(0, 1fr); gap: .35rem; }
+  .chip b { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-weight: 600; margin-right: .3rem; }
+}
+
+/* THE MANUAL, FINDABLE. Thirty sections, some 13,000px of text, and no
+   contents at all. In a wide window the contents stay in view beside the
+   text and mark the section being read; in a narrow one they sit folded
+   under the title (the script opens them only where there is room, so
+   nothing on a phone jumps when it runs). The title comes first in the
+   page, for a phone and for a screen reader alike. */
+main.manual {
+  max-width: calc(var(--wrap) + 17.4rem); display: grid; align-items: start;
+  grid-template-columns: 14rem minmax(0, 1fr); gap: 0 3.4rem;
+}
+main.manual > :not(.toc) { grid-column: 2; }
+main.manual > .toc { grid-column: 1; grid-row: 1 / span 3; }
+.toc {
+  position: sticky; top: 4.6rem; max-height: calc(100vh - 5.6rem); overflow-y: auto;
+  overscroll-behavior: contain; font-size: .86rem; padding: 1.2rem 0 1rem;
+}
+.toc summary { cursor: pointer; font-weight: 600; font-family: var(--label); }
+.toc p {
+  margin: 1.2rem 0 .35rem; font: 600 .7rem var(--label); color: var(--ink-mid);
+  text-transform: uppercase; letter-spacing: .12em;
+}
+.toc p:first-of-type { margin-top: .4rem; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc a {
+  display: block; padding: .24rem .65rem; line-height: 1.35; text-decoration: none;
+  color: var(--ink-mid); border-left: 2px solid var(--line);
+}
+.toc a:hover { color: var(--ink); }
+.toc a[aria-current="true"] {
+  color: var(--ink); font-weight: 700; border-left-color: var(--record);
+  background: color-mix(in srgb, var(--record) 8%, transparent);
+}
+.toc .n { font: 700 .8rem var(--label); color: var(--accent); margin-right: .15rem; }
+@media (min-width: 70rem) { .toc details[open] > summary { display: none; } }
+@media (max-width: 69.99rem) {
+  main.manual { display: block; max-width: var(--wrap); }
+  .toc {
+    position: static; max-height: none; overflow: visible; margin: 0 0 2rem;
+    padding: .8rem 1rem; background: var(--raise); border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+}
+
+/* On paper, the page alone: not the header and its buttons, nor the
+   manual's contents column, which narrowed every printed page's text. */
+@media print {
+  .bar, .toc, .viewer { display: none; }
+  main.manual { display: block; max-width: var(--wrap); }
+}
+
+/* A step's place in the setup, over its heading: done, this one, to come. */
+.step-rail { display: flex; align-items: center; gap: 4px; max-width: 17rem; margin: 3rem 0 -1.7rem; }
+/* A jump from the contents lands on the heading; this much more keeps the
+   bar above it out from under the header. */
+.step-rail + h2 { scroll-margin-top: 2.2rem; }
+.step-rail i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.step-rail i.d { background: var(--play); }
+.step-rail i.c { background: var(--record); }
+.step-rail span { margin-left: .6rem; font: 600 .74rem var(--label); color: var(--ink-mid); white-space: nowrap; }
+
+/* WHAT THE HEADER SAYS, AS IT SAYS IT - in the page's look, from the app's
+   own words (header_words), each look's header drawn small: Memo's disc,
+   Deck's REC key and LCD, Multitrack's ring and spaced capitals. */
+.status-list { margin: 1.2rem 0 .6rem; border-top: 1px solid var(--line); }
+.status {
+  display: grid; grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+  gap: .6rem 1.5rem; align-items: center; padding: .95rem 0; border-bottom: 1px solid var(--line);
+}
+.status p { margin: 0; color: var(--ink-mid); font-size: .95rem; }
+@media (max-width: 38rem) { .status { grid-template-columns: minmax(0, 1fr); } }
+.hd { display: inline-flex; align-items: center; gap: .75rem; min-width: 0; }
+.hd b { display: block; font-weight: 600; line-height: 1.2; }
+.hd small { display: block; margin-top: .15rem; font-size: .78rem; line-height: 1.3; color: var(--st-idle); }
+.hd .ready { color: var(--st-ready); }
+.hd .alarm { color: var(--st-alarm); }
+.hd .idle { color: var(--st-idle); }
+.hd-disc, .hd-ring, .hd-key { flex: none; width: 2.4rem; height: 2.4rem; border-radius: 50%; }
+.hd-disc, .hd-ring { display: grid; place-items: center; background: var(--disc); }
+.hd-disc { border: 1px solid var(--disc-edge); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
+.hd-ring { border: 2px solid var(--disc-edge); }
+.hd-disc i, .hd-ring i { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--rec); }
+.hd-disc.off i { background: none; border: 2px solid var(--disc-edge); }
+.hd-ring.off i { background: color-mix(in srgb, var(--rec) 28%, var(--disc)); }
+.hd-memo b { font-size: 1.12rem; font-family: var(--sans); }
+.hd-memo small { font-family: var(--sans); }
+/* As Memo draws them: a line you can tap in its primary colour, and while
+   it starts, a ring round the button (the app's spins; this one holds). */
+.hd-memo small.tap { color: var(--accent); }
+.hd-disc.busy { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* The REC key as the app domes it (HeaderParts.kt, domed): lit from up-left,
+   light, mid, dark at 0, 46% and the rim, over 0.78 of its width - LitRed
+   when on, the theme's keyIdle greys when off. */
+.hd-key {
+  background: radial-gradient(78% 78% at 38% 32%, #FF9184 0, #E8564B 46%, #A8322A 100%);
+  box-shadow: 0 0 0 3px var(--disc), 0 0 0 4px var(--disc-edge);
+}
+.hd-key.off {
+  background: radial-gradient(78% 78% at 38% 32%, var(--key-idle) 0, var(--key-idle-mid) 46%, var(--key-idle-rim) 100%);
+}
+.hd-lcd {
+  min-width: 12.5rem; padding: .3rem .65rem .35rem; border-radius: 8px;
+  background: var(--lcd); color: var(--lcd-ink); border: 2px solid var(--lcd-edge);
+  text-shadow: 0 0 8px var(--lcd-glow);
+}
+.hd-lcd b, .hd-lcd b.ready, .hd-lcd b.alarm, .hd-lcd b.idle { font: 800 1.2rem var(--lcdface); letter-spacing: .04em; color: inherit; }
+.hd-lcd small { color: inherit; font: .64rem var(--engraved); letter-spacing: .03em; }
+.hd-lcd.off { background: var(--lcd-off); color: var(--lcd-ink-off); }
+.hd-multitrack b { font: 600 1.05rem var(--jbmono); letter-spacing: .14em; }
+.hd-multitrack small { font: .64rem var(--jbmono); letter-spacing: .06em; }
+.hd-notif {
+  padding: .5rem .85rem; border-radius: 14px; background: var(--raise);
+  border: 1px solid var(--line); font-family: var(--sans);
+}
+.hd-notif img { width: 18px; height: 18px; border-radius: 50%; }
 
 footer {
   border-top: 1px solid var(--line); margin-top: 3rem; padding: 1.6rem 0 3rem;
@@ -207,7 +694,7 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .eyebrow {
   display: inline-block; font-size: .86rem; font-weight: 600; color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  padding: .28rem .8rem; border-radius: 999px;
+  padding: .28rem .8rem; border-radius: var(--radius-sm); font-family: var(--label);
 }
 .hero h1 {
   font-size: clamp(2.35rem, 5.4vw, 3.75rem); line-height: 1.04;
@@ -306,49 +793,93 @@ main.home { max-width: none; padding: 0 0 2rem; }
   }
 }
 
-.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-.card {
-  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
-  padding: 1.35rem 1.35rem 1.25rem;
-}
-.card p { margin: 0; color: var(--ink-mid); font-size: .96rem; }
-.icon {
-  width: 44px; height: 44px; border-radius: 13px; margin-bottom: 1rem;
-  display: grid; place-items: center; color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-}
-.icon svg { width: 23px; height: 23px; }
-@media (max-width: 62rem) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 38rem) { .cards { grid-template-columns: minmax(0, 1fr); } }
+/* REASONS, NOT CARDS. Four sections of the home page were the same box - an
+   icon in a rounded square, a bold title, grey words - and that box is what
+   made the site read as a template (the user, 2026-10-27). A list of reasons
+   is a list: a rule over each, the icon beside its title. The icons are
+   Material's, the set the app draws from (ICONS). */
+.reasons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.4rem 2.6rem; }
+.reason { border-top: 2px solid var(--ink); padding-top: 1.05rem; }
+.reason h3 { display: flex; align-items: flex-start; gap: .6rem; margin: 0 0 .45rem; }
+.reason h3 svg { width: 22px; height: 22px; flex: none; color: var(--accent); margin-top: .05rem; }
+.reason p { margin: 0; color: var(--ink-mid); font-size: .96rem; }
+@media (max-width: 62rem) { .reasons { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 38rem) { .reasons { grid-template-columns: minmax(0, 1fr); gap: 1.8rem; } }
 
+/* Three steps on one line, because they are one road: numbered, joined, no
+   boxes. On a phone the line runs down the left. */
 .steps {
   list-style: none; padding: 0; margin: 0; counter-reset: step;
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.6rem 2.6rem;
 }
-.steps li {
-  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
-  padding: 1.35rem; display: flex; flex-direction: column;
-}
+.steps li { position: relative; padding-top: 3.6rem; display: flex; flex-direction: column; }
 .steps li::before {
   counter-increment: step; content: counter(step);
-  width: 2.2rem; height: 2.2rem; border-radius: 50%; margin-bottom: 1rem;
-  display: grid; place-items: center; font-weight: 700;
-  background: var(--accent); color: var(--surface);
+  position: absolute; left: 0; top: 0; width: 2.5rem; height: 2.5rem;
+  border-radius: var(--radius-sm); display: grid; place-items: center;
+  font: var(--num-weight) 1.05rem var(--num-font); background: var(--num-bg); color: var(--num-ink);
+  border: 2px solid var(--num-edge); text-shadow: 0 0 6px var(--num-glow);
 }
+.steps li::after {
+  content: ""; position: absolute; top: 1.2rem; left: 3.3rem; right: -1.9rem;
+  height: 2px; background: var(--line);
+}
+.steps li:last-child::after { display: none; }
 .steps p { margin: 0 0 .9rem; color: var(--ink-mid); font-size: .96rem; flex: 1; }
 .after-steps { margin: 1.4rem 0 0; color: var(--ink-mid); max-width: 46rem; }
-@media (max-width: 54rem) { .steps { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 54rem) {
+  .steps { grid-template-columns: minmax(0, 1fr); gap: 1.8rem; }
+  .steps li { padding: 0 0 0 3.6rem; }
+  .steps li::after { left: 1.2rem; top: 3.1rem; right: auto; bottom: -1.3rem; width: 2px; height: auto; }
+}
 
-/* One row of every screen, however many SCREENS has - a column each, so a
-   new one cannot wrap alone - or below 62rem a strip that scrolls sideways
-   and stops on each one: seven phones stacked would be seven screens of
-   scrolling. 62rem, so seven phones in the row are never narrower than six
-   were at the 54rem this used to change at: about 120px. */
-.gallery { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1.2rem; }
-.gallery figure { margin: 0; text-align: center; }
-.gallery figcaption { margin-top: 1rem; }
-.gallery figcaption strong { display: block; }
-.gallery figcaption span { color: var(--ink-mid); font-size: .92rem; }
+/* A LOOK AROUND: one screen large enough to read, and the rest as a strip
+   that picks it. Seven phones in a row were about 120px wide each - a
+   picture of a screen, not one you could read (2026-10-27). Without script
+   the first screen shows and the strip does nothing. */
+.tour {
+  display: grid; grid-template-columns: minmax(0, 19rem) minmax(0, 1fr);
+  gap: 2rem 4rem; align-items: center;
+}
+/* The strip and its words come first in the page, as a phone shows them
+   and a keyboard reaches them; a wide window puts the phone on the left. */
+.tour-phone { width: 100%; max-width: 19rem; margin: 0 auto; grid-column: 1; grid-row: 1; }
+.tour-side { grid-column: 2; grid-row: 1; }
+.tour-side h3 { font-size: 1.7rem; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 .5rem; }
+.tour-text { color: var(--ink-mid); margin: 0 0 1.6rem; min-height: 3.3em; max-width: 30rem; }
+.thumbs { display: flex; flex-wrap: wrap; gap: .7rem; }
+.thumbs button {
+  width: 5.4rem; padding: 3px; border: 2px solid transparent; border-radius: 14px;
+  background: #0D0F12; cursor: pointer; transition: transform .15s;
+}
+/* Under the phone's picture, the seven share one row: fixed thumbnails
+   left one or two alone on a second row between about 650 and 920px. */
+@media (max-width: 54rem) {
+  .thumbs { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); max-width: 44rem; margin: 0 auto; }
+  .thumbs button { width: auto; }
+}
+/* Four to a row on a phone, sharing the width: fixed 4.4rem thumbnails came
+   out three, three and one on the Honor (359px wide, 2026-10-27). */
+@media (max-width: 38rem) {
+  .thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+  .thumbs button { width: auto; }
+}
+.thumbs img {
+  display: block; width: 100%; height: auto; aspect-ratio: 420 / 520;
+  object-fit: cover; object-position: top; border-radius: 10px;
+}
+@media (hover: hover) { .thumbs button:hover { transform: translateY(-2px); } }
+.thumbs button[aria-pressed="true"] { border-color: var(--record); }
+.thumbs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 54rem) {
+  .tour { grid-template-columns: minmax(0, 1fr); }
+  /* The strip above the phone: below it, a screen picked on a phone changed
+     a picture already scrolled out of view (the Honor, 2026-10-27). */
+  .tour-phone, .tour-side { grid-column: auto; grid-row: auto; }
+  .tour-phone { max-width: 16rem; }
+  .tour-side { text-align: center; }
+  .tour-text { margin-left: auto; margin-right: auto; }
+}
 .shot {
   display: block; width: 100%; padding: 6px; border: 0; border-radius: 30px;
   background: #0D0F12; cursor: zoom-in;
@@ -356,24 +887,16 @@ main.home { max-width: none; padding: 0 0 2rem; }
   transition: transform .2s;
 }
 .shot img { display: block; width: 100%; height: auto; border-radius: 24px; }
-.shot:hover { transform: translateY(-3px); }
+@media (hover: hover) { .shot:hover { transform: translateY(-3px); } }
 .shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.gallery-note { color: var(--ink-mid); font-size: .92rem; margin: 1.6rem 0 0; max-width: 46rem; }
-@media (max-width: 62rem) {
-  .gallery {
-    display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
-    gap: 1rem; margin: 0 -1.4rem; padding: .4rem 1.4rem 1rem;
-    scroll-padding: 0 1.4rem;
-  }
-  .gallery figure { flex: 0 0 min(62%, 15rem); scroll-snap-align: start; }
-}
+.gallery-note { color: var(--ink-mid); font-size: .92rem; margin: 2.2rem 0 0; max-width: 46rem; }
 
 /* The setup video: a still of it with a play button until someone presses
    play (see the script). 16:9 whether still or player, so nothing below it
    jumps when the one replaces the other. */
 .video { margin: 2rem 0 0; max-width: 46rem; }
 .video-frame {
-  position: relative; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden;
+  position: relative; aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden;
   background: #0D0F12;
   box-shadow: 0 0 0 1px var(--line), 0 22px 40px -26px rgba(10, 20, 40, .55);
 }
@@ -402,20 +925,101 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .video figcaption { margin-top: .7rem; color: var(--ink-mid); font-size: .92rem; }
 .video figcaption strong { color: var(--ink); }
 
-.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
-.tile {
-  display: flex; flex-direction: column; padding: 1.15rem 1.2rem;
-  background: var(--raise); border: 1px solid var(--line); border-radius: 16px;
-  color: var(--ink); text-decoration: none;
-  transition: border-color .15s, transform .15s;
+/* WHAT YOU CAN DO, BESIDE WHAT IT LOOKS LIKE. Eleven tiles of words were
+   eleven more boxes; each row now puts a few features beside the screen,
+   notification or measurement they are about (FEATURE_ROWS). */
+.rows { display: flex; flex-direction: column; gap: 4.5rem; }
+.row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2rem 4.5rem; align-items: center;
 }
-.tile:hover { border-color: var(--accent); transform: translateY(-2px); }
-.tile.wide { grid-column: 1 / -1; }
-.tile span { color: var(--ink-mid); font-size: .93rem; margin-top: .4rem; flex: 1; }
-.tile em { font-style: normal; font-weight: 600; font-size: .88rem; color: var(--accent); margin-top: .9rem; }
-.tiles-note { color: var(--ink-mid); margin: 1.4rem 0 0; }
-@media (max-width: 62rem) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 38rem) { .tiles { grid-template-columns: minmax(0, 1fr); } }
+.row:nth-child(even) .row-pic { order: -1; }
+.row-text { display: flex; flex-direction: column; gap: 1.6rem; }
+.feature h3 { font-size: 1.15rem; margin: 0 0 .35rem; }
+.feature p { margin: 0 0 .35rem; color: var(--ink-mid); }
+.row-pic { min-width: 0; display: flex; justify-content: center; }
+.tiles-note { color: var(--ink-mid); margin: 3.5rem 0 0; max-width: 46rem; }
+@media (max-width: 54rem) {
+  .rows { gap: 3.5rem; }
+  .row { grid-template-columns: minmax(0, 1fr); }
+  .row:nth-child(even) .row-pic { order: 0; }
+}
+
+/* A part of a screenshot: the image, moved up inside a window cut to the
+   part's height. Every look and theme has its own window (CROPS), because
+   the looks lay the same screen out differently. */
+.crop {
+  width: 100%; max-width: 24rem; overflow: hidden; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--surface);
+  box-shadow: 0 22px 40px -28px rgba(10, 20, 40, .55);
+}
+.crop img { display: block; width: 100%; height: auto; }
+
+/* The three looks, side by side in the page's light or dark - each a button
+   that puts the site in that look. */
+.trio-box { width: 100%; }
+.trio { display: flex; gap: .9rem; justify-content: center; width: 100%; }
+.trio-note { margin: .9rem 0 0; text-align: center; font-size: .86rem; color: var(--ink-mid); }
+.trio button {
+  flex: 1 1 0; max-width: 9.5rem; padding: 0; border: 0; background: none;
+  color: var(--ink-mid); cursor: pointer; font: .84rem var(--label);
+}
+.trio .mini {
+  display: block; padding: 4px; border-radius: 20px; background: #0D0F12;
+  border: 2px solid transparent; margin-bottom: .55rem; transition: transform .15s;
+}
+.trio img { display: block; width: 100%; height: auto; border-radius: 15px; }
+@media (hover: hover) { .trio button:hover .mini { transform: translateY(-3px); } }
+.trio button[aria-pressed="true"] { color: var(--ink); font-weight: 700; }
+.trio button[aria-pressed="true"] .mini { border-color: var(--record); }
+.trio button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+/* Notifications are Android's, not the app's: drawn in the phone's own
+   type in every look. Their words are the app's (NOTIFICATIONS). */
+.shade {
+  width: 100%; max-width: 25rem; padding: .75rem; border-radius: 24px;
+  background: var(--code-bg); display: flex; flex-direction: column; gap: .5rem;
+  font-family: var(--sans);
+}
+.notif {
+  background: var(--raise); border-radius: 18px; padding: .75rem 1rem .7rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .1);
+}
+.notif .app { display: flex; align-items: center; gap: .4rem; font-size: .74rem; color: var(--ink-mid); }
+.notif .app img { width: 16px; height: 16px; border-radius: 50%; }
+.notif strong { display: block; font-size: .93rem; margin-top: .3rem; }
+.notif p { margin: .1rem 0 0; font-size: .85rem; line-height: 1.42; color: var(--ink-mid); }
+.notif .acts { display: flex; flex-wrap: wrap; gap: .3rem 1.3rem; margin-top: .55rem; font-size: .82rem; font-weight: 600; color: var(--accent); }
+
+/* MEASURED, DRAWN TO SCALE. Each chart is a measurement the docs already
+   give with its phone and date (MEASURES), every bar placed by its own
+   numbers. HTML rather than an SVG, so its words stay readable on a phone. */
+.chart { width: 100%; max-width: 31rem; margin: 0; }
+.chart-title { font: 700 1rem/1.35 var(--display); margin: 0 0 1rem; }
+.tl-row + .tl-row { margin-top: .85rem; }
+.tl-label { display: block; font: 600 .82rem var(--label); margin-bottom: .3rem; }
+.tl-track { position: relative; height: 2.1rem; }
+.seg {
+  position: absolute; top: 0; bottom: 0; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; white-space: nowrap; padding: 0 .3rem;
+  font: 600 .78rem var(--label); border-radius: min(var(--radius-sm), 6px);
+}
+.seg.ring { background: var(--line); color: var(--ink-mid); }
+.seg.talk, .seg.down { background: var(--record); color: var(--surface); }
+.seg.ok { background: var(--play); color: var(--surface); }
+.seg.range { background: color-mix(in srgb, var(--record) 30%, transparent); color: var(--ink); }
+.seg.lost, .seg.none { background: none; border: 1.5px dashed var(--ink-mid); color: var(--ink-mid); }
+.seg.none { border-color: var(--line); }
+.tl-axis {
+  position: relative; height: 1.5rem; margin-top: .55rem; border-top: 1px solid var(--line);
+  font: .74rem var(--label); color: var(--ink-mid);
+}
+.tl-axis span { position: absolute; top: .3rem; transform: translateX(-50%); white-space: nowrap; }
+.tl-axis span:first-child { transform: none; }
+.tl-axis span:last-child { transform: translateX(-100%); }
+.chart figcaption { margin-top: .9rem; font-size: .9rem; color: var(--ink-mid); }
+.chart .src { display: block; margin-top: .35rem; font: .74rem/1.4 var(--label); opacity: .85; }
+main:not(.home) .chart { margin: 1.6rem 0; max-width: none; }
 
 .how { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem 3.5rem; align-items: center; }
 @media (max-width: 54rem) { .how { grid-template-columns: minmax(0, 1fr); } }
@@ -425,7 +1029,8 @@ main.home { max-width: none; padding: 0 0 2rem; }
   counter-increment: n; content: counter(n);
   position: absolute; left: 0; top: .1rem; width: 1.8rem; height: 1.8rem;
   border-radius: 50%; display: grid; place-items: center;
-  font-weight: 700; font-size: .88rem; background: var(--accent); color: var(--surface);
+  font: var(--num-weight) .88rem var(--num-font); background: var(--num-bg); color: var(--num-ink);
+  border: 2px solid var(--num-edge); text-shadow: 0 0 6px var(--num-glow);
 }
 
 /* The diagram's colours are the page's, so it changes theme with it. */
@@ -439,8 +1044,21 @@ main.home { max-width: none; padding: 0 0 2rem; }
 .dg-label { fill: var(--ink-mid); font: 15px var(--body); }
 .dg-line { stroke: var(--ink-mid); stroke-width: 2; fill: none; }
 .dg-head { fill: var(--ink-mid); }
-.dg-num { fill: var(--accent); }
-.dg-num-text { fill: var(--surface); font: 700 15px var(--body); text-anchor: middle; dominant-baseline: central; }
+.dg-num { fill: var(--num-bg); stroke: var(--num-edge); stroke-width: 2; }
+.dg-num-text { fill: var(--num-ink); font: var(--num-weight) 15px var(--num-font); text-anchor: middle; dominant-baseline: central; }
+/* The step being read, lit, and the others stepped back: pointing at a step
+   in the list lights its part, and the first time the diagram comes into
+   view it walks through the four once (the script). The movement is the
+   order the recorder is built in, nothing else. */
+.dg-head.lit { fill: var(--record); }
+.dg-step, .numbered li { transition: opacity .25s, color .25s; }
+.how-box.walking .dg-step:not(.lit) { opacity: .32; }
+.dg-step.lit .dg-node { stroke: var(--record); stroke-width: 3; }
+.dg-step.lit .dg-line { stroke: var(--record); marker-end: url(#dg-arrow-lit); }
+.dg-step.lit .dg-num { fill: var(--num-lit-bg); stroke: var(--num-lit-edge); }
+.how-box.walking .numbered li:not(.lit) { color: var(--ink-mid); }
+.numbered li.lit::before { background: var(--num-lit-bg); border-color: var(--num-lit-edge); }
+.how-box.solo .diagram { margin-bottom: 2rem; }
 
 /* TWO CARDS THAT LINE UP. The headings are a row of their own, sitting on its
    bottom edge, so a heading that wraps does not push its card below the other;
@@ -469,7 +1087,7 @@ main.home { max-width: none; padding: 0 0 2rem; }
   .devices.tested { order: 4; }
 }
 .table-card {
-  background: var(--raise); border: 1px solid var(--line); border-radius: 18px;
+  background: var(--raise); border: 1px solid var(--line); border-radius: var(--radius);
   overflow: hidden;
 }
 .table-card table { margin: 0; }
@@ -479,12 +1097,24 @@ main.home { max-width: none; padding: 0 0 2rem; }
   .table-card table { font-size: .88rem; }
   .table-card th, .table-card td { padding: .8rem .65rem; }
 }
-.yes, .no {
-  display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem;
-  border-radius: 50%; font-weight: 700; margin-right: .45rem; vertical-align: middle;
+/* Android's versions as a strip, a band for each answer: what was a table of
+   "12 and 13" and "14 and newer" shows where the line falls. */
+.strip { table-layout: fixed; }
+.strip th:first-child { width: 31%; }
+.strip th { text-align: center; font-family: var(--label); }
+.strip th:first-child, .strip th[scope="row"] { text-align: left; color: var(--ink); }
+.strip td { text-align: center; font-weight: 600; font-size: .9rem; line-height: 1.35; }
+.strip td.y { background: color-mix(in srgb, var(--play) 14%, transparent); color: var(--play); }
+.strip td.n { background: color-mix(in srgb, var(--ink-mid) 9%, transparent); color: var(--ink-mid); font-weight: 400; }
+/* On a phone the labels take less and the cells pad less: two versions'
+   width was too narrow for "Android does not allow it", which broke over five
+   lines on the Honor (2026-10-27). */
+@media (max-width: 38rem) {
+  .strip th { font-size: .8rem; }
+  .strip td { font-size: .8rem; }
+  .strip th:first-child { width: 28%; }
+  .strip th, .strip td { padding-left: .35rem; padding-right: .35rem; }
 }
-.yes { color: var(--play); background: color-mix(in srgb, var(--play) 15%, transparent); }
-.no { color: var(--ink-mid); background: color-mix(in srgb, var(--ink-mid) 12%, transparent); }
 .devices { list-style: none; padding: 0; margin: 0; display: grid; grid-template-rows: repeat(3, 1fr); }
 .devices li {
   padding: .75rem 1.1rem; font-weight: 600; border-bottom: 1px solid var(--line);
@@ -495,9 +1125,8 @@ main.home { max-width: none; padding: 0 0 2rem; }
 
 .band {
   margin-top: 5.5rem; padding-bottom: 4rem;
-  background: var(--raise); border-block: 1px solid var(--line);
+  background: var(--band); border-block: 1px solid var(--line);
 }
-.band .card { background: var(--surface); }
 .band .links { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: 1.8rem 0 0; }
 
 .faq { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.6fr); gap: 1rem 3.5rem; align-items: start; }
@@ -533,9 +1162,96 @@ main.home { max-width: none; padding: 0 0 2rem; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .shot, .tile, .faq summary::after { transition: none; }
-  .shot:hover, .tile:hover { transform: none; }
+  .shot, .thumbs button, .trio .mini, .faq summary::after, .datum summary::after,
+  .dg-step, .numbered li { transition: none; }
+  .shot:hover, .thumbs button:hover, .trio button:hover .mini { transform: none; }
 }
+
+/* ── Deck: a pocket recorder ──
+   The app's Deck, on the page (Theme.kt, LookColors.kt): engraved type
+   throughout, the screen titles on an LCD in Doto - lit green in light, a
+   negative that glows at night - keys that stand up off the face, and
+   section labels in capitals with a rule to the edge. */
+:root[data-look="deck"] h1, :root[data-look="deck"] h2 {
+  text-transform: uppercase; letter-spacing: .03em; font-weight: 400;
+}
+/* The rule runs on from the heading's last line to the edge: an inline line
+   as wide as the heading, cut off by it. Not a flex row - that would pull a
+   heading's <code> or <em> apart into items of their own. */
+:root[data-look="deck"] h2 { overflow: hidden; }
+:root[data-look="deck"] h2::after {
+  content: ""; display: inline-block; vertical-align: middle; width: 100%; height: 1px;
+  margin: 0 -100% 0 1rem; background: var(--line);
+}
+:root[data-look="deck"] .faq h2::after, :root[data-look="deck"] .closing h2::after { display: none; }
+:root[data-look="deck"] .hero .lcd, :root[data-look="deck"] main:not(.home) h1 {
+  background: var(--lcd); color: var(--lcd-ink); border: 3px solid var(--lcd-edge);
+  border-radius: 12px; box-shadow: inset 0 2px 10px rgba(0, 0, 0, .22);
+  text-shadow: 0 0 9px var(--lcd-glow);
+}
+:root[data-look="deck"] main:not(.home) h1 {
+  font-family: var(--lcdface); font-weight: 800; letter-spacing: .02em;
+  padding: .55rem 1rem .45rem; line-height: 1.15;
+}
+:root[data-look="deck"] .hero .lcd { padding: 1.15rem 1.35rem 1.3rem; margin-bottom: 1.5rem; }
+:root[data-look="deck"] .hero h1 {
+  font-family: var(--lcdface); font-weight: 800; letter-spacing: .01em;
+  margin: .8rem 0 0; font-size: clamp(2.1rem, 4.8vw, 3.3rem); line-height: 1.08;
+}
+:root[data-look="deck"] .hero h1 span { color: inherit; opacity: .62; }
+/* The eyebrow as the LCD's small print: a boxed legend, as AUTO ANS MSG are. */
+:root[data-look="deck"] .hero .eyebrow {
+  background: none; color: var(--lcd-ink); border: 1.5px solid currentColor;
+  border-radius: 3px; padding: .05rem .4rem; font-weight: 400; font-size: .76rem;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+:root[data-look="deck"] .theme, :root[data-look="deck"] .look {
+  background: var(--key); border-color: var(--key-edge); box-shadow: 0 2px 0 var(--key-edge);
+}
+:root[data-look="deck"] .store { border-radius: 10px; }
+:root[data-look="deck"] .store.github { background: var(--key); border-color: var(--key-edge); box-shadow: 0 3px 0 var(--key-edge); }
+:root[data-look="deck"] .store.fdroid { box-shadow: 0 3px 0 #0D47A1; }
+:root[data-look="deck"] .store strong { font-weight: 400; letter-spacing: .02em; }
+:root[data-look="deck"] th { text-transform: uppercase; letter-spacing: .05em; font-weight: 400; font-size: .84rem; }
+:root[data-look="deck"] .reason h3 svg { color: var(--ink); }
+:root[data-look="deck"] .dg-node.key { stroke: var(--lcd-edge); }
+
+/* ── Multitrack: a sound editor ──
+   Space Grotesk for names and titles, JetBrains Mono for the rest; screen
+   titles and labels in spaced capitals, the day markers' amber for table
+   heads, a red tab line under what you point at, square-cornered lanes. */
+:root[data-look="multitrack"] main:not(.home) h1 {
+  font-family: var(--label); text-transform: uppercase; letter-spacing: .14em;
+  font-weight: 600; font-size: clamp(1.35rem, 3.4vw, 1.75rem);
+}
+:root[data-look="multitrack"] .hero h1 span { color: var(--play); }
+/* What is said about a thing in the editor's mono, as the app's smaller
+   text is; the manual's running text stays in Space Grotesk. */
+:root[data-look="multitrack"] :is(.intro, .reason p, .feature p, .steps p, .tour-text,
+  .gallery-note, .tiles-note, .muted, .lead, figcaption, .faq details > div, .status p) {
+  font-family: var(--label); font-size: .9rem; line-height: 1.6;
+}
+:root[data-look="multitrack"] .bar nav a, :root[data-look="multitrack"] .theme,
+:root[data-look="multitrack"] .look, :root[data-look="multitrack"] .support-btn {
+  text-transform: uppercase; letter-spacing: .1em; font-size: .74rem;
+}
+:root[data-look="multitrack"] .bar nav a { padding-bottom: .2rem; }
+:root[data-look="multitrack"] .bar nav a:hover { color: var(--ink); box-shadow: 0 2px 0 var(--record); }
+:root[data-look="multitrack"] .eyebrow {
+  text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; font-weight: 600;
+  color: var(--play); background: color-mix(in srgb, var(--play) 13%, transparent);
+}
+:root[data-look="multitrack"] th {
+  font-family: var(--label); text-transform: uppercase; letter-spacing: .1em;
+  font-size: .72rem; color: var(--marker);
+}
+:root[data-look="multitrack"] .strip th[scope="row"], :root[data-look="multitrack"] .strip th:first-child { color: var(--marker); }
+:root[data-look="multitrack"] .reason { border-top-width: 1px; border-top-color: var(--line); }
+:root[data-look="multitrack"] .reason h3 svg { color: var(--play); }
+:root[data-look="multitrack"] .store { border-radius: 6px; }
+:root[data-look="multitrack"] .store small, :root[data-look="multitrack"] .faq summary,
+:root[data-look="multitrack"] .tour-side h3 { letter-spacing: .02em; }
+:root[data-look="multitrack"] .more { font-family: var(--label); font-size: .86rem; letter-spacing: .02em; }
 
 /* EACH SCREEN IS ON THE PAGE TWICE, once per theme, and the page's theme
    decides which shows - the three states again, as with the palette. Both are

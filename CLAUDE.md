@@ -28,7 +28,7 @@ Wireless debugging and starts a recorder that runs as the shell user
 
 ## Generated files - edit the source, then regenerate
 
-- `docs/*.html`, `docs/SETUP.md`, `docs/jemrec.css`, `docs/jemrec.js`: from
+- `docs/*.html`, `docs/SETUP.md`, `docs/jemrec.css`, `docs/jemrec.js`, `docs/fonts/`: from
   `tools/build_site.py`.
 - `docs/screenshots/` and the F-Droid screenshots: `tools/shoot.py`, on the
   phone, with the debug build's invented people.
@@ -40,10 +40,12 @@ They must all say the same thing; a feature is not done until they do.
 - `README.md`: the "What you can do" table, the FAQ, the phones table, the
   privacy and permission lines, the tests badge and the developer section's
   test count.
-- `tools/build_site.py`, then run it: the home page's tiles, FAQ and "Will it
+- `tools/build_site.py`, then run it: the home page's feature rows (`FEATURES`,
+  `FEATURE_ROWS`, with a picture for a new row), FAQ and "Will it
   work on your phone?", `HOW_BODY`, the manual (`SETUP` blocks: its own
   section, Settings, the Calls tab's statuses, the notifications table) and
-  the privacy policy for any new data kept or network asked.
+  the privacy policy (`PRIVACY_DATA`: its words, and the chips that sum them
+  up) for any new data kept or network asked.
 - `docs/ARCHITECTURE.md`: a section of its own, the contents line, the
   permission table if one changes.
 - `docs/DEVELOPMENT.md` and `tools/README.md`: test counts, emulator checks.

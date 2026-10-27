@@ -50,7 +50,9 @@ and marked `PATCHED:` at the site. The full licence text is in
 Four typefaces, bundled unmodified in `app/src/main/res/font/` from
 <https://github.com/google/fonts> (downloaded 2026-10-23), each under the SIL
 Open Font License 1.1. The licence text of each travels in the app, in
-`app/src/main/assets/licenses/`.
+`app/src/main/assets/licenses/`. The website wears the same looks and serves
+the same files, unmodified, from `docs/fonts/` with each licence text beside
+its font (`tools/build_site.py` copies both).
 
 - **Doto** (`doto.ttf`, the LCD): Copyright 2024 The Doto Project Authors.
   <https://github.com/oliverlalan/Doto>
@@ -69,6 +71,14 @@ F-Droid's own logo, unmodified. Copyright 2012 William Theaker, 2013 Robert
 Martinez, 2015 Andrew Nayenko. Dual licensed CC-BY-SA 3.0 Unported **OR**
 GPL-3.0-or-later; used here under **CC-BY-SA 3.0**. It is not part of the app.
 <https://gitlab.com/fdroid/artwork>
+
+## Material icons - the website only
+
+The icons beside the website's reasons and privacy points are Google's Material
+Icons, filled - the set the app's own icons come from - their shapes copied from
+`src/<group>/<name>/materialicons/24px.svg` in
+<https://github.com/google/material-design-icons> (read 2026-10-27), under the
+Apache License 2.0.
 
 ## GitHub mark - the website only
 

@@ -18,7 +18,12 @@
     <div class="bar-end">
       <nav><a href="index.html" class="roomy">Home</a><a href="how-it-works.html" class="roomy">How it works</a><a href="privacy-policy.html" class="roomy">Privacy</a><a class="roomy" href="https://github.com/jemcik/JemRec">GitHub</a></nav>
       <a class="support-btn" href="https://donatello.to/jemcik" aria-label="Support JemRec on Donatello"><span aria-hidden="true">&#9829;</span><span class="support-name">Support</span></a>
-      <button class="theme" type="button" aria-label="Theme">
+      <button class="look" type="button" aria-label="Look">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="m2 12 10 5 10-5"/><path d="m2 16 10 5 10-5"/>
+        </svg><span class="look-name">Memo</span>
+      </button><button class="theme" type="button" aria-label="Theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" aria-hidden="true">
           <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
@@ -27,9 +32,18 @@
     </div>
   </div>
 </header>
-<main>
+<main class="manual">
   <h1>Setting up JemRec</h1>
   <p class="lead">Everything happens on the phone. You will not need a computer, a cable, or a second app. It takes about three minutes, and you do it once.</p>
+  <nav class="toc" aria-label="Contents">
+    <details><summary>Contents</summary>
+      <p>Setting up</p><ol><li><a href="#installing">Installing</a></li><li><a href="#step-1-open-jemrec-and-allow-notifications"><span class="n">1</span> Open JemRec and allow notifications</a></li><li><a href="#step-2-turn-on-developer-options"><span class="n">2</span> Turn on Developer options</a></li><li><a href="#step-3-turn-on-both-debugging-switches"><span class="n">3</span> Turn on both debugging switches</a></li><li><a href="#step-4-pair-from-your-notifications"><span class="n">4</span> Pair, from your notifications</a></li><li><a href="#step-5-wait-a-few-seconds"><span class="n">5</span> Wait a few seconds</a></li><li><a href="#step-6-test-it"><span class="n">6</span> Test it</a></li></ol>
+      <p>Using it</p><ol><li><a href="#where-recordings-go">Where recordings go</a></li><li><a href="#choosing-when-to-record">Choosing when to record</a></li><li><a href="#exact-call-tracking">Exact call tracking</a></li><li><a href="#whose-calls-to-keep">Whose calls to keep</a></li><li><a href="#file-names">File names</a></li><li><a href="#messenger-calls">Messenger calls</a></li><li><a href="#the-answering-machine">The answering machine</a></li><li><a href="#playing-sharing-and-deleting">Playing, sharing and deleting</a></li><li><a href="#the-calls-tab">The Calls tab</a></li><li><a href="#three-looks">Three looks</a></li><li><a href="#turning-jemrec-off">Turning JemRec off</a></li><li><a href="#off-and-debugging-with-it">Off, and debugging with it</a></li></ol>
+      <p>Keeping it running</p><ol><li><a href="#after-a-restart">After a restart</a></li><li><a href="#unplugging-from-a-computer">Unplugging from a computer</a></li><li><a href="#stopped-in-the-background">Stopped in the background</a></li></ol>
+      <p>When you need it</p><ol><li><a href="#what-the-app-tells-you">What the app tells you</a></li><li><a href="#settings">Settings</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#uninstalling">Uninstalling</a></li><li><a href="#two-honest-warnings">Two honest warnings</a></li></ol>
+    </details>
+  </nav>
+  <div class="manual-text">
   <figure class="video">
     <div class="video-frame">
       <a href="https://www.youtube.com/watch?v=rt25pZd8R9M" data-youtube="rt25pZd8R9M" aria-label="Play the setup video (2:22), from YouTube">
@@ -53,6 +67,7 @@
   </table>
   <p>If yours refuses, those are the two things to try, in that order: open the file from a file manager rather than the browser, and only then consider turning Play Protect off for the minute it takes — and back on afterwards.</p>
   <p>Every release is signed with the same key, so each one installs over the one before it. If you would rather check what you downloaded than trust it, <code>apksigner verify --print-certs</code> on the file should report SHA-256 <code>50aeab3630f0198ea3845db51413b1ad29582f78240fa2df6fe55ba8537afdf8</code>, the same digest the release workflow prints in its log on every run.</p>
+  <div class="step-rail" aria-hidden="true"><i class="c"></i><i></i><i></i><i></i><i></i><i></i><span>1 of 6</span></div>
   <h2 id="step-1-open-jemrec-and-allow-notifications">Step 1 — Open JemRec and allow notifications</h2>
   <ol>
     <li>Open <strong>JemRec</strong>.</li>
@@ -62,6 +77,7 @@
   <p>Notifications are not decoration here. They are how the app tells you a call is being recorded, how it asks whether to record one, and where you will type the pairing code in step 4.</p>
   <p>JemRec does <strong>not</strong> ask for microphone access and does not have it. The recording is done by a separate, more privileged helper that the app starts later; the app itself only collects the finished file.</p>
   <p><strong>Then one question.</strong> Before you switch anything on, JemRec says what stays on: USB debugging and Wireless debugging, for as long as it is installed, turned back on if they go off. Android shows a notification for as long as debugging is on, and JemRec asks whether to hide it. Either answer works. Hidden, nothing on screen reminds you that debugging is on; you can change it later in Settings.</p>
+  <div class="step-rail" aria-hidden="true"><i class="d"></i><i class="c"></i><i></i><i></i><i></i><i></i><span>2 of 6</span></div>
   <h2 id="step-2-turn-on-developer-options">Step 2 — Turn on Developer options</h2>
   <p>Skip this if Developer options are already on.</p>
   <ol>
@@ -72,6 +88,7 @@
   </ol>
   <p>You should see <em>You are now a developer</em>.</p>
   <p>JemRec moves on by itself once it sees them on. Some phones on Android 17, Pixels from the September 2026 update among them, no longer tell apps whether Developer options are on, so JemRec cannot see it. There the card has a <strong>They are on already</strong> button: tap it once they are.</p>
+  <div class="step-rail" aria-hidden="true"><i class="d"></i><i class="d"></i><i class="c"></i><i></i><i></i><i></i><span>3 of 6</span></div>
   <h2 id="step-3-turn-on-both-debugging-switches">Step 3 — Turn on both debugging switches</h2>
   <p><strong>Be on Wi-Fi before you start this.</strong> Wireless debugging only stays on while the phone has a Wi-Fi connection.</p>
   <ol>
@@ -82,6 +99,7 @@
   </ol>
   <p><strong>Why both.</strong> Wireless debugging is the channel JemRec uses to start its recorder. USB debugging — the setting, with no cable involved — is what keeps Android's debugging service alive, and without it Wireless debugging switches itself off again before the app can connect.</p>
   <div class="note info"><p>If you see an old <strong>JemRec</strong> under <em>Paired devices</em>, tap the gear beside it and forget it. It is left over from a previous install and cannot be used: a reinstalled app has a new key and must pair again.</p></div>
+  <div class="step-rail" aria-hidden="true"><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i></i><i></i><span>4 of 6</span></div>
   <h2 id="step-4-pair-from-your-notifications">Step 4 — Pair, from your notifications</h2>
   <p><strong>Read this step before starting it.</strong> The obvious approach does not work, and knowing why saves repeating it.</p>
   <p>The pairing dialog exists only while Settings is on screen. Leave Settings — by switching to JemRec, or by pressing Back — and Android tears the dialog down instantly, taking the code with it.</p>
@@ -96,9 +114,11 @@
   <p>You do not need the port number. JemRec finds that itself.</p>
   <p>Then watch that same notification. It says what is happening, and if a debugging switch turned itself off it says which one — turn it back on and the app connects by itself. There is no need to pair again or to fetch a new code.</p>
   <div class="note info"><p>The code changes every time the dialog is reopened, so always use the one on screen. If you swiped the notification away, tap <strong>Show the code field again</strong> in JemRec to bring it back.</p></div>
+  <div class="step-rail" aria-hidden="true"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i></i><span>5 of 6</span></div>
   <h2 id="step-5-wait-a-few-seconds">Step 5 — Wait a few seconds</h2>
   <p>JemRec does the rest by itself: it grants itself the one privileged setting it needs, starts the recorder, and begins watching for calls. When it is done the header says <strong>Ready to record</strong>.</p>
   <p>There is no permanent notification. The app is dormant between calls — the recorder is a separate process that does the watching — so a notification appears for the length of a call, and one more when it ends, with the recording on it.</p>
+  <div class="step-rail" aria-hidden="true"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><span>6 of 6</span></div>
   <h2 id="step-6-test-it">Step 6 — Test it</h2>
   <p>Call someone and talk for twenty seconds, with both of you speaking.</p>
   <ul>
@@ -213,18 +233,18 @@
   <p>More often the phone does not stop JemRec but <strong>freezes</strong> it. Tried twice on that Honor, it froze JemRec both times: after an unplug with the screen off, the recorder stayed down 8.5 minutes, until the screen was touched. JemRec times its own restart after a cable: the first moment it is allowed to run and finds minutes gone instead of seconds, it puts up the same notification, and says how long it was held back once the recorder is back.</p>
   <h2 id="what-the-app-tells-you">What the app tells you</h2>
   <p>The header is the honest indicator:</p>
-  <table>
-    <tr><th>It says</th><th>Meaning</th></tr>
-    <tr><td><strong>Ready to record</strong></td><td>A call would be recorded right now.</td></tr>
-    <tr><td><strong>Recording call</strong></td><td>In the notification, during a call.</td></tr>
-    <tr><td><strong>Cannot record, needs Wi-Fi</strong></td><td>Join any Wi-Fi and it resumes on its own. Usually a reboot, or a long stretch away from a network.</td></tr>
-    <tr><td><strong>Cannot record, tap to start it again</strong></td><td>On Wi-Fi, the recorder did not come back. Tap the line to try now.</td></tr>
-    <tr><td><strong>Cannot record, tap to allow this Wi-Fi</strong></td><td>You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick <strong>Always allow on this network</strong> and tap <strong>Allow</strong>.</td></tr>
-    <tr><td><strong>Cannot record, tap to pair again</strong></td><td>Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before.</td></tr>
-    <tr><td><strong>Starting…</strong></td><td>Rebuilding the recorder. A few seconds.</td></tr>
-    <tr><td><strong>Off</strong></td><td>You turned the switch off.</td></tr>
-    <tr><td><strong>Off</strong>, debugging off too</td><td>You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi.</td></tr>
-  </table>
+  <div class="status-list">
+    <div class="status"><div><span class="hd hd-memo look-memo"><span class="hd-disc"><i></i></span><span><b class="ready">Ready to record</b></span></span><span class="hd hd-deck look-deck"><span class="hd-key"></span><span class="hd-lcd"><b class="ready">REC READY</b></span></span><span class="hd hd-multitrack look-multitrack"><span class="hd-ring"><i></i></span><span><b class="ready">ARMED</b></span></span></div><p>A call would be recorded right now.</p></div>
+    <div class="status"><div><span class="hd hd-notif"><img src="icon.png" alt="" width="18" height="18"><b>Recording call</b></span></div><p>In the notification, during a call.</p></div>
+    <div class="status"><div><span class="hd hd-memo look-memo"><span class="hd-disc"><i></i></span><span><b class="alarm">Cannot record</b><small>Join any Wi-Fi to resume</small></span></span><span class="hd hd-deck look-deck"><span class="hd-key"></span><span class="hd-lcd"><b class="alarm">CAN'T REC</b><small>JOIN ANY WI-FI · RESUMES ITSELF</small></span></span><span class="hd hd-multitrack look-multitrack"><span class="hd-ring"><i></i></span><span><b class="alarm">NO LINK</b><small>JOIN ANY WI-FI · RESUMES ITSELF</small></span></span></div><p>Join any Wi-Fi and it resumes on its own. Usually a reboot, or a long stretch away from a network.</p></div>
+    <div class="status"><div><span class="hd hd-memo look-memo"><span class="hd-disc"><i></i></span><span><b class="alarm">Cannot record</b><small class="tap">Tap to start it again</small></span></span><span class="hd hd-deck look-deck"><span class="hd-key"></span><span class="hd-lcd"><b class="alarm">CAN'T REC</b><small>TAP TO START IT AGAIN</small></span></span><span class="hd hd-multitrack look-multitrack"><span class="hd-ring"><i></i></span><span><b class="alarm">NO LINK</b><small>TAP TO START IT AGAIN</small></span></span></div><p>On Wi-Fi, the recorder did not come back. Tap the line to try now.</p></div>
+    <div class="status"><div><span class="hd hd-memo look-memo"><span class="hd-disc"><i></i></span><span><b class="alarm">Cannot record</b><small class="tap">Tap to allow this Wi-Fi</small></span></span><span class="hd hd-deck look-deck"><span class="hd-key"></span><span class="hd-lcd"><b class="alarm">CAN'T REC</b><small>TAP TO ALLOW THIS WI-FI</small></span></span><span class="hd hd-multitrack look-multitrack"><span class="hd-ring"><i></i></span><span><b class="alarm">NO LINK</b><small>TAP TO ALLOW THIS WI-FI</small></span></span></div><p>You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick <strong>Always allow on this network</strong> and tap <strong>Allow</strong>.</p></div>
+    <div class="status"><div><span class="hd hd-memo look-memo"><span class="hd-disc"><i></i></span><span><b class="alarm">Cannot record</b><small class="tap">Tap to pair again</small></span></span><span class="hd hd-deck look-deck"><span class="hd-key"></span><span class="hd-lcd"><b class="alarm">CAN'T REC</b><small>TAP TO PAIR AGAIN</small></span></span><span class="hd hd-multitrack look-multitrack"><span class="hd-ring"><i></i></span><span><b class="alarm">NO LINK</b><small>TAP TO PAIR AGAIN</small></span></span></div><p>Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before.</p></div>
+    <div class="status"><div><span class="hd hd-memo look-memo"><span class="hd-disc busy"><i></i></span><span><b class="idle">Starting...</b></span></span><span class="hd hd-deck look-deck"><span class="hd-key"></span><span class="hd-lcd"><b class="idle">STARTING</b></span></span><span class="hd hd-multitrack look-multitrack"><span class="hd-ring"><i></i></span><span><b class="idle">ARMING</b></span></span></div><p>Rebuilding the recorder. A few seconds.</p></div>
+    <div class="status"><div><span class="hd hd-memo look-memo"><span class="hd-disc off"><i></i></span><span><b class="idle">Off</b><small>Tap the button to record calls</small></span></span><span class="hd hd-deck look-deck"><span class="hd-key off"></span><span class="hd-lcd off"><b class="idle">OFF</b><small>PRESS REC TO RECORD CALLS</small></span></span><span class="hd hd-multitrack look-multitrack"><span class="hd-ring off"><i></i></span><span><b class="idle">DISARMED</b><small>TAP THE BUTTON TO RECORD CALLS</small></span></span></div><p>You turned the switch off.</p></div>
+    <div class="status"><div><span class="hd hd-memo look-memo"><span class="hd-disc off"><i></i></span><span><b class="idle">Off</b><small>Debugging off · turn on over Wi-Fi</small></span></span><span class="hd hd-deck look-deck"><span class="hd-key off"></span><span class="hd-lcd off"><b class="idle">OFF</b><small>DEBUGGING OFF · REC NEEDS WI-FI</small></span></span><span class="hd hd-multitrack look-multitrack"><span class="hd-ring off"><i></i></span><span><b class="idle">DISARMED</b><small>DEBUGGING OFF · ON NEEDS WI-FI</small></span></span></div><p>You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi.</p></div>
+  </div>
+  <p class="muted">Drawn in the look this page is in; the Look button at the top shows the others, each worded its own way.</p>
   <p>And when the app is closed, in notifications:</p>
   <table>
     <tr><th>It says</th><th>Meaning</th></tr>
@@ -292,6 +312,7 @@
   <h2 id="two-honest-warnings">Two honest warnings</h2>
   <p><strong>The other person is being recorded too.</strong> Whether you may do that without telling them differs by country and sometimes by region. That is your call to make, not the app's.</p>
   <p><strong>This uses debugging switches, and they stay on.</strong> They are developer features that let software on your phone act with elevated privileges. JemRec needs them to record calls at all, so it keeps them on, and turns them back on if they go off. While they are on, a computer that has been paired with this phone can connect to it on the same Wi-Fi, and one you have allowed before can connect over a cable — so check <em>Wireless debugging → Paired devices</em> now and then and remove any you do not recognise. If you stop using JemRec, uninstall it first, then turn Wireless debugging, USB debugging and Developer options back off.</p>
+  </div>
 </main>
 <footer>
   <div class="column">
