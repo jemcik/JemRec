@@ -305,16 +305,22 @@ final class PhoneCapture implements AudioCapture {
         // A call that began on the mixer is never taken off it but for the
         // modem's voice path: nothing to ask again.
         mixerMidCall = mixer && midCall && !startedOnMixer;
+        lookSoon();
+        return true;
+    }
+
+    /** A look at what plays, a moment after a swap. Nothing waits on it:
+     *  AudioScene says in the report what went wrong. */
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private void lookSoon() {
         ScheduledExecutorService thread = modeThread;
         if (thread != null) {
             try {
-                // AudioScene says in the report what went wrong, if anything.
-                ScheduledFuture<?> unused = thread.schedule(call::lookAround, LOOK_AFTER_MS, TimeUnit.MILLISECONDS);
+                thread.schedule(call::lookAround, LOOK_AFTER_MS, TimeUnit.MILLISECONDS);
             } catch (Throwable ignored) {
                 // Shut down: the call is over.
             }
         }
-        return true;
     }
 
     private synchronized boolean isStopped() {

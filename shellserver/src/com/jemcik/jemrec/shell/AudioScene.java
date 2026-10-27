@@ -26,10 +26,6 @@ final class AudioScene {
     private AudioScene() {
     }
 
-    // getAudioDeviceInfo: deprecated in Android 16 for a list of devices, and
-    // still answers there; the first is enough to say where a player plays,
-    // and the list is not there before 16.
-    @SuppressWarnings("deprecation")
     static void lookInto(CallReport report, AudioManager audio) {
         try {
             int me = android.os.Process.myUid();
@@ -37,10 +33,9 @@ final class AudioScene {
             for (AudioPlaybackConfiguration p : audio.getActivePlaybackConfigurations()) {
                 AudioAttributes a = p.getAudioAttributes();
                 int uid = orMinusOne(Voip.uidOf(p));
-                AudioDeviceInfo device = p.getAudioDeviceInfo();
                 playing.add(CallReport.player(uid, who(uid, me), a.getUsage(), a.getContentType(),
                         a.getAllowedCapturePolicy(), hiddenInt(p, "getPlayerType"), hiddenInt(a, "getAllFlags"),
-                        device == null ? -1 : device.getType()));
+                        deviceOf(p)));
             }
             List<String> capturing = new ArrayList<>();
             for (AudioRecordingConfiguration r : audio.getActiveRecordingConfigurations()) {
@@ -69,6 +64,32 @@ final class AudioScene {
             }
         }
         return CallReport.who(uid, me, packages == null ? new String[0] : packages);
+    }
+
+    /**
+     * The type of the device a player plays to, -1 for none named. Android 16
+     * lists them (getAudioDeviceInfos, a hidden system call) and deprecates
+     * the single one, as "never populated"; before 16 the single one is all
+     * there is, and it named the device of every player that had one on the
+     * Honor and the emulators (2026-10-27). So the list where it names one,
+     * else the single one - both by reflection, as the other hidden parts.
+     */
+    private static int deviceOf(AudioPlaybackConfiguration player) {
+        try {
+            Object list = player.getClass().getMethod("getAudioDeviceInfos").invoke(player);
+            if (list instanceof List && !((List<?>) list).isEmpty()
+                    && ((List<?>) list).get(0) instanceof AudioDeviceInfo) {
+                return ((AudioDeviceInfo) ((List<?>) list).get(0)).getType();
+            }
+        } catch (Throwable ignored) {
+            // Before Android 16, or not allowed: the single one, below.
+        }
+        try {
+            Object one = player.getClass().getMethod("getAudioDeviceInfo").invoke(player);
+            return one instanceof AudioDeviceInfo ? ((AudioDeviceInfo) one).getType() : -1;
+        } catch (Throwable t) {
+            return -1;
+        }
     }
 
     private static int orMinusOne(@Nullable Integer value) {

@@ -52,7 +52,6 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.Mac;
@@ -1709,8 +1708,7 @@ public final class Main {
             Ln.i("recording: started -> " + name);
             lastReport = report;
             // The first look at what plays: by then a call's players are up.
-            ScheduledFuture<?> unused = LOOKS.schedule(() -> lookAround(report), PhoneCapture.LOOK_AFTER_MS,
-                    TimeUnit.MILLISECONDS);
+            lookSoon(report);
             return new RecordingSession(name, incoming, startedAt, app, file, out, recorder, report);
         }
 
@@ -1841,6 +1839,13 @@ public final class Main {
         t.setDaemon(true);
         return t;
     });
+
+    /** A look into [report] a moment from now, on the looks' own thread.
+     *  Nothing waits on it: AudioScene says in the report what went wrong. */
+    @SuppressWarnings("FutureReturnValueIgnored")
+    private static void lookSoon(CallReport report) {
+        LOOKS.schedule(() -> lookAround(report), PhoneCapture.LOOK_AFTER_MS, TimeUnit.MILLISECONDS);
+    }
 
     /** What is playing and capturing, into [report], while its call is
      *  still the one recorded. */
