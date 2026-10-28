@@ -15,6 +15,12 @@ import com.jemcik.jemrec.capture.DebugSwitchesOff
 import com.jemcik.jemrec.capture.switchesOff
 import com.jemcik.jemrec.capture.takesTheRecorder
 import com.jemcik.jemrec.capture.RecorderSwitch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The Quick Settings tile: JemRec's on/off switch, without opening JemRec.
@@ -50,6 +56,18 @@ class RecorderTile : TileService() {
         }
     }
 
+    /** For the one read a tap may need off the main thread (toggle). */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /** A turn-off being decided: a second tap meanwhile would still find
+     *  JemRec on, and ask or turn off twice. Main thread only. */
+    private var deciding = false
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+
     override fun onTileAdded() = setAdded(this, true)
 
     override fun onTileRemoved() = setAdded(this, false)
@@ -69,13 +87,29 @@ class RecorderTile : TileService() {
             return
         }
         val on = !RecorderSwitch.isOn(this)
-        // Turning off with all debugging, away from Wi-Fi: the same question
-        // the header's button asks, before anything happens.
-        if (!on && DebugSwitchesOff.asksBeforeOff(this)) {
-            openQuestion()
+        if (on) {
+            turn(true)
             return
         }
-        // Shown at once; the recorder catches up in the background.
+        // Turning off with all debugging, away from Wi-Fi: the same question
+        // the header's button asks, before anything happens. Whether Start
+        // without Wi-Fi's port would bring it back is a process (getprop),
+        // so read off the main thread; the tile is still bound a moment after
+        // its tap, and a tap lost to an unbind is only a tap to make again.
+        if (deciding) return
+        deciding = true
+        scope.launch {
+            try {
+                val asks = withContext(Dispatchers.IO) { DebugSwitchesOff.asksBeforeOff(this@RecorderTile) }
+                if (asks) openQuestion() else turn(false)
+            } finally {
+                deciding = false
+            }
+        }
+    }
+
+    /** Shown at once; the recorder catches up in the background. */
+    private fun turn(on: Boolean) {
         show(on, debuggingOff = !on && DebugSwitchesOff.mode(this).switchesOff().takesTheRecorder())
         RecorderSwitch.turnInBackground(this, on)
     }

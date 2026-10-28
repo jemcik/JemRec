@@ -4,9 +4,13 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.provider.Settings
 import android.util.Log
+import androidx.core.content.edit
+import com.jemcik.jemrec.Prefs
 
 /**
  * Brings the recorder back the instant Wi-Fi returns.
@@ -80,12 +84,87 @@ object NetworkRevive {
      * switch for nothing, waits out a connect that has nowhere to go, and
      * shows "Starting..." for ten seconds before admitting it. Unknown reads as
      * on, so a phone that cannot answer still gets its attempt.
+     *
+     * Any Wi-Fi the phone has joined, not only Android's default network: a
+     * Wi-Fi without internet stays joined while Android sends everything else
+     * over mobile data, and Wireless debugging - which asks only whether
+     * Wi-Fi is joined - works on it, as the alert promises ("Any network will
+     * do - it does not need internet"). Asking the default network said "not
+     * on Wi-Fi" there: the Android 12 AVD, 2026-10-28, its Wi-Fi joined with
+     * its internet blocked, mobile data the default, and the revive stopped.
      */
     fun onWifi(context: Context): Boolean = runCatching {
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return true
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
-        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        wifiNetwork(cm) != null
     }.getOrDefault(true)
+
+    /** The Wi-Fi network the phone has joined, default or not - not a VPN
+     *  over it, which carries its transports. */
+    @Suppress("DEPRECATION") // allNetworks: its replacement is a callback, and this is asked in passing
+    private fun wifiNetwork(cm: ConnectivityManager): Network? = cm.allNetworks.firstOrNull { network ->
+        cm.getNetworkCapabilities(network)?.let {
+            it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        } == true
+    }
+
+    /**
+     * Android refused Wireless debugging on the Wi-Fi the phone is on now:
+     * switched on, it read off again a moment later, with "Allow wireless
+     * debugging on this network?" on screen. Android 12 keeps the switch off
+     * while it asks and after Cancel, so every revive that switched it on
+     * asked again; on an allowed Wi-Fi it stays on - straight after all
+     * debugging comes back on too. Measured on the Android 12 AVD,
+     * 2026-10-28: refused, it read 0 with the question up, and a keep-alive
+     * after Cancel asked again; allowed, it read 1 for 25 s after Turn all
+     * debugging off and back on, and after the revive's own switch-on.
+     * (Android 17 leaves it on after Cancel and asks once - 0.10's notes.)
+     */
+    fun noteWirelessRefused(context: Context) {
+        val here = connection(context) ?: return
+        Prefs.of(context).edit { putString(KEY_REFUSED_ON, here) }
+    }
+
+    /** Asked again: the user, at Start without Wi-Fi's switch. */
+    fun forgetWirelessRefused(context: Context) {
+        Prefs.of(context).edit { remove(KEY_REFUSED_ON) }
+    }
+
+    /**
+     * Refused here and still off. Wireless debugging found [on] after all is
+     * an Allow - tapped on the question that stayed up, or from "Allow this
+     * Wi-Fi" - and the refusal is forgotten: kept, it would have revives
+     * leave the switch off the next time it goes off on this connection (an
+     * adbd restart can do that: on the Honor, 2026-10-28, it read 0 after
+     * the port was opened).
+     */
+    fun stillRefusedHere(context: Context, on: Boolean): Boolean {
+        if (!wirelessRefusedHere(context)) return false
+        if (on) forgetWirelessRefused(context)
+        return !on
+    }
+
+    fun wirelessRefusedHere(context: Context): Boolean {
+        val here = connection(context) ?: return false
+        return Prefs.of(context).getString(KEY_REFUSED_ON, null) == here
+    }
+
+    /**
+     * This Wi-Fi connection: the boot and the Wi-Fi network's handle (the
+     * Wi-Fi's, as for [onWifi], not the default network's). A handle is new
+     * for each join but not across boots - network ids start again, and the
+     * Android 12 AVD's Wi-Fi was network 101 or 102 at each boot - so a
+     * refusal noted before a restart would otherwise stand for a Wi-Fi
+     * allowed since.
+     */
+    private fun connection(context: Context): String? {
+        val handle = runCatching {
+            context.getSystemService(ConnectivityManager::class.java)?.let(::wifiNetwork)?.networkHandle
+        }.getOrNull()?.takeIf { it != 0L } ?: return null
+        val boot = Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+        return "$boot:$handle"
+    }
+
+    private const val KEY_REFUSED_ON = "wireless_debugging_refused_on"
 
     private fun pendingIntent(context: Context): PendingIntent {
         val intent = Intent(context, NetworkReviveReceiver::class.java)

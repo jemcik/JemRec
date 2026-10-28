@@ -65,8 +65,8 @@ private class JemAdbConnectionManager(context: Context) : AbsAdbConnectionManage
  * The unsolved half is DISCOVERY, not connection. The port above is ephemeral
  * and is advertised over mDNS, which needs a live network interface. With Wi-Fi
  * off there is nothing to browse, so the port has to be either remembered or
- * pinned. That is what makes the Wi-Fi-off state a real test rather than a
- * formality, and it is tracked separately.
+ * pinned. Pinning is what Start without Wi-Fi does: adbd's classic port, 5555,
+ * which listens with or without a network (StartWithoutWifi).
  */
 object AdbTransport {
 
@@ -77,8 +77,9 @@ object AdbTransport {
 
     /**
      * The legacy fixed ADB-over-TCP port. Only reachable if something has set
-     * `service.adb.tcp.port`; tried as a last resort because when it IS set it
-     * is stable across Wi-Fi state, which no mDNS-discovered port is.
+     * `service.adb.tcp.port` - Start without Wi-Fi, or a computer's `adb
+     * tcpip`; tried as a last resort because when it IS set it is stable
+     * across Wi-Fi state, which no mDNS-discovered port is.
      */
     const val LEGACY_TCP_PORT = 5555
 
@@ -90,7 +91,9 @@ object AdbTransport {
 
     /** The one reused shell, and the lock that stops two commands interleaving
      *  on it. A shared stream with a sentinel protocol is only correct while
-     *  exactly one caller is writing to it. */
+     *  exactly one caller is writing to it. Volatile: a connect drops it
+     *  (forgetShell) outside the lock that exec reads it under. */
+    @Volatile
     private var shell: ShellSession? = null
     private val mutex = Mutex()
 
@@ -106,6 +109,16 @@ object AdbTransport {
      */
     @Volatile
     var lastKnownConnected: Boolean = false
+        private set
+
+    /**
+     * The port the live connection was made on, 0 for none. On 5555 it came
+     * over Start without Wi-Fi's port - autoConnect's last resort, where
+     * Wireless debugging cannot be had - and closing that port would take the
+     * only way back to the recorder with it (CaptureDaemon.portChangeOver).
+     */
+    @Volatile
+    var connectedPort: Int = 0
         private set
 
     val isConnected: Boolean
@@ -154,8 +167,10 @@ object AdbTransport {
                     return@runCatching
                 }
                 Log.i(TAG, "connect: $host:$port")
+                forgetShell()
                 val ok = mgr.connect(host, port)
                 check(ok || mgr.isConnected) { "connect refused by adbd at $host:$port" }
+                connectedPort = port
                 Log.i(TAG, "connect: established")
             }
         }
@@ -176,6 +191,7 @@ object AdbTransport {
                     lastConnect = ConnectOutcome.CONNECTED
                     return@runCatching
                 }
+                forgetShell()
 
                 val discovered = discoverPort(context, AdbMdns.SERVICE_TYPE_TLS_CONNECT, timeoutMs)
                 if (discovered != null) {
@@ -188,6 +204,7 @@ object AdbTransport {
                         .getOrDefault(false) || mgr.isConnected
                     if (accepted) {
                         lastConnect = ConnectOutcome.CONNECTED
+                        connectedPort = discovered
                         return@runCatching
                     }
                     Log.w(TAG, "autoConnect: mDNS port $discovered did not accept us")
@@ -203,6 +220,57 @@ object AdbTransport {
                     "no adbd found by mDNS, and nothing listening on $LEGACY_TCP_PORT"
                 }
                 lastConnect = ConnectOutcome.CONNECTED
+                connectedPort = LEGACY_TCP_PORT
+            }
+        }
+
+    /**
+     * The shell kept from a connection before this one goes with it. A new
+     * connection is made only when the last one has died - adbd restarted,
+     * stopped with USB debugging - and the kept shell is a stream of the dead
+     * one: the first command after the reconnect wrote to it and failed
+     * "Stream closed". Measured on the Honor, 2026-10-27: the recorder's
+     * start after Turn all debugging off and on failed at copying the jar,
+     * and the next try, with the shell then dropped, started it.
+     */
+    private fun forgetShell() {
+        runCatching { shell?.close() }
+        shell = null
+    }
+
+    /**
+     * Have adbd restart itself listening on its classic port too
+     * (`tcpip:<port>`), or no longer (`usb:`) - what `adb tcpip` and `adb usb`
+     * send. adbd sets service.adb.tcp.port, answers one line and restarts, so
+     * this connection - and every process adbd started, the recorder too -
+     * goes with it; the caller closes this side and connects again. The line
+     * adbd answered, as "restarting in TCP mode port: 5555" - or a failure
+     * that means nothing about the restart: on the Honor, 2026-10-28, `usb:`
+     * restarted adbd before its line arrived ("Stream closed."), and the
+     * property was cleared all the same.
+     */
+    suspend fun restartAdbd(service: String, timeoutMs: Long = 5_000): Result<String> =
+        withContext(Dispatchers.IO) {
+            val mgr = manager
+            if (mgr == null || !mgr.isConnected) {
+                return@withContext Result.failure(IllegalStateException("ADB is not connected"))
+            }
+            mutex.withLock {
+                forgetShell()
+                // A stream that never answers is let go by closing the whole
+                // connection, as exec's watchdog does; it is about to die anyway.
+                val watchdog = launch {
+                    kotlinx.coroutines.delay(timeoutMs)
+                    runCatching { mgr.close() }
+                }
+                try {
+                    runCatching {
+                        Log.i(TAG, "restartAdbd: $service")
+                        mgr.openStream(service).openInputStream().bufferedReader().readLine().orEmpty().trim()
+                    }
+                } finally {
+                    watchdog.cancel()
+                }
             }
         }
 
@@ -439,6 +507,7 @@ object AdbTransport {
         runCatching { shell?.close() }
         shell = null
         runCatching { manager?.disconnect() }
+        connectedPort = 0
         Unit
     }
 
@@ -450,6 +519,7 @@ object AdbTransport {
         runCatching { manager?.close() }
         manager = null
         lastKnownConnected = false
+        connectedPort = 0
         Unit
     }
 }

@@ -264,6 +264,18 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!--
+              A long press on the Quick Settings tile opens JemRec, not App
+              info. Android's Quick Settings tiles guide: "Long-tapping a tile
+              prompts the App Info screen for the user. To override this
+              behavior ... add an <intent-filter> to one of your activities
+              with ACTION_QS_TILE_PREFERENCES." Asked for in issue #37. Not
+              guarded with BIND_QUICK_SETTINGS_TILE as the guide suggests: this
+              is the launcher activity, which anything may start anyway.
+            -->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
         </activity>
 
         <!--

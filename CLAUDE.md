@@ -54,8 +54,9 @@ They must all say the same thing; a feature is not done until they do.
   new versionCode (with the bump in `gradle.properties`).
 - Screenshots: screen tests for the new screens; the demo data
   (`app/src/debug/.../DemoRecordings.kt`) so the feature shows; `SCREENS` in
-  `build_site.py` and `LISTING_ORDER` in `tools/shoot.py` for a new screen;
-  then `tools/shoot.py`.
+  `build_site.py` and `LISTING_ORDER` in `tools/shoot.py` for a new screen
+  (F-Droid keeps every file name it is given: never drop or rename one, a new
+  shot gets a name that sorts last); then `tools/shoot.py`.
 - An emulator check in `tools/emulator_checks.py` for what can be simulated.
 
 ## Limits and rules

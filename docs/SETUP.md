@@ -501,7 +501,7 @@ no network.
 The same switch is a **Quick Settings tile**, so you can flip it without
 opening the app. Settings has a row that adds it, on Android 13 and later; on
 12, edit the Quick Settings panel and drag JemRec in. On a locked phone the
-tile asks for your unlock first.
+tile asks for your unlock first. A long press on the tile opens JemRec.
 
 ## Off, and debugging with it
 
@@ -513,13 +513,43 @@ JemRec off, from the record button or the tile:
 |---|---|---|
 | **Keep debugging on** (the default) | nothing else | instantly, anywhere |
 | **Hide Developer options** | Developer options, Wireless debugging | instantly, anywhere |
-| **Turn all debugging off** | Developer options, Wireless debugging, USB debugging | needs Wi-Fi, about 15 seconds; no answering machine until then |
+| **Turn all debugging off** | Developer options, Wireless debugging, USB debugging | needs Wi-Fi - or Start without Wi-Fi - about 15 seconds; no answering machine until then |
 
 Try **Hide Developer options** first: USB debugging stays on, so the recorder
 keeps running and JemRec is back the moment you turn it on. If your bank still
 refuses, **Turn all debugging off** - which stops the recorder too, so away
-from Wi-Fi JemRec asks before it does. Turning JemRec back on puts back what it
+from Wi-Fi JemRec asks before it does. With **Start without Wi-Fi** on, the
+first leaves debugging port 5555 open while JemRec is off, which a bank may
+look for too; the second closes it. Turning JemRec back on puts back what it
 switched off. A new choice applies the next time you turn JemRec off.
+
+## Start without Wi-Fi
+
+Starting the recorder takes Wireless debugging, and Android allows that only on
+a Wi-Fi network the phone has joined - not on its own hotspot, not on mobile
+data. **Settings → Start without Wi-Fi** opens a second way in: debugging port
+5555, which works with no network at all. With it on, turning JemRec back on
+after **Turn all debugging off** works anywhere, and so does every restart of
+the recorder - after a cable from a computer, say - until the phone restarts.
+
+JemRec opens the port the next time it starts the recorder on Wi-Fi; switched
+on while on Wi-Fi, that is at once - after a call in progress, and, if When
+JemRec is off has switched debugging off, once JemRec is back on - and the
+recorder restarts for a few seconds. On a Wi-Fi Android has not allowed
+Wireless debugging on, Android first asks **Allow wireless debugging on this
+network?**: tap Allow, or the port waits for a Wi-Fi where it is allowed. A
+phone restart closes the port, and the first start after it needs Wi-Fi once,
+as before. Switching it off closes the port the same way, the next time it can.
+
+**What it costs:** port 5555 is open on every network the phone joins - a
+hotel's Wi-Fi too - whenever USB debugging is on: while JemRec is on, and while
+it is off unless **Turn all debugging off** goes with it. **Hide Developer
+options** keeps USB debugging on, so with it the port stays open while JemRec
+is off, and the phone announces it on each network by its serial number. A
+computer that reaches the port, or an app on the phone, cannot debug the phone
+without your yes, but it can put the question on screen; do not allow one you
+do not expect. With all debugging off, nothing listens. Measured on the Honor,
+Android 17.
 
 ## After a restart
 
@@ -609,7 +639,7 @@ The header is the honest indicator:
 | **Cannot record** · Tap to pair again | Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before. |
 | **Starting...** | Rebuilding the recorder. A few seconds. |
 | **Off** · Tap the button to record calls | You turned the switch off. |
-| **Off** · Debugging off · turn on over Wi-Fi | You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi. |
+| **Off** · Debugging off · turn on over Wi-Fi | You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi - unless Start without Wi-Fi has opened its port, and then the line is the plain one above. |
 
 In Memo's words; Deck and Multitrack word the header their own way.
 
@@ -681,6 +711,10 @@ everything still works, with the time as each recording's headline.
 - **When JemRec is off** — what else goes off when you turn JemRec off:
   nothing, Developer options and Wireless debugging, or all debugging; see Off,
   and debugging with it.
+- **Start without Wi-Fi** — opens debugging port 5555, so that the recorder can
+  start with no Wi-Fi until the phone restarts; it says whether the port is
+  open, and that it is open to every network the phone joins. See Start without
+  Wi-Fi.
 - **Hide the debugging notification** — the answer to the question in step 1,
   changeable. Debugging stays on either way while JemRec is on; this is only
   about whether Android's notification saying so is shown. Turning it on after

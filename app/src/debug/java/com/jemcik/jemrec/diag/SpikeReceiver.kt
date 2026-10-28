@@ -318,6 +318,28 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "bootstrap", text + "\n---\n" + CaptureDaemon.readLog())
                     }
 
+                    // Start without Wi-Fi, as this process sees it: the
+                    // port property read with getprop in the APP's SELinux
+                    // domain (sepolicy app.te allows it; run-as is another
+                    // domain and proves nothing), whether the port answers,
+                    // and what a revive would do about it.
+                    "port" -> {
+                        val sw = com.jemcik.jemrec.capture.StartWithoutWifi
+                        // What one read costs the screen's refresh, which
+                        // makes it each time (MainViewModel's snapshot).
+                        val readStart = System.nanoTime()
+                        val configured = sw.configuredPort()
+                        val readMs = (System.nanoTime() - readStart) / 1_000_000.0
+                        report(
+                            appContext, "port",
+                            "switch=${sw.enabled(appContext)} configured=$configured " +
+                                "(getprop ${"%.1f".format(java.util.Locale.ROOT, readMs)} ms) " +
+                                "answers=${sw.answers()} opened=${sw.openedThisBoot(appContext)} " +
+                                "failed=${sw.failedThisBoot(appContext)} step=${sw.step(appContext)} " +
+                                "due now=${CaptureDaemon.portChangeDue(appContext)}",
+                        )
+                    }
+
                     // What THIS process reads for the settings setup decides
                     // by, to set against `settings get global` from a shell.
                     // Android 17's docs say adb_enabled and
@@ -388,6 +410,26 @@ class SpikeReceiver : BroadcastReceiver() {
                         )
                         com.jemcik.jemrec.capture.RecorderSwitch.set(appContext, on)
                         com.jemcik.jemrec.capture.RecorderSwitch.turn(appContext, on)
+                    }
+
+                    // The emulator's sounds turned down for a check run
+                    // (tools/emulator_checks.py, quieten): --es set "2:3,3:4"
+                    // is stream:index pairs. From the app in front, not the
+                    // shell: Android 17's audio hardening ignores the shell's
+                    // volume changes ("AudioHardening volume control ... would
+                    // be ignored for com.android.server.media (2000)", the
+                    // 37.2 AVD, 2026-10-28).
+                    "volume" -> {
+                        val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                        val text = intent.getStringExtra("set").orEmpty().split(',').filter { ':' in it }
+                            .joinToString(" ") { pair ->
+                                runCatching {
+                                    val stream = pair.substringBefore(':').trim().toInt()
+                                    audio.setStreamVolume(stream, pair.substringAfter(':').trim().toInt(), 0)
+                                    "$stream=${audio.getStreamVolume(stream)}"
+                                }.getOrElse { "$pair failed: ${it.message}" }
+                            }
+                        report(appContext, "volume", text)
                     }
 
                     // Arm the keep-alive job that revives the daemon, the way

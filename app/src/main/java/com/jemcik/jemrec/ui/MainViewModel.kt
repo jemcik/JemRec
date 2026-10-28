@@ -64,6 +64,7 @@ import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.PlaybackRules
 import com.jemcik.jemrec.capture.PlaybackService
 import com.jemcik.jemrec.capture.RecordingStore
+import com.jemcik.jemrec.capture.StartWithoutWifi
 import com.jemcik.jemrec.capture.Trash
 import com.jemcik.jemrec.capture.Waveforms
 import com.jemcik.jemrec.capture.Retention
@@ -233,8 +234,20 @@ data class UiState(
     /** What turning JemRec off switches off besides: Settings, When JemRec
      *  is off (DebugSwitchesOff). */
     val offMode: OffMode = OffMode.KEEP_DEBUGGING,
-    /** Off with all debugging, so with the recorder gone: On needs Wi-Fi. */
+    /** Off with all debugging, so with the recorder gone: On needs Wi-Fi,
+     *  unless [portSet]. */
     val debuggingOff: Boolean = false,
+    /** Settings, Start without Wi-Fi (StartWithoutWifi): the switch; whether
+     *  adbd is on its port until the next restart, so that the recorder can
+     *  start with no Wi-Fi; whether JemRec opened it, so closes it once the
+     *  switch is off; and whether asking adbd for it failed this boot. */
+    val startWithoutWifi: Boolean = false,
+    val portSet: Boolean = false,
+    val portOurs: Boolean = false,
+    val portFailed: Boolean = false,
+    /** Switched off, and asking adbd to close JemRec's port left it set
+     *  (StartWithoutWifi.closeFailedThisBoot). */
+    val portCloseFailed: Boolean = false,
     /** The question before turning off with all debugging, away from Wi-Fi,
      *  is on screen (TurnOffAwayFromWifiDialog). */
     val askingToTurnOff: Boolean = false,
@@ -393,7 +406,7 @@ class MainViewModel @JvmOverloads constructor(
      */
     private fun awaitRecorderStartedElsewhere() {
         if (!awaitingRecorder.compareAndSet(false, true)) return
-        _state.update { it.copy(starting = true) }
+        starts.begin()
         viewModelScope.launch {
             try {
                 kotlinx.coroutines.withTimeoutOrNull(RECORDER_ELSEWHERE_MS) {
@@ -401,8 +414,8 @@ class MainViewModel @JvmOverloads constructor(
                 }
                 refreshNow()
             } finally {
-                _state.update { it.copy(starting = false) }
                 awaitingRecorder.set(false)
+                starts.end()
             }
         }
     }
@@ -695,7 +708,7 @@ class MainViewModel @JvmOverloads constructor(
 
     private fun reviveInBackground() {
         if (!reviving.compareAndSet(false, true)) return
-        _state.update { it.copy(starting = true) }
+        starts.begin()
         viewModelScope.launch {
             try {
                 CaptureDaemon.revive(getApplication())
@@ -703,8 +716,8 @@ class MainViewModel @JvmOverloads constructor(
             } catch (t: Throwable) {
                 Log.w("JemRec", "reviving the recorder failed", t)
             } finally {
-                _state.update { it.copy(starting = false) }
                 reviving.set(false)
+                starts.end()
             }
         }
     }
@@ -830,7 +843,9 @@ class MainViewModel @JvmOverloads constructor(
      * over (OffMode.asksFirst). Everything else goes straight to [setEnabled].
      */
     fun toggleRecording(on: Boolean) {
-        if (!on && DebugSwitchesOff.asksBeforeOff(getApplication())) {
+        // The port's reading the screen shows ("Back on: anywhere"), so the
+        // question and the screen agree - and no getprop on the main thread.
+        if (!on && DebugSwitchesOff.asksBeforeOff(getApplication()) { _state.value.portSet }) {
             _state.update { it.copy(askingToTurnOff = true) }
             return
         }
@@ -848,6 +863,56 @@ class MainViewModel @JvmOverloads constructor(
     fun setOffMode(mode: OffMode) {
         DebugSwitchesOff.setMode(getApplication(), mode)
         _state.update { it.copy(offMode = mode) }
+    }
+
+    /**
+     * Settings, Start without Wi-Fi. Saved at once; the port follows at the
+     * first revive that can change it - this one, if it can now
+     * (CaptureDaemon.portChangeDue), or a later one. The change restarts
+     * adbd, and the recorder with it, so it is revived in the background:
+     * Starting in the header until it is back, and the rest of the screen
+     * left usable - an action would hold `busy`, and every control with it,
+     * for all of it.
+     *
+     * Its own revive, not reviveInBackground's, which stands aside for one
+     * already under way - and that one, or a keep-alive run (kickNow keeps a
+     * run already going), may have read the switch before this flip. Revives
+     * queue on the recorder's lock, so this one comes after them and finds
+     * the switch as it is now.
+     *
+     * A refusal of this Wi-Fi a background revive noted is forgotten
+     * (NetworkRevive.noteWirelessRefused) when the flip asks for a change of
+     * the port: the one flipping the switch is there to answer Android's
+     * question, which would otherwise not be asked, and the switch would do
+     * nothing at all. Kept for a flip that changes nothing, or the next
+     * background revive would ask again.
+     */
+    fun setStartWithoutWifi(on: Boolean) {
+        val app = getApplication<Application>()
+        StartWithoutWifi.setEnabled(app, on)
+        _state.update { it.copy(startWithoutWifi = on) }
+        viewModelScope.launch {
+            val changes = withContext(Dispatchers.IO) {
+                val step = StartWithoutWifi.step(app)
+                if (step != StartWithoutWifi.PortStep.LEAVE) NetworkRevive.forgetWirelessRefused(app)
+                CaptureDaemon.portChangeDue(app, step = step) != null
+            }
+            if (changes) {
+                // Starting once the change begins - the restart of adbd and
+                // the recorder - not for a revive that ends up changing
+                // nothing: one that connects over the port itself leaves a
+                // close for a Wi-Fi with Wireless debugging (portChangeOver).
+                val began = AtomicBoolean(false)
+                try {
+                    CaptureDaemon.revive(app) { if (began.compareAndSet(false, true)) starts.begin() }
+                } catch (t: Throwable) {
+                    Log.w("JemRec", "the port change's revive failed", t)
+                } finally {
+                    if (began.get()) starts.end()
+                }
+            }
+            refreshNow()
+        }
     }
 
     /**
@@ -869,7 +934,8 @@ class MainViewModel @JvmOverloads constructor(
         // shown before the switch is saved, so the switch's own listener
         // (stopWatchingSwitch) takes this flip for this screen's, not the
         // tile's.
-        _state.update { it.copy(enabled = on, starting = on) }
+        if (on) starts.begin()
+        _state.update { it.copy(enabled = on) }
         // Saved at once, outside the action below, which waits its turn.
         RecorderSwitch.set(getApplication(), on)
         // Waits its turn rather than being dropped: the record control takes
@@ -879,8 +945,8 @@ class MainViewModel @JvmOverloads constructor(
         // when the app is free, as the switch then is - a quick on and off
         // ends off.
         launchActionWhenFree(if (on) "turn on" else "turn off") {
-            if (RecorderSwitch.isOn(getApplication()) != on) return@launchActionWhenFree
             try {
+                if (RecorderSwitch.isOn(getApplication()) != on) return@launchActionWhenFree
                 // Shared with the Quick Settings tile. See RecorderSwitch.turn.
                 RecorderSwitch.turn(getApplication(), on)
                 // Ask what the world looks like rather than assuming. Called
@@ -889,8 +955,9 @@ class MainViewModel @JvmOverloads constructor(
                 recheckSetup()
             } finally {
                 // Whatever happened: "Starting..." outranks "Ready" in the
-                // header, and left set it stays there with the recorder up.
-                _state.update { it.copy(starting = false) }
+                // header, and left set it stays there with the recorder up -
+                // unless another start is still under way (startingEnded).
+                if (on) starts.end()
             }
         }
     }
@@ -1322,6 +1389,11 @@ class MainViewModel @JvmOverloads constructor(
                 enabled = RecorderSwitch.isOn(app),
                 offMode = DebugSwitchesOff.mode(app),
                 debuggingOff = DebugSwitchesOff.recorderGone(app),
+                startWithoutWifi = StartWithoutWifi.enabled(app),
+                portSet = StartWithoutWifi.readyForUser(app),
+                portOurs = StartWithoutWifi.openedThisBoot(app),
+                portFailed = StartWithoutWifi.failedThisBoot(app),
+                portCloseFailed = StartWithoutWifi.closeFailedThisBoot(app),
                 canReadCallLog = CallLogLookup.granted(app),
                 canReadAudio = AudioAccess.granted(app),
                 offerCallLog = CallLogLookup.anythingLeftToOffer(app) &&
@@ -1377,6 +1449,11 @@ class MainViewModel @JvmOverloads constructor(
                 enabled = snapshot.enabled,
                 offMode = snapshot.offMode,
                 debuggingOff = snapshot.debuggingOff,
+                startWithoutWifi = snapshot.startWithoutWifi,
+                portSet = snapshot.portSet,
+                portOurs = snapshot.portOurs,
+                portFailed = snapshot.portFailed,
+                portCloseFailed = snapshot.portCloseFailed,
                 canReadCallLog = snapshot.canReadCallLog,
                 canReadAudio = snapshot.canReadAudio,
                 offerCallLog = snapshot.offerCallLog,
@@ -1513,6 +1590,11 @@ class MainViewModel @JvmOverloads constructor(
         val enabled: Boolean,
         val offMode: OffMode,
         val debuggingOff: Boolean,
+        val startWithoutWifi: Boolean,
+        val portSet: Boolean,
+        val portOurs: Boolean,
+        val portFailed: Boolean,
+        val portCloseFailed: Boolean,
         val canReadCallLog: Boolean,
         val canReadAudio: Boolean,
         val offerCallLog: Boolean,
@@ -1574,6 +1656,9 @@ class MainViewModel @JvmOverloads constructor(
 
     /** Guards against two bring-ups racing when the screen is reopened. */
     private val reviving = AtomicBoolean(false)
+
+    /** Every start the screen shows as Starting (StartsUnderWay). */
+    private val starts = StartsUnderWay(_state)
 
     /** Refreshes begun, and the latest whose list is on screen. Main thread. */
     private var refreshesStarted = 0L

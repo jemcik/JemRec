@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-853-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-883-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -145,7 +145,7 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 
 | | |
 | --- | --- |
-| **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record. A Quick Settings tile turns recording on and off. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
+| **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record. A Quick Settings tile turns recording on and off, and a long press on it opens JemRec. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
 | **Start at the answer** | Exact call tracking cuts the ringing, skips calls nobody answered, and splits call waiting into one recording per call. → [more](docs/ARCHITECTURE.md#exact-call-tracking) |
 | **Keep only the calls you want** | All your contacts, all but some, only some, or none - and other numbers on their own switch. → [more](docs/ARCHITECTURE.md#whose-calls-to-keep) |
 | **Messenger calls** | WhatsApp, Telegram, Viber, and Google Meet calls and meetings, both sides, each switched on separately, with the caller's name from the app's notification. Android 14+. → [more](docs/ARCHITECTURE.md#messenger-calls) |
@@ -154,7 +154,7 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 | **Play, keep, clean up** | A call plays as its waveform, to see where people talk, and plays on with the screen off, under the phone's media controls; a keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
 | **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, a call went unrecorded, or the phone stopped JemRec or held it back in the background. A call that came out wrong? *Copy a report* in Diagnostics says how it was recorded, for an issue on GitHub. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
 | **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
-| **Open your banking app** | Some banking apps won't open while Developer options or debugging is on. Turning JemRec off can hide Developer options too, or switch all debugging off; turning it on puts back what it switched off. Settings → When JemRec is off. → [more](docs/ARCHITECTURE.md#off-and-debugging-with-it) |
+| **Open your banking app** | Some banking apps won't open while Developer options or debugging is on. Turning JemRec off can hide Developer options too, or switch all debugging off; turning it on puts back what it switched off - away from Wi-Fi too, with *Start without Wi-Fi*. Settings → When JemRec is off. → [more](docs/ARCHITECTURE.md#off-and-debugging-with-it) |
 | **Three looks** | Memo, calm and simple; Deck, a pocket recorder with an LCD and a REC key; Multitrack, a sound editor with a colour for each caller. Each light, dark or as the phone, in Settings → Theme. → [more](docs/ARCHITECTURE.md#three-looks) |
 
 Recordings are Opus files in the phone's standard `Recordings/JemRec` folder,
@@ -206,7 +206,7 @@ takes the same path as the other messengers and has not been tested yet.
 Developer options and Wireless debugging are on every Android phone, though the
 menu they live in differs by make; JemRec names the right path for yours.
 
-**Both sides of the call** have been recorded on four phones, across three very
+**Both sides of the call** have been recorded on five phones, across three very
 different Android builds:
 
 | Phone | Build |
@@ -214,9 +214,10 @@ different Android builds:
 | Honor Magic 8 Pro (BKQ-N49) | MagicOS 10 and 11, Android 16 and 17 — the phone it was developed on |
 | Samsung Galaxy S20 | One UI |
 | Samsung Galaxy S23 | One UI, Android 16 — over Wi-Fi Calling too, which it carries like a messenger call |
+| Samsung Galaxy M34 | One UI 8.5, Android 16 — over Wi-Fi Calling too, since 0.24, as its owner reported |
 | OnePlus | LineageOS 23 |
 
-Four is not a compatibility list. The one thing nobody can promise for a phone
+Five is not a compatibility list. The one thing nobody can promise for a phone
 they have not held is its audio hardware: some hand over both sides of the call,
 some one, some silence. The **Self-test** answers it on yours in about a second:
 it opens a real capture over the same path a call takes and tells you what came
@@ -245,7 +246,11 @@ Honor - so the answering machine's settings hold its own checks and a test call.
   it; while it is off, it can go too (Settings → When JemRec is off). A computer you have paired with the phone can connect to it over the
   same Wi-Fi, and one you have authorised before over a cable; an unpaired one
   cannot. Now and then, check *Wireless debugging →
-  Paired devices* and remove anything you do not recognise.
+  Paired devices* and remove anything you do not recognise. With *Start
+  without Wi-Fi* on, debugging port 5555 is open as well, to every network the
+  phone joins, and announced there by the phone's serial number: a computer
+  that reaches it, or an app on the phone, can ask to debug the phone, and the
+  phone asks you - allow only one you expect.
   → [What stays switched on](docs/ARCHITECTURE.md#what-stays-switched-on)
 
 <details>
@@ -345,6 +350,14 @@ it lets JemRec run again, and one says the recorder is down if it stays down
 two minutes. And if When JemRec is off is set to *Turn all debugging off*,
 turning JemRec back on needs Wi-Fi too.
 
+**Settings → Start without Wi-Fi** takes the Wi-Fi away from all of that
+until the phone restarts: it opens debugging port 5555, which the recorder can
+be started over with no network at all. After a restart, the first start
+needs Wi-Fi once, as before. The cost is the open port, on every network the
+phone joins whenever USB debugging is on - unless *Turn all debugging off*
+goes with JemRec; see [Starting without
+Wi-Fi](docs/ARCHITECTURE.md#starting-without-wi-fi).
+
 </details>
 
 <details>
@@ -400,10 +413,14 @@ you open the bank:
   instantly, anywhere.
 - **Turn all debugging off**: USB debugging goes off too, and the recorder with
   it. Turning JemRec back on then needs Wi-Fi and takes about 15 seconds, and
-  the answering machine is off until then. Away from Wi-Fi, JemRec asks first.
+  the answering machine is off until then. Away from Wi-Fi, JemRec asks first -
+  unless **Start without Wi-Fi** is on (Settings → Debugging): then it comes
+  back anywhere, on mobile data or none, until the phone restarts.
 
-Try the first; if your bank still refuses, the second. Turning JemRec back on
-puts back what it switched off. Measured on an Honor (Android 17): with
+Try the first; if your bank still refuses, the second. With **Start without
+Wi-Fi** on, the first leaves debugging port 5555 open while JemRec is off, which
+a bank may look for too; the second closes it. Turning JemRec back on puts back
+what it switched off. Measured on an Honor (Android 17): with
 Developer options and Wireless debugging off, the recorder ran on through Wi-Fi
 off and on, a locked screen and a call, recorded both sides. Our own banks open
 with debugging on, so we could not test one that refuses - if yours needed the
@@ -435,7 +452,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 853 tests, screenshots of the screens included
+    ./gradlew test              # 883 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

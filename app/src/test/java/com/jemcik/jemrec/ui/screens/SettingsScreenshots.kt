@@ -203,6 +203,20 @@ class SettingsScreenshots : ScreenTest() {
         snap("when-off-while-off")
     }
 
+    // Start without Wi-Fi on, its port open: Turn all debugging off comes
+    // back anywhere, and the footer no longer points to the switch.
+    @Test fun whenOffWithStartWithoutWifi() {
+        settings(
+            Fixtures.ready().copy(
+                screen = Screen.WHEN_OFF,
+                offMode = OffMode.ALL_DEBUGGING_OFF,
+                startWithoutWifi = true,
+                portSet = true,
+            ),
+        )
+        snap("when-off-start-without-wifi")
+    }
+
     @Config(qualifiers = "+h1500dp")
     @Test fun whenOffLargeText() {
         settings(Fixtures.ready().copy(screen = Screen.WHEN_OFF, offMode = OffMode.ALL_DEBUGGING_OFF), fontScale = 2f)

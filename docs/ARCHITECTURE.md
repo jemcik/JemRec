@@ -13,6 +13,7 @@ this one is - or to check that it does what it says.
   [the daemon records](#the-daemon-records-the-app-collects) ·
   [the authenticated socket](#the-socket-is-authenticated-in-both-directions) ·
   [staying alive without Wi-Fi](#staying-alive-without-wi-fi) ·
+  [starting without Wi-Fi](#starting-without-wi-fi) ·
   [unplugged from a computer](#unplugged-from-a-computer) ·
   [after a restart](#after-a-restart) ·
   [stopped in the background](#stopped-in-the-background)
@@ -127,13 +128,27 @@ emulator). With a cable in, that took about six seconds.
 Without one, Honor holds every background app's scheduled work while the phone
 is in use and lets it run for the app in front: the recorder came back when
 JemRec was opened, or — with the phone locked straight after — 37 seconds after
-the switch went off. Off Wi-Fi nothing can bring it back until there is Wi-Fi,
-so on such a phone Developer options is best left alone away from it.
+the switch went off. Off Wi-Fi nothing can bring it back until there is Wi-Fi -
+unless *Start without Wi-Fi* has opened its port (next section) - so on such a
+phone Developer options is best left alone away from it.
+
+**Any joined Wi-Fi counts, internet or not.** A Wi-Fi without internet - a
+car's, a hotel's before its login page, another phone's hotspot with no data -
+stays joined while Android sends everything else over mobile data, and
+Wireless debugging, which asks only whether Wi-Fi is joined, works on it. The
+app asked whether Android's *default* network was Wi-Fi, and so took such a
+Wi-Fi for none: on the Android 12 emulator, 2026-10-28, with the Wi-Fi's
+internet blocked, it stayed joined while mobile data became the default, and
+the revive stopped at "not on Wi-Fi". It now asks whether any joined network
+is Wi-Fi (`NetworkRevive.onWifi`); the same emulator, with port 5555 blocked
+for the app so that only Wireless debugging over that Wi-Fi could do it, had
+the recorder back.
 
 When the daemon does die — a reboot kills it outright, unplugging the phone
 from a computer can (see the next section), and the system reclaims it
 eventually — it has to be started again, and starting it is the one operation
-that needs ADB and therefore Wi-Fi. A scheduled job and a system-held Wi-Fi
+that needs ADB and therefore Wi-Fi, or the port of [Starting without
+Wi-Fi](#starting-without-wi-fi). A scheduled job and a system-held Wi-Fi
 watcher do it without you: the app is woken when a network appears, rebuilds the
 recorder in a few seconds, and stands the ADB session back down.
 
@@ -144,6 +159,137 @@ manual says to open the app once after a restart rather than trusting the
 machinery. **Between the restart and that moment nothing is recorded**, which is
 why the header says so plainly rather than looking healthy - and after two
 minutes of it, a notification does too.
+
+## Starting without Wi-Fi
+
+**Starting the recorder takes an adb connection, and the only one a phone
+offers an app on its own is Wireless debugging - which Android allows only on a
+Wi-Fi network the phone has joined.** `AdbDebuggingManager` switches it off
+with "Not connected to any wireless network. Not enabling adbwifi." whenever
+the phone has no Wi-Fi client connection, and the phone's own hotspot is not
+one (read in AOSP's source, and measured on the Honor, 2026-09-09). So after a
+reboot, or after *Turn all debugging off*, nothing could start the recorder
+until there was Wi-Fi - and someone travelling often has none (issue #37).
+
+`adbd` has a second door, the one `adb tcpip` opens: its `tcpip:5555` service
+sets `service.adb.tcp.port` and restarts `adbd`, and from then on every start
+of `adbd` listens on port 5555 too - on every interface, loopback included,
+Wi-Fi or not - until a reboot clears the property. Only `init`, `adbd` and
+`system_server` may set it (AOSP's sepolicy), so the shell cannot, but any adb
+client can ask `adbd` to. Settings → *Start without Wi-Fi*
+(`StartWithoutWifi`), off until switched on, has JemRec ask, once each boot,
+over Wireless debugging; after that the recorder can be started over
+`127.0.0.1:5555` with no network at all. Apps may read the property
+(`get_prop(appdomain, adbd_config_prop)`), which is how JemRec knows the port
+will be there while `adbd` is stopped and nothing can answer on it.
+
+Measured on the Honor (MagicOS 11, Android 17), 2026-10-28, off the cable:
+
+- With the port open and Wi-Fi off, *Turn all debugging off* from the tile
+  stopped `adbd` and the recorder; On from the tile, 38 seconds later,
+  switched USB debugging back on, `adbd` came back on 5555 with the property
+  kept, took JemRec's paired key there without asking, and the recorder was
+  up 6.1 seconds after the tap. A call half a minute later, Wi-Fi still off,
+  was recorded both sides (16.5 s, -26 dB each).
+- Unplugged from a computer with Wi-Fi off, the recorder died with `adbd`
+  5 seconds later; the revive switched Wireless debugging off and on, which
+  had Android start `adbd` with no Wi-Fi, connected on 5555, and the recorder
+  was back 16.6 seconds after the cable came out.
+- The switch, on Wi-Fi: on, `adbd` answered "restarting in TCP mode port:
+  5555", listened 1.1 seconds later, and the recorder was back within 5
+  seconds; off, `usb:` restarted `adbd` before its own answer could arrive
+  ("Stream closed."), and the property was cleared all the same.
+- The first command after any reconnect failed "Stream closed": the app kept
+  its shell from the connection before, a stream of the dead one. A new
+  connection now drops it (`AdbTransport.forgetShell`).
+
+**When the port is opened and closed.** Changing it restarts `adbd`, and the
+recorder with it, so it is changed only where the recorder can be started
+again at once: on Wi-Fi, never in a call - and not while *When JemRec is off*
+has debugging switched off, which a revive would have to switch Wireless
+debugging on for; the change waits for On. After a reboot the first start opens
+it before starting the recorder, so nothing restarts twice. Switched on while
+the recorder runs, the next revive - the switch's own, at once on Wi-Fi -
+opens it and restarts the recorder; switched off, the next revive on Wi-Fi
+closes it (`usb:`), but only a port JemRec opened this boot: one a computer
+opened with `adb tcpip` is the computer's - and never over the port itself: on
+a Wi-Fi Android has not allowed Wireless debugging on, a revive's connection
+falls back on 5555, and closing it would leave nothing to start the recorder
+over until another Wi-Fi. On such a Wi-Fi, switching Wireless debugging on
+for a change has Android ask "Allow wireless debugging on this network?", as
+it does for any revive there. Android 17 leaves the switch on after Cancel and
+does not ask again; Android 12 keeps it off while it asks and after Cancel, so
+each keep-alive asked again while a change waited. Measured on the Android 12
+emulator, 2026-10-28: refused, the switch read 0 with the question up; allowed,
+it read 1 - for 25 seconds after *Turn all debugging off* and back on, and
+after a revive's own switch-on. So a switch-on that reads off again is taken
+for a refusal of that Wi-Fi connection (`NetworkRevive.noteWirelessRefused`,
+keyed to the boot and the network): a revive for the port alone waits 20
+seconds for Allow, and no revive switches it on again on that connection - as
+on Android 17, which leaves the switch on and never asks twice - until it is
+found on after all, an Allow tapped later on the question that stayed up,
+which ends the refusal. Asking again
+is left to "Allow this Wi-Fi", in the header and the alert, and to Start
+without Wi-Fi's switch flipped by hand, whose user is there to answer.
+Measured on the Android 12 emulator, 2026-10-28, with port 5555 blocked for
+the app so that nothing but Wireless debugging could start the recorder:
+before, with JemRec open, each revive asked again over it (and, by the code,
+the cause could not be "not allowed", which wanted the switch on, so the
+header offered no Allow this Wi-Fi); now the revive left the
+switch alone, the header said "Tap to allow this Wi-Fi", the tap put the
+question up, and Allow had the recorder back 6 seconds later. The alert,
+posted by the keep-alive's own retry 237 seconds after the recorder went
+down, said "Android has not allowed Wireless debugging on this Wi-Fi" with
+its "Allow this Wi-Fi" button; tapped in the notification shade, it put the
+question up, Allow had the recorder back 6 seconds later, and the alert went
+with it. And the switch
+flipped by hand after a refusal noted in the background asked at once, and
+Allow had the port open 14 seconds after the flip. An ask after which the property
+does not say 5555 is not repeated until the next boot, and the switch says so -
+as for a close after which it still does, which leaves the port JemRec's to
+show, open until a restart (an ask lost on a connection that had just died);
+a slow `adbd` is not taken for that, and where the property cannot be read,
+`adbd` answering on the port is. The reconnect after a change switches
+Wireless debugging back on where `adbd`'s restart left it off: on the Honor,
+2026-10-28, it read 0 after one open of the port and 1 after another. Start
+fresh closes it, over the port itself, under the recorder's lock, read back
+as a revive's close is. Off Wi-Fi with the port open, every revive - the
+keep-alive, a cable from a computer, On after *Turn all debugging off* -
+connects on it rather than standing down.
+
+**What it costs.** Port 5555 is open on every network the phone joins - home,
+a hotel's Wi-Fi, mobile data - whenever `adbd` runs, which is whenever USB
+debugging is on: while JemRec is on, and while it is off unless *Turn all
+debugging off* goes with it. *Hide Developer options*, the first choice for a
+bank, leaves USB debugging on, so the port stays open while JemRec is off; the
+*When JemRec is off* screen says so while the switch is on. `adbd` can be kept
+to loopback only through `service.adb.listen_addrs`, which only
+`system_server` may set. A computer that reaches the port - or any app on the
+phone, at `127.0.0.1` - still needs its key accepted on the phone, but it can
+put the question on screen; Wireless debugging, which takes pairing, never asked
+about unknown keys. And `adbd` announces the port on every network the phone
+joins, over mDNS, as `_adb._tcp` named after the phone's serial number
+(`daemon/mdns.cpp`): measured on the Honor, 2026-10-28, a Mac on its network saw
+`adb-<serial>` offered on 5555 while the port was open, and no more once it was
+closed. Wireless debugging announces that name too, but only on a Wi-Fi it is
+allowed on; the port's announcement goes out on a hotel's as well, which makes
+the phone easy to find there. With all
+debugging off, `adbd` is stopped and nothing listens. Uninstalling leaves the property
+until the next reboot, with USB debugging off, so nothing listens then either
+unless debugging is switched on again by hand. That is why it is a switch of
+its own, off by default, and why its summary says the port is open whichever
+way it is set.
+
+**What it does not do.** After a reboot the first start still needs Wi-Fi: the
+property is gone, and the one property that would outlive a reboot,
+`persist.adb.tcp.port`, takes root (Shizuku-Next's own code says a stock
+Samsung refuses it). There is a way around that on some phones, a race: with
+the phone's own hotspot up, writing Wireless debugging on every 20 ms or so
+until one write lands before the framework takes it back (found by Shizuku
+users in March 2026, confirmed on Galaxy S22 Ultra, S23, S23+ and M34). It
+depends on a bug, and it fails on the Honor: 1682 offs and ons in 120 seconds,
+hotspot up, and `adbd` never opened its port once - the framework checked for
+Wi-Fi before telling `adbd` to start, every time (2026-10-27). It is not built.
 
 ## Unplugged from a computer
 
@@ -328,7 +474,9 @@ call's uplink and downlink, which other recorders report working only on some
 phones; it is not built.
 
 A Quick Settings tile turns recording on and off without opening the app. It
-is the same switch as the one in the app's header.
+is the same switch as the one in the app's header. A long press on it opens
+JemRec, not App info: the main activity takes `ACTION_QS_TILE_PREFERENCES`, as
+Android's Quick Settings tiles guide says (asked for in issue #37).
 
 ## Exact call tracking
 
@@ -1249,7 +1397,10 @@ What that means for the phone: while debugging is on, a computer that has been
 paired with it can open an ADB shell on it from the same Wi-Fi, and one you have
 authorised before can do the same over a cable. An unpaired computer cannot.
 Check *Wireless debugging → Paired devices* now and then and remove anything you
-do not recognise.
+do not recognise. With *Start without Wi-Fi* on, port 5555 is open too, on
+every network the phone joins; a computer that reaches it, or an app on the
+phone, can ask to debug the phone, and only a yes on the phone lets it (see [Starting without
+Wi-Fi](#starting-without-wi-fi)).
 
 Android shows a notification for as long as debugging is on. Setup says all of
 the above before you switch anything on, then asks whether JemRec should hide
@@ -1276,7 +1427,7 @@ by the record button or the Quick Settings tile (`DebugSwitchesOff`):
 | --- | --- | --- |
 | Keep debugging on (the default) | nothing else | instantly, anywhere |
 | Hide Developer options | Developer options, Wireless debugging | instantly, anywhere |
-| Turn all debugging off | Developer options, Wireless debugging, USB debugging | needs Wi-Fi, about 15 s; no answering machine until then |
+| Turn all debugging off | Developer options, Wireless debugging, USB debugging | needs Wi-Fi - or *Start without Wi-Fi* - about 15 s; no answering machine until then |
 
 The three are what each switch costs, measured on the Honor (Android 17),
 2026-10-26:
@@ -1304,7 +1455,9 @@ revive that has to switch Wireless debugging off and on having taken 12 to 16
 seconds. That is why the third says what it costs on its own line, and why,
 away from Wi-Fi, turning off with it asks first - the only off that does
 (`TurnOffAwayFromWifiDialog`, the same dialog in the app and, through a
-see-through activity, from the tile).
+see-through activity, from the tile). With *Start without Wi-Fi*'s port open
+it asks nothing, and its line says *anywhere*: On comes back over the port
+(see [Starting without Wi-Fi](#starting-without-wi-fi)).
 
 **What goes off, and what comes back.** The app writes Developer options off
 itself (it holds `WRITE_SECURE_SETTINGS`). For the third choice the recorder
@@ -1333,7 +1486,8 @@ sends the user there.
 Not measured: a banking app that refuses. Ours open with debugging on, so what
 any one bank looks at is not known here; the order to try is the order above.
 The emulator checks `hide_developer_options` and `debugging_off` run both
-choices end to end on Android 12, 13 and 17.
+choices end to end on Android 12, 13, 16 and 17, and `start_without_wifi` the
+third with Wi-Fi off, back on over the port.
 
 ---
 

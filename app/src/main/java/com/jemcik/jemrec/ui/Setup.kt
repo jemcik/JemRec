@@ -21,6 +21,7 @@ import com.jemcik.jemrec.capture.GlobalSettings
 import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.RecordingStore
+import com.jemcik.jemrec.capture.StartWithoutWifi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -733,6 +734,10 @@ object Setup {
         }
 
         CallMonitorService.stop(context)
+
+        // While the key that opens it is still held.
+        val portClosed = CaptureDaemon.closePortForReset(context)
+        StartWithoutWifi.forget(context, stillOpen = !portClosed)
 
         AdbTransport.close()
         AdbIdentity.forget(context)

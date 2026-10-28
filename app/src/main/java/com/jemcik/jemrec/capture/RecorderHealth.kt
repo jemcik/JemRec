@@ -46,7 +46,10 @@ import com.jemcik.jemrec.adb.AdbTransport
  * question gone, and the next revive, finding the switch already on, never
  * asked again. Nothing an app can read says "not allowed", so a revive on
  * Wi-Fi that found the switch on and no advertisement is taken to mean
- * exactly this. The answer is to ask again: the alert's button switches
+ * exactly this. Android 12 keeps the switch off while it asks, and after
+ * Cancel (the Android 12 AVD, 2026-10-28), so there the revive's own note
+ * that Android switched it back off stands for it
+ * (NetworkRevive.noteWirelessRefused). The answer is to ask again: the alert's button switches
  * Wireless debugging off and on (see CaptureDaemon.askToAllowNetwork), and
  * Android puts the question back on screen.
  */
@@ -98,7 +101,7 @@ internal object RecorderHealth {
         val since = prefs.getLong(KEY_DOWN_SINCE, 0L).takeIf { it > 0 }
             ?: now.also { prefs.edit { putLong(KEY_DOWN_SINCE, it) } }
         val unadvertised = AdbTransport.lastConnect == AdbTransport.ConnectOutcome.NOT_FOUND &&
-            GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED)
+            (GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED) || NetworkRevive.wirelessRefusedHere(context))
         val problem = diagnose(NetworkRevive.onWifi(context), refused, unadvertised)
         // Kept at every failed revive, not only once alerted: the home screen
         // shows it straight away, where the alert waits out the grace.

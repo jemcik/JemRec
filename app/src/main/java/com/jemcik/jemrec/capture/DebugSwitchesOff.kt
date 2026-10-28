@@ -27,7 +27,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *   needs Wireless debugging, so Wi-Fi.
  *
  * So the first two can go off with the recorder kept, and On is instant; the
- * third takes the recorder with it, and On needs Wi-Fi.
+ * third takes the recorder with it, and On needs Wi-Fi - or adbd on Start
+ * without Wi-Fi's port, measured on the Honor 2026-10-27 (StartWithoutWifi).
  */
 enum class OffMode {
     /** Recording stops; the recorder stays up and debugging stays on. */
@@ -56,8 +57,11 @@ internal fun OffMode.switchesOff(): Set<DebugSwitch> = when (this) {
 }
 
 /** Whether turning off asks first: only where On will need Wi-Fi and there
- *  is none, the one case where off costs more than it says. */
-internal fun OffMode.asksFirst(onWifi: Boolean): Boolean = this == OffMode.ALL_DEBUGGING_OFF && !onWifi
+ *  is none, the one case where off costs more than it says - unless adbd is
+ *  on Start without Wi-Fi's port, which On comes back over anywhere.
+ *  [portSet] is asked last, and only then: it starts a process (getprop). */
+internal inline fun OffMode.asksFirst(onWifi: Boolean, portSet: () -> Boolean): Boolean =
+    this == OffMode.ALL_DEBUGGING_OFF && !onWifi && !portSet()
 
 /** Whether the recorder goes with the switches. */
 internal fun Set<DebugSwitch>.takesTheRecorder(): Boolean = DebugSwitch.USB_DEBUGGING in this
@@ -139,9 +143,16 @@ object DebugSwitchesOff {
      */
     fun standingDown(context: Context): Boolean = recorderGone(context) && !RecorderSwitch.isOn(context)
 
-    /** Whether turning off asks first, here and now (OffMode.asksFirst): the
-     *  record control and the tile ask the same question in the same case. */
-    fun asksBeforeOff(context: Context): Boolean = mode(context).asksFirst(NetworkRevive.onWifi(context))
+    /**
+     * Whether turning off asks first, here and now (OffMode.asksFirst): the
+     * record control and the tile ask the same question in the same case.
+     * [portReady]: whether Start without Wi-Fi's port would bring JemRec
+     * back - asked only where it matters, and a process (getprop) unless
+     * given: the record control gives the reading its screen shows, the
+     * tile asks off the main thread.
+     */
+    fun asksBeforeOff(context: Context, portReady: () -> Boolean = { StartWithoutWifi.readyForUser(context) }): Boolean =
+        mode(context).asksFirst(NetworkRevive.onWifi(context), portReady)
 
     /**
      * Switch off what the choice says. Recorded first, so a revive racing

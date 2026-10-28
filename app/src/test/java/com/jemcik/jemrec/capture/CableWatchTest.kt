@@ -44,16 +44,36 @@ class CableWatchTest {
 
     @Test fun aCableThatStoppedAdbdHasWirelessDebuggingSwitchedOffAndOn() {
         // On the Honor it read 1 with adbd stopped; only off-and-on started it.
-        assertEquals(WirelessStep.CYCLE, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = true, on = true))
-        assertEquals(WirelessStep.CYCLE, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = true, on = false))
+        assertEquals(WirelessStep.CYCLE, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = true, on = true, onWifi = true))
+        assertEquals(WirelessStep.CYCLE, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = true, on = false, onWifi = true))
+        // Off Wi-Fi too, on Start without Wi-Fi's port: the switch going on
+        // is what has Android start adbd, Wi-Fi or not.
+        assertEquals(WirelessStep.CYCLE, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = true, on = true, onWifi = false))
     }
 
     @Test fun otherwiseWirelessDebuggingIsOnlyTurnedOnWhenOff() {
         // A reboot leaves it off.
-        assertEquals(WirelessStep.TURN_ON, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = false, on = false))
+        assertEquals(WirelessStep.TURN_ON, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = false, on = false, onWifi = true))
         // On, with nothing advertised, may be a Wi-Fi Android has not allowed:
         // switching it again would put Android's question up unasked.
-        assertEquals(WirelessStep.LEAVE, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = false, on = true))
+        assertEquals(WirelessStep.LEAVE, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = false, on = true, onWifi = true))
+        // Off where Android refused it on this Wi-Fi: Android 12 keeps it off
+        // after Cancel, and switching it on again asked again at every revive
+        // (the 12 AVD, 2026-10-28) - left to the Allow this Wi-Fi button.
+        assertEquals(
+            WirelessStep.LEAVE,
+            CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = false, on = false, onWifi = true, refused = true),
+        )
+        // A cable's stopped adbd is still started: there is nothing else to.
+        assertEquals(
+            WirelessStep.CYCLE,
+            CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = true, on = false, onWifi = true, refused = true),
+        )
+    }
+
+    @Test fun offWifiWirelessDebuggingIsNotTurnedOnForNothing() {
+        // On the port, there is no Wi-Fi for it to come on over.
+        assertEquals(WirelessStep.LEAVE, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = false, on = false, onWifi = false))
     }
 
     @Test fun aRestartInItsUsualTimeWasNotHeldBack() {

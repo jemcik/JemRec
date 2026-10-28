@@ -408,6 +408,22 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modif
                     onClick = { vm.showScreen(Screen.WHEN_OFF) },
                 )
             }
+            // StartWithoutWifi. What it costs is in the summary whichever way
+            // it is set: an open port is not a detail to find out later.
+            row {
+                SwitchRow(
+                    title = "Start without Wi-Fi",
+                    summary = startWithoutWifiSummary(state),
+                    summaryColor = if (startWithoutWifiFailed(state)) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    icon = SettingsIcons.WifiOff,
+                    checked = state.startWithoutWifi,
+                    onCheckedChange = vm::setStartWithoutWifi,
+                )
+            }
             // Setup's debugging question, answerable again. Debugging itself is
             // not a choice while JemRec is on - the recorder needs it - so the
             // summary says what stays on whichever way the switch is set, and
@@ -571,6 +587,52 @@ internal fun rulesSentence(state: UiState): RulesSummary {
         RulesCase.NOTHING -> RulesSummary("As set, no call will be kept.", nothing = true)
     }
 }
+
+/**
+ * Start without Wi-Fi, as Settings says it: what it does while off, where it
+ * stands while on - the port open, or waiting for the Wi-Fi it is opened over
+ * - and, open or waiting, that the port is open to every network the phone
+ * joins (StartWithoutWifi). Switched off with the port it opened still open
+ * - the close waits for a Wi-Fi with Wireless debugging, a call's end, and
+ * JemRec back on if its off switched debugging off (CaptureDaemon
+ * .portChangeDue, portChangeOver) - it says that, not
+ * the off text. An ask that left the port unopened is said too, unless the port is
+ * open after all: the switch would otherwise claim a door that is not there,
+ * or deny one that is. And while JemRec is off with all debugging, adbd is
+ * stopped and nothing listens: a set port is closed until On, which is the
+ * point of that choice for a bank. First of all, switched off with a close
+ * that did not take (StartWithoutWifi.closeFailedThisBoot), in red: the port
+ * stays open until a restart, which no other text would say.
+ */
+internal fun startWithoutWifiSummary(state: UiState): String = when {
+    !state.startWithoutWifi && state.portSet && state.portOurs && state.portCloseFailed ->
+        if (state.debuggingOff) {
+            "This phone would not close debugging port 5555. Shut while debugging is off, it opens with it until the phone restarts"
+        } else {
+            "This phone would not close debugging port 5555. It stays open until the phone restarts"
+        }
+    !state.startWithoutWifi && state.portSet && state.portOurs && state.debuggingOff ->
+        "Debugging port 5555 is closed while debugging is off. It opens with debugging, then closes once JemRec is on a Wi-Fi with Wireless debugging"
+    !state.startWithoutWifi && state.portSet && state.portOurs ->
+        "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi with Wireless debugging, or the phone restarts"
+    !state.startWithoutWifi ->
+        "Turn JemRec back on with no Wi-Fi. Opens debugging port 5555 to any network the phone joins"
+    state.portSet && state.debuggingOff ->
+        "Debugging port 5555 is closed while debugging is off. Turning JemRec on opens it again, with or without Wi-Fi"
+    state.portSet ->
+        "Debugging port 5555 is open to any network the phone joins. After a restart, JemRec needs Wi-Fi once"
+    state.portFailed -> "This phone would not open port 5555. JemRec asks again after a restart"
+    else -> "Opens debugging port 5555 the next time JemRec starts on Wi-Fi"
+}
+
+/** The summaries said as an error: switched on and the port not opened, or
+ *  switched off and JemRec's port not closed. */
+internal fun startWithoutWifiFailed(state: UiState): Boolean =
+    if (state.startWithoutWifi) {
+        state.portFailed && !state.portSet
+    } else {
+        state.portCloseFailed && state.portSet && state.portOurs
+    }
 
 internal fun messengerSummary(state: UiState): String = when {
     !state.voipSupported -> "Needs Android 14 or later"

@@ -29,12 +29,26 @@ class DebugSwitchesOffTest {
     @Test fun onlyAllDebuggingOffAwayFromWifiAsksFirst() {
         // On needs Wi-Fi only once the recorder is gone, so that is the one
         // off worth a question - and only where there is no Wi-Fi.
-        assertTrue(OffMode.ALL_DEBUGGING_OFF.asksFirst(onWifi = false))
-        assertFalse(OffMode.ALL_DEBUGGING_OFF.asksFirst(onWifi = true))
+        assertTrue(OffMode.ALL_DEBUGGING_OFF.asksFirst(onWifi = false) { false })
+        assertFalse(OffMode.ALL_DEBUGGING_OFF.asksFirst(onWifi = true) { false })
         OffMode.entries.filter { it != OffMode.ALL_DEBUGGING_OFF }.forEach {
-            assertFalse(it.asksFirst(onWifi = false))
-            assertFalse(it.asksFirst(onWifi = true))
+            assertFalse(it.asksFirst(onWifi = false) { false })
+            assertFalse(it.asksFirst(onWifi = true) { false })
         }
+    }
+
+    @Test fun startWithoutWifisPortAsksNothing() {
+        // adbd on its classic port comes back with no Wi-Fi (the Honor,
+        // 2026-10-27), so there is nothing to warn of.
+        assertFalse(OffMode.ALL_DEBUGGING_OFF.asksFirst(onWifi = false) { true })
+    }
+
+    @Test fun thePortIsAskedOnlyWhereItCanChangeTheAnswer() {
+        // It starts getprop, from the tile's tap on the main thread.
+        var asked = false
+        OffMode.ALL_DEBUGGING_OFF.asksFirst(onWifi = true) { asked = true; true }
+        OffMode.HIDE_DEVELOPER_OPTIONS.asksFirst(onWifi = false) { asked = true; true }
+        assertFalse(asked)
     }
 
     @Test fun usbDebuggingComesBackBeforeWirelessDebugging() {

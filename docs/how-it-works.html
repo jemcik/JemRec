@@ -197,7 +197,7 @@
      age you pick and calls too short to have been a conversation, into the same
      place. A bookmark marks a recording to keep, and nothing removes a kept one.
      A Quick Settings tile turns recording on and off without opening the
-     app.</p>
+     app, and a long press on it opens the app.</p>
 
   <h3>Off, and debugging with it, for banking apps</h3>
   <p>Some banking apps won&rsquo;t open while Developer options or debugging is
@@ -206,6 +206,16 @@
      the moment JemRec is on &mdash; or switch all debugging off, the recorder
      with it, so that turning it on needs Wi-Fi. Turning it on puts back what it
      switched off. Settings &rarr; When JemRec is off.</p>
+  <p><em>Start without Wi-Fi</em>, off until you switch it on, takes that Wi-Fi
+     away until the phone restarts. Android allows Wireless debugging only on a
+     Wi-Fi network the phone has joined, but adbd has another way in, its
+     classic port, 5555, which listens with no network at all; JemRec asks adbd
+     to open it, once each boot, over Wireless debugging. The cost is that the
+     port is open on every network the phone joins whenever USB debugging is
+     on &mdash; while JemRec is on, and while it is off unless all debugging goes
+     with it &mdash; and announced there by the phone&rsquo;s serial number: a
+     computer that reaches it, or an app on the phone, cannot debug the phone
+     without a yes on it, but it can ask.</p>
 
   <h2 id="permissions">What it asks for, and what it does not</h2>
   <p>No microphone permission. The app never records &mdash; the shell-side
@@ -250,12 +260,12 @@
      silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
      <strong>Self-test</strong> &mdash; by opening a real capture down the same
      path a call takes and telling you what came out.</p>
-  <p class="muted">Both sides of the call have been recorded on four phones,
+  <p class="muted">Both sides of the call have been recorded on five phones,
      across three very different Android builds: an Honor Magic&nbsp;8 Pro on
-     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20 and a Galaxy&nbsp;S23 on
-     One&nbsp;UI &mdash; the S23 over Wi-Fi Calling too &mdash; and a OnePlus on
-     LineageOS&nbsp;23. Four is not a compatibility list, which is what the
-     self-test is for.</p>
+     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20, a Galaxy&nbsp;S23 and a
+     Galaxy&nbsp;M34 on One&nbsp;UI &mdash; the S23 and the M34 over Wi-Fi
+     Calling too &mdash; and a OnePlus on LineageOS&nbsp;23. Five is not a
+     compatibility list, which is what the self-test is for.</p>
 
 </main>
 <footer>

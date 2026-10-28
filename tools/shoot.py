@@ -52,20 +52,46 @@ LOOKS = {"memo": "MEMO", "deck": "DECK", "multitrack": "MULTITRACK"}
 THEMES = {"light": "no", "dark": "yes"}
 SCREENS = ("home", "calls", "settings", "answering", "theme", "whenoff", "selftest")
 
-# The F-Droid listing. fastlane orders screenshots by file name, so these are
-# numbered: the three looks first, then the rest in Memo, the default (the
-# user's choice, 2026-10-23); full resolution.
+# The F-Droid listing, full resolution, shown in the order of its file names.
+#
+# F-DROID NEVER FORGETS A FILE NAME. fdroidserver copies the listing into its
+# repo at each build and deletes nothing (fdroidserver issue #490, open since
+# 2018; insert_localized_app_metadata only copies), then shows every file there.
+# The names used to say what each shot was and where it stood, so every change
+# added names and the old pictures stayed: the page showed 18 shots on
+# 2026-10-28, ten of them from before the three looks. Asked in 2022 whether
+# they could be removed by hand, F-Droid said "Not currently sadly" (its forum).
+#
+# So the names below are every one F-Droid has ever been given, kept for good,
+# each with a current picture: what a name says is history, not the picture.
+# Sorted, they are the gallery's order - checked in listing(). The first nine
+# are the three looks, then the rest in Memo, the default (the user's choice,
+# 2026-10-23); the other twelve the same screens in dark and in the other
+# looks. Never drop a name: give it another picture. A new picture gets a new
+# name that sorts after the last.
 LISTING = ROOT / "fastlane" / "metadata" / "android" / "en-US" / "images" / "phoneScreenshots"
 LISTING_ORDER = (
-    ("memo", "light", "home"),
-    ("deck", "light", "home"),
-    ("multitrack", "light", "home"),
-    ("memo", "light", "calls"),
-    ("memo", "light", "settings"),
-    ("memo", "light", "answering"),
-    ("memo", "light", "whenoff"),
-    ("memo", "light", "selftest"),
-    ("memo", "light", "theme"),
+    ("1-home-memo.png", "memo", "light", "home"),
+    ("1-home.png", "deck", "light", "home"),
+    ("2-calls.png", "multitrack", "light", "home"),
+    ("2-home-deck.png", "memo", "light", "calls"),
+    ("2-settings.png", "memo", "light", "settings"),
+    ("3-home-multitrack.png", "memo", "light", "answering"),
+    ("3-selftest.png", "memo", "light", "whenoff"),
+    ("3-settings.png", "memo", "light", "selftest"),
+    ("4-calls-memo.png", "memo", "light", "theme"),
+    ("4-home-dark.png", "memo", "dark", "home"),
+    ("4-selftest.png", "deck", "dark", "home"),
+    ("5-home-dark.png", "multitrack", "dark", "home"),
+    ("5-selftest-dark.png", "deck", "light", "calls"),
+    ("5-settings-memo.png", "multitrack", "light", "calls"),
+    ("6-answering-memo.png", "deck", "light", "settings"),
+    ("6-selftest-dark.png", "multitrack", "light", "settings"),
+    ("7-selftest-memo.png", "deck", "light", "answering"),
+    ("7-whenoff-memo.png", "multitrack", "light", "answering"),
+    ("8-selftest-memo.png", "deck", "light", "theme"),
+    ("8-theme-memo.png", "multitrack", "light", "theme"),
+    ("9-theme-memo.png", "memo", "dark", "selftest"),
 )
 
 # What the README shows, at the width it shows it. Full-resolution shots of a
@@ -417,20 +443,26 @@ def thumbnails() -> None:
 
 
 def listing() -> None:
-    """The F-Droid copies: full resolution, numbered, from the shots above."""
+    """The F-Droid copies: full resolution, from the shots above, under the
+    names F-Droid already has (see LISTING_ORDER). Every name gets a picture,
+    or the old one F-Droid holds under it stays on the page."""
     import shutil
 
+    names = [name for name, *_ in LISTING_ORDER]
+    if names != sorted(names):
+        sys.exit("LISTING_ORDER is not in file-name order: F-Droid would show it shuffled")
+    missing = [f"{look}/{theme}/{screen}" for _, look, theme, screen in LISTING_ORDER
+               if not (OUT / look / theme / f"{screen}.png").exists()]
+    if missing:
+        sys.exit(f"no shot to list for {', '.join(missing)}: shoot those first")
     LISTING.mkdir(parents=True, exist_ok=True)
     for old in LISTING.glob("*.png"):
-        old.unlink()
-    for number, (look, theme, name) in enumerate(LISTING_ORDER, start=1):
-        source = OUT / look / theme / f"{name}.png"
-        if not source.exists():
-            continue
-        suffix = "" if theme == "light" else "-dark"
-        target = LISTING / f"{number}-{name}-{look}{suffix}.png"
-        shutil.copyfile(source, target)
-        print(f"    {target.relative_to(ROOT)}  {target.stat().st_size // 1024} kB")
+        if old.name not in names:
+            sys.exit(f"{old.name} is not in LISTING_ORDER: F-Droid keeps every name it is given")
+    for name, look, theme, screen in LISTING_ORDER:
+        target = LISTING / name
+        shutil.copyfile(OUT / look / theme / f"{screen}.png", target)
+        print(f"    {target.relative_to(ROOT)}  {look} {theme} {screen}  {target.stat().st_size // 1024} kB")
 
 
 if __name__ == "__main__":

@@ -105,6 +105,21 @@ class HeaderFactsTest {
         assertEquals(Instruction.JOIN_WIFI, instruction(down.copy(onWifi = false, networkNotAllowed = true)))
     }
 
+    @Test fun offWithDebuggingOffNeedsWifiOnlyWithoutThePort() {
+        val none = Marks(true, false, false, 0)
+        val off = ready.copy(enabled = false, debuggingOff = true)
+        assertEquals(Instruction.SWITCH_ON_OVER_WIFI, instruction(off))
+        assertTrue(headerSpeech(off, none).startsWith("Off, with debugging off. Calls are not recorded; turning on needs Wi-Fi."))
+        // adbd on Start without Wi-Fi's port comes back anywhere (the Honor,
+        // 2026-10-27): no Wi-Fi to send anyone looking for.
+        val port = off.copy(portSet = true)
+        assertEquals(Instruction.SWITCH_ON, instruction(port))
+        assertTrue(headerSpeech(port, none).startsWith("Off, with debugging off. Calls are not recorded."))
+        assertFalse("Wi-Fi" in headerSpeech(port, none))
+        // A plain off is a plain off, port or not.
+        assertEquals(Instruction.SWITCH_ON, instruction(ready.copy(enabled = false, portSet = true)))
+    }
+
     @Test fun everyInstructionThatIsATapSaysWhatItDoes() {
         assertEquals(setOf(Instruction.ALLOW_WIFI, Instruction.PAIR_AGAIN, Instruction.START_AGAIN), Instruction.entries.filter { it.tap != null }.toSet())
     }
