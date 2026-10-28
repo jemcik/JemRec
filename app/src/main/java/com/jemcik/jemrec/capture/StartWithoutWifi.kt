@@ -66,6 +66,9 @@ object StartWithoutWifi {
 
     const val PORT = AdbTransport.LEGACY_TCP_PORT
 
+    /** By its full path, not looked up on PATH (CodeQL, code-scanning alert
+     *  67): Android's own, in every build. */
+    private const val GETPROP = "/system/bin/getprop"
     private const val GETPROP_MS = 2_000L
     private const val EXIT_POLL_MS = 2L
     private const val PROBE_MS = 200
@@ -97,7 +100,7 @@ object StartWithoutWifi {
      */
     fun configuredPort(): Int? {
         val process = runCatching {
-            ProcessBuilder("getprop", "service.adb.tcp.port").redirectErrorStream(true).start()
+            ProcessBuilder(GETPROP, "service.adb.tcp.port").redirectErrorStream(true).start()
         }.getOrNull() ?: return null
         return try {
             val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(GETPROP_MS)
