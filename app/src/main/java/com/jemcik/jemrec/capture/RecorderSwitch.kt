@@ -118,7 +118,8 @@ object RecorderSwitch {
             // What the last off switched off, back first: the revive below
             // stands down while it is still off (DebugSwitchesOff).
             DebugSwitchesOff.switchBackOn(context)
-            CaptureDaemon.revive(context)
+            // The user's own On: not held to a routine revive's limits.
+            CaptureDaemon.revive(context, request = CaptureDaemon.Request.USER)
             RecorderKeepAlive.schedule(context)
             NetworkRevive.arm(context)
             CaptureDaemon.pushMode(context)

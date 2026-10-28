@@ -52,7 +52,7 @@ class CableWatchTest {
     }
 
     @Test fun otherwiseWirelessDebuggingIsOnlyTurnedOnWhenOff() {
-        // A reboot leaves it off.
+        // Off: a reboot leaves it so on some phones.
         assertEquals(WirelessStep.TURN_ON, CaptureDaemon.wirelessDebuggingStep(cableStoppedAdbd = false, on = false, onWifi = true))
         // On, with nothing advertised, may be a Wi-Fi Android has not allowed:
         // switching it again would put Android's question up unasked.

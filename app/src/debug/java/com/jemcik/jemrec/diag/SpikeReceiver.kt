@@ -340,6 +340,28 @@ class SpikeReceiver : BroadcastReceiver() {
                         )
                     }
 
+                    // What THIS process reads of init's notes on adbd, to set
+                    // against `getprop` from a shell: whether an app may read
+                    // them at all is sepolicy's to say (AdbdState).
+                    "adbd" -> {
+                        val sp = com.jemcik.jemrec.capture.SystemProperty
+                        val readStart = System.nanoTime()
+                        val state = com.jemcik.jemrec.capture.AdbdState.read()
+                        val readMs = (System.nanoTime() - readStart) / 1_000_000.0
+                        report(
+                            appContext, "adbd",
+                            "init.svc.adbd=[${sp.read("init.svc.adbd")}] init.svc.zygote=[${sp.read("init.svc.zygote")}] " +
+                                "state=$state (${"%.1f".format(java.util.Locale.ROOT, readMs)} ms)",
+                        )
+                    }
+
+                    // A routine revive once adbd stops (ReviveLater), for the
+                    // emulator check that stops it.
+                    "revivelater" -> {
+                        ReviveLater.schedule(appContext)
+                        report(appContext, "revivelater", "scheduled: a revive once adbd reads stopped")
+                    }
+
                     // What THIS process reads for the settings setup decides
                     // by, to set against `settings get global` from a shell.
                     // Android 17's docs say adb_enabled and

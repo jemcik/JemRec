@@ -32,6 +32,25 @@ class RecorderHealthTest {
         )
     }
 
+    @Test fun theWifiIsNotAllowedOnlyWithAdbdRunning() {
+        val notAllowed = { refused: Boolean, on: Boolean, adbd: AdbdState.State, here: Boolean ->
+            RecorderHealth.notAllowed(refusedHere = refused, switchOn = on, adbd = adbd, switchedOnHere = here)
+        }
+        // The emulator's untrusted Wi-Fi: adbd running, nothing advertised.
+        assertTrue(notAllowed(false, true, AdbdState.State.RUNNING, false))
+        // The Honor after a restart, 2026-10-28: switch on, adbd not running,
+        // a Wi-Fi allowed long before. Not the Wi-Fi - even after a switch.
+        assertFalse(notAllowed(false, true, AdbdState.State.STOPPED, false))
+        assertFalse(notAllowed(false, true, AdbdState.State.STOPPED, true))
+        // Unreadable: the Wi-Fi once a switch here has not started anything.
+        assertFalse(notAllowed(false, true, AdbdState.State.UNKNOWN, false))
+        assertTrue(notAllowed(false, true, AdbdState.State.UNKNOWN, true))
+        // Refused here (Android 12 keeps the switch off) says it whatever else.
+        assertTrue(notAllowed(true, false, AdbdState.State.STOPPED, false))
+        // Switched off, with no refusal: nothing to allow.
+        assertFalse(notAllowed(false, false, AdbdState.State.RUNNING, true))
+    }
+
     @Test fun offWifiNothingIsAdvertisedAnywaySoThatSaysNothing() {
         assertEquals(Problem.NEEDS_WIFI, RecorderHealth.diagnose(onWifi = false, refusedInARow = 0, unadvertised = true))
     }

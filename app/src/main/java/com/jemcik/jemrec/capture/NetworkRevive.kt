@@ -119,12 +119,10 @@ object NetworkRevive {
      * debugging off and back on, and after the revive's own switch-on.
      * (Android 17 leaves it on after Cancel and asks once - 0.10's notes.)
      */
-    fun noteWirelessRefused(context: Context) {
-        val here = connection(context) ?: return
-        Prefs.of(context).edit { putString(KEY_REFUSED_ON, here) }
-    }
+    fun noteWirelessRefused(context: Context) = noteHere(context, KEY_REFUSED_ON)
 
-    /** Asked again: the user, at Start without Wi-Fi's switch. */
+    /** Asked again: the user, at Start without Wi-Fi's switch, or by Allow
+     *  this Wi-Fi's revive as it switches Wireless debugging off and on. */
     fun forgetWirelessRefused(context: Context) {
         Prefs.of(context).edit { remove(KEY_REFUSED_ON) }
     }
@@ -143,9 +141,34 @@ object NetworkRevive {
         return !on
     }
 
-    fun wirelessRefusedHere(context: Context): Boolean {
+    fun wirelessRefusedHere(context: Context): Boolean = notedHere(context, KEY_REFUSED_ON)
+
+    /**
+     * A revive switched Wireless debugging on, or off and on, on the Wi-Fi
+     * connection the phone is on now, and the recorder has not been up since
+     * (CaptureDaemon.revive forgets it then). A routine revive switches it
+     * off and on once per connection at most (wirelessDebuggingStep), and
+     * RecorderHealth takes nothing advertised after such a switch for a
+     * Wi-Fi not allowed.
+     */
+    fun noteSwitchedOn(context: Context) = noteHere(context, KEY_SWITCHED_ON)
+
+    fun forgetSwitchedOn(context: Context) {
+        Prefs.of(context).edit { remove(KEY_SWITCHED_ON) }
+    }
+
+    fun switchedOnHere(context: Context): Boolean = notedHere(context, KEY_SWITCHED_ON)
+
+    /** A note under [key] for the Wi-Fi connection the phone is on now
+     *  ([connection]); none off Wi-Fi. */
+    private fun noteHere(context: Context, key: String) {
+        val here = connection(context) ?: return
+        Prefs.of(context).edit { putString(key, here) }
+    }
+
+    private fun notedHere(context: Context, key: String): Boolean {
         val here = connection(context) ?: return false
-        return Prefs.of(context).getString(KEY_REFUSED_ON, null) == here
+        return Prefs.of(context).getString(key, null) == here
     }
 
     /**
@@ -165,6 +188,7 @@ object NetworkRevive {
     }
 
     private const val KEY_REFUSED_ON = "wireless_debugging_refused_on"
+    private const val KEY_SWITCHED_ON = "wireless_debugging_switched_on"
 
     private fun pendingIntent(context: Context): PendingIntent {
         val intent = Intent(context, NetworkReviveReceiver::class.java)

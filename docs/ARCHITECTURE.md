@@ -360,6 +360,27 @@ was ever armed, and seven minutes after Wi-Fi returned nothing had come back.
 **Opening JemRec once** had it recording sixteen seconds later. That is the
 fallback, and it always works.
 
+**A restart can leave Wireless debugging switched on and not running.**
+Measured on the Honor (MagicOS 11, Android 17), 2026-10-28, with no cable:
+after the restart both switches read on and Android believed both on, but
+adbd was not running - `AdbDebuggingManager` logged "adbd_auth domain socket
+unavailable" once a second. Every revive found nothing advertised; the header
+said *Tap to allow this Wi-Fi*, for a Wi-Fi allowed long before; and the
+recorder stayed down until that tap switched Wireless debugging off and on.
+adbd was up two seconds later, the recorder a minute after that, at the
+keep-alive's next try. So a revive now reads whether adbd runs, from init's
+own note of it (`init.svc.adbd`, `AdbdState`) - readable by apps, measured on
+the Honor and the Android 12, 13, 16 and 17 emulators - and with adbd stopped
+switches Wireless debugging off and on itself. The same phone rebooted with
+that build: JemRec's first try, as the phone was unlocked, read adbd stopped,
+switched it, and had the recorder up **eleven seconds** later, the app never
+opened. Where the note cannot be read, a revive that finds nothing switches it
+off and on once per Wi-Fi connection: that starts an adbd not running, and on
+a Wi-Fi Android has not allowed it asks once (`cycleAfterNotFound`). *Tap to
+allow this Wi-Fi* is now said only with adbd running, or after that once
+(`RecorderHealth.notAllowed`), and the tap starts the recorder itself, waiting
+for a start under way instead of cutting it off.
+
 Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 recording carries on with Wi-Fi off, on mobile data, anywhere.
 

@@ -30,6 +30,7 @@ import com.jemcik.jemrec.capture.AfterCall
 import com.jemcik.jemrec.capture.BackgroundKill
 import com.jemcik.jemrec.capture.MissedCalls
 import kotlinx.coroutines.flow.first
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -500,23 +501,35 @@ class MainViewModel @JvmOverloads constructor(
     fun refreshSetup() = launchAction("check setup") { recheckSetup() }
 
     /**
-     * Ask Android, again, to allow Wireless debugging on this Wi-Fi: its
-     * question comes up over this screen, and closing it resumes the screen,
-     * whose re-check revives the recorder. See CaptureDaemon.askToAllowNetwork.
+     * The header's Allow this Wi-Fi, and the alert's: Android asks again, its
+     * question over this screen, and the recorder starts once adbd is
+     * advertised (CaptureDaemon.askToAllowNetwork), with Starting in the
+     * header meanwhile - as a revive, not holding the screen still
+     * (reviveInBackground). It waits its turn while the screen is busy rather
+     * than being dropped, as setEnabled does: asked for while the recorder is
+     * down, when the opening's check holds busy for seconds, the tap went
+     * without a sign. One at a time - a second tap while one runs is the same
+     * question - and one while another revive runs waits for it, under the
+     * revive's lock.
      */
-    /** Waits its turn rather than being dropped, as setEnabled does: asked
-     *  for while the recorder is down, when the opening's check holds busy
-     *  for seconds, the tap went without a sign. One at a time - a second
-     *  tap while one waits is the same question. */
     fun allowThisWifi() {
         if (!askingForWifi.compareAndSet(false, true)) return
-        launchActionWhenFree("allow this Wi-Fi") {
+        starts.begin()
+        viewModelScope.launch {
             try {
+                _state.first { !it.busy }
                 if (!CaptureDaemon.askToAllowNetwork(getApplication())) {
                     say("could not switch Wireless debugging - open it in Developer options and allow this network")
                 }
+                refreshNow()
+            } catch (e: CancellationException) {
+                throw e // the screen gone: not a failure to report
+            } catch (t: Throwable) {
+                Log.w("JemRec", "allow this Wi-Fi failed", t)
+                say("allow this Wi-Fi failed: ${t.javaClass.simpleName}: ${t.message}")
             } finally {
                 askingForWifi.set(false)
+                starts.end()
             }
         }
     }
@@ -658,15 +671,18 @@ class MainViewModel @JvmOverloads constructor(
      * on the last reading being "down": the callback also fires on
      * registration, before anything has been read.
      */
-    fun onWifiAvailable() {
-        val s = _state.value
-        if (s.step == SetupStep.READY && s.enabled && !s.daemonRunning) reviveInBackground()
-    }
+    fun onWifiAvailable() = reviveIfDown(CaptureDaemon.Request.ROUTINE)
 
     /** The header's Tap to start again: the recorder down on Wi-Fi, for a
      *  reason the last revive could not name - started again now, rather
-     *  than at the keep-alive's next turn. */
-    fun startAgain() = onWifiAvailable()
+     *  than at the keep-alive's next turn, and allowed to switch Wireless
+     *  debugging off and on again for an adbd still stopped. */
+    fun startAgain() = reviveIfDown(CaptureDaemon.Request.USER)
+
+    private fun reviveIfDown(request: CaptureDaemon.Request) {
+        val s = _state.value
+        if (s.step == SetupStep.READY && s.enabled && !s.daemonRunning) reviveInBackground(request)
+    }
 
     private var pairingWatch: Job? = null
 
@@ -706,12 +722,12 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    private fun reviveInBackground() {
+    private fun reviveInBackground(request: CaptureDaemon.Request = CaptureDaemon.Request.ROUTINE) {
         if (!reviving.compareAndSet(false, true)) return
         starts.begin()
         viewModelScope.launch {
             try {
-                CaptureDaemon.revive(getApplication())
+                CaptureDaemon.revive(getApplication(), request = request)
                 refreshNow()
             } catch (t: Throwable) {
                 Log.w("JemRec", "reviving the recorder failed", t)
@@ -904,7 +920,7 @@ class MainViewModel @JvmOverloads constructor(
                 // close for a Wi-Fi with Wireless debugging (portChangeOver).
                 val began = AtomicBoolean(false)
                 try {
-                    CaptureDaemon.revive(app) { if (began.compareAndSet(false, true)) starts.begin() }
+                    CaptureDaemon.revive(app, onPortChange = { if (began.compareAndSet(false, true)) starts.begin() })
                 } catch (t: Throwable) {
                     Log.w("JemRec", "the port change's revive failed", t)
                 } finally {

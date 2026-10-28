@@ -21,11 +21,13 @@ import android.util.Log
  * useful to do until BOOT_COMPLETED.
  *
  * What it starts is the keep-alive job, not a service. A reboot kills the
- * daemon and resets Wireless debugging to 0, so the daemon must be revived -
- * but that needs ADB and therefore Wi-Fi, which may not be up the instant boot
- * completes. The job kicks once immediately and then retries with backoff until
- * Wi-Fi arrives, and schedules the periodic heartbeat. No foreground service,
- * no notification, until an actual call.
+ * daemon, and leaves adbd without Wireless debugging: switched off on some
+ * phones, and on the Honor (MagicOS 11, 2026-10-28) left on with adbd not
+ * started - the revive switches it on, or off and on (CaptureDaemon). So the
+ * daemon must be revived - but that needs ADB and therefore Wi-Fi, which may
+ * not be up the instant boot completes. The job kicks once immediately and
+ * then retries with backoff until Wi-Fi arrives, and schedules the periodic
+ * heartbeat. No foreground service, no notification, until an actual call.
  */
 class BootReceiver : BroadcastReceiver() {
 

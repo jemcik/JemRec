@@ -7,7 +7,6 @@ import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.util.concurrent.TimeUnit
 
 /**
  * Settings, Debugging, Start without Wi-Fi (issue #37): the recorder started
@@ -66,11 +65,6 @@ object StartWithoutWifi {
 
     const val PORT = AdbTransport.LEGACY_TCP_PORT
 
-    /** By its full path, not looked up on PATH (CodeQL, code-scanning alert
-     *  67): Android's own, in every build. */
-    private const val GETPROP = "/system/bin/getprop"
-    private const val GETPROP_MS = 2_000L
-    private const val EXIT_POLL_MS = 2L
     private const val PROBE_MS = 200
 
     fun enabled(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ON, false)
@@ -81,43 +75,17 @@ object StartWithoutWifi {
 
     /**
      * The port adbd listens on whenever it starts: service.adb.tcp.port, 0
-     * for none. Read with getprop, since android.os.SystemProperties is not
-     * for apps (see DeviceSkin) and this property is readable by them -
-     * `get_prop(appdomain, adbd_config_prop)`, sepolicy's app.te. It is what
-     * says whether On after Turn all debugging off can come back without
-     * Wi-Fi, which asking the port cannot: adbd is stopped then.
+     * for none. Read with getprop (SystemProperty), and this property is
+     * readable by apps - `get_prop(appdomain, adbd_config_prop)`, sepolicy's
+     * app.te. It is what says whether On after Turn all debugging off can
+     * come back without Wi-Fi, which asking the port cannot: adbd is stopped
+     * then.
      *
-     * Null when it cannot be told: getprop prints the same empty line for a
-     * property never set as for one this app may not read, so an empty
-     * answer is not taken for "no port" - a build that denied apps the read
-     * would otherwise never see the port it opened ([ready] falls back on
-     * what this boot did). Run on every revive and every screen refresh, so
-     * the process and its pipes are let go every time.
-     *
-     * Its end is looked for every 2 ms, not with waitFor(timeout), which
-     * looks every 100: each read took 102 ms that way, on the Honor,
-     * 2026-10-28, eight reads in a row, for a getprop done in a few.
+     * Null when it cannot be told: an empty answer is not taken for "no
+     * port" - a build that denied apps the read would otherwise never see
+     * the port it opened ([ready] falls back on what this boot did).
      */
-    fun configuredPort(): Int? {
-        val process = runCatching {
-            ProcessBuilder(GETPROP, "service.adb.tcp.port").redirectErrorStream(true).start()
-        }.getOrNull() ?: return null
-        return try {
-            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(GETPROP_MS)
-            while (process.isAlive) {
-                if (System.nanoTime() > deadline) return null
-                Thread.sleep(EXIT_POLL_MS)
-            }
-            parsePort(process.inputStream.bufferedReader().use { it.readText() })
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            null
-        } catch (_: Exception) {
-            null
-        } finally {
-            process.destroy()
-        }
-    }
+    fun configuredPort(): Int? = SystemProperty.read("service.adb.tcp.port")?.let(::parsePort)
 
     /** getprop prints the value, or an empty line for a property never set
      *  or not readable - null, as is anything that is not a number. */

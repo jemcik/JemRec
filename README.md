@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-883-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-895-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -129,6 +129,11 @@ JemRec → *Manage manually*, with *Auto-launch* on), the recorder was back
 the phone declined to start the app at boot and nothing came back by itself -
 **opening JemRec once** had it recording sixteen seconds later. That is the
 fallback, and it always works.
+
+On MagicOS 11 a restart also leaves Wireless debugging switched on without
+starting it. Since 0.25.1 JemRec sees that and switches it off and on itself:
+recording again **eleven seconds** after its first try, which came as the
+phone was unlocked, with the app never opened.
 
 Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 recording carries on with Wi-Fi off, on mobile data, anywhere. The measurements
@@ -452,7 +457,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 883 tests, screenshots of the screens included
+    ./gradlew test              # 895 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

@@ -46,7 +46,11 @@ import com.jemcik.jemrec.adb.AdbTransport
  * question gone, and the next revive, finding the switch already on, never
  * asked again. Nothing an app can read says "not allowed", so a revive on
  * Wi-Fi that found the switch on and no advertisement is taken to mean
- * exactly this. Android 12 keeps the switch off while it asks, and after
+ * exactly this - with adbd running ([notAllowed]). Not with adbd stopped:
+ * after a restart of the Honor (2026-10-28) both switches were on, adbd was
+ * not running, and the header asked to allow a Wi-Fi Android had allowed
+ * long before; a tap that switched it off and on started adbd, and no
+ * question came. Android 12 keeps the switch off while it asks, and after
  * Cancel (the Android 12 AVD, 2026-10-28), so there the revive's own note
  * that Android switched it back off stands for it
  * (NetworkRevive.noteWirelessRefused). The answer is to ask again: the alert's button switches
@@ -70,15 +74,16 @@ internal object RecorderHealth {
 
     enum class Problem { NEEDS_WIFI, NETWORK_NOT_ALLOWED, CANNOT_CONNECT, CANNOT_START }
 
-    /** Called with the outcome of every revive. Cheap; never throws. */
-    fun onRevive(context: Context, alive: Boolean) = runCatching {
+    /** Called with the outcome of every revive - [connect], what its own
+     *  connect found (CaptureDaemon.revive). Cheap; never throws. */
+    fun onRevive(context: Context, alive: Boolean, connect: AdbTransport.ConnectOutcome) = runCatching {
         val prefs = Prefs.of(context)
         // Refusals count only in a row: a recorder that came up, or an adbd
         // that let us in, starts the count again.
         val refused = when {
             alive -> 0
-            AdbTransport.lastConnect == AdbTransport.ConnectOutcome.REFUSED -> prefs.getInt(KEY_REFUSED, 0) + 1
-            AdbTransport.lastConnect == AdbTransport.ConnectOutcome.NONE -> prefs.getInt(KEY_REFUSED, 0)
+            connect == AdbTransport.ConnectOutcome.REFUSED -> prefs.getInt(KEY_REFUSED, 0) + 1
+            connect == AdbTransport.ConnectOutcome.NONE -> prefs.getInt(KEY_REFUSED, 0)
             else -> 0
         }
         prefs.edit { putInt(KEY_REFUSED, refused) }
@@ -100,8 +105,13 @@ internal object RecorderHealth {
         val now = System.currentTimeMillis()
         val since = prefs.getLong(KEY_DOWN_SINCE, 0L).takeIf { it > 0 }
             ?: now.also { prefs.edit { putLong(KEY_DOWN_SINCE, it) } }
-        val unadvertised = AdbTransport.lastConnect == AdbTransport.ConnectOutcome.NOT_FOUND &&
-            (GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED) || NetworkRevive.wirelessRefusedHere(context))
+        val unadvertised = connect == AdbTransport.ConnectOutcome.NOT_FOUND &&
+            notAllowed(
+                refusedHere = NetworkRevive.wirelessRefusedHere(context),
+                switchOn = GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED),
+                adbd = AdbdState.read(),
+                switchedOnHere = NetworkRevive.switchedOnHere(context),
+            )
         val problem = diagnose(NetworkRevive.onWifi(context), refused, unadvertised)
         // Kept at every failed revive, not only once alerted: the home screen
         // shows it straight away, where the alert waits out the grace.
@@ -115,8 +125,32 @@ internal object RecorderHealth {
     }.onFailure { Log.w(TAG, "health: could not judge the recorder", it) }
 
     /**
-     * unadvertised: on Wi-Fi with Wireless debugging switched on, the revive
-     * found no advertisement to connect to. See the class comment.
+     * Nothing advertised, and this Wi-Fi not allowed the reason: Android
+     * refused it here, or the switch is on and adbd runs. With adbd's state
+     * unreadable, only once a revive has switched it off and on here - the
+     * one try that would have started an adbd not running (CaptureDaemon's
+     * cycleAfterNotFound). Never with adbd stopped: no Wi-Fi question
+     * explains that, and a revive that switched it off and on and still
+     * found it stopped has no name for why.
+     */
+    internal fun notAllowed(
+        refusedHere: Boolean,
+        switchOn: Boolean,
+        adbd: AdbdState.State,
+        switchedOnHere: Boolean,
+    ): Boolean = when {
+        refusedHere -> true
+        !switchOn -> false
+        else -> when (adbd) {
+            AdbdState.State.RUNNING -> true
+            AdbdState.State.STOPPED -> false
+            AdbdState.State.UNKNOWN -> switchedOnHere
+        }
+    }
+
+    /**
+     * unadvertised: on Wi-Fi, the revive found no advertisement to connect
+     * to, and [notAllowed]. See the class comment.
      */
     internal fun diagnose(onWifi: Boolean, refusedInARow: Int, unadvertised: Boolean = false): Problem = when {
         !onWifi -> Problem.NEEDS_WIFI

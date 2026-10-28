@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-883 JVM tests, no device needed - 687 for the app and 196 for the daemon:
+895 JVM tests, no device needed - 699 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -86,10 +86,16 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13, 16 and 17 for 0.25 -
-16 is what the Galaxy phones of the issues run):
+emulator, for each Android version it claims (12, 13, 16 and 17 for 0.25.1 -
+16 is what the Galaxy phones of the issues run), each booted cold
+(`emulator -avd <name> -no-snapshot`):
 
     python3 tools/emulator_checks.py --serial emulator-5554
+
+Cold, not `-no-snapshot-save` alone, which still loads the AVD's quick-boot
+snapshot at every start and throws away whatever happened since it was taken:
+the 17 AVD showed JemRec 0.9 for eight days that way, until 2026-10-28 (every
+run installed the current build first, so the results were for it).
 
 It installs the debug build, sets JemRec up from nothing and places simulated
 calls: the ringing cut, the same cut with nothing captured until the answer
@@ -133,23 +139,34 @@ does, the app switches Wireless debugging off and on and starts it again.
 Then USB debugging switched off by the shell with the app in the background,
 as an Honor's own Settings app does whenever Developer options is shown: the
 app is woken by the change, switches it back on and has the recorder
-answering again. Then When JemRec is off: set to Hide Developer options, off
+answering again. Then adbd stopped with Wireless debugging on, as an Honor
+on MagicOS 11 leaves it after a restart (stopped here as root, the recorder
+killed): the app's revive reads adbd stopped, switches Wireless debugging off
+and on, and has the recorder back, running as shell. Then When JemRec is
+off: set to Hide Developer options, off
 takes Developer options and Wireless debugging off and the recorder keeps its
 process, and on puts them back; set to Turn all debugging off, the recorder
 switches Wireless and USB debugging off and goes, adbd with it, and on - sent
 by the debug build after a delay, since adb is gone - puts it all back and
-starts the recorder. Then Start without Wi-Fi: on Wi-Fi a revive has adbd
+starts the recorder. Then the header's *Tap to allow this Wi-Fi*: on a Wi-Fi
+Android has not allowed (its allowance taken back first), with the recorder
+down and port 5555 shut to the app, the header asks; the tap puts Android's
+question up, and after Allow the tap's own revive has the recorder back.
+Then Start without Wi-Fi: on Wi-Fi a revive has adbd
 open its classic port, 5555 (the property is what is checked: an emulator's
 adbd listens there anyway); with Wi-Fi off, Turn all debugging off and back
 on has the recorder started over that port; switched off, the port is closed
 again on Wi-Fi over Wireless debugging - or, where the revive came over 5555
 itself, left open, as it must be. And first, where the AVD's Wi-Fi has not
-been allowed for Wireless debugging (the 12 AVD asks again at every boot, the
-13 and 16 AVDs did on some), that once the question is cancelled no revive
-for the port asks again or opens it; then the check allows that Wi-Fi for
-the rest. These checks and the USB-debugging one take a snapshot
-through the emulator's console first, and load it if adb never comes back.
-Last, the daemon's watch for the phone stopping JemRec in the background:
+been allowed for Wireless debugging - on Android 12 always, the check taking
+its allowance back first, as root with system_server stopped - that once the
+question is cancelled no revive for the port asks again or opens it; then
+the check allows that Wi-Fi for the rest. These checks, the USB-debugging one
+and the adbd one take a snapshot through the emulator's console first, and
+load it if adb never comes back.
+And, run before those two Wi-Fi checks (Start without Wi-Fi goes last: it
+turns the emulator's Wi-Fi off and on), the daemon's watch for the phone
+stopping JemRec in the background:
 that it runs and reads the device's own exit records; and on Android 15 and
 later, that the app reads its own start record - a Force stop, then an open,
 read as "started stopped" and, being the user's own stop, not warned of. The

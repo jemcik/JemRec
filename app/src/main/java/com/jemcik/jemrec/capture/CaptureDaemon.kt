@@ -58,6 +58,12 @@ object CaptureDaemon {
     /** How long a revive looks for adbd before giving up on this attempt. */
     internal const val CONNECT_MS = 5_000L
 
+    /** How long a revive gives an adbd Android is starting by itself - for a
+     *  switch written just before, armShield's or On's - before taking it
+     *  for stopped. On the Honor, 2026-10-28, adbd's socket answered 0.55 s
+     *  and 1.0 s after the switch-on that started it. */
+    private const val ADBD_START_MS = 2_000L
+
     /** adbd's own restart, when it is told to change its port: gone, then
      *  started again by init. */
     private const val ADBD_RESTART_MS = 1_000L
@@ -65,9 +71,11 @@ object CaptureDaemon {
     /** Connects tried after adbd restarts, a second or more apart. */
     private const val PORT_RECONNECTS = 3
 
-    /** How long a revive for the port alone waits for Allow on Android's
-     *  Wi-Fi question before taking it for a refusal: long enough to read
-     *  the question and tap, by judgement, not measured. */
+    /** How long Android's Wi-Fi question is given for an answer: a revive
+     *  for the port alone waits this long for Allow before taking it for a
+     *  refusal, and Allow this Wi-Fi's revive looks this long for adbd's
+     *  advertisement. Long enough to read the question and tap, by
+     *  judgement, not measured. */
     private const val ALLOW_WAIT_MS = 20_000L
     private const val KEY_TOKEN = "daemon_token"
 
@@ -437,8 +445,15 @@ object CaptureDaemon {
      * begins - the restart of adbd, and of the recorder with it: the
      * switch's own revive says Starting from then, and not for one that ends
      * up changing nothing (MainViewModel.setStartWithoutWifi).
+     *
+     * [request] says who asked, which decides how far it goes to start adbd
+     * (wirelessDebuggingStep).
      */
-    suspend fun revive(context: Context, onPortChange: (() -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
+    suspend fun revive(
+        context: Context,
+        onPortChange: (() -> Unit)? = null,
+        request: Request = Request.ROUTINE,
+    ): Boolean = withContext(Dispatchers.IO) {
         // Switched off with debugging, by choice: every revive stands down
         // here, or one of them would have debugging back on within seconds.
         // Not a failure either, so RecorderHealth is not told of one.
@@ -455,18 +470,39 @@ object CaptureDaemon {
             ReviveLog.note(context, "revive: JemRec is on with debugging still recorded off; putting it back")
             DebugSwitchesOff.switchBackOn(context)
         }
-        AdbTransport.forgetLastConnect()
-        ReviveLog.note(context, "revive: start")
-        val alive = lifecycle.withLock { reviveLocked(context, onPortChange) }
-        ReviveLog.note(context, "revive: ${if (alive) "recorder up" else "recorder down"} (connect ${AdbTransport.lastConnect})")
+        // What this revive's own connect found, kept as it connects, under
+        // the lock: AdbTransport.lastConnect is any connect's. Read after the
+        // lock, it was the next revive's, which reset it on its way in - on
+        // the Android 13 and 16 AVDs, 2026-10-29, a keep-alive queued behind
+        // Allow this Wi-Fi's revive had it log "recorder up (connect NONE)".
+        val found = Found()
+        val alive = lifecycle.withLock {
+            AdbTransport.forgetLastConnect()
+            ReviveLog.note(context, "revive: start")
+            reviveLocked(context, onPortChange, request, found)
+        }
+        ReviveLog.note(context, "revive: ${if (alive) "recorder up" else "recorder down"} (connect ${found.connect})")
         // Every revive is a reading of whether the recorder is up, and the
         // one place the user hears about it when it is not. See RecorderHealth.
-        RecorderHealth.onRevive(context, alive)
-        if (alive) CableWatch.forget(context)
+        RecorderHealth.onRevive(context, alive, found.connect)
+        if (alive) {
+            CableWatch.forget(context)
+            NetworkRevive.forgetSwitchedOn(context)
+        }
         alive
     }
 
-    private suspend fun reviveLocked(context: Context, onPortChange: (() -> Unit)?): Boolean {
+    /** A revive's own connect outcome (see revive). */
+    private class Found {
+        var connect = AdbTransport.ConnectOutcome.NONE
+    }
+
+    private suspend fun reviveLocked(
+        context: Context,
+        onPortChange: (() -> Unit)?,
+        request: Request,
+        found: Found,
+    ): Boolean {
         // Keep the off-Wi-Fi shield up whenever this phone is set up - even when
         // the daemon is already running. Honor clears adb_enabled when adbd
         // restarts (which is what a Wi-Fi return does), and a manual respawn
@@ -522,43 +558,54 @@ object CaptureDaemon {
             return running != null
         }
 
-        // A reboot resets this to 0, and without it adbd is not listening even
-        // on Wi-Fi. Needs WRITE_SECURE_SETTINGS, granted once at setup.
-        //
-        // And after a USB cable stopped adbd it reads 1 with nothing listening
-        // (see CableWatch): only switching it off and on has Android start
-        // adbd again. Measured on the Honor: adbd stopped at 18:44:21 and was
-        // back at 18:47:13, the moment it was switched off and on, and not
-        // before. Not done for a revive that merely finds nothing advertised:
-        // on a Wi-Fi Android has not allowed, that puts its question on screen
-        // out of nowhere (see RecorderHealth), so it is left to the button.
-        // Nor switched on again where Android refused it on this Wi-Fi: on
+        // Off, Wireless debugging is switched on (TURN_ON): without it adbd is
+        // not listening even on Wi-Fi. Needs WRITE_SECURE_SETTINGS, granted
+        // once at setup. Not where Android refused it on this Wi-Fi: on
         // Android 12 the switch stays off after Cancel, and each revive -
         // every return to JemRec with the recorder down - asked again
         // (NetworkRevive.noteWirelessRefused).
+        //
+        // On with adbd not running, only switching it off and on has Android
+        // start adbd (CYCLE): after a USB cable stopped it (CableWatch), and
+        // after a restart of the Honor (AdbdState). Measured on the Honor: adbd
+        // stopped at 18:44:21 and was back at 18:47:13, the moment it was
+        // switched off and on; and on 2026-10-28, rebooted at 22:53:35, every
+        // revive read adbd stopped with both switches on, and found nothing
+        // until a tap on the header switched it off and on at 22:56:28 - adbd
+        // was up two seconds later. Not done where adbd runs and nothing is
+        // advertised: that is a Wi-Fi Android has not allowed, and switching
+        // would put its question on screen out of nowhere (RecorderHealth) -
+        // the header's Allow this Wi-Fi asks.
         val wirelessOn = wirelessDebuggingOn(context)
+        val cableStopped = CableWatch.stoppedAdbd(context)
+        val switchedOnHere = NetworkRevive.switchedOnHere(context)
+        // Stopped, with the switch on, may be adbd a switch written a moment
+        // ago is starting: armShield's above, or debugging put back on by On
+        // (DebugSwitchesOff.switchBackOn) - a stopped that ends by itself.
+        // Waited out only where stopped would have it switched off and on.
+        val waitForStart = wirelessOn && onWifi && !cableStopped && request != Request.ALLOW_WIFI &&
+            mayCycleAgain(switchedOnHere, request)
+        val adbd = AdbdState.read().let { if (waitForStart) AdbdState.settled(it, ADBD_START_MS) else it }
+        ReviveLog.note(context, "revive: adbd $adbd")
         val step = wirelessDebuggingStep(
-            cableStoppedAdbd = CableWatch.stoppedAdbd(context),
+            cableStoppedAdbd = cableStopped,
             on = wirelessOn,
             onWifi = onWifi,
             refused = NetworkRevive.stillRefusedHere(context, wirelessOn),
+            adbdStopped = adbd == AdbdState.State.STOPPED,
+            switchedOnHere = switchedOnHere,
+            request = request,
         )
         ReviveLog.note(context, "revive: Wireless debugging $step")
         when (step) {
             WirelessStep.CYCLE -> {
-                Log.i(TAG, "daemon: a USB cable stopped adbd; switching Wireless debugging off and on to start it")
-                val cycled = cycleWirelessDebugging(context)
-                ReviveLog.note(context, "revive: switched off and on: $cycled")
-                if (cycled) {
-                    // Once: that starts adbd, and a revive that fails after
-                    // it fails for some other reason, which cycling again
-                    // would only hide.
-                    CableWatch.forget(context)
-                    delay(ADBD_SETTLE_MS)
-                }
+                // Asked again, by the one who will answer.
+                if (request == Request.ALLOW_WIFI) NetworkRevive.forgetWirelessRefused(context)
+                switchOffAndOn(context, onWifi, answerAwaited = request == Request.ALLOW_WIFI)
             }
             WirelessStep.TURN_ON -> if (GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, true)) {
                 Log.i(TAG, "daemon: re-armed Wireless debugging")
+                NetworkRevive.noteSwitchedOn(context)
                 delay(ADBD_SETTLE_MS)
                 // Off again: Android refused it on this Wi-Fi and is asking
                 // (NetworkRevive.noteWirelessRefused). With the recorder up,
@@ -578,10 +625,28 @@ object CaptureDaemon {
 
         if (!AdbTransport.isConnected) {
             ReviveLog.note(context, if (overPort) "revive: connecting on port ${StartWithoutWifi.PORT}, no Wi-Fi" else "revive: connecting")
-            val connected = if (overPort) connectOnPort(context) else AdbTransport.autoConnect(context, timeoutMs = CONNECT_MS)
+            // Asked to allow this Wi-Fi: Android's question is on screen, and
+            // the connect waits for the answer.
+            val lookMs = if (request == Request.ALLOW_WIFI) ALLOW_WAIT_MS else CONNECT_MS
+            var connected = if (overPort) connectOnPort(context) else AdbTransport.autoConnect(context, timeoutMs = lookMs)
+            found.connect = AdbTransport.lastConnect
+            if (connected.isFailure && found.connect == AdbTransport.ConnectOutcome.NOT_FOUND &&
+                cycleAfterNotFound(adbd, step, wirelessOn, onWifi, switchedOnHere, request)
+            ) {
+                ReviveLog.note(context, "revive: nothing advertised, adbd unreadable; switching off and on once on this Wi-Fi")
+                if (switchOffAndOn(context, onWifi, answerAwaited = false)) {
+                    connected = AdbTransport.autoConnect(context, timeoutMs = CONNECT_MS)
+                    found.connect = AdbTransport.lastConnect
+                }
+            }
             connected.onFailure {
                 Log.w(TAG, "daemon: no ADB session - ${it.javaClass.simpleName}: ${it.message ?: "no detail"}")
-                ReviveLog.note(context, "revive: no ADB session (${AdbTransport.lastConnect}): ${it.message}")
+                ReviveLog.note(context, "revive: no ADB session (${found.connect}): ${it.message}")
+                // Cancelled: Android 12 leaves the switch off (noteWirelessRefused).
+                if (request == Request.ALLOW_WIFI && onWifi && !wirelessDebuggingOn(context)) {
+                    NetworkRevive.noteWirelessRefused(context)
+                    ReviveLog.note(context, "revive: Android refused Wireless debugging on this Wi-Fi")
+                }
                 // An older build that is up is still a recorder. Only a daemon
                 // that is down is a failure here - reporting the other as one
                 // would have the keep-alive retrying with backoff all day.
@@ -592,6 +657,9 @@ object CaptureDaemon {
         if (change != null) {
             onPortChange?.invoke()
             changePort(context, open = change == StartWithoutWifi.PortStep.OPEN)
+            // It connects again after adbd's restart: that connect is this
+            // revive's reading now, as it was when read at the end.
+            found.connect = AdbTransport.lastConnect
         } else if (portChange != null) {
             ReviveLog.note(context, "revive: port ${StartWithoutWifi.PORT} left open: connected over it, no Wireless debugging here")
         }
@@ -615,23 +683,62 @@ object CaptureDaemon {
     }
 
     /**
-     * Put Android's "Allow wireless debugging on this network?" back on
-     * screen, for a Wi-Fi it has not allowed (see RecorderHealth).
+     * The header's Allow this Wi-Fi, and the alert's: put Android's "Allow
+     * wireless debugging on this network?" back on screen, for a Wi-Fi it
+     * has not allowed (see RecorderHealth), and start the recorder once
+     * adbd is advertised.
      *
      * SystemUI asks when Wireless debugging is switched ON on such a network,
-     * not while it stays on, so it is switched off and on again. Measured on
-     * the Android 17 QPR2 emulator: the question appeared within a second of
-     * the second write, and after Always allow and Allow, the next revive
-     * found adbd advertising and the recorder came back. Called from the
-     * activity, so the question lands over JemRec, and the screen's
-     * re-check when it closes is what revives the recorder.
+     * not while it stays on, so the revive switches it off and on whatever
+     * else it finds (Request.ALLOW_WIFI). Measured on the Android 17 QPR2
+     * emulator: the question appeared within a second of the second write,
+     * and after Always allow and Allow, adbd advertised and the recorder came
+     * back. It revives itself rather than leaving that to the screen's
+     * re-check when the question closes: where no question comes - a Wi-Fi
+     * allowed already, adbd merely not running - nothing closes. On the
+     * Honor, 2026-10-28, the tap started adbd two seconds after it and the
+     * recorder waited a minute, for the keep-alive. Under the revive's lock,
+     * so it waits for a start under way instead of cutting it off: the third
+     * of three taps that evening switched Wireless debugging off two seconds
+     * into a keep-alive's start, which then failed.
      *
-     * False if the setting could not be written, which leaves the user to do
-     * it by hand in Settings.
+     * False without WRITE_SECURE_SETTINGS, which leaves the user to do it by
+     * hand in Settings: nothing can be switched then. Asked of the permission,
+     * not tried with a write, which would race the switch's other writers -
+     * a keep-alive's off and on among them. The permission and the writes go
+     * live together (Setup.hasSecureSettings: not until the process restarts
+     * after setup granted it).
      */
     suspend fun askToAllowNetwork(context: Context): Boolean {
         Log.i(TAG, "daemon: asking Android to allow Wireless debugging on this Wi-Fi")
-        return cycleWirelessDebugging(context)
+        if (!Setup.hasSecureSettings(context)) return false
+        revive(context, request = Request.ALLOW_WIFI)
+        return true
+    }
+
+    /**
+     * A revive's off and on (cycleWirelessDebugging), then a moment for adbd
+     * to start and advertise; noted for this Wi-Fi, which a routine revive
+     * switches once (wirelessDebuggingStep). Read back as TURN_ON's switch-on
+     * is: off again is a refusal (NetworkRevive.noteWirelessRefused) - except
+     * where the user was asked and may still be answering, which the
+     * connect's long look waits out. True if both writes landed.
+     */
+    private suspend fun switchOffAndOn(context: Context, onWifi: Boolean, answerAwaited: Boolean): Boolean {
+        Log.i(TAG, "daemon: switching Wireless debugging off and on")
+        val cycled = cycleWirelessDebugging(context)
+        ReviveLog.note(context, "revive: switched off and on: $cycled")
+        if (!cycled) return false
+        // Once: that starts adbd, and a revive that fails after it fails for
+        // some other reason, which cycling again would only hide.
+        CableWatch.forget(context)
+        if (onWifi) NetworkRevive.noteSwitchedOn(context)
+        delay(ADBD_SETTLE_MS)
+        if (onWifi && !answerAwaited && !wirelessDebuggingOn(context)) {
+            NetworkRevive.noteWirelessRefused(context)
+            ReviveLog.note(context, "revive: Android refused Wireless debugging on this Wi-Fi")
+        }
+        return true
     }
 
     /** Wireless debugging off, then on: what puts the network question back
@@ -802,24 +909,68 @@ object CaptureDaemon {
 
     internal enum class WirelessStep { CYCLE, TURN_ON, LEAVE }
 
+    /** Who asked for a revive, which decides how far it goes to start adbd. */
+    enum class Request {
+        /** The keep-alive, a watch, the screen coming back: Wireless debugging
+         *  switched off and on once per Wi-Fi connection at most, so that no
+         *  reading gone wrong can put Android's question up again and again. */
+        ROUTINE,
+
+        /** The user asked - the header's Tap to start again, or turning
+         *  JemRec on (RecorderSwitch.turn): they are there, and the once per
+         *  connection does not hold. */
+        USER,
+
+        /** The header's Allow this Wi-Fi (askToAllowNetwork): switched off and
+         *  on whatever else is found, and the connect waits for the answer. */
+        ALLOW_WIFI,
+    }
+
     /**
      * What a revive does to Wireless debugging before it connects. Off Wi-Fi,
      * on Start without Wi-Fi's port, only the off and on that starts an adbd
-     * a cable stopped: Wireless debugging itself cannot come on there. And
-     * not switched on where Android has [refused] it on this Wi-Fi: that is
-     * left to the "Allow this Wi-Fi" button, and to Start without Wi-Fi's
-     * switch, whose user is there to answer.
+     * a cable stopped: Wireless debugging itself cannot come on there. On
+     * Wi-Fi: switched on where it is off, but not where Android has [refused]
+     * it on this Wi-Fi - that is left to the "Allow this Wi-Fi" button, and to
+     * Start without Wi-Fi's switch, whose user is there to answer; off and on
+     * where it is on and [adbdStopped], once per Wi-Fi connection unless the
+     * user asked (Request); and off and on whatever else for Allow this Wi-Fi.
      */
     internal fun wirelessDebuggingStep(
         cableStoppedAdbd: Boolean,
         on: Boolean,
         onWifi: Boolean,
         refused: Boolean = false,
+        adbdStopped: Boolean = false,
+        switchedOnHere: Boolean = false,
+        request: Request = Request.ROUTINE,
     ): WirelessStep = when {
         cableStoppedAdbd -> WirelessStep.CYCLE
+        request == Request.ALLOW_WIFI && onWifi -> WirelessStep.CYCLE
         !on && onWifi && !refused -> WirelessStep.TURN_ON
+        on && onWifi && adbdStopped && mayCycleAgain(switchedOnHere, request) -> WirelessStep.CYCLE
         else -> WirelessStep.LEAVE
     }
+
+    /**
+     * Where adbd's state cannot be read (AdbdState.UNKNOWN), nothing
+     * advertised with the switch on is adbd not running or a Wi-Fi Android
+     * has not allowed, which a revive cannot tell apart: one off and on per
+     * Wi-Fi connection starts the first, and asks once about the second.
+     * Only after a revive that left the switch as it was.
+     */
+    internal fun cycleAfterNotFound(
+        adbd: AdbdState.State,
+        step: WirelessStep,
+        on: Boolean,
+        onWifi: Boolean,
+        switchedOnHere: Boolean,
+        request: Request,
+    ): Boolean = adbd == AdbdState.State.UNKNOWN && step == WirelessStep.LEAVE && on && onWifi &&
+        mayCycleAgain(switchedOnHere, request)
+
+    private fun mayCycleAgain(switchedOnHere: Boolean, request: Request) =
+        !switchedOnHere || request != Request.ROUTINE
 
     /** Push the current recorder switch + automatic/on-demand choice to the
      *  daemon as its recording mode, and the messenger apps with it.

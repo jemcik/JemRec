@@ -573,6 +573,11 @@ at 21 seconds of uptime, armed its scheduled job and asked the system to wake
 it when Wi-Fi appeared, and the recorder was back **ten seconds** after Wi-Fi
 came on — with the app never opened.
 
+On MagicOS 11 a restart also leaves Wireless debugging switched on without
+starting it. Since 0.25.1 JemRec sees that and switches it off and on itself:
+recording again **eleven seconds** after its first try, which came as the phone
+was unlocked, with the app never opened.
+
 ### Without it, open JemRec once
 
 The same phone with auto-launch off does nothing at all. The system declined to
@@ -635,7 +640,7 @@ The header is the honest indicator:
 | **Recording call** | In the notification, during a call. |
 | **Cannot record** · Join any Wi-Fi to resume | Join any Wi-Fi and it resumes on its own. Usually a reboot, or a long stretch away from a network. |
 | **Cannot record** · Tap to start it again | On Wi-Fi, the recorder did not come back. Tap the line to try now. |
-| **Cannot record** · Tap to allow this Wi-Fi | You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick **Always allow on this network** and tap **Allow**. |
+| **Cannot record** · Tap to allow this Wi-Fi | You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick **Always allow on this network** and tap **Allow**; the recorder starts a few seconds later. |
 | **Cannot record** · Tap to pair again | Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before. |
 | **Starting...** | Rebuilding the recorder. A few seconds. |
 | **Off** · Tap the button to record calls | You turned the switch off. |

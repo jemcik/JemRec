@@ -2131,6 +2131,11 @@ SETUP = [
           "broadcast at 21 seconds of uptime, armed its scheduled job and asked "
           "the system to wake it when Wi-Fi appeared, and the recorder was back "
           "**ten seconds** after Wi-Fi came on — with the app never opened."),
+    ("p", "On MagicOS 11 a restart also leaves Wireless debugging switched on "
+          "without starting it. Since 0.25.1 JemRec sees that and switches it "
+          "off and on itself: recording again **eleven seconds** after its "
+          "first try, which came as the phone was unlocked, with the app never "
+          "opened."),
     ("h3", "Without it, open JemRec once"),
     ("p", "The same phone with auto-launch off does nothing at all. The system "
           "declined to start the app for the boot broadcast — *don't meet "
@@ -2194,7 +2199,8 @@ SETUP = [
          "line to try now."),
         ("CANNOT", "ALLOW_WIFI", "You are on a Wi-Fi network Android has not allowed "
          "Wireless debugging on. Tap the line, tick **Always allow on this "
-         "network** and tap **Allow**."),
+         "network** and tap **Allow**; the recorder starts a few seconds "
+         "later."),
         ("CANNOT", "PAIR_AGAIN", "Wireless debugging turns JemRec away, as it does "
          "once its pairing is deleted. JemRec goes to the pairing step by itself "
          "as soon as the home screen shows; the line is there for the moment "
