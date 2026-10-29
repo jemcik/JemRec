@@ -10,6 +10,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import com.jemcik.jemrec.ui.ShellGrant
 
 /**
  * Does this phone record calls, right now?
@@ -307,7 +308,7 @@ object SelfTest {
         }
         val corrected = !watch.tracking && CaptureDaemon.setTracking(context)
         if (!watch.tracking && !corrected) {
-            return "exact call tracking is on, but the recorder could not allow it. $RESTART"
+            return "exact call tracking is on, but the recorder could not allow it. ${trackingFix()}"
         }
         val inForce = runCatching {
             context.getSystemService(android.app.AppOpsManager::class.java).unsafeCheckOpNoThrow(
@@ -315,11 +316,20 @@ object SelfTest {
             ) == android.app.AppOpsManager.MODE_ALLOWED
         }.getOrDefault(false)
         if (!inForce) {
-            return "exact call tracking is on, but Android has not allowed it for JemRec. $RESTART"
+            return "exact call tracking is on, but Android has not allowed it for JemRec. ${trackingFix()}"
         }
         lines += "tracking:  on" + if (corrected) " (corrected)" else ""
         return null
     }
+
+    /**
+     * What to do about tracking the recorder could not allow. On an OPPO,
+     * OnePlus or realme phone with its switch off the shell may not change an
+     * app-op (ShellGrant; CallVault measured `appops set` refused there), so a
+     * restart alone would only be refused again.
+     */
+    private fun trackingFix(): String =
+        if (ShellGrant.switchMayBeOff()) "In Developer options, turn on ${ShellGrant.SWITCH}. $RESTART" else RESTART
 
     /**
      * The answering machine: switched on here, and does the recorder know it,

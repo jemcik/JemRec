@@ -1689,6 +1689,17 @@ SETUP = [
           "its recorder. USB debugging — the setting, with no cable involved — is "
           "what keeps Android's debugging service alive, and without it Wireless "
           "debugging switches itself off again before the app can connect."),
+    ("note", "**On an OPPO, OnePlus or realme phone, one more switch:** "
+             "**Disable system optimization**, the last one in Developer "
+             "options' **Apps** section (**Disable permission monitoring** on "
+             "older ones). Turn it on, and leave it on - or, where it says "
+             "just **Permission monitoring**, turn that off and leave it off. "
+             "Without it the phone refuses the setting JemRec grants itself in "
+             "step 5, and the "
+             "recorder could not turn debugging off when JemRec is "
+             "uninstalled. Some phones show it only "
+             "in English: if it is not there, set the phone's language to "
+             "English, turn it on, and set the language back."),
     ("note", "If you see an old **JemRec** under *Paired devices*, tap the gear "
              "beside it and forget it. It is left over from a previous install "
              "and cannot be used: a reinstalled app has a new key and must pair "
@@ -1725,6 +1736,12 @@ SETUP = [
     ("p", "JemRec does the rest by itself: it grants itself the one privileged "
           "setting it needs, starts the recorder, and begins watching for calls. "
           "When it is done the header says **Ready to record**."),
+    ("p", "**If it stops at *Android would not let JemRec change debugging "
+          "settings***, the phone refuses that setting until a switch of its "
+          "own is set, and the card names it: on OPPO, OnePlus and realme "
+          "**Disable system optimization**, set as step 3 says; on Xiaomi "
+          "**USB debugging (Security settings)**, on. Then tap **Try again**; "
+          "**Open settings** beside it opens Settings."),
     ("p", "There is no permanent notification. The app is dormant between calls "
           "— the recorder is a separate process that does the watching — so a "
           "notification appears for the length of a call, and one more when it "
@@ -3225,6 +3242,21 @@ FAQ = [
      "as they were, once you let it read them (it asks): each recording "
      "carries its own marks &mdash; a message, kept, who a messenger call was "
      "with &mdash; inside the file."),
+    ("Setup says Android would not let JemRec change debugging settings",
+     "Your phone refuses JemRec the one setting setup grants it until a switch "
+     "of the phone&rsquo;s own is set, and the card names it. On an OPPO, OnePlus "
+     "or realme phone it is <em>Disable system optimization</em>, the last "
+     "switch in Developer options&rsquo; Apps section (<em>Disable permission "
+     "monitoring</em> on older ones; where it says just <em>Permission "
+     "monitoring</em>, turn that off instead); some show it only in English, so if it "
+     "is not there, set the phone&rsquo;s language to English, turn it on and "
+     "set the language back. On a Xiaomi it is <em>USB debugging (Security "
+     "settings)</em>. Then tap <strong>Try again</strong>. Setup does not "
+     "finish without that setting: it is what lets JemRec turn Wireless "
+     "debugging back on after a restart. Leave it that way afterwards: the "
+     "recorder needs it too, to turn debugging off when JemRec is "
+     "uninstalled. Reported from two OnePlus phones "
+     "(issues #61 and #64); we have none to try it on."),
     ("My banking app won&rsquo;t open while debugging is on",
      "Choose in Settings &rarr; <em>When JemRec is off</em> what goes off with "
      "JemRec, then turn JemRec off &mdash; with the record button or the Quick "
@@ -3248,7 +3280,9 @@ FAQ = [
     ("How do I turn debugging off for good?",
      "Uninstall JemRec first. If the recorder is running, it notices the "
      "uninstall within a few minutes, turns both debugging switches off and "
-     "exits; either way, once JemRec is gone nothing turns them back on. To "
+     "exits &mdash; on an OPPO, OnePlus or realme phone only while its "
+     "<em>Disable system optimization</em> switch is set as setup asked, or "
+     "they stay on for you to turn off. Either way, once JemRec is gone nothing turns them back on. To "
      "have it off only while JemRec is off, see the question above."),
 ]
 
@@ -3417,7 +3451,9 @@ INDEX_BODY = f"""
   <h2>Will it work on your phone?</h2>
   <p class="intro">Developer options and Wireless debugging are on every Android
      phone, though the menu they live in differs by make; JemRec names the right
-     path for yours.</p>
+     path for yours. OPPO, OnePlus and realme phones on their own systems
+     (ColorOS, OxygenOS, realme UI) need one more switch there, and setup names
+     that too.</p>
   <div class="works">
     <h3 class="versions">What it records, by Android version</h3>
     <h3 class="tested">Both sides recorded on five phones</h3>
@@ -3443,7 +3479,7 @@ INDEX_BODY = f"""
      and a meeting. Signal takes the same path as the other messengers and has
      not been tested yet.</p>
   <div class="note info">
-    <p><strong>Four is not a compatibility list.</strong> The one thing nobody
+    <p><strong>Five is not a compatibility list.</strong> The one thing nobody
        can promise for a phone they have not held is its audio hardware: some
        hand over both sides of the call, some one, some silence. The
        <strong>Self-test</strong> answers it on yours in about a second.</p>
@@ -3699,6 +3735,13 @@ HOW_BODY = f"""
      Galaxy&nbsp;M34 on One&nbsp;UI &mdash; the S23 and the M34 over Wi-Fi
      Calling too &mdash; and a OnePlus on LineageOS&nbsp;23. Five is not a
      compatibility list, which is what the self-test is for.</p>
+  <p class="muted">OPPO, OnePlus and realme phones on their own systems
+     (ColorOS, OxygenOS, realme UI) refuse JemRec the setting setup grants it
+     until a switch of their own is set: <em>Disable system
+     optimization</em> on, the last in Developer options&rsquo; Apps section
+     (<em>Disable permission monitoring</em> on older ones, or
+     <em>Permission monitoring</em> off). Setup names it before it is needed,
+     and again if the phone refuses.</p>
 """
 
 # WHAT STAYS ON THE PHONE, a row each: what it is, where it lives, how long

@@ -708,16 +708,11 @@ public final class Main {
         }
         Ln.i("debugging off: Wireless debugging, then USB debugging - adbd stops, and this process with it");
         for (String setting : new String[]{"adb_wifi_enabled", "adb_enabled"}) {
-            try {
-                new ProcessBuilder("settings", "put", "global", setting, "0")
-                        .redirectErrorStream(true)
-                        .start()
-                        .waitFor();
-            } catch (Throwable t) {
-                Ln.w("debugging off: could not turn " + setting + " off");
-            }
+            putGlobal(setting, "0");
         }
-        // Still here: adbd lived on. The app asked for the recorder gone too.
+        // Still here: adbd lived on, or the writes were refused - and then the
+        // app finishes the off (DebugSwitchesOff.switchOff). The app asked
+        // for the recorder gone too.
         sleep(3_000L);
         Ln.i("debugging off: still running after both switches, exiting");
         System.exit(0);
@@ -853,13 +848,11 @@ public final class Main {
         // Both debugging switches. Wireless was turned on for setup; USB is the
         // off-Wi-Fi shield this daemon keeps up (see keepShieldUp) - and with the
         // app gone, nothing else will ever turn either of them back off.
+        // Refused where an OPPO, OnePlus or realme phone's switch is off
+        // (putGlobal), and then nothing is left to do it: the app is gone.
         for (String setting : new String[]{"adb_wifi_enabled", "adb_enabled"}) {
-            try {
-                new ProcessBuilder("settings", "put", "global", setting, "0")
-                        .start().waitFor();
+            if (putGlobal(setting, "0")) {
                 Ln.i("custodian: turned " + setting + " off");
-            } catch (Throwable t) {
-                Ln.w("custodian: could not turn " + setting + " off");
             }
         }
     }
@@ -957,19 +950,43 @@ public final class Main {
             // Not while debugging is going off by the user's choice
             // (COMMAND_DEBUGGING_OFF): putting it back would undo that.
             if (usb != null && !"1".equals(usb) && !switchingOff) {
-                new ProcessBuilder("settings", "put", "global", "adb_enabled", "1")
-                        .redirectErrorStream(true)
-                        .start()
-                        .waitFor();
+                boolean on = putGlobal("adb_enabled", "1");
                 // Stamped: WHEN the setting flips is the one thing nobody has
                 // been able to see. Each of these is a data point about what
-                // Honor does and when.
+                // Honor does and when. Refused, the app's own write - it holds
+                // the permission - is what puts it back (UsbDebuggingWatch).
                 Ln.w("shield: adb_enabled was " + usb + " at " + new java.util.Date()
-                        + " - turned USB debugging back on");
+                        + (on ? " - turned USB debugging back on" : " - could not turn USB debugging back on"));
             }
         } catch (Throwable t) {
             Ln.w("shield: could not check or restore adb_enabled: " + t.getMessage());
         }
+    }
+
+    /**
+     * `settings put global name value`, read back: true if it now says so. An
+     * OPPO, OnePlus or realme phone with its Developer options switch off
+     * refuses the shell this write (the app's ShellGrant; CallVault measured
+     * `settings put` refused on a OnePlus 9, 2026-09-16), and the write's
+     * exit says nothing - so what the phone said is logged, its first lines.
+     * Writing USB debugging off ends this process with adbd: no read-back.
+     */
+    private static boolean putGlobal(String name, String value) {
+        try {
+            Process put = new ProcessBuilder("settings", "put", "global", name, value)
+                    .redirectErrorStream(true)
+                    .start();
+            String said = slurp(put);
+            put.waitFor();
+            if (value.equals(readGlobal(name))) {
+                return true;
+            }
+            Ln.w("settings: could not set " + name + " to " + value
+                    + (said.isEmpty() ? "" : " - Android said " + said.substring(0, Math.min(said.length(), 300))));
+        } catch (Throwable t) {
+            Ln.w("settings: could not set " + name + " to " + value + ": " + t.getMessage());
+        }
+        return false;
     }
 
     /** `settings get global name`, trimmed; null if it could not be read. */
@@ -1573,8 +1590,15 @@ public final class Main {
     private static void applyTracking() {
         synchronized (TRACKING_LOCK) {
             String mode = trackingOn ? "allow" : "default";
-            runQuietly("cmd", "appops", "set", "--uid", APP_PACKAGE, "MANAGE_ONGOING_CALLS", mode);
+            String said = runQuietly("cmd", "appops", "set", "--uid", APP_PACKAGE, "MANAGE_ONGOING_CALLS", mode);
             runQuietly("cmd", "appops", "set", APP_PACKAGE, "MANAGE_ONGOING_CALLS", mode);
+            // Silent when it works. An OPPO, OnePlus or realme phone with its
+            // Developer options switch off refuses the shell this (CallVault,
+            // measured on a OnePlus 9, 2026-09-16; the app's ShellGrant): its
+            // first lines, as the stack trace after them runs to twenty.
+            if (said != null && !said.isEmpty()) {
+                Ln.w("tracking: Android said " + said.substring(0, Math.min(said.length(), 300)));
+            }
             Ln.i("tracking: " + (trackingOn ? "on - Telecom may bind the app's call service" : "off"));
         }
     }

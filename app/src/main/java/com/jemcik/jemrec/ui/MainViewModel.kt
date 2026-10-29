@@ -211,6 +211,9 @@ data class UiState(
      * never accuses before it has been looked at.
      */
     val pairingNotificationsBlocked: Boolean = false,
+    /** An OPPO, OnePlus or realme phone that may refuse setup's grant until
+     *  its own switch is on (ShellGrant), so the pairing card names it. */
+    val systemOptimizationSwitch: Boolean = false,
     val folder: String = "",
     val usingDefaultFolder: Boolean = true,
     /** True when every call is recorded without asking. */
@@ -1397,6 +1400,9 @@ class MainViewModel @JvmOverloads constructor(
                 pairingRefused = RecorderHealth.cause(app) == RecorderHealth.Problem.CANNOT_CONNECT,
                 onWifi = NetworkRevive.onWifi(app),
                 pairingNotificationsBlocked = PairingNotification.blocked(app),
+                // Only until setup is done: a getprop, on the phones that may
+                // have the switch.
+                systemOptimizationSwitch = !Setup.isComplete(app) && ShellGrant.switchMayBeOff(),
                 folder = RecordingStore.describe(app),
                 usingDefaultFolder = RecordingStore.treeUri(app) == null,
                 automatic = RecordingMode.of(app) == RecordingMode.AUTOMATIC,
@@ -1457,6 +1463,7 @@ class MainViewModel @JvmOverloads constructor(
                 pairingRefused = snapshot.pairingRefused,
                 onWifi = snapshot.onWifi,
                 pairingNotificationsBlocked = snapshot.pairingNotificationsBlocked,
+                systemOptimizationSwitch = snapshot.systemOptimizationSwitch,
                 folder = snapshot.folder,
                 usingDefaultFolder = snapshot.usingDefaultFolder,
                 automatic = snapshot.automatic,
@@ -1598,6 +1605,7 @@ class MainViewModel @JvmOverloads constructor(
         val pairingRefused: Boolean,
         val onWifi: Boolean,
         val pairingNotificationsBlocked: Boolean,
+        val systemOptimizationSwitch: Boolean,
         val folder: String,
         val usingDefaultFolder: Boolean,
         val automatic: Boolean,

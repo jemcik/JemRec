@@ -409,6 +409,30 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "hidesettings", "acting as if hidden: $on")
                     }
 
+                    // Act like a OnePlus with Disable system optimization off,
+                    // whose shell is refused setup's grant: --ez on true|false.
+                    // For this process only.
+                    "refusegrant" -> {
+                        val on = intent.getBooleanExtra("on", true)
+                        com.jemcik.jemrec.ui.ShellGrant.actAsRefused = on
+                        report(appContext, "refusegrant", "acting as if the grant is refused: $on")
+                    }
+
+                    // The ADB session dropped, as Wireless debugging going off
+                    // drops it: for a `finish` with none to run over.
+                    "disconnect" -> {
+                        AdbTransport.close()
+                        report(appContext, "disconnect", "closed")
+                    }
+
+                    // Setup's last step - the grant, then the recorder - over
+                    // the session `connect` opened: what Try again runs.
+                    "finish" -> report(
+                        appContext, "finish",
+                        com.jemcik.jemrec.ui.Setup.finish(appContext)
+                            .fold({ "finished" }, { "failed: ${it.message}" }),
+                    )
+
                     "daemon" -> report(
                         appContext, "daemon",
                         if (CaptureDaemon.isRunning(appContext)) "running" else "not running",

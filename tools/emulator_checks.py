@@ -82,6 +82,17 @@ through the real app and daemon, checking what each one leaves behind:
   debugging-off  set to Turn all debugging off: off has the recorder switch
               Wireless and USB debugging off and go, adb with it; on puts all
               of it back and starts the recorder again
+  adbd-stopped  a revive that finds adbd stopped with both debugging switches
+              on, as an Honor's restart left it, switches Wireless debugging
+              off and on and has the recorder back
+  allow-this-wifi  on a Wi-Fi Android has not allowed, the header's tap puts
+              Android's question up, and after Allow the recorder is back
+  refused-grant  setup's last step on a phone that refuses its grant, as an
+              OPPO, OnePlus or realme does with Disable system optimization
+              off (faked, issues #61, #64): it is told that switch and is not
+              set up; with no ADB session it is told that, not sent to a
+              switch; Try again without the fake grants, read back from the
+              package's own record
   start-without-wifi  on Wi-Fi, a revive has adbd open its classic port,
               5555; with Wi-Fi off, Turn all debugging off and back on has
               the recorder started over that port; switched off, the port is
@@ -219,13 +230,18 @@ def adb_ready():
         return False
 
 
+def connect_app():
+    """The app's own ADB session, to the emulator's adbd on 5555."""
+    if "connected" not in diag("connect", "--ei", "port", "5555"):
+        raise RuntimeError("the app could not connect to adbd on 5555")
+
+
 def start_recorder():
     """Open the app (a never-opened app may not reach 127.0.0.1:5555), connect it
     to the emulator's adbd, and start a fresh daemon from this build."""
     sh(f"am start -n {PKG}/.MainActivity")
     time.sleep(3)
-    if "connected" not in diag("connect", "--ei", "port", "5555"):
-        raise RuntimeError("the app could not connect to adbd on 5555")
+    connect_app()
     sh("pkill -f com.jemcik.jemrec.shell.Main")
     time.sleep(1)
     diag("bootstrap")
@@ -1744,6 +1760,56 @@ def _forget_wifi_allowed():
     return True
 
 
+def refused_grant():
+    """Setup's last step where the phone refuses the grant, as an OPPO,
+    OnePlus or realme does until Disable system optimization is on: issue #64
+    quoted the refusal, from a Nord CE5 on OxygenOS 16, and #61, a OnePlus
+    10R, was told to look for a Xiaomi switch. An emulator grants, so the
+    debug build answers with #64's refusal (ShellGrant.actAsRefused); with
+    the app's ADB session dropped, the grant is not blamed on a switch; Try
+    again, without the fake, grants for real, and the grant is read back from the
+    package's own record - the read-back being the part that changed on every
+    phone, so the part this runs on each Android. The permission is taken
+    away first, as on a phone not yet set up, and live again at the end: a
+    grant reaches the app only once it starts again (Setup.isComplete)."""
+    permission = "android.permission.WRITE_SECURE_SETTINGS"
+
+    def held():
+        # Fixed strings, as the app's own read-back (ShellGrant.readBackCommand).
+        return f"{permission}: granted=true" in sh(f"dumpsys package {PKG} | grep -F {permission}")
+
+    sh(f"pm revoke {PKG} {permission}")
+    assert not held(), "the permission was not taken away"
+    try:
+        start_recorder()
+        diag("refusegrant", "--ez", "on", "true")
+        refused = diag("finish")
+        assert "Disable system optimization" in refused and "Xiaomi" not in refused, refused
+        assert "setup: grant -> REFUSED" in log(), "the refusal not logged as one"
+        assert not held(), "granted while refused"
+        diag("refusegrant", "--ez", "on", "false")
+        # No session at all: said as that, not blamed on a switch.
+        diag("disconnect")
+        lost = diag("finish")
+        assert "lost its connection" in lost and "Disable system optimization" not in lost, lost
+        connect_app()
+        again = diag("finish")
+        assert "finished" in again, again
+        assert "setup: grant -> GRANTED" in log(), "the grant not read back as granted"
+        assert held(), "Try again finished without the permission granted"
+    finally:
+        # Put back whatever happened: without the permission the app cannot
+        # switch debugging back on, and start-without-wifi, after this, turns
+        # all of it off (an Android 12 AVD stayed locked out that way, see
+        # usb_debugging). The fake dies with the process.
+        if not held():
+            sh(f"pm grant {PKG} {permission}")
+        sh(f"am force-stop {PKG}")
+        start_recorder()
+    return ("refused: told Disable system optimization, not set up; no session: told so; "
+            "Try again: granted, read back")
+
+
 def allow_this_wifi():
     """The header's Tap to allow this Wi-Fi, end to end, as 0.25.1 rewrote it:
     on a Wi-Fi Android has not allowed, with the recorder down and port 5555
@@ -2003,7 +2069,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           background_playback,
           recently_deleted, recently_deleted_folder, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
-          debugging_off, background, allow_this_wifi,
+          debugging_off, background, allow_this_wifi, refused_grant,
           # Last: it turns the emulator's Wi-Fi off and on, and a simulated
           # Wi-Fi that does not come back would fail every check after it.
           start_without_wifi]

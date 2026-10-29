@@ -4,8 +4,11 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import com.jemcik.jemrec.ui.AppScaffold
+import com.jemcik.jemrec.capture.GlobalSettings
 import com.jemcik.jemrec.ui.AutoStart
+import com.jemcik.jemrec.ui.DeviceSkin
 import com.jemcik.jemrec.ui.SetupStep
+import com.jemcik.jemrec.ui.ShellGrant
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -65,5 +68,42 @@ class SetupScreenshots : ScreenTest() {
     @Test fun backgroundStepAtTwiceTheTextSize() {
         backgroundCard(fontScale = 2f)
         snap("setup-background-2x")
+    }
+
+    /** An OPPO, OnePlus or realme phone's pairing card: the switch setup's
+     *  grant needs is named before the grant, not after (issues #61, #64). */
+    @Test fun pairingStepOnAOnePlus() {
+        val state = Fixtures.ready().copy(
+            step = SetupStep.NEEDS_PAIRING,
+            usbDebugging = GlobalSettings.Reading.OFF,
+            wirelessDebuggingOn = false,
+            systemOptimizationSwitch = true,
+        )
+        show { AppScaffold(state, viewModel(state)) }
+        compose.onNodeWithText("Disable system optimization", substring = true).assertIsDisplayed()
+        snap("setup-pairing-oneplus")
+    }
+
+    /** The grant refused, as #64's OnePlus refused it: its switch, and a way
+     *  to Settings beside Try again. */
+    private fun refusedCard(fontScale: Float = 1f) {
+        val state = Fixtures.ready().copy(
+            step = SetupStep.FINISHING,
+            finishFailed = ShellGrant.advice(ShellGrant.Outcome.REFUSED, DeviceSkin.OPLUS, monitoring = true),
+        )
+        show(fontScale) { AppScaffold(state, viewModel(state)) }
+        compose.onNodeWithText("Disable system optimization", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Try again").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Open settings").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun grantRefusedOnAOnePlus() {
+        refusedCard()
+        snap("setup-refused-oneplus")
+    }
+
+    @Test fun grantRefusedAtTwiceTheTextSize() {
+        refusedCard(fontScale = 2f)
+        snap("setup-refused-oneplus-2x")
     }
 }

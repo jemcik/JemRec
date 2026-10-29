@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-895 JVM tests, no device needed - 699 for the app and 196 for the daemon:
+911 JVM tests, no device needed - 715 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -86,7 +86,7 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13, 16 and 17 for 0.25.1 -
+emulator, for each Android version it claims (12, 13, 16 and 17 for 0.25.2 -
 16 is what the Galaxy phones of the issues run), each booted cold
 (`emulator -avd <name> -no-snapshot`):
 
@@ -152,6 +152,12 @@ starts the recorder. Then the header's *Tap to allow this Wi-Fi*: on a Wi-Fi
 Android has not allowed (its allowance taken back first), with the recorder
 down and port 5555 shut to the app, the header asks; the tap puts Android's
 question up, and after Allow the tap's own revive has the recorder back.
+Then setup's last step on a phone that refuses its grant, as an OPPO, OnePlus
+or realme does until *Disable system optimization* is on (issues #61, #64;
+the debug build answers with #64's refusal, as an emulator grants): told that
+switch, and not set up; with the ADB session dropped, told so rather than
+sent to a switch; Try again, without the fake, grants for real, read back
+from the package's own record.
 Then Start without Wi-Fi: on Wi-Fi a revive has adbd
 open its classic port, 5555 (the property is what is checked: an emulator's
 adbd listens there anyway); with Wi-Fi off, Turn all debugging off and back

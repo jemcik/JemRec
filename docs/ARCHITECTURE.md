@@ -31,6 +31,7 @@ this one is - or to check that it does what it says.
   [notifications](#after-the-call-and-when-something-is-wrong) ·
   [the last call's report](#the-last-calls-report)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
+  [when the phone refuses the grant](#when-the-phone-refuses-the-grant) ·
   [what stays switched on](#what-stays-switched-on) ·
   [off, and debugging with it](#off-and-debugging-with-it)
 
@@ -1400,6 +1401,56 @@ declared instead, capped at Android 12, for the row above. One more that cannot 
 `com.jemcik.jemrec.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, which AndroidX
 defines for this app alone when it registers a receiver as not-exported.
 
+## When the phone refuses the grant
+
+Setup ends by granting JemRec `WRITE_SECURE_SETTINGS` over its own ADB session.
+OPPO, OnePlus and realme phones refuse it out of the box: their system takes a
+list of permissions away from the shell while `persist.sys.permission.enable`
+is `true`, which is how they ship, and `pm grant` answers *Neither user 2000 nor
+current process has android.permission.GRANT_RUNTIME_PERMISSIONS*. Two reports:
+a Nord CE5 on OxygenOS 16 (issue #64, which quoted that line) and a OnePlus 10R
+on Android 15 (#61), which 0.25.1 told to look for a Xiaomi switch.
+
+The way past it is the user's: the last switch in Developer options' Apps
+section, **Disable system optimization** on ColorOS and OxygenOS 15 and 16,
+**Disable permission monitoring** before; some label it just *Permission
+monitoring*, on by default, to be turned off (Shizuku's setup guide; Octoclip's
+notes, ColorOS in Chinese). Some builds show it only in English.
+Nothing else gets past it: while it is off, the shell's own `settings put` and
+`appops set` are refused too. None of that was measured here, with no such
+phone. CallVault measured it on a OnePlus 9 (OxygenOS 14) and a OnePlus 12
+(OxygenOS 16) on 2026-09-16: the property reads `false` once the switch is on,
+and a grant made then outlives the switch going off again, and a restart.
+
+So, since 0.25.2:
+
+- On an OPPO, OnePlus or realme phone the pairing card names the switch, while
+  the user is in Developer options anyway - unless the app can read the
+  property and it says the switch is on.
+- A refused grant is told from one that never ran by what `pm grant` printed,
+  and the card names the switch: that one where the property reads `true` or
+  the phone is OPPO-family, *USB debugging (Security settings)* on a Xiaomi,
+  both anywhere else. **Open settings** sits beside **Try again**.
+- The grant is read back from the package's own record (`dumpsys package`),
+  not taken from `pm grant` saying nothing: a Xiaomi on HyperOS 3 was reported
+  to CallVault granting nothing, silently. The app cannot ask for itself, as a
+  grant reaches it only once it restarts. Where dumpsys does not list the
+  package, the grant's exit status counts, as before.
+- The recorder writes settings as the shell too, and those writes are read
+  back and logged as refused where they were: USB debugging kept on (the
+  app's own write, holding the permission, puts it back - UsbDebuggingWatch),
+  and both switches off for *Turn all debugging off*, which the app then
+  finishes itself once the recorder has gone (inferred: an emulator does not
+  refuse the write). The one nothing can finish is
+  the recorder's off when JemRec is uninstalled: the app is gone. So the
+  cards and docs say to leave it that way.
+- The recorder logs what Android said when it could not allow exact call
+  tracking, and on these phones the self-test names the switch.
+
+Measured here: the read-back on the Android 12 and 17 emulators (2026-10-29),
+granted and revoked, and the `refused-grant` emulator check, where the debug
+build answers with #64's refusal and Try again then grants for real.
+
 ## What stays switched on
 
 **USB debugging and Wireless debugging stay on while JemRec is on** - and
@@ -1435,7 +1486,9 @@ notifications and reads nothing else.
 
 To switch debugging off for good, uninstall JemRec first. If the recorder is
 running, it notices the uninstall within a few minutes, turns both switches off
-and exits; either way, once JemRec is gone nothing turns them back on.
+and exits - on an OPPO, OnePlus or realme phone only while its *Disable system
+optimization* switch is set as setup asked ([when the phone refuses the grant](#when-the-phone-refuses-the-grant));
+either way, once JemRec is gone nothing turns them back on.
 
 
 ## Off, and debugging with it

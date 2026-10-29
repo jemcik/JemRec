@@ -119,6 +119,15 @@ recorder. USB debugging — the setting, with no cable involved — is what keep
 Android's debugging service alive, and without it Wireless debugging switches
 itself off again before the app can connect.
 
+> **On an OPPO, OnePlus or realme phone, one more switch:** **Disable system
+> optimization**, the last one in Developer options' **Apps** section
+> (**Disable permission monitoring** on older ones). Turn it on, and leave it
+> on - or, where it says just **Permission monitoring**, turn that off and
+> leave it off. Without it the phone refuses the setting JemRec grants itself
+> in step 5, and the recorder could not turn debugging off when JemRec is
+> uninstalled. Some phones show it only in English: if it is not there, set the
+> phone's language to English, turn it on, and set the language back.
+
 > If you see an old **JemRec** under *Paired devices*, tap the gear beside it
 > and forget it. It is left over from a previous install and cannot be used: a
 > reinstalled app has a new key and must pair again.
@@ -159,6 +168,12 @@ app connects by itself. There is no need to pair again or to fetch a new code.
 JemRec does the rest by itself: it grants itself the one privileged setting it
 needs, starts the recorder, and begins watching for calls. When it is done the
 header says **Ready to record**.
+
+**If it stops at *Android would not let JemRec change debugging settings***,
+the phone refuses that setting until a switch of its own is set, and the card
+names it: on OPPO, OnePlus and realme **Disable system optimization**, set as
+step 3 says; on Xiaomi **USB debugging (Security settings)**, on. Then tap
+**Try again**; **Open settings** beside it opens Settings.
 
 There is no permanent notification. The app is dormant between calls — the
 recorder is a separate process that does the watching — so a notification
