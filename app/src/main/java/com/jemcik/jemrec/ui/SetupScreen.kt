@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -368,6 +369,17 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
+                    // Named here, where the user is about to be in Developer
+                    // options anyway, not once the grant has failed: issues
+                    // #61 and #64, a OnePlus each (ShellGrant).
+                    if (state.systemOptimizationSwitch) {
+                        Text(
+                            "This phone will not let JemRec finish setting up until one more " +
+                                "switch is on, in Developer options too: ${ShellGrant.SWITCH}. " +
+                                "Leave it that way afterwards.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
 
                     // The one notification state that actually strands the user:
                     // with notifications off there is nowhere for the code to
@@ -512,14 +524,16 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                     Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    val failed = state.finishFailed
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        CircularProgressIndicator()
+                        // Only while it is working: failed, nothing is until
+                        // Try again, and a spinner then said otherwise.
+                        if (failed == null || state.busy) CircularProgressIndicator()
                         Text("Almost done", style = MaterialTheme.typography.titleMedium)
                     }
-                    val failed = state.finishFailed
                     if (failed == null) {
                         Text(
                             "Paired. JemRec is starting the recorder now. This takes a " +
@@ -531,7 +545,18 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                             "Paired, but starting the recorder did not work: $failed",
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        Button(onClick = vm::retryFinish, enabled = !state.busy) { Text("Try again") }
+                        // Most failures are a switch to turn on first (ShellGrant).
+                        // A FlowRow: at twice the text size the pair does not fit
+                        // one line, and Open settings went to two inside its button.
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Button(onClick = vm::retryFinish, enabled = !state.busy) { Text("Try again") }
+                            TextButton(
+                                onClick = { haptics.tap(); Setup.openSettings(context) },
+                            ) { Text("Open settings") }
+                        }
                     }
                 }
             }

@@ -614,17 +614,34 @@ object Setup {
      */
     suspend fun finish(context: Context): Result<Unit> = runCatching {
         if (!hasSecureSettings(context)) {
-            val out = AdbTransport.exec(
-                "pm grant ${context.packageName} $PERMISSION && echo granted"
-            ).getOrElse { "failed: ${it.message}" }
-            Log.i(TAG, "setup: grant -> $out")
             // Without it, nothing turns Wireless debugging back on after a
             // restart, and the recorder never comes back - so setup is not
-            // done. On Xiaomi phones the grant needs a switch of its own.
-            check(out.contains("granted")) {
-                "Android would not let JemRec change debugging settings. On a Xiaomi or " +
-                    "Redmi phone, turn on \"USB debugging (Security settings)\" in Developer " +
-                    "options, then try again."
+            // done. OPPO, OnePlus, realme and Xiaomi phones refuse it until
+            // a switch of their own is on (ShellGrant). Read back, as the
+            // grant can say nothing and give nothing.
+            val pkg = context.packageName
+            val (grant, readBack) = if (ShellGrant.actAsRefused) {
+                ShellGrant.REFUSAL to null
+            } else {
+                // Not run at all - the session gone - is said as that, not
+                // blamed on a switch.
+                val ran = AdbTransport.exec(ShellGrant.grantCommand(pkg, PERMISSION)).getOrElse {
+                    val why = it.message ?: it.javaClass.simpleName
+                    error(
+                        "JemRec lost its connection to this phone ($why). Check that Wireless " +
+                            "debugging is still on, then tap Try again.",
+                    )
+                }
+                ran to AdbTransport.exec(ShellGrant.readBackCommand(pkg, PERMISSION)).getOrNull()
+            }
+            val outcome = ShellGrant.outcome(pkg, PERMISSION, grant, readBack)
+            // Two lines: a refusal's stack trace runs to twenty.
+            Log.i(TAG, "setup: grant -> $outcome (${grant.lines().take(2).joinToString(" | ")})")
+            if (outcome != ShellGrant.Outcome.GRANTED) {
+                val property = if (ShellGrant.actAsRefused) "true"
+                else AdbTransport.exec("getprop ${ShellGrant.MONITORING_PROPERTY}").getOrNull()
+                Log.i(TAG, "setup: ${ShellGrant.MONITORING_PROPERTY}=[${property?.trim()}]")
+                error(ShellGrant.advice(outcome, DeviceSkin.current(), ShellGrant.monitoring(property)))
             }
         }
 

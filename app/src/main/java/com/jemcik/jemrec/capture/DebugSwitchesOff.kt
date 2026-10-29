@@ -87,13 +87,17 @@ object DebugSwitchesOff {
     private const val KEY_MODE = "off_mode"
     private const val KEY_SWITCHED_OFF = "debug_switched_off"
 
-    /** The recorder said "OFF AFTER CALL": an off it has still to finish. */
+    /** The recorder said "OFF AFTER CALL" or "OFF NOW": an off it has still
+     *  to finish, or that the app finishes where its writes did not land. */
     private const val KEY_OFF_PENDING = "debug_off_pending"
 
     /** How long On waits for a recorder already writing the switches off to
-     *  be gone: two `settings put`s, the 3 s it allows adbd after them, and
-     *  the confirmed probe's own 2.4 s to say no (CaptureDaemon). */
-    private const val RECORDER_GOING_MS = 8_000L
+     *  be gone, and Off for one whose writes may have been refused: two
+     *  `settings put`s, each read back since 0.25.2, the 3 s it allows adbd
+     *  after them, and the confirmed probe's own 2.4 s to say no
+     *  (CaptureDaemon). Over by then, Off leaves the rest to the next
+     *  stayingOff - minutes, for a bank waiting to open. */
+    private const val RECORDER_GOING_MS = 10_000L
 
     fun mode(context: Context): OffMode =
         Prefs.of(context).getString(KEY_MODE, null)
@@ -182,7 +186,35 @@ object DebugSwitchesOff {
             val reply = CaptureDaemon.debuggingOff(context, go = true)
             Log.i(TAG, "debugging off: the recorder says ${reply ?: "nothing"}")
             ReviveLog.note(context, "debugging off: the recorder says ${reply ?: "nothing"}")
-            notePending(context, reply == "OFF AFTER CALL")
+            notePending(context, reply == "OFF AFTER CALL" || reply == "OFF NOW")
+            if (reply == "OFF NOW") {
+                // Landed, USB debugging reads off at once, and nothing is left
+                // to wait for. Refused - an OPPO, OnePlus or realme phone with
+                // its Developer options switch off refuses the shell those
+                // writes (ShellGrant) - the recorder goes 3 s after them, and
+                // the app, holding the permission, then finishes the off. Not
+                // measured: no such phone here.
+                val gone = withTimeoutOrNull(RECORDER_GOING_MS) {
+                    while (GlobalSettings.read(context, GlobalSettings.ADB_ENABLED) != GlobalSettings.Reading.OFF &&
+                        CaptureDaemon.isRunningConfirmed(context)
+                    ) delay(250)
+                    true
+                } == true
+                if (GlobalSettings.read(context, GlobalSettings.ADB_ENABLED) == GlobalSettings.Reading.UNKNOWN) {
+                    // Hidden from the app (Android 17), so whether the writes
+                    // landed cannot be read, and finishOffLeftUndone leaves it
+                    // alone. This off is the app's own, a moment old: once the
+                    // recorder is gone the app writes them too, which changes
+                    // nothing where they landed.
+                    if (gone) {
+                        GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+                        GlobalSettings.set(context, GlobalSettings.ADB_ENABLED, false)
+                        notePending(context, false)
+                    }
+                } else {
+                    finishOffLeftUndone(context)
+                }
+            }
             if (reply == null) {
                 GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)
                 GlobalSettings.set(context, GlobalSettings.ADB_ENABLED, false)
@@ -245,13 +277,14 @@ object DebugSwitchesOff {
     /**
      * An off with all debugging the recorder never finished: it was waiting
      * out a call ("OFF AFTER CALL") and died first - a computer's cable, say -
-     * so debugging is still on under a record and a header that say it is
-     * off. Only that off: USB debugging the user switched on themselves while
-     * JemRec is off is theirs, and the note is dropped the first time USB
-     * debugging is seen off - the recorder finished. Left alone while a
-     * recorder answers, asked the confirmed way (one missed ping is not a
-     * dead recorder, and this one may be waiting on a call), and where
-     * Android hides the setting from the app (UNKNOWN).
+     * or its writes were refused (switchOff), so debugging is still on under
+     * a record and a header that say it is off. Only that off: USB debugging
+     * the user switched on themselves while JemRec is off is theirs, and the
+     * note is dropped the first time USB debugging is seen off - the
+     * recorder finished. Left alone while a recorder answers, asked the
+     * confirmed way (one missed ping is not a dead recorder, and this one may
+     * be waiting on a call), and where Android hides the setting from the app
+     * (UNKNOWN).
      */
     suspend fun finishOffLeftUndone(context: Context) {
         val prefs = Prefs.of(context)

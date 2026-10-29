@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-895-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-911-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -60,7 +60,10 @@ the phone sets itself up.
    options, USB and Wireless debugging (no cable needed), and pairing - the
    phone pairs with itself. Type the six-digit code into JemRec's
    *notification*, not the app: leaving Settings closes the code window. Once;
-   the pairing survives restarts.
+   the pairing survives restarts. OPPO, OnePlus and realme phones on their
+   own systems (ColorOS, OxygenOS, realme UI) need one more switch in
+   Developer options, *Disable system optimization* (*Disable permission
+   monitoring* on older ones); setup names it.
 3. **Let it keep running:** on phones that stop apps in the background
    (Honor, Huawei, Xiaomi, Samsung and others), setup asks you to allow JemRec
    in the phone's own screen for it, and tells you what to tap there. If the
@@ -210,6 +213,8 @@ Google Meet was tested on the Honor: calls both ways and a meeting. Signal
 takes the same path as the other messengers and has not been tested yet.
 Developer options and Wireless debugging are on every Android phone, though the
 menu they live in differs by make; JemRec names the right path for yours.
+OPPO, OnePlus and realme phones on their own systems (ColorOS, OxygenOS,
+realme UI) need one more switch there, and setup names that too.
 
 **Both sides of the call** have been recorded on five phones, across three very
 different Android builds:
@@ -405,6 +410,26 @@ marks - a message, kept, who a messenger call was with - inside the file.
 </details>
 
 <details>
+<summary><b>Setup says Android would not let JemRec change debugging settings</b></summary>
+
+<br>
+
+Your phone refuses JemRec the one setting setup grants it until a switch of
+the phone's own is set, and the card names it. On an OPPO, OnePlus or realme
+phone it is *Disable system optimization*, the last switch in Developer
+options' Apps section (*Disable permission monitoring* on older ones; where it
+says just *Permission monitoring*, turn that off instead); some show it only
+in English, so if it is not there, set the phone's language to English, turn
+it on and set the language back. On a Xiaomi it is *USB
+debugging (Security settings)*. Then tap **Try again**. Setup does not finish
+without that setting: it is what lets JemRec turn Wireless debugging back on
+after a restart. Leave it that way afterwards: the recorder needs it too, to
+turn debugging off when JemRec is uninstalled. Reported from two OnePlus phones
+(issues #61 and #64); we have none to try it on.
+
+</details>
+
+<details>
 <summary><b>My banking app won't open while debugging is on</b></summary>
 
 <br>
@@ -439,9 +464,11 @@ second choice, or neither worked, say so in [issue #37](https://github.com/jemci
 <br>
 
 Uninstall JemRec first. If the recorder is running, it notices the uninstall
-within a few minutes, turns both debugging switches off and exits; either way,
-once JemRec is gone nothing turns them back on. To have it off only while
-JemRec is off, see the question above.
+within a few minutes, turns both debugging switches off and exits - on an
+OPPO, OnePlus or realme phone only while its *Disable system optimization*
+switch is set as setup asked, or they stay on for you to turn off. Either way, once JemRec is gone nothing
+turns them back on. To have it off only while JemRec is off, see the question
+above.
 
 </details>
 
@@ -457,7 +484,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 895 tests, screenshots of the screens included
+    ./gradlew test              # 911 tests, screenshots of the screens included
 
 | | |
 | --- | --- |
