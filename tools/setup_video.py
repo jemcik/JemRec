@@ -1069,9 +1069,12 @@ def soundtrack(path, seconds, lines, voice, music, level):
         f.writeframes((np.clip(mix, -1, 1) * 32767).astype("<i2").tobytes())
 
 
-def mux(video, audio, out):
-    """The video with the soundtrack at -16 LUFS: measured, then set linearly."""
-    target = "I=-16:TP=-1.5:LRA=11"
+def mux(video, audio, out, tp=-1.5, bitrate="192k"):
+    """The video with the soundtrack at -16 LUFS: measured, then set linearly.
+
+    `tp` is the true-peak ceiling. features_video.py asks for -2.5: at -1.5 its
+    AAC came out peaking at -0.3 dBFS (measured 2026-10-29, ebur128)."""
+    target = f"I=-16:TP={tp}:LRA=11"
     report = subprocess.run(
         ["ffmpeg", "-hide_banner", "-i", str(audio), "-af",
          f"loudnorm={target}:print_format=json", "-f", "null", "-"],
@@ -1085,7 +1088,7 @@ def mux(video, audio, out):
         ["ffmpeg", "-v", "error", "-y", "-i", str(video), "-i", str(audio),
          "-map", "0:v", "-map", "1:a", "-c:v", "copy",
          "-af", f"loudnorm={target}:{measured}", "-ar", str(AUDIO_SR),
-         "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)],
+         "-c:a", "aac", "-b:a", bitrate, "-movflags", "+faststart", str(out)],
         check=True)
 
 

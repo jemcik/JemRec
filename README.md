@@ -151,6 +151,12 @@ are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 
 ## What you can do
 
+<a href="https://www.youtube.com/watch?v=v5JV6KUUj_I"><img src="docs/video/features.jpg" alt="The features video: JemRec's screens on a pocket recorder" width="560"></a>
+
+**Prefer to watch?** What it does, in 1:51
+[on YouTube](https://www.youtube.com/watch?v=v5JV6KUUj_I), on the app's own
+screens.
+
 | | |
 | --- | --- |
 | **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record. A Quick Settings tile turns recording on and off, and a long press on it opens JemRec. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
