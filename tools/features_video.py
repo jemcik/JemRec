@@ -7,7 +7,9 @@ and chapters. Published 2026-10-29 as https://youtu.be/v5JV6KUUj_I.
 WHY A SCRIPT. As with setup_video.py: the screens change, and the cheap fix
 for a video that shows an old screen is to run this again. Nothing is filmed.
 The phone screens are docs/screenshots/<look>/dark (tools/shoot.py, the debug
-build's invented people), so a new set of screenshots is a new video.
+build's invented people), so a new set of screenshots is a new video - once
+--stills shows each box in SECTIONS still on its row: they are drawn in the
+screenshot's own pixels, and a moved row leaves its box behind.
 
 THE LOOK. The app's Deck look as hardware, the user's pick of four: brushed
 metal, the phone in a slot like a tape, an LCD in Doto with the chapter, two VU
@@ -24,7 +26,8 @@ download link returns a web page, not the file); it is not in this repository.
 The track is 125.00 BPM with its first kick at 0.062 s. A first measurement on
 256-sample hops said 0.023 s, and every cut landed 39 ms ahead of the kick; on
 64-sample hops (2.9 ms) --beats reads 0.060 s, the same within a hop
-(2026-10-29).
+(2026-10-29). --beats finds the beat, not the bar: which beat starts one is
+for the ear, and FIRST_KICK must be that one.
 
 EVERY CUT ON A BAR. Each section takes whole bars of the track and grows by
 one when its words need it: she starts LEAD after a cut and is done TAIL
@@ -60,14 +63,13 @@ it swings about -5 to +3 with the beat, and falls about 16 dB when she speaks.
     ... --stills                                     a still at every change and
                                                      in every section, no encode
     python3 tools/features_video.py --beats TRACK.mp3
-                                                     the tempo and first kick of
-                                                     another track
+                                                     the tempo and the beat grid
+                                                     of another track
 
 Needs ffmpeg, Pillow and numpy. Copy the thumbnail over docs/video/features.jpg
 after a new cut; the site shows it in place of the player.
 """
 import argparse
-import json
 import math
 import pathlib
 import subprocess
@@ -92,7 +94,6 @@ LEAD, TAIL = 0.7, 1.0            # her words after a cut / before the next
 END_TAIL = 1.5 * BEAT + 0.4      # the end card fades over its last beat and a half
 LEVEL, GAP_UP = -21.0, 9.0       # the music under her, and between her lines
 VOICE = "af_heart"
-VIDEO_URL = "https://youtu.be/v5JV6KUUj_I"
 TRACK_URL = "https://freemusicarchive.org/music/beat-mekanik/single/futuristic-1"
 
 
@@ -180,8 +181,8 @@ LINES = [(k, words) for s in SECTIONS for k, words, _ in s["phrases"]]
 
 SLOT_X, SLOT_Y = 400, 100        # the phone's centre x and top, seated
 PHONE_H, BEZEL = 880, 12
-SCALE = PHONE_H / 2808           # screenshot pixels -> pixels on the phone
 LCD, INK, OFF, EDGE = "#0E140B", "#B6F27A", "#18210f", "#565D66"   # Deck dark
+CAPTION_SIZE, CAPTION_W = 38, 1040   # two lines of it fit under the meters
 
 
 # ------------------------------------------------------------------ drawing
@@ -233,18 +234,6 @@ def draw_text(d, xy, text, f, fill, tracking=0):
         x += f.getlength(ch) + tracking
 
 
-def wrap(text, f, maxw):
-    lines, cur = [], ""
-    for w in text.split():
-        nxt = (cur + " " + w).strip()
-        if f.getlength(nxt) > maxw and cur:
-            lines.append(cur)
-            cur = w
-        else:
-            cur = nxt
-    return lines + [cur]
-
-
 def rgba(color, mask, alpha=1.0):
     """Float RGBA in one colour, shaped by an L mask."""
     a = np.asarray(mask, np.float32)[..., None] / 255.0 * alpha
@@ -293,15 +282,17 @@ def rrect_mask(w, h, r, ss=3):
 
 
 def phone(look, screen, radius=58):
-    """A dark screenshot in a phone's black bezel, as a float RGBA layer."""
+    """A dark screenshot in a phone's black bezel, as a float RGBA layer, and
+    the scale from the screenshot's pixels to the layer's."""
     im = Image.open(SHOTS / look / "dark" / f"{screen}.png").convert("RGB")
+    scale = PHONE_H / im.height
     w = round(im.width * PHONE_H / im.height)
     im = im.resize((w, PHONE_H), Image.LANCZOS)
     size = (w + 2 * BEZEL, PHONE_H + 2 * BEZEL)
     body = Image.new("RGBA", size, (6, 6, 8, 255))
     body.putalpha(rrect_mask(*size, radius + BEZEL))
     body.paste(im, (BEZEL, BEZEL), rrect_mask(w, PHONE_H, radius))
-    return np.asarray(body, np.float32)
+    return np.asarray(body, np.float32), scale
 
 
 # ------------------------------------------------------------- the timeline
@@ -336,15 +327,12 @@ def plan(voice):
 # ---------------------------------------------------------------- the sound
 
 def speak(args, cache):
-    """Every line as samples at SR, through setup_video.py's Kokoro job."""
-    cache.mkdir(parents=True, exist_ok=True)
-    job = dict(model=str(args.kokoro / "kokoro-v1.0.onnx"),
-               voices=str(args.kokoro / "voices-v1.0.bin"),
-               espeak=str(args.espeak_data), voice=VOICE, speed=sv.SPEED, lang=sv.LANG,
-               lines=[dict(text=t, out=str(cache / f"{k}.wav")) for k, t in LINES])
-    subprocess.run([str(args.tts_python), "-c", sv.TTS], input=json.dumps(job),
-                   text=True, check=True)
-    return {k: sv.to_audio_rate(*sv.read_wav(cache / f"{k}.wav")) for k, _ in LINES}
+    """Every line as samples at SR, through setup_video.py's Kokoro job and its
+    cache, which skips lines already said in this voice."""
+    job = argparse.Namespace(**{**vars(args), "voice": VOICE})
+    said = sv.synthesize([sv.Cue("say", 0, 0, voice=words) for _, words in LINES],
+                         job, cache)
+    return {k: said[words] for k, words in LINES}
 
 
 def mix(track, voice, starts, cuts, dur, path):
@@ -411,8 +399,9 @@ def vu_levels(stems, n_frames):
 
 
 def measure_beats(track):
-    """(BPM, first kick in s) of a track, from the rise of its low end on
-    64-sample hops (2.9 ms)."""
+    """(BPM, where the beat grid starts in s, within the first beat) of a
+    track, from the rise of its low end on 64-sample hops (2.9 ms). A beat,
+    not necessarily a bar's first."""
     sr = 22050
     x = np.frombuffer(subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(track), "-ac", "1", "-ar", str(sr),
@@ -441,6 +430,8 @@ def measure_beats(track):
         c = phase + k * period
         a, b = int((c - 0.12) * fps), int((c + 0.12) * fps)
         offs.append((a + np.argmax(rise[a:b])) / fps - c)
+    if not offs:                  # too short to refine: the grid as found
+        return 60 / period, phase
     return 60 / period, (phase + np.median(offs)) % period
 
 
@@ -450,7 +441,7 @@ class Deck:
     """The app's Deck look as hardware, playing the video's own timeline."""
 
     def __init__(self, spans, changes, levels):
-        self.spans, self.levels = spans, levels
+        self.levels = levels
         self.dur = spans[-1][1]
         self.cuts = [a for a, _ in spans[1:]]        # where each section begins
         self.swaps = [(t, v) for t, _, kind, v in changes if kind == "look"]
@@ -491,9 +482,12 @@ class Deck:
         self.f_lcd = font(FONTS / "doto.ttf", 112, weight=900)
         self.f_lcd_s = font(FONTS / "doto.ttf", 50, weight=900)
         self.f_leg = font(FONTS / "share_tech_mono.ttf", 30)
-        self.f_cap = font(FONTS / "share_tech_mono.ttf", 38)
+        self.f_cap = font(FONTS / "share_tech_mono.ttf", CAPTION_SIZE)
         self.f_small = font(FONTS / "share_tech_mono.ttf", 28)
         self.f_key = font(FONTS / "share_tech_mono.ttf", 28)
+        # What a frame draws that is the same as the frame before, kept.
+        self.key_rows, self.lit_key, self.lit = {}, None, None
+        self.captions, self.mark_masks = {}, {}
         self.big = []                 # each chapter's LCD words, sized to fit
         for words in [s["lines"] for s in CHAPTERS] + [["FREE AND", "OPEN SOURCE"]]:
             size = 112
@@ -506,13 +500,14 @@ class Deck:
         self.vu_boxes = [(760, 455, 1262, 735), (1298, 455, 1800, 735)]
         self.vu_face = [self.meter(c_ - a, d_ - b, name) for (a, b, c_, d_), name
                         in zip(self.vu_boxes, ["MUSIC", "VOICE"])]
-        # The tapes: (in, out, phone, label) - each chapter's own, then the changer's.
+        # The tapes: (in, out, phone, scale, label) - each chapter's own, then
+        # the changer's. A mark is drawn at its chapter tape's scale.
         self.tapes = []
         for (a, b), s in zip(spans[1:-1], CHAPTERS):
             outs = [t for t, _ in self.swaps if a < t < b] + [b]
-            self.tapes.append((a, outs[0], phone("deck", s["tape"]), None))
+            self.tapes.append((a, outs[0], *phone("deck", s["tape"]), None))
             for (t, look), nxt in zip([w for w in self.swaps if a < w[0] < b], outs[1:]):
-                self.tapes.append((t, nxt, phone(look, "home"), look.upper()))
+                self.tapes.append((t, nxt, *phone(look, "home"), look.upper()))
 
     @staticmethod
     def meter(w, h, name):
@@ -542,6 +537,12 @@ class Deck:
         return np.asarray(f, np.float32)
 
     def keys(self, fr, pressed):
+        state = frozenset(pressed)
+        if state not in self.key_rows:
+            self.key_rows[state] = self.key_row(state)
+        over(fr, self.key_rows[state], 760, 846)
+
+    def key_row(self, pressed):
         layer = Image.new("RGBA", (1060, 175))
         d = ImageDraw.Draw(layer)
         kw = 166
@@ -574,11 +575,20 @@ class Deck:
                 d.rectangle([cx - 16, cy + 8, cx + 16, cy + 14], fill=ink)
             draw_text(d, (cx - self.f_key.getlength(nm) / 2, 130), nm, self.f_key,
                       (190, 196, 204, 255))
-        over(fr, np.asarray(layer, np.float32), 760, 846)
+        return np.asarray(layer, np.float32)
 
     def lcd_text(self, fr, lines, flicker=1.0):
-        """Lit segments: ((x, y), text, font, boxed) in the LCD's own pixels."""
+        """Lit segments: ((x, y), text, font, boxed) in the LCD's own pixels.
+        Most frames light what the one before did, so that is kept."""
         x0, y0 = self.lcd_box[:2]
+        key = (tuple(lines), flicker)
+        if key != self.lit_key:
+            self.lit_key, self.lit = key, self.light(lines, flicker)
+        lit, g, pad = self.lit
+        add(fr, g, x0 - pad, y0 - pad, 0.55 * flicker)
+        over(fr, lit, x0, y0)
+
+    def light(self, lines, flicker):
         layer = Image.new("L", (self.lcd.shape[1], self.lcd.shape[0]))
         d = ImageDraw.Draw(layer)
         for (x, y), text, f, box in lines:
@@ -586,25 +596,37 @@ class Deck:
                 w = f.getlength(text)
                 d.rectangle([x - 10, y - 2, x + w + 10, y + f.size + 8], outline=255, width=3)
             d.text((x, y), text, font=f, fill=255)
-        lit = rgba(INK, layer, flicker)
-        g, pad = glow(rgba(INK, layer), 10)
-        add(fr, g, x0 - pad, y0 - pad, 0.55 * flicker)
-        over(fr, lit, x0, y0)
+        return (rgba(INK, layer, flicker), *glow(rgba(INK, layer), 10))
+
+    def caption(self, sec):
+        layer = Image.new("RGBA", (1060, 100))
+        d = ImageDraw.Draw(layer)
+        if sec < 0:
+            d.text((0, 0), "A call recorder for Android.", font=self.f_cap,
+                   fill=(222, 226, 231, 255))
+        elif sec < len(CHAPTERS):
+            for j, ln in enumerate(sv.wrap(CHAPTERS[sec]["caption"], self.f_cap, CAPTION_W)):
+                d.text((0, j * 48), ln, font=self.f_cap, fill=(222, 226, 231, 255))
+        else:
+            d.text((0, 0), "On F-Droid and GitHub.", font=self.f_cap, fill=(222, 226, 231, 255))
+            d.text((0, 52), "Music: “Futuristic” by JMHBM · CC BY 4.0",
+                   font=self.f_small, fill=(170, 176, 184, 255))
+        return np.asarray(layer, np.float32)
 
     def section(self, t):
         """-1 for the title, 0.. for a chapter, len(CHAPTERS) for the end card."""
         return sum(t >= c for c in self.cuts) - 1
 
     def tape_at(self, t):
-        """The phone in or near the slot: (layer, top, label), or (None, 0, None)."""
-        for a, b, ph, label in self.tapes:
+        """The phone in or near the slot: (layer, top, scale, label), or Nones."""
+        for a, b, ph, scale, label in self.tapes:
             if a - 0.05 <= t < b:
                 k = ease(ramp(t, a, a + 0.45))                  # drops in
                 out = ease(ramp(t, b - 0.4, b - 0.02))          # lifts out
-                return ph, SLOT_Y - (1 - k) * 1000 - out * 1000, label
-        return None, 0, None
+                return ph, SLOT_Y - (1 - k) * 1000 - out * 1000, scale, label
+        return None, 0, None, None
 
-    def mark(self, fr, t, sec, px, py):
+    def mark(self, fr, t, sec, px, py, scale):
         """The box on the row she is talking about, drawn on the phone where it
         is, so it leaves with it."""
         live = [(a, box) for a, ch, box in self.marks if ch == sec and a <= t + 0.001]
@@ -612,16 +634,20 @@ class Deck:
             return
         a, (x0, y0, x1, y1) = live[-1]
         k = ease(ramp(t, a, a + 0.25))
-        x0, x1 = px + BEZEL + x0 * SCALE, px + BEZEL + x1 * SCALE
-        y0, y1 = py + BEZEL + y0 * SCALE, py + BEZEL + y1 * SCALE
+        x0, x1 = px + BEZEL + x0 * scale, px + BEZEL + x1 * scale
+        y0, y1 = py + BEZEL + y0 * scale, py + BEZEL + y1 * scale
         pad = 30
         w, h = int(x1 - x0) + 2 * pad, int(y1 - y0) + 2 * pad
-        m = Image.new("L", (w * 3, h * 3))
-        ImageDraw.Draw(m).rounded_rectangle([pad * 3, pad * 3, (w - pad) * 3, (h - pad) * 3],
-                                            14 * 3, outline=255, width=4 * 3)
-        m = m.resize((w, h), Image.LANCZOS)
-        line = np.asarray(m, np.float32)[..., None] / 255
-        halo = np.asarray(m.filter(ImageFilter.GaussianBlur(9)), np.float32)[..., None] / 255
+        if (w, h) not in self.mark_masks:
+            m = Image.new("L", (w * 3, h * 3))
+            ImageDraw.Draw(m).rounded_rectangle(
+                [pad * 3, pad * 3, (w - pad) * 3, (h - pad) * 3], 14 * 3,
+                outline=255, width=4 * 3)
+            m = m.resize((w, h), Image.LANCZOS)
+            self.mark_masks[w, h] = (
+                np.asarray(m, np.float32)[..., None] / 255,
+                np.asarray(m.filter(ImageFilter.GaussianBlur(9)), np.float32)[..., None] / 255)
+        line, halo = self.mark_masks[w, h]
         ox, oy = int(round(x0 - pad)), int(round(y0 - pad))
         # A phone lifting out takes its mark above the frame: a negative end
         # would count from the bottom, so clip, and draw nothing once it's gone.
@@ -635,10 +661,11 @@ class Deck:
 
     def frame(self, t, still=False):
         """The frame at t s. `still` is the thumbnail's: the title's marquee
-        held on its first words and the clock at 0:00."""
+        held on its first words, the clock at 0:00 and the needles at rest
+        mid-scale rather than reading the soundtrack."""
         fr = self.bg.copy()
         over(fr, self.chrome, 0, 0)
-        ph, y, label = self.tape_at(t)
+        ph, y, scale, label = self.tape_at(t)
         if ph is not None:
             over(fr, ph, SLOT_X - ph.shape[1] / 2, y)
         over(fr, self.lcd, *self.lcd_box[:2])
@@ -653,7 +680,7 @@ class Deck:
             n = self.cuts.index(near[0]) + 1
             flick = 0.55 + 0.45 * (math.sin(t * 90) > -0.2)
             self.lcd_text(fr, [((40, 34), "FF", self.f_leg, True),
-                               ((40, 120), f">> CH 0{n}", self.f_lcd, False)], flick)
+                               ((40, 120), f">> CH {n:02d}", self.f_lcd, False)], flick)
         elif sec < 0:
             marquee = "EVERYTHING IT DOES  ·  A CALL RECORDER FOR ANDROID  ·  "
             off = int(t * 9) % len(marquee)
@@ -668,7 +695,7 @@ class Deck:
             fl = self.big[sec]
             state = "EJECT" if eject else ("PLAY" if sec < last else "STOP")
             if sec < last:
-                legends = [((40, 34), f"CH 0{sec + 1}", self.f_leg, True),
+                legends = [((40, 34), f"CH {sec + 1:02d}", self.f_leg, True),
                            ((200, 34), state, self.f_leg, True),
                            ((360, 34), clock, self.f_leg, False)]
                 if label and not eject:
@@ -693,25 +720,17 @@ class Deck:
                 fill=(20, 20, 22, 255), width=4)
             over(fr, np.asarray(nl, np.float32), a, b)
             fr[d_ - 22:d_ - 12, a + 12:c_ - 12] = rgb("#1a1b1e")
-        # The caption under the meters.
-        layer = Image.new("RGBA", (1060, 100))
-        d = ImageDraw.Draw(layer)
+        # The caption under the meters, fading in and out.
         if sec < 0:
             k = 1 - ease(ramp(t, self.cuts[0] - 0.3, self.cuts[0]))
-            d.text((0, 0), "A call recorder for Android.", font=self.f_cap,
-                   fill=(222, 226, 231, 255))
         elif sec < last:
-            q = t - self.cuts[sec]
-            k = ease(ramp(q, 0.8, 1.2)) * (1 - ease(ramp(t, self.cuts[sec + 1] - 0.3,
-                                                          self.cuts[sec + 1])))
-            for j, ln in enumerate(wrap(CHAPTERS[sec]["caption"], self.f_cap, 1040)[:2]):
-                d.text((0, j * 48), ln, font=self.f_cap, fill=(222, 226, 231, 255))
+            k = ease(ramp(t - self.cuts[sec], 0.8, 1.2)) * (
+                1 - ease(ramp(t, self.cuts[sec + 1] - 0.3, self.cuts[sec + 1])))
         else:
             k = ease(ramp(t - self.cuts[-1], 0.6, 1.0))
-            d.text((0, 0), "On F-Droid and GitHub.", font=self.f_cap, fill=(222, 226, 231, 255))
-            d.text((0, 52), "Music: “Futuristic” by JMHBM · CC BY 4.0",
-                   font=self.f_small, fill=(170, 176, 184, 255))
-        over(fr, np.asarray(layer, np.float32), 760, 752, k)
+        if sec not in self.captions:
+            self.captions[sec] = self.caption(sec)
+        over(fr, self.captions[sec], 760, 752, k)
         self.keys(fr, {"FF"} if ff else {"EJECT"} if eject else
                   {"STOP"} if sec == last else {"PLAY"} if t > 0.3 else set())
         fade = 1 - ease(ramp(t, self.dur - 1.5 * BEAT, self.dur))
@@ -719,9 +738,18 @@ class Deck:
         # The mark goes on last, at the fade's level (marks end before it starts).
         if 0 <= sec < last and ph is not None:
             before = fr.copy()
-            self.mark(fr, t, sec, SLOT_X - ph.shape[1] / 2, y)
+            self.mark(fr, t, sec, SLOT_X - ph.shape[1] / 2, y, scale)
             fr = before + (fr - before) * fade
         return fr
+
+
+def check_captions():
+    """A caption has two lines under the meters; a longer one is an error, not
+    a cut - found before anything is spoken."""
+    f = font(FONTS / "share_tech_mono.ttf", CAPTION_SIZE)
+    for s in CHAPTERS:
+        if len(sv.wrap(s["caption"], f, CAPTION_W)) > 2:
+            raise SystemExit(f"the caption of {s['key']!r} needs more than two lines")
 
 
 def to_img(fr):
@@ -735,18 +763,19 @@ def write_srt(path, lines):
         ms = int(round(s * 1000))
         return (f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:"
                 f"{ms // 1000 % 60:02d},{ms % 1000:03d}")
-    measure = font(FONTS / "share_tech_mono.ttf", 20)
     out = []
     for i, (a, b, text) in enumerate(lines, 1):
-        rows = wrap(text, measure, 42 * measure.getlength("n"))
+        rows = sv.srt_lines(text)
         out.append(f"{i}\n{ts(a)} --> {ts(b)}\n" + "\n".join(rows) + "\n")
     path.write_text("\n".join(out))
 
 
-def write_description(path, chapters):
+def write_description(path, chapters, seconds):
+    from build_site import VIDEO_URL as setup_url   # the site's own record of it
+    minutes = max(1, math.floor(seconds / 60 + 0.5))   # a half rounds up
     stamps = "".join(f"{int(a) // 60}:{int(a) % 60:02d} {name}\n" for a, name in chapters)
     path.write_text(f"""Suggested title:
-JemRec: a call recorder for Android, no root - everything it does in 2 minutes
+JemRec: a call recorder for Android, no root - everything it does in {minutes} minute{"s" if minutes > 1 else ""}
 
 Description:
 
@@ -757,7 +786,7 @@ Get JemRec
 F-Droid: https://f-droid.org/packages/com.jemcik.jemrec/
 GitHub: https://github.com/jemcik/JemRec
 Website and manual: https://jemcik.github.io/JemRec/
-How to set it up: https://www.youtube.com/watch?v=rt25pZd8R9M
+How to set it up: {setup_url}
 
 The screens show the app's demo data; the people in them are invented.
 
@@ -781,10 +810,12 @@ def main():
     args = p.parse_args()
     if args.beats:
         bpm, kick = measure_beats(args.track)
-        print(f"{bpm:.2f} BPM, first kick at {kick:.3f} s")
+        print(f"{bpm:.2f} BPM, a beat at {kick:.3f} s and every {60 / bpm:.3f} s after: "
+              f"FIRST_KICK is the one of these that starts a bar")
         return
     if not (args.outdir and args.kokoro and args.tts_python and args.espeak_data):
         p.error("OUTDIR, --kokoro, --tts-python and --espeak-data are needed")
+    check_captions()
     out = args.outdir
     out.mkdir(parents=True, exist_ok=True)
     voice = speak(args, out / "voice")
@@ -802,7 +833,8 @@ def main():
     # the last runs on through the end card.
     write_description(out / "jemrec-features.txt",
                       [(0.0, CHAPTERS[0]["chapter"])] +
-                      [(a, s["chapter"]) for (a, _), s in zip(spans[2:-1], CHAPTERS[1:])])
+                      [(a, s["chapter"]) for (a, _), s in zip(spans[2:-1], CHAPTERS[1:])],
+                      dur)
     write_srt(out / "jemrec-features.srt",
               [(starts[k], starts[k] + len(voice[k]) / SR, words) for k, words in LINES])
     cuts = [a for a, _ in spans[1:]]
@@ -811,11 +843,19 @@ def main():
     # MUSIC's trim: the music alone, from the title's line lifting off it to the
     # first cut (4.4-5.6 s on this timeline).
     said = starts["title"] + len(voice["title"]) / SR
-    a, b = round(said + 0.9, 1), round(cuts[0] - 0.2, 1)
-    alone = 20 * np.log10(np.sqrt(np.mean(music[round(a * SR):round(b * SR)] ** 2)))
+    # The first cut is only TAIL after her line; a window under half a second
+    # (empty, when the cut comes within 1.1 s) runs on past it instead.
+    a = round(said + 0.9, 1)
+    b = max(round(cuts[0] - 0.2, 1), a + 0.5)
+    rms = np.sqrt(np.mean(music[round(a * SR):round(b * SR)] ** 2))
+    if not rms > 0:
+        raise SystemExit(f"the music is silent from {a} to {b} s: MUSIC has nothing to "
+                         f"read 0 VU at")
+    alone = 20 * np.log10(rms)
     n = int(round(dur * FPS))
     deck = Deck(spans, changes, vu_levels([(music, alone), (speech, -15.0)], n))
     if args.stills:
+        wav.unlink()
         d = out / "stills"
         d.mkdir(exist_ok=True)
         for t in sorted([w + 0.6 for w, *_ in changes] + [a + 3.0 for a, _ in spans]):

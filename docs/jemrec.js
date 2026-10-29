@@ -83,7 +83,7 @@
         var f = document.createElement('iframe');
         f.src = 'https://www.youtube-nocookie.com/embed/' + a.dataset.youtube +
                 '?autoplay=1&rel=0';
-        f.title = a.dataset.title;
+        f.title = a.dataset.title || 'JemRec video';
         f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
         f.allowFullscreen = true;
         f.referrerPolicy = 'strict-origin-when-cross-origin';
