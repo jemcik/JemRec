@@ -963,6 +963,10 @@ public final class Main {
         }
     }
 
+    /** By its full path, not looked up on PATH (CodeQL, code-scanning alert
+     *  69), as the app's getprop is (SystemProperty): Android's own. */
+    private static final String SETTINGS = "/system/bin/settings";
+
     /**
      * `settings put global name value`, read back: true if it now says so. An
      * OPPO, OnePlus or realme phone with its Developer options switch off
@@ -973,7 +977,7 @@ public final class Main {
      */
     private static boolean putGlobal(String name, String value) {
         try {
-            Process put = new ProcessBuilder("settings", "put", "global", name, value)
+            Process put = new ProcessBuilder(SETTINGS, "put", "global", name, value)
                     .redirectErrorStream(true)
                     .start();
             String said = slurp(put);
@@ -992,7 +996,7 @@ public final class Main {
     /** `settings get global name`, trimmed; null if it could not be read. */
     private static @Nullable String readGlobal(String name) {
         try {
-            Process process = new ProcessBuilder("settings", "get", "global", name)
+            Process process = new ProcessBuilder(SETTINGS, "get", "global", name)
                     .redirectErrorStream(true)
                     .start();
             String value = slurp(process);
