@@ -71,7 +71,7 @@
       });
     }
 
-    // The setup video is a picture of it until someone presses play. A YouTube
+    // Each video is a picture of it until someone presses play. A YouTube
     // embed loads Google's player, scripts and cookies with the page, for every
     // visitor, watching or not, and this site fetches nothing from anywhere else
     // - the privacy policy says so. So the player is fetched on the click that
@@ -83,7 +83,7 @@
         var f = document.createElement('iframe');
         f.src = 'https://www.youtube-nocookie.com/embed/' + a.dataset.youtube +
                 '?autoplay=1&rel=0';
-        f.title = 'JemRec setup video';
+        f.title = a.dataset.title || 'JemRec video';
         f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
         f.allowFullscreen = true;
         f.referrerPolicy = 'strict-origin-when-cross-origin';
