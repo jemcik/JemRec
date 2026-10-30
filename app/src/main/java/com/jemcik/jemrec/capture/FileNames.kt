@@ -12,20 +12,22 @@ import java.util.Locale
 /**
  * What a saved recording is called, and what a name says when read back.
  *
- * Three ways to name one, chosen in Settings:
+ * Four ways to name one, chosen in Settings:
  *
  *   - DATE, the default and the only one before 0.12:
  *     20261020_165705_out.ogg - when the call began, and which way it went.
  *   - DATE_AND_CALLER: the same, then who it was with -
  *     20261020_165705_out_Priya Shah.ogg - for anyone who browses the folder
  *     in a file manager or copies it to a computer.
+ *   - DATE_AND_NUMBER: the same, then the phone number even for a contact -
+ *     20261020_165705_out_+447700900123.ogg.
  *   - HONOR: Priya Shah@+447700900123_20261020165705.ogg, the name Honor's
  *     own call recorder uses. Honor's Phone app shows a play button on a call
  *     in its history when a file named like that is in Sounds/CallRecord.
  *     Tested on an Honor (see the note in [build]); offered only on a phone
  *     that has that app.
  *
- * The two with a caller in them need the call log, read when the call is
+ * The three with a caller in them need the call log, read when the call is
  * saved; without it, or for a call it does not have, the name falls back to
  * DATE. A name is chosen once, when the recording is saved, and never changed
  * afterwards: everything that remembers a recording - the keep mark, Recently
@@ -35,8 +37,10 @@ import java.util.Locale
  * 20261020_203501_in_viber.ogg, with the caller after it in the formats that
  * name one - 20261020_203501_in_viber_Priya Raman.ogg - and no direction when
  * it is not known. Honor's format does not apply: its dialer has no messenger
- * calls to match. In the date format the caller is noted here by name instead
- * ([noteCaller]), since nothing else can say it: messenger calls are not in
+ * calls to match. DATE_AND_NUMBER uses the date form for messenger calls:
+ * only a caller label is available. In both date forms the caller is noted
+ * here by name instead ([noteCaller]), since nothing else can say it:
+ * messenger calls are not in
  * the phone's call log. The recording's own tags carry it too
  * (RecordingTags), and a reinstall notes it here again from them.
  *
@@ -51,7 +55,7 @@ import java.util.Locale
  */
 object FileNames {
 
-    enum class Format { DATE, DATE_AND_CALLER, HONOR }
+    enum class Format { DATE, DATE_AND_CALLER, DATE_AND_NUMBER, HONOR }
 
     private const val KEY = "file_names"
     private const val KEY_DIRECTIONS = "name_directions"
@@ -102,8 +106,9 @@ object FileNames {
         val standard = RecordingStore.nameFor(Date(startedAt), incoming)
         return when (format) {
             Format.DATE -> standard
-            Format.DATE_AND_CALLER -> {
-                val who = clean(party?.name) ?: digits(party?.number) ?: return standard
+            Format.DATE_AND_CALLER, Format.DATE_AND_NUMBER -> {
+                val contact = if (format == Format.DATE_AND_CALLER) clean(party?.name) else null
+                val who = contact ?: digits(party?.number) ?: return standard
                 "${standard.removeSuffix(".${RecordingStore.EXTENSION}")}_$who.${RecordingStore.EXTENSION}"
             }
             Format.HONOR -> {
@@ -182,7 +187,10 @@ object FileNames {
             false -> "_out"
             null -> ""
         }
-        val who = if (format == Format.DATE) null else clean(caller)
+        val who = when (format) {
+            Format.DATE, Format.DATE_AND_NUMBER -> null
+            Format.DATE_AND_CALLER, Format.HONOR -> clean(caller)
+        }
         return "$stamp${direction}_$tag${who?.let { "_$it" } ?: ""}.${RecordingStore.EXTENSION}"
     }
 
@@ -245,7 +253,7 @@ object FileNames {
     }
 
     /** A messenger call's caller, by the recording's name, when the name
-     *  itself does not carry it (the date format). */
+     *  itself does not carry it (the date and phone-number formats). */
     fun noteCaller(context: Context, name: String, caller: String) = noteCallers(context, mapOf(name to caller))
 
     /** The same, for many at once: one write of the preferences. */

@@ -260,6 +260,11 @@ you already have keep their names.
   began, and which way it went.
 - **With the caller**: `20261020_165705_out_Priya Raman.ogg` — easier to find
   in a file manager or on a computer.
+- **With the phone number**: `20261020_165705_out_+447700900123.ogg` — the
+  number even for a saved contact, never the contact or caller-ID name. If the
+  number is hidden or unavailable, just the date, time and direction. Messenger
+  calls use the date, direction and app; their caller still appears in JemRec's
+  list.
 - **For Honor's Phone app**, on a phone that has it: `Priya
   Raman@+447700900123_20261020165705.ogg`, the name Honor's own recorder uses.
   Saved in `Sounds/CallRecord` — the File names dialog has a button that opens
@@ -709,8 +714,9 @@ everything still works, with the time as each recording's headline.
 **Saving**
 
 - **Saving to** — which folder recordings go in, and back to the default.
-- **File names** — date and time, with the caller, or the name Honor's Phone
-  app plays from its call history.
+- **File names** — date and time, with the caller, with the phone number even
+  for a saved contact, or the name Honor's Phone app plays from its call
+  history.
 - **Auto-delete old recordings** and **Auto-delete short calls** — off until
   you choose. Recordings older than 30 days, 90 days, 6 months or a year; calls
   shorter than 5, 10 or 30 seconds. Kept recordings are never touched, and

@@ -509,6 +509,7 @@ private fun ageChoice(days: Int): String = if (days == 0) "Never" else ageWords(
 private fun fileNamesLabel(format: FileNames.Format): String = when (format) {
     FileNames.Format.DATE -> "Date and time"
     FileNames.Format.DATE_AND_CALLER -> "With the caller"
+    FileNames.Format.DATE_AND_NUMBER -> "With the phone number"
     FileNames.Format.HONOR -> "For Honor's Phone app"
 }
 
@@ -710,6 +711,7 @@ private fun FileNamesDialog(
             when (format) {
                 FileNames.Format.DATE -> "20261020_165705_out.ogg"
                 FileNames.Format.DATE_AND_CALLER -> "20261020_165705_out_Priya Raman.ogg"
+                FileNames.Format.DATE_AND_NUMBER -> "20261020_165705_out_+447700900123.ogg"
                 FileNames.Format.HONOR -> "Priya Raman@+447700900123_20261020165705.ogg"
             }
         },
@@ -726,6 +728,10 @@ private fun FileNamesDialog(
                         FileNames.Format.DATE_AND_CALLER ->
                             "The same, then the contact's name or the number - easier " +
                                 "to find in a file manager or on a computer."
+                        FileNames.Format.DATE_AND_NUMBER ->
+                            "The same, then the phone number, even for a saved contact. " +
+                                "If the number is hidden or unavailable, just the date and time. " +
+                                "Messenger calls keep the date, direction and app only."
                         FileNames.Format.HONOR ->
                             "The name Honor's own recorder uses. Honor's Phone app then " +
                                 "shows a play button on the call in its history - as long " +

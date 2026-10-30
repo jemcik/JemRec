@@ -1,6 +1,13 @@
 package com.jemcik.jemrec.ui.screens
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -13,9 +20,11 @@ import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.UiState
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.LookChoice
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
@@ -270,6 +279,33 @@ class SettingsScreenshots : ScreenTest() {
         compose.waitForIdle()
         snapWithDialog("dialog-file-names")
     }
+
+    @Test fun phoneNumberFileNamesDialog() {
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS, fileNames = FileNames.Format.DATE_AND_CALLER))
+        show {
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        compose.onNodeWithText("File names").performScrollTo().performClick()
+        phoneNumberChoice().performScrollTo().performClick()
+        phoneNumberChoice().assertIsSelected()
+        compose.onNodeWithText("Done").assertIsDisplayed()
+        assertEquals(FileNames.Format.DATE_AND_NUMBER, FileNames.format(RuntimeEnvironment.getApplication()))
+        snapWithDialog("dialog-file-names-number")
+    }
+
+    @Config(qualifiers = "+night")
+    @Test fun phoneNumberFileNamesDialogLargeText() {
+        settings(Fixtures.ready().copy(fileNames = FileNames.Format.DATE_AND_NUMBER), fontScale = 2f)
+        compose.onNodeWithText("File names").performScrollTo().performClick()
+        phoneNumberChoice().performScrollTo().assertIsSelected()
+        compose.onNodeWithText("Done").assertIsDisplayed()
+        snapWithDialog("dialog-file-names-number-large-text-dark")
+    }
+
+    private fun phoneNumberChoice() = compose.onNode(
+        hasText("With the phone number") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+    )
 
     // Recently deleted, with its Restore all and Delete all for good, and the
     // question Delete all for good asks first.

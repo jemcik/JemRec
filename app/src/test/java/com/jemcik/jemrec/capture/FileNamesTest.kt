@@ -11,7 +11,7 @@ import org.junit.Test
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-/** The three ways to name a recording, and every one read back. */
+/** The four ways to name a recording, and every one read back. */
 class FileNamesTest {
 
     private val at = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse("20261020_165705")!!.time
@@ -31,6 +31,34 @@ class FileNamesTest {
         )
         // Nobody known at all: the plain name.
         assertEquals("20261020_165705_in.ogg", FileNames.build(Format.DATE_AND_CALLER, at, true, Party(null, null)))
+    }
+
+    @Test fun withThePhoneNumberItIgnoresTheContactsName() {
+        assertEquals("20261020_165705_out_+447700900123.ogg", FileNames.build(Format.DATE_AND_NUMBER, at, false, priya))
+        assertEquals("20261020_165705_in_+447700900123.ogg", FileNames.build(Format.DATE_AND_NUMBER, at, true, priya))
+    }
+
+    @Test fun withThePhoneNumberItStillNamesUnknownContacts() {
+        assertEquals(
+            "20261020_165705_in_+447700900123.ogg",
+            FileNames.build(Format.DATE_AND_NUMBER, at, true, Party("+44 (7700) 900-123", null)),
+        )
+        assertEquals(
+            "20261020_165705_out_0501234567.ogg",
+            FileNames.build(Format.DATE_AND_NUMBER, at, false, Party("050 123 45 67", "Caller ID")),
+        )
+    }
+
+    @Test fun withNoUsableNumberItNeverSubstitutesAName() {
+        val parties = listOf(null, Party(null, "Priya Shah"), Party("Private", "Priya Shah"), Party("", "Priya Shah"))
+        parties.forEach { party ->
+            listOf(true, false).forEach { incoming ->
+                assertEquals(
+                    FileNames.build(Format.DATE, at, incoming, party),
+                    FileNames.build(Format.DATE_AND_NUMBER, at, incoming, party),
+                )
+            }
+        }
     }
 
     @Test fun honorsNameIsWhatHonorsPhoneAppLooksFor() {
@@ -55,6 +83,7 @@ class FileNamesTest {
             }
         }
         assertEquals("Priya Shah", FileNames.parse("20261020_165705_out_Priya Shah.ogg")?.caller)
+        assertEquals("+447700900123", FileNames.parse("20261020_165705_out_+447700900123.ogg")?.caller)
     }
 
     @Test fun namesFromBeforeReadExactlyAsTheyDid() {
@@ -79,6 +108,18 @@ class FileNamesTest {
             "20261020_165705_in_viber_Priya Raman.ogg",
             FileNames.buildVoip(Format.HONOR, at, true, "viber", "Priya Raman"),
         )
+    }
+
+    @Test fun numberOnlyMessengerNamesDoNotSubstituteACaller() {
+        listOf(true, false, null).forEach { incoming ->
+            val name = FileNames.buildVoip(Format.DATE_AND_NUMBER, at, incoming, "whatsapp", "Priya Raman")
+            assertEquals(FileNames.buildVoip(Format.DATE, at, incoming, "whatsapp", "Priya Raman"), name)
+            val parsed = FileNames.parse(name)!!
+            assertEquals(at, parsed.startedAt)
+            assertEquals(incoming, parsed.incoming)
+            assertEquals("whatsapp", parsed.app)
+            assertNull(parsed.caller)
+        }
     }
 
     @Test fun aMessengerCallReadsBack() {
