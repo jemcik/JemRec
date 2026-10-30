@@ -103,6 +103,28 @@ class SavePlanTest {
         assertEquals(byLog, byTelecom)
     }
 
+    @Test fun theNumberFormatIgnoresContactAndCallerIdNamesBothWays() {
+        listOf(true, false).forEach { incoming ->
+            listOf(emptyMap(), mapOf("3034997111" to contact("Priya Raman", 7))).forEach { contacts ->
+                val phone = Phone(contacts = contacts, log = listOf(entry(t, incoming, "3034997111", "Caller ID")))
+                val (byLog, byTelecom) = bothWays(phone, "+13034997111", Format.DATE_AND_NUMBER, incoming)
+                assertTrue(byLog, byLog.endsWith("_${if (incoming) "in" else "out"}_3034997111.ogg"))
+                assertEquals(byLog, byTelecom)
+            }
+        }
+    }
+
+    @Test fun theNumberFormatFallsBackToDateWithoutCallLogPermissionBothWays() {
+        val phone = Phone(
+            contacts = mapOf("3034997111" to contact("Priya Raman", 7)),
+            log = listOf(entry(t, false, "3034997111", "Caller ID")),
+            callLogAllowed = false,
+        )
+        val (byLog, byTelecom) = bothWays(phone, "+13034997111", Format.DATE_AND_NUMBER)
+        assertTrue(byLog, byLog.endsWith("_out.ogg"))
+        assertEquals(byLog, byTelecom)
+    }
+
     @Test fun withNoNameAnywhereTheNumberIsTheLogsBothWays() {
         val phone = Phone(log = listOf(entry(t, false, "3034997111")))
         val (byLog, byTelecom) = bothWays(phone, "+13034997111", Format.DATE_AND_CALLER)

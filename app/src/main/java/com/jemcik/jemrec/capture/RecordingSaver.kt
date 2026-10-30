@@ -322,7 +322,9 @@ object RecordingSaver {
         val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), ledger = false) {
             RecordingTags.Facts(incoming = note?.incoming, caller = note?.name)
         }
-        if (outcome is Outcome.Saved && note?.name != null && format == FileNames.Format.DATE) {
+        if (outcome is Outcome.Saved && note?.name != null &&
+            (format == FileNames.Format.DATE || format == FileNames.Format.DATE_AND_NUMBER)
+        ) {
             FileNames.noteCaller(context, name, note.name)
         }
         return outcome

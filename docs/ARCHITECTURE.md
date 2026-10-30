@@ -587,6 +587,11 @@ permissions, to tell who a call was with.
 
 - **Date and time**, the default - `20261020_165705_out.ogg`.
 - **With the caller** - `20261020_165705_out_Priya Raman.ogg`.
+- **With the phone number** - `20261020_165705_out_+447700900123.ogg`,
+  even when the number belongs to a saved contact or has a caller-ID name.
+  A hidden or unavailable number leaves just the date, time and direction.
+  Messenger calls have no phone number available to JemRec: they use the
+  date, direction and app, with the caller still kept for the list and tags.
 - **For Honor's Phone app** - `Priya Raman@+447700900123_20261020165705.ogg`,
   in `Sounds/CallRecord`: the name and folder Honor's own recorder uses.
   Honor's Phone app then shows a play button on the call in its history.

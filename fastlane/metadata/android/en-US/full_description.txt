@@ -6,7 +6,7 @@ In an ADB session of a few seconds the app starts a small shell-privileged daemo
 
 <b>Recordings</b> are Ogg Opus files in the phone's Recordings/JemRec folder. A recording starts at the answer: no ringing, and a call nobody answered is not kept. Automatic mode records every call; ask-first mode records nothing until you tap Record. Messenger calls (WhatsApp, Telegram, Signal, Viber) and Google Meet can be recorded too, both sides, app by app, on Android 14+; all but Signal tested. It warns of a silent recording, a recorder that is down, or a call that went unrecorded.
 
-<b>Playing, finding, keeping.</b> A call plays as its waveform, and goes on with the screen off, its caller kept off the lock screen. A Calls tab shows each call: its recording, or why there is none; both lists can be searched. Deleted recordings wait 30 days in Recently deleted; auto-delete, off by default, clears old and very short recordings, never ones marked to keep. You can keep only some people's calls, and name files with the caller, or as Honor's Phone app plays them.
+<b>Playing, finding, keeping.</b> A call plays as its waveform, and goes on with the screen off, its caller kept off the lock screen. A Calls tab shows each call: its recording, or why there is none; both lists can be searched. Deleted recordings wait 30 days in Recently deleted; auto-delete, off by default, clears old and very short recordings, never ones marked to keep. You can keep only some people's calls, and name files by caller, phone number, or for Honor's Phone app.
 
 <b>Three looks</b>: Memo; Deck, a pocket recorder; Multitrack, a sound editor - each light, dark or as the phone.
 

@@ -37,7 +37,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-911 JVM tests, no device needed - 715 for the app and 196 for the daemon:
+919 JVM tests, no device needed - 723 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -102,7 +102,8 @@ calls: the ringing cut, the same cut with nothing captured until the answer
 (as over Wi-Fi Calling on a Pixel, issue #40: the recorder is stopped while
 the call rings), an unanswered call not kept, an incoming call kept to
 the second, a stranger skipped before recording, two calls in quick
-succession, a caller-ID name, the self-test, and the answering machine: a
+succession, a caller-ID name, a saved contact named by phone number, the
+self-test, and the answering machine: a
 message taken and marked with the microphone given back, a caller who hangs
 up during the greeting, a caller the rules leave out left to ring, a phone
 call ringing over a messenger call left to ring (a stand-in call from

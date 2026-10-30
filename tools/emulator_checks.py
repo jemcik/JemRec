@@ -573,6 +573,17 @@ def caller_id():
         as_root(f"pm enable {PKG}/.capture.CallMonitorService")
 
 
+def phone_number_file_names():
+    """A saved contact's recording uses the number when that format is chosen."""
+    set_prefs(file_names="DATE_AND_NUMBER", rules_other_numbers=True)
+    try:
+        sh("logcat -c")
+        dial(CONTACT, ring_s=2, talk_s=4)
+        return exact(f"_out_{CONTACT}.ogg")
+    finally:
+        set_prefs(file_names="DATE_AND_CALLER")
+
+
 GREETING = "/data/local/tmp/jemrec-test-greeting.pcm"
 
 
@@ -2063,7 +2074,7 @@ def self_test():
     return next(l.split("] ", 1)[1] for l in report.splitlines() if "PASS" in l)
 
 
-CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
+CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, phone_number_file_names, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, app_call, mode_switch, app_call_in_front, waveform,
           background_playback,

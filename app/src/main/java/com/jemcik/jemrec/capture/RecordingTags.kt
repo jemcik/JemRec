@@ -452,7 +452,7 @@ internal object RecordingTags {
         val keeps = found.filter { it.second.kept }.map { it.first }
         if (keeps.isNotEmpty()) KeepMarks.set(context, keeps, kept = true)
         FileNames.noteDirections(context, found.mapNotNull { (name, f) -> f.incoming?.let { name to it } }.toMap())
-        // Only where the name does not say who: the date format's.
+        // Only where the name does not say who: the date and number formats'.
         FileNames.noteCallers(
             context,
             found.mapNotNull { (name, f) ->

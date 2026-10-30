@@ -1831,6 +1831,11 @@ SETUP = [
         "call began, and which way it went.",
         "**With the caller**: `20261020_165705_out_Priya Raman.ogg` — easier to "
         "find in a file manager or on a computer.",
+        "**With the phone number**: `20261020_165705_out_+447700900123.ogg` — "
+        "the number even for a saved contact, never the contact or caller-ID name. "
+        "If the number is hidden or unavailable, just the date, time and direction. "
+        "Messenger calls use the date, direction and app; their caller still "
+        "appears in JemRec's list.",
         "**For Honor's Phone app**, on a phone that has it: "
         "`Priya Raman@+447700900123_20261020165705.ogg`, the name Honor's own "
         "recorder uses. Saved in `Sounds/CallRecord` — the File names dialog has "
@@ -2309,7 +2314,8 @@ SETUP = [
     ("p", "**Saving**"),
     ("ul", [
         "**Saving to** — which folder recordings go in, and back to the default.",
-        "**File names** — date and time, with the caller, or the name Honor's "
+        "**File names** — date and time, with the caller, with the phone number "
+        "even for a saved contact, or the name Honor's "
         "Phone app plays from its call history.",
         "**Auto-delete old recordings** and **Auto-delete short calls** — off "
         "until you choose. Recordings older than 30 days, 90 days, 6 months or a "
@@ -3118,7 +3124,8 @@ FEATURES = [
      "if there is none, why. Search either list, or narrow it with a tap.",
      "the-calls-tab"),
     ("Name files your way",
-     "By date and time, with the caller, or the way Honor&rsquo;s Phone app "
+     "By date and time, with the caller, with the phone number even for a "
+     "saved contact, or the way Honor&rsquo;s Phone app "
      "plays them from its call history.",
      "file-names"),
     ("Play, keep, clean up",
@@ -3670,8 +3677,9 @@ HOW_BODY = f"""
 
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
-     everyone&rsquo;s but a few people&rsquo;s. Name files by date, or with the
-     caller in them &mdash; and on an Honor, the way Honor&rsquo;s own Phone app
+     everyone&rsquo;s but a few people&rsquo;s. Name files by date, with the
+     caller, or with the phone number even for a saved contact &mdash; and on
+     an Honor, the way Honor&rsquo;s own Phone app
      looks for them, so its call history gets a play button.</p>
 
   <h3>Nothing is deleted by accident</h3>
@@ -3809,7 +3817,8 @@ PRIVACY_DATA = [
      "call by who it was with, and to notice a call that was not recorded. Names "
      "and numbers are not copied or stored; the lookup happens each time it is "
      "needed. Two choices change that, and only when you make them: a file name "
-     "with the caller in it puts their name or number in the recording&rsquo;s "
+     "with the caller or phone number in it puts their name or number in the "
+     "recording&rsquo;s "
      "file name, and for those JemRec keeps which way each call went, by file "
      "name, in its private storage and inside the recording; and the contacts "
      "you pick under Whose calls to keep are stored there as your contacts "
@@ -3827,7 +3836,8 @@ PRIVACY_DATA = [
      "notifications of the apps whose calls you record &mdash; the messengers "
      "and Google Meet &mdash; the caller&rsquo;s name, the time, and whether the "
      "call rang first, for the last 30 calls, in the app&rsquo;s private "
-     "storage. A recording named by date alone keeps its caller&rsquo;s name "
+     "storage. A recording named by date alone or with the phone-number format "
+     "keeps its caller&rsquo;s name "
      "there too, by file name; one named with the caller has it in the file "
      "name. Either way the name is also written inside the recording, where no "
      "music app shows it, so that a reinstall still knows who it was &mdash; and "
