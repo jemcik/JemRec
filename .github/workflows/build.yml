@@ -73,6 +73,12 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
+      # The build the emulator checks install: debug's sources through R8
+      # with the release's rules (app/build.gradle.kts). Built here so a
+      # change that breaks only it shows on the push, not on release day.
+      - name: Build the shrunk APK
+        run: ./gradlew assembleShrunk
+
       # The reproducibility check, on every push. With no keystore in the
       # environment AGP writes app-release-unsigned.apk, which is exactly what
       # F-Droid's builder produces and what a local `./gradlew assembleRelease`

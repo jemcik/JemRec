@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Whether this build keeps files/revive.log (ReviveLog). Off in a release:
+      it keeps nothing. On in the debug and shrunk builds, from
+      src/debug/res/values/builds.xml. A resource rather than the debuggable
+      flag, which it was until 0.25.3: the shrunk build is not debuggable, so
+      R8 treats it as it treats the release (issue #69), and the emulator
+      checks still read the log there.
+    -->
+    <bool name="keeps_revive_log">false</bool>
+</resources>

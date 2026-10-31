@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 
 /**
@@ -59,7 +60,11 @@ class RecorderKeepAlive(
             retention()
             return Result.success()
         }
-        ReviveLog.note(applicationContext, "keepalive: run (attempt ${runAttemptCount + 1})")
+        val forWifi = inputData.getBoolean(FOR_WIFI, false)
+        ReviveLog.note(
+            applicationContext,
+            "keepalive: ${if (forWifi) "Wi-Fi run" else "run"} (attempt ${runAttemptCount + 1})",
+        )
         // A force-stop clears the system's trigger with every other job; this
         // run is the next chance to put it back. KEEP, so a watch already
         // waiting is left alone.
@@ -68,7 +73,8 @@ class RecorderKeepAlive(
         // Off Wi-Fi is exactly when the Wi-Fi watch must be armed, and the
         // one place it reliably can be: armed on Wi-Fi it fires at once and
         // the system drops it. See NetworkRevive.
-        if (!NetworkRevive.onWifi(applicationContext)) NetworkRevive.arm(applicationContext)
+        val onWifi = NetworkRevive.onWifi(applicationContext)
+        if (!onWifi) NetworkRevive.arm(applicationContext)
         if (alive) {
             // Collect anything the daemon still holds - normally nothing, but a
             // crash or a reboot between hang-up and the fetch can strand a
@@ -84,8 +90,9 @@ class RecorderKeepAlive(
         retention()
         // retry(), not failure(): failure is terminal for a one-off, and a
         // daemon that could not be revived now - almost always no Wi-Fi - is
-        // exactly the thing worth trying again shortly with backoff.
-        return if (alive) Result.success() else Result.retry()
+        // the thing worth trying again shortly with backoff. Except Wi-Fi's
+        // run off Wi-Fi: the watch armed above starts the next (triesAgain).
+        return if (triesAgain(alive, forWifi, onWifi)) Result.retry() else Result.success()
     }
 
     /** Auto-delete and the trash's expiry, once a day at most. Needs no
@@ -100,6 +107,17 @@ class RecorderKeepAlive(
         private const val TAG = "JemRec"
         private const val PERIODIC = "jemrec.keepalive.periodic"
         private const val IMMEDIATE = "jemrec.keepalive.now"
+        private const val WIFI = "jemrec.keepalive.wifi"
+        private const val FOR_WIFI = "for_wifi"
+
+        /** Whether a run that ended with the recorder down tries again with
+         *  backoff. A kick or the heartbeat does, Wi-Fi or not: the retry is
+         *  what brings the recorder back if nothing else does. The Wi-Fi run
+         *  does only while it is on Wi-Fi: off it, the watch is armed again
+         *  (doWork) and will wake a new one, which a retry still waiting
+         *  would be taken for, as the kick's was (kickForWifi). */
+        internal fun triesAgain(alive: Boolean, forWifi: Boolean, onWifi: Boolean): Boolean =
+            !alive && (!forWifi || onWifi)
 
         /** The steady heartbeat, and the watch on USB debugging that cuts it
          *  short when the phone switches that off (see UsbDebuggingWatch).
@@ -124,17 +142,36 @@ class RecorderKeepAlive(
          *  run mid-way - a reconcile between saving a call and deleting the
          *  daemon's copy, or a revive between stopping a daemon and starting
          *  the next. One already running does the same job. */
-        fun kickNow(context: Context) {
-            val work = OneTimeWorkRequestBuilder<RecorderKeepAlive>().build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                IMMEDIATE, ExistingWorkPolicy.KEEP, work,
-            )
+        fun kickNow(context: Context) = runOnce(context, IMMEDIATE, forWifi = false)
+
+        /** Wi-Fi is back (NetworkReviveReceiver): a run of its own, not a
+         *  kick. A kick that ran off Wi-Fi - an open away from home, a
+         *  cable's or USB debugging's fallback - is still waiting out its
+         *  retry, 30 s, then 60, 120 and on, and KEEP took the watch's kick
+         *  for it. Measured on the Honor, 2026-10-31: Wi-Fi back at
+         *  15:39:42, the watch's kick taken for the waiting one, the recorder
+         *  up at 15:40:04 on that one's second try. The waits double, so
+         *  from the sixth a waiting kick can be further off than the
+         *  15-minute job (WorkManager's backoff, not measured). Its own
+         *  name, so only an earlier Wi-Fi run is taken for it. A run
+         *  alongside a kick or the heartbeat is safe: revive takes the
+         *  recorder's lock, and reconcile claims each file. */
+        fun kickForWifi(context: Context) = runOnce(context, WIFI, forWifi = true)
+
+        /** One run under [name], KEEP: one already waiting or running is
+         *  left to do the job. */
+        private fun runOnce(context: Context, name: String, forWifi: Boolean) {
+            val work = OneTimeWorkRequestBuilder<RecorderKeepAlive>()
+                .setInputData(workDataOf(FOR_WIFI to forWifi))
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(name, ExistingWorkPolicy.KEEP, work)
         }
 
         /** Switched off: stop trying to keep anything alive. */
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(PERIODIC)
             WorkManager.getInstance(context).cancelUniqueWork(IMMEDIATE)
+            WorkManager.getInstance(context).cancelUniqueWork(WIFI)
             UsbDebuggingWatch.cancel(context)
         }
     }

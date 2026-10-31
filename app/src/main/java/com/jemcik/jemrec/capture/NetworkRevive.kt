@@ -25,8 +25,9 @@ import com.jemcik.jemrec.Prefs
  * The keep-alive job answers that on a 15-minute clock - which means a call in
  * the first quarter-hour after walking back onto Wi-Fi is missed even though
  * recording was possible the whole time. This closes that gap. It watches for
- * Wi-Fi coming back and revives the daemon within a second or two, so "on Wi-Fi"
- * and "recording" line up as closely as the platform allows.
+ * Wi-Fi coming back and revives the daemon within seconds, so "on Wi-Fi" and
+ * "recording" line up as closely as the platform allows: on the Honor,
+ * 2026-10-31, the run began 3 s after Wi-Fi and the recorder answered at 9 s.
  *
  * WHY A PENDING-INTENT CALLBACK, NOT A LISTENER
  *

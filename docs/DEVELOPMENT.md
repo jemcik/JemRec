@@ -25,9 +25,34 @@ The release build is shrunk with R8 and the debug build is not. Measured on
 0.4, the unshrunk APK was 38 MB of which this app's own code was 0.2 MB; the
 rest was libraries shipped whole, and a third of it was nothing but their
 class, method and field names. Shrunk, it is under 7 MB. Names are kept -
-[app/proguard-rules.pro](../app/proguard-rules.pro) says why, and lists the two
-things R8 must not remove and the two references it must not warn about,
-which is the whole file.
+[app/proguard-rules.pro](../app/proguard-rules.pro) says why, and lists what
+R8 must not remove and the two references it must not warn about, which is
+the whole file.
+
+A third build, `shrunk`, is the debug build through R8 with the same rules,
+and it is what the emulator checks install. The script builds it first
+(`./gradlew :app:assembleShrunk`, which redoes only what changed), so a run
+never checks an APK older than the sources; CI builds it on every push.
+Until 0.25.3 they installed debug, so nothing ever ran what R8 makes, and a
+library rule that let R8 remove a constructor WorkManager finds by reflection
+failed every one-time work in every release from 0.5 to 0.25.2 - each kick of
+the keep-alive, every USB debugging watch - without a check seeing it
+([#69](https://github.com/jemcik/JemRec/issues/69). The constructor is missing
+from the published 0.8 APK and from a local build of 0.25.2's code, measured
+here, and from the published 0.25.2 APK, as its reporter measured; 0.5 to 0.7
+were built with the same AGP, WorkManager and rules). Measured 2026-10-31 on
+the Android 12 and 17 emulators: with WorkManager 2.9.1 the shrunk build (then
+still debuggable, see below - R8's debug mode removed the constructor too)
+fails `usb_debugging` ("the app never switched USB debugging back on", the log
+saying `NoSuchMethodException: androidx.work.OverwritingInputMerger.<init>`);
+with 2.12.0 the same work ends `Worker result SUCCESS`. It is not debuggable,
+because AGP gives a debuggable build R8's debug mode, which optimises far less
+(measured: 49,827 items removed against the release's 70,575; not debuggable,
+70,635 against 70,578 - the few more presumably the diagnostic code's, not
+checked). So the checks read the app's files as root through the image's
+`su`, not `run-as`, and the revive log is kept by a resource the debug sources
+set rather than by the debuggable flag. It has no unit tests of its own: AGP 9
+makes them for debug only, and its sources are debug's.
 
 The JDK major is exact because the daemon's bytes depend on it: measured, JDK 17
 and JDK 21 turn the same sources into dex files 264 bytes apart, and an APK that
@@ -37,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-911 JVM tests, no device needed - 715 for the app and 196 for the daemon:
+914 JVM tests, no device needed - 718 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -86,7 +111,7 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13, 16 and 17 for 0.25.2 -
+emulator, for each Android version it claims (12, 13, 16 and 17 for 0.25.3 -
 16 is what the Galaxy phones of the issues run), each booted cold
 (`emulator -avd <name> -no-snapshot`):
 
@@ -97,12 +122,12 @@ snapshot at every start and throws away whatever happened since it was taken:
 the 17 AVD showed JemRec 0.9 for eight days that way, until 2026-10-28 (every
 run installed the current build first, so the results were for it).
 
-It installs the debug build, sets JemRec up from nothing and places simulated
-calls: the ringing cut, the same cut with nothing captured until the answer
-(as over Wi-Fi Calling on a Pixel, issue #40: the recorder is stopped while
-the call rings), an unanswered call not kept, an incoming call kept to
-the second, a stranger skipped before recording, two calls in quick
-succession, a caller-ID name, the self-test, and the answering machine: a
+It installs the shrunk build (see above), sets JemRec up from nothing and
+places simulated calls: the ringing cut, the same cut with nothing captured
+until the answer (as over Wi-Fi Calling on a Pixel, issue #40: the recorder
+is stopped while the call rings), an unanswered call not kept, an incoming
+call kept to the second, a stranger skipped before recording, two calls in
+quick succession, a caller-ID name, the self-test, and the answering machine: a
 message taken and marked with the microphone given back, a caller who hangs
 up during the greeting, a caller the rules leave out left to ring, a phone
 call ringing over a messenger call left to ring (a stand-in call from
@@ -158,6 +183,11 @@ the debug build answers with #64's refusal, as an emulator grants): told that
 switch, and not set up; with the ADB session dropped, told so rather than
 sent to a switch; Try again, without the fake, grants for real, read back
 from the package's own record.
+Then Wi-Fi coming back: with a kick of the keep-alive failed twice off Wi-Fi
+and a minute or more from its next try, and no screen up, Wi-Fi's own run has
+the recorder back within 45 s, before that try - 10 s on the Android 17 AVD,
+where the build before had none, the kick's wait taking Wi-Fi's place
+(2026-10-31).
 Then Start without Wi-Fi: on Wi-Fi a revive has adbd
 open its classic port, 5555 (the property is what is checked: an emulator's
 adbd listens there anyway); with Wi-Fi off, Turn all debugging off and back
@@ -170,8 +200,8 @@ question is cancelled no revive for the port asks again or opens it; then
 the check allows that Wi-Fi for the rest. These checks, the USB-debugging one
 and the adbd one take a snapshot through the emulator's console first, and
 load it if adb never comes back.
-And, run before those two Wi-Fi checks (Start without Wi-Fi goes last: it
-turns the emulator's Wi-Fi off and on), the daemon's watch for the phone
+And, run before those Wi-Fi checks (they go last: they turn the emulator's
+Wi-Fi off and on), the daemon's watch for the phone
 stopping JemRec in the background:
 that it runs and reads the device's own exit records; and on Android 15 and
 later, that the app reads its own start record - a Force stop, then an open,

@@ -6,14 +6,15 @@ import android.content.Intent
 import android.util.Log
 
 /**
- * Woken by the system when Wi-Fi comes back (see [NetworkRevive]). Kicks the
- * keep-alive job to bring the daemon up at once, so a call made moments after
+ * Woken by the system when Wi-Fi comes back (see [NetworkRevive]). Starts a
+ * keep-alive run to bring the daemon up at once, so a call made moments after
  * returning to Wi-Fi still records instead of waiting out the 15-minute period.
  *
- * It only kicks the existing job rather than reviving inline: the job already
+ * A run of the keep-alive job rather than a revive inline: the job already
  * owns bring-up, its retry/backoff handles the case where Wi-Fi flickers, and
  * revive() no-ops when the daemon is already alive - so a burst of network
- * events costs nothing.
+ * events costs nothing. Its own run, not the kick: a kick waiting out a retry
+ * took this one's place until 0.25.3 (RecorderKeepAlive.kickForWifi).
  */
 class NetworkReviveReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -22,7 +23,7 @@ class NetworkReviveReceiver : BroadcastReceiver() {
         // if recording is currently switched off.
         if (!CaptureDaemon.isSetUp(context)) return
         Log.i(TAG, "netrevive: Wi-Fi is back, reviving the recorder now")
-        RecorderKeepAlive.kickNow(context)
+        RecorderKeepAlive.kickForWifi(context)
     }
 
     private companion object {
