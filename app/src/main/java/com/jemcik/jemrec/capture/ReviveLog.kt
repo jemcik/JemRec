@@ -1,7 +1,7 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
+import com.jemcik.jemrec.R
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -9,7 +9,8 @@ import java.util.Locale
 
 /**
  * A line, with the time, for each step of bringing the recorder back -
- * files/revive.log, in a debug build only; a release build keeps nothing.
+ * files/revive.log, in the debug and shrunk builds only; a release build keeps
+ * nothing (R.bool.keeps_revive_log).
  *
  * Why it exists: on the Honor logcat's main buffer rolls over in about a
  * minute unless it is enlarged, and the daemon's own log ends where the daemon
@@ -19,7 +20,8 @@ import java.util.Locale
  * say where those minutes went. With this log the gap sat inside one quick
  * step, and the system's own log (HnFreezerController, PG_ash) showed the
  * phone freezing the app there (2026-10-25). Read it with
- * `run-as com.jemcik.jemrec cat files/revive.log`.
+ * `run-as com.jemcik.jemrec cat files/revive.log` - or, in the shrunk build,
+ * which is not debuggable, as root on an emulator.
  */
 internal object ReviveLog {
 
@@ -28,7 +30,7 @@ internal object ReviveLog {
     private val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
     /** Whether this build keeps the log at all. */
-    fun on(context: Context): Boolean = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    fun on(context: Context): Boolean = context.resources.getBoolean(R.bool.keeps_revive_log)
 
     @Synchronized
     fun note(context: Context, line: String) {

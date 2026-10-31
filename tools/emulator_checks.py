@@ -3,7 +3,12 @@
 
     python3 tools/emulator_checks.py [--serial emulator-5554] [--apk PATH]
 
-Installs the debug APK, sets JemRec up from nothing, and runs simulated calls
+Builds and installs the shrunk build (./gradlew :app:assembleShrunk, which
+redoes only what changed; --apk installs another instead) - the debug build
+through R8 with the release's rules, not debuggable, so what runs here is
+what R8 makes for a release (issue #69: the debug build is not shrunk, and a
+constructor R8 removed failed every one-time work in the release without one
+check seeing it) - sets JemRec up from nothing, and runs simulated calls
 through the real app and daemon, checking what each one leaves behind:
 
   ringing     an outgoing call is saved from its answer to its end, exactly
@@ -103,23 +108,35 @@ through the real app and daemon, checking what each one leaves behind:
               background runs and reads the device's own exit records; from
               Android 15, a Force stop's open is read from the app's own
               start record and not taken for the phone's doing
+  wifi-back   Wi-Fi coming back starts the recorder within seconds, though
+              a kick of the keep-alive waits out a retry a minute or more off
 
 Every call is the emulator's own simulation - nothing leaves the machine -
 and the script refuses to touch anything that is not an emulator. It needs a
-google_apis image (adb root, for the caller-id check). Run it on each Android
+google_apis image: root, through its su, to read the app's files (the shrunk
+build is not debuggable, so run-as refuses), and adb root for the caller-id
+check. Run it on each Android
 version a release claims; see docs/DEVELOPMENT.md, Tests.
 
 Exit status: 0 if every check passed.
 """
 import argparse
+import atexit
+import contextlib
+import fcntl
 import hashlib
+import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PKG = "com.jemcik.jemrec"
+APP_DIR = f"/data/data/{PKG}"
 PREFS = "shared_prefs/jemrec.xml"
 CONTACT = "5557777"      # made a contact here, as "TestKept"
 STRANGER_IN = "5554321"  # rings in; no contact
@@ -165,6 +182,39 @@ def only_an_emulator():
     qemu = sh("getprop ro.kernel.qemu").strip() or sh("getprop ro.boot.qemu").strip()
     if not serial.startswith("emulator-") or qemu != "1":
         sys.exit(f"{serial} is not an emulator - these checks place calls; refusing.")
+
+
+# Every wait capped, as adb's are: a build that hangs would otherwise hold
+# the build lock, and stall each run waiting on it, for good.
+GRADLE_TIMEOUT_S = 30 * 60  # a cold R8 build with downloads takes minutes
+PROBE_TIMEOUT_S = 5 * 60
+LOCK_WAIT_S = GRADLE_TIMEOUT_S + 10 * 60  # longer than any one holder may take
+
+
+@contextlib.contextmanager
+def build_lock():
+    """Held while a run builds into the tree - the shrunk APK, the stand-in
+    call's jar - or copies or pushes what it built. Two runs started
+    together, one per AVD, would otherwise build into the same outputs at
+    once, or remove a jar the other is pushing: build-probe.sh starts by
+    deleting its output. The second waits, and finds the work done."""
+    os.makedirs(os.path.join(ROOT, "app", "build"), exist_ok=True)
+    path = os.path.join(ROOT, "app", "build", "emulator_checks.lock")
+    with open(path, "w") as lock:
+        deadline, told = time.time() + LOCK_WAIT_S, False
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() > deadline:
+                    raise TimeoutError(f"waited {LOCK_WAIT_S // 60} min for {path}: "
+                                       "another run is building, or stuck holding it")
+                if not told:
+                    print("waiting for another run's build (the build lock)")
+                    told = True
+                time.sleep(1)
+        yield
 
 
 # --- setting JemRec up -------------------------------------------------------------
@@ -378,7 +428,7 @@ def ring_in(number, ring_s, talk_s):
 
 def tracked():
     """Telecom's account of the calls, as the app kept it: (id, incoming, answered, ended)."""
-    xml = adb("exec-out", f"run-as {PKG} cat {PREFS}")
+    xml = app_file(PREFS)
     m = re.search(r'<set name="tracked_calls">(.*?)</set>', xml, re.S)
     calls = []
     for s in re.findall(r"<string>(.*?)</string>", m.group(1) if m else "", re.S):
@@ -628,7 +678,7 @@ def _answering():
     _, _, name = saved()
 
     def marked():
-        marks = adb("exec-out", f"run-as {PKG} cat {PREFS}")
+        marks = app_file(PREFS)
         m = re.search(r'<set name="message_recordings">(.*?)</set>', marks, re.S)
         return bool(m) and f"<string>{name}</string>" in m.group(1)
 
@@ -696,22 +746,40 @@ def answer_rules():
     return "rang on, unanswered"
 
 
-PROBE_JAR = "shellserver/probe/voip-probe.jar"
-PROBE_SOURCE = "shellserver/probe/com/jemcik/jemrec/probe/FakeCallProbe.java"
+PROBE_DIR = os.path.join(ROOT, "shellserver", "probe")
+PROBE_JAR = os.path.join(PROBE_DIR, "voip-probe.jar")
 FAKE_CALL_LOG = "/data/local/tmp/fakecall.txt"
+
+
+def probe_stale():
+    """Whether the stand-in's jar is missing, or older than anything
+    build-probe.sh builds it from: the probes, the script, and the daemon's
+    sources, which it compiles in."""
+    if not os.path.exists(PROBE_JAR):
+        return True
+    built = os.path.getmtime(PROBE_JAR)
+    for top in (PROBE_DIR, os.path.join(ROOT, "shellserver", "src")):
+        for d, dirs, files in os.walk(top):
+            dirs[:] = [x for x in dirs if x != "build" and not x.startswith(".")]
+            for f in files:
+                path = os.path.join(d, f)
+                if path != PROBE_JAR and not f.startswith(".") and os.path.getmtime(path) > built:
+                    return True
+    return False
 
 
 def fake_call_up(tone=False):
     """A stand-in for a messenger call, run as the shell: the audio mode at
     MODE_IN_COMMUNICATION, call audio playing - silence, or a tone - the
-    microphone open."""
-    import os
-    if not os.path.exists(PROBE_JAR) or os.path.getmtime(PROBE_JAR) < os.path.getmtime(PROBE_SOURCE):
-        built = subprocess.run(["bash", "shellserver/probe/build-probe.sh"], capture_output=True, text=True)
-        if built.returncode != 0:
-            raise RuntimeError("could not build the stand-in call (JDK 21? set JEMREC_JAVA_HOME):\n"
-                               + built.stdout[-800:] + built.stderr[-800:])
-    adb("push", PROBE_JAR, "/data/local/tmp/voip-probe.jar", check=True)
+    microphone open. Built and pushed under the build lock."""
+    with build_lock():
+        if probe_stale():
+            built = subprocess.run(["bash", os.path.join(PROBE_DIR, "build-probe.sh")],
+                                   capture_output=True, text=True, timeout=PROBE_TIMEOUT_S)
+            if built.returncode != 0:
+                raise RuntimeError("could not build the stand-in call (JDK 21? set JEMREC_JAVA_HOME):\n"
+                                   + built.stdout[-800:] + built.stderr[-800:])
+        adb("push", PROBE_JAR, "/data/local/tmp/voip-probe.jar", check=True)
     sh(f"rm -f {FAKE_CALL_LOG}")
     sh("CLASSPATH=/data/local/tmp/voip-probe.jar setsid nohup app_process / "
        f"com.jemcik.jemrec.probe.FakeCallProbe 60{' tone' if tone else ''} < /dev/null > {FAKE_CALL_LOG} 2>&1 &")
@@ -990,7 +1058,7 @@ def waveform():
     _, _, name = saved()
     # Waveforms.cacheFile: the first 12 bytes of the name's SHA-256, in hex.
     cached = f"cache/waveforms-v2/{hashlib.sha256(name.encode()).digest()[:12].hex()}.lvl"
-    wait_for(lambda: sh(f"run-as {PKG} stat -c %s {cached}").strip() == "800", 30,
+    wait_for(lambda: su(f"stat -c %s {APP_DIR}/{cached}").strip() == "800", 30,
              "the call's 800 levels to be kept")
     return f"{name}: 800 levels kept"
 
@@ -1253,7 +1321,7 @@ def pick_folder(name):
     wait_for(lambda: press("Use this folder"), 10, "Use this folder")
     wait_for(lambda: on_screen_any_case("Allow"), 10, "the picker's question")
     press("Allow")
-    wait_for(lambda: f"tree/primary%3A{name}<" in adb("exec-out", f"run-as {PKG} cat {PREFS}"), 15,
+    wait_for(lambda: f"tree/primary%3A{name}<" in app_file(PREFS), 15,
              f"{name} kept as the folder to save to")
 
 
@@ -1341,7 +1409,7 @@ def media_row(name):
 
 
 def marks(key):
-    xml = adb("exec-out", f"run-as {PKG} cat {PREFS}")
+    xml = app_file(PREFS)
     m = re.search(rf'<set name="{key}">(.*?)</set>', xml, re.S)
     return set(re.findall(r"<string>(.*?)</string>", m.group(1), re.S)) if m else set()
 
@@ -1427,7 +1495,7 @@ def cable():
 
 
 def revive_log():
-    return sh(f"run-as {PKG} cat files/revive.log")
+    return app_file("files/revive.log")
 
 
 def revive_since(before):
@@ -1438,7 +1506,7 @@ def revive_since(before):
     now = revive_log()
     if now.startswith(before):
         return now[len(before):]
-    older = sh(f"run-as {PKG} cat files/revive.log.1")
+    older = app_file("files/revive.log.1")
     return (older[len(before):] if older.startswith(before) else older) + now
 
 
@@ -1506,6 +1574,13 @@ def su(command):
     as_root restarts it, and a recorder the app started through a root adbd
     would run as root."""
     return sh(f"su 0 sh -c {shlex.quote(command)}")
+
+
+def app_file(path):
+    """[path] under the app's data directory, read as root: the shrunk build
+    these checks install is not debuggable (app/build.gradle.kts says why), so
+    run-as refuses it. Empty when there is no such file, as run-as cat was."""
+    return su(f"cat {APP_DIR}/{path} 2>/dev/null")
 
 
 def adbd_stopped():
@@ -1755,7 +1830,7 @@ def _forget_wifi_allowed():
     # "Service activity: found", or "...: not found" while it restarts.
     wait_for(lambda: sh("service check activity").strip().endswith(": found") and "package:" in sh("pm path android"),
              180, "Android back after system_server's restart")
-    wait_for(lambda: 'connected to "' in sh("cmd wifi status"), 90, "Wi-Fi connected after the restart")
+    wait_wifi_connected(90, "Wi-Fi connected after the restart")
     assert "<wifiAP" not in read_keys(), "the Wi-Fi is still allowed"
     return True
 
@@ -1889,6 +1964,68 @@ def wifi_on(on):
     sh(f"cmd wifi set-wifi-enabled {'enabled' if on else 'disabled'}")
 
 
+def wait_wifi_off():
+    wait_for(lambda: "Wi-Fi is disabled" in sh("dumpsys wifi | grep -m1 'Wi-Fi is'"), 20, "Wi-Fi off")
+
+
+def wait_wifi_connected(timeout=60, what="Wi-Fi connected"):
+    wait_for(lambda: 'connected to "' in sh("cmd wifi status"), timeout, what)
+
+
+def wifi_back():
+    """Wi-Fi coming back starts the recorder within seconds, though a kick of
+    the keep-alive is waiting out a long retry. A kick that runs off Wi-Fi -
+    the app opened away from home, a cable's or USB debugging's fallback -
+    fails and tries again with backoff: 30 s, 60, 120 and on. Until 0.25.3
+    the Wi-Fi watch's own kick was the same unique work, KEEP, so it was not
+    taken while that retry waited, and the recorder came back on the retry:
+    21 s after Wi-Fi on the Honor (2026-10-31, Wi-Fi back 14 s into the
+    kick's first 30 s wait); the waits double, so after a long time away
+    (inferred, not measured) the heartbeat came first.
+
+    The app is force-stopped first: no screen, whose own Wi-Fi callback
+    revives (MainScreen), and no periodic job or watch but what the kick
+    arms. A force-stopped app takes an explicit broadcast only when asked to,
+    and delivering it takes the app out of the stopped state, so its jobs
+    and the watch it arms then work as on any phone. It is force-stopped
+    again at the end, so the kick's retry still waiting does not run a
+    revive in the middle of the next check.
+
+    It waits for the kick's second try to fail, whose next is 60 s off at
+    the least, and then reads from the log that Wi-Fi's run came first - not
+    for any time JobScheduler keeps: on the Android 17 AVD, 2026-10-31, the
+    third try came 114 s after the second, not 60."""
+    set_prefs(start_without_wifi=False)
+    log_before = revive_log()
+    try:
+        sh(f"am force-stop {PKG}")
+        wifi_on(False)
+        wait_wifi_off()
+        sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
+        wait_for(lambda: not recorder_answers(), 10, "the recorder gone")
+        diag("monitor", "--include-stopped-packages")  # the kick, as an open off Wi-Fi makes it
+        second = "keepalive: run (attempt 2)"
+        wait_for(lambda: "recorder down" in revive_since(log_before).partition(second)[2], 180,
+                 "the kick's second try to fail off Wi-Fi", step=2)
+        wifi_on(True)
+        on_at = time.time()
+        wait_wifi_connected()
+        wait_for(recorder_answers, 45, "the recorder back while the kick waits out its retry", step=1)
+        took = time.time() - on_at
+        since = revive_since(log_before)
+        assert "keepalive: Wi-Fi run" in since, "not started by the Wi-Fi watch's run"
+        assert "keepalive: run (attempt 3)" not in since, "brought back by the kick's next try"
+        return f"back {took:.0f} s after Wi-Fi, before the kick's next try"
+    finally:
+        wifi_on(True)
+        sh(f"am force-stop {PKG}")  # the kick's retry, still waiting, with it - Wi-Fi back or not
+        try:
+            wait_wifi_connected()
+            start_recorder()  # the open schedules the periodic job and the watches again
+        except Exception as e:  # not in place of whatever failed the check
+            print(f"     (the recorder could not be started again afterwards: {e})")
+
+
 def start_without_wifi():
     """Start without Wi-Fi: on Wi-Fi, a revive has adbd open its classic port,
     5555 (`tcpip:5555`, which sets service.adb.tcp.port - the property is what
@@ -1936,7 +2073,7 @@ def start_without_wifi():
         # returned without opening it: Android had mobile data as its default
         # network, and the app then took the joined Wi-Fi for none - fixed
         # since (NetworkRevive.onWifi); the retries stay for a slow revive.
-        wait_for(lambda: 'connected to "' in sh("cmd wifi status"), 60, "Wi-Fi connected")
+        wait_wifi_connected()
         refused = global_setting("adb_wifi_enabled") != "1"
         if refused:
             _refused_wifi_left_alone(port)
@@ -1954,7 +2091,7 @@ def start_without_wifi():
             "the app never opened the port"
         before = daemon_pid()
         wifi_on(False)
-        wait_for(lambda: "Wi-Fi is disabled" in sh("dumpsys wifi | grep -m1 'Wi-Fi is'"), 20, "Wi-Fi off")
+        wait_wifi_off()
         if "OK" not in adb("emu", "avd", "snapshot", "save", USB_GUARD):
             raise RuntimeError("no snapshot to come back to; not switching debugging off")
         try:
@@ -1989,7 +2126,7 @@ def start_without_wifi():
     # "connected" can come a moment before Android lists the network a revive
     # looks for, and then that revive rightly leaves the port for a later one
     # - so a revive is asked for again until one has decided.
-    wait_for(lambda: 'connected to "' in sh("cmd wifi status"), 60, "Wi-Fi connected again")
+    wait_wifi_connected(what="Wi-Fi connected again")
     log_close = revive_log()
 
     def decided():
@@ -2045,8 +2182,7 @@ def background():
     # to tell a stop that left JemRec stopped (BackgroundKill.startedStopped).
     # A Force stop leaves it stopped too, so the next open is marked - and as
     # the user's own (reason 10) it must not be warned of.
-    revive = f"run-as {PKG} cat files/revive.log"
-    opens = lambda: [l for l in sh(revive).splitlines() if "backgroundkill: on open" in l]
+    opens = lambda: [l for l in revive_log().splitlines() if "backgroundkill: on open" in l]
     before = len(opens())
     sh(f"am force-stop {PKG}")
     sh(f"am start -n {PKG}/.MainActivity")
@@ -2070,9 +2206,10 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           recently_deleted, recently_deleted_folder, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
           debugging_off, background, allow_this_wifi, refused_grant,
-          # Last: it turns the emulator's Wi-Fi off and on, and a simulated
-          # Wi-Fi that does not come back would fail every check after it.
-          start_without_wifi]
+          # Last, these two: they turn the emulator's Wi-Fi off and on, and a
+          # simulated Wi-Fi that does not come back would fail every check
+          # after them.
+          wifi_back, start_without_wifi]
 
 
 def nothing_pending():
@@ -2093,19 +2230,47 @@ def what_happened():
     return "\n".join("       " + l[6:170] for l in lines[-25:])
 
 
+SHRUNK_APK = "app/build/outputs/apk/shrunk/app-shrunk.apk"
+
+
+def build_shrunk():
+    """The shrunk APK, made from the sources as they are now, and copied for
+    this run alone. It is built only when asked for, unlike debug's at every
+    routine build, so a run that took the one on disk could check yesterday's
+    code and pass. Gradle knows every input (the daemon's build.sh included)
+    and redoes only what changed. Under the build lock, so two runs started
+    together build once; the copy, so a build another run starts later
+    cannot change this one's APK under it - reinstall installs it again."""
+    try:
+        with build_lock():
+            print("building the shrunk APK (./gradlew :app:assembleShrunk)")
+            done = subprocess.run(["./gradlew", "-q", ":app:assembleShrunk"], cwd=ROOT,
+                                  timeout=GRADLE_TIMEOUT_S)
+            if done.returncode != 0:
+                sys.exit("./gradlew :app:assembleShrunk failed")
+            run_dir = tempfile.mkdtemp(prefix="jemrec-checks-")
+            atexit.register(shutil.rmtree, run_dir, ignore_errors=True)
+            copy = os.path.join(run_dir, "app-shrunk.apk")
+            shutil.copyfile(os.path.join(ROOT, SHRUNK_APK), copy)
+            return copy
+    except (TimeoutError, subprocess.TimeoutExpired) as e:
+        sys.exit(f"no shrunk APK to check: {e}")
+
+
 def main():
     global serial
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--serial", default="emulator-5554")
-    parser.add_argument("--apk", default="app/build/outputs/apk/debug/app-debug.apk")
+    parser.add_argument("--apk", help=f"install this instead of building {SHRUNK_APK}")
     parser.add_argument("--only", help="comma-separated checks to run, e.g. succession,caller_id")
     args = parser.parse_args()
     serial = args.serial
     only_an_emulator()
+    apk = args.apk or build_shrunk()
     sdk = sh("getprop ro.build.version.sdk").strip()
     print(f"{serial}: Android API {sdk}")
-    set_up(args.apk)
-    reinstall.apk = args.apk
+    set_up(apk)
+    reinstall.apk = apk
     checks = [c for c in CHECKS if not args.only or c.__name__ in args.only.split(",")]
     if args.only and "succession" in args.only and "rules" not in args.only:
         set_prefs(rules_other_numbers=False)  # what the rules check leaves behind

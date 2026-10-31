@@ -73,6 +73,12 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
+      # The build the emulator checks install: debug's sources through R8
+      # with the release's rules (app/build.gradle.kts). Built here so a
+      # change that breaks only it shows on the push, not on release day.
+      - name: Build the shrunk APK
+        run: ./gradlew assembleShrunk
+
       # The reproducibility check, on every push. With no keystore in the
       # environment AGP writes app-release-unsigned.apk, which is exactly what
       # F-Droid's builder produces and what a local `./gradlew assembleRelease`
@@ -105,6 +111,14 @@ jobs:
       # is how Conscrypt 2.5.3 did it. See the script for what it checks.
       - name: Check the native libraries suit 16 KB pages
         run: python3 tools/check_16k_pages.py app/build/outputs/apk/release/app-release-unsigned.apk
+
+      # A keep rule can keep a class and let R8 remove the constructor that
+      # Android or a library makes it with by name, and nothing fails until
+      # then: WorkManager 2.9.1's did, and every one-time run failed in every
+      # release from 0.5 to 0.25.2 (issue #69). See the script for what it
+      # checks.
+      - name: Check R8 left every class made by name its constructor
+        run: python3 tools/check_r8_constructors.py app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v5

@@ -15,7 +15,9 @@ Wireless debugging and starts a recorder that runs as the shell user
 - Screen tests compare against `app/src/test/screenshots`. After a meant change:
   `./gradlew testDebugUnitTest --tests '*.ui.screens.*' -PrecordScreens=true`,
   then look at every PNG that changed.
-- Before a release: `python3 tools/emulator_checks.py --serial emulator-5554` on
+- Before a release: `python3 tools/emulator_checks.py --serial emulator-5554`
+  (it builds and installs the shrunk build: debug through R8, since debug is
+  not shrunk and R8 broke the release unseen in #69) on
   the Android 12, 13, 16 and 17 AVDs (`jemrec-api31-0.14`, `jemrec-api33`,
   `jemrec-api36`, `jemrec-api37.2`; boot cold with `-no-snapshot`), two at a
   time: more at once makes calls flaky. Ask before creating or deleting an AVD.
@@ -25,7 +27,9 @@ Wireless debugging and starts a recorder that runs as the shell user
   `app/lint.xml` says what is off and why. It also checks the daemon's calls
   against Android 12 (`:daemon-lint`). `./gradlew :daemon-tests:errorProne`
   is Error Prone and NullAway over the daemon, analysis only: what may be
-  null there is marked with the daemon's own `@Nullable`. Reports:
+  null there is marked with the daemon's own `@Nullable`. CI also runs
+  `tools/check_r8_constructors.py` on the release APK: a class made by name
+  that R8 left without its constructor fails the build (#69). Reports:
   [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#checks-beyond-the-tests).
 
 ## Generated files - edit the source, then regenerate

@@ -16,6 +16,7 @@ this one is - or to check that it does what it says.
   [starting without Wi-Fi](#starting-without-wi-fi) ·
   [unplugged from a computer](#unplugged-from-a-computer) ·
   [after a restart](#after-a-restart) ·
+  [coming back without you](#coming-back-without-you) ·
   [stopped in the background](#stopped-in-the-background)
 - The features: [recording and being asked](#recording-and-being-asked) ·
   [exact call tracking](#exact-call-tracking) ·
@@ -384,6 +385,46 @@ for a start under way instead of cutting it off.
 
 Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 recording carries on with Wi-Fi off, on mobile data, anywhere.
+
+## Coming back without you
+
+Five things bring a stopped recorder back with nobody touching the phone: a
+heartbeat every 15 minutes (`RecorderKeepAlive`), and four that cut it short -
+a one-time run at a restart, another when Wi-Fi returns (`NetworkRevive`), the
+watch on USB debugging (`UsbDebuggingWatch`, a one-time run itself), and after
+a cable is pulled the app's own revive (`CableWatch`), which falls back to a
+one-time run. Opening JemRec starts it too, on the app's own.
+
+**In the release build, from 0.5 to 0.25.2, no one-time run ran**
+([#69](https://github.com/jemcik/JemRec/issues/69)): not the restart's, not
+Wi-Fi's, not the USB debugging watch, not the cable's fallback. The cable's
+own revive, the heartbeat and an open of the app were left. Before each
+one-time run WorkManager builds, by reflection, the small object that merges
+the run's input (`OverwritingInputMerger`), and its own keep rule let R8
+remove that object's constructor: each run ended failed before it began. The
+debug build is not shrunk, so neither the emulator checks nor the Honor, which
+run it, ever showed it. Measured on the Honor (MagicOS 11, Android 17),
+2026-10-31, with shrunk builds - the debug build's tools through R8 with the
+release's rules: Wi-Fi back with the app not on screen, the old code had no
+recorder after 120 s and WorkManager's own record of the run read FAILED, 0
+attempts (that build still debuggable, so R8 in its debug mode, which removed
+the constructor as the release's pass did); 0.25.3's first build, not
+debuggable, had it back in 21 s, and after a restart 7 s after the app
+started, never opened. WorkManager 2.12 keeps the constructor itself, and the
+checks now install the shrunk build ([DEVELOPMENT.md](DEVELOPMENT.md#build)).
+
+**Wi-Fi's run is a run of its own.** A one-time run that finds no Wi-Fi tries
+again with backoff - 30 s, then 60, 120 and on - and Wi-Fi's run used to be the
+same work as the rest, kept rather than started while one waited. On the Honor
+test above the recorder came back on the waiting run's next try, not on
+Wi-Fi's. The waits double, so from the sixth a waiting try can be further off
+than the heartbeat (WorkManager's backoff, not measured). Now Wi-Fi's run has
+its own name, and tries again only while it is on Wi-Fi: off it, the watch is
+armed again and starts a new one. Measured on the Android 17 emulator,
+2026-10-31, with a run two minutes from its next try: 0.25.3's first build had
+no recorder 45 s after Wi-Fi; with this, it was back in 10 s (`wifi_back`). On
+the Honor the same day, the kick 58 s from its next try: Wi-Fi's run began 3 s
+after Wi-Fi, and the recorder answered at 9 s.
 
 ## Stopped in the background
 
