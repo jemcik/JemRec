@@ -3524,8 +3524,11 @@ INDEX_BODY = f"""
 <section class="column faq" id="faq">
   <div>
     <h2>Questions</h2>
-    <p class="intro">Something else? Ask on
-       <a href="{REPO}/issues">GitHub</a>.</p>
+    <p class="intro">Something else? Ask in
+       <a href="{REPO}/discussions/categories/q-a">Discussions</a>, where ideas
+       go too. A call that came out wrong is worth
+       <a href="{REPO}/issues/new">an issue</a>: tap <em>Copy a report</em> in
+       Diagnostics right after it and paste that in.</p>
   </div>
   <div>
     {"".join(f"<details><summary>{q}</summary><div><p>{a}</p></div></details>" for q, a in FAQ)}
@@ -3975,7 +3978,8 @@ PRIVACY_BODY = f"""
      repository as the code, with the change visible in the history.</p>
 
   <h2>Contact</h2>
-  <p>Questions and bug reports: <a href="{REPO}/issues">GitHub issues</a>.</p>
+  <p>Questions and ideas: <a href="{REPO}/discussions">GitHub Discussions</a>.
+     Bug reports: <a href="{REPO}/issues">GitHub issues</a>.</p>
 """
 
 

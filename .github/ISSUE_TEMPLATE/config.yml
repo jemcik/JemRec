@@ -1,0 +1,11 @@
+# What the New issue page offers besides a blank issue: a question or an idea
+# goes to Discussions, so issues stay for what is broken. Blank issues stay on:
+# there are no issue templates, so a blank one is how a problem is reported.
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question
+    url: https://github.com/jemcik/JemRec/discussions/categories/q-a
+    about: Setting it up, how something works, whether it works on your phone.
+  - name: Suggest an idea
+    url: https://github.com/jemcik/JemRec/discussions/categories/ideas
+    about: Something JemRec could do. If it is there already, upvote it.
