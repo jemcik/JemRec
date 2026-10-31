@@ -3526,7 +3526,8 @@ INDEX_BODY = f"""
     <h2>Questions</h2>
     <p class="intro">Something else? Ask in
        <a href="{REPO}/discussions">Discussions</a>, where ideas go too. A call
-       that came out wrong is worth <a href="{REPO}/issues/new">an issue</a>,
+       that came out wrong is worth
+       <a href="{REPO}/issues/new?template=bug.yml">an issue</a>,
        with <em>Copy a report</em> from Diagnostics, tapped before the next
        call.</p>
   </div>

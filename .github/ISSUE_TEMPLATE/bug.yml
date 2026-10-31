@@ -1,6 +1,8 @@
 # The New issue page's form for a problem. It asks for Copy a report because
 # that is what it takes to fix a phone the developer has never held (#37: a
 # Galaxy M34's one-sided Wi-Fi call, nothing on the phone could say why).
+# The README and the site (tools/build_site.py) open it by this file's name,
+# issues/new?template=bug.yml: rename it and change those links with it.
 name: Report a problem
 description: A call that came out wrong, or something that does not work.
 labels: [bug]

@@ -480,8 +480,8 @@ above.
 
 Something else? Ask in [Discussions](https://github.com/jemcik/JemRec/discussions),
 where ideas go too. A call that came out wrong is worth
-[an issue](https://github.com/jemcik/JemRec/issues/new), with *Copy a report*
-from Diagnostics, tapped before the next call.
+[an issue](https://github.com/jemcik/JemRec/issues/new?template=bug.yml),
+with *Copy a report* from Diagnostics, tapped before the next call.
 
 ## Support JemRec
 
