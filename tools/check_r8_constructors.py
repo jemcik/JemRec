@@ -14,9 +14,9 @@ they happen to run; this reads the APK itself.
 
 WHAT IS CHECKED, in the APK's own manifest and code:
 
-  - every activity, service, receiver and provider in the manifest, the
-    application class and the AppComponentFactory: Android makes them by
-    name, with no arguments;
+  - every activity, service, receiver and provider in the manifest, and the
+    application's class, AppComponentFactory, backup agent and zygote
+    preload class: Android makes them by name, with no arguments;
   - every androidx.startup initializer the manifest names: made by name, with
     no arguments;
   - every class listed in META-INF/services (ServiceLoader): the same;
@@ -29,12 +29,15 @@ WHAT IS CHECKED, in the APK's own manifest and code:
     merges a base class into its only subclass, and in 0.25.3's release
     OverwritingInputMerger's superclass reads java.lang.Object - found by
     a first version of this script, which knew it only by its base and so
-    passed without looking at it (2026-10-31).
+    passed without looking at it (2026-10-31). A base in BASES that is not
+    in the APK fails the run unless NAMED lists what is made from it.
 
-Each must be in the APK and still have that constructor. Not checked: methods
-reached by name (libadb's getMethod into Conscrypt is kept by `{ *; }` in
-app/proguard-rules.pro), and any other library's own reflection - add it
-here when one comes in.
+Each must be in the APK and still have that constructor. It fails, too, when
+the manifest or the code cannot be read, rather than pass on what it could.
+Not checked: methods and fields reached by name (libadb's getMethod into
+Conscrypt is kept by `{ *; }` in app/proguard-rules.pro; a Parcelable's
+CREATOR, which Android reads by name, by AGP's default rules), and any other
+library's own reflection - add it here when one comes in.
 
 Needs dexdump and aapt2 from the SDK's build-tools: ANDROID_HOME (or
 ANDROID_SDK_ROOT, or local.properties' sdk.dir) and BUILD_TOOLS (default
@@ -52,21 +55,24 @@ import zipfile
 NO_ARGS = "()V"
 WORKER_ARGS = "(Landroid/content/Context;Landroidx/work/WorkerParameters;)V"
 
-# Built by name and still without a constructor, on purpose. Each says why
-# making it by name cannot happen, so a new one fails until someone looks.
+# Listed as made by name, yet never made that way: not checked at all, in the
+# APK or not. Each says why, so a new one fails until someone looks.
 EXPECTED = {
-    # Dispatchers.Main works in every release (the app would not start
-    # without it), yet this has no constructor: R8 turns coroutines'
-    # ServiceLoader lookup of it into a direct `new` and inlines that
-    # (measured in the 0.25.2 and 0.25.3 release APKs, 2026-10-31). Its
-    # services file stays, unread.
+    # Measured: no constructor in the 0.25.2 and 0.25.3 release APKs, and
+    # Dispatchers.Main works in both (the app would not start without it),
+    # 2026-10-31. Inferred, from R8's documented rewriting of ServiceLoader
+    # lookups: R8 makes it with a direct `new` and inlines that, and its
+    # services file is left, unread.
     "kotlinx.coroutines.android.AndroidDispatcherFactory",
 }
 
-# Made by name from a string, so looked for by name, base or no base.
+# Made by name from a string, so looked for by name, base or no base - and
+# the base each stands for when R8 has merged that base away.
 NAMED = {
-    "androidx.work.OverwritingInputMerger": (NO_ARGS, "WorkManager makes it by name before every one-time run"),
-    "androidx.work.impl.WorkDatabase_Impl": (NO_ARGS, "Room makes WorkManager's database by name"),
+    "androidx.work.OverwritingInputMerger":
+        (NO_ARGS, "WorkManager makes it by name before every one-time run", "androidx.work.InputMerger"),
+    "androidx.work.impl.WorkDatabase_Impl":
+        (NO_ARGS, "Room makes WorkManager's database by name", "androidx.room.RoomDatabase"),
 }
 
 # Bases whose concrete subclasses a library makes by name, and how.
@@ -140,6 +146,9 @@ def by_name_in_manifest(apk, aapt2):
                             line)) and elements:
             elements[-1][1][m.group(1)] = m.group(2)
 
+    if not package or not any(tag == "application" for tag, _ in elements):
+        sys.exit("could not read the manifest's package and application from aapt2's output")
+
     def full(name):
         return package + name if name.startswith(".") else name if "." in name else f"{package}.{name}"
 
@@ -148,11 +157,13 @@ def by_name_in_manifest(apk, aapt2):
         if tag in ("activity", "service", "receiver", "provider") and "name" in attrs:
             wanted.append((full(attrs["name"]), f"the manifest's {tag}"))
         elif tag == "application":
-            for key in ("name", "appComponentFactory"):
+            for key in ("name", "appComponentFactory", "backupAgent", "zygotePreloadName"):
                 if key in attrs:
                     wanted.append((full(attrs[key]), f"the manifest's application {key}"))
         elif tag == "meta-data" and attrs.get("value") == "androidx.startup" and "name" in attrs:
             wanted.append((attrs["name"], "an androidx.startup initializer"))
+    if not any(why.startswith("the manifest's activity") for _, why in wanted):
+        sys.exit("read no activity from the manifest: has aapt2's output changed?")
     return wanted
 
 
@@ -169,6 +180,8 @@ def by_name_in_services(apk):
 def main(apk):
     tools = build_tools()
     code = classes(apk, os.path.join(tools, "dexdump"))
+    if not code:
+        sys.exit("read no class from the APK's dex files: has dexdump's output changed?")
 
     def ancestors(name):
         seen = []
@@ -177,9 +190,9 @@ def main(apk):
             seen.append(name)
         return seen
 
-    wanted = [(name, NO_ARGS, why) for name, why in by_name_in_manifest(apk, os.path.join(tools, "aapt2"))]
-    wanted += [(name, NO_ARGS, why) for name, why in by_name_in_services(apk)]
-    wanted += [(name, args, why) for name, (args, why) in NAMED.items()]
+    manifest = [(name, NO_ARGS, why) for name, why in by_name_in_manifest(apk, os.path.join(tools, "aapt2"))]
+    services = [(name, NO_ARGS, why) for name, why in by_name_in_services(apk)]
+    wanted = manifest + services + [(name, args, why) for name, (args, why, _) in NAMED.items()]
     for name, (_, abstract, _) in code.items():
         if abstract:
             continue
@@ -188,23 +201,34 @@ def main(apk):
                 wanted.append((name, *BASES[base]))
 
     bad = 0
+    for base in BASES:
+        if base not in code and not any(b == base for _, _, b in NAMED.values()):
+            bad += 1
+            print(f"FAIL {base} is not in the APK: R8 merged it into a subclass, so what is made by "
+                  "name from it cannot be found by its base - list each such class in NAMED")
     for name, args, why in sorted(set(wanted)):
+        if name in EXPECTED:
+            continue
         if name not in code:
             problem = "is not in the APK"
-        elif args not in code[name][2] and name not in EXPECTED:
+        elif args not in code[name][2]:
             problem = f"has no constructor {args}"
         else:
             continue
         bad += 1
         print(f"FAIL {name} {problem}: {why}")
     checked = len(set(name for name, _, _ in wanted))
+    counts = (f"{len(set(n for n, _, _ in manifest))} from the manifest, {len(set(n for n, _, _ in services))} "
+              f"ServiceLoader providers, {checked - len(set(n for n, _, _ in manifest + services))} by name or base")
     if bad:
-        print(f"{bad} of {checked} classes made by name cannot be made. A keep rule kept "
-              "the class and let R8 remove what makes it: see app/proguard-rules.pro.")
+        print(f"{bad} problem(s) in {checked} classes made by name ({counts}). How a keep rule "
+              "keeps a class and loses its constructor: app/proguard-rules.pro's header.")
         return 1
-    print(f"ok   {checked} classes made by name, each with its constructor")
+    print(f"ok   {checked} classes made by name ({counts}), each with its constructor")
     return 0
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        sys.exit("usage: python3 tools/check_r8_constructors.py APK")
     sys.exit(main(sys.argv[1]))
