@@ -478,6 +478,11 @@ above.
 
 </details>
 
+Something else? Ask in [Discussions](https://github.com/jemcik/JemRec/discussions),
+where ideas go too. A call that came out wrong is worth
+[an issue](https://github.com/jemcik/JemRec/issues/new), with *Copy a report*
+from Diagnostics, tapped before the next call.
+
 ## Support JemRec
 
 JemRec is free: no ads, no account, and nothing collected about you. If it has
@@ -502,6 +507,9 @@ SDK with platforms 37 and 36 and build-tools 36.0.0:
 
 Everything else that would have gone in a document is in the code, beside the
 thing it explains, with the measurement it came from.
+
+JemRec is written by one person and does not take pull requests. An idea is
+welcome in [Ideas](https://github.com/jemcik/JemRec/discussions/categories/ideas).
 
 ## Licence
 
