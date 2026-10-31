@@ -1,0 +1,32 @@
+# The New issue page's form for a problem. It asks for Copy a report because
+# that is what it takes to fix a phone the developer has never held (#37: a
+# Galaxy M34's one-sided Wi-Fi call, nothing on the phone could say why).
+name: Report a problem
+description: A call that came out wrong, or something that does not work.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't attach recordings of real calls, or put anyone's name or number here.
+
+        A question goes to [Q&A](https://github.com/jemcik/JemRec/discussions/categories/q-a), an idea to [Ideas](https://github.com/jemcik/JemRec/discussions/categories/ideas).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you got. For a call, say whether it was a phone call (over Wi-Fi Calling or not) or which messenger, which way it went, and which side came out wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Copy a report
+      description: Settings → Diagnostics → Copy a report, tapped before your next call, pasted here. It names your phone and JemRec's settings, and no numbers or people. For the answering machine, use the Copy a report on its own screen.
+      render: text
+  - type: input
+    id: phone
+    attributes:
+      label: Phone, Android version and JemRec version
+      description: Not needed with the Diagnostics report, which says all three; the answering machine's report says only the JemRec version. JemRec's page in Android's Settings → Apps shows its version.
+      placeholder: Galaxy S23, Android 16, JemRec 0.25.3
