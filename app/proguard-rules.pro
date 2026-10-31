@@ -13,6 +13,9 @@
 # its input mergers (every one-time work failed without running, silently, in
 # every release from 0.5 to 0.25.2 - issue #69). The emulator checks install
 # the shrunk build for that reason: it goes through R8 with these same rules.
+# And CI's tools/check_r8_constructors.py fails a release APK in which a class
+# made by name - a component, a worker, an input merger, a database - lost
+# the constructor it is made with.
 
 # libadb pairs by reflecting into Conscrypt - Class.forName("org.conscrypt.
 # Conscrypt").getMethod("exportKeyingMaterial", ...) for the SPAKE2 channel

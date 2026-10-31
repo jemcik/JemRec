@@ -27,7 +27,9 @@ Wireless debugging and starts a recorder that runs as the shell user
   `app/lint.xml` says what is off and why. It also checks the daemon's calls
   against Android 12 (`:daemon-lint`). `./gradlew :daemon-tests:errorProne`
   is Error Prone and NullAway over the daemon, analysis only: what may be
-  null there is marked with the daemon's own `@Nullable`. Reports:
+  null there is marked with the daemon's own `@Nullable`. CI also runs
+  `tools/check_r8_constructors.py` on the release APK: a class made by name
+  that R8 left without its constructor fails the build (#69). Reports:
   [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#checks-beyond-the-tests).
 
 ## Generated files - edit the source, then regenerate

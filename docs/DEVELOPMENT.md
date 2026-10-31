@@ -272,6 +272,16 @@ time.
   `./gradlew :daemon-lint:lint`. Proven on two planted calls (Android 13's
   `ByteArrayOutputStream.toString(Charset)`, 14's `Scanner(InputStream,
   Charset)`); the daemon itself had none.
+- **R8's constructors.** `tools/check_r8_constructors.py`, on the release APK
+  after every CI build: each class Android or a library makes by name - the
+  manifest's components, androidx.startup initializers, ServiceLoader
+  providers, workers, input mergers, Room databases - must be in the APK with
+  the constructor it is made with. A keep rule that keeps a class but not its
+  constructor fails only when the class is made, and silently in #69. It
+  fails 0.25.2's code and the published 0.8 APK on WorkManager's two input
+  mergers, and passes 0.25.3 (2026-10-31). One exception is listed with its
+  reason: coroutines' `AndroidDispatcherFactory`, which R8 makes with a direct
+  `new`.
 - **CodeQL.** `.github/workflows/codeql.yml`: GitHub's code scanning with the
   security-and-quality queries, on pushes to `main`, pull requests and weekly.
   Findings go to the Security tab.
