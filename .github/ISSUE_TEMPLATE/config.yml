@@ -1,11 +1,12 @@
-# What the New issue page offers besides a blank issue: a question or an idea
-# goes to Discussions and a security problem to a private report, so issues
-# stay for what is broken. Blank issues stay on: there are no issue templates,
-# so a blank one is how a problem is reported. The security link is ours:
-# private reporting is on, but GitHub put no link to it on this page (seen
-# 2026-10-31, with no SECURITY.md). It leads nowhere without that setting:
-# if private reporting is ever turned off, take the link out with it.
-blank_issues_enabled: true
+# What the New issue page offers: a problem gets the form (bug.yml), which asks
+# for Copy a report; a question or an idea goes to Discussions. Blank issues are
+# off, so a report always comes through the form; maintainers still see a
+# blank issue, marked Maintainers only.
+# A security problem needs no link here: with SECURITY.md in the repository
+# GitHub adds its own "Report a security vulnerability" entry, pointing to it
+# (seen on nodejs/node's page, 2026-10-31). Before SECURITY.md this page had no
+# such entry, so this file carried one of its own.
+blank_issues_enabled: false
 contact_links:
   - name: Ask a question
     url: https://github.com/jemcik/JemRec/discussions/categories/q-a
@@ -13,6 +14,3 @@ contact_links:
   - name: Suggest an idea
     url: https://github.com/jemcik/JemRec/discussions/categories/ideas
     about: Something JemRec could do. If it is there already, upvote it.
-  - name: Report a security problem
-    url: https://github.com/jemcik/JemRec/security/advisories/new
-    about: Privately, so it is not public before a fix ships.
