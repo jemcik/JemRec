@@ -3525,10 +3525,10 @@ INDEX_BODY = f"""
   <div>
     <h2>Questions</h2>
     <p class="intro">Something else? Ask in
-       <a href="{REPO}/discussions/categories/q-a">Discussions</a>, where ideas
-       go too. A call that came out wrong is worth
-       <a href="{REPO}/issues/new">an issue</a>: tap <em>Copy a report</em> in
-       Diagnostics right after it and paste that in.</p>
+       <a href="{REPO}/discussions">Discussions</a>, where ideas go too. A call
+       that came out wrong is worth <a href="{REPO}/issues/new">an issue</a>,
+       with <em>Copy a report</em> from Diagnostics, tapped before the next
+       call.</p>
   </div>
   <div>
     {"".join(f"<details><summary>{q}</summary><div><p>{a}</p></div></details>" for q, a in FAQ)}
@@ -3979,7 +3979,8 @@ PRIVACY_BODY = f"""
 
   <h2>Contact</h2>
   <p>Questions and ideas: <a href="{REPO}/discussions">GitHub Discussions</a>.
-     Bug reports: <a href="{REPO}/issues">GitHub issues</a>.</p>
+     Bug reports: <a href="{REPO}/issues">GitHub issues</a>. A security
+     problem: <a href="{REPO}/security/advisories/new">report it privately</a>.</p>
 """
 
 

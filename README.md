@@ -478,10 +478,10 @@ above.
 
 </details>
 
-Something else? Ask in [Discussions](https://github.com/jemcik/JemRec/discussions/categories/q-a),
+Something else? Ask in [Discussions](https://github.com/jemcik/JemRec/discussions),
 where ideas go too. A call that came out wrong is worth
-[an issue](https://github.com/jemcik/JemRec/issues/new): tap *Copy a report* in
-Diagnostics right after it and paste that in.
+[an issue](https://github.com/jemcik/JemRec/issues/new), with *Copy a report*
+from Diagnostics, tapped before the next call.
 
 ## Support JemRec
 
