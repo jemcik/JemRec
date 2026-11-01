@@ -59,6 +59,11 @@ class DaySectionsTest {
         }
     }
 
+    @Test fun aDayIsKeyedByItsYearAndItsDayOfTheYear() {
+        // 21 October 2026 is the 294th day of 2026.
+        assertEquals(2026 * 1000 + 294, dayStamp(at(21, 12)))
+    }
+
     @Test fun groupingIsRedoneWhenTheDayTurns() {
         assertEquals(dayStamp(at(21, 0, 1)), dayStamp(at(21, 23, 59)))
         assertEquals(false, dayStamp(at(20, 23, 59)) == dayStamp(at(21, 0, 1)))

@@ -213,6 +213,13 @@ android {
             // Robolectric's Android 16 sets up a file descriptor through a
             // JDK internal that Java 21 keeps closed unless asked.
             test.jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
+            // The contract tests (app/src/test/.../contract) read these as
+            // text. Gradle does not know that, and called the tests up to date
+            // after a change to the emulator checks alone.
+            test.inputs.files(rootProject.fileTree("tools") { include("*.py") })
+                .withPropertyName("toolsReadByContractTests")
+            test.inputs.dir(rootProject.file("shellserver/tests/fixtures"))
+                .withPropertyName("protocolFixture")
             // With -Pcoverage: Robolectric loads the app's classes through a
             // class loader of its own, which JaCoCo skips unless told - and
             // then the screens the screen tests draw count as never run.
@@ -336,6 +343,10 @@ dependencies {
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.76.0")
     testImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
+    // WorkManager's test driver, for the keep-alive's and the USB watch's
+    // doWork and for what each trigger enqueues: an in-process WorkManager
+    // over a synchronous executor. Its version is work-runtime-ktx's above.
+    testImplementation("androidx.work:work-testing:2.12.0")
 }
 
 kotlin {

@@ -1,17 +1,22 @@
 package com.jemcik.jemrec.ui.screens
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.capture.GlobalSettings
 import com.jemcik.jemrec.ui.AutoStart
 import com.jemcik.jemrec.ui.DeviceSkin
+import com.jemcik.jemrec.ui.Setup
 import com.jemcik.jemrec.ui.SetupStep
 import com.jemcik.jemrec.ui.ShellGrant
+import com.jemcik.jemrec.ui.UiState
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
@@ -105,5 +110,92 @@ class SetupScreenshots : ScreenTest() {
     @Test fun grantRefusedAtTwiceTheTextSize() {
         refusedCard(fontScale = 2f)
         snap("setup-refused-oneplus-2x")
+    }
+
+    // Every other card setup has, as its state draws it: none was drawn
+    // before the 1.0 restructuring, which splits SetupScreen's one function
+    // into one per step - these show that it changes nothing.
+
+    private fun step(state: UiState) = show { AppScaffold(state, viewModel(state)) }
+
+    /** The first look, while the check that opens the app holds busy: the
+     *  bar over the card as well as the card's own spinner. */
+    @Test fun checkingStep() {
+        step(Fixtures.ready().copy(step = SetupStep.CHECKING, busy = true))
+        compose.onNodeWithText("Checking...").assertIsDisplayed()
+        snap("setup-checking")
+    }
+
+    @Test fun permissionsStep() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_PERMISSIONS))
+        compose.onNodeWithText("Allow permissions").assertIsDisplayed()
+        snap("setup-permissions")
+    }
+
+    @Test fun debuggingChoiceStep() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_DEBUGGING_CHOICE))
+        compose.onNodeWithText("Set up JemRec").assertIsDisplayed()
+        compose.onNodeWithText("Hide it").performScrollTo().assertIsDisplayed()
+        snap("setup-debugging-choice")
+    }
+
+    /** The same question for an install set up before it existed: not
+     *  greeted as a setup. */
+    @Test fun debuggingChoiceAfterSetup() {
+        Setup.markComplete(RuntimeEnvironment.getApplication())
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_DEBUGGING_CHOICE))
+        compose.onNodeWithText("One question").assertIsDisplayed()
+        snap("setup-debugging-choice-after-setup")
+    }
+
+    @Test fun developerOptionsStep() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_DEVELOPER_OPTIONS))
+        compose.onAllNodes(hasText("They are on already")).assertCountEquals(0)
+        snap("setup-developer-options")
+    }
+
+    /** On a phone that hides whether they are on: the user may say so. */
+    @Test fun developerOptionsStepWhereThePhoneHidesThem() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_DEVELOPER_OPTIONS, developerOptionsHidden = true))
+        compose.onNodeWithText("They are on already").performScrollTo().assertIsDisplayed()
+        snap("setup-developer-options-hidden")
+    }
+
+    // Finish connecting, in its three branches: a switch off, both on with
+    // USB debugging hidden from the app, both on.
+
+    @Test fun connectionStepWithASwitchOff() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_CONNECTION, wirelessDebuggingOn = false))
+        compose.onNodeWithText("Open settings").performScrollTo().assertIsDisplayed()
+        snap("setup-connection-switch-off")
+    }
+
+    @Test fun connectionStepWithUsbDebuggingHidden() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_CONNECTION, usbDebugging = GlobalSettings.Reading.UNKNOWN))
+        compose.onNodeWithText("Check that USB debugging is on", substring = true).assertIsDisplayed()
+        snap("setup-connection-usb-unknown")
+    }
+
+    @Test fun connectionStepWithBothOn() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_CONNECTION))
+        compose.onNodeWithText("Both switches are on", substring = true).assertIsDisplayed()
+        snap("setup-connection-both-on")
+    }
+
+    /** The last step as it runs - inside the check, so busy - with nothing
+     *  failed: a spinner, and nothing to do. */
+    @Test fun finishingStep() {
+        step(Fixtures.ready().copy(step = SetupStep.FINISHING, busy = true))
+        compose.onNodeWithText("Almost done").assertIsDisplayed()
+        compose.onAllNodes(hasText("Try again")).assertCountEquals(0)
+        snap("setup-finishing")
+    }
+
+    /** Pairing with JemRec's notifications off: nowhere for the code to go,
+     *  said before the steps, with the way to turn them on. */
+    @Test fun pairingStepWithNotificationsBlocked() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_PAIRING, pairingNotificationsBlocked = true))
+        compose.onNodeWithText("Turn on notifications").assertIsDisplayed()
+        snap("setup-pairing-notifications-blocked")
     }
 }

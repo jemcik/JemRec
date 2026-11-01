@@ -1,11 +1,11 @@
 package com.jemcik.jemrec.capture
 
-import androidx.core.content.FileProvider
 import com.jemcik.jemrec.capture.OggSamples.recording
 import com.jemcik.jemrec.capture.OggSamples.splice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,14 +30,8 @@ class RecordingTagsRecoverTest {
     private val app = RuntimeEnvironment.getApplication()
     private val folder = File(app.getExternalFilesDir(null), "recordings").apply { mkdirs() }
 
-    /**
-     * FileProvider keeps each authority's folders in a static cache, and every
-     * test here has folders of its own: from the second test on, it refused
-     * the files and the list dropped them. A phone has one set of folders.
-     */
     @Before fun forgetTheLastTestsFolders() {
-        FileProvider::class.java.getDeclaredField("sCache").apply { isAccessible = true }
-            .let { (it.get(null) as HashMap<*, *>).clear() }
+        FakeStorage.forgetFileProviderFolders()
     }
 
     private val message = "20261022_152242_in.ogg"
@@ -125,6 +119,69 @@ class RecordingTagsRecoverTest {
         save(untagged, null)
         KeepMarks.set(app, listOf(untagged), kept = true)
         assertEquals(0, RecordingTags.writeKept(app, listOf(listed().getValue(untagged))))
+    }
+
+    @Test fun aKeepMarkInTheFileOnlyEverAdds() {
+        // Kept in the app before its file was first read; the file says not.
+        KeepMarks.set(app, listOf(message), kept = true)
+        save(message, RecordingTags.Facts(message = true, incoming = true))
+        assertTrue(listed().getValue(message).kept)
+        assertEquals(setOf(message), KeepMarks.all(app))
+    }
+
+    @Test fun aDirectionIsNotedOnlyWhereTheNameDoesNotSayIt() {
+        saveAll()
+        // The name says in; a file that says otherwise is not believed.
+        val contrary = "20261024_101010_in.ogg"
+        save(contrary, RecordingTags.Facts(incoming = false))
+        val list = listed()
+        assertEquals(mapOf(honor to false), FileNames.directions(app))
+        assertTrue(list.getValue(contrary).incoming)
+    }
+
+    @Test fun aCallerIsNotedOnlyForAMessengerNameWithoutOne() {
+        saveAll()
+        // A phone call's caller comes from the call log, never from its tags.
+        save(untagged, RecordingTags.Facts(incoming = false, caller = "Sam Lee"))
+        // A messenger name that carries its caller keeps the name's.
+        val named = "20261022_170000_in_telegram_Priya Raman.ogg"
+        save(named, RecordingTags.Facts(incoming = true, caller = "Somebody Else"))
+        val list = listed()
+        assertEquals(mapOf(telegram to "Priya Raman"), FileNames.callers(app))
+        assertEquals("Priya Raman", list.getValue(named).caller)
+    }
+
+    @Test fun aNameThatIsNotOursIsNeverRead() {
+        val foreign = "voice-note.ogg"
+        save(foreign, RecordingTags.Facts(message = true, kept = true))
+        val row = listed().getValue(foreign)
+        assertFalse(row.message || row.kept)
+        assertFalse(foreign in RecordingTags.readNames(app))
+        assertTrue(MessageMarks.all(app).isEmpty())
+    }
+
+    @Test fun aRemovedKeepMarkComesBackWhenItsFileLeavesTheListAndReturns() {
+        save(kept, RecordingTags.Facts(incoming = false, kept = true))
+        assertTrue(listed().getValue(kept).kept)
+        // Un-kept, on a file this app may not write - as after a reinstall,
+        // when Android counts the old install's files as nobody's. Root writes
+        // a read-only file all the same, so run as root this has nothing to show.
+        val file = File(folder, kept).apply { setWritable(false) }
+        assumeFalse("the tests run as root", file.canWrite())
+        KeepMarks.set(app, listOf(kept), kept = false)
+        assertEquals(0, RecordingTags.writeKept(app, listOf(listed().getValue(kept))))
+        assertFalse(listed().getValue(kept).kept)
+        // To Recently deleted and back.
+        val row = listed().getValue(kept)
+        Trash.trash(app, row.uri, row.filePath, row.name)
+        listed()
+        Trash.restore(app, Trash.list(app).single())
+        // Pins today's behaviour, which looks like a bug: recover forgets a
+        // name once it is not listed, reads the file again when it returns,
+        // and the file's old keep mark undoes the user's unkeep
+        // (to be fixed in its own commit).
+        assertTrue(listed().getValue(kept).kept)
+        assertEquals(setOf(kept), KeepMarks.all(app))
     }
 
     @Test fun theFileEndsAsThePreferencesWhateverOrderTheWritesRunIn() {

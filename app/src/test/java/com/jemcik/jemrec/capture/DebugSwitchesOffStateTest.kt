@@ -1,22 +1,34 @@
 package com.jemcik.jemrec.capture
 
+import android.app.NotificationManager
 import android.provider.Settings
+import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.adb.AdbTransport
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 
 /**
  * What the last off switched off, and what On and a revive make of it
  * (DebugSwitchesOff) - against the real settings provider, with no recorder
- * to answer.
+ * to answer. The revives at the end are CaptureDaemon.revive itself, on a
+ * phone set up and off Wi-Fi: one that gets past its gate probes, finds
+ * nothing and stops at "not on Wi-Fi" (about 2.5 s, TestPhone), having
+ * written at most armShield's USB debugging, and never connects.
  */
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)
@@ -161,5 +173,140 @@ class DebugSwitchesOffStateTest {
         assertEquals(1, get(dev))
         assertEquals(OffMode.KEEP_DEBUGGING, DebugSwitchesOff.mode(context))
         assertTrue(DebugSwitchesOff.switchedOff(context).isEmpty())
+    }
+
+    private val stoodDown = "revive: debugging is off with JemRec; nothing to do until it is on"
+
+    private fun aPhoneSetUpOffWifi() {
+        TestPhone.setUp(context)
+        TestPhone.offWifi(context)
+        TestPhone.clearReviveLog(context)
+    }
+
+    /** RecorderHealth's prefs (its keys are private there). */
+    private fun health(): Map<String, Any?> = Prefs.of(context).all.filterKeys {
+        it in setOf("recorder_down_since", "recorder_down_alerted", "recorder_down_cause", "adb_refused_in_a_row")
+    }
+
+    @Test fun aReviveWhileStayingOffStandsDownAndWritesNothing() = runBlocking {
+        aPhoneSetUpOffWifi()
+        // The recorder had been down past the grace, its alert up, when the
+        // user turned JemRec off with all debugging.
+        Prefs.of(context).edit().putLong("recorder_down_since", System.currentTimeMillis() - 3 * 60_000L).apply()
+        RecorderHealth.onRevive(context, alive = false, connect = AdbTransport.ConnectOutcome.NONE)
+        val alerts = shadowOf(context.getSystemService(NotificationManager::class.java))
+        assertNotNull(alerts.getNotification(34))
+        DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
+        RecorderSwitch.set(context, false)
+        DebugSwitchesOff.switchOff(context)
+        val before = health()
+        assertEquals(RecorderHealth.Problem.NEEDS_WIFI.name, before["recorder_down_cause"])
+        TestPhone.clearReviveLog(context)
+        val writes = TestPhone.Writes(context)
+
+        assertFalse(CaptureDaemon.revive(context))
+
+        // Not one switch written - armShield would have put USB debugging
+        // back on - and the lock never taken: no "revive: start", no probe.
+        assertEquals(emptyList<String>(), writes.seen())
+        assertEquals(listOf(0, 0, 0), listOf(dev, wifi, usb).map(::get))
+        assertEquals(listOf(stoodDown), TestPhone.reviveLog(context))
+        // Not a failure, so RecorderHealth is not told.
+        // Pins today's behaviour, which looks like a bug: the recorder-down
+        // alert and its cause, from before the Off, outlive it - only a
+        // revive's onRevive clears them, and every revive now stands down
+        // before it (to be fixed in its own commit)
+        assertEquals(before, health())
+        assertNotNull(alerts.getNotification(34))
+        writes.close()
+    }
+
+    @Test fun aReviveWhileStayingOffFinishesAnOffTheRecorderLeftUndone() = runBlocking {
+        aPhoneSetUpOffWifi()
+        DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
+        RecorderSwitch.set(context, false)
+        DebugSwitchesOff.switchOff(context)
+        // As if it had said "OFF AFTER CALL" and died in the call.
+        put(usb, 1)
+        put(wifi, 1)
+        DebugSwitchesOff.notePending(context, true)
+        TestPhone.clearReviveLog(context)
+        val writes = TestPhone.Writes(context)
+
+        assertFalse(CaptureDaemon.revive(context))
+
+        // The gate writes as it answers (stayingOff): Wireless debugging, then
+        // USB debugging, once a confirmed probe finds no recorder.
+        assertEquals(listOf(wifi, usb), writes.seen())
+        assertEquals(
+            listOf("debugging off: finished what the recorder left undone", stoodDown),
+            TestPhone.reviveLog(context),
+        )
+        writes.close()
+    }
+
+    @Test fun aReviveWithJemRecOnPutsTheRecordBackUsbFirstBeforeItsLock() = runBlocking {
+        aPhoneSetUpOffWifi()
+        DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
+        RecorderSwitch.set(context, false)
+        DebugSwitchesOff.switchOff(context)
+        assertEquals(DebugSwitch.entries.toSet(), DebugSwitchesOff.switchedOff(context))
+        // On saved, the process gone before the switches came back.
+        RecorderSwitch.set(context, true)
+        TestPhone.clearReviveLog(context)
+        val writes = TestPhone.Writes(context)
+
+        assertFalse(CaptureDaemon.revive(context))
+
+        // USB debugging first, which Wireless debugging needs on the Honor;
+        // Developer options last. armShield then finds USB debugging on and
+        // writes nothing more.
+        assertEquals(listOf(usb, wifi, dev), writes.seen())
+        assertTrue(DebugSwitchesOff.switchedOff(context).isEmpty())
+        val log = TestPhone.reviveLog(context)
+        assertEquals(
+            listOf(
+                "revive: JemRec is on with debugging still recorded off; putting it back",
+                "debugging back on: USB_DEBUGGING, WIRELESS_DEBUGGING, DEVELOPER_OPTIONS",
+                "revive: start",
+            ),
+            log.take(3),
+        )
+        assertTrue("revive: not on Wi-Fi" in log)
+        assertEquals("revive: recorder down (connect NONE)", log.last())
+        writes.close()
+    }
+
+    @Test fun aReviveQueuedBeforeAnOffStillPutsUsbDebuggingBackOn() = runBlocking {
+        aPhoneSetUpOffWifi()
+        DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
+        // One revive holds the lock, probing a recorder that is not there
+        // (about 2.4 s)...
+        val first = async(Dispatchers.IO) { CaptureDaemon.revive(context) }
+        withTimeout(5_000) { while ("revive: start" !in TestPhone.reviveLog(context)) delay(20) }
+        // ...a second is past the staying-off gate - a few preference reads -
+        // and waits for the lock. Nothing shows from outside when it is past,
+        // so a second is given: the first holds the lock for at least 2.4 s
+        // (its probe's four 600 ms gaps), which leaves both sides a second's
+        // margin or more...
+        val second = async(Dispatchers.IO) { CaptureDaemon.revive(context) }
+        delay(1_000)
+        // ...when JemRec goes off with all debugging.
+        RecorderSwitch.set(context, false)
+        DebugSwitchesOff.switchOff(context)
+        assertEquals(0, get(usb))
+        assertTrue(DebugSwitchesOff.standingDown(context))
+
+        assertFalse(first.await())
+        assertFalse(second.await())
+
+        // Pins today's behaviour, which looks like a bug: the second revive
+        // asked about staying off before the lock and not again under it, so
+        // its armShield has USB debugging back on under a JemRec that is off
+        // with all debugging - on Wi-Fi it would go on to switch Wireless
+        // debugging on and start the recorder (to be fixed in its own commit)
+        assertEquals(1, get(usb))
+        assertTrue(DebugSwitchesOff.standingDown(context))
+        assertEquals(2, TestPhone.reviveLog(context).count { it == "revive: start" })
     }
 }

@@ -42,8 +42,8 @@
         <!--
           Fills the recordings list with invented calls for the README's
           screenshots, when the diagnostic flag is set. A provider because the
-          system creates those before the first activity and this app has no
-          Application subclass; not exported, because nothing outside the app
+          system creates those before the first activity, ahead of even the
+          Application's onCreate; not exported, because nothing outside the app
           has any business talking to it. See DemoRecordings.
         -->
         <provider

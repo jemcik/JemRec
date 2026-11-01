@@ -4,13 +4,15 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * The one preferences file.
+ * The app's preferences file.
  *
  * Every setting and flag in the app lives in it - the recorder switch, the
  * recording mode, the setup flags, the daemon token, the chosen folder - so a
- * Start fresh or a future migration has exactly one file to reason about. The
- * keys stay with the code that owns them; only the file is shared, and it used
- * to be named in eight places.
+ * Start fresh or a future migration has one file to reason about. The keys
+ * stay with the code that owns them; only the file is shared, and it used to
+ * be named in eight places. Two files are kept apart from it, neither a
+ * setting: the callers' colours (CallerColours) and the recordings whose tags
+ * have been read (RecordingTags).
  */
 internal object Prefs {
     const val FILE = "jemrec"

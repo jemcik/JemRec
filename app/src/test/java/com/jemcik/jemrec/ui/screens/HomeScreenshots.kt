@@ -1,10 +1,13 @@
 package com.jemcik.jemrec.ui.screens
 
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithText
 import com.jemcik.jemrec.capture.Waveforms
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.CallsNarrowing
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.HomeTab
+import com.jemcik.jemrec.ui.RecordingsNarrowing
 import com.jemcik.jemrec.ui.UiState
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
@@ -315,6 +318,54 @@ class HomeScreenshots : ScreenTest() {
     @Test fun multitrackCannotRecord() {
         home(Fixtures.ready().copy(daemonRunning = false, onWifi = false), look = multitrack)
         snap("multitrack-cannot-record")
+    }
+
+    // What home draws that nothing drew before the 1.0 restructuring, which
+    // splits HomeScreen and the narrowing headers: the call-log offer, the
+    // Calls tab before its permission, the delete question, the share sheet
+    // and its wait, and a narrowing that leaves nothing.
+
+    /** The one-time offer over the list, before the call log is allowed. */
+    @Test fun callLogOffer() {
+        home(Fixtures.ready().copy(offerCallLog = true, canReadCallLog = false, canReadContacts = false))
+        compose.onNodeWithText("Show who called").assertIsDisplayed()
+        snap("home-call-log-offer")
+    }
+
+    @Test fun callsWithoutPermission() {
+        home(Fixtures.ready().copy(homeTab = HomeTab.CALLS, canReadCallLog = false, canReadContacts = false))
+        compose.onNodeWithText("See every call here").assertIsDisplayed()
+        snap("calls-no-permission")
+    }
+
+    @Test fun deleteSelectedDialog() {
+        val picked = Fixtures.recordings().take(2).map { it.name }.toSet()
+        home(Fixtures.ready().copy(selecting = true, selected = picked, confirmingDeleteSelected = true))
+        compose.onNodeWithText("Delete 2 recordings?").assertIsDisplayed()
+        snapWithDialog("dialog-delete-selected")
+    }
+
+    /** Share asks how first: the sheet over the list. */
+    @Test fun shareSheet() {
+        home(Fixtures.ready().copy(shareChoice = Fixtures.recordings().first()))
+        compose.onNodeWithText("Share as").assertIsDisplayed()
+        snapWithDialog("home-share-sheet")
+    }
+
+    /** The wait while the .m4a is made. */
+    @Test fun convertingToShare() {
+        home(Fixtures.ready().copy(converting = true))
+        compose.onNodeWithText("Converting to .m4a…").assertIsDisplayed()
+        snapWithDialog("dialog-converting")
+    }
+
+    /** A source chip still on after its calls have gone: the list says
+     *  nothing matches, under the chip that would bring them back. */
+    @Test fun recordingsNoMatches() {
+        home(Fixtures.ready().copy(recordingsNarrowing = RecordingsNarrowing(sources = setOf("telegram"))))
+        compose.onNodeWithText("No matches").assertIsDisplayed()
+        compose.onNodeWithText("No recordings match your search or filter.").assertIsDisplayed()
+        snap("home-no-matches")
     }
 
     // The user's own light or dark, over the phone's: Dark chosen on a

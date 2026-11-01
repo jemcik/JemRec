@@ -109,4 +109,10 @@ class AudioStreamTest {
         assertEquals(a.hashCode(), b.hashCode())
         assertFalse(a == c)
     }
+
+    @Test fun aPacketOfTheLargestLengthIsRead() {
+        // 1 MiB is the limit itself, not past it.
+        val largest = ByteArray(1 shl 20)
+        assertEquals(1 shl 20, stream { codec("opus"); packet(0, largest) }.readPacket()!!.data.size)
+    }
 }

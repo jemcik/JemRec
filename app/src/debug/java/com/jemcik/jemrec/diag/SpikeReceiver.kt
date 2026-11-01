@@ -79,8 +79,8 @@ class SpikeReceiver : BroadcastReceiver() {
 
         val op = intent.getStringExtra("op").orEmpty()
         // goAsync keeps the receiver alive past onReceive's return. The budget
-        // is around ten seconds, which is why nothing here waits 20s for mDNS
-        // the way the UI's "Find port" button does.
+        // is around ten seconds; pair's search for its port below may take up
+        // to 15 s, past it.
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {

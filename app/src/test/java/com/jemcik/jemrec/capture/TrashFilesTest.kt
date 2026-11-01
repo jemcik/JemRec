@@ -56,4 +56,11 @@ class TrashFilesTest {
         val gone = trashed("20261020_101010_in.ogg").also { File(it.filePath!!).delete() }
         assertEquals(1, Trash.deleteForGood(app, listOf(gone)).deleted)
     }
+
+    @Test fun trashingOneAlreadyGoneCountsAsDone() {
+        // Gone already is where the trash would have taken it.
+        val file = File(folder, "20261020_101010_in.ogg")
+        assertEquals(DeleteResult.Deleted, Trash.trash(app, Uri.fromFile(file), file.absolutePath, file.name))
+        assertTrue(folder.listFiles()!!.isEmpty())
+    }
 }

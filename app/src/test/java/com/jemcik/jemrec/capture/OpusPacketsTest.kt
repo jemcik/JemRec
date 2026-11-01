@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -122,5 +123,40 @@ class OpusPacketsTest {
     @Test fun onePacketIsPassedOnAsItIs() {
         val one = packet(320)
         assertArrayEquals(one, join(listOf(one)))
+    }
+
+    // The edges PIT found no test standing on (2026-11-01).
+
+    @Test fun hybridEndsAndCeltBeginsAtConfigSixteen() {
+        // Hybrid 20 ms, then CELT 2.5 ms. (At config 12, SILK 10 ms and hybrid
+        // 10 ms are both 4 units, so that edge cannot be told apart.)
+        assertEquals(8, OpusPackets.frameUnits(15 shl 3))
+        assertEquals(1, OpusPackets.frameUnits(16 shl 3))
+    }
+
+    @Test fun fortyEightFramesFillAPacket() {
+        // CELT 2.5 ms frames, so the count runs out before the 120 ms do.
+        val short = (16 shl 3) or (1 shl 2)
+        val first = packet(40, toc = short)
+        assertTrue(fits(first, 47, 47, packet(40, toc = short)))
+        assertFalse(fits(first, 48, 10, packet(40, toc = short)))
+    }
+
+    @Test fun aTocAndOneByteOfSoundIsAFrameToJoin() {
+        assertTrue(joinable(packet(2)))
+    }
+
+    @Test fun theJoinedTocKeepsTheFramesConfiguration() {
+        // Not the recorder's TOC: its bits are all set where the mask keeps
+        // them, which would hide a mask that kept nothing.
+        val mono = 16 shl 3
+        val joined = join(listOf(packet(40, toc = mono), packet(40, toc = mono)))
+        assertEquals((mono and 0xfc) or 3, joined[0].toInt() and 0xff)
+    }
+
+    @Test fun nothingToJoinIsRefused() {
+        assertThrows(IllegalArgumentException::class.java) {
+            OpusPackets.joinInto(ByteArray(0), IntArray(0), 0, ByteBuffer.allocate(8))
+        }
     }
 }
