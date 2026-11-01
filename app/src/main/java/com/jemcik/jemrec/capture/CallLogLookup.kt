@@ -118,6 +118,9 @@ object CallLogLookup {
         val seconds: Int = 0,
         /** The name the log cached for it, if any. */
         val name: String? = null,
+        /** The country the call was made or taken in, as the log has it -
+         *  the one to read a number in that was dialled without its code. */
+        val country: String? = null,
     )
 
     /** What is known about the other end of a call. */
@@ -211,6 +214,7 @@ object CallLogLookup {
             CallLog.Calls.CACHED_NAME,
             CallLog.Calls.DURATION,
             CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
+            CallLog.Calls.COUNTRY_ISO,
         )
         val out = mutableListOf<Entry>()
         context.contentResolver.query(
@@ -239,6 +243,7 @@ object CallLogLookup {
             val nameCol = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
             val durationCol = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
             val accountCol = cursor.getColumnIndexOrThrow(CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME)
+            val countryCol = cursor.getColumnIndexOrThrow(CallLog.Calls.COUNTRY_ISO)
             while (cursor.moveToNext()) {
                 if (!isPhoneCall(cursor.getString(accountCol))) continue
                 val type = cursor.getInt(typeCol)
@@ -255,6 +260,7 @@ object CallLogLookup {
                     number = number,
                     seconds = cursor.getInt(durationCol),
                     name = name,
+                    country = cursor.getString(countryCol)?.takeIf { it.isNotBlank() },
                 )
             }
         }

@@ -1831,6 +1831,10 @@ SETUP = [
         "call began, and which way it went.",
         "**With the caller**: `20261020_165705_out_Priya Raman.ogg` — easier to "
         "find in a file manager or on a computer.",
+        "**With the phone number**: `20261020_165705_out_+447700900123.ogg` — the "
+        "number with its country code, even a contact's, for a program that sorts "
+        "recordings by number. A hidden number leaves the date and time; a "
+        "messenger call has no number, so its name ends with the app.",
         "**For Honor's Phone app**, on a phone that has it: "
         "`Priya Raman@+447700900123_20261020165705.ogg`, the name Honor's own "
         "recorder uses. Saved in `Sounds/CallRecord` — the File names dialog has "
@@ -1838,8 +1842,8 @@ SETUP = [
         "**Allow** — Honor's Phone app then shows a play button on the call in "
         "its history.",
     ]),
-    ("p", "The caller comes from exact call tracking or the call log, with "
-          "permission to read the call log; without it, a recording is named by "
+    ("p", "The caller and the number come from exact call tracking or the call "
+          "log, with permission to read the call log; without it, a recording is named by "
           "date and time. Google's Phone app has nothing "
           "like Honor's: it keeps its own recordings to itself, and no other app "
           "can add one to its call history."),
@@ -2309,8 +2313,8 @@ SETUP = [
     ("p", "**Saving**"),
     ("ul", [
         "**Saving to** — which folder recordings go in, and back to the default.",
-        "**File names** — date and time, with the caller, or the name Honor's "
-        "Phone app plays from its call history.",
+        "**File names** — date and time, with the caller, with the phone number, "
+        "or the name Honor's Phone app plays from its call history.",
         "**Auto-delete old recordings** and **Auto-delete short calls** — off "
         "until you choose. Recordings older than 30 days, 90 days, 6 months or a "
         "year; calls shorter than 5, 10 or 30 seconds. Kept recordings are never "
@@ -3118,8 +3122,9 @@ FEATURES = [
      "if there is none, why. Search either list, or narrow it with a tap.",
      "the-calls-tab"),
     ("Name files your way",
-     "By date and time, with the caller, or the way Honor&rsquo;s Phone app "
-     "plays them from its call history.",
+     "By date and time, with the caller, with the phone number for a program "
+     "that sorts them, or the way Honor&rsquo;s Phone app plays them from its "
+     "call history.",
      "file-names"),
     ("Play, keep, clean up",
      "A call plays as its waveform, to see where people talk, and plays on with "
@@ -3675,8 +3680,9 @@ HOW_BODY = f"""
   <h3>Only the calls you want</h3>
   <p>Keep every call, only your contacts&rsquo;, only strangers&rsquo;, or
      everyone&rsquo;s but a few people&rsquo;s. Name files by date, or with the
-     caller in them &mdash; and on an Honor, the way Honor&rsquo;s own Phone app
-     looks for them, so its call history gets a play button.</p>
+     caller or their number in them &mdash; and on an Honor, the way
+     Honor&rsquo;s own Phone app looks for them, so its call history gets a
+     play button.</p>
 
   <h3>Nothing is deleted by accident</h3>
   <p>Delete moves a recording to Recently deleted, where it can be restored for
@@ -3777,8 +3783,8 @@ PRIVACY_DATA = [
      "good</em> removes them all at once, when you ask. Messages the answering "
      "machine took are recordings too; which ones are messages, and which you "
      "marked to keep, is kept by file name in the app&rsquo;s private storage, "
-     "and written inside each recording as well, so that a reinstall still "
-     "knows."),
+     "and written inside each recording as well, with which way the call went "
+     "where JemRec knows it, so that a reinstall still knows."),
     ("Caller colours", "the app&rsquo;s private storage", "until you uninstall", "once you use Multitrack",
      "Only once you use the Multitrack look: which of its six colours each "
      "caller has, so a caller keeps theirs, also after you change the look. Kept "
@@ -3813,9 +3819,10 @@ PRIVACY_DATA = [
      "call by who it was with, and to notice a call that was not recorded. Names "
      "and numbers are not copied or stored; the lookup happens each time it is "
      "needed. Two choices change that, and only when you make them: a file name "
-     "with the caller in it puts their name or number in the recording&rsquo;s "
-     "file name, and for those JemRec keeps which way each call went, by file "
-     "name, in its private storage and inside the recording; and the contacts "
+     "with the caller or their number in it puts their name or number in the "
+     "recording&rsquo;s file name, and so in the app&rsquo;s private storage, "
+     "where JemRec keeps what it knows of a recording by its file name (which "
+     "ones are marked to keep, say); and the contacts "
      "you pick under Whose calls to keep are stored there as your contacts "
      "app&rsquo;s own links to them. Exact call tracking, below, keeps numbers "
      "too."),
@@ -3831,7 +3838,8 @@ PRIVACY_DATA = [
      "notifications of the apps whose calls you record &mdash; the messengers "
      "and Google Meet &mdash; the caller&rsquo;s name, the time, and whether the "
      "call rang first, for the last 30 calls, in the app&rsquo;s private "
-     "storage. A recording named by date alone keeps its caller&rsquo;s name "
+     "storage. A recording named by date alone, or with the phone number "
+     "&mdash; a messenger call has none &mdash; keeps its caller&rsquo;s name "
      "there too, by file name; one named with the caller has it in the file "
      "name. Either way the name is also written inside the recording, where no "
      "music app shows it, so that a reinstall still knows who it was &mdash; and "
@@ -3897,7 +3905,7 @@ PRIVACY_BODY = f"""
   <h1>Privacy policy</h1>
   <p class="lead">JemRec has no servers, no accounts, and no analytics. Nothing it
      records or reads ever leaves your phone.</p>
-  <p class="muted">Last updated: October 2026.</p>
+  <p class="muted">Last updated: November 2026.</p>
 
   <h2>What it collects</h2>
   <p><strong>Nothing is sent anywhere.</strong> There is no backend to send it to.

@@ -628,6 +628,19 @@ permissions, to tell who a call was with.
 
 - **Date and time**, the default - `20261020_165705_out.ogg`.
 - **With the caller** - `20261020_165705_out_Priya Raman.ogg`.
+- **With the phone number** - `20261020_165705_out_+447700900123.ogg`: the
+  number even for a contact, for a program that sorts the files by who the
+  call was with ([#71](https://github.com/jemcik/JemRec/issues/71)). That
+  place in the name holds a number or nothing, never a name. It is written
+  with its country code, read in the country the call log gives each call
+  (`UA` on all 178 calls on the Honor, 2026-11-01) - else the one the phone's
+  network or SIM is in - so `050 123 45 67` dialled and `+380501234567`
+  ringing in are one number in the names; a short code such as `477` keeps its
+  digits. A hidden number leaves the date, time and direction, and so does a
+  code such as `*86`; `#31#` or `*31#` in front of a number, to hide or show
+  caller ID for that call, is left out, and so is an extension dialled after a
+  pause. A messenger call has no number: its name is the date, direction and
+  app, and its caller is kept as for the date format.
 - **For Honor's Phone app** - `Priya Raman@+447700900123_20261020165705.ogg`,
   in `Sounds/CallRecord`: the name and folder Honor's own recorder uses.
   Honor's Phone app then shows a play button on the call in its history.
@@ -635,13 +648,12 @@ permissions, to tell who a call was with.
   may be anywhere inside the call, the number has to be the call's, and the
   part before the `@` is not read at all.
 
-The caller comes from the number Android gave exact call tracking, or else
-from the call log as the call is saved - either way, only with the call-log
-permission. Without it, or for a call neither knows, a recording is named by
-date and time. A name is
-given once and never changed. Google's Phone app has no equivalent: it keeps
-its own recordings in a database of its own, and nothing in it is open to
-another app.
+The caller and the number come from what Android gave exact call tracking,
+or else from the call log as the call is saved - either way, only with the
+call-log permission. Without it, or for a call neither knows, a recording is
+named by date and time. A name is given once and never changed. Google's
+Phone app has no equivalent: it keeps its own recordings in a database of its
+own, and nothing in it is open to another app.
 
 ## Messenger calls
 

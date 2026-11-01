@@ -183,10 +183,13 @@ class SettingsSummaryTest {
 
     @Test fun fileNamesSayWhatIsMissing() {
         assertNull(fileNamesProblem(UiState(fileNames = FileNames.Format.DATE)))
-        assertEquals(
-            "Needs your call log. Named by date and time until then.",
-            fileNamesProblem(UiState(fileNames = FileNames.Format.DATE_AND_CALLER)),
-        )
+        listOf(FileNames.Format.DATE_AND_CALLER, FileNames.Format.DATE_AND_NUMBER).forEach { format ->
+            assertEquals(
+                "Needs your call log. Named by date and time until then.",
+                fileNamesProblem(UiState(fileNames = format)),
+            )
+            assertNull(fileNamesProblem(UiState(fileNames = format, canReadCallLog = true)))
+        }
         val honor = UiState(fileNames = FileNames.Format.HONOR, canReadCallLog = true)
         assertEquals("Not saving to ${FileNames.HONOR_FOLDER} yet", fileNamesProblem(honor))
         assertNull(fileNamesProblem(honor.copy(inHonorFolder = true)))

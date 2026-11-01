@@ -36,6 +36,10 @@ internal object SavePlan {
         /** Every call the log dates from [from] to [to]. */
         fun loggedBetween(from: Long, to: Long): List<CallLogLookup.Entry>
 
+        /** Where the phone is now, for a call the log gives no country: what
+         *  the number format reads a number dialled without its code in. */
+        val country: String?
+
         /** A second's wait for the call log to write a call down. */
         suspend fun pause()
     }
@@ -49,18 +53,20 @@ internal object SavePlan {
      * contact's name; else the call log's own name for the number - the
      * dialer's caller ID, or the network's; else the number alone. Not known
      * at all when the contacts could not be asked, which the rules must not
-     * take for a stranger.
+     * take for a stranger. [country]: where the call was, as the log has it,
+     * else where the phone is now.
      */
     fun identified(
         number: String?,
         contact: CallLogLookup.Contact,
         loggedName: String?,
         seconds: Int,
+        country: String?,
         loggedAt: Long? = null,
     ): Who? {
         if (contact.failed) return null
         val name = contact.name ?: loggedName?.takeIf { it.isNotBlank() }
-        return Who(FileNames.Party(number, name), contact.ids, seconds, loggedAt)
+        return Who(FileNames.Party(number, name, country), contact.ids, seconds, loggedAt)
     }
 
     /** Who, from the call log alone - the way without exact call tracking.
@@ -69,7 +75,7 @@ internal object SavePlan {
         if (!lookups.callLogAllowed) return null
         repeat(tries) { attempt ->
             lookups.logged(start, incoming)?.let { entry ->
-                return identified(entry.number, lookups.contact(entry.number), entry.name, entry.seconds, entry.at)
+                return identified(entry.number, lookups.contact(entry.number), entry.name, entry.seconds, entry.country ?: lookups.country, entry.at)
             }
             if (attempt < tries - 1) lookups.pause()
         }
@@ -97,7 +103,7 @@ internal object SavePlan {
         val contact = lookups.contact(call.number)
         if (contact.failed) return null
         val entry = if (named && call.number != null) loggedEntry(lookups, call, start, tries) else null
-        return identified(entry?.number ?: call.number, contact, entry?.name, call.seconds)
+        return identified(entry?.number ?: call.number, contact, entry?.name, call.seconds, entry?.country ?: lookups.country)
     }
 
     private suspend fun loggedEntry(

@@ -271,6 +271,25 @@ class SettingsScreenshots : ScreenTest() {
         snapWithDialog("dialog-file-names")
     }
 
+    @Test fun fileNamesDialogWithTheNumber() {
+        // The number format's words under its choices: the longest of the
+        // formats', and at twice the text size below.
+        settings(Fixtures.ready().copy(fileNames = FileNames.Format.DATE_AND_NUMBER))
+        compose.onNodeWithText("File names").performScrollTo().performClick()
+        compose.waitForIdle()
+        snapWithDialog("dialog-file-names-number")
+    }
+
+    // The dialog is a window of its own, which the scale settings() gives the
+    // screen does not reach: the configuration's reaches both.
+    @Config(qualifiers = "+night", fontScale = 2f)
+    @Test fun fileNamesDialogWithTheNumberLargeText() {
+        settings(Fixtures.ready().copy(fileNames = FileNames.Format.DATE_AND_NUMBER), fontScale = 2f)
+        compose.onNodeWithText("File names").performScrollTo().performClick()
+        compose.waitForIdle()
+        snapWithDialog("dialog-file-names-number-large-text-dark")
+    }
+
     // Recently deleted, with its Restore all and Delete all for good, and the
     // question Delete all for good asks first.
     @Test fun recentlyDeleted() {

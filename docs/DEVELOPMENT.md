@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-914 JVM tests, no device needed - 718 for the app and 196 for the daemon:
+927 JVM tests, no device needed - 731 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -111,7 +111,7 @@ call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13, 16 and 17 for 0.25.3 -
+emulator, for each Android version it claims (12, 13, 16 and 17 for 0.26 -
 16 is what the Galaxy phones of the issues run), each booted cold
 (`emulator -avd <name> -no-snapshot`):
 
@@ -127,8 +127,11 @@ places simulated calls: the ringing cut, the same cut with nothing captured
 until the answer (as over Wi-Fi Calling on a Pixel, issue #40: the recorder
 is stopped while the call rings), an unanswered call not kept, an incoming
 call kept to the second, a stranger skipped before recording, two calls in
-quick succession, a caller-ID name, the self-test, and the answering machine: a
-message taken and marked with the microphone given back, a caller who hangs
+quick succession, a caller-ID name, a contact dialled without the
+country code named by the number with it (the number format, issue #71)
+and a call that the call log says was made in Ukraine named with
+Ukraine's code, the self-test, and the answering machine: a message
+taken and marked with the microphone given back, a caller who hangs
 up during the greeting, a caller the rules leave out left to ring, a phone
 call ringing over a messenger call left to ring (a stand-in call from
 `shellserver/probe`, built by the script if need be), a caller left to ring
