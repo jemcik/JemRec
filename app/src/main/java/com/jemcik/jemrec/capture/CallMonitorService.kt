@@ -485,10 +485,9 @@ class CallMonitorService : Service() {
         }
     }
 
-    /** Nothing left to do this start, and no recording running: stand down
-     *  rather than sit as a foreground service between calls. */
     /**
-     * Stops the service unless something still needs it. [ending] is the job
+     * Stops the service unless something still needs it, rather than sit as a
+     * foreground service between calls. [ending] is the job
      * calling this as it finishes - still active until it returns - so it does
      * not count. The background-kill warning counts like the rest: on an
      * Honor left to "Manage automatically" JemRec was frozen two seconds after

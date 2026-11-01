@@ -535,20 +535,6 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier,
     }
 }
 
-/**
- * Who the call was with, as a circle.
- *
- * Initials when there is a name, a handset when there is only a number or
- * nothing at all - so every row has the same shape and the list does not go
- * ragged down its left edge where some calls happen to be in the contacts and
- * others are not.
- *
- * Drawn rather than fetched. The call log carries a photo URI, but it points
- * into the contacts provider and opening it needs READ_CONTACTS - a second
- * dangerous permission, for a picture. Initials cost nothing, identify a
- * caller just as well at this size, and keep the app to the one permission it
- * actually asked for.
- */
 /** The tip over the recordings: how selection starts, with an x to put it away. */
 @Composable
 private fun SelectTip(onDismiss: () -> Unit) {
@@ -1313,6 +1299,13 @@ internal fun SelectableAvatar(
     }
 }
 
+/**
+ * Who the call was with, as a circle: the contact's photo where there is one
+ * (rememberContactPhoto), else initials when there is a name, else a person's
+ * outline - so every row has the same shape and the list does not go ragged
+ * down its left edge where some calls happen to be in the contacts and others
+ * are not.
+ */
 @Composable
 internal fun CallerAvatar(
     caller: String?,

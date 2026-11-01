@@ -386,14 +386,6 @@ object CallLogLookup {
     }
 
     /**
-     * The log's entry for a call whose recording began at [startMillis], for
-     * the saver to name it and apply the rules by (see RecordingSaver). Null
-     * if the log does not have it - yet: it is written as the call ends, so
-     * the saver asks again for a few seconds. [others] are the starts of the
-     * recordings already made (CallLedger), whose calls this cannot be.
-     * Blocking.
-     */
-    /**
      * Whether two ways of writing a number are the same number - Telecom's
      * "+13034997111" and the call log's "3034997111", say. Loosely, the way
      * Android matches numbers to contacts: the digits alone, and the last
@@ -418,6 +410,14 @@ object CallLogLookup {
             .getOrDefault(emptyList())
     }
 
+    /**
+     * The log's entry for a call whose recording began at [startMillis], for
+     * the saver to name it and apply the rules by (see RecordingSaver). Null
+     * if the log does not have it - yet: it is written as the call ends, so
+     * the saver asks again for a few seconds. [others] are the starts of the
+     * recordings already made (CallLedger), whose calls this cannot be.
+     * Blocking.
+     */
     internal fun callFor(
         context: Context,
         startMillis: Long,

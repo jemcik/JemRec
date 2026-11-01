@@ -8,6 +8,7 @@
 .externalNativeBuild
 .cxx
 /app/build/
+/app/pure-tests/build/
 
 # Signing material has never been in this repo and never will be. CI decodes a
 # base64 secret to a file and points JEMREC_KEYSTORE at it.

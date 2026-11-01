@@ -18,15 +18,18 @@ import com.jemcik.jemrec.Prefs
  * Between them they cover "everyone", "only my contacts", "only strangers",
  * "only these people" and "everyone but these people".
  *
- * AFTER THE CALL, NOT BEFORE
+ * AS THE CALL COMES UP WHERE TELECOM SAYS, AFTER IT OTHERWISE
  *
- * The daemon starts recording as a call starts, and at that moment nothing on
- * the phone will tell this app who it is with: the call-state callback gives
- * no number, by design, and only the dialer itself is told. The call log has
- * it - once the call has ended. So every call is recorded, and when it ends
- * RecordingSaver asks the log who it was before saving: a call these rules
- * leave out is deleted from the daemon there and then, and never reaches the
- * recordings folder.
+ * With exact call tracking (CallTracker, on by default), Telecom tells this
+ * app the number as the call comes up, and a call these rules leave out is
+ * skipped there: the recorder is told before it records, or within its first
+ * seconds. Without it, nothing on the phone tells this app who a call is with
+ * while it lasts: the call-state callback gives no number, by design, and the
+ * call log has it only once the call has ended. So then every call is
+ * recorded, and when it ends RecordingSaver asks the log who it was before
+ * saving: a call these rules leave out is deleted from the daemon there and
+ * then, and never reaches the recordings folder. The saver asks the rules
+ * again either way.
  *
  * KEPT WHEN UNSURE. A call the log does not have, or a phone that no longer
  * lets JemRec read the log, keeps its recording - a recording can be deleted

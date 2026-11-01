@@ -1,7 +1,7 @@
 # shellserver
 
 The shell-side capture daemon: an audio-only fork of scrcpy v4.1 (Apache-2.0)
-plus one file of our own.
+plus the files of our own in `src/com/jemcik/jemrec/shell`.
 
 It runs as the **shell UID**, and that is the whole reason it is a separate
 program rather than a class in the app. Capturing call audio needs
@@ -21,7 +21,7 @@ against upstream and why each one exists.
 ```
 
 `javac` against platform 36, then `d8`, into `jemrec-capture.jar`
-(about 24 KB). `ANDROID_PLATFORM` and `BUILD_TOOLS` are overridable but default
+(about 85 KB). `ANDROID_PLATFORM` and `BUILD_TOOLS` are overridable but default
 to 36 and 36.0.0.
 
 `ANDROID_PLATFORM` must match the platform the **device** runs, not the app's
@@ -39,7 +39,9 @@ adb shell 'nohup sh -c "CLASSPATH=/data/local/tmp/jemrec-capture.jar \
 ```
 
 `Main [port] [raw]` - port defaults to 28472, and passing `raw` sends
-uncompressed PCM instead of Opus, for diagnostics.
+uncompressed PCM instead of Opus. A daemon started by hand like this has no
+token (the app passes it in the environment), so it refuses every command but a
+bare ping - see Protocol.
 
 It then listens on `127.0.0.1:28472` and stays. Started once, it outlives the
 ADB connection that launched it, which is the entire point: with Wi-Fi off adbd
@@ -52,7 +54,14 @@ would have to live under `/data/local/tmp`, which the app cannot traverse.
 
 ## Protocol
 
-Unchanged from scrcpy, so its tooling still reads it.
+Every connection but a bare ping (`P`, answered `PONG <version> <build>`)
+starts with a handshake in both directions, proved with the token the app
+passes in the environment (`A`; `Main.authenticate`), then one command byte.
+The commands and their replies are in `Main.session`, and every reply that is
+a line of text is listed in `tests/fixtures/protocol.txt`, which the app's
+ProtocolTest checks against both.
+
+The audio a capture (`R`) streams is scrcpy's format, unchanged:
 
 ```
 4 bytes   codec id, ASCII ("opus" or "raw")
@@ -62,17 +71,13 @@ repeating:
   n bytes payload
 ```
 
-One connection is one recording session. There is no stop command and none is
-needed: the encoder writes into the socket, so the app closing its end is what
-ends the session. That keeps the daemon free of any protocol that could get out
-of sync with the app.
+One `R` connection is one capture, and there is no stop command for it: the
+encoder writes into the socket, so the app closing its end is what ends it.
+Calls are recorded by the daemon itself, into files the app fetches (`F`).
 
 ## Verifying a device
 
-```
-adb forward tcp:28472 tcp:28472
-../tools/capture-call.py --seconds 25 --out call.wav
-```
-
-During a real call. It reports per-channel energy, because the question is
-whether **both directions** are present, not merely whether audio arrived.
+The app's Settings > Diagnostics > Self-test opens a real capture (`R`) over the
+path a call takes and says what came out of it, both directions included.
+`tools/capture-call.py` predates the handshake: it sends nothing, so the
+daemon refuses it.

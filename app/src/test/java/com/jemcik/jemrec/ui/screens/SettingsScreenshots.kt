@@ -322,6 +322,32 @@ class SettingsScreenshots : ScreenTest() {
         snapWithDialog("dialog-tracking-off")
     }
 
+    // Two of Settings' dialogs nothing drew before the 1.0 restructuring.
+
+    @Test fun startFreshDialog() {
+        settings(Fixtures.ready().copy(confirmingReset = true))
+        compose.onNodeWithText("Start fresh?").assertIsDisplayed()
+        snapWithDialog("dialog-start-fresh")
+    }
+
+    /** Saving to, in the standard folder: Change, and no Use default. */
+    @Test fun folderDialog() {
+        settings(Fixtures.ready())
+        compose.onNodeWithText("Saving to").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Change").assertIsDisplayed()
+        snapWithDialog("dialog-folder")
+    }
+
+    /** ...and in a folder the user chose: Use default beside Cancel. */
+    @Test fun folderDialogForAChosenFolder() {
+        settings(Fixtures.ready().copy(folder = "Documents/Calls", usingDefaultFolder = false))
+        compose.onNodeWithText("Saving to").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Use default").assertIsDisplayed()
+        snapWithDialog("dialog-folder-chosen")
+    }
+
     @Config(qualifiers = "+night")
     @Test fun autoDeleteDialog() {
         settings(Fixtures.ready())

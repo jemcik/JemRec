@@ -279,14 +279,6 @@
         </activity>
 
         <!--
-          Not exported: BOOT_COMPLETED is a protected broadcast that only the
-          system may send, so exporting would gain nothing.
-
-          directBootAware is deliberately FALSE. LOCKED_BOOT_COMPLETED arrives
-          before first unlock while /data is still encrypted, and everything
-          this app needs - its ADB identity above all - lives there.
-        -->
-        <!--
           Woken by the system, through our own PendingIntent, when Wi-Fi
           returns - to revive the recorder at once instead of on the next
           keep-alive period. Not exported: it is only ever fired by the
@@ -307,6 +299,14 @@
             android:name=".capture.AfterCallReceiver"
             android:exported="false" />
 
+        <!--
+          Not exported: BOOT_COMPLETED is a protected broadcast that only the
+          system may send, so exporting would gain nothing.
+
+          directBootAware is deliberately FALSE. LOCKED_BOOT_COMPLETED arrives
+          before first unlock while /data is still encrypted, and everything
+          this app needs - its ADB identity above all - lives there.
+        -->
         <receiver
             android:name=".capture.BootReceiver"
             android:exported="false">
@@ -407,12 +407,6 @@
 
 
         <!--
-          Cancels the system "Wireless debugging connected" notification, which
-          the recorder cannot avoid keeping on. Bound by the system once granted
-          notification access - given over ADB during setup, not through the
-          Settings switch a side-loaded app cannot reach. See the service class.
-        -->
-        <!--
           Telecom binds this, a non-UI in-call service, for the length of each
           call once MANAGE_ONGOING_CALLS is allowed. Exported only to Telecom:
           BIND_INCALL_SERVICE is a system permission.
@@ -429,6 +423,12 @@
             </intent-filter>
         </service>
 
+        <!--
+          Cancels the system "Wireless debugging connected" notification, which
+          the recorder cannot avoid keeping on. Bound by the system once granted
+          notification access - given over ADB during setup, not through the
+          Settings switch a side-loaded app cannot reach. See the service class.
+        -->
         <service
             android:name=".capture.DebugNotificationCleaner"
             android:exported="false"

@@ -624,12 +624,6 @@ class MainViewModel @JvmOverloads constructor(
         // So the notification is posted the moment pairing becomes the thing to
         // do, not when a button is pressed. By the time the user is standing in
         // Settings looking at six digits, the place to type them already exists.
-        // THE REPLY FIELD HAS TO BE THERE BEFORE THE USER NEEDS IT.
-        //
-        // Once the pairing dialog is open, coming back to JemRec to press a
-        // button would close it - which is the entire difficulty of this step.
-        // So the notification is posted the moment pairing becomes the thing to
-        // do, not when a button is pressed.
         if (step == SetupStep.NEEDS_PAIRING) {
             PairingNotification.show(getApplication())
         } else {
@@ -656,16 +650,6 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    /**
-     * Bring the recorder back without holding the screen still while it happens.
-     *
-     * Deliberately off launchAction: reviving re-arms Wireless debugging, waits
-     * for adbd, opens an ADB session and starts the daemon, which is seconds -
-     * and launchAction would hold `busy` for all of them, greying out every
-     * control on a screen that is working perfectly well. `starting` is the
-     * flag that already exists for exactly this, and the header reads it rather
-     * than announcing a failure that is being repaired as it is read.
-     */
     /**
      * Wi-Fi came while the screen is up. If the recorder is down, this is the
      * moment it can come back - and doing it from here puts "Starting..." in
@@ -725,6 +709,16 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Bring the recorder back without holding the screen still while it happens.
+     *
+     * Deliberately off launchAction: reviving re-arms Wireless debugging, waits
+     * for adbd, opens an ADB session and starts the daemon, which is seconds -
+     * and launchAction would hold `busy` for all of them, greying out every
+     * control on a screen that is working perfectly well. `starting` is the
+     * flag that already exists for exactly this, and the header reads it rather
+     * than announcing a failure that is being repaired as it is read.
+     */
     private fun reviveInBackground(request: CaptureDaemon.Request = CaptureDaemon.Request.ROUTINE) {
         if (!reviving.compareAndSet(false, true)) return
         starts.begin()
@@ -826,14 +820,6 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /**
-     * The permission dialog has closed, whichever way and whichever of the two
-     * were granted.
-     *
-     * The verdict is read back from the system rather than taken from the
-     * callback: the user can grant one and refuse the other, and the system is
-     * the only thing that knows which.
-     */
-    /**
      * The user has answered the audio-access request, either way.
      *
      * Granted, the recordings from before the reinstall appear on the next
@@ -845,6 +831,14 @@ class MainViewModel @JvmOverloads constructor(
         refresh()
     }
 
+    /**
+     * The permission dialog has closed, whichever way and whichever of the two
+     * were granted.
+     *
+     * The verdict is read back from the system rather than taken from the
+     * callback: the user can grant one and refuse the other, and the system is
+     * the only thing that knows which.
+     */
     fun onCallLogResult() {
         val app = getApplication<Application>()
         // Anything refused counts as an answer. Asking again next time the app
@@ -2027,11 +2021,11 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun showMore() = _state.update { it.copy(visibleCount = it.visibleCount + PAGE) }
 
-    /** The system delete dialog has closed, one way or the other. */
     /** Android's dialog is up: the request is spent. Left set, a new screen -
      *  rotated, re-themed behind the dialog - launched it a second time. */
     fun onDeleteConsentShown() = _state.update { it.copy(deleteConsent = null) }
 
+    /** The system delete dialog has closed, one way or the other. */
     fun onDeleteConsentResult(granted: Boolean) {
         _state.update { it.copy(deleteConsent = null) }
         if (!granted) say("deletion cancelled")
@@ -2146,8 +2140,6 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    /** Named `say` rather than `append` on purpose: inside a buildString block
-     *  an `append` member would be shadowed by StringBuilder.append. */
     /** As say, and in a snackbar too: for a failure of something the user
      *  did just now. */
     private fun tell(text: String) {
@@ -2155,6 +2147,8 @@ class MainViewModel @JvmOverloads constructor(
         _notices.tryEmit(text.replaceFirstChar { it.uppercase() })
     }
 
+    /** Named `say` rather than `append` on purpose: inside a buildString block
+     *  an `append` member would be shadowed by StringBuilder.append. */
     private fun say(text: String) {
         val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         // NEWEST FIRST. Appending put the answer at the bottom of a log that

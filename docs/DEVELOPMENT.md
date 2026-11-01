@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-927 JVM tests, no device needed - 731 for the app and 196 for the daemon:
+1150 JVM tests, no device needed - 954 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -109,6 +109,31 @@ callers: **its states** (`AnswerMachine`, in `shellserver/tests`) - nothing
 answered without a go-ahead for the ring in progress, never during another
 call, the microphone always given back, and the phone's own unmute at the
 end of a call not taken for *Talk to them*.
+
+**What the code does today, pinned.** Before the 1.0 restructuring moves any
+code, tests hold what it does now where no test reached before:
+`CallMonitorService` driven by the recorder's wakes, the after-call notices
+and the ask-first prompt's ticket, the call-log queries against a fake call
+log (`FakeCallLog`), the recordings list, Recently deleted and auto-delete
+over fake MediaStore and folder providers (`FakeStorage`), the keep-alive's
+and the USB watch's runs and what each trigger arms (WorkManager's test
+driver), the record switch, a revive while JemRec stays off, and the main
+screen's reading and busy rules. Where one pins something that looks wrong,
+its comment says so ("Pins today's behaviour, which looks like a bug") and
+what: the fix comes in a commit of its own, which turns the test round.
+
+**Names and words something else depends on** (`app/src/test/.../contract`):
+the component and worker class names the phone and the tools remember,
+the recorder's own class name, and the actions and extras of its wakes
+(`FrozenNamesTest`); the preference keys, the enums stored by name and a fresh
+install's defaults (`PreferencesInventoryTest`); every log line
+`tools/emulator_checks.py` waits for, as it is written or from the parts it is
+built of (`LogLinesTest`); and every reply of the loopback protocol, listed in
+`shellserver/tests/fixtures/protocol.txt`, as the app reads it and the
+recorder writes it (`ProtocolTest`). A rename in any of these compiles and
+passes every other test. They search the code whole and without its
+comments, so a file moved between packages changes nothing for them, and a
+comment that quotes a line does not stand in for the line.
 
 Before a release, the same calls go through the real app and daemon on an
 emulator, for each Android version it claims (12, 13, 16 and 17 for 0.26 -
@@ -288,12 +313,19 @@ time.
 - **CodeQL.** `.github/workflows/codeql.yml`: GitHub's code scanning with the
   security-and-quality queries, on pushes to `main`, pull requests and weekly.
   Findings go to the Security tab.
+- **The app's pure code, alone.** `./gradlew :pure-tests:test`, part of
+  `./gradlew test` and so of CI, compiles the app's files listed in
+  `app/pure-tests/build.gradle.kts` - those that use nothing of Android -
+  with no `android.jar`, and runs their tests there. A listed file that
+  reaches Android, or an app class that does, fails to compile: in the app's
+  own tests `android.jar`'s stubs return defaults, so there it would pass.
 
 Reports, not gates - run them when wanted:
 
 - **App coverage:** `./gradlew createDebugUnitTestCoverageReport -Pcoverage`,
-  then `app/build/reports/coverage/test/debug/index.html`. 55% of lines at
-  0.21: 73% of `ui`, 99% of the themes, 36% of `capture`.
+  then `app/build/reports/coverage/test/debug/index.html`. 67% of lines on
+  2026-11-01: 80% of `ui`, 99% of the themes, 58% of `capture` (55%, 73%
+  and 36% at 0.21).
 - **Daemon coverage:** `./gradlew :daemon-tests:test -Pcoverage`, then
   `shellserver/tests/build/reports/jacoco/test/html`. 99% of instructions,
   93% of branches (2026-10-26).
@@ -307,6 +339,18 @@ Reports, not gates - run them when wanted:
   needs a ring in the first three seconds after boot), the whole chime's
   sign or its octave's phase - each one read in the report (2026-10-26). Some tests read records the Honor itself
   printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
+- **The app's mutation testing:** `./gradlew :pure-tests:pitest`, then
+  `app/pure-tests/build/reports/pitest`: PIT over the pure module's files
+  (the gate above). 119 of the 123 changes its tests reach fail one
+  (2026-11-01). The four left change nothing: frame lengths at Opus config 12,
+  which SILK and hybrid give alike; two `setTimeZone` calls on formatters
+  built in that zone already; and a bound inside the standard library's
+  `trim`, inlined into `AudioStream`. 17 more are not reached, nearly all in
+  `SystemProperty`, which runs `getprop`. The Kotlin compiler's own null
+  checks, `hashCode`, and data classes' `copy` and `componentN` are left out
+  (`--avoidCallsTo`, `--excludedMethods`): they were 9 of the first run's 26
+  survivors - six null checks removed, three hashes changed that still agreed
+  with `equals` - and no test could tell any of them.
 
 None of these checks changes what ships but NullAway, whose `Nullable` - a
 type the daemon's sources now use - is one more class in the daemon jar.

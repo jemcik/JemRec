@@ -1256,23 +1256,12 @@ object CaptureDaemon {
     }
 
     /**
-     * Put the borrowed door back once we are through it.
+     * Put the borrowed door back once we are through it: close the ADB session.
      *
      * ADB is a bootstrap here, not a transport: it exists to start this daemon,
-     * and once the daemon is up it serves loopback and needs no adbd, no mDNS
-     * and no Wi-Fi. Nothing enforced that. Wireless debugging stayed on
-     * afterwards, adbd stayed listening on the network for as long as the phone
-     * was on that Wi-Fi, and Android posted its own "Wireless debugging
-     * connected" notification to say so - which the app cannot dismiss, because
-     * it belongs to the system.
-     *
-     * Turning it off removes the notification by removing its cause, which is
-     * the only honest way to remove someone else's notification. The larger
-     * win is the exposure: a debugging port open on every network the phone
-     * joins, indefinitely, to support an operation that finished seconds ago.
-     *
-     * The watchdog turns it back on when it next needs to repair the daemon, so
-     * this costs nothing but a few seconds at the moment of repair.
+     * and once the daemon is up it serves loopback and needs no ADB session, no
+     * mDNS and no Wi-Fi. Wireless debugging itself stays on: switching it off
+     * here killed the recorder just started, as below.
      *
      * Deliberately does nothing when the daemon is NOT running: that is exactly
      * when the way back in still has to be there.
@@ -1821,7 +1810,7 @@ object CaptureDaemon {
     /**
      * Copy the bundled jar somewhere the shell UID can read it.
      *
-     * Rewritten every time rather than cached: it costs 24 KB and a few
+     * Rewritten every time rather than cached: it costs 85 KB and a few
      * milliseconds, and it means an app update cannot leave a stale daemon jar
      * behind to be launched against mismatched app code.
      */

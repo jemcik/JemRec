@@ -1,0 +1,58 @@
+# The replies the recorder sends the app over loopback as lines of text, as
+# both sides speak them (0.26, 2026-11-01): not the handshake's answer (the
+# recorder's nonce and MAC, bytes) nor the audio a capture (R) streams. One
+# reply per line, four columns split by tabs:
+#
+#   command   the command byte(s) the app sends (Main.session)
+#   app       source text in the app that reads this reply; "-" when the app
+#             only logs or passes it on
+#   recorder  source text in shellserver/src that writes it
+#   example   a reply as the recorder builds it
+#
+# Both sides are written by hand and built apart: the app never compiles the
+# recorder's sources. ProtocolTest (app) checks that each side still has its
+# text and that the app's parsers read each example; the recorder's own test
+# of the lines it builds comes with the 1.0 restructuring, which moves
+# the formatting out of Main.java where daemon-tests can reach it.
+# An installed app talks to whatever recorder is running, possibly an older
+# one for days off Wi-Fi, so a reply changes only with both sides at once.
+P	"PONG"	"PONG "	PONG 2 1a2b3c4d
+Q	"BYE"	"BYE\n"	BYE
+Q	"BUSY"	"BUSY\n"	BUSY
+O	"OFF NOW"	"OFF NOW"	OFF NOW
+O	"OFF AFTER CALL"	"OFF AFTER CALL"	OFF AFTER CALL
+O	"OFF TOO LATE"	"OFF TOO LATE"	OFF TOO LATE
+O	startsWith("OFF")	"OFF CANCELLED"	OFF CANCELLED
+T	startsWith("TRACK ")	"TRACK "	TRACK on
+K	startsWith("SKIP ")	"SKIP "	SKIP current
+V	startsWith("VOIP ")	"VOIP "	VOIP 3 armed
+W	parts[0] != "WATCH"	return "WATCH " + WATCH_FORMAT	WATCH 1 since=1761990000000 watching=1 looper=ok mode=1 call=0 events=4 lastevent=1761990100000 offhooks=1 lastoffhook=1761990050000 recording=0 voip=3 voiparmed=0 tracking=1 answer=0 greeting=0
+F	"gone"	"gone"	gone
+D	reply[0] == 'O'.code.toByte()	"OK\n"	OK
+D	reply[0] == 'O'.code.toByte()	"NO\n"	NO
+N	startsWith("ANSWER ")	"ANSWER " + settings.wire()	ANSWER 1,60,music
+Y	-	"GO " + state	GO ARMED
+Y	-	"GO none"	GO none
+H	startsWith("HAND ")	"HAND " + state	HAND TALKING
+H	startsWith("HAND ")	"HAND none"	HAND none
+GQ	startsWith("GREETING ")	"GREETING " + (Greeting.present()	GREETING 96000
+GR	"TAKE recording"	"TAKE recording"	TAKE recording
+GR	"TAKE recording"	"TAKE busy"	TAKE busy
+GS	startsWith("TAKE ")	"TAKE " + Greeting.stopTake()	TAKE 96000
+GP	"GREETING ${pcm.size}"	"GREETING " + Greeting.FILE.length()	GREETING 96000
+GD	-	"GREETING 0"	GREETING 0
+XC	"DIAG 1"	new StringBuilder("DIAG 1")	DIAG 1 perms=ok incallmusic=1 screening=1 greeting=0 route=music sdk=37 voice=13 soc=SM8850 maker=HONOR model=BKQ-N49
+XA	"TEST armed"	"TEST armed"	TEST armed
+XA	"TEST bad-number"	"TEST bad-number"	TEST bad-number
+XA	"TEST emergency"	"TEST emergency"	TEST emergency
+XA	"TEST no-greeting"	"TEST no-greeting"	TEST no-greeting
+XA	"TEST busy"	"TEST busy"	TEST busy
+XA	"TEST armed"	"TEST none"	TEST none
+XR	"RESULT 1"	"RESULT 1 state="	RESULT 1 state=done route=1 realms=9416 audioms=9539 tone=0 tonechunks=0 mute=1 voice=16
+XF	startsWith("FWD ")	"FWD " + (telephony == null	FWD error no-telephony
+XS	startsWith("FWD ")	"FWD error bad-seconds"	FWD error bad-seconds
+XP	startsWith("SIMS")	new StringBuilder("SIMS")	SIMS default=1 1|SIM_1 2|SIM_2
+E	-	write((recordingMode + "\n")	1
+L	-	os.write((name + "\n")	jemrec_rec_1761990000000_in.dat
+S	-	((name != null ? name : "") + "\n")	jemrec_rec_1761990000000_out.dat
+C	-	write((reportText() + "\n")	Recorded by build 1a2b3c4d

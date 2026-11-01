@@ -27,3 +27,9 @@ project(":daemon-tests").projectDir = file("shellserver/tests")
 // (Android 12). Nothing is built from it; see shellserver/lint.
 include(":daemon-lint")
 project(":daemon-lint").projectDir = file("shellserver/lint")
+
+// The app's pure code - files that use nothing of Android - compiled alone,
+// with no android.jar, and tested and mutated there. Nothing is built from it
+// into the APK; see app/pure-tests.
+include(":pure-tests")
+project(":pure-tests").projectDir = file("app/pure-tests")
