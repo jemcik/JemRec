@@ -31,6 +31,7 @@ class SavePlanTest {
         override val callLogAllowed: Boolean = true,
         val contactsFail: Boolean = false,
         val logLag: Int = 0,
+        override val country: String? = null,
     ) : SavePlan.Lookups {
         var pauses = 0
         var logReads = 0
@@ -57,8 +58,8 @@ class SavePlanTest {
 
     private fun contact(name: String, id: Long) = CallLogLookup.Contact(name, null, false, id)
 
-    private fun entry(at: Long, incoming: Boolean, number: String?, name: String? = null, seconds: Int = 17) =
-        CallLogLookup.Entry(at, incoming, name ?: number ?: "", number, seconds, name)
+    private fun entry(at: Long, incoming: Boolean, number: String?, name: String? = null, seconds: Int = 17, country: String? = null) =
+        CallLogLookup.Entry(at, incoming, name ?: number ?: "", number, seconds, name, country)
 
     private fun settings(format: Format = Format.DATE_AND_CALLER, ruled: Boolean = false, keeps: (List<Long>) -> Boolean = { true }) =
         SavePlan.Settings(format, ruled, keeps)
@@ -100,6 +101,47 @@ class SavePlanTest {
         )
         val (byLog, byTelecom) = bothWays(phone, "+13034997111", Format.DATE_AND_CALLER)
         assertTrue(byLog, byLog.endsWith("_out_Priya Raman.ogg"))
+        assertEquals(byLog, byTelecom)
+    }
+
+    // The number format writes the number with its country code, which needs
+    // Android's phone number library: NumberFileNamesTest has that. Here, the
+    // same name both ways, and the country it is read in. With no country, as
+    // in the first, a phone too keeps the log's digits.
+
+    @Test fun theNumberFormatLeavesOutContactAndCallerIdNamesBothWays() {
+        listOf(true, false).forEach { incoming ->
+            listOf(emptyMap(), mapOf("3034997111" to contact("Priya Raman", 7))).forEach { contacts ->
+                val phone = Phone(contacts = contacts, log = listOf(entry(t, incoming, "3034997111", "Caller ID")))
+                val (byLog, byTelecom) = bothWays(phone, "+13034997111", Format.DATE_AND_NUMBER, incoming)
+                assertTrue(byLog, byLog.endsWith("_${if (incoming) "in" else "out"}_3034997111.ogg"))
+                assertEquals(byLog, byTelecom)
+            }
+        }
+    }
+
+    @Test fun theNumberIsReadInTheCallsCountryElseThePhonesBothWays() {
+        val call = Tracked(t, false, "+13034997111", listOf(t + 60), t + 20 * s)
+        fun countries(phone: Phone) = runBlocking {
+            listOf(
+                SavePlan.fromCallLog(phone, t + 60, false, 1)?.party?.country,
+                SavePlan.fromTelecom(phone, call, t + 60, named = true, tries = 1)?.party?.country,
+            )
+        }
+        assertEquals(listOf("US", "US"), countries(Phone(log = listOf(entry(t, false, "3034997111", country = "US")), country = "ua")))
+        assertEquals(listOf("ua", "ua"), countries(Phone(log = listOf(entry(t, false, "3034997111")), country = "ua")))
+        // Not in the log yet: Telecom's number, read where the phone is.
+        assertEquals(listOf(null, "ua"), countries(Phone(country = "ua")))
+    }
+
+    @Test fun theNumberFormatIsTheDateWithoutTheCallLogBothWays() {
+        val phone = Phone(
+            contacts = mapOf("3034997111" to contact("Priya Raman", 7)),
+            log = listOf(entry(t, false, "3034997111")),
+            callLogAllowed = false,
+        )
+        val (byLog, byTelecom) = bothWays(phone, "+13034997111", Format.DATE_AND_NUMBER)
+        assertTrue(byLog, byLog.endsWith("_out.ogg"))
         assertEquals(byLog, byTelecom)
     }
 

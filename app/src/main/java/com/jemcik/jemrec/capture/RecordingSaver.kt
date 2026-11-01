@@ -2,6 +2,7 @@ package com.jemcik.jemrec.capture
 
 import android.content.Context
 import android.os.ParcelFileDescriptor
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
@@ -304,6 +305,15 @@ object RecordingSaver {
         override fun contact(number: String?) = CallLogLookup.contactFor(context, number, contacts)
         override fun logged(start: Long, incoming: Boolean) = CallLogLookup.callFor(context, start, incoming, others)
         override fun loggedBetween(from: Long, to: Long) = CallLogLookup.entriesBetween(context, from, to)
+
+        // The mobile network's country, else the SIM's: neither needs a
+        // permission. Both ua on the Honor (gsm.operator.iso-country and
+        // gsm.sim.operator.iso-country, 2026-11-01).
+        override val country: String? by lazy {
+            val telephony = context.getSystemService(TelephonyManager::class.java)
+            telephony?.networkCountryIso?.takeIf { it.isNotBlank() } ?: telephony?.simCountryIso?.takeIf { it.isNotBlank() }
+        }
+
         override suspend fun pause() = delay(1_000)
     }
 
@@ -322,7 +332,9 @@ object RecordingSaver {
         val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), ledger = false) {
             RecordingTags.Facts(incoming = note?.incoming, caller = note?.name)
         }
-        if (outcome is Outcome.Saved && note?.name != null && format == FileNames.Format.DATE) {
+        // Where the name does not say who: the date and number formats, or a
+        // caller with nothing a file name can take.
+        if (outcome is Outcome.Saved && note?.name != null && FileNames.parse(name)?.caller == null) {
             FileNames.noteCaller(context, name, note.name)
         }
         return outcome

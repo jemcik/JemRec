@@ -21,6 +21,11 @@ through the real app and daemon, checking what each one leaves behind:
               stranger's call is kept, and is incoming (the 0.14.1 daemon fix)
   caller-id   a number in no contact is named as the call log names it
               (issue #30)
+  number-names  with the phone number in file names, a contact dialled
+              without the country code is named by the number with it, not
+              by the contact (issue #71); and a call whose row in the call
+              log says it was made in Ukraine is named in Ukraine's code,
+              though the emulator's network says US
   self-test   PASS, with exact call tracking on
   answering   the answering machine answers a stranger after its delay, plays
               the greeting, and saves the message marked as one, with the
@@ -142,6 +147,10 @@ CONTACT = "5557777"      # made a contact here, as "TestKept"
 STRANGER_IN = "5554321"  # rings in; no contact
 STRANGER_OUT = "5551234"  # dialled; no contact
 CALLER_ID = ("3034997111", "NIST Radio Station WWV")  # issue #30's call
+# A contact, made here as "TestNumbered": a number Android takes for a valid US
+# one (libphonenumber's own example), so it can be given its +1.
+NUMBERED = ("2015550123", "TestNumbered")
+UA_DIALLED = "0501234567"  # a Ukrainian mobile number, as dialled there
 USB_GUARD = "jemrec_usb_guard"  # the snapshot usb_debugging comes back to
 
 serial = "emulator-5554"
@@ -341,14 +350,7 @@ def set_up(apk):
     # usb_debugging check locked the Android 12 and 13 AVDs out until this
     # line (2026-10-26, "cannot write adb_enabled - SecurityException").
     sh(f"pm grant {PKG} android.permission.WRITE_SECURE_SETTINGS")
-    # A contact, if this emulator has none with the number yet.
-    if CONTACT not in sh("content query --uri content://com.android.contacts/data/phones --projection data1"):
-        sh("content insert --uri content://com.android.contacts/raw_contacts --bind account_type:n: --bind account_name:n:")
-        raw = max(int(x) for x in re.findall(r"_id=(\d+)", sh("content query --uri content://com.android.contacts/raw_contacts --projection _id")))
-        sh(f"content insert --uri content://com.android.contacts/data --bind raw_contact_id:i:{raw} "
-           f"--bind mimetype:s:vnd.android.cursor.item/name --bind data1:s:TestKept")
-        sh(f"content insert --uri content://com.android.contacts/data --bind raw_contact_id:i:{raw} "
-           f"--bind mimetype:s:vnd.android.cursor.item/phone_v2 --bind data1:s:{CONTACT} --bind data2:i:2")
+    add_contact("TestKept", CONTACT)
     # The diag receiver's token: refused once, it says what it wants.
     sh(f"am start -n {PKG}/.MainActivity")
     time.sleep(3)
@@ -374,6 +376,18 @@ def set_up(apk):
     # cut short leaves its picked folder set.
     set_prefs(recordings_tree_uri=None)
     start_recorder()
+
+
+def add_contact(name, number):
+    """A contact, if this emulator has none with the number yet."""
+    if number in sh("content query --uri content://com.android.contacts/data/phones --projection data1"):
+        return
+    sh("content insert --uri content://com.android.contacts/raw_contacts --bind account_type:n: --bind account_name:n:")
+    raw = max(int(x) for x in re.findall(r"_id=(\d+)", sh("content query --uri content://com.android.contacts/raw_contacts --projection _id")))
+    sh(f"content insert --uri content://com.android.contacts/data --bind raw_contact_id:i:{raw} "
+       f"--bind mimetype:s:vnd.android.cursor.item/name --bind data1:s:{name}")
+    sh(f"content insert --uri content://com.android.contacts/data --bind raw_contact_id:i:{raw} "
+       f"--bind mimetype:s:vnd.android.cursor.item/phone_v2 --bind data1:s:{number} --bind data2:i:2")
 
 
 # --- calls -------------------------------------------------------------------------
@@ -601,12 +615,11 @@ def succession():
     return exact("_in_TestKept")
 
 
-def caller_id():
-    number, name = CALLER_ID
-    set_prefs(rules_other_numbers=True)
-    # The emulator has no caller ID; the name is written into the call log
-    # the way Google Phone writes it. For that to come first, the save at
-    # hang-up is turned off - the backup collector saves 5 s later.
+def logged_as(number, bind, name_part):
+    """A call dialled to [number] whose row in the call log is changed by
+    [bind] (content update's --bind) before it is saved, then exact(). For
+    the change to come first, the save at hang-up is turned off - the backup
+    collector saves 5 s later."""
     as_root(f"pm disable {PKG}/.capture.CallMonitorService")
     try:
         start = sh("date +%s").strip()
@@ -614,13 +627,41 @@ def caller_id():
         dial(number, ring_s=2, talk_s=4)
         wait_for(lambda: "Row" in sh(f"content query --uri content://call_log/calls --projection _id --where \"date>={start}000\""),
                  20, "the call log entry")
-        sh(f"content update --uri content://call_log/calls --bind 'name:s:{name}' --where 'date>={start}000'")
-        return exact(f"_out_{name}")
+        sh(f"content update --uri content://call_log/calls --bind '{bind}' --where 'date>={start}000'")
+        return exact(name_part)
     except Exception as e:
         # Before the finally: putting the service back restarts the daemon.
         raise RuntimeError(f"{e}\n{what_happened()}") from e
     finally:
         as_root(f"pm enable {PKG}/.capture.CallMonitorService")
+
+
+def caller_id():
+    number, name = CALLER_ID
+    set_prefs(rules_other_numbers=True)
+    # The emulator has no caller ID; the name is written into the call log
+    # the way Google Phone writes it.
+    return logged_as(number, f"name:s:{name}", f"_out_{name}")
+
+
+def number_names():
+    number, name = NUMBERED
+    add_contact(name, number)
+    set_prefs(rules_other_numbers=True, file_names="DATE_AND_NUMBER")
+    try:
+        sh("logcat -c")
+        # Dialled as a person dials it, without the +1: the call log keeps it
+        # so, and the name is to have the code.
+        dial(number, ring_s=2, talk_s=4)
+        here = exact(f"_out_+1{number}.ogg")
+        # The call's own country, as the call log has it, over the phone's: a
+        # call made in Ukraine, the emulator's network still saying US. No US
+        # number starts with 0, so only the log's UA gives this one its +380.
+        abroad = logged_as(UA_DIALLED, "countryiso:s:UA", f"_out_+380{UA_DIALLED[1:]}.ogg")
+        return f"{here}; {abroad}"
+    finally:
+        # The checks after this look for the caller in names.
+        set_prefs(file_names="DATE_AND_CALLER")
 
 
 GREETING = "/data/local/tmp/jemrec-test-greeting.pcm"
@@ -2199,7 +2240,7 @@ def self_test():
     return next(l.split("] ", 1)[1] for l in report.splitlines() if "PASS" in l)
 
 
-CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, self_test,
+CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, number_names, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, app_call, mode_switch, app_call_in_front, waveform,
           background_playback,
