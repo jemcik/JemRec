@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.recordings.DaemonFile
 
 /**
  * Messenger calls: which apps' calls are recorded. None until the user turns
@@ -60,7 +61,7 @@ object VoipApps {
 
     /** The app a daemon file came from, if it is a messenger call. */
     internal fun forRecfile(recfile: String): App? {
-        val pkg = recfile.substringAfter("_voip-", "").removeSuffix(".dat").ifEmpty { return null }
+        val pkg = DaemonFile.parse(recfile).messenger ?: return null
         return byPackage(pkg) ?: OTHER.copy(pkg = pkg)
     }
 
@@ -71,11 +72,7 @@ object VoipApps {
      * jemrec_rec_<ms>_in_voip-<pkg>.dat. Null where only the app's
      * notification can say - every other messenger.
      */
-    internal fun directionOf(recfile: String): Boolean? = when {
-        recfile.contains("_in_voip-") -> true
-        recfile.contains("_out_voip-") -> false
-        else -> null
-    }
+    internal fun directionOf(recfile: String): Boolean? = DaemonFile.parse(recfile).messengerIncoming
 
     /** "Viber", for a name's tag. */
     fun labelForTag(tag: String?): String? = (KNOWN + OTHER).firstOrNull { it.tag == tag }?.label

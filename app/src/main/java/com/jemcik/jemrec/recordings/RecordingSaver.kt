@@ -204,14 +204,15 @@ object RecordingSaver {
         // Named for when the CALL happened, taken from the daemon file, so a
         // recording collected late by the reconcile still carries the right
         // time rather than the time it was picked up.
-        val startedAt = Date(startMillis(recfile) ?: clock())
+        val file = DaemonFile.parse(recfile)
+        val startedAt = Date(file.start ?: clock())
 
         // A messenger call: not in the phone's call log, so none of what
         // follows applies - not the caller lookup, not the rules on whose
         // calls to keep (the app's own switch is the rule), not the ledger
         // the missed-call check reads.
         val messenger = VoipApps.forRecfile(recfile)
-        if (messenger != null) return saveMessenger(context, recfile, startedAt, messenger)
+        if (messenger != null) return saveMessenger(context, recfile, startedAt, messenger, file.messengerIncoming)
 
         // Who it was with - asked only when something needs to know: the
         // rules on whose calls to keep, or a file name with the caller in it.
@@ -231,9 +232,8 @@ object RecordingSaver {
         // the file with where the message starts - after the silent greeting -
         // or "none" when the caller left before the beep, or "fail" when the
         // greeting could not be played and the recorder hung up.
-        val messageStart = RecordingStore.messageStartMs(recfile)
-        if (messageStart != null && messageStart < 0) {
-            val failed = messageStart == RecordingStore.MESSAGE_FAILED
+        if (file.message == DaemonFile.Message.None || file.message == DaemonFile.Message.Failed) {
+            val failed = file.message == DaemonFile.Message.Failed
             Log.i(TAG, "save: $recfile - " + if (failed) "the greeting could not be played" else "the caller hung up during the greeting; nothing to keep")
             daemon.delete(context, recfile)
             // Accounted for, either way: no missed-call report on top. A
@@ -313,7 +313,8 @@ object RecordingSaver {
                 // over, from just before they took it, or the caller's first
                 // words if earlier (AnswerMachine.takenStart) - an ordinary
                 // recording.
-                val trimFrom = messageStart ?: RecordingStore.takenStartMs(recfile)
+                val messageStart = (file.message as? DaemonFile.Message.Starts)?.ms
+                val trimFrom = messageStart ?: file.takenFromMs
                 // A message is the answered call's alone. A call answered
                 // during it - a waiting one, which takes the message over -
                 // has its first moments in the file, recorded before the
@@ -385,14 +386,15 @@ object RecordingSaver {
 
     /** A messenger call, named for its app and - when its notification said
      *  - its caller and direction; the direction the recorder's, where it
-     *  knew (VoipApps.directionOf). See VoipCallNotes. */
+     *  knew ([incoming], from its file's name). See VoipCallNotes. */
     private suspend fun saveMessenger(
         context: Context,
         recfile: String,
         startedAt: Date,
         app: VoipApps.App,
+        incoming: Boolean?,
     ): Outcome {
-        val note = VoipCallNotes.find(context, app.pkg, startedAt.time, VoipApps.directionOf(recfile))
+        val note = VoipCallNotes.find(context, app.pkg, startedAt.time, incoming)
         val format = FileNames.format(context)
         val name = FileNames.buildVoip(format, startedAt.time, note?.incoming, app.tag, note?.name)
         val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), ledger = false) {
@@ -818,8 +820,7 @@ object RecordingSaver {
         return now
     }
 
-    /** The call's start time, from the millis in jemrec_rec_<millis>_<in|out>.dat. */
-    internal fun startMillis(recfile: String): Long? =
-        recfile.substringAfter("jemrec_rec_", "").substringBefore('_', "").toLongOrNull()
+    /** The call's start time, from the recorder's name for its file. */
+    internal fun startMillis(recfile: String): Long? = DaemonFile.parse(recfile).start
 
 }
