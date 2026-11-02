@@ -80,6 +80,10 @@ class CallMonitorService : Service() {
     /** Whether the service may stand down: one rule, finishIfIdle's. */
     private val standDown = StandDown<Job> { it.isCompleted }
 
+    /** The last start this service took in: what a stop is made for. */
+    @Volatile
+    private var lastStart = 0
+
     /**
      * Whether a call is actually happening.
      *
@@ -161,6 +165,18 @@ class CallMonitorService : Service() {
         // service is a startForegroundService.
         startForegroundCompat()
 
+        // The changes this start makes, made under the lock every look at
+        // whether to stand down takes (finishIfIdle): a look sees them
+        // whole, or not at all, and the start's id with them.
+        standDown.holding {
+            lastStart = startId
+            dispatch(intent, fromDaemon)
+        }
+        return START_NOT_STICKY
+    }
+
+    /** What a start asks for, [fromDaemon] or not (see onStartCommand). */
+    private fun dispatch(intent: Intent?, fromDaemon: Boolean) {
         when (intent?.action) {
             // EVERY ACTION BELOW IS GUARDED. This service is exported, so any
             // installed app can send it any of them; the guard is the only
@@ -190,7 +206,7 @@ class CallMonitorService : Service() {
                 if (!fromDaemon) {
                     Log.w(TAG, "monitor: ${intent.action} with a bad token, ignoring")
                     finishIfIdle()
-                    return START_NOT_STICKY
+                    return
                 }
                 when (intent.action) {
                     ACTION_CALL_STARTED -> onCallStarted(
@@ -238,7 +254,7 @@ class CallMonitorService : Service() {
                 if (ticket == null || intent.getStringExtra(EXTRA_TICKET) != ticket) {
                     Log.w(TAG, "monitor: ${intent.action} without this message's ticket, ignoring")
                     finishIfIdle()
-                    return START_NOT_STICKY
+                    return
                 }
                 val talk = intent.action == ACTION_TALK
                 scope.launch {
@@ -256,7 +272,7 @@ class CallMonitorService : Service() {
                 if (!RecordPrompt.claim(this, intent.getStringExtra(EXTRA_TICKET))) {
                     Log.w(TAG, "monitor: ${intent.action} without this prompt's ticket, ignoring")
                     finishIfIdle()
-                    return START_NOT_STICKY
+                    return
                 }
                 if (intent.action == ACTION_RECORD_NOW) recordNow() else decline()
             }
@@ -270,7 +286,6 @@ class CallMonitorService : Service() {
                 finishIfIdle()
             }
         }
-        return START_NOT_STICKY
     }
 
     /** The daemon saw a USB cable go in or come out, seconds before adbd -
@@ -493,15 +508,20 @@ class CallMonitorService : Service() {
      * under would wait for the next thaw.
      *
      * The rule itself, and why an ending job is marked before it looks at
-     * the others, is StandDown's. Only the mark and the look share its lock:
-     * stopSelf is a call into the system, and the main thread takes this
-     * lock too - for a call that ends with nothing recorded, Not now, and
-     * every start it turns away.
+     * the others, is StandDown's. The stop is for the last start the service
+     * took in when it looked: Android stops a service only for its latest
+     * start, so a stop decided on a job's thread before a new wake - a call
+     * starting as a save ends - is refused once that wake has come, where a
+     * plain stopSelf took the service down under the new call. Every start's
+     * changes share the look's lock (onStartCommand), so a look sees a start
+     * whole, its id with it, or not at all. The stop itself is outside the
+     * lock: it is a call into the system.
      */
     private fun finishIfIdle(ending: Job? = null): Boolean {
-        val idle = standDown.idle(ending, { callInProgress }) { listOf(cableWatch, warningJob) + saves }
-        if (idle) stopSelf()
-        return idle
+        val start = standDown.holding {
+            lastStart.takeIf { standDown.idle(ending, { callInProgress }) { listOf(cableWatch, warningJob) + saves } }
+        } ?: return false
+        return stopSelfResult(start)
     }
 
     private fun startForegroundCompat() {

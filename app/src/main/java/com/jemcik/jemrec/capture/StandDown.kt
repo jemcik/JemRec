@@ -19,6 +19,10 @@ internal class StandDown<J : Any>(private val done: (J) -> Boolean) {
     /** Jobs past their look at the others, still returning. */
     private val ending = mutableSetOf<J>()
 
+    /** [block] under the lock every look takes: what it changes, a look
+     *  sees whole or not at all. */
+    inline fun <T> holding(block: () -> T): T = synchronized(this, block)
+
     /**
      * Whether nothing keeps the service: [end], the job asking as it ends, if
      * one is; [callUp] and [jobs] read under the lock, after [end] is marked.

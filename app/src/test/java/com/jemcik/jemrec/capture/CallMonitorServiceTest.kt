@@ -794,6 +794,37 @@ class CallMonitorServiceTest {
         eventually("the service stands down after the warning") { stopped }
     }
 
+    // ---- which start a stop is for ------------------------------------------
+
+    /** The start a stop was made for (stopSelfResult): Android stops a
+     *  service only for its latest start, so one made for an older start
+     *  - decided before a new wake came - is refused. */
+    private val stoppedFor get() = shadowOf(service).stopSelfResultId
+
+    @Test fun aStartTurnedAwayStopsForItself() {
+        start(null)
+        assertTrue(stopped)
+        assertEquals(startId, stoppedFor)
+    }
+
+    @Test fun aSaveStopsForTheLastStartTheServiceTookInBeforeItLooked() {
+        val log = heldCallLog(start, incoming = true)
+        try {
+            val file = recfile(start, true)
+            wake("CALL_ENDED", file, incoming = true)
+            log.awaitHeld()
+            // Two starts while it saves, each turned away: the save still runs.
+            stray(null)
+            stray(null)
+            assertFalse(stopped)
+            log.release()
+            eventually("the service stands down") { stopped }
+            assertEquals(startId, stoppedFor)
+        } finally {
+            log.release()
+        }
+    }
+
     // ---- with a recorder that answers (the saver's seams) --------------------
 
     /** The recorder holding [file] as [bytes], through the saver's seams
