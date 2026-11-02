@@ -29,6 +29,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The app's presence during a call: a foreground service that exists for the
@@ -65,8 +66,16 @@ import java.util.Date
 class CallMonitorService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
-    @Volatile
-    private var recording: Job? = null
+
+    /**
+     * Every save, and every Record tap's start, each counted until it
+     * completes. One field held only the newest, and a newer save - a
+     * second call's that ended at once, or the same end come twice and
+     * found Busy - made the service forget the older one still running:
+     * the newer one's end stood the service down, and onDestroy cancelled
+     * the older save half way.
+     */
+    private val saves: MutableSet<Job> = ConcurrentHashMap.newKeySet()
 
     /** Whether the service may stand down: one rule, finishIfIdle's. */
     private val standDown = StandDown<Job> { it.isCompleted }
@@ -300,7 +309,7 @@ class CallMonitorService : Service() {
                 // finishIfIdle first, whatever else is up: it is where this
                 // job is marked as ending for the others' checks.
                 if (!finishIfIdle(ending = coroutineContext[Job]) &&
-                    (callInProgress || recording?.isCompleted == false)
+                    (callInProgress || saves.any { !it.isCompleted })
                 ) {
                     runCatching { startForegroundCompat() }
                 }
@@ -315,7 +324,7 @@ class CallMonitorService : Service() {
             val name = startOnDemand(this@CallMonitorService)
             if (name.isNullOrBlank()) {
                 Log.w(TAG, "monitor: on-demand start did not take (call over?)")
-                // Not counting itself: it is the job in recording, and still
+                // Not counting itself: it is one of the saves, and still
                 // running, so a plain finishIfIdle never stood the service
                 // down with no call up - "Call in progress" stayed.
                 finishIfIdle(ending = coroutineContext[Job])
@@ -336,9 +345,8 @@ class CallMonitorService : Service() {
 
     override fun onDestroy() {
         running = false
-        recording?.cancel()
-        recording = null
         scope.cancel()
+        saves.clear()
         super.onDestroy()
     }
 
@@ -424,7 +432,7 @@ class CallMonitorService : Service() {
             Log.i(TAG, "monitor: recorder is off, discarding $recfile")
             launchRecording {
                 RecordingSaver.deleteFromRecorder(this@CallMonitorService, recfile)
-                doneWith(coroutineContext[Job])
+                finishIfIdle(ending = coroutineContext[Job])
             }
             return
         }
@@ -434,40 +442,33 @@ class CallMonitorService : Service() {
         launchRecording {
             saveAndReport(recfile, incoming)
             Log.i(TAG, "monitor: recording handled")
-            doneWith(coroutineContext[Job])
+            // Stand down - unless another call has started since, or another
+            // save still runs. A plain stopSelf here ended the service under
+            // the next call: its notification went, and its save was
+            // cancelled half way, when the user redialled within this save's
+            // few seconds. Nor under a cable watch, which may be half way
+            // through starting the recorder again, nor under the
+            // background-kill warning.
+            finishIfIdle(ending = coroutineContext[Job])
         }
     }
 
     /**
-     * [block] as the job in [recording], put there before it runs, so that
-     * the job finds itself there when it ends. Launched straight into the
-     * field, a save that ended at once - nothing answering, or that file
-     * being saved already, as when the recorder's end of a call comes twice -
-     * reached doneWith before this thread had stored it, found the job before
-     * it there, and left the service up after the call (CI, 2026-11-01; made
-     * certain by a 300 ms pause between the launch and the store). Stored but
-     * not yet started, a job is not active: what asks whether one is still
-     * running asks whether it has completed.
+     * [block] as one of the [saves], put there before it runs, so that the
+     * job is counted when it looks at the others as it ends. Launched first
+     * and stored after, a save that ended at once - nothing answering, or
+     * that file being saved already, as when the recorder's end of a call
+     * comes twice - looked before this thread had stored it and left the
+     * service up after the call (CI, 2026-11-01; made certain by a 300 ms
+     * pause between the launch and the store). Stored but not yet started, a
+     * job is not active: what asks whether one is still running asks whether
+     * it has completed.
      */
     private fun launchRecording(block: suspend CoroutineScope.() -> Unit) {
         val job = scope.launch(start = CoroutineStart.LAZY, block = block)
-        recording = job
+        saves.removeAll { it.isCompleted }
+        saves += job
         job.start()
-    }
-
-    /**
-     * A save is done: stand down - unless another call has started since, or
-     * its save is now the one running. A plain stopSelf here ended the service
-     * under the next call: its notification went, and its save was cancelled
-     * half way, when the user redialled within this save's few seconds.
-     * Nor under a cable watch, which may be half way through starting the
-     * recorder again, nor under the background-kill warning: finishIfIdle's
-     * rule, which every job's end goes through but two - a save another one
-     * has replaced (the newer one decides) and a Record that started (its
-     * call's end decides).
-     */
-    private fun doneWith(job: Job?) {
-        if (recording === job) finishIfIdle(ending = job)
     }
 
     /**
@@ -498,7 +499,7 @@ class CallMonitorService : Service() {
      * every start it turns away.
      */
     private fun finishIfIdle(ending: Job? = null): Boolean {
-        val idle = standDown.idle(ending, { callInProgress }) { listOf(recording, cableWatch, warningJob) }
+        val idle = standDown.idle(ending, { callInProgress }) { listOf(cableWatch, warningJob) + saves }
         if (idle) stopSelf()
         return idle
     }

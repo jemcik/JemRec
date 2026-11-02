@@ -624,12 +624,37 @@ class CallMonitorServiceTest {
             awaitLog("monitor: $file is being saved by the reconcile")
             awaitLog("monitor: recording handled")
             assertNull("not a failure to report", notRecorded())
-            // The newer save is the current one, and it is done: the service
-            // stands down with the first still running. On a phone onDestroy
-            // would then cancel that save half way (inferred, not measured).
-            eventually("the service stands down") { stopped }
+            // The first save still runs, and the service stays for it:
+            // stopped, its onDestroy would cancel that save half way.
+            settle()
+            assertFalse(stopped)
             log.release()
             eventually("the first save") { logs().count { it == "monitor: recording handled" } == 2 }
+            eventually("the service stands down") { stopped }
+        } finally {
+            log.release()
+        }
+    }
+
+    @Test fun aShortSecondCallsSaveDoesNotStopTheServiceUnderTheFirsts() {
+        val log = heldCallLog(start, incoming = true)
+        try {
+            val first = recfile(start, true)
+            wake("CALL_STARTED", first, incoming = true)
+            wake("CALL_ENDED", first, incoming = true)
+            log.awaitHeld()
+            // A second call, over before the first is saved; its save ends at
+            // once (saved before, by the ledger).
+            val second = recfile(start + 30_000, false)
+            CallLedger.noteRecording(context, start + 30_000, false, 5)
+            wake("CALL_STARTED", second, incoming = false)
+            wake("CALL_ENDED", second, incoming = false)
+            awaitLog("monitor: $second was collected already")
+            settle()
+            assertFalse("the first save still runs", stopped)
+            log.release()
+            eventually("the first save") { logs().count { it == "monitor: recording handled" } == 2 }
+            eventually("the service stands down") { stopped }
         } finally {
             log.release()
         }
