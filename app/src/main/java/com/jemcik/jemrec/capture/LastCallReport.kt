@@ -2,6 +2,9 @@ package com.jemcik.jemrec.capture
 
 import android.content.Context
 import android.os.Build
+import com.jemcik.jemrec.answering.AnsweringMachine
+import com.jemcik.jemrec.calls.CallTracking
+import com.jemcik.jemrec.calls.VoipApps
 
 /**
  * Copy a report, on Diagnostics: this phone, the settings that decide how a

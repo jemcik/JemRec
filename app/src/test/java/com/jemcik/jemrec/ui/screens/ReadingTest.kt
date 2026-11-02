@@ -4,8 +4,8 @@ import android.net.Uri
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import com.jemcik.jemrec.capture.AnsweringMachine
-import com.jemcik.jemrec.capture.CallHistory
+import com.jemcik.jemrec.answering.AnsweringMachine
+import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.capture.Recordings
 import com.jemcik.jemrec.capture.Waveforms

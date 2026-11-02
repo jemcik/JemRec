@@ -29,9 +29,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.jemcik.jemrec.capture.CallHistory
-import com.jemcik.jemrec.capture.CallHistory.Kind
-import com.jemcik.jemrec.capture.CallHistory.Status
+import com.jemcik.jemrec.calls.CallHistory
+import com.jemcik.jemrec.calls.CallHistory.Kind
+import com.jemcik.jemrec.calls.CallHistory.Status
 import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.memoColors

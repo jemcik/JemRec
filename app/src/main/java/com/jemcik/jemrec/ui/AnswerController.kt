@@ -3,13 +3,13 @@ package com.jemcik.jemrec.ui
 import android.app.Application
 import android.media.AudioTrack
 import android.util.Log
-import com.jemcik.jemrec.capture.AnswerConditions
-import com.jemcik.jemrec.capture.AnswerDiagnostics
-import com.jemcik.jemrec.capture.AnsweringMachine
-import com.jemcik.jemrec.capture.CallTracking
-import com.jemcik.jemrec.capture.EmergencyPause
+import com.jemcik.jemrec.answering.AnswerConditions
+import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.answering.AnsweringMachine
+import com.jemcik.jemrec.calls.CallTracking
+import com.jemcik.jemrec.answering.EmergencyPause
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.capture.Greeting
+import com.jemcik.jemrec.answering.Greeting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -265,12 +265,8 @@ class AnswerController(
             } else {
                 AnswerDiagnostics.rememberStageOne(app, fields)
                 val stage = AnswerDiagnostics.stageOne(fields)
-                // Only the call-screening route here: that is the one to try.
-                // Not on a setup that could not be read: that is no "no".
-                if (!stage.inCallMusic && !stage.audioUnread && stage.screening &&
-                    AnsweringMachine.route(app) != AnsweringMachine.ROUTE_SCREENING
-                ) {
-                    AnsweringMachine.setRoute(app, AnsweringMachine.ROUTE_SCREENING)
+                AnswerDiagnostics.routeAfterChecks(stage, AnsweringMachine.route(app))?.let {
+                    AnsweringMachine.setRoute(app, it)
                     push()
                 }
                 _state.update { it.copy(stageOne = stage) }
@@ -381,28 +377,12 @@ class AnswerController(
         _state.update { it.copy(askHeard = null, results = AnswerDiagnostics.results(app)) }
     }
 
-    /**
-     * The route just failed on a [type] of call is not the only one: try the
-     * other next time - unless this one passed on another call type, which
-     * one route for every call would break; and back again if that fails
-     * too. On the Honor the screening route reached nobody
-     * (docs/ARCHITECTURE.md).
-     */
+    /** The route just failed on a [type] of call: the other one next time,
+     *  where AnswerDiagnostics.routeAfterFailure says so. */
     private fun tryTheOtherRoute(type: String) {
-        val route = AnsweringMachine.route(app)
-        val passedElsewhere = AnswerDiagnostics.results(app).any { (other, v) ->
-            other != type && (v == AnswerDiagnostics.Verdict.WORKS || v == AnswerDiagnostics.Verdict.LIKELY)
-        }
-        val stage = _state.value.stageOne
-        val other = when {
-            passedElsewhere -> null
-            route == AnsweringMachine.ROUTE_MUSIC && stage?.screening == true -> AnsweringMachine.ROUTE_SCREENING
-            // Back as well where the checks could not read the audio setup:
-            // no "no" to in-call music, as for the switch (StageOne.possible).
-            route == AnsweringMachine.ROUTE_SCREENING && (stage?.inCallMusic == true || stage?.audioUnread == true) ->
-                AnsweringMachine.ROUTE_MUSIC
-            else -> null
-        } ?: return
+        val other = AnswerDiagnostics.routeAfterFailure(
+            AnsweringMachine.route(app), _state.value.stageOne, AnswerDiagnostics.results(app), type,
+        ) ?: return
         AnsweringMachine.setRoute(app, other)
         push()
         say("the greeting did not reach the call; the next test tries the other way")

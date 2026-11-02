@@ -12,7 +12,15 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.jemcik.jemrec.MainActivity
+import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.calls.CallLedger
+import com.jemcik.jemrec.calls.RecordPrompt
+import com.jemcik.jemrec.recordings.AfterSave
+import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.recordings.react
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +29,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The app's presence during a call: a foreground service that exists for the
@@ -56,13 +65,24 @@ import java.util.Date
  */
 class CallMonitorService : Service() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    @Volatile
-    private var recording: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
-    /** Jobs past their last look at the others, still returning. Guarded by
-     *  itself, which is finishIfIdle's lock. */
-    private val ended = mutableSetOf<Job>()
+    /**
+     * Every save, and every Record tap's start, each counted until it
+     * completes. One field held only the newest, and a newer save - a
+     * second call's that ended at once, or the same end come twice and
+     * found Busy - made the service forget the older one still running:
+     * the newer one's end stood the service down, and onDestroy cancelled
+     * the older save half way.
+     */
+    private val saves: MutableSet<Job> = ConcurrentHashMap.newKeySet()
+
+    /** Whether the service may stand down: one rule, finishIfIdle's. */
+    private val standDown = StandDown<Job> { it.isCompleted }
+
+    /** The last start this service took in: what a stop is made for. */
+    @Volatile
+    private var lastStart = 0
 
     /**
      * Whether a call is actually happening.
@@ -75,7 +95,17 @@ class CallMonitorService : Service() {
     @Volatile
     private var callInProgress = false
 
-    /** Written from the save coroutine as well as the main thread. */
+    /** Calls ended so far: the recorder's answer to Record or Talk to them
+     *  that comes after its call's end is not taken for a call still up
+     *  (ifTheCallIsUp). Under standDown's lock. */
+    private var callEnds = 0
+
+    /** What the notification says of the call: whether it is recorded, and
+     *  whether a save failed. These two, [callInProgress] and
+     *  [messageTicket] are written on the main thread and on the service's
+     *  jobs - each write under standDown's lock, so a look at whether to
+     *  stand down, or a failure's check for a call up, never sees a start's
+     *  or an answer's change half made. */
     @Volatile
     private var recordingNow = false
     @Volatile
@@ -145,6 +175,18 @@ class CallMonitorService : Service() {
         // service is a startForegroundService.
         startForegroundCompat()
 
+        // The changes this start makes, made under the lock every look at
+        // whether to stand down takes (finishIfIdle): a look sees them
+        // whole, or not at all, and the start's id with them.
+        standDown.holding {
+            lastStart = startId
+            dispatch(intent, fromDaemon)
+        }
+        return START_NOT_STICKY
+    }
+
+    /** What a start asks for, [fromDaemon] or not (see onStartCommand). */
+    private fun dispatch(intent: Intent?, fromDaemon: Boolean) {
         when (intent?.action) {
             // EVERY ACTION BELOW IS GUARDED. This service is exported, so any
             // installed app can send it any of them; the guard is the only
@@ -174,7 +216,7 @@ class CallMonitorService : Service() {
                 if (!fromDaemon) {
                     Log.w(TAG, "monitor: ${intent.action} with a bad token, ignoring")
                     finishIfIdle()
-                    return START_NOT_STICKY
+                    return
                 }
                 when (intent.action) {
                     ACTION_CALL_STARTED -> onCallStarted(
@@ -222,13 +264,14 @@ class CallMonitorService : Service() {
                 if (ticket == null || intent.getStringExtra(EXTRA_TICKET) != ticket) {
                     Log.w(TAG, "monitor: ${intent.action} without this message's ticket, ignoring")
                     finishIfIdle()
-                    return START_NOT_STICKY
+                    return
                 }
                 val talk = intent.action == ACTION_TALK
+                val ends = callEnds
                 scope.launch {
-                    val ok = CaptureDaemon.handOver(this@CallMonitorService, talk)
+                    val ok = handOver(this@CallMonitorService, talk)
                     Log.i(TAG, "monitor: ${if (talk) "talk to them" else "hang up"} -> $ok")
-                    if (talk && ok) messageTaken()
+                    if (talk && ok && ifTheCallIsUp(ends, ::messageTaken)) startForegroundCompat()
                 }
             }
 
@@ -240,7 +283,7 @@ class CallMonitorService : Service() {
                 if (!RecordPrompt.claim(this, intent.getStringExtra(EXTRA_TICKET))) {
                     Log.w(TAG, "monitor: ${intent.action} without this prompt's ticket, ignoring")
                     finishIfIdle()
-                    return START_NOT_STICKY
+                    return
                 }
                 if (intent.action == ACTION_RECORD_NOW) recordNow() else decline()
             }
@@ -254,7 +297,6 @@ class CallMonitorService : Service() {
                 finishIfIdle()
             }
         }
-        return START_NOT_STICKY
     }
 
     /** The daemon saw a USB cable go in or come out, seconds before adbd -
@@ -293,7 +335,7 @@ class CallMonitorService : Service() {
                 // finishIfIdle first, whatever else is up: it is where this
                 // job is marked as ending for the others' checks.
                 if (!finishIfIdle(ending = coroutineContext[Job]) &&
-                    (callInProgress || recording?.isCompleted == false)
+                    (callInProgress || saves.any { !it.isCompleted })
                 ) {
                     runCatching { startForegroundCompat() }
                 }
@@ -301,23 +343,50 @@ class CallMonitorService : Service() {
         }
     }
 
-    /** The user tapped Record on the start-of-call prompt (on-demand). */
+    /**
+     * The user tapped Record on the start-of-call prompt (on-demand). Once
+     * the recorder has started, a call is up - this service may never have
+     * seen its start: the prompt's ticket outlives the process - and only
+     * its end, as the recorder sends it after every call it recorded, or
+     * STOP, stands the service down, as for any call. Before, nothing counted
+     * it, and the next look at whether to stand down - a stray start, a
+     * cable watch's end - did, with "Recording call" going as it recorded.
+     * Unless that end came while the recorder was asked: the call is over,
+     * and its end has seen to the rest.
+     */
     private fun recordNow() {
         RecordPrompt.dismiss(this)
+        val ends = callEnds
         launchRecording {
-            val name = CaptureDaemon.startOnDemand(this@CallMonitorService)
+            val name = startOnDemand(this@CallMonitorService)
             if (name.isNullOrBlank()) {
                 Log.w(TAG, "monitor: on-demand start did not take (call over?)")
-                // Not counting itself: it is the job in recording, and still
-                // running, so a plain finishIfIdle never stood the service
-                // down with no call up - "Call in progress" stayed.
-                finishIfIdle(ending = coroutineContext[Job])
             } else {
                 Log.i(TAG, "monitor: on-demand recording started -> $name")
-                recordingNow = true
-                startForegroundCompat()
+                val up = ifTheCallIsUp(ends) {
+                    callInProgress = true
+                    recordingNow = true
+                    // As at any call's start: a failure told of is the call
+                    // before's.
+                    notRecording = false
+                }
+                if (up) startForegroundCompat()
             }
+            // Not counting itself: it is one of the saves, and still running,
+            // so a plain finishIfIdle never stood the service down with no
+            // call up - "Call in progress" stayed.
+            finishIfIdle(ending = coroutineContext[Job])
         }
+    }
+
+    /**
+     * [change], under the lock the stand-down rule takes, if no call has
+     * ended since [ends] - the count when the recorder was asked - and
+     * whether it was made. The recorder's answer to Record or Talk to them
+     * can come after the call's end, and is then no answer for a call up.
+     */
+    private fun ifTheCallIsUp(ends: Int, change: () -> Unit): Boolean = standDown.holding {
+        (callEnds == ends).also { up -> if (up) change() }
     }
 
     /** The user tapped Not now: nothing was ever recorded, so nothing to do. */
@@ -329,14 +398,15 @@ class CallMonitorService : Service() {
 
     override fun onDestroy() {
         running = false
-        recording?.cancel()
-        recording = null
         scope.cancel()
+        saves.clear()
         super.onDestroy()
     }
 
     private fun onCallStarted(recfile: String?, incoming: Boolean, app: String?) {
         callInProgress = true
+        // A failure told of is the call before's.
+        notRecording = false
         // A message's own wake is MESSAGE_STARTED. This one, for a call the
         // answering machine took, is Ask first's after a takeover: the
         // message is over, and the prompt asks about the rest.
@@ -363,6 +433,7 @@ class CallMonitorService : Service() {
     private fun onMessageStarted(test: Boolean) {
         Log.i(TAG, "monitor: the answering machine is taking a message${if (test) " (test)" else ""}")
         callInProgress = true
+        notRecording = false
         testing = test
         messageTicket = java.util.UUID.randomUUID().toString()
         startForegroundCompat()
@@ -386,7 +457,9 @@ class CallMonitorService : Service() {
     private fun onMessageTaken() {
         Log.i(TAG, "monitor: the call was taken over")
         callInProgress = true
+        notRecording = false
         messageTaken()
+        startForegroundCompat()
     }
 
     /** The message is the user's call now: recorded on, in Record every
@@ -395,11 +468,11 @@ class CallMonitorService : Service() {
     private fun messageTaken() {
         messageTicket = null
         recordingNow = RecordingMode.of(this) == RecordingMode.AUTOMATIC
-        startForegroundCompat()
     }
 
     private fun onCallEnded(recfile: String?, incoming: Boolean) {
         Log.i(TAG, "monitor: call ended, recfile=$recfile")
+        callEnds++
         callInProgress = false
         recordingNow = false
         messageTicket = null
@@ -416,8 +489,8 @@ class CallMonitorService : Service() {
         if (!RecorderSwitch.isOn(this)) {
             Log.i(TAG, "monitor: recorder is off, discarding $recfile")
             launchRecording {
-                CaptureDaemon.deleteRecording(this@CallMonitorService, recfile)
-                doneWith(coroutineContext[Job])
+                RecordingSaver.deleteFromRecorder(this@CallMonitorService, recfile)
+                finishIfIdle(ending = coroutineContext[Job])
             }
             return
         }
@@ -427,92 +500,45 @@ class CallMonitorService : Service() {
         launchRecording {
             saveAndReport(recfile, incoming)
             Log.i(TAG, "monitor: recording handled")
-            doneWith(coroutineContext[Job])
+            // Stand down - unless another call has started since, or another
+            // save still runs. A plain stopSelf here ended the service under
+            // the next call: its notification went, and its save was
+            // cancelled half way, when the user redialled within this save's
+            // few seconds. Nor under a cable watch, which may be half way
+            // through starting the recorder again, nor under the
+            // background-kill warning.
+            finishIfIdle(ending = coroutineContext[Job])
         }
     }
 
     /**
-     * [block] as the job in [recording], put there before it runs, so that
-     * the job finds itself there when it ends. Launched straight into the
-     * field, a save that ended at once - nothing answering, or that file
-     * being saved already, as when the recorder's end of a call comes twice -
-     * reached doneWith before this thread had stored it, found the job before
-     * it there, and left the service up after the call (CI, 2026-11-01; made
-     * certain by a 300 ms pause between the launch and the store). Stored but
-     * not yet started, a job is not active: what asks whether one is still
-     * running asks whether it has completed.
+     * [block] as one of the [saves], put there before it runs, so that the
+     * job is counted when it looks at the others as it ends. Launched first
+     * and stored after, a save that ended at once - nothing answering, or
+     * that file being saved already, as when the recorder's end of a call
+     * comes twice - looked before this thread had stored it and left the
+     * service up after the call (CI, 2026-11-01; made certain by a 300 ms
+     * pause between the launch and the store). Stored but not yet started, a
+     * job is not active: what asks whether one is still running asks whether
+     * it has completed.
      */
     private fun launchRecording(block: suspend CoroutineScope.() -> Unit) {
         val job = scope.launch(start = CoroutineStart.LAZY, block = block)
-        recording = job
+        saves.removeAll { it.isCompleted }
+        saves += job
         job.start()
-    }
-
-    /**
-     * A save is done: stand down - unless another call has started since, or
-     * its save is now the one running. A plain stopSelf here ended the service
-     * under the next call: its notification went, and its save was cancelled
-     * half way, when the user redialled within this save's few seconds.
-     * Nor under a cable watch, which may be half way through starting the
-     * recorder again, nor under the background-kill warning: finishIfIdle's
-     * rule, which every job's end goes through but two - a save another one
-     * has replaced (the newer one decides) and a Record that started (its
-     * call's end decides).
-     */
-    private fun doneWith(job: Job?) {
-        if (recording === job) finishIfIdle(ending = job)
     }
 
     /**
      * Fetch the finished recording from the daemon, mux it, and speak up only if
      * it could not be saved. The fetch-and-mux itself lives in RecordingSaver,
-     * shared with the startup reconcile; this adds the one thing that is the
-     * service's job - telling the user when a call went unsaved.
+     * shared with the startup reconcile, and what follows each outcome is one
+     * table for both (AfterSave); this adds the one thing that is the
+     * service's job - its own notification saying when a call went unsaved.
      */
     private suspend fun saveAndReport(recfile: String, incoming: Boolean) {
-        when (val outcome = RecordingSaver.save(this, recfile, incoming)) {
-            is RecordingSaver.Outcome.Saved -> {
-                Log.i(TAG, "monitor: saved $recfile")
-                // While this service still holds the foreground: the check
-                // decodes the file, and a dormant app might not get the time.
-                // The saved part's own call - with call waiting, the last of
-                // them - not the recording's.
-                runCatching { AfterCall.saved(this, outcome, outcome.incoming, outcome.startMillis) }
-                    .onFailure { Log.w(TAG, "monitor: after-call notice failed", it) }
-                // And while the daemon is plainly reachable, whether any
-                // earlier call went by unrecorded.
-                runCatching { MissedCalls.check(this) }
-                    .onFailure { Log.w(TAG, "monitor: missed-call check failed", it) }
-            }
-            // The reconcile got there first, or has it now. Either way the
-            // recording is being kept, and this is not a failure to report.
-            RecordingSaver.Outcome.Gone ->
-                Log.i(TAG, "monitor: $recfile was collected already")
-            RecordingSaver.Outcome.Busy ->
-                Log.i(TAG, "monitor: $recfile is being saved by the reconcile")
-            // The user's rules on whose calls to keep left this one out.
-            RecordingSaver.Outcome.Skipped ->
-                Log.i(TAG, "monitor: $recfile was left out by the rules")
-            // Only ringing: nobody answered.
-            RecordingSaver.Outcome.NotAnswered ->
-                Log.i(TAG, "monitor: $recfile was never answered")
-            // The answering machine answered; the caller left before the beep.
-            RecordingSaver.Outcome.GreetingHangUp ->
-                Log.i(TAG, "monitor: $recfile - the caller hung up during the greeting")
-            // Every answered call would end this way until it is put right.
-            RecordingSaver.Outcome.GreetingFailed -> reportNotRecorded(GREETING_FAILED)
-            RecordingSaver.Outcome.Empty -> {
-                reportNotRecorded(
-                    "No call audio came through. Some phones do not allow calls to be recorded.",
-                )
-                // Told now, so the missed-call check must not say it again.
-                // Here, where the telling is: a recording collected later
-                // is left to that check.
-                RecordingSaver.startMillis(recfile)?.let { CallLedger.noteRecording(this, it, incoming, 0) }
-            }
-            is RecordingSaver.Outcome.Failed ->
-                reportNotRecorded(outcome.reason)
-        }
+        val outcome = RecordingSaver.save(this, recfile, incoming)
+        AfterSave.react(this, outcome, recfile, incoming, AfterSave.Collector.HANG_UP, tell = ::reportNotRecorded)
     }
 
     /**
@@ -524,24 +550,23 @@ class CallMonitorService : Service() {
      * after its service ended (measured 2026-10-25), so a warning stopped
      * under would wait for the next thaw.
      *
-     * One at a time, and an ending job is marked as such before it looks at
-     * the others: two jobs ending at once - a save and the warning, say - each
-     * saw the other still running, and neither stopped the service (made
-     * certain by a 1.5 s pause after a save's own check). Now the second of
-     * the two finds the first marked, and stops it. Only the mark and the
-     * look share the lock: stopSelf is a call into the system, and the main
-     * thread takes this lock too - for a call that ends with nothing
-     * recorded, Not now, and every start it turns away.
+     * The rule itself, and why an ending job is marked before it looks at
+     * the others, is StandDown's. The stop is for the last start the service
+     * took in when it looked: Android stops a service only for its latest
+     * start, so a stop decided on a job's thread before a new wake - a call
+     * starting as a save ends - is refused once that wake has come, where a
+     * plain stopSelf took the service down under the new call. Every start's
+     * changes share the look's lock (onStartCommand), so a look sees a start
+     * whole, its id with it, or not at all. A job's stop is made outside the
+     * lock, as a call into the system; a start that stands the service down
+     * makes it still holding the lock its own changes were made under, on the
+     * main thread, where nothing waits for a job that wants the lock.
      */
     private fun finishIfIdle(ending: Job? = null): Boolean {
-        val idle = synchronized(ended) {
-            if (ending != null) ended += ending
-            ended.removeAll { it.isCompleted }
-            fun running(job: Job?) = job != null && !job.isCompleted && job !in ended
-            !running(recording) && !callInProgress && !running(cableWatch) && !running(warningJob)
-        }
-        if (idle) stopSelf()
-        return idle
+        val start = standDown.holding {
+            lastStart.takeIf { standDown.idle(ending, { callInProgress }) { listOf(cableWatch, warningJob) + saves } }
+        } ?: return false
+        return stopSelfResult(start)
     }
 
     private fun startForegroundCompat() {
@@ -549,42 +574,25 @@ class CallMonitorService : Service() {
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        // This service only exists during a call now, so the notification only
-        // says what it is doing about THIS call. "Recording call" while it
-        // records; "Call in progress" in the gap before recording starts, or
-        // while the mid-call prompt waits for an answer in on-demand mode.
-        val ticket = messageTicket
-        // Only the cable watch, no call: a check that ends in seconds when the
-        // cable changed nothing, and so the one notification here that waits.
-        val cableOnly = checkingRecorder && !callInProgress && !recordingNow && ticket == null
-        // The background-kill warning's wake, no call and no cable watch: over
-        // as soon as the warning is posted, so it waits, and is never seen.
-        val warningWake = warningOnly && !checkingRecorder && !callInProgress && !recordingNow && ticket == null
-        val title = when {
-            warningWake -> "Checking JemRec"
-            cableOnly -> "Checking the recorder"
-            ticket != null && testing -> "Testing the answering machine"
-            ticket != null -> "Taking a message"
-            recordingNow -> "Recording call"
-            notRecording -> "Not recording this call"
-            else -> "Call in progress"
-        }
-        val text = when {
-            warningWake -> "Making sure it keeps running"
-            cableOnly -> "A USB cable went in or came out"
-            ticket != null && testing -> "Your greeting is playing to the caller"
-            ticket != null -> "Your greeting is playing; your microphone is muted"
-            recordingNow -> "Saving this call"
-            notRecording -> "Tap to see why"
-            else -> "JemRec is handling this call"
-        }
+        // Each field read once: the save's coroutine writes some of them too.
+        val notice = CallNotice.of(
+            CallNotice.State(
+                callUp = callInProgress,
+                recording = recordingNow,
+                notRecording = notRecording,
+                messageTicket = messageTicket,
+                testing = testing,
+                checkingRecorder = checkingRecorder,
+                warningOnly = warningOnly,
+            ),
+        )
         val builder = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(text)
+            .setContentTitle(notice.title)
+            .setContentText(notice.text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(tap)
             .setOngoing(true)
-        if (ticket != null) {
+        notice.buttonTicket?.let { ticket ->
             builder.addAction(messageAction("Talk to them", ACTION_TALK, ticket))
                 .addAction(messageAction("Hang up", ACTION_HANG_UP, ticket))
         }
@@ -600,12 +608,13 @@ class CallMonitorService : Service() {
             // once: the person should know the moment their call is being
             // recorded, not ten seconds into it.
             //
-            // DEFERRED for the cable watch alone: a cable that changed
-            // nothing ends it within CableWatch.WATCH_MS, under those ten
-            // seconds, so a phone put on a charger shows nothing at all. One
-            // that took the recorder down takes longer, and then it shows.
+            // DEFERRED for the cable watch alone, and the background-kill
+            // warning's wake: a cable that changed nothing ends it within
+            // CableWatch.WATCH_MS, under those ten seconds, so a phone put on
+            // a charger shows nothing at all. One that took the recorder down
+            // takes longer, and then it shows.
             .setForegroundServiceBehavior(
-                if (cableOnly || warningWake) Notification.FOREGROUND_SERVICE_DEFERRED
+                if (notice.deferred) Notification.FOREGROUND_SERVICE_DEFERRED
                 else Notification.FOREGROUND_SERVICE_IMMEDIATE,
             )
             .build()
@@ -644,11 +653,21 @@ class CallMonitorService : Service() {
      * not be missed. Not ongoing, and dismissible - it is news, not status.
      */
     private fun reportNotRecorded(reason: String) {
-        // The ongoing notification must stop claiming otherwise.
-        recordingNow = false
-        notRecording = true
-        runCatching { startForegroundCompat() }
-        postNotRecorded(this, reason)
+        // The ongoing notification must stop claiming otherwise - for the
+        // call that ended. A call up now, the next one, says what is
+        // happening to it: a failure set on it said "Not recording this
+        // call" over a call being recorded, and went on saying it for the
+        // calls after.
+        val ended = standDown.holding {
+            (!callInProgress).also { ended ->
+                if (ended) {
+                    recordingNow = false
+                    notRecording = true
+                }
+            }
+        }
+        if (ended) runCatching { startForegroundCompat() }
+        AfterCall.postNotRecorded(this, reason)
     }
 
     private fun createChannel() {
@@ -694,26 +713,6 @@ class CallMonitorService : Service() {
         private val LEGACY_CHANNEL_IDS =
             listOf("jemrec.monitor", "jemrec.ask", "jemrec.pairing")
         private const val NOTIFICATION_ID = 1
-        private const val PROBLEM_NOTIFICATION_ID = 31
-
-        /** Why an answered call kept nothing: the greeting would not play. */
-        internal const val GREETING_FAILED = "The answering machine answered a call, but could not play your " +
-            "greeting, so it hung up. Run the test call in Settings, Answering machine."
-
-        /** "Call not recorded", with [reason] - from here at a hang-up, or
-         *  from a collection that found out later (RecordingSaver.reconcile). */
-        internal fun postNotRecorded(context: Context, reason: String) {
-            runCatching {
-                // A collection can get here before this service ever ran:
-                // AfterCall.problem makes sure the channel exists.
-                val tap = PendingIntent.getActivity(
-                    context, 0, Intent(context, MainActivity::class.java),
-                    PendingIntent.FLAG_IMMUTABLE,
-                )
-                val notification = AfterCall.problem(context, "Call not recorded", reason, tap).build()
-                AfterCall.notifyProblem(context, PROBLEM_NOTIFICATION_ID, notification, "monitor")
-            }.onFailure { Log.w(TAG, "monitor: could not report the failure", it) }
-        }
         const val ACTION_STOP = "com.jemcik.jemrec.STOP_MONITOR"
 
         /** The mid-call prompt's buttons, when automatic recording is off. */
@@ -759,6 +758,19 @@ class CallMonitorService : Service() {
         @Volatile
         var running = false
             private set
+
+        /** The thread the service's work runs on, and the recorder's answer
+         *  to a Record tap: today's own, and the tests' in the tests
+         *  (CallMonitorServiceTest). Read as a service is made. */
+        @VisibleForTesting
+        internal var dispatcher: CoroutineDispatcher = Dispatchers.IO
+
+        @VisibleForTesting
+        internal var startOnDemand: suspend (Context) -> String? = CaptureDaemon::startOnDemand
+
+        /** And to Talk to them (true) or Hang up. */
+        @VisibleForTesting
+        internal var handOver: suspend (Context, Boolean) -> Boolean = CaptureDaemon::handOver
 
         fun stop(context: Context) {
             runCatching {

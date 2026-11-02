@@ -10,7 +10,7 @@ import com.jemcik.jemrec.Prefs
  * Kept by name, like KeepMarks, so the file keeps the name the user's File
  * names setting gives it, and Honor's Phone app still finds it by that name.
  * The recorder's own file says it is a message ("_msg" in the daemon's name,
- * see RecordingStore.messageStartMs); this is where the list reads that after
+ * see DaemonFile); this is where the list reads that after
  * the save, and the saved file's tags (RecordingTags) are where it outlives
  * an uninstall.
  */

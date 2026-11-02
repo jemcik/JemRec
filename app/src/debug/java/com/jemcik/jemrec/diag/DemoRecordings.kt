@@ -8,7 +8,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.content.edit
 import androidx.core.net.toUri
-import com.jemcik.jemrec.capture.CallHistory
+import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.capture.OpusOggWriter
 import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.capture.Recordings

@@ -10,6 +10,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.jemcik.jemrec.calls.MissedCalls
+import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.rethrowingCancellation
 import java.util.concurrent.TimeUnit
 
 /**
@@ -80,11 +83,11 @@ class RecorderKeepAlive(
             // crash or a reboot between hang-up and the fetch can strand a
             // recording. This is the app's safety net for exactly that; it
             // no-ops when there is nothing pending.
-            runCatching { RecordingSaver.reconcile(applicationContext) }
+            runCatching { RecordingSaver.reconcile(applicationContext) }.rethrowingCancellation()
                 .onFailure { Log.w(TAG, "keepalive: reconcile failed", it) }
             // After the reconcile, so a call it has just saved is not one this
             // reports as missed.
-            runCatching { MissedCalls.check(applicationContext) }
+            runCatching { MissedCalls.check(applicationContext) }.rethrowingCancellation()
                 .onFailure { Log.w(TAG, "keepalive: missed-call check failed", it) }
         }
         retention()

@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.capture
 
+import com.jemcik.jemrec.recordings.RecordingSaver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

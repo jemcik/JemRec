@@ -1,0 +1,403 @@
+package com.jemcik.jemrec.calls
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.CallLog
+import android.provider.ContactsContract
+import android.util.Log
+import androidx.core.content.edit
+import androidx.core.net.toUri
+import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.capture.FileNames
+import com.jemcik.jemrec.capture.Recording
+
+/**
+ * Who each call was with, if the user has said we may look.
+ *
+ * WHY THIS IS OPTIONAL, AND STAYS OPTIONAL
+ *
+ * Nothing the app already holds can answer it. The call-state listener reports
+ * that a call started and nothing else - no number, by design. The only source
+ * is the call log, and reading it means READ_CALL_LOG: a dangerous permission,
+ * on an app that records phone calls. That is worth a moment's thought from the
+ * user rather than a line in a manifest they never see, so it is asked for at
+ * the point it buys something and the app works perfectly well without it.
+ *
+ * The log caches a contact NAME, so a name alone would cost this one
+ * permission. The photo, the favourite star and a name the log has not
+ * cached live in the contacts provider, so READ_CONTACTS is asked for with it
+ * - see PERMISSIONS for why the two are offered as one choice.
+ *
+ * MATCHED BY TIME, NOT STORED AT RECORD TIME
+ *
+ * The log entry is written when the call ENDS, which can be after the recording
+ * has been closed - so reading it during the recording is a race. Matching
+ * afterwards avoids that, costs one query per refresh, and has the useful side
+ * effect of filling in recordings made before the permission was ever granted.
+ *
+ * The window is generous in one direction only. A log entry is dated when the
+ * call began, which for an incoming call is when it started RINGING - possibly
+ * a minute before the recording, which starts when it is answered. Ahead of the
+ * recording it can only be seconds.
+ */
+object CallLogLookup {
+
+    private const val TAG = "JemRec"
+    private const val KEY_DISMISSED = "caller_banner_dismissed"
+
+    /**
+     * Two permissions, asked for together, for one feature.
+     *
+     * The call log carries the contact NAME, cached, so names cost only the
+     * first. It does not carry the photo - it carries a POINTER to one, into
+     * the contacts provider, and following that pointer needs READ_CONTACTS.
+     * So a picture costs a second dangerous permission, which is why they are
+     * offered as one choice rather than smuggled in one at a time.
+     */
+    val PERMISSIONS = arrayOf(
+        Manifest.permission.READ_CALL_LOG,
+        Manifest.permission.READ_CONTACTS,
+    )
+
+    /**
+     * Whether a call log row is a phone call's - the phone's own calling,
+     * whose account is Telephony's (com.android.phone) - and not one an app
+     * put in the call log through Android's call service. Google Meet logs
+     * its calls that way, with the other person's number (the Honor,
+     * 2026-10-26); they are not phone calls: the recorder records them only
+     * as Meet's, under Messenger calls, and never as a phone call. Taken for
+     * phone calls, they named phone recordings, and each looked like a call
+     * that was never recorded. A row with no account at all - from before
+     * Android kept one - is a phone call's, as every row was. Pure.
+     */
+    internal fun isPhoneCall(account: String?): Boolean =
+        account.isNullOrBlank() || account.substringBefore('/') == TELEPHONY
+
+    /** The package of Telephony's own account, on stock Android and on the
+     *  Honor alike (com.android.phone/com.android.services.telephony.
+     *  TelephonyConnectionService, the Honor's call log, 2026-10-26). */
+    private const val TELEPHONY = "com.android.phone"
+
+    /** Names work on the call log alone. */
+    fun granted(context: Context): Boolean =
+        context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** Photos need the contacts provider the log only points at. */
+    fun photosGranted(context: Context): Boolean =
+        context.checkSelfPermission(Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun anythingLeftToOffer(context: Context): Boolean =
+        !granted(context) || !photosGranted(context)
+
+    fun bannerDismissed(context: Context): Boolean =
+        Prefs.of(context)
+            .getBoolean(KEY_DISMISSED, false)
+
+    fun dismissBanner(context: Context) {
+        Prefs.of(context)
+            .edit { putBoolean(KEY_DISMISSED, true) }
+    }
+
+    internal class Entry(
+        val at: Long,
+        val incoming: Boolean,
+        val label: String,
+        val number: String?,
+        /** How long the call lasted; 0 for one nobody answered. */
+        val seconds: Int = 0,
+        /** The name the log cached for it, if any. */
+        val name: String? = null,
+        /** The country the call was made or taken in, as the log has it -
+         *  the one to read a number in that was dialled without its code. */
+        val country: String? = null,
+    )
+
+    /** What is known about the other end of a call. */
+    data class Caller(
+        val label: String,
+        val photo: Uri?,
+        val number: String? = null,
+        /** The contact this call was with is starred in the address book. */
+        val favorite: Boolean = false,
+        /** Which way the call went, as the log has it - for a recording whose
+         *  name does not say (see FileNames.parse). */
+        val incoming: Boolean? = null,
+    )
+
+    /** What the contacts provider knows about a number: a name, a photo, and
+     *  whether the contact is a favourite. Looked up together, cached per number.
+     *  The name matters because the call log does not always cache one even for a
+     *  saved contact, and a bare number under a photo reads as a stranger. */
+    internal data class Contact(
+        val name: String?,
+        val photo: Uri?,
+        val starred: Boolean,
+        /** The contact's id, for the rules on whose calls to keep (CallRules). */
+        val id: Long? = null,
+        /** The lookup itself failed, so "not in the contacts" is not known -
+         *  which the rules must not take for a stranger. */
+        val failed: Boolean = false,
+        /** Every contact with this number - a shared landline, or one person
+         *  saved twice. The rules keep a call if they keep any of them. */
+        val ids: List<Long> = listOfNotNull(id),
+    )
+
+    /**
+     * A caller label per recording name, for the ones that can be matched.
+     *
+     * One query for the whole list rather than one per recording: the log is a
+     * content provider, and forty cursors to answer forty rows would be forty
+     * times the work for the same answer.
+     */
+    fun labelsFor(context: Context, recordings: List<Recording>): Map<String, Caller> {
+        if (recordings.isEmpty() || !granted(context)) return emptyMap()
+
+        // The Recording already knows when it was and which way it went; this
+        // used to parse the name again for both, with its own copy of the rules.
+        // Not a messenger call: it is never in the phone's call log, and a
+        // phone call at about the same time is somebody else.
+        val times = recordings.filter { it.parsedName?.app == null }.mapNotNull { r ->
+            r.startedAtMillis?.let { at -> Triple(r, at, r.incoming) }
+        }
+        if (times.isEmpty()) return emptyMap()
+
+        val from = times.minOf { it.second } - CallMatch.BEFORE_MS
+        val to = times.maxOf { it.second } + CallMatch.AFTER_MS
+
+        val entries = runCatching { query(context, from, to) }
+            .onFailure { Log.w(TAG, "call log: could not read", it) }
+            .getOrDefault(emptyList())
+        if (entries.isEmpty()) return emptyMap()
+
+        val out = mutableMapOf<String, Caller>()
+        // One lookup per distinct number rather than per recording: several
+        // calls with the same person is the normal case, not the exception.
+        val contacts = mutableMapOf<String, Contact>()
+        times.forEach { (recording, at, incoming) ->
+            val name = recording.name
+            // A name with the number in it (Honor's format) is matched on that
+            // number, whichever way the call went - its name does not say.
+            val number = recording.parsedName?.number
+            val match = if (number != null) CallMatch.withNumber(entries, number, at) else CallMatch.closest(entries, at, incoming)
+            if (match != null) {
+                val contact = contactFor(context, match.number, contacts)
+                out[name] = Caller(
+                    // The live contact name wins over the call log's, which may
+                    // be a stale cache or just a number.
+                    contact.name ?: match.label,
+                    contact.photo,
+                    match.number,
+                    contact.starred,
+                    match.incoming,
+                )
+            }
+        }
+        return out
+    }
+
+    private fun query(context: Context, from: Long, to: Long): List<Entry> =
+        CallLogRows.read(
+            context,
+            arrayOf(
+                CallLog.Calls.DATE,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.DURATION,
+                CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
+                CallLog.Calls.COUNTRY_ISO,
+            ),
+            // Never a call that did not go off-hook here: a recording cannot
+            // be one. Every type but INCOMING used to count as outgoing, so a
+            // missed call just before a call-back could name the call-back.
+            // The types are listed out rather than kept in, so a vendor's own
+            // type for an answered call is not lost.
+            "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.DATE} <= ? AND " +
+                "${CallLog.Calls.TYPE} NOT IN (?, ?, ?, ?, ?)",
+            arrayOf(
+                from.toString(), to.toString(),
+                CallLog.Calls.MISSED_TYPE.toString(),
+                CallLog.Calls.VOICEMAIL_TYPE.toString(),
+                CallLog.Calls.REJECTED_TYPE.toString(),
+                CallLog.Calls.BLOCKED_TYPE.toString(),
+                CallLog.Calls.ANSWERED_EXTERNALLY_TYPE.toString(),
+            ),
+            "${CallLog.Calls.DATE} DESC",
+        ).map { Entry(it.at, it.incoming, it.label, it.number, it.seconds, it.name, it.country) }
+
+    /**
+     * When each call since a moment began, for the self-test's check that the
+     * daemon heard them (see SelfTest.unheardCall).
+     *
+     * Only answered incoming calls and outgoing ones: the two kinds that
+     * certainly went off-hook on this phone, so the daemon's call watch cannot
+     * have missed them and still be working. A missed or rejected call usually
+     * rings, but call screening can turn one away before it ever does, and a
+     * check that cries wolf teaches people to ignore it.
+     */
+    internal fun callStartsSince(context: Context, since: Long): List<Long> =
+        CallLogRows.read(
+            context,
+            arrayOf(CallLog.Calls.DATE, CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME),
+            "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.TYPE} IN (?, ?)",
+            arrayOf(
+                since.toString(),
+                CallLog.Calls.INCOMING_TYPE.toString(),
+                CallLog.Calls.OUTGOING_TYPE.toString(),
+            ),
+            null,
+        ).map { it.at }
+
+    /**
+     * The contact's photo, looked up by number.
+     *
+     * NOT taken from the call log's cached_photo_uri, which is where it ought
+     * to be and where the first version looked. On this phone that column is
+     * never written: twenty-three calls over a week, every one with a null
+     * photo and a zero photo id, while the cached NAME was filled in for all of
+     * them. The dialer caches half of what the schema offers, and nothing
+     * requires it to cache the other half.
+     *
+     * PhoneLookup does not depend on anyone having cached anything. It asks the
+     * contacts provider directly, matching however that provider normalises
+     * numbers - which is also better than comparing strings, since the same
+     * person appears in a call log with and without a country code.
+     */
+    internal fun contactFor(
+        context: Context,
+        number: String?,
+        cache: MutableMap<String, Contact>,
+    ): Contact {
+        if (number.isNullOrBlank() || !photosGranted(context)) return Contact(null, null, false)
+        return cache.getOrPut(number) {
+            runCatching {
+                val uri = Uri.withAppendedPath(
+                    ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                    Uri.encode(number),
+                )
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(
+                        ContactsContract.PhoneLookup.DISPLAY_NAME,
+                        ContactsContract.PhoneLookup.PHOTO_URI,
+                        // STARRED is the address book's own "favourite" flag, so
+                        // the list can mark a call as being with a favourite
+                        // contact - the same star the dialer shows.
+                        ContactsContract.PhoneLookup.STARRED,
+                        ContactsContract.PhoneLookup._ID,
+                    ),
+                    null, null, null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val name = cursor.getString(0)?.takeIf { it.isNotBlank() }
+                        val photo = cursor.getString(1)?.takeIf { it.isNotBlank() }?.toUri()
+                        val starred = cursor.getInt(2) != 0
+                        val first = cursor.getLong(3)
+                        // Every contact with the number, not the first the
+                        // provider happens to return: the rules on whose calls
+                        // to keep may name any of them.
+                        val ids = mutableListOf(first)
+                        while (cursor.moveToNext()) ids += cursor.getLong(3)
+                        Contact(name, photo, starred, first, ids = ids.distinct())
+                    } else {
+                        Contact(null, null, false)
+                    }
+                }
+                    // No cursor is the provider not answering, which is not
+                    // "no such contact": the rules must not take it for a
+                    // stranger and leave a contact's call out.
+                    ?: Contact(null, null, false, failed = true)
+            }.onFailure { Log.w(TAG, "contacts: lookup failed", it) }
+                .getOrDefault(Contact(null, null, false, failed = true))
+        }
+    }
+
+    /** Closest entry of the same direction inside the window (CallMatch.closest). */
+    internal fun closest(entries: List<Entry>, at: Long, incoming: Boolean): Entry? =
+        CallMatch.closest(entries, at, incoming)
+
+    /** The call with [number] a recording at [at] fell inside (CallMatch.withNumber). */
+    internal fun withNumber(entries: List<Entry>, number: String, at: Long): Entry? =
+        CallMatch.withNumber(entries, number, at)
+
+    /** Whether two ways of writing a number are the same number (PhoneNumbers.sameNumber). */
+    internal fun sameNumber(a: String?, b: String?): Boolean = PhoneNumbers.sameNumber(a, b)
+
+    /** Every incoming and outgoing call the log dates from [from] to [to]. */
+    internal fun entriesBetween(context: Context, from: Long, to: Long): List<Entry> {
+        if (!granted(context)) return emptyList()
+        return runCatching { query(context, from, to) }
+            .onFailure { Log.w(TAG, "call log: could not read", it) }
+            .getOrDefault(emptyList())
+    }
+
+    /**
+     * The log's entry for a call whose recording began at [startMillis], for
+     * the saver to name it and apply the rules by (see RecordingSaver). Null
+     * if the log does not have it - yet: it is written as the call ends, so
+     * the saver asks again for a few seconds. [others] are the starts of the
+     * recordings already made (CallLedger), whose calls this cannot be.
+     * Blocking.
+     */
+    internal fun callFor(
+        context: Context,
+        startMillis: Long,
+        incoming: Boolean,
+        others: List<CallLedger.Recorded>,
+    ): Entry? {
+        if (!granted(context)) return null
+        // Back twice the window: the calls the other recordings claim can be
+        // a window before them.
+        val entries = runCatching { query(context, startMillis - 2 * CallMatch.BEFORE_MS, startMillis + CallMatch.AFTER_MS) }
+            .onFailure { Log.w(TAG, "call log: could not read", it) }
+            .getOrDefault(emptyList())
+        return CallMatch.unclaimed(entries, startMillis, incoming, others)
+    }
+
+    /** Closest entry for a recording at [at] that no other recording's call
+     *  claims (CallMatch.unclaimed). */
+    internal fun unclaimed(
+        entries: List<Entry>,
+        at: Long,
+        incoming: Boolean,
+        others: List<CallLedger.Recorded>,
+    ): Entry? = CallMatch.unclaimed(entries, at, incoming, others)
+
+    /** A call as the missed-call check needs it. */
+    internal data class LoggedCall(
+        val at: Long,
+        val seconds: Int,
+        val incoming: Boolean,
+        val label: String,
+    )
+
+    /**
+     * Every answered incoming and every outgoing call since [since], with how
+     * long it lasted - the calls that went off-hook here and so had to be
+     * recorded, if recording was on. The same two kinds callStartsSince asks
+     * for, for the same reason.
+     */
+    internal fun answeredCallsSince(context: Context, since: Long): List<LoggedCall> =
+        CallLogRows.read(
+            context,
+            arrayOf(
+                CallLog.Calls.DATE,
+                CallLog.Calls.DURATION,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
+            ),
+            "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.TYPE} IN (?, ?)",
+            arrayOf(
+                since.toString(),
+                CallLog.Calls.INCOMING_TYPE.toString(),
+                CallLog.Calls.OUTGOING_TYPE.toString(),
+            ),
+            "${CallLog.Calls.DATE} ASC",
+        ).map { LoggedCall(it.at, it.seconds, it.incoming, it.label) }
+}

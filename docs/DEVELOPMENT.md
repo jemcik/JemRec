@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1152 JVM tests, no device needed - 956 for the app and 196 for the daemon:
+1290 JVM tests, no device needed - 1094 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -122,6 +122,18 @@ screen's reading and busy rules. Where one pins something that looks wrong,
 its comment says so ("Pins today's behaviour, which looks like a bug") and
 what: the fix comes in a commit of its own, which turns the test round.
 
+**Every branch of a save** (`RecordingSaverTest`, from 0.27): the saver takes
+the recorder's files, the Ogg writer, where a file goes, the clock and its
+thread as seams with today's objects by default, and the tests put fakes in
+(`SaverFakes`): what is saved and under what name, what stays on the
+recorder for later, what the ledger is told and when, what is announced, the
+log lines the emulator checks read, and the week a failing file is retried.
+The call service's tests drive it with the same fakes, and with its own
+thread and the saver's made the test's, so a save that ends before its launch
+returns does so every time; its rule for standing down (`StandDown`) is
+tested apart, with jobs whose ends the test decides, so two jobs ending
+together do too.
+
 **Names and words something else depends on** (`app/src/test/.../contract`):
 the component and worker class names the phone and the tools remember,
 the recorder's own class name, and the actions and extras of its wakes
@@ -136,7 +148,7 @@ comments, so a file moved between packages changes nothing for them, and a
 comment that quotes a line does not stand in for the line.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13, 16 and 17 for 0.26 -
+emulator, for each Android version it claims (12, 13, 16 and 17 for 0.27 -
 16 is what the Galaxy phones of the issues run), each booted cold
 (`emulator -avd <name> -no-snapshot`):
 
@@ -341,16 +353,19 @@ Reports, not gates - run them when wanted:
   printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
 - **The app's mutation testing:** `./gradlew :pure-tests:pitest`, then
   `app/pure-tests/build/reports/pitest`: PIT over the pure module's files
-  (the gate above). 119 of the 123 changes its tests reach fail one
-  (2026-11-01). The four left change nothing: frame lengths at Opus config 12,
-  which SILK and hybrid give alike; two `setTimeZone` calls on formatters
-  built in that zone already; and a bound inside the standard library's
-  `trim`, inlined into `AudioStream`. 17 more are not reached, nearly all in
-  `SystemProperty`, which runs `getprop`. The Kotlin compiler's own null
-  checks, `hashCode`, and data classes' `copy` and `componentN` are left out
-  (`--avoidCallsTo`, `--excludedMethods`): they were 9 of the first run's 26
-  survivors - six null checks removed, three hashes changed that still agreed
-  with `equals` - and no test could tell any of them.
+  (the gate above). 218 of the 223 changes its tests reach fail one
+  (2026-11-02; 119 of 123 before 0.27 added the saver's and the call
+  service's decisions). The five left change nothing: frame lengths at Opus
+  config 12, which SILK and hybrid give alike; two `setTimeZone` calls on
+  formatters built in that zone already; and two shortcuts inside the
+  standard library, inlined: a bound in `trim` (`AudioStream`) and `none`'s
+  "is it a collection" (`StandDown`), which a list always is. 17 more are not
+  reached, nearly all in `SystemProperty`, which runs `getprop`. The Kotlin
+  compiler's own null checks, `hashCode`, and data classes' `copy` and
+  `componentN` are left out (`--avoidCallsTo`, `--excludedMethods`): they
+  were 9 of the first run's 26 survivors - six null checks removed, three
+  hashes changed that still agreed with `equals` - and no test could tell
+  any of them.
 
 None of these checks changes what ships but NullAway, whose `Nullable` - a
 type the daemon's sources now use - is one more class in the daemon jar.

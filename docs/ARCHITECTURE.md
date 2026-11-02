@@ -85,6 +85,30 @@ as 14 to 44 seconds. The daemon runs as shell, outside app management, and is
 never frozen. Afterwards the app fetches the finished file at whatever pace the
 system allows — a freeze there costs a slower copy, never a lost second.
 
+**Two collect it, by one set of rules.** The call service collects a call's
+recording as the call ends. Whatever a wake that did not land leaves on the
+recorder is collected later: by the keep-alive, and, with exact call tracking,
+a few seconds after the last call. Both go through one saver, and what each
+does after a save is one table, so where the two differ it is written down:
+only the call service tells you at once of a recording that came out empty or
+could not be saved; only a later collection keeps trying a file that fails,
+and gives it up after a week. The missed-call check runs after both: after a
+call the call service saved, and after each of the keep-alive's collections.
+
+- A recording is noted as saved before the recorder's copy is deleted, so a
+  copy that outlives its save — a delete that did not get through — is only
+  deleted next time. A messenger call's too, since 0.27; before, it was saved
+  a second time.
+- A recording of two calls (call waiting) is saved as one file each, and noted
+  only once every file is saved: a part that would not save is saved at the
+  next try, the others again with it, rather than lost.
+- A recording is dropped when recording is switched off at its call's end;
+  switched off and on again before the end, it is kept whole (the Honor,
+  2026-11-02). Both collectors judge that moment: the call service reads the
+  switch as the call's end reaches it; a later collection goes by the end
+  Telecom gave, or else by the recording's own end, which is when the
+  recorder's wake to the call service goes.
+
 ## The socket is authenticated in both directions
 
 Loopback is shared by every process on the phone, so the daemon's port would

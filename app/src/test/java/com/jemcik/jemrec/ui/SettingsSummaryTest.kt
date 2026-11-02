@@ -1,10 +1,10 @@
 package com.jemcik.jemrec.ui
 
-import com.jemcik.jemrec.capture.CallRules
-import com.jemcik.jemrec.capture.CallRules.Contacts
+import com.jemcik.jemrec.calls.CallRules
+import com.jemcik.jemrec.calls.CallRules.Contacts
 import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.OffMode
-import com.jemcik.jemrec.capture.VoipApps
+import com.jemcik.jemrec.calls.VoipApps
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

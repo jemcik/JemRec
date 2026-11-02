@@ -18,7 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.CallMonitorService
-import com.jemcik.jemrec.capture.RecordPrompt
+import com.jemcik.jemrec.calls.RecordPrompt
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.Looks
 

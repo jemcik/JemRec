@@ -4,6 +4,7 @@ import android.app.StatusBarManager
 import android.content.ComponentName
 import android.content.Intent
 import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.capture.HeldWork.Companion.NOW
 import com.jemcik.jemrec.capture.HeldWork.Companion.PERIODIC
 import com.jemcik.jemrec.capture.HeldWork.Companion.USB_WATCH

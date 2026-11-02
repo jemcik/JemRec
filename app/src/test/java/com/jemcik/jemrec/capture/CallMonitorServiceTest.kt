@@ -8,6 +8,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.provider.CallLog
 import com.jemcik.jemrec.MainActivity
+import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.calls.CallLedger
+import com.jemcik.jemrec.calls.RecordPrompt
+import com.jemcik.jemrec.recordings.SaverFakes
 import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -503,6 +507,103 @@ class CallMonitorServiceTest {
         eventually("the service stands down") { stopped }
     }
 
+    /** The recorder's answer to Record, for [block]: [name], once [answer]
+     *  completes when given. */
+    private fun withRecord(name: String?, answer: kotlinx.coroutines.CompletableDeferred<Unit>? = null, block: () -> Unit) {
+        val before = CallMonitorService.startOnDemand
+        CallMonitorService.startOnDemand = { answer?.await(); name }
+        try {
+            block()
+        } finally {
+            CallMonitorService.startOnDemand = before
+        }
+    }
+
+    @Test fun aRecordStartedForACallThisServiceNeverSawKeepsItForThatCall() {
+        val file = recfile(start, true)
+        withRecord(file) {
+            RecordPrompt.show(context, incoming = true)
+            start(tap(prompt()!!, "Record"))
+            awaitLog("monitor: on-demand recording started -> $file")
+            settle()
+            assertEquals("Recording call", ongoing().title())
+            // A start from anywhere else, while it records: the call keeps it.
+            stray(null)
+            assertFalse(stopped)
+            // Its end, as the recorder sends it.
+            wake("CALL_ENDED", file, incoming = true)
+            awaitLog("monitor: recording handled")
+            eventually("the service stands down") { stopped }
+        }
+    }
+
+    @Test fun aTalkConfirmedOnlyAfterTheCallEndedChangesNothing() {
+        val answer = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val before = CallMonitorService.handOver
+        CallMonitorService.handOver = { _, _ -> answer.await(); true }
+        val log = heldCallLog(start, incoming = true)
+        try {
+            wake("MESSAGE_STARTED", incoming = true)
+            start(tap(ongoing(), "Talk to them"))
+            // The call ends before the recorder's answer; its save keeps the
+            // service up.
+            val file = recfile(start, true)
+            wake("CALL_ENDED", file, incoming = true)
+            log.awaitHeld()
+            val shown = ongoing()
+            answer.complete(Unit)
+            awaitLog("monitor: talk to them -> true")
+            settle()
+            assertTrue("not posted again for a call that is over", shown === ongoing())
+            assertNotEquals("Recording call", ongoing().title())
+        } finally {
+            answer.complete(Unit)
+            log.release()
+            CallMonitorService.handOver = before
+        }
+    }
+
+    @Test fun aRecordedCallLeavesAnEarlierFailureBehind() {
+        // An earlier call's save failed, no call up: its notification says so.
+        val first = recfile(start, true)
+        wake("CALL_ENDED", first, incoming = true)
+        awaitLog("monitor: recording handled")
+        assertEquals("Not recording this call", ongoing().title())
+        // A call whose start this service never heard of, recorded by a
+        // Record tap; its save held, the service up for it.
+        val second = recfile(start + 60_000, false)
+        val log = heldCallLog(start + 60_000, incoming = false)
+        try {
+            withRecord(second) {
+                RecordPrompt.show(context, incoming = false)
+                start(tap(prompt()!!, "Record"))
+                awaitLog("monitor: on-demand recording started -> $second")
+                wake("CALL_ENDED", second, incoming = false)
+                log.awaitHeld()
+                // Any re-post now is about this call, which nothing failed.
+                stray(null)
+                assertEquals("Call in progress", ongoing().title())
+            }
+        } finally {
+            log.release()
+        }
+    }
+
+    @Test fun aRecordThatStartsAsTheCallEndsStandsDownAndSaysNothingOfRecording() {
+        val answer = kotlinx.coroutines.CompletableDeferred<Unit>()
+        withRecord(recfile(start, true), answer) {
+            wake("CALL_STARTED", "", incoming = true)
+            start(tap(prompt()!!, "Record"))
+            // The call's end comes before the recorder's answer to Record.
+            wake("CALL_ENDED", "", incoming = true)
+            assertFalse("the Record still runs", stopped)
+            answer.complete(Unit)
+            awaitLog("monitor: on-demand recording started")
+            eventually("the service stands down") { stopped }
+            assertEquals("Call in progress", ongoing().title())
+        }
+    }
+
     // ---- a call ends -------------------------------------------------------
 
     @Test fun anEndWithNothingRecordedTakesThePromptDownAndStandsDown() {
@@ -620,12 +721,37 @@ class CallMonitorServiceTest {
             awaitLog("monitor: $file is being saved by the reconcile")
             awaitLog("monitor: recording handled")
             assertNull("not a failure to report", notRecorded())
-            // The newer save is the current one, and it is done: the service
-            // stands down with the first still running. On a phone onDestroy
-            // would then cancel that save half way (inferred, not measured).
-            eventually("the service stands down") { stopped }
+            // The first save still runs, and the service stays for it:
+            // stopped, its onDestroy would cancel that save half way.
+            settle()
+            assertFalse(stopped)
             log.release()
             eventually("the first save") { logs().count { it == "monitor: recording handled" } == 2 }
+            eventually("the service stands down") { stopped }
+        } finally {
+            log.release()
+        }
+    }
+
+    @Test fun aShortSecondCallsSaveDoesNotStopTheServiceUnderTheFirsts() {
+        val log = heldCallLog(start, incoming = true)
+        try {
+            val first = recfile(start, true)
+            wake("CALL_STARTED", first, incoming = true)
+            wake("CALL_ENDED", first, incoming = true)
+            log.awaitHeld()
+            // A second call, over before the first is saved; its save ends at
+            // once (saved before, by the ledger).
+            val second = recfile(start + 30_000, false)
+            CallLedger.noteRecording(context, start + 30_000, false, 5)
+            wake("CALL_STARTED", second, incoming = false)
+            wake("CALL_ENDED", second, incoming = false)
+            awaitLog("monitor: $second was collected already")
+            settle()
+            assertFalse("the first save still runs", stopped)
+            log.release()
+            eventually("the first save") { logs().count { it == "monitor: recording handled" } == 2 }
+            eventually("the service stands down") { stopped }
         } finally {
             log.release()
         }
@@ -651,9 +777,9 @@ class CallMonitorServiceTest {
         }
     }
 
-    // ---- bugs, pinned as they are ------------------------------------------
+    // ---- one call's save, the next call -------------------------------------
 
-    @Test fun aFailedSaveSaysNotRecordingOverTheNextCallBeingRecorded() {
+    @Test fun aFailedSaveLeavesTheNextCallBeingRecordedAsItIs() {
         val log = heldCallLog(start, incoming = true)
         try {
             val first = recfile(start, true)
@@ -666,12 +792,10 @@ class CallMonitorServiceTest {
             log.release()
             awaitLog("monitor: recording handled")
             assertEquals("The recorder could not be reached.", notRecorded()!!.text())
-            // Pins today's behaviour, which looks like a bug: the first call's
-            // failed save clears recordingNow and sets notRecording for the
-            // call being recorded now, which then says "Not recording this
-            // call" (to be fixed in its own commit)
-            assertEquals("Not recording this call", ongoing().title())
-            assertEquals("Tap to see why", ongoing().text())
+            // The first call's failure is told by its own notification; the
+            // call being recorded now still says so.
+            assertEquals("Recording call", ongoing().title())
+            assertEquals("Saving this call", ongoing().text())
             settle()
             assertFalse(stopped)
         } finally {
@@ -679,7 +803,7 @@ class CallMonitorServiceTest {
         }
     }
 
-    @Test fun aFailedSaveSticksToTheCallsAfterIt() {
+    @Test fun aFailedSaveDoesNotStickToTheCallsAfterIt() {
         val log = heldCallLog(start, incoming = true)
         try {
             // A fails while B is up, and B is saving when C starts.
@@ -696,17 +820,14 @@ class CallMonitorServiceTest {
             log.hold()
             wake("CALL_ENDED", b, incoming = false)
             log.awaitHeld()
-            // C, in Ask first: never recorded, and nothing of it failed.
+            // C, in Ask first: never recorded, and nothing of it failed. A's
+            // failure, two calls back, is not C's to show.
             wake("CALL_STARTED", "", incoming = true)
             assertNotNull(prompt())
-            // Pins today's behaviour, which looks like a bug: notRecording is
-            // never cleared, so C says "Not recording this call - Tap to see
-            // why" for A's failure, two calls back, and goes on saying it
-            // after its own Not now (to be fixed in its own commit)
-            assertEquals("Not recording this call", ongoing().title())
-            assertEquals("Tap to see why", ongoing().text())
+            assertEquals("Call in progress", ongoing().title())
+            assertEquals("JemRec is handling this call", ongoing().text())
             start(tap(prompt()!!, "Not now"))
-            assertEquals("Not recording this call", ongoing().title())
+            assertEquals("Call in progress", ongoing().title())
             log.release()
             eventually("B's save") { logs().count { it == "monitor: recording handled" } == 2 }
         } finally {
@@ -763,6 +884,140 @@ class CallMonitorServiceTest {
             assertFalse("finishIfIdle counts the warning", stopped)
         }
         eventually("the service stands down after the warning") { stopped }
+    }
+
+    // ---- which start a stop is for ------------------------------------------
+
+    /** The start a stop was made for (stopSelfResult): Android stops a
+     *  service only for its latest start, so one made for an older start
+     *  - decided before a new wake came - is refused. */
+    private val stoppedFor get() = shadowOf(service).stopSelfResultId
+
+    @Test fun aStartTurnedAwayStopsForItself() {
+        start(null)
+        assertTrue(stopped)
+        assertEquals(startId, stoppedFor)
+    }
+
+    @Test fun aSaveStopsForTheLastStartTheServiceTookInBeforeItLooked() {
+        val log = heldCallLog(start, incoming = true)
+        try {
+            val file = recfile(start, true)
+            wake("CALL_ENDED", file, incoming = true)
+            log.awaitHeld()
+            // Two starts while it saves, each turned away: the save still runs.
+            stray(null)
+            stray(null)
+            assertFalse(stopped)
+            log.release()
+            eventually("the service stands down") { stopped }
+            assertEquals(startId, stoppedFor)
+        } finally {
+            log.release()
+        }
+    }
+
+    // ---- with a recorder that answers (the saver's seams) --------------------
+
+    /** The recorder holding [file] as [bytes], through the saver's seams
+     *  (SaverFakes); [block] runs with it, and today's recorder is put back. */
+    private fun withRecorder(file: String, bytes: ByteArray, block: (SaverFakes) -> Unit) {
+        val fakes = SaverFakes(context)
+        fakes.install(System.currentTimeMillis())
+        try {
+            fakes.files[file] = bytes
+            block(fakes)
+        } finally {
+            fakes.restore()
+        }
+    }
+
+    @Test fun aSavedCallIsCheckedForMissedCallsAndStandsTheServiceDown() {
+        val file = recfile(start, true)
+        withRecorder(file, SaverFakes.stream(50)) { fakes ->
+            wake("CALL_STARTED", file, incoming = true)
+            wake("CALL_ENDED", file, incoming = true)
+            awaitLog("monitor: recording handled")
+            assertTrue(logged("monitor: saved $file"))
+            assertEquals(1, fakes.published.size)
+            assertEquals(listOf(file), fakes.deleted)
+            assertNull("nothing to report", notRecorded())
+            assertEquals(listOf(CallLedger.Recorded(start, true, 1)), CallLedger.read(context).recordings)
+            eventually("the service stands down") { stopped }
+        }
+    }
+
+    @Test fun anEmptyRecordingIsReportedAndNotedAsTold() {
+        val file = recfile(start, false)
+        withRecorder(file, SaverFakes.stream(0)) { fakes ->
+            wake("CALL_STARTED", file, incoming = false)
+            wake("CALL_ENDED", file, incoming = false)
+            awaitLog("monitor: recording handled")
+            assertEquals("Call not recorded", notRecorded()!!.title())
+            assertEquals("No call audio came through. Some phones do not allow calls to be recorded.", notRecorded()!!.text())
+            assertEquals("Not recording this call", ongoing().title())
+            assertEquals(listOf(file), fakes.deleted)
+            // Told now, so the missed-call check does not tell it again.
+            assertEquals(listOf(CallLedger.Recorded(start, false, 0)), CallLedger.read(context).recordings)
+            eventually("the service stands down") { stopped }
+        }
+    }
+
+    @Test fun aSaveCutShortByTheServiceGoingIsNotToldAsAFailure() {
+        val file = recfile(start, true)
+        withRecorder(file, SaverFakes.stream(10)) { fakes ->
+            fakes.hold()
+            try {
+                wake("CALL_ENDED", file, incoming = true)
+                fakes.awaitHeld()
+                // Stopped from outside - any app may stop it - mid-save.
+                controller.destroy()
+                fakes.release()
+                settle()
+                assertNull("no false alarm", notRecorded())
+                assertFalse(logged("monitor: recording handled"))
+                assertTrue("left on the recorder", fakes.deleted.isEmpty())
+            } finally {
+                fakes.release()
+                // A service for @After to destroy, whatever happened here.
+                controller = Robolectric.buildService(CallMonitorService::class.java).create()
+            }
+        }
+    }
+
+    @Test fun aRecordingMadeAfterTheSwitchWentOffIsDeletedFromTheRecorder() {
+        RecorderSwitch.set(context, false)
+        val file = recfile(start, true)
+        withRecorder(file, SaverFakes.stream(10)) { fakes ->
+            wake("CALL_ENDED", file, incoming = true)
+            eventually("the service stands down") { stopped }
+            assertEquals(listOf(file), fakes.deleted)
+            assertTrue(fakes.fetched.isEmpty())
+        }
+    }
+
+    /**
+     * A save that ends before the thread that started it goes on: the service
+     * and the saver both on the starting thread (Unconfined), so the save runs
+     * to its end inside its own launch. Launched straight into its field, the
+     * job was stored after it had ended, the end found the job before it, and
+     * the service stayed up (CI, 2026-11-01). Every time, here.
+     */
+    @Test fun aSaveThatEndsBeforeItsLaunchReturnsStandsTheServiceDown() {
+        controller.destroy()
+        CallMonitorService.dispatcher = kotlinx.coroutines.Dispatchers.Unconfined
+        try {
+            controller = Robolectric.buildService(CallMonitorService::class.java).create()
+            CallLedger.noteRecording(context, start, true, 30)
+            val file = recfile(start, true)
+            withRecorder(file, SaverFakes.stream(10)) {
+                wake("CALL_ENDED", file, incoming = true)
+                assertTrue(logged("monitor: $file was collected already"))
+                assertTrue(stopped)
+            }
+        } finally {
+            CallMonitorService.dispatcher = kotlinx.coroutines.Dispatchers.IO
+        }
     }
 
     // ---- the cable watch ---------------------------------------------------

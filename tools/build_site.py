@@ -2876,7 +2876,7 @@ def trio() -> str:
 
 
 # Three of the app's notifications in its own words - the one after each call
-# and a silent recording (capture/AfterCall.kt), and a recorder down on a
+# and a silent recording (calls/AfterCall.kt), and a recorder down on a
 # Wi-Fi Android has not allowed (capture/RecorderHealth.kt) - with two of the
 # debug build's invented people. (when, title, text, buttons)
 NOTIFICATIONS = [

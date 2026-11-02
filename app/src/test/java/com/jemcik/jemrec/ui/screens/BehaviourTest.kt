@@ -360,7 +360,7 @@ class BehaviourTest : ScreenTest() {
         compose.onNodeWithText("Longest message").performClick()
         compose.onNodeWithText("No limit").performClick()
         compose.onNodeWithText("No limit").performClick()
-        assertEquals(com.jemcik.jemrec.capture.AnsweringMachine.NO_LIMIT, vm.answer.state.value.longest)
+        assertEquals(com.jemcik.jemrec.answering.AnsweringMachine.NO_LIMIT, vm.answer.state.value.longest)
         compose.onNodeWithText("No limit - it hangs up after 30 seconds of silence").assertIsDisplayed()
     }
 

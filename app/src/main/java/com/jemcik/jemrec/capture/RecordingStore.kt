@@ -13,6 +13,7 @@ import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.recordings.DaemonFile
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,16 +51,9 @@ object RecordingStore {
     /** Subfolder of the system Recordings directory. */
     const val FOLDER = "JemRec"
 
-    /**
-     * Which way a call went, from the "_in." / "_out." tag every name carries -
-     * the daemon's jemrec_rec_<millis>_in.dat and the saved
-     * yyyyMMdd_HHmmss_in.ogg alike. One reader for both, because two had
-     * drifted: one matched "_in" and would have called an "_input" incoming.
-     */
-    fun isIncoming(name: String): Boolean = name.contains("_in.")
-
-    private val MESSAGE_TAG = Regex("_msg(\\d+|none|fail)_")
-    private val TAKEN_TAG = Regex("_from(\\d+)_")
+    /** Which way a call went, from the "_in." / "_out." tag of a saved
+     *  name or a recorder's file alike (DaemonFile.isIncoming). */
+    fun isIncoming(name: String): Boolean = DaemonFile.isIncoming(name)
 
     /**
      * Where a call the user took over from the answering machine starts, in
@@ -67,8 +61,7 @@ object RecordingStore {
      * first sample. Null for any other recording. Such a call is trimmed like
      * a message and kept as an ordinary recording.
      */
-    fun takenStartMs(recfile: String): Long? =
-        TAKEN_TAG.find(recfile)?.groupValues?.get(1)?.toLongOrNull()
+    fun takenStartMs(recfile: String): Long? = DaemonFile.parse(recfile).takenFromMs
 
     /** [messageStartMs] for a caller who hung up during the greeting. */
     const val MESSAGE_NONE = -1L
@@ -82,13 +75,11 @@ object RecordingStore {
      * [MESSAGE_NONE] for "_msgnone", [MESSAGE_FAILED] for "_msgfail"; null for
      * any other recording.
      */
-    fun messageStartMs(recfile: String): Long? {
-        val tag = MESSAGE_TAG.find(recfile)?.groupValues?.get(1) ?: return null
-        return when (tag) {
-            "none" -> MESSAGE_NONE
-            "fail" -> MESSAGE_FAILED
-            else -> tag.toLongOrNull()
-        }
+    fun messageStartMs(recfile: String): Long? = when (val message = DaemonFile.parse(recfile).message) {
+        null -> null
+        DaemonFile.Message.None -> MESSAGE_NONE
+        DaemonFile.Message.Failed -> MESSAGE_FAILED
+        is DaemonFile.Message.Starts -> message.ms
     }
 
     private val collection: Uri
@@ -257,9 +248,12 @@ object RecordingStore {
     private fun openInAppStorage(context: Context, name: String): Target? = runCatching {
         val dir = File(context.getExternalFilesDir(null), "recordings").apply { mkdirs() }
         val file = File(dir, name)
+        // Truncated, as MediaStore's new row and a new document are empty: a
+        // file of the name from before - a save that failed half way, then
+        // tried again untagged and shorter - kept its tail past the new end.
         val pfd = ParcelFileDescriptor.open(
             file,
-            ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE,
+            ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE or ParcelFileDescriptor.MODE_TRUNCATE,
         )
         Target(
             name,

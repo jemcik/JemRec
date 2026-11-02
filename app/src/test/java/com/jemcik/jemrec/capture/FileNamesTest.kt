@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.capture
 
-import com.jemcik.jemrec.capture.CallRules.Contacts
+import com.jemcik.jemrec.calls.CallRules
+import com.jemcik.jemrec.calls.CallRules.Contacts
 import com.jemcik.jemrec.capture.FileNames.Format
 import com.jemcik.jemrec.capture.FileNames.Party
 import org.junit.Assert.assertEquals

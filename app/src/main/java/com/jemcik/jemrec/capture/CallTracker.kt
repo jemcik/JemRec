@@ -4,6 +4,19 @@ import android.content.Context
 import android.telecom.Call
 import android.telecom.InCallService
 import android.util.Log
+import com.jemcik.jemrec.answering.AnswerConditions
+import com.jemcik.jemrec.answering.AnsweringMachine
+import com.jemcik.jemrec.answering.EmergencyPause
+import com.jemcik.jemrec.answering.Greeting
+import com.jemcik.jemrec.calls.CallLedger
+import com.jemcik.jemrec.calls.CallLogLookup
+import com.jemcik.jemrec.calls.CallRules
+import com.jemcik.jemrec.calls.CallTracking
+import com.jemcik.jemrec.calls.CoverageHistory
+import com.jemcik.jemrec.calls.PhoneNumbers
+import com.jemcik.jemrec.calls.TelecomAccount
+import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.rethrowingCancellation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,20 +64,10 @@ class CallTracker : InCallService() {
         changed(call)
         // Whose calls to keep, asked once for both: the contacts lookup is
         // the costly part of each, and the two must judge the caller alike.
-        val number = call.details.handle?.schemeSpecificPart
-        val keeps = lazy { rulesKeep(applicationContext, number) }
+        val number = PhoneNumbers.of(call.details.handle)
+        val keeps = lazy { CallRules.verdict(applicationContext, number) }
         decideEarly(call, keeps)
         decideAnswer(call, keeps)
-    }
-
-    /** Whose calls to keep, for [number]: true if kept - or no rules - false
-     *  if left out, null when it cannot be told: no call log or contacts,
-     *  or the lookup failed. */
-    private fun rulesKeep(context: Context, number: String?): Boolean? = when {
-        !CallRules.active(context) -> true
-        !CallLogLookup.granted(context) || !CallLogLookup.photosGranted(context) -> null
-        else -> CallLogLookup.contactFor(context, number, mutableMapOf())
-            .let { if (it.failed) null else CallRules.keeps(context, it.ids) }
     }
 
     /**
@@ -169,10 +172,7 @@ class CallTracker : InCallService() {
             return
         }
         val ended = System.currentTimeMillis()
-        CallTracking.update(this, id) { old ->
-            val base = old ?: track(call)
-            base.copy(endedAt = base.endedAt.takeIf { it > 0 } ?: ended)
-        }
+        CallTracking.update(this, id) { old -> TelecomAccount.ended(old ?: track(call), ended) }
         Log.i(TAG, "calltrack: call ended")
         if (wasLeftOut) {
             val tracked = CallTracking.calls(this).firstOrNull { it.id == id }
@@ -186,24 +186,20 @@ class CallTracker : InCallService() {
         if (!CallTracking.enabled(this)) return
         val id = call.details.creationTimeMillis
         val now = System.currentTimeMillis()
+        val change = when (call.state) {
+            Call.STATE_ACTIVE -> TelecomAccount.Change.ACTIVE
+            Call.STATE_DISCONNECTED -> TelecomAccount.Change.DISCONNECTED
+            else -> TelecomAccount.Change.OTHER
+        }
         CallTracking.update(this, id) { old ->
-            val base = old ?: track(call)
-            when (call.state) {
-                Call.STATE_ACTIVE ->
-                    // The first answer from Telecom's own connect time, which
-                    // is to the millisecond; a return from hold from now.
-                    if (base.activations.isEmpty()) {
-                        base.copy(activations = listOf(call.details.connectTimeMillis.takeIf { it > 0 } ?: now))
-                    } else if (old == null || wasActive[id] == true) {
-                        // New here, and track() already took Telecom's
-                        // connect time; or ACTIVE again with no hold between.
-                        base
-                    } else {
-                        base.copy(activations = base.activations + now)
-                    }
-                Call.STATE_DISCONNECTED -> base.copy(endedAt = base.endedAt.takeIf { it > 0 } ?: now)
-                else -> base
-            }
+            TelecomAccount.changed(
+                base = old ?: track(call),
+                isNew = old == null,
+                change = change,
+                connectedAt = call.details.connectTimeMillis,
+                wasActive = wasActive[id] == true,
+                now = now,
+            )
         }
         val becameActive = call.state == Call.STATE_ACTIVE && wasActive[id] != true
         wasActive[id] = call.state == Call.STATE_ACTIVE
@@ -229,7 +225,7 @@ class CallTracker : InCallService() {
         incoming = call.details.callDirection == Call.Details.DIRECTION_INCOMING,
         // The number only with the call-log permission: the same consent the
         // call log needs, for the same information.
-        number = if (CallLogLookup.granted(this)) call.details.handle?.schemeSpecificPart else null,
+        number = if (CallLogLookup.granted(this)) PhoneNumbers.of(call.details.handle) else null,
         // Already answered, if Telecom says so: a call first seen here late -
         // tracking switched on mid-call, a service bound mid-call - is not
         // then taken for one nobody answered, and deleted as such.
@@ -249,22 +245,20 @@ class CallTracker : InCallService() {
      * already up, the recording is shared and the saver splits it instead -
      * and only in automatic mode, where the rules apply. And only with the
      * call log and the contacts, as everywhere else that decides who a call
-     * was with: without them a call is kept.
-     *
-     * Not either straight after another call: the daemon records on for the
-     * two seconds it takes to be sure a call is over, and a call that goes
-     * off-hook in them joins that recording. A skip would then stop it - the
-     * kept call's audio with it - where the saver splits the two instead.
+     * was with: without them a call is kept (TelecomAccount.skipEarly).
      */
     private fun decideEarly(call: Call, keeps: Lazy<Boolean?>) {
         val context = applicationContext
-        if (calls.size > 1) return
         val id = call.details.creationTimeMillis
-        val now = System.currentTimeMillis()
-        if (CallTracking.calls(context).any { it.id != id && it.endedAt > now - RECENT_END_MS }) return
-        if (!RecorderSwitch.isOn(context) || RecordingMode.of(context) != RecordingMode.AUTOMATIC) return
-        // Kept, no rules, or no telling: recorded.
-        if (keeps.value != false) return
+        val skip = TelecomAccount.skipEarly(
+            id = id,
+            callsUp = calls.size,
+            now = System.currentTimeMillis(),
+            tracked = { CallTracking.calls(context) },
+            automatic = { CoverageHistory.automatic(context) },
+            keeps = { keeps.value },
+        )
+        if (!skip) return
         leftOut += id
         Log.i(TAG, "calltrack: the rules leave this call out; telling the recorder")
         skips.trySend(context to true)
@@ -284,7 +278,7 @@ class CallTracker : InCallService() {
             // harmless (RecordingSaver claims and checks).
             for (wait in COLLECT_AFTER_MS) {
                 delay(wait)
-                runCatching { RecordingSaver.reconcile(context) }
+                runCatching { RecordingSaver.reconcile(context) }.rethrowingCancellation()
                     .onFailure { Log.w(TAG, "calltrack: collecting after the call failed", it) }
             }
         }
@@ -294,10 +288,6 @@ class CallTracker : InCallService() {
         const val TAG = "JemRec"
         /** Five seconds after the last call, and fifteen after that. */
         val COLLECT_AFTER_MS = longArrayOf(5_000L, 15_000L)
-
-        /** Another call ended this recently: no skip (see decideEarly).
-         *  Past the daemon's 2 s end check, with room to spare. */
-        const val RECENT_END_MS = 10_000L
 
         /** Not tied to the service: Telecom unbinds it the moment the last
          *  call goes, and the collection after it must still run. */
