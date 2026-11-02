@@ -30,6 +30,9 @@ import com.jemcik.jemrec.Prefs
  *     not a missed call - and the Calls tab can say why it has nothing.
  *   - the answering machine's: a call whose caller hung up during the
  *     greeting, one whose greeting could not be played, and its test calls.
+ *   - a MESSENGER call's recording, saved: not a phone call's, so none of
+ *     the above asks about it - only the saver, so that a recorder's copy
+ *     that outlived its save is not saved again.
  *
  * Kept for [KEEP_MS] and no longer: the check never looks further back than
  * that, so older entries are dead weight in a preferences file that is read
@@ -56,6 +59,9 @@ internal object CallLedger {
         /** Answering-machine calls whose greeting could not be played: the
          *  recorder hung up, and the user was told. */
         val greetingFailures: List<Recorded> = emptyList(),
+        /** Messenger calls' recordings, saved: not in [accounted], which is
+         *  the phone's calls'. */
+        val messengerRecordings: List<Recorded> = emptyList(),
     ) {
         /** Every call this knows the fate of - recorded, left out, or the
          *  answering machine's - so none is taken for a missed call, or its
@@ -90,6 +96,10 @@ internal object CallLedger {
     fun noteTestCall(context: Context, startMillis: Long, incoming: Boolean, seconds: Int) =
         add(context, encodeRecording(Recorded(startMillis, incoming, seconds), kind = "t"))
 
+    /** A messenger call's recording, saved. */
+    fun noteMessenger(context: Context, startMillis: Long, incoming: Boolean, seconds: Int) =
+        add(context, encodeRecording(Recorded(startMillis, incoming, seconds), kind = "v"))
+
     /** A call log entry the user has been told was not recorded. */
     fun noteReported(context: Context, callDate: Long) = add(context, "c:$callDate")
 
@@ -107,7 +117,7 @@ internal object CallLedger {
     /** "r" for a recording, "s" for a call the rules skipped, "g" for a
      *  message call the caller left during the greeting, "f" for one whose
      *  greeting could not be played, "t" for a test call of the answering
-     *  machine. */
+     *  machine, "v" for a messenger call's recording. */
     internal fun encodeRecording(r: Recorded, kind: String = "r"): String =
         "$kind:${r.startMillis}:${if (r.incoming) "in" else "out"}:${r.seconds}"
 
@@ -119,11 +129,12 @@ internal object CallLedger {
         val hungUp = mutableListOf<Recorded>()
         val tests = mutableListOf<Recorded>()
         val failed = mutableListOf<Recorded>()
+        val messenger = mutableListOf<Recorded>()
         val reported = mutableSetOf<Long>()
         for (entry in entries) {
             val parts = entry.split(':')
             when (val kind = parts.firstOrNull()) {
-                "r", "s", "g", "f", "t" -> if (parts.size == 4) {
+                "r", "s", "g", "f", "t", "v" -> if (parts.size == 4) {
                     val start = parts[1].toLongOrNull() ?: continue
                     val seconds = parts[3].toIntOrNull() ?: continue
                     val recorded = Recorded(start, parts[2] == "in", seconds)
@@ -132,13 +143,14 @@ internal object CallLedger {
                         "s" -> skipped += recorded
                         "g" -> hungUp += recorded
                         "f" -> failed += recorded
+                        "v" -> messenger += recorded
                         else -> tests += recorded
                     }
                 }
                 "c" -> parts.getOrNull(1)?.toLongOrNull()?.let { reported += it }
             }
         }
-        return Ledger(recordings, reported, skipped, hungUp, tests, failed)
+        return Ledger(recordings, reported, skipped, hungUp, tests, failed, messenger)
     }
 
     private fun timeOf(entry: String): Long? = entry.split(':').getOrNull(1)?.toLongOrNull()

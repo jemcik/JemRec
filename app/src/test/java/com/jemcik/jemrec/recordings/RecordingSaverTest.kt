@@ -502,18 +502,20 @@ class RecordingSaverTest {
         assertTrue(save(file) is Outcome.Saved)
     }
 
-    @Test fun aMessengerCallWhoseCopyCouldNotBeDeletedIsSavedAgain() {
+    @Test fun aMessengerCallWhoseCopyCouldNotBeDeletedIsOnlyDeletedNextTime() {
         val file = "jemrec_rec_${t}_voip-com.whatsapp.dat"
         fakes.files[file] = stream(10)
         fakes.deletes = false
         assertTrue(save(file) is Outcome.Saved)
         assertTrue(logged("save: could not delete $file from the daemon; it goes next time"))
-        // Pins today's behaviour, which looks like a bug: a messenger call
-        // writes nothing a later save asks, so the next collection saves it
-        // again - as "(1)" on a phone - where a phone call's is only deleted
-        // (to be fixed in its own commit)
-        assertTrue(save(file, justEnded = false) is Outcome.Saved)
-        assertEquals(2, fakes.published.size)
+        // Noted as a phone call's is, where only the saver asks.
+        assertEquals(listOf(Recorded(t, false, 0)), ledger().messengerRecordings)
+        assertTrue(ledger().accounted.isEmpty())
+        fakes.deletes = true
+        assertEquals(Outcome.Gone, save(file, justEnded = false))
+        assertEquals(listOf(file), fakes.deleted)
+        assertEquals(1, fakes.published.size)
+        assertTrue(logged("save: $file was saved before; deleting the daemon's copy"))
     }
 
     // ---- what the recorder hands over ------------------------------------------------

@@ -209,12 +209,13 @@ object RecordingSaver {
 
         // A messenger call: not in the phone's call log, so none of what
         // follows applies - not the caller lookup, not the rules on whose
-        // calls to keep (the app's own switch is the rule), not the ledger
-        // the missed-call check reads.
+        // calls to keep (the app's own switch is the rule), not the phone
+        // calls the missed-call check reads. Saved before, though, as a
+        // phone call can be: its own entries in the ledger say so.
         val messenger = VoipApps.forRecfile(recfile)
-        if (messenger != null) return saveMessenger(context, recfile, startedAt, messenger, file.messengerIncoming)
-
-        when (SavePlan.drop(file, startedAt.time, CallLedger.read(context).accounted)) {
+        val ledger = CallLedger.read(context)
+        val before = if (messenger != null) ledger.messengerRecordings else ledger.accounted
+        when (SavePlan.drop(file, startedAt.time, before)) {
             SavePlan.Drop.DUPLICATE -> {
                 Log.i(TAG, "save: $recfile was saved before; deleting the daemon's copy")
                 dropFromDaemon(context, recfile, announce = false)
@@ -239,6 +240,7 @@ object RecordingSaver {
             }
             null -> Unit
         }
+        if (messenger != null) return saveMessenger(context, recfile, startedAt, messenger, file.messengerIncoming)
 
         // Who it was with - asked only when something needs to know: the
         // rules on whose calls to keep, or a file name with the caller in it.
@@ -302,7 +304,7 @@ object RecordingSaver {
                     Log.i(TAG, "save: $recfile - ${cut.notKept} call(s) answered during the message, not kept")
                 }
                 val clock = PacketClock(startedAt.time, cut.clockOffset)
-                val written = write(context, recfile, cut.parts, ledger = true, message = cut.message, clock = clock, orWhole = cut.orWhole) { part ->
+                val written = write(context, recfile, cut.parts, phoneCall = true, message = cut.message, clock = clock, orWhole = cut.orWhole) { part ->
                     RecordingTags.Facts(message = cut.message, incoming = part.incoming)
                 }
                 if (cut.message && written == Outcome.Empty) {
@@ -374,7 +376,7 @@ object RecordingSaver {
         val note = VoipCallNotes.find(context, app.pkg, startedAt.time, incoming)
         val format = FileNames.format(context)
         val name = FileNames.buildVoip(format, startedAt.time, note?.incoming, app.tag, note?.name)
-        val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), ledger = false) {
+        val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), phoneCall = false) {
             RecordingTags.Facts(incoming = note?.incoming, caller = note?.name)
         }
         // Where the name does not say who: the date and number formats, or a
@@ -567,16 +569,17 @@ object RecordingSaver {
     /**
      * Fetch the daemon's file and mux it into [parts] (Transfer), then finish
      * every part, copy each into place, and publish them - or say why not.
-     * [ledger]: note each saved part for the missed-call check - phone calls
-     * only. [facts]: what each part's file says of itself (RecordingTags).
-     * [orWhole]: saved into instead when no part held any of the file's
-     * packets (SavePlan.wholeIfNothingFits).
+     * [phoneCall]: each saved part noted for the missed-call check, and its
+     * direction; a messenger's call is noted only as saved. [facts]: what
+     * each part's file says of itself (RecordingTags). [orWhole]: saved into
+     * instead when no part held any of the file's packets
+     * (SavePlan.wholeIfNothingFits).
      */
     private suspend fun write(
         context: Context,
         recfile: String,
         parts: List<Part>,
-        ledger: Boolean,
+        phoneCall: Boolean,
         message: Boolean = false,
         clock: PacketClock? = null,
         orWhole: Part? = null,
@@ -640,11 +643,11 @@ object RecordingSaver {
                 open.values.forEach { it.target.abandon() }
                 Outcome.Failed("The recording could not be written. Is the storage full?")
             }
-            WriteOutcome.Ending.PUBLISH -> publish(context, recfile, counts, ledger, message)
+            WriteOutcome.Ending.PUBLISH -> publish(context, recfile, counts, phoneCall, message)
             WriteOutcome.Ending.WHOLE -> {
                 Log.w(TAG, "save: none of the ${transfer.seen} packets of $recfile fell inside the call Telecom reported; saving it whole")
                 open.values.forEach { it.target.abandon() }
-                write(context, recfile, listOf(checkNotNull(whole)), ledger, message, facts = facts)
+                write(context, recfile, listOf(checkNotNull(whole)), phoneCall, message, facts = facts)
             }
             WriteOutcome.Ending.EMPTY -> {
                 // Read the whole thing; there was simply no call audio in it.
@@ -672,7 +675,7 @@ object RecordingSaver {
         context: Context,
         recfile: String,
         counts: List<Pair<Open, Pair<Long, Double>>>,
-        ledger: Boolean,
+        phoneCall: Boolean,
         message: Boolean,
     ): Outcome = withContext(NonCancellable) {
         // From the first publish to the daemon's delete, one piece: a
@@ -704,11 +707,15 @@ object RecordingSaver {
                 "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile) +
                     if (undelivered > 0) ", %.2fs not delivered by the capture".format(undelivered) else "",
             )
-            if (ledger) {
+            if (phoneCall) {
                 FileNames.noteDirection(context, o.part.name, o.part.incoming)
                 // Before anyone can delete it: see CallLedger for why the
                 // missed-call check asks this and not the disk.
                 CallLedger.noteRecording(context, o.part.startMillis, o.part.incoming, seconds.toInt())
+            } else {
+                // Before the recorder's copy goes: one that outlives this,
+                // its delete not getting through, is only deleted next time.
+                CallLedger.noteMessenger(context, o.part.startMillis, o.part.incoming, seconds.toInt())
             }
             if (message) MessageMarks.mark(context, o.part.name)
             _saved.tryEmit(o.part.name)
