@@ -11,6 +11,7 @@ import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.RecordPrompt
+import com.jemcik.jemrec.recordings.SaverFakes
 import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -766,6 +767,87 @@ class CallMonitorServiceTest {
             assertFalse("finishIfIdle counts the warning", stopped)
         }
         eventually("the service stands down after the warning") { stopped }
+    }
+
+    // ---- with a recorder that answers (the saver's seams) --------------------
+
+    /** The recorder holding [file] as [bytes], through the saver's seams
+     *  (SaverFakes); [block] runs with it, and today's recorder is put back. */
+    private fun withRecorder(file: String, bytes: ByteArray, block: (SaverFakes) -> Unit) {
+        val fakes = SaverFakes(context)
+        fakes.install(System.currentTimeMillis())
+        try {
+            fakes.files[file] = bytes
+            block(fakes)
+        } finally {
+            fakes.restore()
+        }
+    }
+
+    @Test fun aSavedCallIsCheckedForMissedCallsAndStandsTheServiceDown() {
+        val file = recfile(start, true)
+        withRecorder(file, SaverFakes.stream(50)) { fakes ->
+            wake("CALL_STARTED", file, incoming = true)
+            wake("CALL_ENDED", file, incoming = true)
+            awaitLog("monitor: recording handled")
+            assertTrue(logged("monitor: saved $file"))
+            assertEquals(1, fakes.published.size)
+            assertEquals(listOf(file), fakes.deleted)
+            assertNull("nothing to report", notRecorded())
+            assertEquals(listOf(CallLedger.Recorded(start, true, 1)), CallLedger.read(context).recordings)
+            eventually("the service stands down") { stopped }
+        }
+    }
+
+    @Test fun anEmptyRecordingIsReportedAndNotedAsTold() {
+        val file = recfile(start, false)
+        withRecorder(file, SaverFakes.stream(0)) { fakes ->
+            wake("CALL_STARTED", file, incoming = false)
+            wake("CALL_ENDED", file, incoming = false)
+            awaitLog("monitor: recording handled")
+            assertEquals("Call not recorded", notRecorded()!!.title())
+            assertEquals("No call audio came through. Some phones do not allow calls to be recorded.", notRecorded()!!.text())
+            assertEquals("Not recording this call", ongoing().title())
+            assertEquals(listOf(file), fakes.deleted)
+            // Told now, so the missed-call check does not tell it again.
+            assertEquals(listOf(CallLedger.Recorded(start, false, 0)), CallLedger.read(context).recordings)
+            eventually("the service stands down") { stopped }
+        }
+    }
+
+    @Test fun aRecordingMadeAfterTheSwitchWentOffIsDeletedFromTheRecorder() {
+        RecorderSwitch.set(context, false)
+        val file = recfile(start, true)
+        withRecorder(file, SaverFakes.stream(10)) { fakes ->
+            wake("CALL_ENDED", file, incoming = true)
+            eventually("the service stands down") { stopped }
+            assertEquals(listOf(file), fakes.deleted)
+            assertTrue(fakes.fetched.isEmpty())
+        }
+    }
+
+    /**
+     * A save that ends before the thread that started it goes on: the service
+     * and the saver both on the starting thread (Unconfined), so the save runs
+     * to its end inside its own launch. Launched straight into its field, the
+     * job was stored after it had ended, the end found the job before it, and
+     * the service stayed up (CI, 2026-11-01). Every time, here.
+     */
+    @Test fun aSaveThatEndsBeforeItsLaunchReturnsStandsTheServiceDown() {
+        controller.destroy()
+        CallMonitorService.dispatcher = kotlinx.coroutines.Dispatchers.Unconfined
+        try {
+            controller = Robolectric.buildService(CallMonitorService::class.java).create()
+            CallLedger.noteRecording(context, start, true, 30)
+            val file = recfile(start, true)
+            withRecorder(file, SaverFakes.stream(10)) {
+                wake("CALL_ENDED", file, incoming = true)
+                assertTrue(logged("monitor: $file was collected already"))
+                assertTrue(stopped)
+            }
+        } finally {
+            CallMonitorService.dispatcher = kotlinx.coroutines.Dispatchers.IO
+        }
     }
 
     // ---- the cable watch ---------------------------------------------------
