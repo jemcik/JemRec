@@ -575,6 +575,24 @@ class RecordingSaverTest {
         assertTrue(logged("save: cannot reach the daemon for $file, will retry"))
     }
 
+    @Test fun aSaveCancelledWhileFetchingIsNoFailureAndKeepsTheRecordersCopy() {
+        val file = recfile()
+        fakes.files[file] = stream(10)
+        fakes.hold()
+        var outcome: Outcome? = null
+        val saving = CoroutineScope(Dispatchers.Default).launch { outcome = RecordingSaver.save(context, file, true) }
+        try {
+            fakes.awaitHeld()
+            saving.cancel()
+        } finally {
+            fakes.release()
+        }
+        runBlocking { saving.join() }
+        assertNull("no outcome: the cancellation goes on up", outcome)
+        assertFalse(logs().any { it.startsWith("save: cannot reach the daemon") })
+        assertTrue(fakes.deleted.isEmpty())
+    }
+
     @Test fun aFileTheRecorderNeverWroteToIsEmpty() {
         val file = recfile()
         fakes.files[file] = ByteArray(0)

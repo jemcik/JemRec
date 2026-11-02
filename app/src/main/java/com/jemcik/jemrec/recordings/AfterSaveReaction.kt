@@ -3,6 +3,7 @@ package com.jemcik.jemrec.recordings
 import android.content.Context
 import android.util.Log
 import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.rethrowingCancellation
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.MissedCalls
 import com.jemcik.jemrec.recordings.RecordingSaver.Outcome
@@ -31,7 +32,7 @@ internal suspend fun AfterSave.react(
             .onFailure { Log.w(TAG, "${by.tag}: after-call notice failed", it) }
     }
     if (row.missedCheck) {
-        runCatching { MissedCalls.check(context) }
+        runCatching { MissedCalls.check(context) }.rethrowingCancellation()
             .onFailure { Log.w(TAG, "${by.tag}: missed-call check failed", it) }
     }
     when (row.tell) {

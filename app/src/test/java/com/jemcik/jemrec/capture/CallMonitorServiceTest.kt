@@ -911,6 +911,26 @@ class CallMonitorServiceTest {
         }
     }
 
+    @Test fun aSaveCutShortByTheServiceGoingIsNotToldAsAFailure() {
+        val file = recfile(start, true)
+        withRecorder(file, SaverFakes.stream(10)) { fakes ->
+            fakes.hold()
+            try {
+                wake("CALL_ENDED", file, incoming = true)
+                fakes.awaitHeld()
+                // Stopped from outside - any app may stop it - mid-save.
+                controller.destroy()
+            } finally {
+                fakes.release()
+            }
+            settle()
+            assertNull("no false alarm", notRecorded())
+            assertFalse(logged("monitor: recording handled"))
+            assertTrue("left on the recorder", fakes.deleted.isEmpty())
+            controller = Robolectric.buildService(CallMonitorService::class.java).create()
+        }
+    }
+
     @Test fun aRecordingMadeAfterTheSwitchWentOffIsDeletedFromTheRecorder() {
         RecorderSwitch.set(context, false)
         val file = recfile(start, true)

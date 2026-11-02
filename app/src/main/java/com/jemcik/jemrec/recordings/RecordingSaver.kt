@@ -24,6 +24,7 @@ import com.jemcik.jemrec.capture.OpusOggWriter
 import com.jemcik.jemrec.capture.PacketClock
 import com.jemcik.jemrec.capture.RecordingStore
 import com.jemcik.jemrec.capture.RecordingTags
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -558,6 +559,8 @@ object RecordingSaver {
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 // Broke off mid-transfer: ambiguous, so keep the file for a retry.
                 Log.e(TAG, "save: transfer of $recfile broke off", t)
@@ -612,6 +615,10 @@ object RecordingSaver {
     ): Outcome {
         val socket = try {
             daemon.fetch(context, recfile)
+        } catch (e: CancellationException) {
+            // Stopped, not failed: the recorder's copy stays for the next
+            // collection, and nobody is told of a failure.
+            throw e
         } catch (t: Throwable) {
             // Could not even reach the daemon: keep the file, try again later.
             Log.w(TAG, "save: cannot reach the daemon for $recfile, will retry", t)

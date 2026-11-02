@@ -16,6 +16,7 @@ import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.PhoneNumbers
 import com.jemcik.jemrec.calls.TelecomAccount
 import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.rethrowingCancellation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -277,7 +278,7 @@ class CallTracker : InCallService() {
             // harmless (RecordingSaver claims and checks).
             for (wait in COLLECT_AFTER_MS) {
                 delay(wait)
-                runCatching { RecordingSaver.reconcile(context) }
+                runCatching { RecordingSaver.reconcile(context) }.rethrowingCancellation()
                     .onFailure { Log.w(TAG, "calltrack: collecting after the call failed", it) }
             }
         }

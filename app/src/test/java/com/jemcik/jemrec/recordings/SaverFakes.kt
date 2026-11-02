@@ -11,6 +11,8 @@ import android.provider.ContactsContract
 import com.jemcik.jemrec.capture.OggSink
 import com.jemcik.jemrec.capture.RecordingStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.robolectric.Robolectric
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -73,6 +75,9 @@ internal class SaverFakes(private val context: Context) {
                 entered?.countDown()
                 held.await(10, TimeUnit.SECONDS)
             }
+            // Where the recorder's own fetch, returning from its I/O thread,
+            // finds the save cancelled meanwhile.
+            currentCoroutineContext().ensureActive()
             if (unreachable) throw IOException("connection refused")
             // What the recorder answers in the codec id's place for a file it no longer has.
             return Canned(files[name] ?: "gone".toByteArray(Charsets.US_ASCII))
