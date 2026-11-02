@@ -14,6 +14,7 @@ import android.os.PowerManager
 import android.util.Log
 import com.jemcik.jemrec.MainActivity
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -58,6 +59,10 @@ class CallMonitorService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile
     private var recording: Job? = null
+
+    /** Jobs past their last look at the others, still returning. Guarded by
+     *  itself, which is finishIfIdle's lock. */
+    private val ended = mutableSetOf<Job>()
 
     /**
      * Whether a call is actually happening.
@@ -285,10 +290,12 @@ class CallMonitorService : Service() {
                 checkingRecorder = false
                 // A call that started meanwhile keeps the service, and its
                 // notification goes back to saying what it says for a call.
-                if (callInProgress || recording?.isActive == true) {
+                // finishIfIdle first, whatever else is up: it is where this
+                // job is marked as ending for the others' checks.
+                if (!finishIfIdle(ending = coroutineContext[Job]) &&
+                    (callInProgress || recording?.isCompleted == false)
+                ) {
                     runCatching { startForegroundCompat() }
-                } else {
-                    finishIfIdle(ending = coroutineContext[Job])
                 }
             }
         }
@@ -297,11 +304,14 @@ class CallMonitorService : Service() {
     /** The user tapped Record on the start-of-call prompt (on-demand). */
     private fun recordNow() {
         RecordPrompt.dismiss(this)
-        recording = scope.launch {
+        launchRecording {
             val name = CaptureDaemon.startOnDemand(this@CallMonitorService)
             if (name.isNullOrBlank()) {
                 Log.w(TAG, "monitor: on-demand start did not take (call over?)")
-                finishIfIdle()
+                // Not counting itself: it is the job in recording, and still
+                // running, so a plain finishIfIdle never stood the service
+                // down with no call up - "Call in progress" stayed.
+                finishIfIdle(ending = coroutineContext[Job])
             } else {
                 Log.i(TAG, "monitor: on-demand recording started -> $name")
                 recordingNow = true
@@ -405,7 +415,7 @@ class CallMonitorService : Service() {
         // Switched off after the daemon had already started (automatic): drop it.
         if (!RecorderSwitch.isOn(this)) {
             Log.i(TAG, "monitor: recorder is off, discarding $recfile")
-            recording = scope.launch {
+            launchRecording {
                 CaptureDaemon.deleteRecording(this@CallMonitorService, recfile)
                 doneWith(coroutineContext[Job])
             }
@@ -414,7 +424,7 @@ class CallMonitorService : Service() {
 
         // A recording exists - automatic, or an on-demand call the user said yes
         // to. Either way the decision is made; fetch and save it.
-        recording = scope.launch {
+        launchRecording {
             saveAndReport(recfile, incoming)
             Log.i(TAG, "monitor: recording handled")
             doneWith(coroutineContext[Job])
@@ -422,15 +432,35 @@ class CallMonitorService : Service() {
     }
 
     /**
+     * [block] as the job in [recording], put there before it runs, so that
+     * the job finds itself there when it ends. Launched straight into the
+     * field, a save that ended at once - nothing answering, or that file
+     * being saved already, as when the recorder's end of a call comes twice -
+     * reached doneWith before this thread had stored it, found the job before
+     * it there, and left the service up after the call (CI, 2026-11-01; made
+     * certain by a 300 ms pause between the launch and the store). Stored but
+     * not yet started, a job is not active: what asks whether one is still
+     * running asks whether it has completed.
+     */
+    private fun launchRecording(block: suspend CoroutineScope.() -> Unit) {
+        val job = scope.launch(start = CoroutineStart.LAZY, block = block)
+        recording = job
+        job.start()
+    }
+
+    /**
      * A save is done: stand down - unless another call has started since, or
      * its save is now the one running. A plain stopSelf here ended the service
      * under the next call: its notification went, and its save was cancelled
      * half way, when the user redialled within this save's few seconds.
+     * Nor under a cable watch, which may be half way through starting the
+     * recorder again, nor under the background-kill warning: finishIfIdle's
+     * rule, which every job's end goes through but two - a save another one
+     * has replaced (the newer one decides) and a Record that started (its
+     * call's end decides).
      */
     private fun doneWith(job: Job?) {
-        // Nor under a cable watch, which may be half way through starting
-        // the recorder again; it stands the service down when it is done.
-        if (recording === job && !callInProgress && cableWatch?.isActive != true) stopSelf()
+        if (recording === job) finishIfIdle(ending = job)
     }
 
     /**
@@ -487,16 +517,31 @@ class CallMonitorService : Service() {
 
     /**
      * Stops the service unless something still needs it, rather than sit as a
-     * foreground service between calls. [ending] is the job
-     * calling this as it finishes - still active until it returns - so it does
-     * not count. The background-kill warning counts like the rest: on an
-     * Honor left to "Manage automatically" JemRec was frozen two seconds after
-     * its service ended (measured 2026-10-25), so a warning stopped under
-     * would wait for the next thaw.
+     * foreground service between calls, and says whether it did. [ending] is
+     * the job calling this as it finishes - still running until it returns -
+     * so it does not count. The background-kill warning counts like the rest:
+     * on an Honor left to "Manage automatically" JemRec was frozen two seconds
+     * after its service ended (measured 2026-10-25), so a warning stopped
+     * under would wait for the next thaw.
+     *
+     * One at a time, and an ending job is marked as such before it looks at
+     * the others: two jobs ending at once - a save and the warning, say - each
+     * saw the other still running, and neither stopped the service (made
+     * certain by a 1.5 s pause after a save's own check). Now the second of
+     * the two finds the first marked, and stops it. Only the mark and the
+     * look share the lock: stopSelf is a call into the system, and the main
+     * thread takes this lock too - for a call that ends with nothing
+     * recorded, Not now, and every start it turns away.
      */
-    private fun finishIfIdle(ending: Job? = null) {
-        fun running(job: Job?) = job?.isActive == true && job !== ending
-        if (!running(recording) && !callInProgress && !running(cableWatch) && !running(warningJob)) stopSelf()
+    private fun finishIfIdle(ending: Job? = null): Boolean {
+        val idle = synchronized(ended) {
+            if (ending != null) ended += ending
+            ended.removeAll { it.isCompleted }
+            fun running(job: Job?) = job != null && !job.isCompleted && job !in ended
+            !running(recording) && !callInProgress && !running(cableWatch) && !running(warningJob)
+        }
+        if (idle) stopSelf()
+        return idle
     }
 
     private fun startForegroundCompat() {

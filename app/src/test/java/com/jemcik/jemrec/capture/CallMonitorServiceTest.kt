@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.provider.CallLog
 import com.jemcik.jemrec.MainActivity
+import kotlinx.coroutines.Job
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,8 +39,9 @@ import org.robolectric.shadows.ShadowLog
  * No recorder runs here, so every question to it fails at once (nothing
  * listens on its port): a save ends "The recorder could not be reached.",
  * Talk to them and Record get no answer. The paths that need a recorder to
- * answer (a save that works, an empty recording) and the cable watch (a wake
- * lock and a restart of the recorder) are left out.
+ * answer (a save that works, an empty recording) and a cable watch that
+ * finds the recorder up or brings it back are left out; one that cannot bring
+ * it back, and ends, is in.
  *
  * Where a test must stop a save half way, the save is held inside its read of
  * the call log (FakeCallLog.hold): with a file name that has the number in it,
@@ -130,16 +132,17 @@ class CallMonitorServiceTest {
     private fun logs() = ShadowLog.getLogsForTag("JemRec").map { it.msg }
     private fun logged(part: String) = logs().any { part in it }
 
-    /** Waits, up to ten seconds, for what the service does on its IO scope. */
-    private fun eventually(what: String, done: () -> Boolean) {
-        val deadline = System.nanoTime() + 10_000_000_000L
+    /** Waits, up to ten seconds unless told otherwise, for what the service
+     *  does on its IO scope. */
+    private fun eventually(what: String, seconds: Long = 10, done: () -> Boolean) {
+        val deadline = System.nanoTime() + seconds * 1_000_000_000L
         while (!done()) {
             if (System.nanoTime() > deadline) fail("never happened: $what")
             Thread.sleep(10)
         }
     }
 
-    private fun awaitLog(part: String) = eventually("log \"$part\"") { logged(part) }
+    private fun awaitLog(part: String, seconds: Long = 10) = eventually("log \"$part\"", seconds) { logged(part) }
 
     /** For the rest of a job whose last log line has been seen: what it
      *  does after that line (a stop, its own end) takes microseconds. */
@@ -488,20 +491,16 @@ class CallMonitorServiceTest {
         assertFalse(stopped)
     }
 
-    @Test fun aRecordForACallThisServiceNeverSawKeepsItUp() {
+    @Test fun aRecordForACallThisServiceNeverSawStandsDownWhenItCannotStart() {
         // The prompt outlives the service on purpose: its ticket is in the
         // preferences, so its answer lands in a service started afresh - the
         // process killed while the prompt sat waiting.
         RecordPrompt.show(context, incoming = true)
         start(tap(prompt()!!, "Record"))
         awaitLog("monitor: on-demand start did not take (call over?)")
-        settle()
-        // Pins today's behaviour, which looks like a bug: recordNow calls
-        // finishIfIdle() without ending = its own job, which is still running,
-        // so nothing stops the service and "Call in progress" stays up with
-        // no call (to be fixed in its own commit)
-        assertFalse(stopped)
-        assertEquals("Call in progress", ongoing().title())
+        // No call this service knows of, and nothing recording: it does not
+        // stay up saying "Call in progress".
+        eventually("the service stands down") { stopped }
     }
 
     // ---- a call ends -------------------------------------------------------
@@ -766,33 +765,70 @@ class CallMonitorServiceTest {
         eventually("the service stands down after the warning") { stopped }
     }
 
-    @Test fun aSaveThatEndsStopsTheServiceUnderTheBackgroundKillWarning() {
-        val log = heldCallLog(start, incoming = true)
+    // ---- the cable watch ---------------------------------------------------
+
+    /**
+     * A watch with no recorder to find: three tries at bringing it back,
+     * each refused here ("setup has not finished"), RETRY_MS apart, then
+     * the keep-alive's: 16 to 19 seconds a test here (2026-11-02), so
+     * waited for longer than the rest.
+     */
+    private fun watchCableToItsEnd() {
+        wake("CABLE") { putExtra("cable", "unplugged") }
+        awaitLog("cable: the recorder is not back yet; leaving it to the keep-alive", seconds = 40)
+        // That line comes before the watch's tail - the Wi-Fi watch armed
+        // when off Wi-Fi, the keep-alive enqueued in WorkManager's test
+        // database - and its end, which a slow machine may take more than
+        // settle() over.
+        eventually("the watch's end") { cableWatch()?.isCompleted == true }
+    }
+
+    /** The service's cable watch, which nothing outside it can see. */
+    private fun cableWatch(): Job? =
+        CallMonitorService::class.java.getDeclaredField("cableWatch").apply { isAccessible = true }.get(service) as Job?
+
+    @Test fun aCableWatchThatEndsWithNothingElseUpStandsDown() {
+        val work = HeldWork(context)
         try {
-            synchronized(BackgroundKill) {
-                wake("BACKGROUND_KILLED")
-                val file = recfile(start, true)
-                wake("CALL_ENDED", file, incoming = true)
-                // Held until its job is in place, so that doneWith sees the
-                // save as the one that counts.
-                log.awaitHeld()
-                log.release()
-                awaitLog("monitor: recording handled")
-                // Re-posted while the warning still runs: the warning's title
-                // comes first, over "Not recording this call".
-                assertEquals("Checking JemRec", ongoing().title())
-                assertEquals(Notification.FOREGROUND_SERVICE_DEFERRED, ongoing().foregroundBehaviour())
-                assertEquals("Call not recorded", notRecorded()!!.title())
-                // Pins today's behaviour, which looks like a bug: doneWith
-                // stops the service while the background-kill warning still
-                // runs (held here), where finishIfIdle waits for it - the
-                // freeze its comment describes (to be fixed in its own commit)
-                eventually("the save's end stops the service") { stopped }
-            }
-            // The warning, let go, ends before the next test.
-            settle()
+            watchCableToItsEnd()
+            eventually("the watch's end stands the service down") { stopped }
         } finally {
-            log.release()
+            work.close()
         }
+    }
+
+    @Test fun aCableWatchThatEndsDuringACallLeavesTheServiceToIt() {
+        val work = HeldWork(context)
+        try {
+            wake("CALL_STARTED", "", incoming = true)
+            watchCableToItsEnd()
+            assertFalse("the call keeps it", stopped)
+            // The call's end, nothing else running, does.
+            wake("CALL_ENDED", "", incoming = true)
+            assertTrue(stopped)
+        } finally {
+            work.close()
+        }
+    }
+
+    @Test fun aSaveThatEndsLeavesTheServiceToTheBackgroundKillWarning() {
+        synchronized(BackgroundKill) {
+            wake("BACKGROUND_KILLED")
+            val file = recfile(start, true)
+            wake("CALL_ENDED", file, incoming = true)
+            awaitLog("monitor: recording handled")
+            // Re-posted while the warning still runs: the warning's title
+            // comes first, over "Not recording this call".
+            assertEquals("Checking JemRec", ongoing().title())
+            assertEquals(Notification.FOREGROUND_SERVICE_DEFERRED, ongoing().foregroundBehaviour())
+            assertEquals("Call not recorded", notRecorded()!!.title())
+            settle()
+            // Not stopped under the warning (held here): a phone that
+            // freezes an app once its service ends would hold the warning
+            // back until the next thaw.
+            assertFalse(stopped)
+        }
+        // The warning, let go, stands the service down as it ends.
+        eventually("the warning's end stops the service") { stopped }
     }
 }
