@@ -5,6 +5,7 @@ import android.telecom.Call
 import android.telephony.TelephonyManager
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.calls.PhoneNumbers
 
 /**
  * The answering machine stands down for a day after the user calls an
@@ -82,13 +83,13 @@ internal object EmergencyPause {
         val details = call.details
         if (details.hasProperty(Call.Details.PROPERTY_NETWORK_IDENTIFIED_EMERGENCY_CALL)) return true
         if (details.callDirection != Call.Details.DIRECTION_OUTGOING) return false
-        return isEmergencyNumber(context, details.handle?.schemeSpecificPart ?: return false)
+        return isEmergencyNumber(context, PhoneNumbers.of(details.handle) ?: return false)
     }
 
     /** Whether [number] is an emergency number on this phone - one a test
      *  call never dials, either. */
     fun isEmergencyNumber(context: Context, number: String): Boolean {
-        val digits = number.filter { it.isDigit() || it == '+' }
+        val digits = PhoneNumbers.emergencyDigits(number)
         if (digits.isEmpty()) return false
         // Public from Android 10, and no permission for an exact match; where
         // it cannot answer, the numbers every GSM phone treats as emergency.

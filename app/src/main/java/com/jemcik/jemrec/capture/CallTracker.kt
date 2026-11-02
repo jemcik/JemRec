@@ -12,6 +12,7 @@ import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.CallTracking
+import com.jemcik.jemrec.calls.PhoneNumbers
 import com.jemcik.jemrec.recordings.RecordingSaver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +61,7 @@ class CallTracker : InCallService() {
         changed(call)
         // Whose calls to keep, asked once for both: the contacts lookup is
         // the costly part of each, and the two must judge the caller alike.
-        val number = call.details.handle?.schemeSpecificPart
+        val number = PhoneNumbers.of(call.details.handle)
         val keeps = lazy { rulesKeep(applicationContext, number) }
         decideEarly(call, keeps)
         decideAnswer(call, keeps)
@@ -238,7 +239,7 @@ class CallTracker : InCallService() {
         incoming = call.details.callDirection == Call.Details.DIRECTION_INCOMING,
         // The number only with the call-log permission: the same consent the
         // call log needs, for the same information.
-        number = if (CallLogLookup.granted(this)) call.details.handle?.schemeSpecificPart else null,
+        number = if (CallLogLookup.granted(this)) PhoneNumbers.of(call.details.handle) else null,
         // Already answered, if Telecom says so: a call first seen here late -
         // tracking switched on mid-call, a service bound mid-call - is not
         // then taken for one nobody answered, and deleted as such.

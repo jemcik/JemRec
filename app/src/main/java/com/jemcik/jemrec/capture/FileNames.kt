@@ -3,9 +3,9 @@ package com.jemcik.jemrec.capture
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import android.telephony.PhoneNumberUtils
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.calls.PhoneNumbers
 import com.jemcik.jemrec.calls.VoipApps
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -163,45 +163,14 @@ object FileNames {
         return name.take(end)
     }
 
-    /**
-     * A number with its country code, +380501234567, as the number format
-     * writes it. The call log has a number as it was dialled (Android:
-     * CallLog.Calls.NUMBER, "as the user entered it"), and an incoming one as
-     * the network sent it - all 60 incoming calls on the Honor began with +,
-     * 2026-11-01 - so one person can be 0501234567 one way and +380501234567
-     * the other. [country] reads the first: the call log keeps one with each
-     * call (UA on all 178 of the Honor's). Null where Android does not take
-     * it for a valid number - a short code like 477, no country to read a
-     * local number in, or a range newer than the phone's own copy of the
-     * numbering plan - and the name then has its [digits].
-     */
-    internal fun international(number: String?, country: String?): String? {
-        if (number.isNullOrBlank()) return null
-        return runCatching { PhoneNumberUtils.formatNumberToE164(number, country?.uppercase(Locale.ROOT)) }.getOrNull()
-    }
+    /** A number with its country code, as the number format writes it
+     *  (PhoneNumbers.international). */
+    internal fun international(number: String?, country: String?): String? = PhoneNumbers.international(number, country)
 
-    /**
-     * The number a call was dialled to, as a name may carry it. What follows a
-     * pause (,) or a wait (;) is not the number but an extension, dialled once
-     * the call is up - the network part ends there, as
-     * PhoneNumberUtils.extractNetworkPortion has it - and "With the caller"
-     * named 0501234567,123 as 0501234567123 (FileNamesTest). Caller ID
-     * hidden or shown for one call is dialled in front of the number, #31# or
-     * *31# (3GPP TS 22.030): the number is what follows. Any other * or #
-     * makes it a code - *86 - whose digits were never a number (Android gives
-     * it no country code either): null rather than those.
-     */
-    private fun dialled(number: String?): String? =
-        number?.substringBefore(PhoneNumberUtils.PAUSE)?.substringBefore(PhoneNumberUtils.WAIT)?.trim()
-            ?.removePrefix("#31#")?.removePrefix("*31#")?.takeIf { '*' !in it && '#' !in it }
+    private fun dialled(number: String?): String? = PhoneNumbers.dialled(number)
 
-    /** A number as it goes into a name: digits and a leading +, nothing else. */
-    internal fun digits(number: String?): String? {
-        val n = number?.trim() ?: return null
-        val kept = n.filter { it.isDigit() }
-        if (kept.isEmpty()) return null
-        return if (n.startsWith("+")) "+$kept" else kept
-    }
+    /** A number as it goes into a name (PhoneNumbers.digits). */
+    internal fun digits(number: String?): String? = PhoneNumbers.digits(number)
 
     /**
      * A recording's name as a log line may show it: its date and time, never

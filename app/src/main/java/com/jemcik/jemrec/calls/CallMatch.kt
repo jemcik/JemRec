@@ -1,6 +1,5 @@
 package com.jemcik.jemrec.calls
 
-import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.recordings.DaemonFile
 
@@ -67,12 +66,12 @@ internal object CallMatch {
      * The call with [number] that a recording starting at [at] fell inside:
      * from the log's date to its end, the way Honor's Phone app matches its
      * own recordings (see FileNames.build). Compared digit for digit, as
-     * FileNames.digits wrote the number into the name.
+     * PhoneNumbers.digits wrote the number into the name.
      */
     fun withNumber(entries: List<CallLogLookup.Entry>, number: String, at: Long): CallLogLookup.Entry? {
-        val wanted = FileNames.digits(number) ?: return null
+        val wanted = PhoneNumbers.digits(number) ?: return null
         return entries
-            .filter { FileNames.digits(it.number) == wanted }
+            .filter { PhoneNumbers.digits(it.number) == wanted }
             .filter { at in (it.at - AFTER_MS)..(it.at + it.seconds * 1000L + AFTER_MS) }
             .minByOrNull { kotlin.math.abs(it.at - at) }
     }

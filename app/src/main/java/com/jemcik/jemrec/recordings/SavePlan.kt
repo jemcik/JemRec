@@ -5,6 +5,7 @@ import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
+import com.jemcik.jemrec.calls.PhoneNumbers
 import com.jemcik.jemrec.capture.FileNames
 
 /**
@@ -119,7 +120,7 @@ internal object SavePlan {
     ): CallLogLookup.Entry? {
         repeat(tries) { attempt ->
             val entry = lookups.logged(start, call.incoming)
-            if (entry != null && CallLogLookup.sameNumber(entry.number, call.number)) return entry
+            if (entry != null && PhoneNumbers.sameNumber(entry.number, call.number)) return entry
             if (attempt < tries - 1) lookups.pause()
         }
         return null

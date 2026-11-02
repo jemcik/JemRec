@@ -360,22 +360,8 @@ object CallLogLookup {
     internal fun withNumber(entries: List<Entry>, number: String, at: Long): Entry? =
         CallMatch.withNumber(entries, number, at)
 
-    /**
-     * Whether two ways of writing a number are the same number - Telecom's
-     * "+13034997111" and the call log's "3034997111", say. Loosely, the way
-     * Android matches numbers to contacts: the digits alone, and the last
-     * seven of them when both have that many. Pure.
-     */
-    internal fun sameNumber(a: String?, b: String?): Boolean {
-        val x = a?.filter { it.isDigit() }.orEmpty()
-        val y = b?.filter { it.isDigit() }.orEmpty()
-        if (x.isEmpty() || y.isEmpty()) return false
-        if (x.length < MIN_MATCH || y.length < MIN_MATCH) return x == y
-        return x.takeLast(MIN_MATCH) == y.takeLast(MIN_MATCH)
-    }
-
-    /** Android's own loose match for numbers looks at the last seven digits. */
-    private const val MIN_MATCH = 7
+    /** Whether two ways of writing a number are the same number (PhoneNumbers.sameNumber). */
+    internal fun sameNumber(a: String?, b: String?): Boolean = PhoneNumbers.sameNumber(a, b)
 
     /** Every incoming and outgoing call the log dates from [from] to [to]. */
     internal fun entriesBetween(context: Context, from: Long, to: Long): List<Entry> {
