@@ -214,40 +214,36 @@ object RecordingSaver {
         val messenger = VoipApps.forRecfile(recfile)
         if (messenger != null) return saveMessenger(context, recfile, startedAt, messenger, file.messengerIncoming)
 
+        when (SavePlan.drop(file, startedAt.time, CallLedger.read(context).accounted)) {
+            SavePlan.Drop.DUPLICATE -> {
+                Log.i(TAG, "save: $recfile was saved before; deleting the daemon's copy")
+                dropFromDaemon(context, recfile, announce = false)
+                return Outcome.Gone
+            }
+            SavePlan.Drop.GREETING_FAILED -> {
+                Log.i(TAG, "save: $recfile - the greeting could not be played")
+                // Accounted for: no missed-call report on top. A failure is
+                // told by whoever collected it - the hang-up's save or the
+                // reconcile - and the Calls tab says which it was.
+                dropFromDaemon(context, recfile, announce = true) {
+                    CallLedger.noteGreetingFailed(context, startedAt.time, incoming)
+                }
+                return Outcome.GreetingFailed
+            }
+            SavePlan.Drop.GREETING_HANG_UP -> {
+                Log.i(TAG, "save: $recfile - the caller hung up during the greeting; nothing to keep")
+                dropFromDaemon(context, recfile, announce = true) {
+                    CallLedger.noteGreetingHangUp(context, startedAt.time, incoming)
+                }
+                return Outcome.GreetingHangUp
+            }
+            null -> Unit
+        }
+
         // Who it was with - asked only when something needs to know: the
         // rules on whose calls to keep, or a file name with the caller in it.
         // With neither, which is the default, this is skipped entirely and a
         // call is saved exactly as it always was.
-        // Saved once already, and the daemon's copy outlived it - a delete
-        // that did not get through. Not again: the second would be "(1)".
-        // So for a call the answering machine had and kept nothing of: told
-        // once, not at every pass while a delete does not get through.
-        if (CallLedger.read(context).accounted.any { it.startMillis == startedAt.time }) {
-            Log.i(TAG, "save: $recfile was saved before; deleting the daemon's copy")
-            daemon.delete(context, recfile)
-            return Outcome.Gone
-        }
-
-        // A message: the answering machine took the call. The recorder named
-        // the file with where the message starts - after the silent greeting -
-        // or "none" when the caller left before the beep, or "fail" when the
-        // greeting could not be played and the recorder hung up.
-        if (file.message == DaemonFile.Message.None || file.message == DaemonFile.Message.Failed) {
-            val failed = file.message == DaemonFile.Message.Failed
-            Log.i(TAG, "save: $recfile - " + if (failed) "the greeting could not be played" else "the caller hung up during the greeting; nothing to keep")
-            daemon.delete(context, recfile)
-            // Accounted for, either way: no missed-call report on top. A
-            // failure is told by whoever collected it - the hang-up's save or
-            // the reconcile - and the Calls tab says which it was.
-            if (failed) {
-                CallLedger.noteGreetingFailed(context, startedAt.time, incoming)
-            } else {
-                CallLedger.noteGreetingHangUp(context, startedAt.time, incoming)
-            }
-            _saved.tryEmit(recfile)
-            return if (failed) Outcome.GreetingFailed else Outcome.GreetingHangUp
-        }
-
         val format = FileNames.format(context)
         val ruled = CallRules.active(context) && rulesApply(context, startedAt.time)
 
@@ -259,14 +255,9 @@ object RecordingSaver {
         } else {
             emptyList()
         }
-        // Switched off during the call: the hang-up drops such a recording
-        // (CallMonitorService), and so does this, when the hang-up's wake did
-        // not land - the two must agree. Telecom says when the call ended.
-        val ended = tracked.firstOrNull()?.endedAt?.takeIf { it > 0 }
-        if (ended != null && CoverageHistory.stateAt(CoverageHistory.read(context), ended) == CoverageHistory.State.OFF) {
+        if (SavePlan.switchedOff(tracked, CoverageHistory.read(context))) {
             Log.i(TAG, "save: recording was switched off during $recfile; discarding it")
-            daemon.delete(context, recfile)
-            _saved.tryEmit(recfile)
+            dropFromDaemon(context, recfile, announce = true)
             return Outcome.Skipped
         }
         // The daemon's other files are calls too: one whose save failed is
@@ -290,17 +281,17 @@ object RecordingSaver {
         return when (decision) {
             is SavePlan.Decision.NotAnswered -> {
                 Log.i(TAG, "save: $recfile was never answered - only ringing, not saved")
-                daemon.delete(context, recfile)
-                CallLedger.noteRecording(context, decision.start, decision.incoming, 0)
-                _saved.tryEmit(recfile)
+                dropFromDaemon(context, recfile, announce = true) {
+                    CallLedger.noteRecording(context, decision.start, decision.incoming, 0)
+                }
                 Outcome.NotAnswered
             }
             is SavePlan.Decision.LeaveOut -> {
                 Log.i(TAG, "save: $recfile is a call the rules leave out - deleting it unsaved")
-                daemon.delete(context, recfile)
-                decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
-                // A Calls tab on screen says so now, not at the next open.
-                _saved.tryEmit(recfile)
+                // Announced: a Calls tab on screen says so now, not at the next open.
+                dropFromDaemon(context, recfile, announce = true) {
+                    decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
+                }
                 Outcome.Skipped
             }
             is SavePlan.Decision.Save -> {
@@ -308,43 +299,20 @@ object RecordingSaver {
                     Log.i(TAG, "save: ${decision.leftOut.size} call(s) in $recfile are ones the rules leave out")
                 }
                 decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
-                // A message is saved from its start, without the silence of
-                // the caller listening to the greeting; a call the user took
-                // over, from just before they took it, or the caller's first
-                // words if earlier (AnswerMachine.takenStart) - an ordinary
-                // recording.
-                val messageStart = (file.message as? DaemonFile.Message.Starts)?.ms
-                val trimFrom = messageStart ?: file.takenFromMs
-                // A message is the answered call's alone. A call answered
-                // during it - a waiting one, which takes the message over -
-                // has its first moments in the file, recorded before the
-                // recorder heard of it: no message, and in Ask first never
-                // asked for (Main.splitOffMessage).
-                val own = decision.parts.filter { it.startMillis == startedAt.time }
-                val kept = if (messageStart != null && own.isNotEmpty()) own else decision.parts
-                if (kept.size < decision.parts.size) {
-                    Log.i(TAG, "save: $recfile - ${decision.parts.size - kept.size} call(s) answered during the message, not kept")
+                val cut = SavePlan.cut(decision, file, startedAt.time, tracked)
+                if (cut.notKept > 0) {
+                    Log.i(TAG, "save: $recfile - ${cut.notKept} call(s) answered during the message, not kept")
                 }
-                val parts = if (trimFrom != null) {
-                    kept.map { it.from(trimFrom / CallTracking.PACKET_MS) }
-                } else {
-                    kept
+                val clock = PacketClock(startedAt.time, cut.clockOffset)
+                val written = write(context, recfile, cut.parts, ledger = true, message = cut.message, clock = clock, orWhole = cut.orWhole) { part ->
+                    RecordingTags.Facts(message = cut.message, incoming = part.incoming)
                 }
-                val message = messageStart != null
-                // Placed by the packets' own stamps, with the clocks' offset
-                // from Telecom's account (PacketClock, issue #40). A message
-                // is cut by counting from its first packet, which is where
-                // the recorder measured its start from.
-                val clock = PacketClock(startedAt.time, if (trimFrom == null) tracked.firstOrNull()?.clockOffset else null)
-                val orWhole = if (trimFrom == null) SavePlan.wholeIfNothingFits(decision, tracked) else null
-                val written = write(context, recfile, parts, ledger = true, message = message, clock = clock, orWhole = orWhole) { part ->
-                    RecordingTags.Facts(message = message, incoming = part.incoming)
-                }
-                if (messageStart != null && written == Outcome.Empty) {
+                if (cut.message && written == Outcome.Empty) {
                     // Nothing from the message's start on: the sound the
                     // recorder took for the caller came as the line went down
                     // (measured on the Android 12 emulator, 2026-10-22). The
                     // caller left before the beep, not a silent recording.
+                    // The recorder's copy went with the empty read.
                     Log.i(TAG, "save: $recfile - nothing after the message's start; the caller hung up during the greeting")
                     CallLedger.noteGreetingHangUp(context, startedAt.time, incoming)
                     _saved.tryEmit(recfile)
@@ -354,6 +322,17 @@ object RecordingSaver {
                 }
             }
         }
+    }
+
+    /**
+     * A recording dropped unsaved: deleted from the recorder, [note]d in the
+     * ledger, and [announce]d - the Calls tab on screen then says what
+     * became of the call.
+     */
+    private suspend fun dropFromDaemon(context: Context, recfile: String, announce: Boolean, note: () -> Unit = {}) {
+        daemon.delete(context, recfile)
+        note()
+        if (announce) _saved.tryEmit(recfile)
     }
 
     /** The phone behind SavePlan: the contacts and the call log. */
@@ -705,7 +684,7 @@ object RecordingSaver {
                 // check that says so.
                 Log.w(TAG, "save: no audio in $recfile, discarding")
                 open.values.forEach { it.target.abandon() }
-                daemon.delete(context, recfile)
+                dropFromDaemon(context, recfile, announce = false)
                 Outcome.Empty
             }
             else -> {

@@ -1,8 +1,10 @@
 package com.jemcik.jemrec.recordings
 
 import android.util.Log
+import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallTracking
+import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.capture.FileNames
 
 /**
@@ -215,6 +217,94 @@ internal object SavePlan {
             )
         }
         return if (parts.isEmpty()) Decision.LeaveOut(leftOut) else Decision.Save(parts, leftOut)
+    }
+
+    /** Why a recording is dropped before it is fetched. */
+    enum class Drop {
+        /** Saved once already, and the recorder's copy outlived it - a delete
+         *  that did not get through. Not again: the second would be "(1)". So
+         *  too for a call the answering machine had and kept nothing of: told
+         *  once, not at every pass while a delete does not get through. */
+        DUPLICATE,
+
+        /** A message whose caller left before the beep: nothing said. */
+        GREETING_HANG_UP,
+
+        /** A message whose greeting could not be played: the recorder hung up. */
+        GREETING_FAILED,
+    }
+
+    /**
+     * Whether a phone call's recording is dropped before anything is fetched,
+     * and why: by the ledger's [accounted] calls, any one of which starting
+     * at [startedAt] is this recording's, then by what its name says of a
+     * message (the recorder names the file with where the message starts, or
+     * "none" or "fail" - see DaemonFile).
+     */
+    fun drop(file: DaemonFile, startedAt: Long, accounted: List<CallLedger.Recorded>): Drop? = when {
+        accounted.any { it.startMillis == startedAt } -> Drop.DUPLICATE
+        file.message == DaemonFile.Message.Failed -> Drop.GREETING_FAILED
+        file.message == DaemonFile.Message.None -> Drop.GREETING_HANG_UP
+        else -> null
+    }
+
+    /**
+     * Whether recording was switched off before the call ended, by
+     * Telecom's end of its own call ([tracked], CallTracking.callsIn) and
+     * the switch's [history]. The hang-up drops such a recording
+     * (CallMonitorService), and so does this, when the hang-up's wake did
+     * not land - the two must agree.
+     */
+    fun switchedOff(tracked: List<CallTracking.Tracked>, history: List<Pair<Long, CoverageHistory.State>>): Boolean {
+        val ended = tracked.firstOrNull()?.endedAt?.takeIf { it > 0 } ?: return false
+        return CoverageHistory.stateAt(history, ended) == CoverageHistory.State.OFF
+    }
+
+    /**
+     * What a kept recording is written as: [parts], [message] or not, the
+     * clocks' [clockOffset] the packets are placed by, the [orWhole] saved
+     * when no part catches a packet, and how many calls a message did not
+     * keep ([notKept]).
+     */
+    class Cut(
+        val parts: List<RecordingSaver.Part>,
+        val message: Boolean,
+        val clockOffset: Long?,
+        val orWhole: RecordingSaver.Part?,
+        val notKept: Int,
+    )
+
+    /**
+     * Cut [decision] to what is written, by what the recording's [file] name
+     * says and Telecom's account ([tracked]) of the call that began at
+     * [startedAt].
+     *
+     * A message is saved from its start, without the silence of the caller
+     * listening to the greeting; a call the user took over, from just before
+     * they took it, or the caller's first words if earlier
+     * (AnswerMachine.takenStart) - an ordinary recording. A message is the
+     * answered call's alone. A call answered during it - a waiting one, which
+     * takes the message over - has its first moments in the file, recorded
+     * before the recorder heard of it: no message, and in Ask first never
+     * asked for (Main.splitOffMessage).
+     *
+     * Placed by the packets' own stamps, with the clocks' offset from
+     * Telecom's account (PacketClock, issue #40). A message is cut by
+     * counting from its first packet, which is where the recorder measured
+     * its start from.
+     */
+    fun cut(decision: Decision.Save, file: DaemonFile, startedAt: Long, tracked: List<CallTracking.Tracked>): Cut {
+        val messageStart = (file.message as? DaemonFile.Message.Starts)?.ms
+        val trimFrom = messageStart ?: file.takenFromMs
+        val own = decision.parts.filter { it.startMillis == startedAt }
+        val kept = if (messageStart != null && own.isNotEmpty()) own else decision.parts
+        return Cut(
+            parts = if (trimFrom != null) kept.map { it.from(trimFrom / CallTracking.PACKET_MS) } else kept,
+            message = messageStart != null,
+            clockOffset = if (trimFrom == null) tracked.firstOrNull()?.clockOffset else null,
+            orWhole = if (trimFrom == null) wholeIfNothingFits(decision, tracked) else null,
+            notKept = decision.parts.size - kept.size,
+        )
     }
 
     /**
