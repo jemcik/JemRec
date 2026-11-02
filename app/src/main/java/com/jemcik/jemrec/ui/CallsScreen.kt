@@ -33,8 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.jemcik.jemrec.capture.CallHistory
-import com.jemcik.jemrec.capture.CallLogLookup
+import com.jemcik.jemrec.calls.CallHistory
+import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.capture.Recording
 
 /**

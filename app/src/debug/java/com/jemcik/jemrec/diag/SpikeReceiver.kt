@@ -140,14 +140,14 @@ class SpikeReceiver : BroadcastReceiver() {
                         val path = intent.getStringExtra("greeting")
                         val text = runCatching {
                             if (path != null) {
-                                com.jemcik.jemrec.capture.Greeting.save(appContext, java.io.File(path).readBytes())
+                                com.jemcik.jemrec.answering.Greeting.save(appContext, java.io.File(path).readBytes())
                             }
-                            com.jemcik.jemrec.capture.AnsweringMachine.setEnabled(appContext, intent.getBooleanExtra("on", true))
+                            com.jemcik.jemrec.answering.AnsweringMachine.setEnabled(appContext, intent.getBooleanExtra("on", true))
                             // All of it: the recording mode a check set too.
                             com.jemcik.jemrec.capture.CaptureDaemon.pushMode(appContext)
                             val set = com.jemcik.jemrec.capture.CaptureDaemon.setAnswering(appContext)
-                            "greeting ${com.jemcik.jemrec.capture.Greeting.seconds(appContext)} s, " +
-                                "wire ${com.jemcik.jemrec.capture.AnsweringMachine.wire(appContext)}, recorder took it: $set, " +
+                            "greeting ${com.jemcik.jemrec.answering.Greeting.seconds(appContext)} s, " +
+                                "wire ${com.jemcik.jemrec.answering.AnsweringMachine.wire(appContext)}, recorder took it: $set, " +
                                 "recorder has ${com.jemcik.jemrec.capture.CaptureDaemon.greetingBytes(appContext)} bytes"
                         }.getOrElse { "failed: $it" }
                         report(appContext, "answer", text)
@@ -202,7 +202,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     //   --es op answered --el since 1793016000000
                     "answered" -> {
                         val since = intent.getLongExtra("since", 0L)
-                        val calls = com.jemcik.jemrec.capture.CallLogLookup.answeredCallsSince(appContext, since)
+                        val calls = com.jemcik.jemrec.calls.CallLogLookup.answeredCallsSince(appContext, since)
                         report(
                             appContext, "answered",
                             calls.joinToString("\n") { "${it.at} ${if (it.incoming) "in" else "out"} ${it.label}" }
@@ -559,9 +559,9 @@ class SpikeReceiver : BroadcastReceiver() {
                         val verdict = com.jemcik.jemrec.capture.AudioCheck.check(appContext, uri)
                         // Only with --ez notify true: run over a folder of
                         // recordings, one notification each is noise.
-                        if (intent.getBooleanExtra("notify", false)) com.jemcik.jemrec.capture.AfterCall.show(
+                        if (intent.getBooleanExtra("notify", false)) com.jemcik.jemrec.calls.AfterCall.show(
                             appContext,
-                            com.jemcik.jemrec.capture.AfterCall.Call(
+                            com.jemcik.jemrec.calls.AfterCall.Call(
                                 file.name, uri, file.absolutePath, 60.0, true,
                                 System.currentTimeMillis(), "Test call", verdict,
                             ),

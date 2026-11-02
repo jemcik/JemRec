@@ -10,7 +10,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import com.jemcik.jemrec.capture.VoipApps
+import com.jemcik.jemrec.calls.VoipApps
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -123,7 +123,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.jemcik.jemrec.capture.AudioAccess
-import com.jemcik.jemrec.capture.CallLogLookup
+import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.capture.Trash
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

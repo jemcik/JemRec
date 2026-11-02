@@ -1,12 +1,12 @@
 package com.jemcik.jemrec.contract
 
 import com.jemcik.jemrec.Prefs
-import com.jemcik.jemrec.capture.AfterCall
-import com.jemcik.jemrec.capture.AnswerDiagnostics
-import com.jemcik.jemrec.capture.AnsweringMachine
-import com.jemcik.jemrec.capture.CallRules
-import com.jemcik.jemrec.capture.CallTracking
-import com.jemcik.jemrec.capture.CoverageHistory
+import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.answering.AnsweringMachine
+import com.jemcik.jemrec.calls.CallRules
+import com.jemcik.jemrec.calls.CallTracking
+import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.DebugSwitch
 import com.jemcik.jemrec.capture.DebugSwitchesOff
@@ -17,7 +17,7 @@ import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.Retention
 import com.jemcik.jemrec.capture.StartWithoutWifi
-import com.jemcik.jemrec.capture.VoipCallNotes
+import com.jemcik.jemrec.calls.VoipCallNotes
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.LookChoice

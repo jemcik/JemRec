@@ -33,9 +33,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.jemcik.jemrec.capture.AnswerDiagnostics
-import com.jemcik.jemrec.capture.AnsweringMachine
-import com.jemcik.jemrec.capture.EmergencyPause
+import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.answering.AnsweringMachine
+import com.jemcik.jemrec.answering.EmergencyPause
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -267,7 +267,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                         else -> "No greeting yet"
                     },
                     summary = when {
-                        a.recordingTake -> "Speak now. Tap Stop when you are done (${com.jemcik.jemrec.capture.Greeting.MAX_SECONDS} seconds at most)."
+                        a.recordingTake -> "Speak now. Tap Stop when you are done (${com.jemcik.jemrec.answering.Greeting.MAX_SECONDS} seconds at most)."
                         a.greetingProblem != null -> a.greetingProblem
                         a.greetingSeconds != null ->
                             "${seconds((a.greetingSeconds ?: 0.0).toInt().coerceAtLeast(1))}. " +

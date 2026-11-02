@@ -1,9 +1,9 @@
 package com.jemcik.jemrec.ui
 
 import android.net.Uri
-import com.jemcik.jemrec.capture.CallHistory
-import com.jemcik.jemrec.capture.CallHistory.Kind
-import com.jemcik.jemrec.capture.CallHistory.Status
+import com.jemcik.jemrec.calls.CallHistory
+import com.jemcik.jemrec.calls.CallHistory.Kind
+import com.jemcik.jemrec.calls.CallHistory.Status
 import com.jemcik.jemrec.capture.Recording
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

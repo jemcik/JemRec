@@ -1,13 +1,13 @@
 package com.jemcik.jemrec.ui.screens
 
 import android.net.Uri
-import com.jemcik.jemrec.capture.CallHistory
-import com.jemcik.jemrec.capture.CallHistory.Kind
-import com.jemcik.jemrec.capture.CallHistory.Status
-import com.jemcik.jemrec.capture.CallRules
+import com.jemcik.jemrec.calls.CallHistory
+import com.jemcik.jemrec.calls.CallHistory.Kind
+import com.jemcik.jemrec.calls.CallHistory.Status
+import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.VoipApps
+import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.capture.Waveforms
 import com.jemcik.jemrec.ui.SetupStep
 import com.jemcik.jemrec.ui.UiState

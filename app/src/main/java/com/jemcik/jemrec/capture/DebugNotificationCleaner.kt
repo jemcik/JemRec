@@ -9,6 +9,8 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.calls.VoipCallNotes
 
 /**
  * Hides the system's "Wireless debugging connected" notification - if, and

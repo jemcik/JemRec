@@ -1,5 +1,7 @@
 package com.jemcik.jemrec.capture
 
+import com.jemcik.jemrec.calls.CallTracking
+
 /**
  * Where each packet of a daemon recording falls in time, in 20 ms slots from
  * the recording's start: what the cut to a call (CallTracking.segments) is

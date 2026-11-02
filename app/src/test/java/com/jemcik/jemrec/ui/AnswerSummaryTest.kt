@@ -1,6 +1,6 @@
 package com.jemcik.jemrec.ui
 
-import com.jemcik.jemrec.capture.AnswerDiagnostics
+import com.jemcik.jemrec.answering.AnswerDiagnostics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

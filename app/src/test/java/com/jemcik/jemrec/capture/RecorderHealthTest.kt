@@ -1,6 +1,8 @@
 package com.jemcik.jemrec.capture
 
-import com.jemcik.jemrec.capture.CallLedger.Recorded
+import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.calls.CallLedger
+import com.jemcik.jemrec.calls.CallLedger.Recorded
 import com.jemcik.jemrec.capture.RecorderHealth.Problem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

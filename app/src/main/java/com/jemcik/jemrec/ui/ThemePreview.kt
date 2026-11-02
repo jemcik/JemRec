@@ -28,7 +28,7 @@ import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.VoipApps
+import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.capture.Waveforms
 import java.text.SimpleDateFormat
 import java.util.Calendar

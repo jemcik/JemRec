@@ -1,6 +1,6 @@
 package com.jemcik.jemrec.ui.screens
 
-import com.jemcik.jemrec.capture.AnswerDiagnostics
+import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.Screen
@@ -66,7 +66,7 @@ class AnswerScreenshots : ScreenTest() {
     }
 
     @Test fun noLimit() {
-        answering(ready.copy(longest = com.jemcik.jemrec.capture.AnsweringMachine.NO_LIMIT))
+        answering(ready.copy(longest = com.jemcik.jemrec.answering.AnsweringMachine.NO_LIMIT))
         snap("answering-no-limit")
     }
 

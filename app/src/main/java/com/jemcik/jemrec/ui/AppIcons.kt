@@ -10,7 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.core.graphics.createBitmap
-import com.jemcik.jemrec.capture.VoipApps
+import com.jemcik.jemrec.calls.VoipApps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap

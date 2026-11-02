@@ -1,6 +1,6 @@
 package com.jemcik.jemrec.ui
 
-import com.jemcik.jemrec.capture.VoipApps
+import com.jemcik.jemrec.calls.VoipApps
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

@@ -61,7 +61,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.capture.RecordingSaver
+import com.jemcik.jemrec.recordings.RecordingSaver
 import kotlinx.coroutines.delay
 import kotlin.system.exitProcess
 import kotlinx.coroutines.flow.conflate

@@ -4,7 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import com.jemcik.jemrec.capture.CallRules.Contacts
+import com.jemcik.jemrec.calls.CallRules.Contacts
 import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.OffMode
 import com.jemcik.jemrec.ui.AnswerUi

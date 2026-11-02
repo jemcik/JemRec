@@ -225,7 +225,7 @@ class LogLinesTest {
                     "java.util.List<String> ports = new java.util.ArrayList<>();",
                 ),
                 "recorder took it: true" to listOf("recorder took it: \$set, "),
-                "wire 1," to listOf("\"wire \${com.jemcik.jemrec.capture.AnsweringMachine.wire(appContext)}, recorder took it"),
+                "wire 1," to listOf("\"wire \${com.jemcik.jemrec.answering.AnsweringMachine.wire(appContext)}, recorder took it"),
                 "recorder up (connect CONNECTED)" to listOf(
                     "\"revive: \${if (alive) \"recorder up\" else \"recorder down\"} (connect \${found.connect})\"",
                     "ConnectOutcome.CONNECTED",
