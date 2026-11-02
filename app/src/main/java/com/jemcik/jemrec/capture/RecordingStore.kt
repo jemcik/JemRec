@@ -248,9 +248,12 @@ object RecordingStore {
     private fun openInAppStorage(context: Context, name: String): Target? = runCatching {
         val dir = File(context.getExternalFilesDir(null), "recordings").apply { mkdirs() }
         val file = File(dir, name)
+        // Truncated, as MediaStore's new row and a new document are empty: a
+        // file of the name from before - a save that failed half way, then
+        // tried again untagged and shorter - kept its tail past the new end.
         val pfd = ParcelFileDescriptor.open(
             file,
-            ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE,
+            ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE or ParcelFileDescriptor.MODE_TRUNCATE,
         )
         Target(
             name,
