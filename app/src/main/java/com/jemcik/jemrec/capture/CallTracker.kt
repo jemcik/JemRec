@@ -12,6 +12,7 @@ import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.CallTracking
+import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.PhoneNumbers
 import com.jemcik.jemrec.recordings.RecordingSaver
 import kotlinx.coroutines.CoroutineScope
@@ -62,19 +63,9 @@ class CallTracker : InCallService() {
         // Whose calls to keep, asked once for both: the contacts lookup is
         // the costly part of each, and the two must judge the caller alike.
         val number = PhoneNumbers.of(call.details.handle)
-        val keeps = lazy { rulesKeep(applicationContext, number) }
+        val keeps = lazy { CallRules.verdict(applicationContext, number) }
         decideEarly(call, keeps)
         decideAnswer(call, keeps)
-    }
-
-    /** Whose calls to keep, for [number]: true if kept - or no rules - false
-     *  if left out, null when it cannot be told: no call log or contacts,
-     *  or the lookup failed. */
-    private fun rulesKeep(context: Context, number: String?): Boolean? = when {
-        !CallRules.active(context) -> true
-        !CallLogLookup.granted(context) || !CallLogLookup.photosGranted(context) -> null
-        else -> CallLogLookup.contactFor(context, number, mutableMapOf())
-            .let { if (it.failed) null else CallRules.keeps(context, it.ids) }
     }
 
     /**
@@ -272,7 +263,7 @@ class CallTracker : InCallService() {
         val id = call.details.creationTimeMillis
         val now = System.currentTimeMillis()
         if (CallTracking.calls(context).any { it.id != id && it.endedAt > now - RECENT_END_MS }) return
-        if (!RecorderSwitch.isOn(context) || RecordingMode.of(context) != RecordingMode.AUTOMATIC) return
+        if (!CoverageHistory.automatic(context)) return
         // Kept, no rules, or no telling: recorded.
         if (keeps.value != false) return
         leftOut += id

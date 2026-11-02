@@ -10,6 +10,7 @@ import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.calls.CallTracking
+import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.ui.Setup
 import kotlinx.coroutines.Dispatchers
@@ -1183,10 +1184,10 @@ object CaptureDaemon {
     }
 
     /** The mode the daemon should be in right now, from the app's settings. */
-    internal fun currentMode(context: Context): Int = when {
-        !RecorderSwitch.isOn(context) -> MODE_OFF
-        RecordingMode.of(context) == RecordingMode.AUTOMATIC -> MODE_AUTOMATIC
-        else -> MODE_ON_DEMAND
+    internal fun currentMode(context: Context): Int = when (CoverageHistory.current(context)) {
+        CoverageHistory.State.OFF -> MODE_OFF
+        CoverageHistory.State.AUTOMATIC -> MODE_AUTOMATIC
+        CoverageHistory.State.ASK_FIRST -> MODE_ON_DEMAND
     }
 
     /** Setup.finish() ran to the end at least once. Setup owns the flag. */

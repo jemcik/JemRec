@@ -38,6 +38,9 @@ internal object CoverageHistory {
         else -> State.AUTOMATIC
     }
 
+    /** Recording on, and in Record every call: asked this way everywhere. */
+    fun automatic(context: Context): Boolean = current(context) == State.AUTOMATIC
+
     /** The settings just changed: note what they are now. */
     @Synchronized
     fun note(context: Context, now: Long = System.currentTimeMillis()) {

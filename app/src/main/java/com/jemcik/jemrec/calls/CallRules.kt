@@ -70,6 +70,33 @@ object CallRules {
     fun active(context: Context): Boolean = contacts(context) != Contacts.ALL || !otherNumbers(context)
 
     /**
+     * Whose calls to keep, for [number], while its call rings or is dialled
+     * (CallTracker): true if kept - or no rules - false if left out, null
+     * when it cannot be told: no call log or contacts, or the lookup failed.
+     */
+    fun verdict(context: Context, number: String?): Boolean? = when {
+        !active(context) -> true
+        !CallLogLookup.granted(context) || !CallLogLookup.photosGranted(context) -> null
+        else -> CallLogLookup.contactFor(context, number, mutableMapOf())
+            .let { if (it.failed) null else keeps(context, it.ids) }
+    }
+
+    /**
+     * Whether the rules get a say in a recording that began at [startMillis],
+     * when it is saved. Not when it was recorded because the user tapped
+     * Record - ask-first mode at the time - since no rule overrides asking for
+     * it. And not without the contacts, which say who is who: the rules stand
+     * down rather than take every contact for a stranger.
+     */
+    fun applies(context: Context, startMillis: Long): Boolean {
+        if (!active(context)) return false
+        if (!CallLogLookup.photosGranted(context)) return false
+        val state = CoverageHistory.stateAt(CoverageHistory.read(context), startMillis)
+            ?: CoverageHistory.current(context)
+        return state != CoverageHistory.State.ASK_FIRST
+    }
+
+    /**
      * Whether a call with the contact [contactId] is kept - null meaning the
      * number is not in the contacts, or there was no number. Pure.
      */

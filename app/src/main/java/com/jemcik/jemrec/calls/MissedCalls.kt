@@ -9,8 +9,6 @@ import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.AfterCallReceiver
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.capture.RecorderSwitch
-import com.jemcik.jemrec.capture.RecordingMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -85,7 +83,7 @@ internal object MissedCalls {
 
     suspend fun check(context: Context) {
         if (!CallLogLookup.granted(context)) return
-        if (!RecorderSwitch.isOn(context) || RecordingMode.of(context) != RecordingMode.AUTOMATIC) return
+        if (!CoverageHistory.automatic(context)) return
         // A call in progress is not in the log yet, and its recording is not
         // saved yet. Ask again after it.
         if (CaptureDaemon.callInProgress(context)) return

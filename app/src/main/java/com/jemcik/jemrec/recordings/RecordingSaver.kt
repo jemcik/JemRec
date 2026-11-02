@@ -245,7 +245,7 @@ object RecordingSaver {
         // With neither, which is the default, this is skipped entirely and a
         // call is saved exactly as it always was.
         val format = FileNames.format(context)
-        val ruled = CallRules.active(context) && rulesApply(context, startedAt.time)
+        val ruled = CallRules.applies(context, startedAt.time)
 
         // Exact call tracking: Telecom's own account of the calls this
         // recording holds. Without it - switched off, or Telecom told us
@@ -733,20 +733,6 @@ object RecordingSaver {
     /** The call log is written as a call ends, and the save can get there
      *  first: asked this many times, a second apart. */
     private const val IDENTIFY_TRIES = 8
-
-    /**
-     * Whether the rules get a say in this call. Not when it was recorded
-     * because the user tapped Record - ask-first mode at the time - since no
-     * rule overrides asking for it. And not without the contacts, which say
-     * who is who: the rules stand down rather than take every contact for a
-     * stranger.
-     */
-    private fun rulesApply(context: Context, startMillis: Long): Boolean {
-        if (!CallLogLookup.photosGranted(context)) return false
-        val state = CoverageHistory.stateAt(CoverageHistory.read(context), startMillis)
-            ?: CoverageHistory.current(context)
-        return state != CoverageHistory.State.ASK_FIRST
-    }
 
     /** A file that still cannot be saved after this long is given up on. A
      *  week is far past any transient cause; what is left is a file that
