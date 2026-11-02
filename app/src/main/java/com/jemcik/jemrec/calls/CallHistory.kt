@@ -170,10 +170,9 @@ object CallHistory {
         }
     }
 
-    private fun query(context: Context): List<Logged> {
-        val out = mutableListOf<Logged>()
-        context.contentResolver.query(
-            CallLog.Calls.CONTENT_URI,
+    private fun query(context: Context): List<Logged> =
+        CallLogRows.read(
+            context,
             arrayOf(
                 CallLog.Calls.DATE,
                 CallLog.Calls.DURATION,
@@ -182,26 +181,11 @@ object CallHistory {
                 CallLog.Calls.CACHED_NAME,
                 CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
             ),
+            // Every row: Meet's, in the call log too, are under Messenger
+            // calls, and are left out with every other app's (CallLogRows).
             null, null,
             "${CallLog.Calls.DATE} DESC",
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                // Phone calls only: Meet's, in the call log too, are under
-                // Messenger calls, and are not in this tab (CallLogLookup.isPhoneCall).
-                if (!CallLogLookup.isPhoneCall(cursor.getString(5))) continue
-                val name = cursor.getString(4)?.takeIf { it.isNotBlank() }
-                val number = cursor.getString(3)?.takeIf { it.isNotBlank() }
-                out += Logged(
-                    at = cursor.getLong(0),
-                    seconds = cursor.getInt(1),
-                    kind = kindOf(cursor.getInt(2)),
-                    label = name ?: number ?: "Unknown number",
-                    number = number,
-                )
-            }
-        }
-        return out
-    }
+        ).map { Logged(it.at, it.seconds, kindOf(it.type), it.label, it.number) }
 
     internal fun kindOf(type: Int): Kind = when (type) {
         CallLog.Calls.INCOMING_TYPE -> Kind.INCOMING

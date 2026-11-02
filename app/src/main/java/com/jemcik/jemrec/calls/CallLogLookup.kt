@@ -199,20 +199,18 @@ object CallLogLookup {
         return out
     }
 
-    private fun query(context: Context, from: Long, to: Long): List<Entry> {
-        val projection = arrayOf(
-            CallLog.Calls.DATE,
-            CallLog.Calls.TYPE,
-            CallLog.Calls.NUMBER,
-            CallLog.Calls.CACHED_NAME,
-            CallLog.Calls.DURATION,
-            CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
-            CallLog.Calls.COUNTRY_ISO,
-        )
-        val out = mutableListOf<Entry>()
-        context.contentResolver.query(
-            CallLog.Calls.CONTENT_URI,
-            projection,
+    private fun query(context: Context, from: Long, to: Long): List<Entry> =
+        CallLogRows.read(
+            context,
+            arrayOf(
+                CallLog.Calls.DATE,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.DURATION,
+                CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME,
+                CallLog.Calls.COUNTRY_ISO,
+            ),
             // Never a call that did not go off-hook here: a recording cannot
             // be one. Every type but INCOMING used to count as outgoing, so a
             // missed call just before a call-back could name the call-back.
@@ -229,36 +227,7 @@ object CallLogLookup {
                 CallLog.Calls.ANSWERED_EXTERNALLY_TYPE.toString(),
             ),
             "${CallLog.Calls.DATE} DESC",
-        )?.use { cursor ->
-            val dateCol = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
-            val typeCol = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
-            val numberCol = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
-            val nameCol = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
-            val durationCol = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
-            val accountCol = cursor.getColumnIndexOrThrow(CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME)
-            val countryCol = cursor.getColumnIndexOrThrow(CallLog.Calls.COUNTRY_ISO)
-            while (cursor.moveToNext()) {
-                if (!isPhoneCall(cursor.getString(accountCol))) continue
-                val type = cursor.getInt(typeCol)
-                val name = cursor.getString(nameCol)?.takeIf { it.isNotBlank() }
-                val number = cursor.getString(numberCol)?.takeIf { it.isNotBlank() }
-                // A name is what a person recognises; the number is the
-                // fallback. Neither means the entry is useless - a withheld
-                // number is still worth saying so.
-                val label = name ?: number ?: "Unknown number"
-                out += Entry(
-                    at = cursor.getLong(dateCol),
-                    incoming = type == CallLog.Calls.INCOMING_TYPE,
-                    label = label,
-                    number = number,
-                    seconds = cursor.getInt(durationCol),
-                    name = name,
-                    country = cursor.getString(countryCol)?.takeIf { it.isNotBlank() },
-                )
-            }
-        }
-        return out
-    }
+        ).map { Entry(it.at, it.incoming, it.label, it.number, it.seconds, it.name, it.country) }
 
     /**
      * When each call since a moment began, for the self-test's check that the
@@ -270,10 +239,9 @@ object CallLogLookup {
      * rings, but call screening can turn one away before it ever does, and a
      * check that cries wolf teaches people to ignore it.
      */
-    internal fun callStartsSince(context: Context, since: Long): List<Long> {
-        val out = mutableListOf<Long>()
-        context.contentResolver.query(
-            CallLog.Calls.CONTENT_URI,
+    internal fun callStartsSince(context: Context, since: Long): List<Long> =
+        CallLogRows.read(
+            context,
             arrayOf(CallLog.Calls.DATE, CallLog.Calls.PHONE_ACCOUNT_COMPONENT_NAME),
             "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.TYPE} IN (?, ?)",
             arrayOf(
@@ -282,11 +250,7 @@ object CallLogLookup {
                 CallLog.Calls.OUTGOING_TYPE.toString(),
             ),
             null,
-        )?.use { cursor ->
-            while (cursor.moveToNext()) if (isPhoneCall(cursor.getString(1))) out += cursor.getLong(0)
-        }
-        return out
-    }
+        ).map { it.at }
 
     /**
      * The contact's photo, looked up by number.
@@ -417,10 +381,9 @@ object CallLogLookup {
      * recorded, if recording was on. The same two kinds callStartsSince asks
      * for, for the same reason.
      */
-    internal fun answeredCallsSince(context: Context, since: Long): List<LoggedCall> {
-        val out = mutableListOf<LoggedCall>()
-        context.contentResolver.query(
-            CallLog.Calls.CONTENT_URI,
+    internal fun answeredCallsSince(context: Context, since: Long): List<LoggedCall> =
+        CallLogRows.read(
+            context,
             arrayOf(
                 CallLog.Calls.DATE,
                 CallLog.Calls.DURATION,
@@ -436,19 +399,5 @@ object CallLogLookup {
                 CallLog.Calls.OUTGOING_TYPE.toString(),
             ),
             "${CallLog.Calls.DATE} ASC",
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                if (!isPhoneCall(cursor.getString(5))) continue
-                val name = cursor.getString(4)?.takeIf { it.isNotBlank() }
-                val number = cursor.getString(3)?.takeIf { it.isNotBlank() }
-                out += LoggedCall(
-                    at = cursor.getLong(0),
-                    seconds = cursor.getInt(1),
-                    incoming = cursor.getInt(2) == CallLog.Calls.INCOMING_TYPE,
-                    label = name ?: number ?: "Unknown number",
-                )
-            }
-        }
-        return out
-    }
+        ).map { LoggedCall(it.at, it.seconds, it.incoming, it.label) }
 }
