@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1287 JVM tests, no device needed - 1091 for the app and 196 for the daemon:
+1288 JVM tests, no device needed - 1092 for the app and 196 for the daemon:
 
     ./gradlew test
 

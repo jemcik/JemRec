@@ -361,6 +361,9 @@ class CallMonitorService : Service() {
                         if (up) {
                             callInProgress = true
                             recordingNow = true
+                            // As at any call's start: a failure told of is
+                            // the call before's.
+                            notRecording = false
                         }
                     }
                 }

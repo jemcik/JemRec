@@ -537,6 +537,32 @@ class CallMonitorServiceTest {
         }
     }
 
+    @Test fun aRecordedCallLeavesAnEarlierFailureBehind() {
+        // An earlier call's save failed, no call up: its notification says so.
+        val first = recfile(start, true)
+        wake("CALL_ENDED", first, incoming = true)
+        awaitLog("monitor: recording handled")
+        assertEquals("Not recording this call", ongoing().title())
+        // A call whose start this service never heard of, recorded by a
+        // Record tap; its save held, the service up for it.
+        val second = recfile(start + 60_000, false)
+        val log = heldCallLog(start + 60_000, incoming = false)
+        try {
+            withRecord(second) {
+                RecordPrompt.show(context, incoming = false)
+                start(tap(prompt()!!, "Record"))
+                awaitLog("monitor: on-demand recording started -> $second")
+                wake("CALL_ENDED", second, incoming = false)
+                log.awaitHeld()
+                // Any re-post now is about this call, which nothing failed.
+                stray(null)
+                assertEquals("Call in progress", ongoing().title())
+            }
+        } finally {
+            log.release()
+        }
+    }
+
     @Test fun aRecordThatStartsAsTheCallEndsStandsDownAndSaysNothingOfRecording() {
         val answer = kotlinx.coroutines.CompletableDeferred<Unit>()
         withRecord(recfile(start, true), answer) {
