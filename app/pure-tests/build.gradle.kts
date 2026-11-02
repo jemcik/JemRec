@@ -27,9 +27,11 @@ plugins {
 
 val pure = listOf(
     "capture/AudioStream",
+    "capture/CallNotice",
     "capture/OpusHead",
     "capture/OpusPackets",
     "capture/PlaybackRules",
+    "capture/StandDown",
     "capture/SystemProperty",
     "recordings/AfterSave",
     "recordings/DaemonFile",
@@ -39,9 +41,11 @@ val pure = listOf(
 
 val pureTests = listOf(
     "capture/AudioStreamTest",
+    "capture/CallNoticeTest",
     "capture/OpusHeadTest",
     "capture/OpusPacketsTest",
     "capture/PlaybackRulesTest",
+    "capture/StandDownTest",
     "recordings/AfterSaveTest",
     "recordings/DaemonFileTest",
     "recordings/WriteOutcomeTest",

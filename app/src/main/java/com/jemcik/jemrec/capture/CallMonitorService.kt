@@ -68,9 +68,8 @@ class CallMonitorService : Service() {
     @Volatile
     private var recording: Job? = null
 
-    /** Jobs past their last look at the others, still returning. Guarded by
-     *  itself, which is finishIfIdle's lock. */
-    private val ended = mutableSetOf<Job>()
+    /** Whether the service may stand down: one rule, finishIfIdle's. */
+    private val standDown = StandDown<Job> { it.isCompleted }
 
     /**
      * Whether a call is actually happening.
@@ -492,22 +491,14 @@ class CallMonitorService : Service() {
      * after its service ended (measured 2026-10-25), so a warning stopped
      * under would wait for the next thaw.
      *
-     * One at a time, and an ending job is marked as such before it looks at
-     * the others: two jobs ending at once - a save and the warning, say - each
-     * saw the other still running, and neither stopped the service (made
-     * certain by a 1.5 s pause after a save's own check). Now the second of
-     * the two finds the first marked, and stops it. Only the mark and the
-     * look share the lock: stopSelf is a call into the system, and the main
-     * thread takes this lock too - for a call that ends with nothing
-     * recorded, Not now, and every start it turns away.
+     * The rule itself, and why an ending job is marked before it looks at
+     * the others, is StandDown's. Only the mark and the look share its lock:
+     * stopSelf is a call into the system, and the main thread takes this
+     * lock too - for a call that ends with nothing recorded, Not now, and
+     * every start it turns away.
      */
     private fun finishIfIdle(ending: Job? = null): Boolean {
-        val idle = synchronized(ended) {
-            if (ending != null) ended += ending
-            ended.removeAll { it.isCompleted }
-            fun running(job: Job?) = job != null && !job.isCompleted && job !in ended
-            !running(recording) && !callInProgress && !running(cableWatch) && !running(warningJob)
-        }
+        val idle = standDown.idle(ending, { callInProgress }) { listOf(recording, cableWatch, warningJob) }
         if (idle) stopSelf()
         return idle
     }
@@ -517,42 +508,25 @@ class CallMonitorService : Service() {
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        // This service only exists during a call now, so the notification only
-        // says what it is doing about THIS call. "Recording call" while it
-        // records; "Call in progress" in the gap before recording starts, or
-        // while the mid-call prompt waits for an answer in on-demand mode.
-        val ticket = messageTicket
-        // Only the cable watch, no call: a check that ends in seconds when the
-        // cable changed nothing, and so the one notification here that waits.
-        val cableOnly = checkingRecorder && !callInProgress && !recordingNow && ticket == null
-        // The background-kill warning's wake, no call and no cable watch: over
-        // as soon as the warning is posted, so it waits, and is never seen.
-        val warningWake = warningOnly && !checkingRecorder && !callInProgress && !recordingNow && ticket == null
-        val title = when {
-            warningWake -> "Checking JemRec"
-            cableOnly -> "Checking the recorder"
-            ticket != null && testing -> "Testing the answering machine"
-            ticket != null -> "Taking a message"
-            recordingNow -> "Recording call"
-            notRecording -> "Not recording this call"
-            else -> "Call in progress"
-        }
-        val text = when {
-            warningWake -> "Making sure it keeps running"
-            cableOnly -> "A USB cable went in or came out"
-            ticket != null && testing -> "Your greeting is playing to the caller"
-            ticket != null -> "Your greeting is playing; your microphone is muted"
-            recordingNow -> "Saving this call"
-            notRecording -> "Tap to see why"
-            else -> "JemRec is handling this call"
-        }
+        // Each field read once: the save's coroutine writes some of them too.
+        val notice = CallNotice.of(
+            CallNotice.State(
+                callUp = callInProgress,
+                recording = recordingNow,
+                notRecording = notRecording,
+                messageTicket = messageTicket,
+                testing = testing,
+                checkingRecorder = checkingRecorder,
+                warningOnly = warningOnly,
+            ),
+        )
         val builder = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(text)
+            .setContentTitle(notice.title)
+            .setContentText(notice.text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(tap)
             .setOngoing(true)
-        if (ticket != null) {
+        notice.buttons?.let { ticket ->
             builder.addAction(messageAction("Talk to them", ACTION_TALK, ticket))
                 .addAction(messageAction("Hang up", ACTION_HANG_UP, ticket))
         }
@@ -568,12 +542,13 @@ class CallMonitorService : Service() {
             // once: the person should know the moment their call is being
             // recorded, not ten seconds into it.
             //
-            // DEFERRED for the cable watch alone: a cable that changed
-            // nothing ends it within CableWatch.WATCH_MS, under those ten
-            // seconds, so a phone put on a charger shows nothing at all. One
-            // that took the recorder down takes longer, and then it shows.
+            // DEFERRED for the cable watch alone, and the background-kill
+            // warning's wake: a cable that changed nothing ends it within
+            // CableWatch.WATCH_MS, under those ten seconds, so a phone put on
+            // a charger shows nothing at all. One that took the recorder down
+            // takes longer, and then it shows.
             .setForegroundServiceBehavior(
-                if (cableOnly || warningWake) Notification.FOREGROUND_SERVICE_DEFERRED
+                if (notice.deferred) Notification.FOREGROUND_SERVICE_DEFERRED
                 else Notification.FOREGROUND_SERVICE_IMMEDIATE,
             )
             .build()
