@@ -132,7 +132,7 @@ object RecordingSaver {
         data object Busy : Outcome
 
         /** A call the user's rules leave out (see CallRules), or one recorded
-         *  with recording switched off before it ended: deleted from the
+         *  with recording switched off when it ended: deleted from the
          *  daemon, never saved, and announced for a Calls tab on screen. Not
          *  a failure. */
         data object Skipped : Outcome

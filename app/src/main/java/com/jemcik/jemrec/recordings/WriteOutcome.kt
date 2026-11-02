@@ -40,7 +40,7 @@ internal object WriteOutcome {
         /** No audio in it: dropped. */
         EMPTY,
 
-        /** Recording was switched off before it ended: dropped, as the
+        /** Recording was switched off when it ended: dropped, as the
          *  hang-up drops it. */
         SWITCHED_OFF,
 

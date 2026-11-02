@@ -102,10 +102,12 @@ call the call service saved, and after each of the keep-alive's collections.
 - A recording of two calls (call waiting) is saved as one file each, and noted
   only once every file is saved: a part that would not save is saved at the
   next try, the others again with it, rather than lost.
-- A recording switched off during its call is dropped by either: the call
-  service reads the switch as the call's end reaches it; a later collection
-  goes by the end Telecom gave, or else by the recording's own end, which is
-  when the recorder's wake to the call service goes.
+- A recording is dropped when recording is switched off at its call's end;
+  switched off and on again before the end, it is kept whole (the Honor,
+  2026-11-02). Both collectors judge that moment: the call service reads the
+  switch as the call's end reaches it; a later collection goes by the end
+  Telecom gave, or else by the recording's own end, which is when the
+  recorder's wake to the call service goes.
 
 ## The socket is authenticated in both directions
 

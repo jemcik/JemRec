@@ -251,8 +251,8 @@ internal object SavePlan {
     }
 
     /**
-     * Whether recording was switched off before the call ended, by
-     * Telecom's end of its own call ([tracked], CallTracking.callsIn) and
+     * Whether recording was switched off when the call ended - switched off
+     * and on again before then, it is kept - by Telecom's end of its own call ([tracked], CallTracking.callsIn) and
      * the switch's [history]. The hang-up drops such a recording
      * (CallMonitorService), and so does this, when the hang-up's wake did
      * not land - the two must agree. Without Telecom's end the recording's

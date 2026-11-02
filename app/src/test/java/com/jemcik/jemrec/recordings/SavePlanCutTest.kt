@@ -33,6 +33,8 @@ class SavePlanCutTest {
         assertFalse("not ended", SavePlan.switchedOff(call(0), history))
         assertFalse("no account", SavePlan.switchedOff(emptyList(), history))
         assertFalse("no history", SavePlan.switchedOff(call(t + 20_000), emptyList()))
+        val onAgain = history + (t + 15_000 to State.AUTOMATIC)
+        assertFalse("on again before the end", SavePlan.switchedOff(call(t + 20_000), onAgain))
     }
 
     private val own = RecordingSaver.Part("own.ogg", true, t, listOf(0L until 500L))
