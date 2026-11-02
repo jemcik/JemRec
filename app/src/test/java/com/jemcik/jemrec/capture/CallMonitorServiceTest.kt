@@ -725,9 +725,9 @@ class CallMonitorServiceTest {
         }
     }
 
-    // ---- bugs, pinned as they are ------------------------------------------
+    // ---- one call's save, the next call -------------------------------------
 
-    @Test fun aFailedSaveSaysNotRecordingOverTheNextCallBeingRecorded() {
+    @Test fun aFailedSaveLeavesTheNextCallBeingRecordedAsItIs() {
         val log = heldCallLog(start, incoming = true)
         try {
             val first = recfile(start, true)
@@ -740,12 +740,10 @@ class CallMonitorServiceTest {
             log.release()
             awaitLog("monitor: recording handled")
             assertEquals("The recorder could not be reached.", notRecorded()!!.text())
-            // Pins today's behaviour, which looks like a bug: the first call's
-            // failed save clears recordingNow and sets notRecording for the
-            // call being recorded now, which then says "Not recording this
-            // call" (to be fixed in its own commit)
-            assertEquals("Not recording this call", ongoing().title())
-            assertEquals("Tap to see why", ongoing().text())
+            // The first call's failure is told by its own notification; the
+            // call being recorded now still says so.
+            assertEquals("Recording call", ongoing().title())
+            assertEquals("Saving this call", ongoing().text())
             settle()
             assertFalse(stopped)
         } finally {
@@ -753,7 +751,7 @@ class CallMonitorServiceTest {
         }
     }
 
-    @Test fun aFailedSaveSticksToTheCallsAfterIt() {
+    @Test fun aFailedSaveDoesNotStickToTheCallsAfterIt() {
         val log = heldCallLog(start, incoming = true)
         try {
             // A fails while B is up, and B is saving when C starts.
@@ -770,17 +768,14 @@ class CallMonitorServiceTest {
             log.hold()
             wake("CALL_ENDED", b, incoming = false)
             log.awaitHeld()
-            // C, in Ask first: never recorded, and nothing of it failed.
+            // C, in Ask first: never recorded, and nothing of it failed. A's
+            // failure, two calls back, is not C's to show.
             wake("CALL_STARTED", "", incoming = true)
             assertNotNull(prompt())
-            // Pins today's behaviour, which looks like a bug: notRecording is
-            // never cleared, so C says "Not recording this call - Tap to see
-            // why" for A's failure, two calls back, and goes on saying it
-            // after its own Not now (to be fixed in its own commit)
-            assertEquals("Not recording this call", ongoing().title())
-            assertEquals("Tap to see why", ongoing().text())
+            assertEquals("Call in progress", ongoing().title())
+            assertEquals("JemRec is handling this call", ongoing().text())
             start(tap(prompt()!!, "Not now"))
-            assertEquals("Not recording this call", ongoing().title())
+            assertEquals("Call in progress", ongoing().title())
             log.release()
             eventually("B's save") { logs().count { it == "monitor: recording handled" } == 2 }
         } finally {

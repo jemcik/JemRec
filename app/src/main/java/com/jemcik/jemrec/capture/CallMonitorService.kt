@@ -389,6 +389,8 @@ class CallMonitorService : Service() {
 
     private fun onCallStarted(recfile: String?, incoming: Boolean, app: String?) {
         callInProgress = true
+        // A failure told of is the call before's.
+        notRecording = false
         // A message's own wake is MESSAGE_STARTED. This one, for a call the
         // answering machine took, is Ask first's after a takeover: the
         // message is over, and the prompt asks about the rest.
@@ -415,6 +417,7 @@ class CallMonitorService : Service() {
     private fun onMessageStarted(test: Boolean) {
         Log.i(TAG, "monitor: the answering machine is taking a message${if (test) " (test)" else ""}")
         callInProgress = true
+        notRecording = false
         testing = test
         messageTicket = java.util.UUID.randomUUID().toString()
         startForegroundCompat()
@@ -438,6 +441,7 @@ class CallMonitorService : Service() {
     private fun onMessageTaken() {
         Log.i(TAG, "monitor: the call was taken over")
         callInProgress = true
+        notRecording = false
         messageTaken()
     }
 
@@ -631,10 +635,20 @@ class CallMonitorService : Service() {
      * not be missed. Not ongoing, and dismissible - it is news, not status.
      */
     private fun reportNotRecorded(reason: String) {
-        // The ongoing notification must stop claiming otherwise.
-        recordingNow = false
-        notRecording = true
-        runCatching { startForegroundCompat() }
+        // The ongoing notification must stop claiming otherwise - for the
+        // call that ended. A call up now, the next one, says what is
+        // happening to it: a failure set on it said "Not recording this
+        // call" over a call being recorded, and went on saying it for the
+        // calls after.
+        val ended = standDown.holding {
+            (!callInProgress).also { ended ->
+                if (ended) {
+                    recordingNow = false
+                    notRecording = true
+                }
+            }
+        }
+        if (ended) runCatching { startForegroundCompat() }
         AfterCall.postNotRecorded(this, reason)
     }
 
