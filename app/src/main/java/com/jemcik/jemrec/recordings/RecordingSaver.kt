@@ -466,14 +466,113 @@ object RecordingSaver {
     }
 
     /**
-     * Fetch the daemon's file and mux it into [parts], each packet into the
+     * Reading a recording from the recorder into [parts], each packet into the
      * part that holds it; a packet none holds is dropped. A part's file is
      * opened at its first packet, so a part with none leaves nothing behind.
+     * [clock]: where each packet falls, for parts cut to a call; without it
+     * they are counted. [tagged]: through a work file, for the tags.
+     */
+    private class Transfer(
+        private val context: Context,
+        private val recfile: String,
+        private val parts: List<Part>,
+        private val clock: PacketClock?,
+        private val tagged: Boolean,
+    ) {
+        val open = LinkedHashMap<Part, Open>()
+        var seen = 0L
+            private set
+        var read = WriteOutcome.Read.BROKE_OFF
+            private set
+
+        fun from(socket: Socket) {
+            try {
+                val stream = try {
+                    AudioStream(socket)
+                } catch (e: java.io.EOFException) {
+                    // Nothing at all, not even a codec id: a file the daemon
+                    // created and never wrote to (it could not start capturing).
+                    // An empty recording, not a transfer to retry for a week.
+                    runCatching { socket.close() }
+                    null
+                } catch (t: Throwable) {
+                    runCatching { socket.close() }
+                    throw t
+                }
+                if (stream == null) read = WriteOutcome.Read.COMPLETE
+                stream?.use { stream ->
+                    if (stream.codecId == GONE) {
+                        read = WriteOutcome.Read.GONE
+                    } else {
+                        val config = stream.readPacket()
+                        if (config == null || !config.isConfig) {
+                            // Empty or malformed - a completed read with nothing in it.
+                            Log.w(TAG, "save: $recfile had no config packet")
+                            read = WriteOutcome.Read.COMPLETE
+                        } else {
+                            var nowhere = false
+                            while (true) {
+                                val packet = stream.readPacket() ?: break
+                                if (packet.isConfig) continue
+                                val slot = clock?.next(packet.pts) ?: seen
+                                seen++
+                                val part = parts.firstOrNull { it.holds(slot) }
+                                if (part == null) continue
+                                val into = open[part] ?: run {
+                                    val target = targets(context, part.name)
+                                    if (target == null) {
+                                        nowhere = true
+                                        null
+                                    } else {
+                                        open(part, target, config.data).also { open[part] = it }
+                                    }
+                                } ?: break
+                                if (into.firstSlot < 0) into.firstSlot = slot
+                                into.lastSlot = slot
+                                into.writer.write(packet.data, packet.pts)
+                            }
+                            read = if (nowhere) WriteOutcome.Read.NOWHERE else WriteOutcome.Read.COMPLETE
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                // Broke off mid-transfer: ambiguous, so keep the file for a retry.
+                Log.e(TAG, "save: transfer of $recfile broke off", t)
+            }
+        }
+
+        /** A writer for [part] into [target]; one that cannot be made must
+         *  not leave its target open behind it. */
+        private fun open(part: Part, target: RecordingStore.Target, config: ByteArray): Open {
+            var work: File? = null
+            var workFd: ParcelFileDescriptor? = null
+            val writer = try {
+                if (tagged) {
+                    work = RecordingTags.workFile(context)
+                    workFd = ParcelFileDescriptor.open(
+                        work,
+                        ParcelFileDescriptor.MODE_READ_WRITE or
+                            ParcelFileDescriptor.MODE_TRUNCATE,
+                    )
+                }
+                sinks((workFd ?: target.descriptor).fileDescriptor, config)
+            } catch (t: Throwable) {
+                runCatching { workFd?.close() }
+                work?.delete()
+                target.abandon()
+                throw t
+            }
+            return Open(part, target, writer, work, workFd)
+        }
+    }
+
+    /**
+     * Fetch the daemon's file and mux it into [parts] (Transfer), then finish
+     * every part, copy each into place, and publish them - or say why not.
      * [ledger]: note each saved part for the missed-call check - phone calls
      * only. [facts]: what each part's file says of itself (RecordingTags).
-     * [clock]: where each packet falls, for parts cut to a call; without it
-     * they are counted. [orWhole]: saved into instead when no part held any
-     * of the file's packets (SavePlan.wholeIfNothingFits).
+     * [orWhole]: saved into instead when no part held any of the file's
+     * packets (SavePlan.wholeIfNothingFits).
      */
     private suspend fun write(
         context: Context,
@@ -498,84 +597,8 @@ object RecordingSaver {
         // into place needs it once, and a file that cannot be saved is given
         // up on after a week. Untagged, it is saved as it always was; its
         // marks are in the preferences still, and only a reinstall loses them.
-        val tagged = !failedBefore(context, recfile)
-        val open = LinkedHashMap<Part, Open>()
-        var seen = 0L
-        var completed = false
-        var gone = false
-        var nowhere = false
-        try {
-            val stream = try {
-                AudioStream(socket)
-            } catch (e: java.io.EOFException) {
-                // Nothing at all, not even a codec id: a file the daemon
-                // created and never wrote to (it could not start capturing).
-                // An empty recording, not a transfer to retry for a week.
-                runCatching { socket.close() }
-                null
-            } catch (t: Throwable) {
-                runCatching { socket.close() }
-                throw t
-            }
-            if (stream == null) completed = true
-            stream?.use { stream ->
-                if (stream.codecId == GONE) {
-                    gone = true
-                } else {
-                    val config = stream.readPacket()
-                    if (config == null || !config.isConfig) {
-                        // Empty or malformed - a completed read with nothing in it.
-                        Log.w(TAG, "save: $recfile had no config packet")
-                        completed = true
-                    } else {
-                        while (true) {
-                            val packet = stream.readPacket() ?: break
-                            if (packet.isConfig) continue
-                            val slot = clock?.next(packet.pts) ?: seen
-                            seen++
-                            val part = parts.firstOrNull { it.holds(slot) }
-                            if (part == null) continue
-                            val into = open[part] ?: run {
-                                val target = targets(context, part.name)
-                                if (target == null) {
-                                    nowhere = true
-                                    null
-                                } else {
-                                    // A writer that cannot be made must not
-                                    // leave its target open behind it.
-                                    var work: File? = null
-                                    var workFd: ParcelFileDescriptor? = null
-                                    val writer = try {
-                                        if (tagged) {
-                                            work = RecordingTags.workFile(context)
-                                            workFd = ParcelFileDescriptor.open(
-                                                work,
-                                                ParcelFileDescriptor.MODE_READ_WRITE or
-                                                    ParcelFileDescriptor.MODE_TRUNCATE,
-                                            )
-                                        }
-                                        sinks((workFd ?: target.descriptor).fileDescriptor, config.data)
-                                    } catch (t: Throwable) {
-                                        runCatching { workFd?.close() }
-                                        work?.delete()
-                                        target.abandon()
-                                        throw t
-                                    }
-                                    Open(part, target, writer, work, workFd).also { open[part] = it }
-                                }
-                            } ?: break
-                            if (into.firstSlot < 0) into.firstSlot = slot
-                            into.lastSlot = slot
-                            into.writer.write(packet.data, packet.pts)
-                        }
-                        completed = !nowhere
-                    }
-                }
-            }
-        } catch (t: Throwable) {
-            // Broke off mid-transfer: ambiguous, so keep the file for a retry.
-            Log.e(TAG, "save: transfer of $recfile broke off", t)
-        }
+        val transfer = Transfer(context, recfile, parts, clock, tagged = !failedBefore(context, recfile))
+        transfer.from(socket)
         // Where the capture put its first packet, and what it lost after: the
         // first thing to ask of a cut that looks wrong (issue #40).
         val first = clock?.firstMs
@@ -583,101 +606,49 @@ object RecordingSaver {
             Log.i(
                 TAG,
                 "save: %s - %d packets, the first %.2f s after the start, then %d gap(s), %.2f s"
-                    .format(recfile, seen, first / 1000.0, clock.gaps, clock.lostMs / 1000.0),
+                    .format(recfile, transfer.seen, first / 1000.0, clock.gaps, clock.lostMs / 1000.0),
             )
         }
 
-        val written = open.values.map { it to (it.writer.packets to it.writer.durationSeconds) }
+        val open = transfer.open
+        val counts = open.values.map { it to (it.writer.packets to it.writer.durationSeconds) }
         // Every file finished before any is published: one that would not
         // finish is unplayable, and the daemon's copy is then the only good
         // one - kept for a retry, not deleted as saved.
         val finished = open.values.map { runCatching { it.writer.finish() }.getOrDefault(false) }.all { it }
-        val anything = written.any { (_, counts) -> counts.first > 0L }
+        val anything = counts.any { (_, count) -> count.first > 0L }
         // Into place, tags and all - only what will be published: a copy that
         // fails is a file not written, and the daemon's copy is kept for it.
-        val copied = finished && !gone && !nowhere && completed && anything && open.values.all { o ->
+        val copied = finished && transfer.read == WriteOutcome.Read.COMPLETE && anything && open.values.all { o ->
             o.writer.packets == 0L || runCatching { o.copyIn(facts(o.part)) }
                 .onFailure { Log.e(TAG, "save: a file from $recfile could not be copied into place", it) }
                 .isSuccess
         }
         open.values.forEach { it.discardWork() }
 
-        return when {
-            gone -> {
+        val whole = orWhole?.takeIf { transfer.seen > 0 }
+        return when (WriteOutcome.of(transfer.read, anything, copied, whole != null)) {
+            WriteOutcome.Ending.GONE -> {
                 Log.i(TAG, "save: $recfile is no longer on the daemon - collected already")
                 open.values.forEach { it.target.abandon() }
                 Outcome.Gone
             }
-            nowhere -> {
+            WriteOutcome.Ending.NOWHERE -> {
                 open.values.forEach { it.target.abandon() }
                 Outcome.Failed("There was nowhere to save it.")
             }
-            completed && anything && !copied -> {
+            WriteOutcome.Ending.NOT_WRITTEN -> {
                 Log.e(TAG, "save: a file from $recfile could not be finished; keeping the daemon's copy")
                 open.values.forEach { it.target.abandon() }
                 Outcome.Failed("The recording could not be written. Is the storage full?")
             }
-            completed && anything -> withContext(NonCancellable) {
-                // From the first publish to the daemon's delete, one piece: a
-                // cancellation between them left a saved recording on the
-                // daemon too, and the next reconcile saved it again as "(1)".
-                var last: Outcome.Saved? = null
-                var unpublished = false
-                for ((o, counts) in written) {
-                    val (packets, seconds) = counts
-                    if (packets == 0L) {
-                        o.target.abandon()
-                        continue
-                    }
-                    if (!o.target.publish()) {
-                        Log.e(TAG, "save: a file from $recfile could not be published")
-                        o.target.abandon()
-                        unpublished = true
-                        continue
-                    }
-                    // The recording's daemon name, not its own: with the
-                    // caller in it, a file name is a name and a number, and
-                    // logcat is no place for those.
-                    // And what the capture left out inside it: a recording
-                    // shorter than its call by that, not cut wrong - what the
-                    // emulator checks allow for (tools/emulator_checks.py).
-                    val undelivered = o.undelivered
-                    Log.i(
-                        TAG,
-                        "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile) +
-                            if (undelivered > 0) ", %.2fs not delivered by the capture".format(undelivered) else "",
-                    )
-                    if (ledger) {
-                        FileNames.noteDirection(context, o.part.name, o.part.incoming)
-                        // Before anyone can delete it: see CallLedger for why the
-                        // missed-call check asks this and not the disk.
-                        CallLedger.noteRecording(context, o.part.startMillis, o.part.incoming, seconds.toInt())
-                    }
-                    if (message) MessageMarks.mark(context, o.part.name)
-                    _saved.tryEmit(o.part.name)
-                    last = Outcome.Saved(
-                        o.part.name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis,
-                        message = message,
-                    )
-                }
-                when {
-                    last == null -> return@withContext Outcome.Failed("The recording could not be written.")
-                    // A part that would not publish: the daemon's copy stays,
-                    // so its audio is not lost - a duplicate later is better.
-                    unpublished -> Log.w(TAG, "save: keeping $recfile on the daemon; a part of it was not saved")
-                    !daemon.delete(context, recfile) ->
-                        // Saved, and noted in the ledger; the next collection
-                        // finds it there and only deletes it (saveClaimed).
-                        Log.w(TAG, "save: could not delete $recfile from the daemon; it goes next time")
-                }
-                last
-            }
-            completed && orWhole != null && seen > 0 -> {
-                Log.w(TAG, "save: none of the $seen packets of $recfile fell inside the call Telecom reported; saving it whole")
+            WriteOutcome.Ending.PUBLISH -> publish(context, recfile, counts, ledger, message)
+            WriteOutcome.Ending.WHOLE -> {
+                Log.w(TAG, "save: none of the ${transfer.seen} packets of $recfile fell inside the call Telecom reported; saving it whole")
                 open.values.forEach { it.target.abandon() }
-                write(context, recfile, listOf(orWhole), ledger, message, facts = facts)
+                write(context, recfile, listOf(checkNotNull(whole)), ledger, message, facts = facts)
             }
-            completed -> {
+            WriteOutcome.Ending.EMPTY -> {
                 // Read the whole thing; there was simply no call audio in it.
                 // Noted in the ledger only where the user is told
                 // (CallMonitorService): collected later, it is the missed-call
@@ -687,11 +658,78 @@ object RecordingSaver {
                 dropFromDaemon(context, recfile, announce = false)
                 Outcome.Empty
             }
-            else -> {
+            WriteOutcome.Ending.BROKE_OFF -> {
                 open.values.forEach { it.target.abandon() }
                 Outcome.Failed("Something went wrong while saving it.")
             }
         }
+    }
+
+    /**
+     * Publish each finished part with a packet in it, note it, announce it,
+     * and then delete the recorder's copy - unless a part would not publish.
+     * The last part published is what the save says it saved.
+     */
+    private suspend fun publish(
+        context: Context,
+        recfile: String,
+        counts: List<Pair<Open, Pair<Long, Double>>>,
+        ledger: Boolean,
+        message: Boolean,
+    ): Outcome = withContext(NonCancellable) {
+        // From the first publish to the daemon's delete, one piece: a
+        // cancellation between them left a saved recording on the
+        // daemon too, and the next reconcile saved it again as "(1)".
+        var last: Outcome.Saved? = null
+        var unpublished = false
+        for ((o, count) in counts) {
+            val (packets, seconds) = count
+            if (packets == 0L) {
+                o.target.abandon()
+                continue
+            }
+            if (!o.target.publish()) {
+                Log.e(TAG, "save: a file from $recfile could not be published")
+                o.target.abandon()
+                unpublished = true
+                continue
+            }
+            // The recording's daemon name, not its own: with the
+            // caller in it, a file name is a name and a number, and
+            // logcat is no place for those.
+            // And what the capture left out inside it: a recording
+            // shorter than its call by that, not cut wrong - what the
+            // emulator checks allow for (tools/emulator_checks.py).
+            val undelivered = o.undelivered
+            Log.i(
+                TAG,
+                "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile) +
+                    if (undelivered > 0) ", %.2fs not delivered by the capture".format(undelivered) else "",
+            )
+            if (ledger) {
+                FileNames.noteDirection(context, o.part.name, o.part.incoming)
+                // Before anyone can delete it: see CallLedger for why the
+                // missed-call check asks this and not the disk.
+                CallLedger.noteRecording(context, o.part.startMillis, o.part.incoming, seconds.toInt())
+            }
+            if (message) MessageMarks.mark(context, o.part.name)
+            _saved.tryEmit(o.part.name)
+            last = Outcome.Saved(
+                o.part.name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis,
+                message = message,
+            )
+        }
+        when {
+            last == null -> return@withContext Outcome.Failed("The recording could not be written.")
+            // A part that would not publish: the daemon's copy stays,
+            // so its audio is not lost - a duplicate later is better.
+            unpublished -> Log.w(TAG, "save: keeping $recfile on the daemon; a part of it was not saved")
+            !daemon.delete(context, recfile) ->
+                // Saved, and noted in the ledger; the next collection
+                // finds it there and only deletes it (saveClaimed).
+                Log.w(TAG, "save: could not delete $recfile from the daemon; it goes next time")
+        }
+        last
     }
 
     /** The call log is written as a call ends, and the save can get there

@@ -32,6 +32,7 @@ val pure = listOf(
     "capture/PlaybackRules",
     "capture/SystemProperty",
     "recordings/DaemonFile",
+    "recordings/WriteOutcome",
     "ui/DaySections",
 )
 
@@ -41,6 +42,7 @@ val pureTests = listOf(
     "capture/OpusPacketsTest",
     "capture/PlaybackRulesTest",
     "recordings/DaemonFileTest",
+    "recordings/WriteOutcomeTest",
     "ui/DaySectionsTest",
 )
 
