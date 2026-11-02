@@ -80,15 +80,6 @@ object CallLogLookup {
      *  TelephonyConnectionService, the Honor's call log, 2026-10-26). */
     private const val TELEPHONY = "com.android.phone"
 
-    /** Ringing can be long. Being answered cannot happen before dialling. */
-    internal const val BEFORE_MS = 3 * 60 * 1000L
-    internal const val AFTER_MS = 30 * 1000L
-
-    /** Whether a call the log dates at [callAt] can be the one a recording
-     *  started at [recordingAt] belongs to. The same window labels the list. */
-    internal fun sameCall(callAt: Long, recordingAt: Long): Boolean =
-        callAt in (recordingAt - BEFORE_MS)..(recordingAt + AFTER_MS)
-
     /** Names work on the call log alone. */
     fun granted(context: Context): Boolean =
         context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) ==
@@ -174,8 +165,8 @@ object CallLogLookup {
         }
         if (times.isEmpty()) return emptyMap()
 
-        val from = times.minOf { it.second } - BEFORE_MS
-        val to = times.maxOf { it.second } + AFTER_MS
+        val from = times.minOf { it.second } - CallMatch.BEFORE_MS
+        val to = times.maxOf { it.second } + CallMatch.AFTER_MS
 
         val entries = runCatching { query(context, from, to) }
             .onFailure { Log.w(TAG, "call log: could not read", it) }
@@ -191,7 +182,7 @@ object CallLogLookup {
             // A name with the number in it (Honor's format) is matched on that
             // number, whichever way the call went - its name does not say.
             val number = recording.parsedName?.number
-            val match = if (number != null) withNumber(entries, number, at) else closest(entries, at, incoming)
+            val match = if (number != null) CallMatch.withNumber(entries, number, at) else CallMatch.closest(entries, at, incoming)
             if (match != null) {
                 val contact = contactFor(context, match.number, contacts)
                 out[name] = Caller(
@@ -361,31 +352,13 @@ object CallLogLookup {
         }
     }
 
-    /**
-     * Closest entry of the same direction inside the window. Direction matters:
-     * two calls a minute apart are common, and one of them being the wrong way
-     * round is the obvious way to label a recording with the wrong person.
-     * The window is BEFORE_MS back and AFTER_MS forward of the recording's
-     * start - see those for why it is lopsided.
-     */
+    /** Closest entry of the same direction inside the window (CallMatch.closest). */
     internal fun closest(entries: List<Entry>, at: Long, incoming: Boolean): Entry? =
-        entries
-            .filter { it.incoming == incoming && sameCall(it.at, at) }
-            .minByOrNull { kotlin.math.abs(it.at - at) }
+        CallMatch.closest(entries, at, incoming)
 
-    /**
-     * The call with [number] that a recording starting at [at] fell inside:
-     * from the log's date to its end, the way Honor's Phone app matches its
-     * own recordings (see FileNames.build). Compared digit for digit, as
-     * FileNames.digits wrote the number into the name.
-     */
-    internal fun withNumber(entries: List<Entry>, number: String, at: Long): Entry? {
-        val wanted = FileNames.digits(number) ?: return null
-        return entries
-            .filter { FileNames.digits(it.number) == wanted }
-            .filter { at in (it.at - AFTER_MS)..(it.at + it.seconds * 1000L + AFTER_MS) }
-            .minByOrNull { kotlin.math.abs(it.at - at) }
-    }
+    /** The call with [number] a recording at [at] fell inside (CallMatch.withNumber). */
+    internal fun withNumber(entries: List<Entry>, number: String, at: Long): Entry? =
+        CallMatch.withNumber(entries, number, at)
 
     /**
      * Whether two ways of writing a number are the same number - Telecom's
@@ -429,34 +402,20 @@ object CallLogLookup {
         if (!granted(context)) return null
         // Back twice the window: the calls the other recordings claim can be
         // a window before them.
-        val entries = runCatching { query(context, startMillis - 2 * BEFORE_MS, startMillis + AFTER_MS) }
+        val entries = runCatching { query(context, startMillis - 2 * CallMatch.BEFORE_MS, startMillis + CallMatch.AFTER_MS) }
             .onFailure { Log.w(TAG, "call log: could not read", it) }
             .getOrDefault(emptyList())
-        return unclaimed(entries, startMillis, incoming, others)
+        return CallMatch.unclaimed(entries, startMillis, incoming, others)
     }
 
-    /**
-     * Closest entry for a recording at [at], leaving out the entries that are
-     * other recordings' calls. Pure.
-     *
-     * Asked right after a hang-up, the log may not have this call yet, and
-     * then the closest entry inside the window is the call BEFORE it - up to
-     * three minutes earlier. Naming this call after that one, or keeping or
-     * deleting it by that one's rule, is the mistake: so an entry another
-     * recording's start matches better is not this call's, and with nothing
-     * else in the window the answer is "not yet".
-     */
+    /** Closest entry for a recording at [at] that no other recording's call
+     *  claims (CallMatch.unclaimed). */
     internal fun unclaimed(
         entries: List<Entry>,
         at: Long,
         incoming: Boolean,
         others: List<CallLedger.Recorded>,
-    ): Entry? {
-        val claimed = others
-            .filter { it.startMillis != at }
-            .mapNotNullTo(HashSet()) { closest(entries, it.startMillis, it.incoming) }
-        return closest(entries.filterNot { it in claimed }, at, incoming)
-    }
+    ): Entry? = CallMatch.unclaimed(entries, at, incoming, others)
 
     /** A call as the missed-call check needs it. */
     internal data class LoggedCall(

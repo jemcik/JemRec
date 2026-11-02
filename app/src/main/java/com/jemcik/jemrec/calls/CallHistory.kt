@@ -6,8 +6,6 @@ import android.provider.CallLog
 import android.util.Log
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.RecordingStore
-import com.jemcik.jemrec.recordings.RecordingSaver
 
 /**
  * The phone's call log, each call matched to its recording or told why it has
@@ -17,7 +15,7 @@ import com.jemcik.jemrec.recordings.RecordingSaver
  * remembers - "the call with the bank on Tuesday" - and is the only place a
  * call that was NOT recorded can show up at all. Matching a call to a
  * recording is the same time-and-direction rule the recordings list uses to
- * name a caller (CallLogLookup.sameCall), in reverse.
+ * name a caller (CallMatch.sameCall), in reverse.
  *
  * WHY A CALL HAS NO RECORDING, AND ONLY WHERE THAT IS KNOWN:
  *   - the recording is in Recently deleted (Trash);
@@ -90,11 +88,7 @@ object CallHistory {
         CoverageHistory.start(context)
         // The daemon's files not collected yet: their calls were recorded.
         // Without them, each read as "Not recorded", in red.
-        val pending = CaptureDaemon.listPendingOrNull(context).orEmpty()
-            .filter { VoipApps.forRecfile(it) == null }
-            .mapNotNull { name ->
-                RecordingSaver.startMillis(name)?.let { CallLedger.Recorded(it, RecordingStore.isIncoming(name), -1) }
-            }
+        val pending = CallMatch.pendingRecorded(CaptureDaemon.listPendingOrNull(context).orEmpty())
         val logged = runCatching { query(context) }
             .onFailure { Log.w(TAG, "calls: could not read the call log", it) }
             .getOrDefault(emptyList())
@@ -145,23 +139,23 @@ object CallHistory {
         // none of these calls, however close in time.
         @Suppress("NAME_SHADOWING") val recordings = recordings.filter { it.parsedName?.app == null }
         @Suppress("NAME_SHADOWING") val trashed = trashed.filter { it.parsedName?.app == null }
-        val recorded = assign(recordings, connectable)
-        val binned = assign(trashed, connectable)
+        val recorded = CallMatch.assign(recordings, connectable, { it.at }, { it.kind == Kind.INCOMING })
+        val binned = CallMatch.assign(trashed, connectable, { it.at }, { it.kind == Kind.INCOMING })
         return calls.map { call ->
             val incoming = call.kind != Kind.OUTGOING
             val canHaveOne = call.kind == Kind.INCOMING || call.kind == Kind.OUTGOING
-            val recording = if (canHaveOne) recorded[call] ?: during(recordings, call.at) else null
+            val recording = if (canHaveOne) recorded[call] ?: CallMatch.during(recordings, call.at) else null
             val status = when {
                 recording != null -> Status.RECORDED
                 !canHaveOne -> Status.NOT_CONNECTED
                 call.kind == Kind.OUTGOING && call.seconds == 0 -> Status.NOT_CONNECTED
-                binned[call] != null || during(trashed, call.at) != null -> Status.IN_TRASH
-                pending.any { accounts(it, call, incoming) } -> Status.PENDING
-                ledger.greetingHangUps.any { accounts(it, call, incoming) } -> Status.GREETING_HANGUP
-                ledger.greetingFailures.any { accounts(it, call, incoming) } -> Status.GREETING_FAILED
-                ledger.testCalls.any { accounts(it, call, incoming) } -> Status.TEST_CALL
-                ledger.skipped.any { accounts(it, call, incoming) } -> Status.SKIPPED
-                ledger.recordings.any { accounts(it, call, incoming) } -> Status.DELETED
+                binned[call] != null || CallMatch.during(trashed, call.at) != null -> Status.IN_TRASH
+                pending.any { CallMatch.accounts(it, call.at, incoming) } -> Status.PENDING
+                ledger.greetingHangUps.any { CallMatch.accounts(it, call.at, incoming) } -> Status.GREETING_HANGUP
+                ledger.greetingFailures.any { CallMatch.accounts(it, call.at, incoming) } -> Status.GREETING_FAILED
+                ledger.testCalls.any { CallMatch.accounts(it, call.at, incoming) } -> Status.TEST_CALL
+                ledger.skipped.any { CallMatch.accounts(it, call.at, incoming) } -> Status.SKIPPED
+                ledger.recordings.any { CallMatch.accounts(it, call.at, incoming) } -> Status.DELETED
                 call.seconds < MissedCalls.MIN_SECONDS -> Status.TOO_SHORT
                 else -> when (CoverageHistory.stateAt(history, call.at)) {
                     CoverageHistory.State.OFF -> Status.RECORDING_OFF
@@ -175,37 +169,6 @@ object CallHistory {
             Call(call.at, call.seconds, call.kind, call.label, call.number, recording = recording, status = status)
         }
     }
-
-    /** Whether a ledger entry is this call's, the way the missed-call check
-     *  decides it (MissedCalls.unrecorded). */
-    private fun accounts(r: CallLedger.Recorded, call: Logged, incoming: Boolean): Boolean =
-        (r.incoming == incoming && CallLogLookup.sameCall(call.at, r.startMillis)) ||
-            (r.seconds > 0 && call.at in r.startMillis..(r.startMillis + r.seconds * 1000L + MissedCalls.SPAN_SLACK_MS))
-
-    /** Each recording to the closest call of its direction inside the window.
-     *  A call that two recordings both choose keeps the first - or the
-     *  message, which the user has not heard: a call taken over in Ask
-     *  first, and recorded at the prompt, has both. */
-    private fun assign(recordings: List<Recording>, calls: List<Logged>): Map<Logged, Recording> {
-        val out = mutableMapOf<Logged, Recording>()
-        recordings.forEach { r ->
-            val start = r.startedAtMillis ?: return@forEach
-            val call = calls
-                .filter { (it.kind == Kind.INCOMING) == r.incoming && CallLogLookup.sameCall(it.at, start) }
-                .minByOrNull { kotlin.math.abs(it.at - start) }
-                ?: return@forEach
-            out.merge(call, r) { old, new -> if (new.message && !old.message) new else old }
-        }
-        return out
-    }
-
-    /** A recording that was running when a call began: call waiting puts the
-     *  second call in the first one's file. */
-    private fun during(recordings: List<Recording>, at: Long): Recording? =
-        recordings.firstOrNull { r ->
-            val start = r.startedAtMillis ?: return@firstOrNull false
-            r.durationMillis > 0 && at > start && at <= start + r.durationMillis + MissedCalls.SPAN_SLACK_MS
-        }
 
     private fun query(context: Context): List<Logged> {
         val out = mutableListOf<Logged>()

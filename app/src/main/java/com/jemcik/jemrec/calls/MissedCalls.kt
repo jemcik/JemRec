@@ -11,8 +11,6 @@ import com.jemcik.jemrec.capture.AfterCallReceiver
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
-import com.jemcik.jemrec.capture.RecordingStore
-import com.jemcik.jemrec.recordings.RecordingSaver
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -61,7 +59,7 @@ internal object MissedCalls {
     internal const val SETTLE_MS = 3L * 60 * 1000
 
     /** A call during a recording - call waiting - lands in that recording. */
-    internal const val SPAN_SLACK_MS = 5_000L
+    internal const val SPAN_SLACK_MS = CallMatch.SPAN_SLACK_MS
 
     /** Reported calls stay listed this long unless the notification is cleared. */
     private const val LIST_FOR_MS = 24L * 60 * 60 * 1000
@@ -99,11 +97,7 @@ internal object MissedCalls {
         val pending = CaptureDaemon.listPendingOrNull(context) ?: return
         val now = System.currentTimeMillis()
         val calls = CallLogLookup.answeredCallsSince(context, maxOf(covered, now - CallLedger.KEEP_MS))
-        // A messenger call's file is no phone call's recording.
-        val pendingStarts = pending.filter { VoipApps.forRecfile(it) == null }.mapNotNull { name ->
-            RecordingSaver.startMillis(name)?.let { CallLedger.Recorded(it, RecordingStore.isIncoming(name), -1) }
-        }
-        val missed = unrecorded(calls, CallLedger.read(context), pendingStarts, covered, now)
+        val missed = unrecorded(calls, CallLedger.read(context), CallMatch.pendingRecorded(pending), covered, now)
         if (missed.isEmpty()) return
         Log.w(TAG, "missed: ${missed.size} call(s) with no recording: ${missed.joinToString { it.at.toString() }}")
         missed.forEach { CallLedger.noteReported(context, it.at) }
@@ -114,9 +108,9 @@ internal object MissedCalls {
      * The calls in [calls] that should have a recording and do not.
      *
      * A recording accounts for a call when it went the same way and started
-     * where the call log's date says it could have (see CallLogLookup.sameCall),
-     * or when the call began while it was running - call waiting puts the
-     * second call into the first one's recording. A pending one ([pending],
+     * where the call log's date says it could have, or when the call began
+     * while it was running - call waiting puts the second call into the
+     * first one's recording (CallMatch.accounts). A pending one ([pending],
      * length unknown) accounts by its start only.
      */
     internal fun unrecorded(
@@ -133,10 +127,7 @@ internal object MissedCalls {
                 call.seconds >= MIN_SECONDS &&
                 call.at + call.seconds * 1000L + SETTLE_MS <= now &&
                 call.at !in ledger.reported &&
-                known.none { r ->
-                    (r.incoming == call.incoming && CallLogLookup.sameCall(call.at, r.startMillis)) ||
-                        (r.seconds > 0 && call.at in r.startMillis..(r.startMillis + r.seconds * 1000L + SPAN_SLACK_MS))
-                }
+                known.none { CallMatch.accounts(it, call.at, call.incoming) }
         }
     }
 

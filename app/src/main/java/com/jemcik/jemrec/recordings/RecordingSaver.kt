@@ -9,6 +9,7 @@ import androidx.core.content.edit
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLogLookup
+import com.jemcik.jemrec.calls.CallMatch
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
@@ -263,9 +264,7 @@ object RecordingSaver {
         // not in the ledger yet, and its call-log entry must not be taken for
         // this one's.
         val pending = if (ruled || format != FileNames.Format.DATE) {
-            daemon.pending(context).orEmpty()
-                .filter { it != recfile && VoipApps.forRecfile(it) == null }
-                .mapNotNull { name -> startMillis(name)?.let { CallLedger.Recorded(it, RecordingStore.isIncoming(name), -1) } }
+            CallMatch.pendingRecorded(daemon.pending(context).orEmpty().filter { it != recfile })
         } else {
             emptyList()
         }
