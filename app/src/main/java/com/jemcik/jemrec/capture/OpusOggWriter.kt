@@ -46,7 +46,7 @@ import java.nio.ByteOrder
 class OpusOggWriter(
     fd: FileDescriptor,
     opusHead: ByteArray,
-) : AutoCloseable {
+) : AutoCloseable, OggSink {
 
     private val muxer = MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG)
     private val track: Int
@@ -55,7 +55,7 @@ class OpusOggWriter(
     /** Packets written. Zero means the call produced nothing. The timestamp
      *  handed to the muxer is COUNTED from this, not clocked: packet N sits at
      *  N x 20ms. See write() for why nothing else works here. */
-    var packets: Long = 0L
+    override var packets: Long = 0L
         private set
 
     init {
@@ -93,7 +93,7 @@ class OpusOggWriter(
      * this code happens to run - which is the whole point now that the file is
      * produced by the daemon and read back here at whatever pace the OS allows.
      */
-    fun write(data: ByteArray, @Suppress("UNUSED_PARAMETER") pts: Long) {
+    override fun write(data: ByteArray, @Suppress("UNUSED_PARAMETER") pts: Long) {
         if (!started) return
 
         val ptsUs = packets * FRAME_US
@@ -111,7 +111,7 @@ class OpusOggWriter(
     /** Length of what was written, in seconds. Every packet is a frame, the
      *  last one included: this was the last packet's timestamp, which is one
      *  frame short of the audio written. */
-    val durationSeconds: Double
+    override val durationSeconds: Double
         get() = packets * FRAME_US / 1_000_000.0
 
     /**
@@ -129,7 +129,7 @@ class OpusOggWriter(
      * open; the saver must then keep the daemon's copy, not delete it as
      * saved.
      */
-    fun finish(): Boolean {
+    override fun finish(): Boolean {
         if (!started) {
             runCatching { muxer.release() }
             return true
@@ -167,4 +167,21 @@ class OpusOggWriter(
         fun littleEndianLong(value: Long): ByteBuffer =
             ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(value).apply { flip() }
     }
+}
+
+/**
+ * What the saver writes a part of a recording through: [OpusOggWriter], or a
+ * test's own (RecordingSaverTest), which needs no MediaMuxer.
+ */
+interface OggSink {
+    /** Packets written. */
+    val packets: Long
+
+    /** Length of what was written, in seconds. */
+    val durationSeconds: Double
+
+    fun write(data: ByteArray, pts: Long)
+
+    /** Finalise the file, and say whether it worked. */
+    fun finish(): Boolean
 }

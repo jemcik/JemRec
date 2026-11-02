@@ -12,12 +12,14 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.MissedCalls
 import com.jemcik.jemrec.calls.RecordPrompt
 import com.jemcik.jemrec.recordings.RecordingSaver
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +63,7 @@ import java.util.Date
  */
 class CallMonitorService : Service() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     @Volatile
     private var recording: Job? = null
 
@@ -310,7 +312,7 @@ class CallMonitorService : Service() {
     private fun recordNow() {
         RecordPrompt.dismiss(this)
         launchRecording {
-            val name = CaptureDaemon.startOnDemand(this@CallMonitorService)
+            val name = startOnDemand(this@CallMonitorService)
             if (name.isNullOrBlank()) {
                 Log.w(TAG, "monitor: on-demand start did not take (call over?)")
                 // Not counting itself: it is the job in recording, and still
@@ -421,7 +423,7 @@ class CallMonitorService : Service() {
         if (!RecorderSwitch.isOn(this)) {
             Log.i(TAG, "monitor: recorder is off, discarding $recfile")
             launchRecording {
-                CaptureDaemon.deleteRecording(this@CallMonitorService, recfile)
+                RecordingSaver.deleteFromRecorder(this@CallMonitorService, recfile)
                 doneWith(coroutineContext[Job])
             }
             return
@@ -764,6 +766,15 @@ class CallMonitorService : Service() {
         @Volatile
         var running = false
             private set
+
+        /** The thread the service's work runs on, and the recorder's answer
+         *  to a Record tap: today's own, and the tests' in the tests
+         *  (CallMonitorServiceTest). Read as a service is made. */
+        @VisibleForTesting
+        internal var dispatcher: CoroutineDispatcher = Dispatchers.IO
+
+        @VisibleForTesting
+        internal var startOnDemand: suspend (Context) -> String? = CaptureDaemon::startOnDemand
 
         fun stop(context: Context) {
             runCatching {

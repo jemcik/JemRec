@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.telephony.TelephonyManager
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.edit
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
@@ -18,10 +19,12 @@ import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.MessageMarks
+import com.jemcik.jemrec.capture.OggSink
 import com.jemcik.jemrec.capture.OpusOggWriter
 import com.jemcik.jemrec.capture.PacketClock
 import com.jemcik.jemrec.capture.RecordingStore
 import com.jemcik.jemrec.capture.RecordingTags
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -30,6 +33,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileDescriptor
+import java.net.Socket
 import java.util.Date
 
 /**
@@ -52,6 +57,50 @@ object RecordingSaver {
     /** What the daemon answers, where the codec id goes, for a file it no
      *  longer has. */
     private const val GONE = "gone"
+
+    /** What the saver asks of the recorder about its files. */
+    internal interface DaemonFiles {
+        /** The file's stream (AudioStream); throws if the recorder cannot be reached. */
+        suspend fun fetch(context: Context, name: String): Socket
+
+        /** Whether the recorder deleted it. */
+        suspend fun delete(context: Context, name: String): Boolean
+
+        /** The files it holds; null when it could not be asked. */
+        suspend fun pending(context: Context): List<String>?
+    }
+
+    /** The recorder itself. */
+    private object Recorder : DaemonFiles {
+        override suspend fun fetch(context: Context, name: String): Socket = CaptureDaemon.fetch(context, name)
+        override suspend fun delete(context: Context, name: String): Boolean = CaptureDaemon.deleteRecording(context, name)
+        override suspend fun pending(context: Context): List<String>? = CaptureDaemon.listPendingOrNull(context)
+    }
+
+    /**
+     * What a save works with: the recorder's files, the writer a part goes
+     * through, where a part goes, the clock, and the thread. Today's own;
+     * the tests put in theirs (RecordingSaverTest), to reach what only a
+     * phone could before.
+     */
+    @VisibleForTesting
+    internal var daemon: DaemonFiles = Recorder
+
+    @VisibleForTesting
+    internal var sinks: (FileDescriptor, ByteArray) -> OggSink = ::OpusOggWriter
+
+    @VisibleForTesting
+    internal var targets: (Context, String) -> RecordingStore.Target? = RecordingStore::open
+
+    @VisibleForTesting
+    internal var clock: () -> Long = System::currentTimeMillis
+
+    @VisibleForTesting
+    internal var io: CoroutineDispatcher = Dispatchers.IO
+
+    /** A recording that is not to be saved, deleted from the recorder: one
+     *  made after the switch went off (CallMonitorService). Whether it went. */
+    suspend fun deleteFromRecorder(context: Context, recfile: String): Boolean = daemon.delete(context, recfile)
 
     sealed interface Outcome {
         /** Muxed and saved; the daemon copy has been deleted. */
@@ -142,7 +191,7 @@ object RecordingSaver {
      * collects calls whose entry is either in the log by now or never will be.
      */
     suspend fun save(context: Context, recfile: String, incoming: Boolean, justEnded: Boolean = true): Outcome =
-        withContext(Dispatchers.IO) {
+        withContext(io) {
             if (!claim(recfile)) return@withContext Outcome.Busy
             try {
                 saveClaimed(context, recfile, incoming, justEnded)
@@ -155,7 +204,7 @@ object RecordingSaver {
         // Named for when the CALL happened, taken from the daemon file, so a
         // recording collected late by the reconcile still carries the right
         // time rather than the time it was picked up.
-        val startedAt = Date(startMillis(recfile) ?: System.currentTimeMillis())
+        val startedAt = Date(startMillis(recfile) ?: clock())
 
         // A messenger call: not in the phone's call log, so none of what
         // follows applies - not the caller lookup, not the rules on whose
@@ -174,7 +223,7 @@ object RecordingSaver {
         // once, not at every pass while a delete does not get through.
         if (CallLedger.read(context).accounted.any { it.startMillis == startedAt.time }) {
             Log.i(TAG, "save: $recfile was saved before; deleting the daemon's copy")
-            CaptureDaemon.deleteRecording(context, recfile)
+            daemon.delete(context, recfile)
             return Outcome.Gone
         }
 
@@ -186,7 +235,7 @@ object RecordingSaver {
         if (messageStart != null && messageStart < 0) {
             val failed = messageStart == RecordingStore.MESSAGE_FAILED
             Log.i(TAG, "save: $recfile - " + if (failed) "the greeting could not be played" else "the caller hung up during the greeting; nothing to keep")
-            CaptureDaemon.deleteRecording(context, recfile)
+            daemon.delete(context, recfile)
             // Accounted for, either way: no missed-call report on top. A
             // failure is told by whoever collected it - the hang-up's save or
             // the reconcile - and the Calls tab says which it was.
@@ -216,7 +265,7 @@ object RecordingSaver {
         val ended = tracked.firstOrNull()?.endedAt?.takeIf { it > 0 }
         if (ended != null && CoverageHistory.stateAt(CoverageHistory.read(context), ended) == CoverageHistory.State.OFF) {
             Log.i(TAG, "save: recording was switched off during $recfile; discarding it")
-            CaptureDaemon.deleteRecording(context, recfile)
+            daemon.delete(context, recfile)
             _saved.tryEmit(recfile)
             return Outcome.Skipped
         }
@@ -224,7 +273,7 @@ object RecordingSaver {
         // not in the ledger yet, and its call-log entry must not be taken for
         // this one's.
         val pending = if (ruled || format != FileNames.Format.DATE) {
-            CaptureDaemon.listPendingOrNull(context).orEmpty()
+            daemon.pending(context).orEmpty()
                 .filter { it != recfile && VoipApps.forRecfile(it) == null }
                 .mapNotNull { name -> startMillis(name)?.let { CallLedger.Recorded(it, RecordingStore.isIncoming(name), -1) } }
         } else {
@@ -241,14 +290,14 @@ object RecordingSaver {
         return when (decision) {
             is SavePlan.Decision.NotAnswered -> {
                 Log.i(TAG, "save: $recfile was never answered - only ringing, not saved")
-                CaptureDaemon.deleteRecording(context, recfile)
+                daemon.delete(context, recfile)
                 CallLedger.noteRecording(context, decision.start, decision.incoming, 0)
                 _saved.tryEmit(recfile)
                 Outcome.NotAnswered
             }
             is SavePlan.Decision.LeaveOut -> {
                 Log.i(TAG, "save: $recfile is a call the rules leave out - deleting it unsaved")
-                CaptureDaemon.deleteRecording(context, recfile)
+                daemon.delete(context, recfile)
                 decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
                 // A Calls tab on screen says so now, not at the next open.
                 _saved.tryEmit(recfile)
@@ -408,7 +457,7 @@ object RecordingSaver {
     private class Open(
         val part: Part,
         val target: RecordingStore.Target,
-        val writer: OpusOggWriter,
+        val writer: OggSink,
         private val work: File?,
         private val workFd: ParcelFileDescriptor?,
     ) {
@@ -456,7 +505,7 @@ object RecordingSaver {
         facts: (Part) -> RecordingTags.Facts,
     ): Outcome {
         val socket = try {
-            CaptureDaemon.fetch(context, recfile)
+            daemon.fetch(context, recfile)
         } catch (t: Throwable) {
             // Could not even reach the daemon: keep the file, try again later.
             Log.w(TAG, "save: cannot reach the daemon for $recfile, will retry", t)
@@ -506,7 +555,7 @@ object RecordingSaver {
                             val part = parts.firstOrNull { it.holds(slot) }
                             if (part == null) continue
                             val into = open[part] ?: run {
-                                val target = RecordingStore.open(context, part.name)
+                                val target = targets(context, part.name)
                                 if (target == null) {
                                     nowhere = true
                                     null
@@ -524,7 +573,7 @@ object RecordingSaver {
                                                     ParcelFileDescriptor.MODE_TRUNCATE,
                                             )
                                         }
-                                        OpusOggWriter((workFd ?: target.descriptor).fileDescriptor, config.data)
+                                        sinks((workFd ?: target.descriptor).fileDescriptor, config.data)
                                     } catch (t: Throwable) {
                                         runCatching { workFd?.close() }
                                         work?.delete()
@@ -635,7 +684,7 @@ object RecordingSaver {
                     // A part that would not publish: the daemon's copy stays,
                     // so its audio is not lost - a duplicate later is better.
                     unpublished -> Log.w(TAG, "save: keeping $recfile on the daemon; a part of it was not saved")
-                    !CaptureDaemon.deleteRecording(context, recfile) ->
+                    !daemon.delete(context, recfile) ->
                         // Saved, and noted in the ledger; the next collection
                         // finds it there and only deletes it (saveClaimed).
                         Log.w(TAG, "save: could not delete $recfile from the daemon; it goes next time")
@@ -654,7 +703,7 @@ object RecordingSaver {
                 // check that says so.
                 Log.w(TAG, "save: no audio in $recfile, discarding")
                 open.values.forEach { it.target.abandon() }
-                CaptureDaemon.deleteRecording(context, recfile)
+                daemon.delete(context, recfile)
                 Outcome.Empty
             }
             else -> {
@@ -702,7 +751,7 @@ object RecordingSaver {
      * app happened to miss the hang-up.
      */
     suspend fun reconcile(context: Context) {
-        val pending = CaptureDaemon.listPending(context)
+        val pending = daemon.pending(context).orEmpty()
         if (pending.isEmpty()) return
         Log.i(TAG, "reconcile: ${pending.size} pending")
         for (recfile in pending) {
@@ -734,9 +783,9 @@ object RecordingSaver {
                 // call: a file stranded on the daemon for a week (a reboot,
                 // no Wi-Fi to bring the recorder back) is not given up on its
                 // first try.
-                is Outcome.Failed -> if (System.currentTimeMillis() - failingSince(context, recfile) > GIVE_UP_MS) {
+                is Outcome.Failed -> if (clock() - failingSince(context, recfile) > GIVE_UP_MS) {
                     Log.w(TAG, "reconcile: giving up on $recfile (${outcome.reason})")
-                    CaptureDaemon.deleteRecording(context, recfile)
+                    daemon.delete(context, recfile)
                     failingSince(context, recfile, clear = true)
                 } else {
                     Log.w(TAG, "reconcile: left $recfile for later (${outcome.reason})")
@@ -764,7 +813,7 @@ object RecordingSaver {
             return 0L
         }
         mine?.substringAfter('|')?.toLongOrNull()?.let { return it }
-        val now = System.currentTimeMillis()
+        val now = clock()
         prefs.edit { putStringSet(KEY_FAILING, all + "$recfile|$now") }
         return now
     }
