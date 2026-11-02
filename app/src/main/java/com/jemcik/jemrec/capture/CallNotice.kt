@@ -29,7 +29,7 @@ internal object CallNotice {
         /** Shown after Android's ten seconds, if still up, rather than at once. */
         val deferred: Boolean,
         /** The ticket Talk to them and Hang up carry; no buttons without one. */
-        val buttons: String?,
+        val buttonTicket: String?,
     )
 
     fun of(s: State): Notice {
@@ -53,6 +53,6 @@ internal object CallNotice {
             s.notRecording -> "Not recording this call" to "Tap to see why"
             else -> "Call in progress" to "JemRec is handling this call"
         }
-        return Notice(title, text, deferred = cableOnly || warningWake, buttons = ticket)
+        return Notice(title, text, deferred = cableOnly || warningWake, buttonTicket = ticket)
     }
 }

@@ -63,9 +63,10 @@ internal object CallLedger {
          *  the phone's calls'. */
         val messengerRecordings: List<Recorded> = emptyList(),
     ) {
-        /** Every call this knows the fate of - recorded, left out, or the
-         *  answering machine's - so none is taken for a missed call, or its
-         *  call-log entry for another recording's. */
+        /** Every phone call this knows the fate of - recorded, left out, or
+         *  the answering machine's - so none is taken for a missed call, or
+         *  its call-log entry for another recording's. Not messenger
+         *  recordings: no phone call is theirs. */
         val accounted: List<Recorded>
             get() = recordings + skipped + greetingHangUps + greetingFailures + testCalls
     }

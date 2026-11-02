@@ -104,7 +104,9 @@ object RecordingSaver {
     suspend fun deleteFromRecorder(context: Context, recfile: String): Boolean = daemon.delete(context, recfile)
 
     sealed interface Outcome {
-        /** Muxed and saved; the daemon copy has been deleted. */
+        /** Muxed and saved; the daemon copy deleted - unless a part of it
+         *  would not publish, or the delete did not get through: the copy
+         *  then stays, for the next collection to save or only delete. */
         data class Saved(
             val name: String,
             val seconds: Double,
@@ -129,8 +131,10 @@ object RecordingSaver {
         /** This process is already saving this very file. Leave it to that. */
         data object Busy : Outcome
 
-        /** A call the user's rules leave out (see CallRules): deleted from the
-         *  daemon, never saved. Not a failure, and nothing to announce. */
+        /** A call the user's rules leave out (see CallRules), or one recorded
+         *  with recording switched off before it ended: deleted from the
+         *  daemon, never saved, and announced for a Calls tab on screen. Not
+         *  a failure. */
         data object Skipped : Outcome
 
         /** An outgoing call nobody answered: the recording was only ringing,
@@ -213,7 +217,7 @@ object RecordingSaver {
         // calls to keep (the app's own switch is the rule), not the phone
         // calls the missed-call check reads. Saved before, though, as a
         // phone call can be: its own entries in the ledger say so.
-        val messenger = VoipApps.forRecfile(recfile)
+        val messenger = file.messenger?.let(VoipApps::forPackage)
         val ledger = CallLedger.read(context)
         val before = if (messenger != null) ledger.messengerRecordings else ledger.accounted
         when (SavePlan.drop(file, startedAt.time, before)) {

@@ -236,11 +236,12 @@ internal object SavePlan {
     }
 
     /**
-     * Whether a phone call's recording is dropped before anything is fetched,
-     * and why: by the ledger's [accounted] calls, any one of which starting
-     * at [startedAt] is this recording's, then by what its name says of a
-     * message (the recorder names the file with where the message starts, or
-     * "none" or "fail" - see DaemonFile).
+     * Whether a recording is dropped before anything is fetched, and why: by
+     * the calls the ledger says were saved before ([accounted]: the phone's
+     * for a phone call, the messengers' own for a messenger's), any one of
+     * which starting at [startedAt] is this recording's, then by what its
+     * name says of a message (the recorder names a phone call's file with
+     * where the message starts, or "none" or "fail" - see DaemonFile).
      */
     fun drop(file: DaemonFile, startedAt: Long, accounted: List<CallLedger.Recorded>): Drop? = when {
         accounted.any { it.startMillis == startedAt } -> Drop.DUPLICATE

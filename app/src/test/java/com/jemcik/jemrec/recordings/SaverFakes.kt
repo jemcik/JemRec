@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor
 import android.provider.ContactsContract
 import com.jemcik.jemrec.capture.OggSink
 import com.jemcik.jemrec.capture.RecordingStore
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -23,6 +24,8 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.Socket
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -36,25 +39,27 @@ internal class SaverFakes(private val context: Context) {
     // ---- the recorder ------------------------------------------------------
 
     /** The recorder's files, by name, as the bytes it would stream. */
-    val files = mutableMapOf<String, ByteArray>()
-    val fetched = mutableListOf<String>()
-    val deleted = mutableListOf<String>()
-    var unreachable = false
-    var deletes = true
+    // Written on the saving thread, read on the test's: thread-safe, all of them.
+    val files: MutableMap<String, ByteArray> = ConcurrentHashMap()
+    val fetched: MutableList<String> = CopyOnWriteArrayList()
+    val deleted: MutableList<String> = CopyOnWriteArrayList()
+    @Volatile var unreachable = false
+
+    @Volatile var deletes = true
 
     /** What LIST answers; null for a recorder that could not be asked. */
-    var listing: List<String>? = emptyList()
-    var listed = 0
+    @Volatile var listing: List<String>? = emptyList()
+    @Volatile var listed = 0
 
     /** Called as each fetch begins, on the saving thread. */
-    var onFetch: (String) -> Unit = {}
+    @Volatile var onFetch: (String) -> Unit = {}
 
     /** Called as each delete begins. */
-    var onDelete: (String) -> Unit = {}
+    @Volatile var onDelete: (String) -> Unit = {}
 
     /** A fetch waits on this, when set, until [release]. */
-    private var gate: CountDownLatch? = null
-    private var entered: CountDownLatch? = null
+    @Volatile private var gate: CountDownLatch? = null
+    @Volatile private var entered: CountDownLatch? = null
 
     fun hold() {
         entered = CountDownLatch(1)
@@ -105,12 +110,12 @@ internal class SaverFakes(private val context: Context) {
     // ---- the writer --------------------------------------------------------
 
     /** Every writer made, with where it wrote. */
-    val sinks = mutableListOf<Sink>()
-    var finishes = true
-    var writerFails = false
+    val sinks: MutableList<Sink> = CopyOnWriteArrayList()
+    @Volatile var finishes = true
+    @Volatile var writerFails = false
 
     /** Writers that take nothing: a muxer that never started. */
-    var silent = false
+    @Volatile var silent = false
 
     /** Writes each packet's bytes, one after another: what the part's file
      *  then holds says which packets went where. */
@@ -134,17 +139,17 @@ internal class SaverFakes(private val context: Context) {
     // ---- where a part goes ---------------------------------------------------
 
     private val dir = File(context.cacheDir, "saved").apply { deleteRecursively(); mkdirs() }
-    val opened = mutableListOf<String>()
-    val published = mutableListOf<String>()
-    val abandoned = mutableListOf<String>()
-    var nowhere = false
+    val opened: MutableList<String> = CopyOnWriteArrayList()
+    val published: MutableList<String> = CopyOnWriteArrayList()
+    val abandoned: MutableList<String> = CopyOnWriteArrayList()
+    @Volatile var nowhere = false
 
     /** Names whose file will not publish. */
-    var unpublishable = setOf<String>()
+    @Volatile var unpublishable = setOf<String>()
 
     /** Names whose file cannot be written into once opened. */
-    var unwritable = setOf<String>()
-    val descriptors = mutableMapOf<String, FileDescriptor>()
+    @Volatile var unwritable = setOf<String>()
+    val descriptors: MutableMap<String, FileDescriptor> = ConcurrentHashMap()
 
     fun file(name: String) = File(dir, name)
 
@@ -173,13 +178,15 @@ internal class SaverFakes(private val context: Context) {
 
     // ---- in and out ----------------------------------------------------------
 
-    private val before = Seams(RecordingSaver.daemon, RecordingSaver.sinks, RecordingSaver.targets, RecordingSaver.clock)
+    private val before =
+        Seams(RecordingSaver.daemon, RecordingSaver.sinks, RecordingSaver.targets, RecordingSaver.clock, RecordingSaver.io)
 
     private class Seams(
         val daemon: RecordingSaver.DaemonFiles,
         val sinks: (FileDescriptor, ByteArray) -> OggSink,
         val targets: (Context, String) -> RecordingStore.Target?,
         val clock: () -> Long,
+        val io: CoroutineDispatcher,
     )
 
     fun install(now: Long) {
@@ -198,7 +205,7 @@ internal class SaverFakes(private val context: Context) {
         RecordingSaver.sinks = before.sinks
         RecordingSaver.targets = before.targets
         RecordingSaver.clock = before.clock
-        RecordingSaver.io = Dispatchers.IO
+        RecordingSaver.io = before.io
         release()
     }
 

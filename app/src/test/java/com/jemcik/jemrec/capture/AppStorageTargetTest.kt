@@ -31,10 +31,14 @@ class AppStorageTargetTest {
         // A longer file of that name from a save before - tagged, say, and
         // this one untagged.
         file.writeBytes(ByteArray(100) { 7 })
-        val target = RecordingStore.open(context, name)
-        assertNotNull(target!!.filePath)
-        FileOutputStream(target.descriptor.fileDescriptor).apply { write(byteArrayOf(1, 2, 3)); flush() }
-        target.publish()
+        val target = RecordingStore.open(context, name)!!
+        try {
+            assertNotNull("app storage, not MediaStore", target.filePath)
+            FileOutputStream(target.descriptor.fileDescriptor).apply { write(byteArrayOf(1, 2, 3)); flush() }
+        } finally {
+            // Ends the waveform's "being written" mark, which outlives a test.
+            target.publish()
+        }
         assertArrayEquals(byteArrayOf(1, 2, 3), file.readBytes())
     }
 }

@@ -68,8 +68,10 @@ internal object AfterSave {
             // recording is being kept, and this is not a failure to report.
             Kind.GONE -> Row({ "monitor: $it was collected already" })
             Kind.BUSY -> Row({ "monitor: $it is being saved by the reconcile" })
-            // The user's rules on whose calls to keep left this one out.
-            Kind.SKIPPED -> Row({ "monitor: $it was left out by the rules" })
+            // Left out by the user's rules on whose calls to keep, or dropped
+            // as recorded with recording switched off: the saver's own line
+            // before this one says which.
+            Kind.SKIPPED -> Row({ "monitor: $it was left out (the rules, or recording switched off)" })
             // Only ringing: nobody answered.
             Kind.NOT_ANSWERED -> Row({ "monitor: $it was never answered" })
             // The answering machine answered; the caller left before the beep.
@@ -86,7 +88,9 @@ internal object AfterSave {
             Kind.EMPTY -> Row({ "reconcile: dropped empty $it" }, failing = Failing.CLEAR)
             Kind.GONE -> Row({ "reconcile: $it was collected meanwhile" }, failing = Failing.CLEAR)
             Kind.BUSY -> Row({ "reconcile: $it is being saved already, leaving it" })
-            Kind.SKIPPED -> Row({ "reconcile: $it was a call the rules leave out" }, failing = Failing.CLEAR)
+            Kind.SKIPPED -> Row(
+                { "reconcile: $it was left out (the rules, or recording switched off)" }, failing = Failing.CLEAR,
+            )
             Kind.NOT_ANSWERED -> Row({ "reconcile: $it was never answered" }, failing = Failing.CLEAR)
             Kind.GREETING_HANG_UP -> Row({ "reconcile: $it - hung up during the greeting" }, failing = Failing.CLEAR)
             // The hang-up's wake did not land: nobody has said so yet, and

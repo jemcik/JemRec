@@ -972,14 +972,16 @@ class CallMonitorServiceTest {
                 fakes.awaitHeld()
                 // Stopped from outside - any app may stop it - mid-save.
                 controller.destroy()
+                fakes.release()
+                settle()
+                assertNull("no false alarm", notRecorded())
+                assertFalse(logged("monitor: recording handled"))
+                assertTrue("left on the recorder", fakes.deleted.isEmpty())
             } finally {
                 fakes.release()
+                // A service for @After to destroy, whatever happened here.
+                controller = Robolectric.buildService(CallMonitorService::class.java).create()
             }
-            settle()
-            assertNull("no false alarm", notRecorded())
-            assertFalse(logged("monitor: recording handled"))
-            assertTrue("left on the recorder", fakes.deleted.isEmpty())
-            controller = Robolectric.buildService(CallMonitorService::class.java).create()
         }
     }
 

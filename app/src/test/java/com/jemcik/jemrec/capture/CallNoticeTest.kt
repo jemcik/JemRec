@@ -39,7 +39,7 @@ class CallNoticeTest {
         assertEquals("Taking a message", notice.title)
         assertEquals("Your greeting is playing; your microphone is muted", notice.text)
         assertEquals(false, notice.deferred)
-        assertEquals("t", notice.buttons)
+        assertEquals("t", notice.buttonTicket)
         assertEquals(true, CallNotice.of(idle.copy(checkingRecorder = true)).deferred)
     }
 

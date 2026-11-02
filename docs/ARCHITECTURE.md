@@ -91,8 +91,9 @@ recorder is collected later: by the keep-alive, and, with exact call tracking,
 a few seconds after the last call. Both go through one saver, and what each
 does after a save is one table, so where the two differ it is written down:
 only the call service tells you at once of a recording that came out empty or
-could not be saved, and runs the missed-call check after a save; only a later
-collection keeps trying a file that fails, and gives it up after a week.
+could not be saved; only a later collection keeps trying a file that fails,
+and gives it up after a week. The missed-call check runs after both: after a
+call the call service saved, and after each of the keep-alive's collections.
 
 - A recording is noted as saved before the recorder's copy is deleted, so a
   copy that outlives its save — a delete that did not get through — is only

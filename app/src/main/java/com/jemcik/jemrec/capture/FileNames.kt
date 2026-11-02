@@ -124,7 +124,7 @@ object FileNames {
                 // A hidden number has nothing for the Phone app to match. Every
                 // digit of the log's number, a code's or an extension's too: the
                 // Phone app wanted the call's own number (above), and
-                // CallLogLookup.withNumber reads the name back digit for digit.
+                // CallMatch.withNumber reads the name back digit for digit.
                 val number = digits(party?.number) ?: return standard
                 val who = clean(party?.name) ?: number
                 "$who@${number}_${honorStamp().format(Date(startedAt))}.${RecordingStore.EXTENSION}"

@@ -100,7 +100,12 @@ class CallMonitorService : Service() {
      *  (ifTheCallIsUp). Under standDown's lock. */
     private var callEnds = 0
 
-    /** Written from the save coroutine as well as the main thread. */
+    /** What the notification says of the call: whether it is recorded, and
+     *  whether a save failed. These two, [callInProgress] and
+     *  [messageTicket] are written on the main thread and on the service's
+     *  jobs - each write under standDown's lock, so a look at whether to
+     *  stand down, or a failure's check for a call up, never sees a start's
+     *  or an answer's change half made. */
     @Volatile
     private var recordingNow = false
     @Volatile
@@ -552,8 +557,10 @@ class CallMonitorService : Service() {
      * starting as a save ends - is refused once that wake has come, where a
      * plain stopSelf took the service down under the new call. Every start's
      * changes share the look's lock (onStartCommand), so a look sees a start
-     * whole, its id with it, or not at all. The stop itself is outside the
-     * lock: it is a call into the system.
+     * whole, its id with it, or not at all. A job's stop is made outside the
+     * lock, as a call into the system; a start that stands the service down
+     * makes it still holding the lock its own changes were made under, on the
+     * main thread, where nothing waits for a job that wants the lock.
      */
     private fun finishIfIdle(ending: Job? = null): Boolean {
         val start = standDown.holding {
@@ -585,7 +592,7 @@ class CallMonitorService : Service() {
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(tap)
             .setOngoing(true)
-        notice.buttons?.let { ticket ->
+        notice.buttonTicket?.let { ticket ->
             builder.addAction(messageAction("Talk to them", ACTION_TALK, ticket))
                 .addAction(messageAction("Hang up", ACTION_HANG_UP, ticket))
         }

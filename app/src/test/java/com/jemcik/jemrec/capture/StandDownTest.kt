@@ -62,10 +62,25 @@ class StandDownTest {
         assertTrue(rule.idle(warning, noCall) { listOf(save, warning) })
     }
 
-    @Test fun whatIsReadIsReadAfterTheMark() {
+    @Test fun theJobsAreReadAfterTheEndingOneIsMarked() {
         val save = Task()
-        var read = false
-        rule.idle(save, { read = true; false }) { listOf(save) }
-        assertTrue(read)
+        val warning = Task()
+        // The warning, as the rule reads it, finds the save marked: it asks
+        // for the jobs only after marking the one that is ending.
+        var sawItRunning = true
+        rule.idle(save, noCall) {
+            sawItRunning = rule.idle(null, noCall) { listOf(save) }.not()
+            listOf(save, warning)
+        }
+        assertFalse("the save, marked before the read, no longer counts", sawItRunning)
+    }
+
+    @Test fun theCallIsAskedOnlyOnceNoJobKeepsIt() {
+        val save = Task()
+        var asked = false
+        assertFalse(rule.idle(null, { asked = true; false }) { listOf(save) })
+        assertFalse(asked)
+        rule.idle(save, { asked = true; false }) { listOf(save) }
+        assertTrue(asked)
     }
 }

@@ -60,10 +60,10 @@ object VoipApps {
     fun byPackage(pkg: String?): App? = KNOWN.firstOrNull { it.pkg == pkg }
 
     /** The app a daemon file came from, if it is a messenger call. */
-    internal fun forRecfile(recfile: String): App? {
-        val pkg = DaemonFile.parse(recfile).messenger ?: return null
-        return byPackage(pkg) ?: OTHER.copy(pkg = pkg)
-    }
+    internal fun forRecfile(recfile: String): App? = DaemonFile.parse(recfile).messenger?.let(::forPackage)
+
+    /** The app of a messenger's package, as a daemon file names it. */
+    internal fun forPackage(pkg: String): App = byPackage(pkg) ?: OTHER.copy(pkg = pkg)
 
     /**
      * Which way a messenger call went, where the recorder could tell: an
