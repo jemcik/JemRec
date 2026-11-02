@@ -16,9 +16,10 @@ import androidx.annotation.VisibleForTesting
 import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
-import com.jemcik.jemrec.calls.MissedCalls
 import com.jemcik.jemrec.calls.RecordPrompt
+import com.jemcik.jemrec.recordings.AfterSave
 import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.recordings.react
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -473,53 +474,13 @@ class CallMonitorService : Service() {
     /**
      * Fetch the finished recording from the daemon, mux it, and speak up only if
      * it could not be saved. The fetch-and-mux itself lives in RecordingSaver,
-     * shared with the startup reconcile; this adds the one thing that is the
-     * service's job - telling the user when a call went unsaved.
+     * shared with the startup reconcile, and what follows each outcome is one
+     * table for both (AfterSave); this adds the one thing that is the
+     * service's job - its own notification saying when a call went unsaved.
      */
     private suspend fun saveAndReport(recfile: String, incoming: Boolean) {
-        when (val outcome = RecordingSaver.save(this, recfile, incoming)) {
-            is RecordingSaver.Outcome.Saved -> {
-                Log.i(TAG, "monitor: saved $recfile")
-                // While this service still holds the foreground: the check
-                // decodes the file, and a dormant app might not get the time.
-                // The saved part's own call - with call waiting, the last of
-                // them - not the recording's.
-                runCatching { AfterCall.saved(this, outcome, outcome.incoming, outcome.startMillis) }
-                    .onFailure { Log.w(TAG, "monitor: after-call notice failed", it) }
-                // And while the daemon is plainly reachable, whether any
-                // earlier call went by unrecorded.
-                runCatching { MissedCalls.check(this) }
-                    .onFailure { Log.w(TAG, "monitor: missed-call check failed", it) }
-            }
-            // The reconcile got there first, or has it now. Either way the
-            // recording is being kept, and this is not a failure to report.
-            RecordingSaver.Outcome.Gone ->
-                Log.i(TAG, "monitor: $recfile was collected already")
-            RecordingSaver.Outcome.Busy ->
-                Log.i(TAG, "monitor: $recfile is being saved by the reconcile")
-            // The user's rules on whose calls to keep left this one out.
-            RecordingSaver.Outcome.Skipped ->
-                Log.i(TAG, "monitor: $recfile was left out by the rules")
-            // Only ringing: nobody answered.
-            RecordingSaver.Outcome.NotAnswered ->
-                Log.i(TAG, "monitor: $recfile was never answered")
-            // The answering machine answered; the caller left before the beep.
-            RecordingSaver.Outcome.GreetingHangUp ->
-                Log.i(TAG, "monitor: $recfile - the caller hung up during the greeting")
-            // Every answered call would end this way until it is put right.
-            RecordingSaver.Outcome.GreetingFailed -> reportNotRecorded(GREETING_FAILED)
-            RecordingSaver.Outcome.Empty -> {
-                reportNotRecorded(
-                    "No call audio came through. Some phones do not allow calls to be recorded.",
-                )
-                // Told now, so the missed-call check must not say it again.
-                // Here, where the telling is: a recording collected later
-                // is left to that check.
-                RecordingSaver.startMillis(recfile)?.let { CallLedger.noteRecording(this, it, incoming, 0) }
-            }
-            is RecordingSaver.Outcome.Failed ->
-                reportNotRecorded(outcome.reason)
-        }
+        val outcome = RecordingSaver.save(this, recfile, incoming)
+        AfterSave.react(this, outcome, recfile, incoming, AfterSave.Collector.HANG_UP, tell = ::reportNotRecorded)
     }
 
     /**
@@ -655,7 +616,7 @@ class CallMonitorService : Service() {
         recordingNow = false
         notRecording = true
         runCatching { startForegroundCompat() }
-        postNotRecorded(this, reason)
+        AfterCall.postNotRecorded(this, reason)
     }
 
     private fun createChannel() {
@@ -701,26 +662,6 @@ class CallMonitorService : Service() {
         private val LEGACY_CHANNEL_IDS =
             listOf("jemrec.monitor", "jemrec.ask", "jemrec.pairing")
         private const val NOTIFICATION_ID = 1
-        private const val PROBLEM_NOTIFICATION_ID = 31
-
-        /** Why an answered call kept nothing: the greeting would not play. */
-        internal const val GREETING_FAILED = "The answering machine answered a call, but could not play your " +
-            "greeting, so it hung up. Run the test call in Settings, Answering machine."
-
-        /** "Call not recorded", with [reason] - from here at a hang-up, or
-         *  from a collection that found out later (RecordingSaver.reconcile). */
-        internal fun postNotRecorded(context: Context, reason: String) {
-            runCatching {
-                // A collection can get here before this service ever ran:
-                // AfterCall.problem makes sure the channel exists.
-                val tap = PendingIntent.getActivity(
-                    context, 0, Intent(context, MainActivity::class.java),
-                    PendingIntent.FLAG_IMMUTABLE,
-                )
-                val notification = AfterCall.problem(context, "Call not recorded", reason, tap).build()
-                AfterCall.notifyProblem(context, PROBLEM_NOTIFICATION_ID, notification, "monitor")
-            }.onFailure { Log.w(TAG, "monitor: could not report the failure", it) }
-        }
         const val ACTION_STOP = "com.jemcik.jemrec.STOP_MONITOR"
 
         /** The mid-call prompt's buttons, when automatic recording is off. */

@@ -15,7 +15,6 @@ import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.calls.VoipCallNotes
 import com.jemcik.jemrec.capture.AudioStream
-import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.MessageMarks
@@ -774,42 +773,28 @@ object RecordingSaver {
         if (pending.isEmpty()) return
         Log.i(TAG, "reconcile: ${pending.size} pending")
         for (recfile in pending) {
-            val outcome = save(context, recfile, isIncoming(recfile), justEnded = false)
-            if (outcome !is Outcome.Failed && outcome != Outcome.Busy) failingSince(context, recfile, clear = true)
-            when (outcome) {
-                is Outcome.Saved -> {
-                    Log.i(TAG, "reconcile: saved $recfile")
-                    // A hang-up whose wake never arrived is still a call that
-                    // just ended, and still worth the after-call notification.
-                    // AfterCall leaves out anything long past.
-                    runCatching { AfterCall.saved(context, outcome, outcome.incoming, outcome.startMillis) }
-                        .onFailure { Log.w(TAG, "reconcile: after-call notice failed", it) }
-                }
-                Outcome.Empty -> Log.i(TAG, "reconcile: dropped empty $recfile")
-                Outcome.Gone -> Log.i(TAG, "reconcile: $recfile was collected meanwhile")
-                Outcome.Busy -> Log.i(TAG, "reconcile: $recfile is being saved already, leaving it")
-                Outcome.Skipped -> Log.i(TAG, "reconcile: $recfile was a call the rules leave out")
-                Outcome.NotAnswered -> Log.i(TAG, "reconcile: $recfile was never answered")
-                Outcome.GreetingHangUp -> Log.i(TAG, "reconcile: $recfile - hung up during the greeting")
-                Outcome.GreetingFailed -> {
-                    // The hang-up's wake did not land: nobody has said so yet,
-                    // and every answered call ends this way until it is put
-                    // right.
-                    Log.w(TAG, "reconcile: $recfile - the greeting could not be played")
-                    CallMonitorService.postNotRecorded(context, CallMonitorService.GREETING_FAILED)
-                }
-                // A week of failing, from the first failure - not from the
-                // call: a file stranded on the daemon for a week (a reboot,
-                // no Wi-Fi to bring the recorder back) is not given up on its
-                // first try.
-                is Outcome.Failed -> if (clock() - failingSince(context, recfile) > GIVE_UP_MS) {
-                    Log.w(TAG, "reconcile: giving up on $recfile (${outcome.reason})")
-                    daemon.delete(context, recfile)
-                    failingSince(context, recfile, clear = true)
-                } else {
-                    Log.w(TAG, "reconcile: left $recfile for later (${outcome.reason})")
-                }
+            val incoming = isIncoming(recfile)
+            val outcome = save(context, recfile, incoming, justEnded = false)
+            AfterSave.react(context, outcome, recfile, incoming, AfterSave.Collector.RECONCILE) {
+                AfterCall.postNotRecorded(context, it)
             }
+        }
+    }
+
+    /** Saving [recfile] came right, or to an end: it is no longer failing. */
+    internal fun noLongerFailing(context: Context, recfile: String) {
+        failingSince(context, recfile, clear = true)
+    }
+
+    /** Saving [recfile] failed again, for [reason]: noted, and given up on -
+     *  the recorder's copy deleted - a week after the first time. */
+    internal suspend fun failedAgain(context: Context, recfile: String, reason: String) {
+        if (clock() - failingSince(context, recfile) > GIVE_UP_MS) {
+            Log.w(TAG, "reconcile: giving up on $recfile ($reason)")
+            daemon.delete(context, recfile)
+            failingSince(context, recfile, clear = true)
+        } else {
+            Log.w(TAG, "reconcile: left $recfile for later ($reason)")
         }
     }
 

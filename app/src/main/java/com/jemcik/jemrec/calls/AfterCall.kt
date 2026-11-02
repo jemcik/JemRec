@@ -385,6 +385,31 @@ internal object AfterCall {
             .onFailure { Log.w(TAG, "$what: could not post", it) }
     }
 
+    /** "Call not recorded" - the hang-up's save, or a collection that found
+     *  out later. */
+    private const val NOT_RECORDED_ID = 31
+
+    /** Why an answered call kept nothing: the greeting would not play. */
+    const val GREETING_FAILED = "The answering machine answered a call, but could not play your " +
+        "greeting, so it hung up. Run the test call in Settings, Answering machine."
+
+    /** Why a saved call kept nothing: no call audio in it. */
+    const val NO_AUDIO = "No call audio came through. Some phones do not allow calls to be recorded."
+
+    /** "Call not recorded", with [reason]: from the call service at a hang-up,
+     *  or from a collection that found out later (RecordingSaver.reconcile). */
+    fun postNotRecorded(context: Context, reason: String) {
+        runCatching {
+            // A collection can get here before the call service ever ran:
+            // problem makes sure the channel exists.
+            val tap = PendingIntent.getActivity(
+                context, 0, Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE,
+            )
+            notifyProblem(context, NOT_RECORDED_ID, problem(context, "Call not recorded", reason, tap).build(), "monitor")
+        }.onFailure { Log.w(TAG, "monitor: could not report the failure", it) }
+    }
+
     /** Takes down the [problem] notification posted as [id]; never throws. */
     internal fun cancelProblem(context: Context, id: Int) {
         runCatching { context.getSystemService(NotificationManager::class.java).cancel(id) }
