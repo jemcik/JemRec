@@ -144,6 +144,38 @@ object AnswerDiagnostics {
             .mapNotNull { e -> (e.value as? String)?.let { v -> runCatching { e.key.removePrefix(KEY_RESULT) to Verdict.valueOf(v) }.getOrNull() } }
             .toMap()
 
+    /**
+     * The route to switch to once the no-call checks found [stage], with
+     * [route] the one in use; null to keep it. Only the call-screening route
+     * there: that is the one to try. Not on a setup that could not be read:
+     * that is no "no" to in-call music.
+     */
+    fun routeAfterChecks(stage: StageOne, route: String): String? =
+        AnsweringMachine.ROUTE_SCREENING.takeIf {
+            !stage.inCallMusic && !stage.audioUnread && stage.screening && route != AnsweringMachine.ROUTE_SCREENING
+        }
+
+    /**
+     * The route to try next after [route] failed a test call of [type]; null
+     * to keep it. The route just failed is not the only one: try the other
+     * next time - unless this one passed on another call type ([results]),
+     * which one route for every call would break; and back again if that
+     * fails too. Back as well where the checks ([stage]) could not read the
+     * audio setup: no "no" to in-call music, as for the switch
+     * (StageOne.possible). On the Honor the screening route reached nobody
+     * (docs/ARCHITECTURE.md).
+     */
+    fun routeAfterFailure(route: String, stage: StageOne?, results: Map<String, Verdict>, type: String): String? {
+        val passedElsewhere = results.any { (other, v) -> other != type && (v == Verdict.WORKS || v == Verdict.LIKELY) }
+        return when {
+            passedElsewhere -> null
+            route == AnsweringMachine.ROUTE_MUSIC && stage?.screening == true -> AnsweringMachine.ROUTE_SCREENING
+            route == AnsweringMachine.ROUTE_SCREENING && (stage?.inCallMusic == true || stage?.audioUnread == true) ->
+                AnsweringMachine.ROUTE_MUSIC
+            else -> null
+        }
+    }
+
     /** The tested call types, in words: "Works on 2G", "Likely works on
      *  VoLTE, not tested on 2G". Null when nothing was tested. Pure. */
     fun summary(results: Map<String, Verdict>): String? {
