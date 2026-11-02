@@ -95,8 +95,9 @@ class CallMonitorService : Service() {
     @Volatile
     private var callInProgress = false
 
-    /** Calls ended so far: a Record's answer that comes after its call's
-     *  end is not taken for a call still up. Under standDown's lock. */
+    /** Calls ended so far: the recorder's answer to Record or Talk to them
+     *  that comes after its call's end is not taken for a call still up
+     *  (ifTheCallIsUp). Under standDown's lock. */
     private var callEnds = 0
 
     /** Written from the save coroutine as well as the main thread. */
@@ -261,10 +262,11 @@ class CallMonitorService : Service() {
                     return
                 }
                 val talk = intent.action == ACTION_TALK
+                val ends = callEnds
                 scope.launch {
-                    val ok = CaptureDaemon.handOver(this@CallMonitorService, talk)
+                    val ok = handOver(this@CallMonitorService, talk)
                     Log.i(TAG, "monitor: ${if (talk) "talk to them" else "hang up"} -> $ok")
-                    if (talk && ok) messageTaken()
+                    if (talk && ok && ifTheCallIsUp(ends, ::messageTaken)) startForegroundCompat()
                 }
             }
 
@@ -356,16 +358,12 @@ class CallMonitorService : Service() {
                 Log.w(TAG, "monitor: on-demand start did not take (call over?)")
             } else {
                 Log.i(TAG, "monitor: on-demand recording started -> $name")
-                val up = standDown.holding {
-                    (callEnds == ends).also { up ->
-                        if (up) {
-                            callInProgress = true
-                            recordingNow = true
-                            // As at any call's start: a failure told of is
-                            // the call before's.
-                            notRecording = false
-                        }
-                    }
+                val up = ifTheCallIsUp(ends) {
+                    callInProgress = true
+                    recordingNow = true
+                    // As at any call's start: a failure told of is the call
+                    // before's.
+                    notRecording = false
                 }
                 if (up) startForegroundCompat()
             }
@@ -374,6 +372,16 @@ class CallMonitorService : Service() {
             // call up - "Call in progress" stayed.
             finishIfIdle(ending = coroutineContext[Job])
         }
+    }
+
+    /**
+     * [change], under the lock the stand-down rule takes, if no call has
+     * ended since [ends] - the count when the recorder was asked - and
+     * whether it was made. The recorder's answer to Record or Talk to them
+     * can come after the call's end, and is then no answer for a call up.
+     */
+    private fun ifTheCallIsUp(ends: Int, change: () -> Unit): Boolean = standDown.holding {
+        (callEnds == ends).also { up -> if (up) change() }
     }
 
     /** The user tapped Not now: nothing was ever recorded, so nothing to do. */
@@ -446,6 +454,7 @@ class CallMonitorService : Service() {
         callInProgress = true
         notRecording = false
         messageTaken()
+        startForegroundCompat()
     }
 
     /** The message is the user's call now: recorded on, in Record every
@@ -454,7 +463,6 @@ class CallMonitorService : Service() {
     private fun messageTaken() {
         messageTicket = null
         recordingNow = RecordingMode.of(this) == RecordingMode.AUTOMATIC
-        startForegroundCompat()
     }
 
     private fun onCallEnded(recfile: String?, incoming: Boolean) {
@@ -752,6 +760,10 @@ class CallMonitorService : Service() {
 
         @VisibleForTesting
         internal var startOnDemand: suspend (Context) -> String? = CaptureDaemon::startOnDemand
+
+        /** And to Talk to them (true) or Hang up. */
+        @VisibleForTesting
+        internal var handOver: suspend (Context, Boolean) -> Boolean = CaptureDaemon::handOver
 
         fun stop(context: Context) {
             runCatching {

@@ -537,6 +537,32 @@ class CallMonitorServiceTest {
         }
     }
 
+    @Test fun aTalkConfirmedOnlyAfterTheCallEndedChangesNothing() {
+        val answer = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val before = CallMonitorService.handOver
+        CallMonitorService.handOver = { _, _ -> answer.await(); true }
+        val log = heldCallLog(start, incoming = true)
+        try {
+            wake("MESSAGE_STARTED", incoming = true)
+            start(tap(ongoing(), "Talk to them"))
+            // The call ends before the recorder's answer; its save keeps the
+            // service up.
+            val file = recfile(start, true)
+            wake("CALL_ENDED", file, incoming = true)
+            log.awaitHeld()
+            val shown = ongoing()
+            answer.complete(Unit)
+            awaitLog("monitor: talk to them -> true")
+            settle()
+            assertTrue("not posted again for a call that is over", shown === ongoing())
+            assertNotEquals("Recording call", ongoing().title())
+        } finally {
+            answer.complete(Unit)
+            log.release()
+            CallMonitorService.handOver = before
+        }
+    }
+
     @Test fun aRecordedCallLeavesAnEarlierFailureBehind() {
         // An earlier call's save failed, no call up: its notification says so.
         val first = recfile(start, true)
