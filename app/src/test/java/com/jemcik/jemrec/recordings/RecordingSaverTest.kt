@@ -677,14 +677,17 @@ class RecordingSaverTest {
         assertEquals(listOf(other), fakes.abandoned)
         assertTrue(fakes.deleted.isEmpty())
         assertTrue(logged("save: keeping $file on the daemon; a part of it was not saved"))
-        assertEquals(listOf(Recorded(t, true, 10)), ledger().recordings)
-        // Pins today's behaviour, which looks like a bug: the first call's
-        // entry in the ledger makes the next save take the whole recording
-        // for saved before, and delete it - the second call's audio with it
-        // (to be fixed in its own commit)
-        assertEquals(Outcome.Gone, save(file, justEnded = false))
+        // Not noted yet: the first call's entry would make the next save take
+        // the whole recording for saved before, and delete it - the second
+        // call's audio with it.
+        assertTrue(ledger().recordings.isEmpty())
+        // The next save saves it all again, the second call with it.
+        fakes.unpublishable = emptySet()
+        assertTrue(save(file, justEnded = false) is Outcome.Saved)
+        assertEquals(listOf(file, file), fakes.fetched)
+        assertTrue(other in fakes.published)
         assertEquals(listOf(file), fakes.deleted)
-        assertEquals(listOf(file), fakes.fetched)
+        assertEquals(setOf(Recorded(t, true, 10), Recorded(t + 10_000, true, 5)), ledger().recordings.toSet())
     }
 
     @Test fun aCopyTheRecorderWouldNotDeleteIsSavedAndLeftForNextTime() {

@@ -683,6 +683,7 @@ object RecordingSaver {
         // daemon too, and the next reconcile saved it again as "(1)".
         var last: Outcome.Saved? = null
         var unpublished = false
+        val published = mutableListOf<Pair<Part, Int>>()
         for ((o, count) in counts) {
             val (packets, seconds) = count
             if (packets == 0L) {
@@ -707,16 +708,8 @@ object RecordingSaver {
                 "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile) +
                     if (undelivered > 0) ", %.2fs not delivered by the capture".format(undelivered) else "",
             )
-            if (phoneCall) {
-                FileNames.noteDirection(context, o.part.name, o.part.incoming)
-                // Before anyone can delete it: see CallLedger for why the
-                // missed-call check asks this and not the disk.
-                CallLedger.noteRecording(context, o.part.startMillis, o.part.incoming, seconds.toInt())
-            } else {
-                // Before the recorder's copy goes: one that outlives this,
-                // its delete not getting through, is only deleted next time.
-                CallLedger.noteMessenger(context, o.part.startMillis, o.part.incoming, seconds.toInt())
-            }
+            if (phoneCall) FileNames.noteDirection(context, o.part.name, o.part.incoming)
+            published += o.part to seconds.toInt()
             if (message) MessageMarks.mark(context, o.part.name)
             _saved.tryEmit(o.part.name)
             last = Outcome.Saved(
@@ -724,10 +717,27 @@ object RecordingSaver {
                 message = message,
             )
         }
+        // In the ledger before anyone can delete them - see CallLedger for
+        // why the missed-call check asks it and not the disk - and before the
+        // recorder's copy goes: one that outlives this, its delete not getting
+        // through, is only deleted next time. Only when every part was
+        // published: with one left on the recorder, another part's entry
+        // made the next collection take the whole recording for saved
+        // before and delete it, the part that did not publish with it.
+        if (!unpublished) {
+            published.forEach { (part, seconds) ->
+                if (phoneCall) {
+                    CallLedger.noteRecording(context, part.startMillis, part.incoming, seconds)
+                } else {
+                    CallLedger.noteMessenger(context, part.startMillis, part.incoming, seconds)
+                }
+            }
+        }
         when {
             last == null -> return@withContext Outcome.Failed("The recording could not be written.")
             // A part that would not publish: the daemon's copy stays,
-            // so its audio is not lost - a duplicate later is better.
+            // so its audio is not lost - a duplicate of the others later,
+            // from the next collection, is better.
             unpublished -> Log.w(TAG, "save: keeping $recfile on the daemon; a part of it was not saved")
             !daemon.delete(context, recfile) ->
                 // Saved, and noted in the ledger; the next collection
