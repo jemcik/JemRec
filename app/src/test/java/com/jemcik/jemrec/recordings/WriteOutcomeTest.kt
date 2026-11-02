@@ -10,13 +10,15 @@ class WriteOutcomeTest {
 
     @Test fun everyRow() {
         val bools = listOf(false, true)
-        for (read in Read.entries) for (anything in bools) for (written in bools) for (whole in bools) {
+        for (read in Read.entries) for (anything in bools) for (written in bools) for (whole in bools) for (off in bools) {
             val expected = when (read) {
                 // A read that did not end cleanly decides alone.
                 Read.GONE -> Ending.GONE
                 Read.NOWHERE -> Ending.NOWHERE
                 Read.BROKE_OFF -> Ending.BROKE_OFF
                 Read.COMPLETE -> when {
+                    // Switched off before it ended: dropped, whatever it holds.
+                    off -> Ending.SWITCHED_OFF
                     // Audio that would not finish or copy keeps the recorder's copy.
                     anything && !written -> Ending.NOT_WRITTEN
                     anything -> Ending.PUBLISH
@@ -25,7 +27,11 @@ class WriteOutcomeTest {
                     else -> Ending.EMPTY
                 }
             }
-            assertEquals("$read anything=$anything written=$written whole=$whole", expected, WriteOutcome.of(read, anything, written, whole))
+            assertEquals(
+                "$read anything=$anything written=$written whole=$whole off=$off",
+                expected,
+                WriteOutcome.of(read, anything, written, whole, off),
+            )
         }
     }
 
@@ -37,5 +43,7 @@ class WriteOutcomeTest {
         assertEquals(Ending.BROKE_OFF, WriteOutcome.of(Read.BROKE_OFF, anything = true, written = true, whole = true))
         assertEquals(Ending.GONE, WriteOutcome.of(Read.GONE, anything = false, written = false, whole = true))
         assertEquals(Ending.NOWHERE, WriteOutcome.of(Read.NOWHERE, anything = true, written = true, whole = false))
+        assertEquals(Ending.SWITCHED_OFF, WriteOutcome.of(Read.COMPLETE, anything = true, written = true, whole = false, switchedOff = true))
+        assertEquals(Ending.BROKE_OFF, WriteOutcome.of(Read.BROKE_OFF, anything = true, written = true, whole = false, switchedOff = true))
     }
 }

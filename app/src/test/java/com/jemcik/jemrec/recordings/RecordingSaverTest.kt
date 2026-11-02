@@ -234,6 +234,53 @@ class RecordingSaverTest {
         assertTrue(save(file) is Outcome.Saved)
     }
 
+    /** Recording switched off [offAfter] ms into a call that began at t. */
+    private fun switchedOff(offAfter: Long) =
+        Prefs.of(context).edit { putStringSet("coverage_history", setOf("0:AUTOMATIC", "${t + offAfter}:OFF")) }
+
+    @Test fun withoutTelecomsEndARecordingSwitchedOffBeforeItEndedIsDropped() {
+        // Ten seconds of call, recording switched off five seconds in, no
+        // account from Telecom: the hang-up, reading the switch as the call
+        // ends, drops it; so does a collection that reads the recording.
+        CallTracking.setEnabled(context, false)
+        switchedOff(5_000)
+        val file = recfile()
+        fakes.files[file] = stream(500)
+        assertEquals(Outcome.Skipped, save(file, justEnded = false))
+        assertEquals(listOf(file), fakes.deleted)
+        assertTrue(fakes.published.isEmpty())
+        assertEquals(listOf(file), announced)
+        assertTrue(ledger().accounted.isEmpty())
+        assertTrue(logged("save: recording was switched off during $file; discarding it"))
+    }
+
+    @Test fun aRecordingSwitchedOffOnlyAfterItEndedIsSaved() {
+        CallTracking.setEnabled(context, false)
+        switchedOff(15_000)
+        val file = recfile()
+        fakes.files[file] = stream(500)
+        assertTrue(save(file) is Outcome.Saved)
+    }
+
+    @Test fun telecomsEndDecidesWhereThereIsOne() {
+        // Over at 4 s by Telecom's account, switched off at 5 s; the recorder
+        // ran on to 10 s. Telecom's end is the call's.
+        track(CallTracking.Tracked(t, false, null, listOf(t), t + 4_000))
+        switchedOff(5_000)
+        val file = recfile(incoming = false)
+        fakes.files[file] = stream(500)
+        assertTrue(save(file, incoming = false) is Outcome.Saved)
+    }
+
+    @Test fun aMessengerCallSwitchedOffBeforeItEndedIsDropped() {
+        switchedOff(5_000)
+        val file = "jemrec_rec_${t}_voip-com.whatsapp.dat"
+        fakes.files[file] = stream(500)
+        assertEquals(Outcome.Skipped, save(file))
+        assertEquals(listOf(file), fakes.deleted)
+        assertTrue(ledger().messengerRecordings.isEmpty())
+    }
+
     @Test fun anOutgoingCallNobodyAnsweredIsDeleted() {
         track(CallTracking.Tracked(t, false, null, emptyList(), t + 20_000))
         val file = recfile(incoming = false)

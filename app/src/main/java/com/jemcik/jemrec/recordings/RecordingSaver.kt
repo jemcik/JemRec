@@ -240,7 +240,12 @@ object RecordingSaver {
             }
             null -> Unit
         }
-        if (messenger != null) return saveMessenger(context, recfile, startedAt, messenger, file.messengerIncoming)
+        if (messenger != null) {
+            val history = CoverageHistory.read(context)
+            return saveMessenger(context, recfile, startedAt, messenger, file.messengerIncoming) { span ->
+                SavePlan.offAt(history, startedAt.time + span)
+            }
+        }
 
         // Who it was with - asked only when something needs to know: the
         // rules on whose calls to keep, or a file name with the caller in it.
@@ -257,7 +262,8 @@ object RecordingSaver {
         } else {
             emptyList()
         }
-        if (SavePlan.switchedOff(tracked, CoverageHistory.read(context))) {
+        val history = CoverageHistory.read(context)
+        if (SavePlan.switchedOff(tracked, history)) {
             Log.i(TAG, "save: recording was switched off during $recfile; discarding it")
             dropFromDaemon(context, recfile, announce = true)
             return Outcome.Skipped
@@ -304,7 +310,16 @@ object RecordingSaver {
                     Log.i(TAG, "save: $recfile - ${cut.notKept} call(s) answered during the message, not kept")
                 }
                 val clock = PacketClock(startedAt.time, cut.clockOffset)
-                val written = write(context, recfile, cut.parts, phoneCall = true, message = cut.message, clock = clock, orWhole = cut.orWhole) { part ->
+                // Without Telecom's end, the recording's own, once it is read.
+                val offBy = if (SavePlan.telecomEnded(tracked) != null) {
+                    null
+                } else {
+                    { span: Long -> SavePlan.offAt(history, startedAt.time + span) }
+                }
+                val written = write(
+                    context, recfile, cut.parts, phoneCall = true, message = cut.message, clock = clock,
+                    orWhole = cut.orWhole, offBy = offBy,
+                ) { part ->
                     RecordingTags.Facts(message = cut.message, incoming = part.incoming)
                 }
                 if (cut.message && written == Outcome.Empty) {
@@ -372,11 +387,14 @@ object RecordingSaver {
         startedAt: Date,
         app: VoipApps.App,
         incoming: Boolean?,
+        offBy: (Long) -> Boolean,
     ): Outcome {
         val note = VoipCallNotes.find(context, app.pkg, startedAt.time, incoming)
         val format = FileNames.format(context)
         val name = FileNames.buildVoip(format, startedAt.time, note?.incoming, app.tag, note?.name)
-        val outcome = write(context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), phoneCall = false) {
+        val outcome = write(
+            context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), phoneCall = false, offBy = offBy,
+        ) {
             RecordingTags.Facts(incoming = note?.incoming, caller = note?.name)
         }
         // Where the name does not say who: the date and number formats, or a
@@ -482,6 +500,10 @@ object RecordingSaver {
         val open = LinkedHashMap<Part, Open>()
         var seen = 0L
             private set
+
+        /** The last slot a packet fell in: how long the recording ran. */
+        var lastSlot = -1L
+            private set
         var read = WriteOutcome.Read.BROKE_OFF
             private set
 
@@ -516,6 +538,7 @@ object RecordingSaver {
                                 if (packet.isConfig) continue
                                 val slot = clock?.next(packet.pts) ?: seen
                                 seen++
+                                lastSlot = maxOf(lastSlot, slot)
                                 val part = parts.firstOrNull { it.holds(slot) }
                                 if (part == null) continue
                                 val into = open[part] ?: run {
@@ -573,7 +596,8 @@ object RecordingSaver {
      * direction; a messenger's call is noted only as saved. [facts]: what
      * each part's file says of itself (RecordingTags). [orWhole]: saved into
      * instead when no part held any of the file's packets
-     * (SavePlan.wholeIfNothingFits).
+     * (SavePlan.wholeIfNothingFits). [offBy]: whether recording was switched
+     * off by the end of a recording that ran this long, in ms (SavePlan.offAt).
      */
     private suspend fun write(
         context: Context,
@@ -583,6 +607,7 @@ object RecordingSaver {
         message: Boolean = false,
         clock: PacketClock? = null,
         orWhole: Part? = null,
+        offBy: ((Long) -> Boolean)? = null,
         facts: (Part) -> RecordingTags.Facts,
     ): Outcome {
         val socket = try {
@@ -618,9 +643,11 @@ object RecordingSaver {
         // one - kept for a retry, not deleted as saved.
         val finished = open.values.map { runCatching { it.writer.finish() }.getOrDefault(false) }.all { it }
         val anything = counts.any { (_, count) -> count.first > 0L }
+        val switchedOff = transfer.read == WriteOutcome.Read.COMPLETE &&
+            offBy?.invoke((transfer.lastSlot + 1) * CallTracking.PACKET_MS) == true
         // Into place, tags and all - only what will be published: a copy that
         // fails is a file not written, and the daemon's copy is kept for it.
-        val copied = finished && transfer.read == WriteOutcome.Read.COMPLETE && anything && open.values.all { o ->
+        val copied = !switchedOff && finished && transfer.read == WriteOutcome.Read.COMPLETE && anything && open.values.all { o ->
             o.writer.packets == 0L || runCatching { o.copyIn(facts(o.part)) }
                 .onFailure { Log.e(TAG, "save: a file from $recfile could not be copied into place", it) }
                 .isSuccess
@@ -628,7 +655,7 @@ object RecordingSaver {
         open.values.forEach { it.discardWork() }
 
         val whole = orWhole?.takeIf { transfer.seen > 0 }
-        return when (WriteOutcome.of(transfer.read, anything, copied, whole != null)) {
+        return when (WriteOutcome.of(transfer.read, anything, copied, whole != null, switchedOff)) {
             WriteOutcome.Ending.GONE -> {
                 Log.i(TAG, "save: $recfile is no longer on the daemon - collected already")
                 open.values.forEach { it.target.abandon() }
@@ -647,7 +674,7 @@ object RecordingSaver {
             WriteOutcome.Ending.WHOLE -> {
                 Log.w(TAG, "save: none of the ${transfer.seen} packets of $recfile fell inside the call Telecom reported; saving it whole")
                 open.values.forEach { it.target.abandon() }
-                write(context, recfile, listOf(checkNotNull(whole)), phoneCall, message, facts = facts)
+                write(context, recfile, listOf(checkNotNull(whole)), phoneCall, message, offBy = offBy, facts = facts)
             }
             WriteOutcome.Ending.EMPTY -> {
                 // Read the whole thing; there was simply no call audio in it.
@@ -662,6 +689,12 @@ object RecordingSaver {
             WriteOutcome.Ending.BROKE_OFF -> {
                 open.values.forEach { it.target.abandon() }
                 Outcome.Failed("Something went wrong while saving it.")
+            }
+            WriteOutcome.Ending.SWITCHED_OFF -> {
+                Log.i(TAG, "save: recording was switched off during $recfile; discarding it")
+                open.values.forEach { it.target.abandon() }
+                dropFromDaemon(context, recfile, announce = true)
+                Outcome.Skipped
             }
         }
     }

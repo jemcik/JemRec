@@ -40,6 +40,10 @@ internal object WriteOutcome {
         /** No audio in it: dropped. */
         EMPTY,
 
+        /** Recording was switched off before it ended: dropped, as the
+         *  hang-up drops it. */
+        SWITCHED_OFF,
+
         /** Failed, the recorder's copy kept: the transfer broke off. */
         BROKE_OFF,
     }
@@ -48,13 +52,16 @@ internal object WriteOutcome {
      * The ending of a recording read as [read], where [anything] - some part
      * got a packet - and [written] - every part finished, and copied into
      * place - and whether it may be tried [whole]: a cut to one call
-     * (SavePlan.wholeIfNothingFits) of a file whose packets it missed.
+     * (SavePlan.wholeIfNothingFits) of a file whose packets it missed. Read
+     * in full, a recording [switchedOff] before it ended is dropped whatever
+     * else it is: not saved, nor told of as empty or unwritten.
      */
-    fun of(read: Read, anything: Boolean, written: Boolean, whole: Boolean): Ending = when (read) {
+    fun of(read: Read, anything: Boolean, written: Boolean, whole: Boolean, switchedOff: Boolean = false): Ending = when (read) {
         Read.GONE -> Ending.GONE
         Read.NOWHERE -> Ending.NOWHERE
         Read.BROKE_OFF -> Ending.BROKE_OFF
         Read.COMPLETE -> when {
+            switchedOff -> Ending.SWITCHED_OFF
             anything && !written -> Ending.NOT_WRITTEN
             anything -> Ending.PUBLISH
             whole -> Ending.WHOLE

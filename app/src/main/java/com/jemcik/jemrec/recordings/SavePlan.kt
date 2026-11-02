@@ -254,12 +254,27 @@ internal object SavePlan {
      * Telecom's end of its own call ([tracked], CallTracking.callsIn) and
      * the switch's [history]. The hang-up drops such a recording
      * (CallMonitorService), and so does this, when the hang-up's wake did
-     * not land - the two must agree.
+     * not land - the two must agree. Without Telecom's end the recording's
+     * own decides, once it is read ([offAt]).
      */
     fun switchedOff(tracked: List<CallTracking.Tracked>, history: List<Pair<Long, CoverageHistory.State>>): Boolean {
-        val ended = tracked.firstOrNull()?.endedAt?.takeIf { it > 0 } ?: return false
-        return CoverageHistory.stateAt(history, ended) == CoverageHistory.State.OFF
+        val ended = telecomEnded(tracked) ?: return false
+        return offAt(history, ended)
     }
+
+    /** When Telecom says the recording's own call ended, if it said. */
+    fun telecomEnded(tracked: List<CallTracking.Tracked>): Long? = tracked.firstOrNull()?.endedAt?.takeIf { it > 0 }
+
+    /**
+     * Whether recording was off at [at], by the switch's [history]. Asked
+     * at the end of a recording read in full (RecordingSaver.write) where
+     * Telecom gave no end: the recorder stops a second or two after the
+     * call, and its wake to the hang-up comes then, where the hang-up reads
+     * the switch - the same moment. Not known before the history began:
+     * kept.
+     */
+    fun offAt(history: List<Pair<Long, CoverageHistory.State>>, at: Long): Boolean =
+        CoverageHistory.stateAt(history, at) == CoverageHistory.State.OFF
 
     /**
      * What a kept recording is written as: [parts], [message] or not, the
