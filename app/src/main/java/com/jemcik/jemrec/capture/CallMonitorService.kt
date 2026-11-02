@@ -95,6 +95,10 @@ class CallMonitorService : Service() {
     @Volatile
     private var callInProgress = false
 
+    /** Calls ended so far: a Record's answer that comes after its call's
+     *  end is not taken for a call still up. Under standDown's lock. */
+    private var callEnds = 0
+
     /** Written from the save coroutine as well as the main thread. */
     @Volatile
     private var recordingNow = false
@@ -332,22 +336,40 @@ class CallMonitorService : Service() {
         }
     }
 
-    /** The user tapped Record on the start-of-call prompt (on-demand). */
+    /**
+     * The user tapped Record on the start-of-call prompt (on-demand). Once
+     * the recorder has started, a call is up - this service may never have
+     * seen its start: the prompt's ticket outlives the process - and only
+     * its end, as the recorder sends it after every call it recorded, or
+     * STOP, stands the service down, as for any call. Before, nothing counted
+     * it, and the next look at whether to stand down - a stray start, a
+     * cable watch's end - did, with "Recording call" going as it recorded.
+     * Unless that end came while the recorder was asked: the call is over,
+     * and its end has seen to the rest.
+     */
     private fun recordNow() {
         RecordPrompt.dismiss(this)
+        val ends = callEnds
         launchRecording {
             val name = startOnDemand(this@CallMonitorService)
             if (name.isNullOrBlank()) {
                 Log.w(TAG, "monitor: on-demand start did not take (call over?)")
-                // Not counting itself: it is one of the saves, and still
-                // running, so a plain finishIfIdle never stood the service
-                // down with no call up - "Call in progress" stayed.
-                finishIfIdle(ending = coroutineContext[Job])
             } else {
                 Log.i(TAG, "monitor: on-demand recording started -> $name")
-                recordingNow = true
-                startForegroundCompat()
+                val up = standDown.holding {
+                    (callEnds == ends).also { up ->
+                        if (up) {
+                            callInProgress = true
+                            recordingNow = true
+                        }
+                    }
+                }
+                if (up) startForegroundCompat()
             }
+            // Not counting itself: it is one of the saves, and still running,
+            // so a plain finishIfIdle never stood the service down with no
+            // call up - "Call in progress" stayed.
+            finishIfIdle(ending = coroutineContext[Job])
         }
     }
 
@@ -430,6 +452,7 @@ class CallMonitorService : Service() {
 
     private fun onCallEnded(recfile: String?, incoming: Boolean) {
         Log.i(TAG, "monitor: call ended, recfile=$recfile")
+        callEnds++
         callInProgress = false
         recordingNow = false
         messageTicket = null

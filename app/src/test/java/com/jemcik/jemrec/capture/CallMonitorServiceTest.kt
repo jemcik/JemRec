@@ -507,6 +507,51 @@ class CallMonitorServiceTest {
         eventually("the service stands down") { stopped }
     }
 
+    /** The recorder's answer to Record, for [block]: [name], once [answer]
+     *  completes when given. */
+    private fun withRecord(name: String?, answer: kotlinx.coroutines.CompletableDeferred<Unit>? = null, block: () -> Unit) {
+        val before = CallMonitorService.startOnDemand
+        CallMonitorService.startOnDemand = { answer?.await(); name }
+        try {
+            block()
+        } finally {
+            CallMonitorService.startOnDemand = before
+        }
+    }
+
+    @Test fun aRecordStartedForACallThisServiceNeverSawKeepsItForThatCall() {
+        val file = recfile(start, true)
+        withRecord(file) {
+            RecordPrompt.show(context, incoming = true)
+            start(tap(prompt()!!, "Record"))
+            awaitLog("monitor: on-demand recording started -> $file")
+            settle()
+            assertEquals("Recording call", ongoing().title())
+            // A start from anywhere else, while it records: the call keeps it.
+            stray(null)
+            assertFalse(stopped)
+            // Its end, as the recorder sends it.
+            wake("CALL_ENDED", file, incoming = true)
+            awaitLog("monitor: recording handled")
+            eventually("the service stands down") { stopped }
+        }
+    }
+
+    @Test fun aRecordThatStartsAsTheCallEndsStandsDownAndSaysNothingOfRecording() {
+        val answer = kotlinx.coroutines.CompletableDeferred<Unit>()
+        withRecord(recfile(start, true), answer) {
+            wake("CALL_STARTED", "", incoming = true)
+            start(tap(prompt()!!, "Record"))
+            // The call's end comes before the recorder's answer to Record.
+            wake("CALL_ENDED", "", incoming = true)
+            assertFalse("the Record still runs", stopped)
+            answer.complete(Unit)
+            awaitLog("monitor: on-demand recording started")
+            eventually("the service stands down") { stopped }
+            assertEquals("Call in progress", ongoing().title())
+        }
+    }
+
     // ---- a call ends -------------------------------------------------------
 
     @Test fun anEndWithNothingRecordedTakesThePromptDownAndStandsDown() {
