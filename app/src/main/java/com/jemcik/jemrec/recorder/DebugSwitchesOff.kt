@@ -185,6 +185,11 @@ object DebugSwitchesOff {
         }.toSet()
         if (off.isEmpty()) return
         record(context, switchedOff(context) + off)
+        // Pending until the recorder's answer says how this off goes: gone
+        // before it - the process killed while the recorder was asked - the
+        // off is left to the next look (finishOffLeftUndone), which found
+        // nothing pending and left debugging on for good.
+        if (off.takesTheRecorder()) notePending(context, true)
         if (DebugSwitch.DEVELOPER_OPTIONS in off) RecorderLifecycle.write(context, GlobalSettings.DEVELOPMENT_SETTINGS_ENABLED, false)
         if (off.takesTheRecorder()) {
             val reply = CaptureDaemon.debuggingOff(context, go = true)
@@ -282,13 +287,16 @@ object DebugSwitchesOff {
      * An off with all debugging the recorder never finished: it was waiting
      * out a call ("OFF AFTER CALL") and died first - a computer's cable, say -
      * or its writes were refused (switchOff), so debugging is still on under
-     * a record and a header that say it is off. Only that off: USB debugging
+     * a record and a header that say it is off; or Off itself was cut short
+     * before the recorder answered (switchOff). Only that off: USB debugging
      * the user switched on themselves while JemRec is off is theirs, and the
      * note is dropped the first time USB debugging is seen off - the
-     * recorder finished. Left alone while a recorder answers, asked the
-     * confirmed way (one missed ping is not a dead recorder, and this one may
-     * be waiting on a call), and where Android hides the setting from the app
-     * (UNKNOWN).
+     * recorder finished. Left alone where Android hides the setting from the
+     * app (UNKNOWN). A recorder that answers, asked the confirmed way (one
+     * missed ping is not a dead recorder), may be waiting on a call, or may
+     * never have been told: it is asked again, and goes as it answers - now,
+     * or after its call. A second go changes nothing for one already waiting
+     * (Main.goOffWhenFree).
      */
     suspend fun finishOffLeftUndone(context: Context) {
         val prefs = Prefs.of(context)
@@ -301,7 +309,11 @@ object DebugSwitchesOff {
             GlobalSettings.Reading.UNKNOWN -> return
             GlobalSettings.Reading.ON -> Unit
         }
-        if (CaptureDaemon.isRunningConfirmed(context)) return
+        if (CaptureDaemon.isRunningConfirmed(context)) {
+            val reply = CaptureDaemon.debuggingOff(context, go = true)
+            ReviveLog.note(context, "debugging off: asked the recorder again, it says ${reply ?: "nothing"}")
+            return
+        }
         RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
         RecorderLifecycle.write(context, GlobalSettings.ADB_ENABLED, false)
         prefs.edit { remove(KEY_OFF_PENDING) }

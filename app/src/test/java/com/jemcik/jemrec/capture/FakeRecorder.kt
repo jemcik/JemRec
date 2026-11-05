@@ -55,6 +55,10 @@ internal class FakeRecorder(
         ),
     )
 
+    /** Called before a reply is written, with its key: a recorder that takes
+     *  its time. */
+    @Volatile var stall: (String) -> Unit = {}
+
     /** Called after a reply is written, with its key: what a recorder does
      *  next - exits after BYE (by default), writes the switches after OFF NOW. */
     @Volatile var after: (String) -> Unit = { key -> if (key == "Q" && replies["Q"] == "BYE") close() }
@@ -113,6 +117,7 @@ internal class FakeRecorder(
         val name = if (command == 'G' || command == 'X') "$command${payload.firstOrNull()?.toInt()?.toChar() ?: ""}" else "$command"
         heard += Heard(name, payload)
         val line = if (command == 'P') pong() else replies[name]
+        stall(name)
         if (line != null) {
             out.write("$line\n".toByteArray())
             out.flush()
