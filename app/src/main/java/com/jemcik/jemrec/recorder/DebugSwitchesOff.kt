@@ -98,7 +98,7 @@ object DebugSwitchesOff {
      *  be gone, and Off for one whose writes may have been refused: two
      *  `settings put`s, each read back since 0.25.2, the 3 s it allows adbd
      *  after them, and the confirmed probe's own 2.4 s to say no
-     *  (CaptureDaemon). Over by then, Off leaves the rest to the next
+     *  (DaemonLauncher). Over by then, Off leaves the rest to the next
      *  stand-down (RecorderLifecycle.admit) - minutes, for a bank waiting
      *  to open. */
     private const val RECORDER_GOING_MS = 10_000L

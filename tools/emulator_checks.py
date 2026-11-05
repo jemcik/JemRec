@@ -256,6 +256,14 @@ def diag(op, *extra, wait=60):
     return "\n".join(l for l in log().splitlines() if f"diag[{op}]" in l)
 
 
+# How long On gets to come back with adb away (TurnOnLater). Its 30 s is
+# JobScheduler's to keep, and nothing can be asked meanwhile: on the Android 16
+# AVD, 2026-11-05, a retry due after 30 s came after 189 s. Inferred, not
+# measured: that a late job is why debugging never came back on there once,
+# with 120 s here.
+TURN_ON_LATER_S = 300
+
+
 def diag_cut_off(op, *extra):
     """A diag op that takes adbd down with it - all debugging off, or a
     revive that restarts it for Start without Wi-Fi's port - sent without
@@ -375,6 +383,11 @@ def set_up(apk):
     # And the standard folder, where the checks look: a recently_deleted_folder
     # cut short leaves its picked folder set.
     set_prefs(recordings_tree_uri=None)
+    # On through the switch too, not the preference above alone: the switch
+    # notes what the save reads (CoverageHistory), and a run cut short with
+    # JemRec off left that note saying off, so that every recording of the next
+    # run was discarded as switched off (the Android 12 and 16 AVDs, 2026-11-05).
+    diag("switch", "--ez", "on", "true")
     start_recorder()
 
 
@@ -1764,7 +1777,7 @@ def debugging_off():
                 return False
 
         try:
-            wait_for(all_back, 120, "")
+            wait_for(all_back, TURN_ON_LATER_S, "")
         except TimeoutError:
             back_from_snapshot("debugging never came back on")
     finally:
@@ -1974,8 +1987,16 @@ def allow_this_wifi():
             if on_screen(label):
                 tap(label)
             time.sleep(1)
+        asked = time.time()
         _answer_questions(allow=True)
+        answered_in = time.time() - asked
         wait_for(recorder_answers, 45, "the recorder back after Allow")
+        # The tap's revive looks for adbd for about 23 s from the question, and
+        # an answer later than that is the next revive's. On the Android 13 AVD,
+        # 2026-11-05, this check's own Allow took 33 s, the system starting a
+        # dozen apps at the time, and the recorder was back 11 s after it.
+        if answered_in > 20:
+            return f"asked on a Wi-Fi not allowed; Allow took {answered_in:.0f} s, past the tap's revive, and the next had the recorder back"
 
         # That revive's own end: the first end line after its CYCLE. Revives
         # queued behind it end after it, under the revive lock. Written a
@@ -2032,18 +2053,18 @@ def wifi_back():
     revives (MainScreen), and no periodic job or watch but what the kick
     arms. A force-stopped app takes an explicit broadcast only when asked to,
     and delivering it takes the app out of the stopped state, so its jobs
-    and the watch it arms then work as on any phone. It is force-stopped
-    again at the end, so the kick's retry still waiting does not run a
-    revive in the middle of the next check.
+    and the watch it arms then work as on any phone. Force-stopped again at
+    the end, for the screen: the kick's retry still waiting is the next
+    nothing_pending's to end.
 
     It waits for a retry of the kick to fail, whose next is 60 s off at the
     least, and then reads from the log that Wi-Fi's run came first - not for
     any time JobScheduler keeps: on the Android 17 AVD, 2026-10-31, the third
     try came 114 s after the second, not 60, and on the Android 16 AVD,
     2026-11-05, the second came 189 s after the first, as the app was opened.
-    Any retry, not the second: a kick joins one that is already waiting
-    (KEEP), so with one left by an earlier check the first try seen here was
-    number 3 (Android 12 AVD, the same day)."""
+    Any retry, not the second: a kick joins one already waiting (KEEP), and
+    with one left by an earlier check the first try seen here was number 3
+    (Android 12 AVD, the same day)."""
     set_prefs(start_without_wifi=False)
     log_before = revive_log()
     try:
@@ -2073,7 +2094,7 @@ def wifi_back():
         return f"back {took:.0f} s after Wi-Fi, before the kick's next try"
     finally:
         wifi_on(True)
-        sh(f"am force-stop {PKG}")  # the kick's retry, still waiting, with it - Wi-Fi back or not
+        sh(f"am force-stop {PKG}")
         try:
             wait_wifi_connected()
             start_recorder()  # the open schedules the periodic job and the watches again
@@ -2154,7 +2175,7 @@ def start_without_wifi():
             time.sleep(5)
 
             try:
-                wait_for(lambda: adb_ready() and global_setting("adb_enabled") == "1", 120, "")
+                wait_for(lambda: adb_ready() and global_setting("adb_enabled") == "1", TURN_ON_LATER_S, "")
             except TimeoutError:
                 back_from_snapshot("debugging never came back on")
         finally:
@@ -2245,6 +2266,36 @@ def background():
     return watching + "; a Force stop's open read as started stopped, not warned of"
 
 
+def off_just_left():
+    """Off from the background, JemRec 20 s off the screen and no call up: the
+    process lives. CallMonitorService.stop is a plain start, and the service
+    went to the foreground at every start, which Android refused:
+    ForegroundServiceStartNotAllowedException, and the process gone, on all
+    four AVDs, 2026-11-05 (first in a full run on Android 12, 28 s off the
+    screen). 2 s off the screen it was allowed, and so was a tap on the tile
+    20 s off, on 12 and 17. An Off that waited behind a revive, the app closed
+    from Recents meanwhile, has neither: read from the code, not run."""
+    def on_screen():
+        return PKG in sh("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity:'")
+
+    sh(f"am start -n {PKG}/.MainActivity")
+    wait_for(on_screen, 15, "JemRec on the screen")
+    sh("input keyevent KEYCODE_HOME")
+    wait_for(lambda: not on_screen(), 15, "JemRec off the screen")
+    time.sleep(20)
+    process = sh(f"pidof {PKG}").strip()
+    assert process, "no process to watch"
+    try:
+        diag("switch", "--ez", "on", "false")
+        time.sleep(3)
+        crash = adb("logcat", "-d", "-b", "crash", "-t", "20")
+        assert "ForegroundServiceStartNotAllowedException" not in crash, "refused the foreground, and the process went"
+        assert sh(f"pidof {PKG}").strip() == process, "the process went"
+    finally:
+        diag("switch", "--ez", "on", "true")
+    return "the process lived"
+
+
 def self_test():
     report = diag("selftest")
     assert "PASS" in report, report
@@ -2258,7 +2309,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           background_playback,
           recently_deleted, recently_deleted_folder, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
-          debugging_off, background, allow_this_wifi, refused_grant,
+          debugging_off, off_just_left, background, allow_this_wifi, refused_grant,
           # Last, these two: they turn the emulator's Wi-Fi off and on, and a
           # simulated Wi-Fi that does not come back would fail every check
           # after them.
@@ -2267,7 +2318,15 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
 
 def nothing_pending():
     """Wait for the call before to be collected, so a check that failed
-    leaves nothing for the next one to find - and then clear the log."""
+    leaves nothing for the next one to find, end any keep-alive retry it left,
+    and then clear the log. A force-stop does not end a retry: WorkManager
+    schedules it again at the next start, and on every full run of 2026-11-05
+    wifi_back's ran a revive in the middle of the check after it (46 s in on the
+    Android 16 AVD, 71 s on the Android 12)."""
+    try:
+        diag("forgetkicks", "--include-stopped-packages", wait=15)
+    except TimeoutError:
+        print("     (no answer to end a retry left waiting)")
     try:
         wait_for(lambda: "jemrec_rec_" not in sh("ls /data/local/tmp"), 20, "")
     except TimeoutError:
@@ -2281,6 +2340,19 @@ def what_happened():
     keep = re.compile(r"callwatch|recording:|rules leave|calltrack|save:|reconcile|never answered|answer:")
     lines = [l for l in log().splitlines() if keep.search(l)]
     return "\n".join("       " + l[6:170] for l in lines[-25:])
+
+
+def app_crashes():
+    """How many crashes of the app Android's DropBox holds, or None with no
+    adb to ask over. A check reads what it is after, so a crash beside that
+    passes it: the app died in full runs that reported 34 of 34 on 2026-11-05,
+    and only a read of the logcat found it. DropBox and not the log's crash
+    buffer, which every `logcat -c` here clears."""
+    try:
+        said = adb("shell", f"dumpsys dropbox --print data_app_crash | grep -c 'Process: {PKG}'", timeout=30).strip()
+    except subprocess.TimeoutExpired:
+        return None
+    return int(said) if said.isdigit() else None
 
 
 def where_things_stood():
@@ -2307,7 +2379,8 @@ def where_things_stood():
         "wifi": read("cmd wifi status | head -2").replace("\n", " "),
         "standby bucket": read(f"am get-standby-bucket {PKG}"),
     }
-    jobs = read(f"dumpsys jobscheduler | grep -A4 'JOB .*{PKG}' | head -30")
+    jobs = read(f"dumpsys jobscheduler | awk '/^ *JOB /{{on=index($0,\"{PKG}\")>0}} on' | "
+                "grep -E 'JOB |[Cc]onstraints|Backoff|Minimum latency|Earliest|Ready|Pending' | head -60")
     revive = read(f"su 0 tail -n 30 {APP_DIR}/files/revive.log")
     lines = [f"{k}: {v[:600]}" for k, v in state.items()] + jobs.splitlines() + revive.splitlines()
     return "\n".join("       " + l[:170] for l in lines)
@@ -2371,8 +2444,12 @@ def main():
     failed = 0
     for check in checks:
         nothing_pending()
+        crashes = app_crashes()
         try:
-            print(f"PASS {check.__name__:11} {check()}")
+            result = check()
+            after = app_crashes()
+            assert crashes is None or after is None or after <= crashes, f"the app crashed during it: {result}"
+            print(f"PASS {check.__name__:11} {result}")
         except Exception as e:  # report every check, whatever one does
             failed += 1
             print(f"FAIL {check.__name__:11} {e}" + ("" if "\n" in str(e) else f"\n{what_happened()}"))

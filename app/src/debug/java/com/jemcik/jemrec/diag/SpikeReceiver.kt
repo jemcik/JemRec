@@ -487,6 +487,18 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "monitor", "keep-alive kicked; see the log")
                     }
 
+                    // A keep-alive retry left by the check before, ended: a
+                    // force-stop does not end one, WorkManager schedules it
+                    // again at the next start, and it ran a revive in the
+                    // middle of the next check (tools/emulator_checks.py).
+                    // The unique names, as the tests' HeldWork has them.
+                    "forgetkicks" -> {
+                        val work = androidx.work.WorkManager.getInstance(appContext)
+                        work.cancelUniqueWork("jemrec.keepalive.now")
+                        work.cancelUniqueWork("jemrec.keepalive.wifi")
+                        report(appContext, "forgetkicks", "ended")
+                    }
+
                     // The README's screenshots: swap the real list for invented
                     // calls, or put it back. See DemoRecordings.
                     // Recently deleted's emulator checks (tools/emulator_checks.py,

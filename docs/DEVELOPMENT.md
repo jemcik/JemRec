@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1382 JVM tests, no device needed - 1186 for the app and 196 for the daemon:
+1385 JVM tests, no device needed - 1189 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -173,7 +173,8 @@ the 17 AVD showed JemRec 0.9 for eight days that way, until 2026-10-28 (every
 run installed the current build first, so the results were for it).
 
 It installs the shrunk build (see above), sets JemRec up from nothing and
-places simulated calls: the ringing cut, the same cut with nothing captured
+places simulated calls, and any crash of the app during a check fails that
+check, whatever else it found: the ringing cut, the same cut with nothing captured
 until the answer (as over Wi-Fi Calling on a Pixel, issue #40: the recorder
 is stopped while the call rings), an unanswered call not kept, an incoming
 call kept to the second, a stranger skipped before recording, two calls in
@@ -226,7 +227,10 @@ takes Developer options and Wireless debugging off and the recorder keeps its
 process, and on puts them back; set to Turn all debugging off, the recorder
 switches Wireless and USB debugging off and goes, adbd with it, and on - sent
 by the debug build after a delay, since adb is gone - puts it all back and
-starts the recorder. Then the header's *Tap to allow this Wi-Fi*: on a Wi-Fi
+starts the recorder. Then an Off from the background, JemRec 20 s off the
+screen: the app's process lives, where the call service asking for the
+foreground, which Android refuses there, took it on all four AVDs
+(2026-11-05). Then the header's *Tap to allow this Wi-Fi*: on a Wi-Fi
 Android has not allowed (its allowance taken back first), with the recorder
 down and port 5555 shut to the app, the header asks; the tap puts Android's
 question up, and after Allow the tap's own revive has the recorder back.

@@ -546,8 +546,8 @@ object DaemonClient {
     /**
      * Ask the daemon to exit, over loopback.
      *
-     * There is a stop() below that does this with `pkill` over ADB, and it is
-     * useless exactly when it matters. Starting fresh closes the ADB session as
+     * DaemonLauncher.stop does this with `pkill` over ADB, and it is useless
+     * exactly when it matters. Starting fresh closes the ADB session as
      * part of what it does, so by then there is no session left to send a kill
      * over, and the daemon survived every reset as an orphan holding port
      * 28472 until the phone was rebooted.
@@ -561,7 +561,7 @@ object DaemonClient {
         withContext(Dispatchers.IO) { quitReply(context) == QuitReply.BYE }
 
     /** What a daemon answers a quit with. BUSY means it is recording a call -
-     *  or believes it is; see retire(). */
+     *  or believes it is; see DaemonLauncher.retire. */
     internal enum class QuitReply { BYE, BUSY, NONE }
 
     /** "BYE" or "BUSY", as Main.session() writes them; anything else, or

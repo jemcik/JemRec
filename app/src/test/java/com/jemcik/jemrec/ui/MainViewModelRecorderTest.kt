@@ -3,6 +3,7 @@ package com.jemcik.jemrec.ui
 import android.os.Looper
 import androidx.lifecycle.viewModelScope
 import com.google.common.util.concurrent.SettableFuture
+import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.FakeRecorder
 import com.jemcik.jemrec.capture.HeldWork
 import com.jemcik.jemrec.capture.HeldWork.Companion.NOW
@@ -11,10 +12,13 @@ import com.jemcik.jemrec.capture.HeldWork.Companion.USB_WATCH
 import com.jemcik.jemrec.capture.TestPhone
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.RecorderSwitch
+import com.jemcik.jemrec.setup.Setup
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.job
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -25,6 +29,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import org.robolectric.shadows.ShadowLog
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -152,5 +157,33 @@ class MainViewModelRecorderTest {
         vm.reconnect()
         // Its connect runs as an action, holding busy for as long as it looks.
         until("busy") { state.busy }
+    }
+
+    @Test fun anActionCutShortByClosingTheScreenIsNoFailure() {
+        val looks = AtomicInteger()
+        vm.viewModelScope.cancel()
+        vm = MainViewModel(context, connectSession = { SettableFuture.create() }, lookForAdb = {
+            looks.incrementAndGet()
+            awaitCancellation()
+        })
+        vm.reconnect()
+        until("its look for adbd") { looks.get() == 1 }
+        vm.viewModelScope.cancel()
+        until("the view model's work to stop") { vm.viewModelScope.coroutineContext.job.isCompleted }
+        assertFalse(state.log, "connect failed" in state.log)
+    }
+
+    @Test fun aReviveCutShortByClosingTheScreenIsNoFailure() {
+        // Past setup's questions, so the check finds a phone set up with its
+        // recorder down, and revives it in the background.
+        shadowOf(context).grantPermissions(*Setup.missingRuntimePermissions(context).toTypedArray())
+        DebugNotificationCleaner.choose(context, false)
+        ShadowLog.clear()
+        ran { vm.refreshSetup() }
+        until("the revive") { state.starting }
+        vm.viewModelScope.cancel()
+        until("the view model's work to stop") { vm.viewModelScope.coroutineContext.job.isCompleted }
+        val said = ShadowLog.getLogsForTag("JemRec").map { it.msg }
+        assertFalse(said.toString(), "reviving the recorder failed" in said)
     }
 }

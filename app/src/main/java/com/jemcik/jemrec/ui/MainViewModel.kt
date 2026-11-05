@@ -745,6 +745,8 @@ class MainViewModel @JvmOverloads constructor(
             try {
                 CaptureDaemon.revive(getApplication(), request = request)
                 refreshNow()
+            } catch (e: CancellationException) {
+                throw e // the screen gone: not a failure to report
             } catch (t: Throwable) {
                 Log.w("JemRec", "reviving the recorder failed", t)
             } finally {
@@ -1713,6 +1715,8 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(busy = true) }
         try {
             block()
+        } catch (e: CancellationException) {
+            throw e // the screen gone: not a failure to report
         } catch (t: Throwable) {
             Log.w("JemRec", "$label failed", t)
             say("$label failed: ${t.javaClass.simpleName}: ${t.message}")
