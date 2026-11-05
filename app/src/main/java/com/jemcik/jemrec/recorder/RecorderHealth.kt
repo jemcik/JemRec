@@ -121,11 +121,13 @@ internal object RecorderHealth {
     }.onFailure { Log.w(TAG, "health: could not judge the recorder", it) }
 
     /**
-     * JemRec stands down: off with all debugging, the recorder gone by
-     * choice. No revive reaches onRevive then - each stands down first - so
-     * a recorder down from before the Off, and its alert, would stay until
-     * JemRec was on again; they go now, as they do at a revive while JemRec
-     * is off.
+     * JemRec is off, so a recorder down is no problem: switched off
+     * (RecorderSwitch.turn), or standing down, off with all debugging and
+     * the recorder gone by choice. Standing down, no revive reaches onRevive
+     * - each stands down first - so a recorder down from before the Off, and
+     * its alert, would stay until JemRec was on again; switched off, they
+     * stayed until the next revive, up to 15 minutes later. They go now, as
+     * they do at a revive while JemRec is off.
      */
     fun standingDown(context: Context) = runCatching { forgetDown(context, back = false) }
         .onFailure { Log.w(TAG, "health: could not forget the recorder down", it) }

@@ -149,6 +149,8 @@ object RecorderSwitch {
             // on again by then.
             CaptureDaemon.sendMode(context)
             if (isOn(context)) return@withLock
+            // Not recording calls is the choice now, not a problem to tell.
+            RecorderHealth.standingDown(context)
             CallMonitorService.stop(context)
             // Then whatever else the user chose to have off with it: Settings,
             // When JemRec is off. The default switches nothing.

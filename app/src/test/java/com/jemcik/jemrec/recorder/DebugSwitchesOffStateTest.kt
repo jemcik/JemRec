@@ -336,7 +336,9 @@ class DebugSwitchesOffStateTest {
     }
 
     /** A revive holding the lock, as one probing a recorder that is not
-     *  there does for about 2.4 s; its own writes are over by its start. */
+     *  there does for about 2.4 s. Its one write, armShield's, comes just
+     *  after its start, and with USB debugging on, as in each test here, it
+     *  writes nothing. */
     private suspend fun kotlinx.coroutines.CoroutineScope.aReviveUnderWay() =
         async(Dispatchers.IO) { CaptureDaemon.revive(context) }.also {
             withTimeout(5_000) { while ("revive: start" !in TestPhone.reviveLog(context)) delay(20) }

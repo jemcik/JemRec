@@ -25,6 +25,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The home screen's part in the recorder's lifecycle (MainViewModel), as it
@@ -128,21 +129,23 @@ class MainViewModelRecorderTest {
     }
 
     @Test fun openSettingsWhileTheScreenIsBusyConnectsOnceItIsFree() {
+        // Its looks for adbd counted, each finding nothing at once.
+        val looks = AtomicInteger()
+        vm.viewModelScope.cancel()
+        vm = MainViewModel(context, connectSession = { SettableFuture.create() }, lookForAdb = {
+            looks.incrementAndGet()
+            false
+        })
         // Start recorder holds busy while it asks for a recorder that is not
-        // there (about 2.4 s).
+        // there (about 2.4 s), and arms nothing.
         vm.bootstrapDaemon()
         until("busy") { state.busy }
         // Setup's Open settings, meanwhile: its connect in the background.
         vm.reconnect()
-        // Start recorder ends a moment after it says why (its refresh); the
-        // connect then holds busy for as long as it looks, 6 s a try. It was
-        // dropped, and the screen was free from then on.
-        until("Start recorder's answer") { "could not start the recorder" in state.log }
-        repeat(150) {
-            shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(10)
-        }
-        assertTrue(state.busy)
+        // It waits its turn, then looks, six times, and ends with the setup
+        // check, which arms the watches. It was dropped: no look, nothing armed.
+        until("the connect's six looks and its setup check") { looks.get() == 6 && armed().isNotEmpty() }
+        assertEquals(setOf(PERIODIC, USB_WATCH, NOW, wifiWatch), armed())
     }
 
     @Test fun openSettingsWithTheScreenFreeStartsItsConnect() {

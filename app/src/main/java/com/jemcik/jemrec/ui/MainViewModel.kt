@@ -381,6 +381,11 @@ class MainViewModel @JvmOverloads constructor(
     private val connectSession: (Application) -> ListenableFuture<MediaController> = { a ->
         MediaController.Builder(a, SessionToken(a, ComponentName(a, PlaybackService::class.java))).buildAsync()
     },
+    /** One look of setup's background connect (reconnect) for adbd, true
+     *  once connected. The tests count the looks. */
+    private val lookForAdb: suspend (Application) -> Boolean = { a ->
+        AdbTransport.autoConnect(a, timeoutMs = 6_000).isSuccess
+    },
 ) : AndroidViewModel(app) {
 
     // Whether messenger calls can work here is known at once (a cached
@@ -798,7 +803,7 @@ class MainViewModel @JvmOverloads constructor(
             try {
                 val app = getApplication<Application>()
                 repeat(6) {
-                    if (AdbTransport.autoConnect(app, timeoutMs = 6_000).isSuccess) {
+                    if (lookForAdb(app)) {
                         recheckSetup()
                         return@launchActionWhenFree
                     }

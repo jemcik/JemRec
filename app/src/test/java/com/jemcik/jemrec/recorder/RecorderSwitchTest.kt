@@ -1,9 +1,11 @@
 package com.jemcik.jemrec.recorder
 
+import android.app.NotificationManager
 import android.app.StatusBarManager
 import android.content.ComponentName
 import android.content.Intent
 import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.CaptureDaemon
@@ -120,6 +122,22 @@ class RecorderSwitchTest {
             those,
         )
         assertEquals(CoverageHistory.State.AUTOMATIC, CoverageHistory.stateAt(CoverageHistory.read(context), at + 2))
+    }
+
+    @Test fun anOffTakesTheRecorderDownAlertDownAtOnce() = runBlocking {
+        TestPhone.setUp(context)
+        // Down past the grace, the alert up.
+        Prefs.of(context).edit().putLong("recorder_down_since", System.currentTimeMillis() - 3 * 60_000L).apply()
+        RecorderHealth.onRevive(context, alive = false, connect = AdbTransport.ConnectOutcome.NONE)
+        val alerts = shadowOf(context.getSystemService(NotificationManager::class.java))
+        assertTrue(alerts.getNotification(34) != null)
+
+        // Off, When JemRec is off left as it is: no stand-down, no revive.
+        RecorderSwitch.set(context, false)
+        RecorderSwitch.turn(context, false)
+
+        assertTrue(alerts.getNotification(34) == null)
+        assertTrue(RecorderHealth.cause(context) == null)
     }
 
     @Test fun savingAsksTheTileToLookAgainEveryTime() {
