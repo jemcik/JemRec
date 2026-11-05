@@ -114,7 +114,7 @@ object CaptureDaemon {
     suspend fun setTracking(context: Context): Boolean = DaemonClient.setTracking(context)
     suspend fun setAnswering(context: Context): Boolean = DaemonClient.setAnswering(context)
     suspend fun skipCall(context: Context, skip: Boolean): Boolean = DaemonClient.skipCall(context, skip)
-    suspend fun debuggingOff(context: Context, go: Boolean): String? = DaemonClient.debuggingOff(context, go)
+    suspend fun debuggingOff(context: Context, go: Boolean): DaemonClient.OffReply? = DaemonClient.debuggingOff(context, go)
     suspend fun goAhead(context: Context, delayMs: Int, rangAt: Long): String? = DaemonClient.goAhead(context, delayMs, rangAt)
     suspend fun handOver(context: Context, talk: Boolean): Boolean = DaemonClient.handOver(context, talk)
     suspend fun greetingBytes(context: Context): Long? = DaemonClient.greetingBytes(context)
@@ -124,7 +124,7 @@ object CaptureDaemon {
     suspend fun uploadGreeting(context: Context, pcm: ByteArray): Boolean = DaemonClient.uploadGreeting(context, pcm)
     suspend fun syncGreeting(context: Context) = DaemonClient.syncGreeting(context)
     suspend fun stageOne(context: Context): Map<String, String>? = DaemonClient.stageOne(context)
-    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): String? =
+    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): DaemonClient.TestArming? =
         DaemonClient.armTest(context, incoming, number)
     suspend fun testResult(context: Context): Map<String, String>? = DaemonClient.testResult(context)
     suspend fun forwarding(context: Context): String? = DaemonClient.forwarding(context)

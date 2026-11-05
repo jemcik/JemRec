@@ -9,6 +9,7 @@ import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.answering.EmergencyPause
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.recorder.DaemonClient.TestArming
 import com.jemcik.jemrec.answering.Greeting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -299,13 +300,13 @@ class AnswerController(
             CaptureDaemon.syncGreeting(app)
             CaptureDaemon.setAnswering(app)
             val reply = CaptureDaemon.armTest(app, incoming, number)
-            if (reply != "TEST armed") {
+            if (reply != TestArming.ARMED) {
                 say(
                     when (reply) {
-                        "TEST bad-number" -> "that number cannot be dialled"
-                        "TEST emergency" -> "an emergency number is never called for a test"
-                        "TEST no-greeting" -> "the recorder does not have your greeting yet - try again in a moment"
-                        "TEST busy" -> "the last test call is still going on"
+                        TestArming.BAD_NUMBER -> "that number cannot be dialled"
+                        TestArming.EMERGENCY -> "an emergency number is never called for a test"
+                        TestArming.NO_GREETING -> "the recorder does not have your greeting yet - try again in a moment"
+                        TestArming.BUSY -> "the last test call is still going on"
                         else -> "the recorder could not arm a test call"
                     },
                 )

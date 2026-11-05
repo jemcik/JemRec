@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.recorder.DaemonClient.OffReply
 import com.jemcik.jemrec.system.GlobalSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
@@ -188,8 +189,8 @@ object DebugSwitchesOff {
             val reply = CaptureDaemon.debuggingOff(context, go = true)
             Log.i(TAG, "debugging off: the recorder says ${reply ?: "nothing"}")
             ReviveLog.note(context, "debugging off: the recorder says ${reply ?: "nothing"}")
-            notePending(context, reply == "OFF AFTER CALL" || reply == "OFF NOW")
-            if (reply == "OFF NOW") {
+            notePending(context, reply?.kind == OffReply.Kind.AFTER_CALL || reply?.kind == OffReply.Kind.NOW)
+            if (reply?.kind == OffReply.Kind.NOW) {
                 // Landed, USB debugging reads off at once, and nothing is left
                 // to wait for. Refused - an OPPO, OnePlus or realme phone with
                 // its Developer options switch off refuses the shell those
@@ -235,7 +236,7 @@ object DebugSwitchesOff {
         val off = switchedOff(context)
         if (off.isEmpty()) return
         val reply = if (off.takesTheRecorder()) CaptureDaemon.debuggingOff(context, go = false) else null
-        if (reply == "OFF TOO LATE") {
+        if (reply?.kind == OffReply.Kind.TOO_LATE) {
             // Too late to call off: the recorder is writing the switches off,
             // and its writes would land on ours - an off and a quick on, say,
             // since the off is done at "OFF NOW", before them. Gone means they

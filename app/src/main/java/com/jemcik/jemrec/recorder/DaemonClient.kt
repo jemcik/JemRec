@@ -280,14 +280,51 @@ object DaemonClient {
      * Have the recorder switch Wireless and USB debugging off and go, or call
      * off a go still waiting (see DebugSwitchesOff). The recorder does it
      * rather than the app: it is never frozen, it waits out a call or a fetch
-     * in progress, and it gives the microphone back first. "OFF NOW", "OFF
-     * AFTER CALL", "OFF CANCELLED", or "OFF TOO LATE" for a call-off that
-     * came while it was writing the switches; null if no recorder answered,
-     * or one from before this command.
+     * in progress, and it gives the microphone back first. Its answer
+     * (OffReply), or null if no recorder answered, or one from before this
+     * command.
      */
-    suspend fun debuggingOff(context: Context, go: Boolean): String? =
-        ask(context, COMMAND_DEBUGGING_OFF, byteArrayOf(if (go) 1 else 0), readMs = 2_000)
-            ?.takeIf { it.startsWith("OFF") }
+    suspend fun debuggingOff(context: Context, go: Boolean): OffReply? =
+        parseOffReply(ask(context, COMMAND_DEBUGGING_OFF, byteArrayOf(if (go) 1 else 0), readMs = 2_000))
+
+    /** What the recorder answers an off, or the call-off of one ([kind]),
+     *  and the [line] it came as: printed as that, so a log says what the
+     *  recorder said. */
+    class OffReply(val kind: Kind, val line: String) {
+        enum class Kind {
+            /** Going now: it writes the switches off, and goes with them. */
+            NOW,
+
+            /** Once the call in progress has ended. */
+            AFTER_CALL,
+
+            /** A go still waiting, called off. */
+            CANCELLED,
+
+            /** A call-off that came while it was writing the switches. */
+            TOO_LATE,
+
+            /** An OFF this app does not know - a later recorder's. */
+            OTHER,
+        }
+
+        override fun toString() = line
+    }
+
+    /** "OFF NOW", "OFF AFTER CALL", "OFF CANCELLED" or "OFF TOO LATE", as
+     *  Main.session() writes them; any other OFF is an answer of no kind
+     *  known here, and anything else, or nothing, is none. */
+    internal fun parseOffReply(line: String?): OffReply? {
+        if (line == null || !line.startsWith("OFF")) return null
+        val kind = when (line) {
+            "OFF NOW" -> OffReply.Kind.NOW
+            "OFF AFTER CALL" -> OffReply.Kind.AFTER_CALL
+            "OFF CANCELLED" -> OffReply.Kind.CANCELLED
+            "OFF TOO LATE" -> OffReply.Kind.TOO_LATE
+            else -> OffReply.Kind.OTHER
+        }
+        return OffReply(kind, line)
+    }
 
     /** The answering machine's settings, to the daemon. Best-effort, like the mode. */
     suspend fun setAnswering(context: Context): Boolean =
@@ -379,13 +416,27 @@ object DaemonClient {
         fields(ask(context, COMMAND_DIAGNOSE, byteArrayOf('C'.code.toByte()), readMs = 15_000), "DIAG 1")
 
     /** Arm a test call: the next incoming call within three minutes, or -
-     *  [number] given - one the daemon dials now. */
-    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): String? =
-        ask(
-            context, COMMAND_DIAGNOSE,
-            byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number),
-            readMs = 5_000,
+     *  [number] given - one the daemon dials now. The recorder's answer;
+     *  null for any other, or none. */
+    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): TestArming? =
+        parseTestArming(
+            ask(
+                context, COMMAND_DIAGNOSE,
+                byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number),
+                readMs = 5_000,
+            ),
         )
+
+    /** The recorder's answers to arming a test call, as it writes them. */
+    enum class TestArming(val line: String) {
+        ARMED("TEST armed"),
+        BAD_NUMBER("TEST bad-number"),
+        EMERGENCY("TEST emergency"),
+        NO_GREETING("TEST no-greeting"),
+        BUSY("TEST busy"),
+    }
+
+    internal fun parseTestArming(line: String?): TestArming? = TestArming.entries.firstOrNull { it.line == line }
 
     /** What the last test call measured; null if the daemon cannot say. */
     suspend fun testResult(context: Context): Map<String, String>? =
