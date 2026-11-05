@@ -3,8 +3,8 @@ package com.jemcik.jemrec.calls
 import android.content.Context
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
-import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.recorder.RecorderSwitch
 
 /**
  * Whether calls were being recorded, and how, at any moment since this was

@@ -249,7 +249,7 @@ class DemoProvider : ContentProvider() {
         if (context.getSharedPreferences("jemrec_diag", Context.MODE_PRIVATE)
                 .getBoolean(HIDE_SETTINGS_KEY, false)
         ) {
-            com.jemcik.jemrec.capture.GlobalSettings.actAsHidden = true
+            com.jemcik.jemrec.system.GlobalSettings.actAsHidden = true
             Log.i("JemRec", "diag: acting as if Android hid adb_enabled and development_settings_enabled")
         }
         // The after-call audio check's numbers, kept where `run-as` can read

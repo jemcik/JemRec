@@ -32,10 +32,10 @@ val pure = listOf(
     "capture/OpusPackets",
     "capture/PlaybackRules",
     "capture/StandDown",
-    "capture/SystemProperty",
     "recordings/AfterSave",
     "recordings/DaemonFile",
     "recordings/WriteOutcome",
+    "system/SystemProperty",
     "ui/DaySections",
 )
 

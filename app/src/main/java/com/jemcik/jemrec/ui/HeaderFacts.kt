@@ -1,5 +1,7 @@
 package com.jemcik.jemrec.ui
 
+import com.jemcik.jemrec.setup.SetupStep
+
 /**
  * What the home screen's header says, worked out once for all three looks so
  * they cannot disagree: Deck's LCD, Memo's words and pills and Multitrack's

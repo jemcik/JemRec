@@ -6,10 +6,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import com.jemcik.jemrec.capture.BackgroundKill
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecorderKeepAlive
-import com.jemcik.jemrec.capture.RecorderSwitch
+import com.jemcik.jemrec.recorder.BackgroundKill
+import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.ui.MainScreen
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.Looks

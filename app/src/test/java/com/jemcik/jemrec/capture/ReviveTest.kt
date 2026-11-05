@@ -1,5 +1,8 @@
 package com.jemcik.jemrec.capture
 
+import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.RecorderHealth
+import com.jemcik.jemrec.recorder.RecorderSwitch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

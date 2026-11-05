@@ -2,7 +2,7 @@ package com.jemcik.jemrec
 
 import android.app.Application
 import android.util.Log
-import com.jemcik.jemrec.capture.BackgroundKill
+import com.jemcik.jemrec.recorder.BackgroundKill
 
 /**
  * What runs at every start of JemRec's process, whatever started it.

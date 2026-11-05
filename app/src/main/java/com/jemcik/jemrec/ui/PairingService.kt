@@ -12,7 +12,9 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import com.jemcik.jemrec.adb.AdbTransport
-import com.jemcik.jemrec.capture.GlobalSettings
+import com.jemcik.jemrec.setup.PairingNotification
+import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.system.GlobalSettings
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

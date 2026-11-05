@@ -9,6 +9,10 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.recorder.ReviveLog
+import com.jemcik.jemrec.system.GlobalSettings
 import java.time.Duration
 
 /**

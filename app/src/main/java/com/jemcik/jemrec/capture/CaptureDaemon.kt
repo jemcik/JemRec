@@ -12,7 +12,16 @@ import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipApps
-import com.jemcik.jemrec.ui.Setup
+import com.jemcik.jemrec.recorder.CableWatch
+import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.recorder.RecorderHealth
+import com.jemcik.jemrec.recorder.RecorderSwitch
+import com.jemcik.jemrec.recorder.ReviveLog
+import com.jemcik.jemrec.recorder.StartWithoutWifi
+import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.system.AdbdState
+import com.jemcik.jemrec.system.GlobalSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow

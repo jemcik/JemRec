@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.capture.Waveforms
+import com.jemcik.jemrec.setup.SetupStep
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale

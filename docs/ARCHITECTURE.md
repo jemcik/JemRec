@@ -471,7 +471,7 @@ each only on a phone that has such a screen (never a Pixel):
   before the first call rather than after the first lost one. It is asked once
   — JemRec has no way to check the setting — and blocks nothing. The card and
   the warnings name that screen and say what to do on it in its maker's words
-  ([`AutoStart.instructionFor`](../app/src/main/java/com/jemcik/jemrec/ui/AutoStart.kt)):
+  ([`AutoStart.instructionFor`](../app/src/main/java/com/jemcik/jemrec/system/AutoStart.kt)):
   *Manage manually* in an Honor's or Huawei's App launch, a switch in a
   Xiaomi's Autostart, OPPO's startup manager or vivo's, *Never sleeping apps*
   on a Samsung's battery page. Honor's is measured; the others follow
@@ -493,7 +493,7 @@ each only on a phone that has such a screen (never a Pixel):
 - **Warns when JemRec next starts.** At every start of its process, and
   again at every open, the app reads its *own* exit records
   (`getHistoricalProcessExitReasons`, the same decision in
-  [`BackgroundKill`](../app/src/main/java/com/jemcik/jemrec/capture/BackgroundKill.kt)),
+  [`BackgroundKill`](../app/src/main/java/com/jemcik/jemrec/recorder/BackgroundKill.kt)),
   as a net for a stop the daemon's wake did not land — the recorder down, say.
   Starting clears the stopped flag, but from Android 15 Android's record of
   the process's own start says whether it began stopped
@@ -513,7 +513,7 @@ each only on a phone that has such a screen (never a Pixel):
   the screen was touched. The cable watch times its own restart, and one that
   took longer than a restart can by itself — the 90 seconds its wake lock is
   sized for, against 12–16 s measured on *Manage manually* —
-  ([`CableWatch.heldBack`](../app/src/main/java/com/jemcik/jemrec/capture/CableWatch.kt))
+  ([`CableWatch.heldBack`](../app/src/main/java/com/jemcik/jemrec/recorder/CableWatch.kt))
   posts the same warning. It does not wait for the restart to finish: on the
   Honor the phone froze JemRec again mid-restart, so the recorder came back
   only when the app was opened, seven minutes on. Instead the warning goes up
