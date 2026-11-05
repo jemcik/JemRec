@@ -249,7 +249,7 @@ class DebugSwitchesOffStateTest {
         writes.close()
     }
 
-    @Test fun aReviveWithJemRecOnPutsTheRecordBackUsbFirstBeforeItsLock() = runBlocking {
+    @Test fun aReviveWithJemRecOnPutsTheRecordBackUsbFirstBeforeItStarts() = runBlocking {
         aPhoneSetUpOffWifi()
         DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
         RecorderSwitch.set(context, false)

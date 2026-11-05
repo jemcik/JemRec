@@ -103,6 +103,25 @@ class RecorderSwitchTest {
         assertTrue(Prefs.of(context).getLong("calls_covered_since", 0L) >= from)
     }
 
+    @Test fun notesInOneMillisecondAreKeptEachAndInTheirOrder() {
+        val at = 5_000L
+        RecorderSwitch.set(context, false)
+        CoverageHistory.note(context, at)
+        CoverageHistory.note(context, at)
+        RecorderSwitch.set(context, true)
+        CoverageHistory.note(context, at)
+        val those = CoverageHistory.read(context).filter { it.first in at..at + 10 }
+        assertEquals(
+            listOf(
+                at to CoverageHistory.State.OFF,
+                at + 1 to CoverageHistory.State.OFF,
+                at + 2 to CoverageHistory.State.AUTOMATIC,
+            ),
+            those,
+        )
+        assertEquals(CoverageHistory.State.AUTOMATIC, CoverageHistory.stateAt(CoverageHistory.read(context), at + 2))
+    }
+
     @Test fun savingAsksTheTileToLookAgainEveryTime() {
         val heard = tileRequests()
         RecorderSwitch.set(context, false)

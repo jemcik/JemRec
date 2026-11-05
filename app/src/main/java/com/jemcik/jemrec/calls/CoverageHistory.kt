@@ -46,7 +46,13 @@ internal object CoverageHistory {
     fun note(context: Context, now: Long = System.currentTimeMillis()) {
         val prefs = Prefs.of(context)
         val entries = parse(prefs.getStringSet(KEY, emptySet()) ?: emptySet()).toMutableList()
-        entries += now to current(context)
+        // Each note in a millisecond of its own: the entries are a set of
+        // "time:STATE", so two notes in one millisecond were one entry when
+        // their states matched, and in no known order when they did not -
+        // seen when a test saved the switch three times in a row.
+        var at = now
+        while (entries.any { it.first == at }) at++
+        entries += at to current(context)
         val kept = entries.sortedBy { it.first }.takeLast(KEEP)
         prefs.edit { putStringSet(KEY, kept.map { "${it.first}:${it.second.name}" }.toSet()) }
     }
