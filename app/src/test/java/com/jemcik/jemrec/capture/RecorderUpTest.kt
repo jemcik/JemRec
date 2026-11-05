@@ -130,17 +130,17 @@ class RecorderUpTest {
         assertFalse(CaptureDaemon.isCurrent(context, CaptureDaemon.Answer(2, "00000000")))
     }
 
-    @Test fun aRecorderThatCannotReadItsJarIsTakenForOutOfDate() = runBlocking {
+    @Test fun aRecorderThatCannotReadItsJarIsTakenForCurrent() = runBlocking {
         // The recorder answers "unknown" when it cannot hash its own jar
-        // (Main.jarBuild), and says the app takes that for current.
+        // (Main.jarBuild), and says the app takes that for current: left
+        // alone, as one that says no build is.
         up(build = "unknown")
         assertTrue(CaptureDaemon.revive(context))
-        // Pins today's behaviour, which looks like a bug: the app takes only
-        // no build at all for current, so a recorder that says "unknown" goes
-        // down the out-of-date path at every revive, and is replaced at each
-        // one that has a session (to be fixed in its own commit)
-        assertTrue("revive: not on Wi-Fi" in TestPhone.reviveLog(context))
-        assertFalse(CaptureDaemon.isCurrent(context, CaptureDaemon.Answer(2, "unknown")))
+        assertEquals(
+            listOf("revive: start", "revive: recorder answers, build unknown", "revive: recorder up (connect NONE)"),
+            TestPhone.reviveLog(context),
+        )
+        assertTrue(CaptureDaemon.isCurrent(context, CaptureDaemon.Answer(2, "unknown")))
     }
 
     @Test fun aStartWithACurrentRecorderNeedsNoSession() = runBlocking {

@@ -151,9 +151,14 @@ object DaemonLauncher {
         digest.digest().take(4).joinToString("") { "%02x".format(it) }.also { bundled = it }
     }
 
-    /** A daemon that cannot say its build is left alone rather than churned. */
+    /** A daemon that cannot say its build is left alone rather than churned:
+     *  one that says none, from before the build was said, and one that
+     *  says "unknown", which cannot read its own jar - the recorder's own
+     *  word on it (Main.BUILD) is that the app takes that for current. Taken
+     *  for out of date, it was replaced at every revive that had a session,
+     *  and its replacement, reading the same jar, said the same. */
     internal fun upToDate(context: Context, answer: DaemonClient.Answer): Boolean =
-        answer.build == null || answer.build == bundledBuild(context)
+        answer.build == null || answer.build == DaemonClient.UNKNOWN_BUILD || answer.build == bundledBuild(context)
 
     /**
      * Put the borrowed door back once we are through it: close the ADB session.

@@ -131,6 +131,10 @@ object DaemonClient {
      */
     internal data class Answer(val version: Int, val build: String?)
 
+    /** The build a recorder says it runs when it cannot read its own jar
+     *  (Main.jarBuild). */
+    internal const val UNKNOWN_BUILD = "unknown"
+
     /** "PONG" (version 1), "PONG 2", "PONG 2 1a2b3c4d"; anything else is not an answer. */
     internal fun parsePong(line: String?): Answer? {
         if (line == null || !line.startsWith("PONG")) return null
