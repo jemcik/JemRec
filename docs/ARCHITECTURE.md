@@ -257,6 +257,14 @@ found on after all, an Allow tapped later on the question that stayed up,
 which ends the refusal. Asking again
 is left to "Allow this Wi-Fi", in the header and the alert, and to Start
 without Wi-Fi's switch flipped by hand, whose user is there to answer.
+After a refusal, mDNS can still hand out the port of a connection made before
+it, and a connect there is turned away at once: nothing listens. Measured on
+the Android 16 emulator, 2026-11-03: three revives in a row were given the
+port of a connection 45 seconds earlier, each turned away within 2 ms, and as
+two refusals in a row mean a lost pairing, the header said Pair again - whose
+tap forgets a pairing that works. A refusal with the switch read off is now
+taken for nothing advertised (`RecorderHealth.meant`), and the header asks to
+allow the Wi-Fi.
 Measured on the Android 12 emulator, 2026-10-28, with port 5555 blocked for
 the app so that nothing but Wireless debugging could start the recorder:
 before, with JemRec open, each revive asked again over it (and, by the code,

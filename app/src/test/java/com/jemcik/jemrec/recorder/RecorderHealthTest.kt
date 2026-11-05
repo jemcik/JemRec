@@ -3,7 +3,9 @@ package com.jemcik.jemrec.recorder
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLedger.Recorded
+import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.recorder.RecorderHealth.Problem
+import com.jemcik.jemrec.system.GlobalSettings
 import com.jemcik.jemrec.system.AdbdState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -65,6 +67,20 @@ class RecorderHealthTest {
             Problem.CANNOT_CONNECT,
             RecorderHealth.diagnose(onWifi = true, refusedInARow = RecorderHealth.REFUSALS_FOR_PAIRING, unadvertised = true),
         )
+    }
+
+    @Test fun aRefusalWithWirelessDebuggingOffIsAPortRememberedNotAnAdbdSayingNo() {
+        val refused = AdbTransport.ConnectOutcome.REFUSED
+        assertEquals(AdbTransport.ConnectOutcome.NOT_FOUND, RecorderHealth.meant(refused, GlobalSettings.Reading.OFF))
+        // On, or unread: adbd may be turning JemRec away - the pairing.
+        assertEquals(refused, RecorderHealth.meant(refused, GlobalSettings.Reading.ON))
+        assertEquals(refused, RecorderHealth.meant(refused, GlobalSettings.Reading.UNKNOWN))
+        // Nothing else is read differently.
+        for (wireless in GlobalSettings.Reading.entries) {
+            for (found in AdbTransport.ConnectOutcome.entries - refused) {
+                assertEquals(found, RecorderHealth.meant(found, wireless))
+            }
+        }
     }
 
     @Test fun aRecorderBackWithinTheGraceIsNeverAnnounced() {

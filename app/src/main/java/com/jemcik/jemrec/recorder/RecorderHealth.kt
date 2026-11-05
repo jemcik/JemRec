@@ -82,12 +82,15 @@ internal object RecorderHealth {
      *  connect found (CaptureDaemon.revive). Cheap; never throws. */
     fun onRevive(context: Context, alive: Boolean, connect: AdbTransport.ConnectOutcome) = runCatching {
         val prefs = Prefs.of(context)
+        val wireless = GlobalSettings.read(context, GlobalSettings.ADB_WIFI_ENABLED)
+        // What the connect found, as it can be meant (meant).
+        val seen = meant(connect, wireless)
         // Refusals count only in a row: a recorder that came up, or an adbd
         // that let us in, starts the count again.
         val refused = when {
             alive -> 0
-            connect == AdbTransport.ConnectOutcome.REFUSED -> prefs.getInt(KEY_REFUSED, 0) + 1
-            connect == AdbTransport.ConnectOutcome.NONE -> prefs.getInt(KEY_REFUSED, 0)
+            seen == AdbTransport.ConnectOutcome.REFUSED -> prefs.getInt(KEY_REFUSED, 0) + 1
+            seen == AdbTransport.ConnectOutcome.NONE -> prefs.getInt(KEY_REFUSED, 0)
             else -> 0
         }
         prefs.edit { putInt(KEY_REFUSED, refused) }
@@ -101,10 +104,10 @@ internal object RecorderHealth {
         val now = System.currentTimeMillis()
         val since = prefs.getLong(KEY_DOWN_SINCE, 0L).takeIf { it > 0 }
             ?: now.also { prefs.edit { putLong(KEY_DOWN_SINCE, it) } }
-        val unadvertised = connect == AdbTransport.ConnectOutcome.NOT_FOUND &&
+        val unadvertised = seen == AdbTransport.ConnectOutcome.NOT_FOUND &&
             notAllowed(
                 refusedHere = NetworkRevive.wirelessRefusedHere(context),
-                switchOn = GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED),
+                switchOn = wireless == GlobalSettings.Reading.ON,
                 adbd = AdbdState.read(),
                 switchedOnHere = NetworkRevive.switchedOnHere(context),
             )
@@ -168,6 +171,25 @@ internal object RecorderHealth {
             AdbdState.State.UNKNOWN -> switchedOnHere
         }
     }
+
+    /**
+     * What a revive's connect [found] can mean, with Wireless debugging's
+     * switch read as [wireless]. Refused with the switch off is no adbd
+     * turning JemRec away - there is no wireless server to do it - but a port
+     * mDNS still remembers from before the switch went off: nothing
+     * advertised. On the Android 16 AVD, 2026-11-03, after Android refused
+     * Wireless debugging on a Wi-Fi, three revives in a row were given the
+     * port of a connection 45 s earlier, each turned away within 2 ms, and
+     * the header said Pair again - whose tap forgets a pairing that works -
+     * where it should have asked to allow the Wi-Fi. Unread (UNKNOWN), a
+     * refusal is taken as it comes.
+     */
+    internal fun meant(found: AdbTransport.ConnectOutcome, wireless: GlobalSettings.Reading): AdbTransport.ConnectOutcome =
+        if (found == AdbTransport.ConnectOutcome.REFUSED && wireless == GlobalSettings.Reading.OFF) {
+            AdbTransport.ConnectOutcome.NOT_FOUND
+        } else {
+            found
+        }
 
     /**
      * unadvertised: on Wi-Fi, the revive found no advertisement to connect
