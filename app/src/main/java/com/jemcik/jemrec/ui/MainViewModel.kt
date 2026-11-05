@@ -357,6 +357,16 @@ data class UiState(
     val log: String = "",
 )
 
+/** Why Start recorder did not start it, by the cause its revive left; null
+ *  is no cause kept - JemRec off, or setup unfinished. */
+internal fun notStarted(cause: RecorderHealth.Problem?): String = when (cause) {
+    RecorderHealth.Problem.NEEDS_WIFI -> "it needs Wi-Fi for a few seconds, or Start without Wi-Fi's port"
+    RecorderHealth.Problem.NETWORK_NOT_ALLOWED -> "Android has not allowed Wireless debugging on this Wi-Fi"
+    RecorderHealth.Problem.CANNOT_CONNECT -> "JemRec cannot connect to Wireless debugging - the pairing may be gone"
+    RecorderHealth.Problem.CANNOT_START -> "it would not start on this network"
+    null -> "JemRec is off, or setup has not finished"
+}
+
 class MainViewModel @JvmOverloads constructor(
     app: Application,
     /** Tests seed the list through this; the app never passes it. Without it
@@ -804,15 +814,23 @@ class MainViewModel @JvmOverloads constructor(
     fun retryFinish() = launchAction("finish setup") { finishSetupInternal() }
 
     /**
-     * Start the shell-side daemon from the jar bundled in this APK.
+     * Start the recorder: Diagnostics' Start recorder.
      *
-     * The one operation that genuinely needs a working ADB session, and so the
-     * one that needs Wi-Fi. Everything afterwards runs over loopback.
+     * A revive the user asked for, as Tap to start again is
+     * (CaptureDaemon.Request.USER): Wireless debugging switched on, or off
+     * and on, where a revive would; the session opened; the recorder started
+     * from the jar this APK carries; the session closed again. It asked for
+     * the start alone, which never connects - and a revive closes its session
+     * once the recorder is up - so it failed unless a session happened to be
+     * open. Why not, when not: the cause the revive left (RecorderHealth).
      */
     fun bootstrapDaemon() = launchAction("start recorder") {
-        CaptureDaemon.ensureRunning(getApplication())
-            .onSuccess { say("recorder running on 127.0.0.1:${CaptureDaemon.PORT}") }
-            .onFailure { say("could not start the recorder: ${it.message}") }
+        val app = getApplication<Application>()
+        if (CaptureDaemon.revive(app, request = CaptureDaemon.Request.USER)) {
+            say("recorder running on 127.0.0.1:${CaptureDaemon.PORT}")
+        } else {
+            say("could not start the recorder: ${notStarted(RecorderHealth.cause(app))}")
+        }
         refresh()
     }
 

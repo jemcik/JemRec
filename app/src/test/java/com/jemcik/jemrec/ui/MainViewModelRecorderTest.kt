@@ -113,18 +113,18 @@ class MainViewModelRecorderTest {
         assertTrue(state.log, "recorder running on 127.0.0.1:28472" in state.log)
     }
 
-    @Test fun startRecorderWithTheRecorderDownStartsNothing() {
+    @Test fun startRecorderWithTheRecorderDownRevivesItAndSaysWhyNot() {
         ran { vm.bootstrapDaemon() }
-        // Pins today's behaviour, which looks like a bug: the button asks for
-        // a start alone, which never opens an ADB session (a revive does that
-        // first), and a revive closes its session once the recorder is up -
-        // so the button fails unless one happens to be open (to be fixed in
-        // its own commit)
+        // A revive the user asked for, which would connect and start it -
+        // here it can only find there is no Wi-Fi - and its cause, in words.
+        val log = TestPhone.reviveLog(context)
+        assertEquals("revive: start", log.first())
+        assertTrue(log.toString(), "revive: not on Wi-Fi" in log)
+        assertEquals("revive: recorder down (connect NONE)", log.last())
         assertTrue(
             state.log,
-            "could not start the recorder: ADB is not connected, so the daemon cannot be started." in state.log,
+            "could not start the recorder: it needs Wi-Fi for a few seconds, or Start without Wi-Fi's port" in state.log,
         )
-        assertEquals(listOf("start: old recorder does not answer"), TestPhone.reviveLog(context))
     }
 
     @Test fun openSettingsWhileTheScreenIsBusyIsDropped() {
