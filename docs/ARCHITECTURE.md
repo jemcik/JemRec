@@ -231,7 +231,8 @@ Measured on the Honor (MagicOS 11, Android 17), 2026-10-28, off the cable:
 
 **When the port is opened and closed.** Changing it restarts `adbd`, and the
 recorder with it, so it is changed only where the recorder can be started
-again at once: on Wi-Fi, never in a call - and not while *When JemRec is off*
+again at once: on Wi-Fi, never in a call, which is asked again once the revive
+has connected, up to half a minute on - and not while *When JemRec is off*
 has debugging switched off, which a revive would have to switch Wireless
 debugging on for; the change waits for On. After a reboot the first start opens
 it before starting the recorder, so nothing restarts twice. Switched on while
@@ -328,8 +329,8 @@ Wi-Fi before telling `adbd` to start, every time (2026-10-27). It is not built.
 ## Unplugged from a computer
 
 **On some phones, pulling the cable out of a computer stops the recorder, and
-JemRec starts it again by itself.** Measured on the Honor (Android 17), 2026-10-24: three
-seconds after the cable came out - Android's debounce of a USB disconnect -
+JemRec starts it again by itself.** Measured on the Honor (Android 17),
+2026-10-24: three seconds after the cable came out - Android's debounce of a USB disconnect -
 the phone took USB debugging off the cable's functions and `adbd` was stopped.
 The recorder was started through `adbd`, so it is in `adbd`'s cgroup, and
 Android kills the whole group: the recorder went at the same instant. Shell
@@ -371,12 +372,13 @@ computer stopped nothing either, the three times it was measured.
 
 **Other phones do it differently, and the same watch covers them.** On a Galaxy
 S20 (One UI 5.1, Android 13), 2026-11-04, it was the other way round. Pulling
-the cable out stopped nothing. Plugging into a computer stopped `adbd`, all
-three times: a few seconds later `android.process.media` had the USB functions
-set again, the USB configuration went to none and back, and `adbd` restarted,
-taking the recorder with it. The two times a recorder was running, the app's
-watch saw it go and had it back 15.5 and 19.7 seconds after the plug-in. On a
-OnePlus 13 (LineageOS 23.2, Android 16), the same day, neither stopped it.
+the cable out stopped nothing. Plugging into a computer restarted `adbd`, all
+three times, by its process's age, and took the recorder with it. The first
+time's log shows why: about four seconds in, `android.process.media` had the
+USB functions set again, and the USB configuration went to none and back. The
+two times a recorder was running, the app's watch saw it go and had it back
+15.5 and 19.7 seconds after the plug-in. On a OnePlus 13 (LineageOS 23.2,
+Android 16), the same day, neither stopped it.
 
 The recorder polls rather than listens: Android refuses a broadcast receiver to
 a process it did not start ("registerReceiverWithFeature: no app for null", on

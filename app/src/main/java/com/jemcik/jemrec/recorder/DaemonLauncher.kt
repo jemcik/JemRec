@@ -131,9 +131,6 @@ object DaemonLauncher {
     /** Our daemon's answer to an authenticated ping, or null if it is not answering. */
     internal suspend fun answer(context: Context): DaemonClient.Answer? = withContext(Dispatchers.IO) { DaemonClient.probe(context) }
 
-    /** Whether the daemon that gave that answer runs the jar this APK carries. */
-    internal fun isCurrent(context: Context, answer: DaemonClient.Answer): Boolean = upToDate(context, answer)
-
     @Volatile
     private var bundled: String? = null
 
@@ -151,7 +148,8 @@ object DaemonLauncher {
         digest.digest().take(4).joinToString("") { "%02x".format(it) }.also { bundled = it }
     }
 
-    /** A daemon that cannot say its build is left alone rather than churned:
+    /** Whether the daemon that gave [answer] runs the jar this APK carries.
+     *  A daemon that cannot say its build is left alone rather than churned:
      *  one that says none, from before the build was said, and one that
      *  says "unknown", which cannot read its own jar - the recorder's own
      *  word on it (Main.BUILD) is that the app takes that for current. Taken

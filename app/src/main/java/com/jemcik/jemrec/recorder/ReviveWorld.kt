@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.recorder
 
 import android.content.Context
-import com.jemcik.jemrec.adb.AdbIdentity
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.system.AdbdState
 import com.jemcik.jemrec.system.GlobalSettings
@@ -70,7 +69,7 @@ internal interface ReviveWorld {
 
     /** The phone: today's objects, each called as the revive always called it. */
     class Live(private val context: Context) : ReviveWorld {
-        override fun setUp() = RecorderLifecycle.setupComplete(context) && AdbIdentity.exists(context)
+        override fun setUp() = RecorderLifecycle.isSetUp(context)
         override suspend fun recorder() = DaemonLauncher.probeConfirmed(context)
         override fun current(answer: DaemonClient.Answer) = DaemonLauncher.upToDate(context, answer)
         override fun bundledBuild() = DaemonLauncher.bundledBuild(context)

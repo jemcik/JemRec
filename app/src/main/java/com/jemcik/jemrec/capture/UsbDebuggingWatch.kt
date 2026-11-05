@@ -115,9 +115,5 @@ class UsbDebuggingWatch(
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(NAME, policy, work)
         }
-
-        fun cancel(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(NAME)
-        }
     }
 }

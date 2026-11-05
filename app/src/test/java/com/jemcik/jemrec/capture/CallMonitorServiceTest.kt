@@ -186,7 +186,7 @@ class CallMonitorServiceTest {
     }
 
     @Test fun runningIsTrueForTheServicesLife() {
-        // CaptureDaemon.retire reads it, so as not to start the service by stopping it.
+        // DaemonLauncher.retire reads it, so as not to start the service by stopping it.
         assertTrue(CallMonitorService.running)
         controller.destroy()
         assertFalse(CallMonitorService.running)

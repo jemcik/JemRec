@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** How the app reads a daemon's answer to quit, and what it takes for a call
- *  to be in progress when a BUSY is weighed (CaptureDaemon.retire). */
+ *  to be in progress when a BUSY is weighed (DaemonLauncher.retire). */
 class QuitTest {
 
     @Test fun byeAndBusyAreReadAsTheDaemonWritesThem() {

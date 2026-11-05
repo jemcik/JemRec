@@ -181,13 +181,5 @@ class RecorderKeepAlive(
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(name, ExistingWorkPolicy.KEEP, work)
         }
-
-        /** Switched off: stop trying to keep anything alive. */
-        fun cancel(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(PERIODIC)
-            WorkManager.getInstance(context).cancelUniqueWork(IMMEDIATE)
-            WorkManager.getInstance(context).cancelUniqueWork(WIFI)
-            UsbDebuggingWatch.cancel(context)
-        }
     }
 }

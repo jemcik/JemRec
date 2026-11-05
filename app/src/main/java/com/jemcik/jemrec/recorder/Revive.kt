@@ -186,8 +186,7 @@ object Revive {
                 if (!wirelessDebuggingOn(w) &&
                     !(current && withTimeoutOrNull(ALLOW_WAIT_MS) { while (!wirelessDebuggingOn(w)) delay(500) } != null)
                 ) {
-                    w.noteRefused()
-                    w.note("revive: Android refused Wireless debugging on this Wi-Fi")
+                    noteRefusal(w)
                     if (current) return true
                 }
             }
@@ -214,10 +213,7 @@ object Revive {
                 Log.w(TAG, "daemon: no ADB session - ${it.javaClass.simpleName}: ${it.message ?: "no detail"}")
                 w.note("revive: no ADB session (${found.connect}): ${it.message}")
                 // Cancelled: Android 12 leaves the switch off (noteWirelessRefused).
-                if (request == Request.ALLOW_WIFI && onWifi && !wirelessDebuggingOn(w)) {
-                    w.noteRefused()
-                    w.note("revive: Android refused Wireless debugging on this Wi-Fi")
-                }
+                if (request == Request.ALLOW_WIFI && onWifi && !wirelessDebuggingOn(w)) noteRefusal(w)
                 // An older build that is up is still a recorder. Only a daemon
                 // that is down is a failure here - reporting the other as one
                 // would have the keep-alive retrying with backoff all day.
@@ -225,14 +221,22 @@ object Revive {
             }
         }
         val change = PortChange.portChangeOver(portChange, w.connectedPort)
-        if (change != null) {
-            onPortChange?.invoke()
-            PortChange.changePort(w, open = change == StartWithoutWifi.PortStep.OPEN)
-            // It connects again after adbd's restart: that connect is this
-            // revive's reading now, as it was when read at the end.
-            found.connect = w.lastConnect
-        } else if (portChange != null) {
-            w.note("revive: port ${StartWithoutWifi.PORT} left open: connected over it, no Wireless debugging here")
+        when {
+            // Asked again: a connect can be half a minute after portChangeDue
+            // asked - adbd's four seconds, Allow's twenty, the look for adbd -
+            // and adbd's restart would take the recorder from a call that came
+            // meanwhile. The change is left for the next revive.
+            change != null && w.inCall() ->
+                w.note("revive: port ${StartWithoutWifi.PORT} left as it is: a call came")
+            change != null -> {
+                onPortChange?.invoke()
+                PortChange.changePort(w, open = change == StartWithoutWifi.PortStep.OPEN)
+                // It connects again after adbd's restart: that connect is this
+                // revive's reading now, as it was when read at the end.
+                found.connect = w.lastConnect
+            }
+            portChange != null ->
+                w.note("revive: port ${StartWithoutWifi.PORT} left open: connected over it, no Wireless debugging here")
         }
 
         w.note("revive: connected, starting the recorder")
@@ -271,11 +275,15 @@ object Revive {
         w.forgetCable()
         if (onWifi) w.noteSwitchedOn()
         delay(ADBD_SETTLE_MS)
-        if (onWifi && !answerAwaited && !wirelessDebuggingOn(w)) {
-            w.noteRefused()
-            w.note("revive: Android refused Wireless debugging on this Wi-Fi")
-        }
+        if (onWifi && !answerAwaited && !wirelessDebuggingOn(w)) noteRefusal(w)
         return true
+    }
+
+    /** Android has refused Wireless debugging on this Wi-Fi: noted for the
+     *  revives to come (NetworkRevive.noteWirelessRefused), and in the log. */
+    private fun noteRefusal(w: ReviveWorld) {
+        w.noteRefused()
+        w.note("revive: Android refused Wireless debugging on this Wi-Fi")
     }
 
     /** Wireless debugging off, then on: what puts the network question back

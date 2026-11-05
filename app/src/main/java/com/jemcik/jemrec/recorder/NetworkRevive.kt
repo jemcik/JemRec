@@ -75,11 +75,6 @@ object NetworkRevive {
         }.onFailure { Log.w(TAG, "netrevive: could not arm the Wi-Fi watch", it) }
     }
 
-    fun disarm(context: Context) {
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return
-        runCatching { cm.unregisterNetworkCallback(pendingIntent(context)) }
-    }
-
     /**
      * Whether the phone is on Wi-Fi right now. Wireless debugging exists only
      * on a Wi-Fi network - the framework turns it off the moment there is none

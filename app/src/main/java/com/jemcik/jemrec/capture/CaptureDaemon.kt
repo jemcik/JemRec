@@ -55,7 +55,7 @@ object CaptureDaemon {
     suspend fun isRunning(context: Context): Boolean = DaemonLauncher.isRunning(context)
     suspend fun isRunningConfirmed(context: Context): Boolean = DaemonLauncher.isRunningConfirmed(context)
     internal suspend fun answer(context: Context): Answer? = DaemonLauncher.answer(context)
-    internal fun isCurrent(context: Context, answer: Answer): Boolean = DaemonLauncher.isCurrent(context, answer)
+    internal fun isCurrent(context: Context, answer: Answer): Boolean = DaemonLauncher.upToDate(context, answer)
     suspend fun standDown(context: Context) = DaemonLauncher.standDown(context)
     internal fun inCall(mode: Int): Boolean = DaemonLauncher.inCall(mode)
     internal fun callInProgress(context: Context): Boolean = DaemonLauncher.callInProgress(context)

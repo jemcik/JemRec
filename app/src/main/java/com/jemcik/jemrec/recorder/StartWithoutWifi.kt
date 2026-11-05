@@ -112,7 +112,7 @@ object StartWithoutWifi {
      * unseen otherwise, and turning all debugging off away from Wi-Fi would
      * go ahead without its question, with nothing to come back on over. Not
      * for the revive, which waits for an adbd only just starting
-     * (CaptureDaemon.connectOnPort). [answers] is for the tests: the JVM's
+     * (PortChange.connectOnPort). [answers] is for the tests: the JVM's
      * loopback is no phone's.
      */
     fun readyForUser(context: Context, answers: () -> Boolean = ::answers): Boolean =

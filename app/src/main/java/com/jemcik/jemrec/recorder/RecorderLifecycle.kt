@@ -292,9 +292,6 @@ object RecorderLifecycle {
     internal suspend fun shieldOverAdb(): String =
         AdbTransport.exec("settings put global adb_enabled 1 && echo shielded").getOrElse { "failed: ${it.message}" }
 
-    /** Setup.finish() ran to the end at least once. Setup owns the flag. */
-    internal fun setupComplete(context: Context): Boolean = Setup.isComplete(context)
-
     /**
      * Whether a daemon should exist on this phone at all: setup finished, and an
      * ADB identity to revive it with. This is the SAME guard revive() applies.
@@ -308,5 +305,5 @@ object RecorderLifecycle {
      * back until Wi-Fi returned.
      */
     fun isSetUp(context: Context): Boolean =
-        setupComplete(context) && AdbIdentity.exists(context)
+        Setup.isComplete(context) && AdbIdentity.exists(context)
 }

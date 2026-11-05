@@ -72,7 +72,7 @@ internal fun Set<DebugSwitch>.takesTheRecorder(): Boolean = DebugSwitch.USB_DEBU
 /**
  * The order to put switches back on in: USB debugging before Wireless
  * debugging, which on the Honor only sticks while USB debugging is on (see
- * CaptureDaemon.armShield), and Developer options last.
+ * Revive.armShield), and Developer options last.
  */
 internal fun Set<DebugSwitch>.inOrderBackOn(): List<DebugSwitch> =
     listOf(DebugSwitch.USB_DEBUGGING, DebugSwitch.WIRELESS_DEBUGGING, DebugSwitch.DEVELOPER_OPTIONS).filter { it in this }
@@ -217,18 +217,14 @@ object DebugSwitchesOff {
                     // recorder is gone the app writes them too, which changes
                     // nothing where they landed.
                     if (gone) {
-                        RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
-                        RecorderLifecycle.write(context, GlobalSettings.ADB_ENABLED, false)
+                        writeDebuggingOff(context)
                         notePending(context, false)
                     }
                 } else {
                     finishOffLeftUndone(context)
                 }
             }
-            if (reply == null) {
-                RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
-                RecorderLifecycle.write(context, GlobalSettings.ADB_ENABLED, false)
-            }
+            if (reply == null) writeDebuggingOff(context)
         } else if (DebugSwitch.WIRELESS_DEBUGGING in off) {
             RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
         }
@@ -268,6 +264,13 @@ object DebugSwitchesOff {
         )
     }
 
+    /** What the recorder writes, by the app, where it did not: Wireless
+     *  debugging, then USB debugging, which stops adbd. */
+    private fun writeDebuggingOff(context: Context) {
+        RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+        RecorderLifecycle.write(context, GlobalSettings.ADB_ENABLED, false)
+    }
+
     /** Whether the recorder has an off still to finish (finishOffLeftUndone). */
     internal fun notePending(context: Context, pending: Boolean) {
         Prefs.of(context).edit { putBoolean(KEY_OFF_PENDING, pending) }
@@ -304,8 +307,7 @@ object DebugSwitchesOff {
             ReviveLog.note(context, "debugging off: asked the recorder again, it says ${reply ?: "nothing"}")
             return
         }
-        RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
-        RecorderLifecycle.write(context, GlobalSettings.ADB_ENABLED, false)
+        writeDebuggingOff(context)
         prefs.edit { remove(KEY_OFF_PENDING) }
         ReviveLog.note(context, "debugging off: finished what the recorder left undone")
     }

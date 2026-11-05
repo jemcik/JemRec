@@ -16,6 +16,10 @@ import com.jemcik.jemrec.recorder.Trigger
  * design, and is one of the few cases where Android 12+ still permits starting
  * a foreground service from the background.
  *
+ * It can be late, and only Android decides: on a Galaxy S20 locked again
+ * straight after the first unlock, 2026-11-04, it came 4 min 46 s after the
+ * unlock, the phone asleep for most of them.
+ *
  * LOCKED_BOOT_COMPLETED is handled too, and deliberately does nothing but log.
  * It arrives before the user has unlocked the phone for the first time, while
  * /data is still encrypted - measured after a real reboot, where `ls /data/data`

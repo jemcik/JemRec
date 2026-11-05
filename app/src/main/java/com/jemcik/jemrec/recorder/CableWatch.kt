@@ -26,6 +26,11 @@ import kotlinx.coroutines.withContext
  * seconds later. Earlier that day nothing did, and the phone recorded nothing
  * for 74 minutes. A wall charger, plugged or pulled, left everything alone.
  *
+ * A Galaxy S20 (One UI 5.1, Android 13), 2026-11-04, did it the other way
+ * round: pulled out, nothing; plugged into a computer, adbd restarted by itself
+ * a few seconds later and took the recorder with it. This brought it back 15.5
+ * and 19.7 s after the plug-in, the same way, adbd running or not.
+ *
  * HOW THIS IS WOKEN
  *
  * The daemon watches the cable (Main.watchCable) and wakes CallMonitorService
@@ -45,10 +50,10 @@ internal object CableWatch {
     private const val TAG = "JemRec"
     private const val KEY_STOPPED_ADBD = "cable_stopped_adbd"
 
-    /** Long enough for the kill, three seconds after the cable, to land with
-     *  room to spare; short enough that a cable that changed nothing ends the
-     *  service inside the ten seconds Android waits before showing its
-     *  notification. */
+    /** Long enough for the kill, three seconds after the cable on the Honor
+     *  and about five on the S20, to land; short enough that a cable that
+     *  changed nothing ends the service inside the ten seconds Android waits
+     *  before showing its notification. */
     internal const val WATCH_MS = 8_000L
     internal const val CHECK_MS = 500L
 

@@ -29,7 +29,7 @@ object GlobalSettings {
     private const val TAG = "JemRec"
 
     /** USB debugging. On this phone also the daemon's off-Wi-Fi shield: see
-     *  CaptureDaemon.armShield. Hidden from apps on some Android 17 builds. */
+     *  Revive.armShield. Hidden from apps on some Android 17 builds. */
     const val ADB_ENABLED = "adb_enabled"
 
     /** Wireless debugging: the bootstrap door, needed only to start the daemon. */

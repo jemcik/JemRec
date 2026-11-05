@@ -755,7 +755,7 @@ class CallMonitorService : Service() {
         /**
          * Whether this service exists in this process right now. For the one
          * caller that must not start it by asking it to stop: retiring a
-         * wedged daemon (CaptureDaemon.retire) clears a notification that
+         * wedged daemon (DaemonLauncher.retire) clears a notification that
          * daemon left up, and a STOP to a service that is not running would
          * first bring it up, notification and all.
          */
