@@ -1,8 +1,6 @@
 package com.jemcik.jemrec.recorder
 
-import android.content.Context
 import android.util.Log
-import com.jemcik.jemrec.adb.AdbIdentity
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.system.AdbdState
 import com.jemcik.jemrec.system.GlobalSettings
@@ -45,7 +43,7 @@ object Revive {
     }
 
     internal suspend fun reviveLocked(
-        context: Context,
+        w: ReviveWorld,
         onPortChange: (() -> Unit)?,
         request: Request,
         found: Found,
@@ -57,15 +55,15 @@ object Revive {
         // health-check return just below would then skip re-arming it, and the
         // keep-alive that calls this every so often would never restore it.
         // Cheap: a read, and a write only when it has drifted.
-        if (RecorderLifecycle.isSetUp(context)) armShield(context)
+        if (w.setUp()) armShield(w)
 
-        val running = DaemonLauncher.probeConfirmed(context)
-        ReviveLog.note(context, "revive: recorder ${running?.let { "answers, build ${it.build}" } ?: "does not answer"}")
-        val onWifi = NetworkRevive.onWifi(context)
+        val running = w.recorder()
+        w.note("revive: recorder ${running?.let { "answers, build ${it.build}" } ?: "does not answer"}")
+        val onWifi = w.onWifi()
         // Start without Wi-Fi's port, to open or to close, where that can be
         // done now (portChangeDue).
-        val portChange = PortChange.portChangeDue(context, onWifi)
-        val current = running != null && DaemonLauncher.upToDate(context, running)
+        val portChange = PortChange.portChangeDue(w, onWifi)
+        val current = running != null && w.current(running)
         if (current && portChange == null) return true
         if (running != null) {
             // Alive, but running the jar an earlier APK staged. Carry on down
@@ -73,7 +71,7 @@ object Revive {
             // replacing once there is a session to do it over.
             Log.i(
                 TAG,
-                "daemon: running build ${running.build}, this app carries ${DaemonLauncher.bundledBuild(context)}; " +
+                "daemon: running build ${running.build}, this app carries ${w.bundledBuild()}; " +
                     "replacing when a session can be had",
             )
         }
@@ -89,7 +87,7 @@ object Revive {
         // Start fresh. Caught by a wizard that kept skipping to the pairing
         // step on a wiped phone, because something had turned Wireless
         // debugging back on between one screen and the next.
-        if (!RecorderLifecycle.setupComplete(context) || !AdbIdentity.exists(context)) {
+        if (!w.setUp()) {
             Log.i(TAG, "daemon: setup has not finished, nothing to revive")
             return false
         }
@@ -98,10 +96,10 @@ object Revive {
         // adbd listens on its classic port (StartWithoutWifi), which it does
         // with no network at all. Otherwise the Wi-Fi watcher brings us back
         // here the moment there is some.
-        val overPort = !onWifi && StartWithoutWifi.ready(context)
+        val overPort = !onWifi && w.portReady()
         if (!onWifi && !overPort) {
             Log.i(TAG, "daemon: not on Wi-Fi, nothing to revive over yet")
-            ReviveLog.note(context, "revive: not on Wi-Fi")
+            w.note("revive: not on Wi-Fi")
             return running != null
         }
 
@@ -123,76 +121,76 @@ object Revive {
         // advertised: that is a Wi-Fi Android has not allowed, and switching
         // would put its question on screen out of nowhere (RecorderHealth) -
         // the header's Allow this Wi-Fi asks.
-        val wirelessOn = wirelessDebuggingOn(context)
-        val cableStopped = CableWatch.stoppedAdbd(context)
-        val switchedOnHere = NetworkRevive.switchedOnHere(context)
+        val wirelessOn = wirelessDebuggingOn(w)
+        val cableStopped = w.cableStopped()
+        val switchedOnHere = w.switchedOnHere()
         // Stopped, with the switch on, may be adbd a switch written a moment
         // ago is starting: armShield's above, or debugging put back on by On
         // (DebugSwitchesOff.switchBackOn) - a stopped that ends by itself.
         // Waited out only where stopped would have it switched off and on.
         val waitForStart = wirelessOn && onWifi && !cableStopped && request != Request.ALLOW_WIFI &&
             mayCycleAgain(switchedOnHere, request)
-        val adbd = AdbdState.read().let { if (waitForStart) AdbdState.settled(it, ADBD_START_MS) else it }
-        ReviveLog.note(context, "revive: adbd $adbd")
+        val adbd = w.adbd().let { if (waitForStart) AdbdState.settled(it, ADBD_START_MS, w::adbd) else it }
+        w.note("revive: adbd $adbd")
         val step = wirelessDebuggingStep(
             cableStoppedAdbd = cableStopped,
             on = wirelessOn,
             onWifi = onWifi,
-            refused = NetworkRevive.stillRefusedHere(context, wirelessOn),
+            refused = w.stillRefusedHere(wirelessOn),
             adbdStopped = adbd == AdbdState.State.STOPPED,
             switchedOnHere = switchedOnHere,
             request = request,
         )
-        ReviveLog.note(context, "revive: Wireless debugging $step")
+        w.note("revive: Wireless debugging $step")
         when (step) {
             WirelessStep.CYCLE -> {
                 // Asked again, by the one who will answer.
-                if (request == Request.ALLOW_WIFI) NetworkRevive.forgetWirelessRefused(context)
-                switchOffAndOn(context, onWifi, answerAwaited = request == Request.ALLOW_WIFI)
+                if (request == Request.ALLOW_WIFI) w.forgetRefused()
+                switchOffAndOn(w, onWifi, answerAwaited = request == Request.ALLOW_WIFI)
             }
-            WirelessStep.TURN_ON -> if (GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, true)) {
+            WirelessStep.TURN_ON -> if (w.write(GlobalSettings.ADB_WIFI_ENABLED, true)) {
                 Log.i(TAG, "daemon: re-armed Wireless debugging")
-                NetworkRevive.noteSwitchedOn(context)
+                w.noteSwitchedOn()
                 delay(ADBD_SETTLE_MS)
                 // Off again: Android refused it on this Wi-Fi and is asking
                 // (NetworkRevive.noteWirelessRefused). With the recorder up,
                 // only the port is at stake: a moment for Allow - the one who
                 // has just flipped Start without Wi-Fi is there to answer -
                 // then no more asking on this Wi-Fi (portChangeDue).
-                if (!wirelessDebuggingOn(context) &&
-                    !(current && withTimeoutOrNull(ALLOW_WAIT_MS) { while (!wirelessDebuggingOn(context)) delay(500) } != null)
+                if (!wirelessDebuggingOn(w) &&
+                    !(current && withTimeoutOrNull(ALLOW_WAIT_MS) { while (!wirelessDebuggingOn(w)) delay(500) } != null)
                 ) {
-                    NetworkRevive.noteWirelessRefused(context)
-                    ReviveLog.note(context, "revive: Android refused Wireless debugging on this Wi-Fi")
+                    w.noteRefused()
+                    w.note("revive: Android refused Wireless debugging on this Wi-Fi")
                     if (current) return true
                 }
             }
             WirelessStep.LEAVE -> Unit
         }
 
-        if (!AdbTransport.isConnected) {
-            ReviveLog.note(context, if (overPort) "revive: connecting on port ${StartWithoutWifi.PORT}, no Wi-Fi" else "revive: connecting")
+        if (!w.connected) {
+            w.note(if (overPort) "revive: connecting on port ${StartWithoutWifi.PORT}, no Wi-Fi" else "revive: connecting")
             // Asked to allow this Wi-Fi: Android's question is on screen, and
             // the connect waits for the answer.
             val lookMs = if (request == Request.ALLOW_WIFI) ALLOW_WAIT_MS else CONNECT_MS
-            var connected = if (overPort) PortChange.connectOnPort(context) else AdbTransport.autoConnect(context, timeoutMs = lookMs)
-            found.connect = AdbTransport.lastConnect
+            var connected = if (overPort) PortChange.connectOnPort(w) else w.autoConnect(lookMs)
+            found.connect = w.lastConnect
             if (connected.isFailure && found.connect == AdbTransport.ConnectOutcome.NOT_FOUND &&
                 cycleAfterNotFound(adbd, step, wirelessOn, onWifi, switchedOnHere, request)
             ) {
-                ReviveLog.note(context, "revive: nothing advertised, adbd unreadable; switching off and on once on this Wi-Fi")
-                if (switchOffAndOn(context, onWifi, answerAwaited = false)) {
-                    connected = AdbTransport.autoConnect(context, timeoutMs = CONNECT_MS)
-                    found.connect = AdbTransport.lastConnect
+                w.note("revive: nothing advertised, adbd unreadable; switching off and on once on this Wi-Fi")
+                if (switchOffAndOn(w, onWifi, answerAwaited = false)) {
+                    connected = w.autoConnect(CONNECT_MS)
+                    found.connect = w.lastConnect
                 }
             }
             connected.onFailure {
                 Log.w(TAG, "daemon: no ADB session - ${it.javaClass.simpleName}: ${it.message ?: "no detail"}")
-                ReviveLog.note(context, "revive: no ADB session (${found.connect}): ${it.message}")
+                w.note("revive: no ADB session (${found.connect}): ${it.message}")
                 // Cancelled: Android 12 leaves the switch off (noteWirelessRefused).
-                if (request == Request.ALLOW_WIFI && onWifi && !wirelessDebuggingOn(context)) {
-                    NetworkRevive.noteWirelessRefused(context)
-                    ReviveLog.note(context, "revive: Android refused Wireless debugging on this Wi-Fi")
+                if (request == Request.ALLOW_WIFI && onWifi && !wirelessDebuggingOn(w)) {
+                    w.noteRefused()
+                    w.note("revive: Android refused Wireless debugging on this Wi-Fi")
                 }
                 // An older build that is up is still a recorder. Only a daemon
                 // that is down is a failure here - reporting the other as one
@@ -200,31 +198,31 @@ object Revive {
                 return running != null
             }
         }
-        val change = PortChange.portChangeOver(portChange, AdbTransport.connectedPort)
+        val change = PortChange.portChangeOver(portChange, w.connectedPort)
         if (change != null) {
             onPortChange?.invoke()
-            PortChange.changePort(context, open = change == StartWithoutWifi.PortStep.OPEN)
+            PortChange.changePort(w, open = change == StartWithoutWifi.PortStep.OPEN)
             // It connects again after adbd's restart: that connect is this
             // revive's reading now, as it was when read at the end.
-            found.connect = AdbTransport.lastConnect
+            found.connect = w.lastConnect
         } else if (portChange != null) {
-            ReviveLog.note(context, "revive: port ${StartWithoutWifi.PORT} left open: connected over it, no Wireless debugging here")
+            w.note("revive: port ${StartWithoutWifi.PORT} left open: connected over it, no Wireless debugging here")
         }
 
-        ReviveLog.note(context, "revive: connected, starting the recorder")
-        val started = DaemonLauncher.ensureRunningLocked(context)
+        w.note("revive: connected, starting the recorder")
+        val started = w.start()
         val ok = started.isSuccess
-        ReviveLog.note(context, "revive: start ${started.fold({ "ok" }, { "failed: ${it.message}" })}")
+        w.note("revive: start ${started.fold({ "ok" }, { "failed: ${it.message}" })}")
         if (ok) {
             // A spawned daemon is told the mode in its environment, so this is
             // for the other case - one that was already running - and it is
             // one round trip. Best-effort.
-            DaemonClient.pushMode(context)
+            w.pushMode()
             // Wireless debugging was turned on a moment ago to make this
             // possible. It is not needed again until the next revive.
-            DaemonLauncher.standDown(context)
+            w.standDown()
             // And off again, if JemRec is off with Developer options hidden.
-            DebugSwitchesOff.afterRecorderStarted(context)
+            w.afterRecorderStarted()
         }
         return ok
     }
@@ -237,33 +235,33 @@ object Revive {
      * where the user was asked and may still be answering, which the
      * connect's long look waits out. True if both writes landed.
      */
-    private suspend fun switchOffAndOn(context: Context, onWifi: Boolean, answerAwaited: Boolean): Boolean {
+    private suspend fun switchOffAndOn(w: ReviveWorld, onWifi: Boolean, answerAwaited: Boolean): Boolean {
         Log.i(TAG, "daemon: switching Wireless debugging off and on")
-        val cycled = cycleWirelessDebugging(context)
-        ReviveLog.note(context, "revive: switched off and on: $cycled")
+        val cycled = cycleWirelessDebugging(w)
+        w.note("revive: switched off and on: $cycled")
         if (!cycled) return false
         // Once: that starts adbd, and a revive that fails after it fails for
         // some other reason, which cycling again would only hide.
-        CableWatch.forget(context)
-        if (onWifi) NetworkRevive.noteSwitchedOn(context)
+        w.forgetCable()
+        if (onWifi) w.noteSwitchedOn()
         delay(ADBD_SETTLE_MS)
-        if (onWifi && !answerAwaited && !wirelessDebuggingOn(context)) {
-            NetworkRevive.noteWirelessRefused(context)
-            ReviveLog.note(context, "revive: Android refused Wireless debugging on this Wi-Fi")
+        if (onWifi && !answerAwaited && !wirelessDebuggingOn(w)) {
+            w.noteRefused()
+            w.note("revive: Android refused Wireless debugging on this Wi-Fi")
         }
         return true
     }
 
     /** Wireless debugging off, then on: what puts the network question back
      *  on screen, and what starts an adbd a cable stopped. */
-    private suspend fun cycleWirelessDebugging(context: Context): Boolean {
-        if (!GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)) return false
+    private suspend fun cycleWirelessDebugging(w: ReviveWorld): Boolean {
+        if (!w.write(GlobalSettings.ADB_WIFI_ENABLED, false)) return false
         // Long enough for the off to land as its own change.
         delay(1_000)
-        return GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, true)
+        return w.write(GlobalSettings.ADB_WIFI_ENABLED, true)
     }
 
-    internal fun wirelessDebuggingOn(context: Context) = GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED)
+    internal fun wirelessDebuggingOn(w: ReviveWorld) = w.read(GlobalSettings.ADB_WIFI_ENABLED) == GlobalSettings.Reading.ON
 
     internal enum class WirelessStep { CYCLE, TURN_ON, LEAVE }
 
@@ -353,10 +351,10 @@ object Revive {
      * was, and so the daemon too. Logged only when the setting was known to
      * be off, or every revive would claim to have switched it on.
      */
-    private fun armShield(context: Context) {
-        val now = GlobalSettings.read(context, GlobalSettings.ADB_ENABLED)
+    private fun armShield(w: ReviveWorld) {
+        val now = w.read(GlobalSettings.ADB_ENABLED)
         if (now != GlobalSettings.Reading.ON &&
-            GlobalSettings.set(context, GlobalSettings.ADB_ENABLED, true) &&
+            w.write(GlobalSettings.ADB_ENABLED, true) &&
             now == GlobalSettings.Reading.OFF
         ) {
             Log.i(TAG, "daemon: enabled USB debugging as the off-Wi-Fi shield")

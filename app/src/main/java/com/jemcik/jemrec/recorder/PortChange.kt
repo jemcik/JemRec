@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.recorder
 
 import android.content.Context
-import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.system.GlobalSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
@@ -26,15 +25,15 @@ object PortChange {
      * which is what starts adbd, and an adbd restarting answers a moment
      * before it can be connected to.
      */
-    internal suspend fun connectOnPort(context: Context): Result<Unit> {
+    internal suspend fun connectOnPort(w: ReviveWorld): Result<Unit> {
         withTimeoutOrNull(Revive.ADBD_SETTLE_MS) {
-            while (!StartWithoutWifi.answers()) delay(250)
+            while (!w.portAnswers()) delay(250)
         }
-        var result = AdbTransport.connect(context, AdbTransport.LOOPBACK, StartWithoutWifi.PORT)
+        var result = w.connect(StartWithoutWifi.PORT)
         repeat(PORT_RECONNECTS - 1) {
             if (result.isFailure) {
                 delay(1_000)
-                result = AdbTransport.connect(context, AdbTransport.LOOPBACK, StartWithoutWifi.PORT)
+                result = w.connect(StartWithoutWifi.PORT)
             }
         }
         return result
@@ -50,17 +49,16 @@ object PortChange {
      * boot (StartWithoutWifi), so the recorder is not restarted for it at
      * every revive.
      */
-    internal suspend fun changePort(context: Context, open: Boolean) {
+    internal suspend fun changePort(w: ReviveWorld, open: Boolean) {
         val port = StartWithoutWifi.PORT
         // Whatever adbd answers: the restart can cut its line off (restartAdbd),
         // and what was asked for is read back from the property below.
-        val reply = AdbTransport.restartAdbd(if (open) "tcpip:$port" else "usb:")
-        ReviveLog.note(
-            context,
+        val reply = w.restartAdbd(if (open) "tcpip:$port" else "usb:")
+        w.note(
             "revive: ${if (open) "opening" else "closing"} port $port, adbd said " +
                 reply.getOrElse { "nothing, the restart cut it off (${it.message})" },
         )
-        AdbTransport.close()
+        w.close()
         // adbd exits and init starts it again: gone a moment, then back.
         delay(ADBD_RESTART_MS)
         if (open) {
@@ -69,51 +67,50 @@ object PortChange {
             // Where the property cannot be read, the port answering is all
             // there is to go on.
             val opened = withTimeoutOrNull(Revive.ADBD_SETTLE_MS) {
-                while (StartWithoutWifi.portSet().let { it != true && !(it == null && StartWithoutWifi.answers()) }) {
+                while (w.portSet().let { it != true && !(it == null && w.portAnswers()) }) {
                     delay(250)
                 }
                 true
             } == true
-            StartWithoutWifi.noteOpened(context, opened)
-            ReviveLog.note(context, "revive: port $port ${if (opened) "opened" else "not opened; not asked again this boot"}")
-            if (opened && connectOnPort(context).isSuccess) return
+            w.noteOpened(opened)
+            w.note("revive: port $port ${if (opened) "opened" else "not opened; not asked again this boot"}")
+            if (opened && connectOnPort(w).isSuccess) return
         } else {
             // A close that did not take - the ask lost on a connection that
             // had just died, or an adbd that keeps the port - leaves the port
             // JemRec's to show, not asked again this boot: each ask restarts
             // the recorder.
-            val closed = closeTook()
-            if (closed) StartWithoutWifi.noteClosed(context) else StartWithoutWifi.noteCloseFailed(context)
-            ReviveLog.note(context, "revive: port $port ${if (closed) "closed" else "still set; not asked again this boot"}")
+            val closed = closeTook(w)
+            if (closed) w.noteClosed() else w.noteCloseFailed()
+            w.note("revive: port $port ${if (closed) "closed" else "still set; not asked again this boot"}")
         }
         // Back over Wireless debugging, which adbd's restart can leave off:
         // on the Honor, 2026-10-28, it read 0 after one open of the port and
         // 1 after another. Switched on as a revive does - not where Android
         // refused it on this Wi-Fi, which would only ask.
-        if (!Revive.wirelessDebuggingOn(context) && !NetworkRevive.wirelessRefusedHere(context) &&
-            GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, true)
+        if (!Revive.wirelessDebuggingOn(w) && !w.refusedHere() &&
+            w.write(GlobalSettings.ADB_WIFI_ENABLED, true)
         ) {
-            ReviveLog.note(context, "revive: Wireless debugging off after adbd's restart; switched on")
+            w.note("revive: Wireless debugging off after adbd's restart; switched on")
             delay(Revive.ADBD_SETTLE_MS)
         }
         repeat(PORT_RECONNECTS) {
-            if (AdbTransport.autoConnect(context, timeoutMs = Revive.CONNECT_MS).isSuccess) return
+            if (w.autoConnect(Revive.CONNECT_MS).isSuccess) return
         }
     }
 
     /** Start fresh's close of the port (RecorderLifecycle.closePortForReset),
      *  under the recorder's lock. */
     internal suspend fun closeForReset(context: Context): Boolean {
-        if (!StartWithoutWifi.openedThisBoot(context) || StartWithoutWifi.portSet() == false) return true
-        if (!AdbTransport.isConnected &&
-            AdbTransport.connect(context, AdbTransport.LOOPBACK, StartWithoutWifi.PORT).isFailure
-        ) return false
+        val w = ReviveWorld.Live(context)
+        if (!StartWithoutWifi.openedThisBoot(context) || w.portSet() == false) return true
+        if (!w.connected && w.connect(StartWithoutWifi.PORT).isFailure) return false
         // Its answer is no guide: the restart can cut it off (restartAdbd).
-        AdbTransport.restartAdbd("usb:")
-        AdbTransport.close()
+        w.restartAdbd("usb:")
+        w.close()
         delay(ADBD_RESTART_MS)
-        val closed = closeTook()
-        if (closed) StartWithoutWifi.noteClosed(context)
+        val closed = closeTook(w)
+        if (closed) w.noteClosed()
         return closed
     }
 
@@ -125,8 +122,8 @@ object PortChange {
      * it two ways, an unreadable property closed for one and open for the
      * other.
      */
-    private suspend fun closeTook(): Boolean = withTimeoutOrNull(Revive.ADBD_SETTLE_MS) {
-        while (StartWithoutWifi.portSet().let { it == true || (it == null && StartWithoutWifi.answers()) }) delay(250)
+    private suspend fun closeTook(w: ReviveWorld): Boolean = withTimeoutOrNull(Revive.ADBD_SETTLE_MS) {
+        while (w.portSet().let { it == true || (it == null && w.portAnswers()) }) delay(250)
     } != null
 
     /**
@@ -143,13 +140,15 @@ object PortChange {
         context: Context,
         onWifi: Boolean = NetworkRevive.onWifi(context),
         step: StartWithoutWifi.PortStep? = null,
-    ): StartWithoutWifi.PortStep? {
-        if (!onWifi || !RecorderLifecycle.isSetUp(context) || DaemonLauncher.callInProgress(context)) return null
-        if (DebugSwitchesOff.switchedOff(context).isNotEmpty()) return null
+    ): StartWithoutWifi.PortStep? = portChangeDue(ReviveWorld.Live(context), onWifi, step)
+
+    internal fun portChangeDue(w: ReviveWorld, onWifi: Boolean, step: StartWithoutWifi.PortStep? = null): StartWithoutWifi.PortStep? {
+        if (!onWifi || !w.setUp() || w.inCall()) return null
+        if (w.switchedOff()) return null
         // Nor where Android refused Wireless debugging on this Wi-Fi and it is
         // still off: switching it on for the port would only ask again.
-        if (NetworkRevive.stillRefusedHere(context, Revive.wirelessDebuggingOn(context))) return null
-        return (step ?: StartWithoutWifi.step(context)).takeIf { it != StartWithoutWifi.PortStep.LEAVE }
+        if (w.stillRefusedHere(Revive.wirelessDebuggingOn(w))) return null
+        return (step ?: w.portStep()).takeIf { it != StartWithoutWifi.PortStep.LEAVE }
     }
 
     /**

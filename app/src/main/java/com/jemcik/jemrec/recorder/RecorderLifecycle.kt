@@ -78,7 +78,7 @@ object RecorderLifecycle {
         val alive = lifecycle.withLock {
             AdbTransport.forgetLastConnect()
             ReviveLog.note(context, "revive: start")
-            Revive.reviveLocked(context, onPortChange, request, found)
+            Revive.reviveLocked(ReviveWorld.Live(context), onPortChange, request, found)
         }
         ReviveLog.note(context, "revive: ${if (alive) "recorder up" else "recorder down"} (connect ${found.connect})")
         // Every revive is a reading of whether the recorder is up, and the
