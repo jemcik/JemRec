@@ -235,7 +235,7 @@ class LogLinesTest {
                 "setup: grant -> REFUSED" to listOf(grant, "Outcome.REFUSED"),
                 "setup: grant -> GRANTED" to listOf(grant, "Outcome.GRANTED"),
                 "keepalive: Wi-Fi run" to keepalive,
-                "keepalive: run (attempt 3)" to keepalive,
+                "keepalive: run (attempt" to keepalive,
                 "revive: port 5555 opened" to
                     listOf("\"revive: port \$port \${if (opened) \"opened\" else ") + port,
                 "revive: connecting on port 5555, no Wi-Fi" to

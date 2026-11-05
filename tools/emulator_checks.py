@@ -578,8 +578,15 @@ def ringing_gap():
 
 
 def unanswered():
+    """A call hung up while it rings leaves no recording. The hang-up has to
+    come well before the AVD's modem answers by itself: it made every outgoing
+    call that went active so 1.93-2.08 s after the dialling, with no `gsm
+    accept` needed (eight runs on the four AVDs, 2026-11-05). 1.2 s after
+    off-hook left half a second of that: with off-hook 0.7 s late, on the
+    Android 13 AVD just after a cold boot, the hang-up came 20 ms after Telecom
+    said ACTIVE, and the app was right to keep the call."""
     sh("logcat -c")
-    dial("5559876", ring_s=1.2, talk_s=0)
+    dial("5559876", ring_s=0.3, talk_s=0)
     wait_log(r"never answered", 30, "the unanswered call to be dropped")
     assert "save: wrote" not in log(), "it was saved"
     return "not saved"
@@ -2029,10 +2036,14 @@ def wifi_back():
     again at the end, so the kick's retry still waiting does not run a
     revive in the middle of the next check.
 
-    It waits for the kick's second try to fail, whose next is 60 s off at
-    the least, and then reads from the log that Wi-Fi's run came first - not
-    for any time JobScheduler keeps: on the Android 17 AVD, 2026-10-31, the
-    third try came 114 s after the second, not 60."""
+    It waits for a retry of the kick to fail, whose next is 60 s off at the
+    least, and then reads from the log that Wi-Fi's run came first - not for
+    any time JobScheduler keeps: on the Android 17 AVD, 2026-10-31, the third
+    try came 114 s after the second, not 60, and on the Android 16 AVD,
+    2026-11-05, the second came 189 s after the first, as the app was opened.
+    Any retry, not the second: a kick joins one that is already waiting
+    (KEEP), so with one left by an earlier check the first try seen here was
+    number 3 (Android 12 AVD, the same day)."""
     set_prefs(start_without_wifi=False)
     log_before = revive_log()
     try:
@@ -2042,9 +2053,15 @@ def wifi_back():
         sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
         wait_for(lambda: not recorder_answers(), 10, "the recorder gone")
         diag("monitor", "--include-stopped-packages")  # the kick, as an open off Wi-Fi makes it
-        second = "keepalive: run (attempt 2)"
-        wait_for(lambda: "recorder down" in revive_since(log_before).partition(second)[2], 180,
-                 "the kick's second try to fail off Wi-Fi", step=2)
+
+        def failed_retry():
+            since = revive_since(log_before)
+            for tried in re.finditer(r"keepalive: run \(attempt (\d+)\)", since):
+                if int(tried[1]) > 1 and "recorder down" in since[tried.end():]:
+                    return int(tried[1])
+            return None
+
+        failed = wait_for(failed_retry, 300, "a retry of the kick to fail off Wi-Fi", step=2)
         wifi_on(True)
         on_at = time.time()
         wait_wifi_connected()
@@ -2052,7 +2069,7 @@ def wifi_back():
         took = time.time() - on_at
         since = revive_since(log_before)
         assert "keepalive: Wi-Fi run" in since, "not started by the Wi-Fi watch's run"
-        assert "keepalive: run (attempt 3)" not in since, "brought back by the kick's next try"
+        assert f"keepalive: run (attempt {failed + 1})" not in since, "brought back by the kick's next try"
         return f"back {took:.0f} s after Wi-Fi, before the kick's next try"
     finally:
         wifi_on(True)
