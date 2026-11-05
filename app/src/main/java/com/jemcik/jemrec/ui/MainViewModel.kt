@@ -973,17 +973,21 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(enabled = on) }
         // Saved at once, outside the action below, which waits its turn.
         RecorderSwitch.set(getApplication(), on)
-        // Waits its turn rather than being dropped: the record control takes
-        // a tap while the app is busy - each opening's check holds busy for
-        // seconds - and the tap was dropped without a sign, the control
-        // looking as ever. The control flips at once; the recorder follows
-        // when the app is free, as the switch then is - a quick on and off
-        // ends off.
+        // The recorder follows in the process's own scope, as for the Quick
+        // Settings tile (RecorderSwitch.turn), not in this screen's: Back
+        // takes this screen's scope away, and an Off waiting there for the
+        // screen to be free was lost with it, debugging never switched off.
+        // Turns queue there, each dropped if the switch has moved on - a
+        // quick on and off ends off.
+        val turned = RecorderSwitch.turnLater(getApplication(), on)
+        // What the screen does after it waits its turn rather than being
+        // dropped: the record control takes a tap while the app is busy -
+        // each opening's check holds busy for seconds - and the tap was
+        // dropped without a sign, the control looking as ever.
         launchActionWhenFree(if (on) "turn on" else "turn off") {
             try {
+                turned.join()
                 if (RecorderSwitch.isOn(getApplication()) != on) return@launchActionWhenFree
-                // Shared with the Quick Settings tile. See RecorderSwitch.turn.
-                RecorderSwitch.turn(getApplication(), on)
                 // Ask what the world looks like rather than assuming. Called
                 // directly, not via refreshSetup(), because that is a launchAction
                 // and one will not start while this one is running.

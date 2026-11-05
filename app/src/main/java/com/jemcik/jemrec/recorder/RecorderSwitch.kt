@@ -11,6 +11,7 @@ import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.ui.RecorderTile
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -92,7 +93,18 @@ object RecorderSwitch {
     fun turnInBackground(context: Context, on: Boolean) {
         val app = context.applicationContext
         set(app, on)
-        background.launch {
+        turnLater(app, on)
+    }
+
+    /**
+     * [turn], in the process's own scope, for a switch the caller has just
+     * saved: the tile's (turnInBackground) and the app's record control,
+     * whose screen Back takes away - an Off lost with it never switched
+     * debugging off. Its job, for a caller still there to wait for it.
+     */
+    fun turnLater(context: Context, on: Boolean): Job {
+        val app = context.applicationContext
+        return background.launch {
             runCatching { turn(app, on) }
                 .onFailure { Log.w("JemRec", "could not turn recording ${if (on) "on" else "off"}", it) }
         }
