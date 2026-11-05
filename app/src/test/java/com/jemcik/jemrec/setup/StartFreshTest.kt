@@ -2,6 +2,7 @@ package com.jemcik.jemrec.setup
 
 import com.jemcik.jemrec.adb.AdbIdentity
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.capture.FakeRecorder
 import com.jemcik.jemrec.capture.TestPhone
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.OffMode
@@ -21,17 +22,20 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Start fresh (Setup.reset) cut short: it runs from the screen, whose scope
- * Back takes away, and waits for the recorder's lock behind a revive. Once
- * begun, it has to finish - half a reset leaves a forgotten pairing under a
- * setup still marked complete.
+ * Start fresh (Setup.reset) beside a revive. It runs from the screen, whose
+ * scope Back takes away, and waits for the recorder's lock behind a revive:
+ * once begun, it has to finish - half a reset leaves a forgotten pairing
+ * under a setup still marked complete. And it ends the recorder under that
+ * lock, so a revive under way cannot start one after it.
  */
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)
 @Config(sdk = [36])
-class StartFreshCutShortTest {
+class StartFreshTest {
 
     private val context = RuntimeEnvironment.getApplication()
 
@@ -65,5 +69,42 @@ class StartFreshCutShortTest {
         assertFalse(Setup.isComplete(context))
         assertEquals(1, TestPhone.get(context, TestPhone.DEV))
         assertTrue(DebugSwitchesOff.switchedOff(context).isEmpty())
+    }
+
+    @Test fun aStartFreshAsksTheRecorderToQuitOnlyOnceARevivesStartIsDone() = runBlocking {
+        TestPhone.switchesOn(context)
+        TestPhone.offWifi(context)
+        TestPhone.setUp(context)
+        TestPhone.clearReviveLog(context)
+        DebugSwitchesOff.forget(context)
+        RecorderSwitch.set(context, true)
+        // A recorder slow to answer the revive's first ping: the revive holds
+        // the lock meanwhile, as one starting a recorder does.
+        val recorder = FakeRecorder(context)
+        val firstPing = AtomicBoolean(true)
+        // Written on the recorder's threads, read on this one.
+        val answeredAt = AtomicLong()
+        val quitAt = AtomicLong()
+        recorder.stall = { key ->
+            if (key == "P" && firstPing.compareAndSet(true, false)) {
+                Thread.sleep(1_500)
+                answeredAt.set(System.nanoTime())
+            }
+            if (key == "Q") quitAt.set(System.nanoTime())
+        }
+        try {
+            val revive = async(Dispatchers.IO) { CaptureDaemon.revive(context) }
+            withTimeout(5_000) { while ("revive: start" !in TestPhone.reviveLog(context)) delay(20) }
+            val reset = async(Dispatchers.IO) { Setup.reset(context) }
+            assertTrue(revive.await())
+            assertTrue(reset.await().isSuccess)
+
+            // Asked to quit after the revive had its answer, not while it waited.
+            assertTrue(quitAt.get() > 0)
+            assertTrue("quit at $quitAt, answered at $answeredAt", quitAt.get() > answeredAt.get())
+            assertFalse(AdbIdentity.exists(context))
+        } finally {
+            recorder.close()
+        }
     }
 }

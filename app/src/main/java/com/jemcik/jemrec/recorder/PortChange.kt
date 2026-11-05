@@ -99,7 +99,7 @@ object PortChange {
         }
     }
 
-    /** Start fresh's close of the port (RecorderLifecycle.closePortForReset),
+    /** Start fresh's close of the port (RecorderLifecycle.endForReset),
      *  under the recorder's lock. */
     internal suspend fun closeForReset(context: Context): Boolean {
         val w = ReviveWorld.Live(context)

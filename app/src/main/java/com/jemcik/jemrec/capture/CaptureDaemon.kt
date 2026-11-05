@@ -70,7 +70,6 @@ object CaptureDaemon {
     ): Boolean = RecorderLifecycle.revive(context, onPortChange, request)
     suspend fun askToAllowNetwork(context: Context): Boolean = RecorderLifecycle.askToAllowNetwork(context)
     suspend fun ensureRunning(context: Context): Result<Unit> = RecorderLifecycle.ensureRunning(context)
-    suspend fun closePortForReset(context: Context): Boolean = RecorderLifecycle.closePortForReset(context)
     fun isSetUp(context: Context): Boolean = RecorderLifecycle.isSetUp(context)
 
     // Bringing it back (Revive, PortChange).

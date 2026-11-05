@@ -10,7 +10,6 @@ import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.adb.AdbIdentity
-import com.jemcik.jemrec.capture.CallMonitorService
 import android.net.Uri
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
@@ -20,7 +19,6 @@ import com.jemcik.jemrec.capture.RecordingStore
 import com.jemcik.jemrec.recorder.BackgroundKill
 import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.RecorderSwitch
-import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.system.DeviceSkin
 import com.jemcik.jemrec.system.GlobalSettings
@@ -754,23 +752,10 @@ object Setup {
      * the forgotten key, alive to pair again in.
      */
     private suspend fun resetSteps(context: Context): Result<Unit> = runCatching {
-        // Over loopback, NOT over ADB. There is usually no ADB session by
-        // this point - there does not need to be one for the app to work - so
-        // the old `pkill` route silently did nothing and left the daemon
-        // running as an orphan through every reset.
-        if (!CaptureDaemon.quit(context)) {
-            runCatching { CaptureDaemon.stop() }
-                .onFailure { Log.w(TAG, "reset: could not stop the recorder", it) }
-        }
-
-        CallMonitorService.stop(context)
-
-        // While the key that opens it is still held.
-        val portClosed = CaptureDaemon.closePortForReset(context)
-        StartWithoutWifi.forget(context, stillOpen = !portClosed)
-
-        AdbTransport.close()
-        AdbIdentity.forget(context)
+        // The recorder quit, its service stopped, Start without Wi-Fi's port
+        // closed, the session and the pairing key gone: under the recorder's
+        // lock, all of it.
+        RecorderLifecycle.endForReset(context)
 
         RecordingStore.clearTree(context)
         RecordingMode.set(context, RecordingMode.AUTOMATIC)

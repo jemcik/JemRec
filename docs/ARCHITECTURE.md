@@ -434,6 +434,11 @@ fresh does: its changes come in pairs - Wireless debugging off and on, adbd
 on the port and the port noted as JemRec's, an old recorder retired and the
 new one started, Wireless debugging on and off again - and one cut between
 the two, by a worker stopped or a screen left, left the first half alone.
+Start fresh ends the recorder under the same lock, from asking it to quit to
+forgetting the pairing key: a revive under way finishes first, and one queued
+behind finds no key and starts nothing. Asked to quit before the lock, a
+recorder a revive was starting could come up after the quit and run on - read
+from the code, not seen on a phone; the unit tests show the order.
 
 **In the release build, from 0.5 to 0.25.2, no one-time run ran**
 ([#69](https://github.com/jemcik/JemRec/issues/69)): not the restart's, not

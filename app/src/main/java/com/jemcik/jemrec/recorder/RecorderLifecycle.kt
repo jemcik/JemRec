@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.jemcik.jemrec.adb.AdbIdentity
 import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.UsbDebuggingWatch
 import com.jemcik.jemrec.setup.Setup
@@ -16,7 +17,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * The recorder's lock, and what takes it: a revive, a start, Start fresh's
- * close of the port, and every write of the debugging switches outside a
+ * end of the recorder, and every write of the debugging switches outside a
  * revive - Off, On's putting back, a stand-down, Start fresh's. Whether a
  * trigger goes on (admit), what it arms (arm) and what follows its revive
  * (followUp), by the tables in Triggers.kt. The one writer of the switches
@@ -159,20 +160,40 @@ object RecorderLifecycle {
     }
 
     /**
-     * Start fresh: Start without Wi-Fi's port closed, if JemRec opened it,
-     * over the port itself - so with or without Wi-Fi. adbd restarts, which
-     * is no loss: the recorder has been told to quit. Whether it is closed
-     * now - or was never JemRec's - read back from the property: with adbd
-     * stopped (Turn all debugging off) nothing answers to close it, and then
-     * the note that JemRec opened it has to outlive the reset, or nothing
-     * would close it before a reboot (Setup.reset).
+     * Start fresh's end of the recorder (Setup.reset), under the lock from
+     * the recorder's quit to the pairing key forgotten: a revive under way
+     * finishes first, and one queued behind finds no key, and starts
+     * nothing. Asked to quit before the lock, a recorder a revive was
+     * starting over its session could come up after the quit and run on
+     * after Start fresh: read from the code; StartFreshTest shows the order,
+     * the quit 1.5 s before the revive's answer, on a stand-in recorder.
+     *
+     * Then Start without Wi-Fi's port closed, if JemRec opened it, over the
+     * port itself - so with or without Wi-Fi. adbd restarts, which is no
+     * loss: the recorder has been told to quit. Whether it is closed now -
+     * or was never JemRec's - read back from the property: with adbd stopped
+     * (Turn all debugging off) nothing answers to close it, and then the
+     * note that JemRec opened it has to outlive the reset, or nothing would
+     * close it before a reboot.
      */
-
-    suspend fun closePortForReset(context: Context): Boolean = withContext(Dispatchers.IO) {
+    internal suspend fun endForReset(context: Context) = withContext(Dispatchers.IO) {
         // On IO: Start fresh is run from the screen, and getprop is a process.
-        // Under the recorder's lock: adbd's restart would cut off a revive
-        // the keep-alive had under way, halfway through starting the recorder.
-        lifecycle.withLock { PortChange.closeForReset(context) }
+        lifecycle.withLock {
+            // Over loopback, NOT over ADB. There is usually no ADB session by
+            // this point - there does not need to be one for the app to work - so
+            // the old `pkill` route silently did nothing and left the daemon
+            // running as an orphan through every reset.
+            if (!DaemonClient.quit(context)) {
+                runCatching { DaemonLauncher.stop() }
+                    .onFailure { Log.w(TAG, "reset: could not stop the recorder", it) }
+            }
+            CallMonitorService.stop(context)
+            // While the key that opens it is still held.
+            val portClosed = PortChange.closeForReset(context)
+            StartWithoutWifi.forget(context, stillOpen = !portClosed)
+            AdbTransport.close()
+            AdbIdentity.forget(context)
+        }
     }
 
     /** Arm what keeps the recorder alive, as [trigger] does (armedBy). */
