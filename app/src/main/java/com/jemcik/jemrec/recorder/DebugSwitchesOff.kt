@@ -99,7 +99,8 @@ object DebugSwitchesOff {
      *  `settings put`s, each read back since 0.25.2, the 3 s it allows adbd
      *  after them, and the confirmed probe's own 2.4 s to say no
      *  (CaptureDaemon). Over by then, Off leaves the rest to the next
-     *  stayingOff - minutes, for a bank waiting to open. */
+     *  stand-down (RecorderLifecycle.admit) - minutes, for a bank waiting
+     *  to open. */
     private const val RECORDER_GOING_MS = 10_000L
 
     fun mode(context: Context): OffMode =
@@ -270,17 +271,6 @@ object DebugSwitchesOff {
     /** Whether the recorder has an off still to finish (finishOffLeftUndone). */
     internal fun notePending(context: Context, pending: Boolean) {
         Prefs.of(context).edit { putBoolean(KEY_OFF_PENDING, pending) }
-    }
-
-    /**
-     * [standingDown], and if so, an off the recorder left unfinished finished
-     * ([finishOffLeftUndone]): what the keep-alive, UsbDebuggingWatch and every
-     * revive ask before anything else. True: leave the recorder alone.
-     */
-    suspend fun stayingOff(context: Context): Boolean {
-        if (!standingDown(context)) return false
-        finishOffLeftUndone(context)
-        return true
     }
 
     /**

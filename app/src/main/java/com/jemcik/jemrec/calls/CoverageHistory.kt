@@ -49,7 +49,8 @@ internal object CoverageHistory {
         // Each note in a millisecond of its own: the entries are a set of
         // "time:STATE", so two notes in one millisecond were one entry when
         // their states matched, and in no known order when they did not -
-        // seen when a test saved the switch three times in a row.
+        // seen 2026-11-03, once in a full run of the app's tests, when one
+        // saved the switch three times in a row and found two entries.
         var at = now
         while (entries.any { it.first == at }) at++
         entries += at to current(context)

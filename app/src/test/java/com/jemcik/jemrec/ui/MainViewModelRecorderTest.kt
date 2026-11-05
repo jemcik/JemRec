@@ -15,7 +15,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.job
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -56,10 +55,11 @@ class MainViewModelRecorderTest {
     }
 
     /** Its work stopped and waited for, turning the main looper, before the
-     *  app goes (as ScreenTest does). */
+     *  app goes (as ScreenTest does). A connect's look is not cut short, and
+     *  takes up to 6 s. */
     @After fun closeAll() {
         vm.viewModelScope.cancel()
-        until("the view model's work to stop", seconds = 5) { vm.viewModelScope.coroutineContext.job.isCompleted }
+        until("the view model's work to stop", seconds = 10) { vm.viewModelScope.coroutineContext.job.isCompleted }
         recorder?.close()
         work.close()
     }
@@ -127,22 +127,22 @@ class MainViewModelRecorderTest {
         )
     }
 
-    @Test fun openSettingsWhileTheScreenIsBusyIsDropped() {
+    @Test fun openSettingsWhileTheScreenIsBusyConnectsOnceItIsFree() {
         // Start recorder holds busy while it asks for a recorder that is not
         // there (about 2.4 s).
         vm.bootstrapDaemon()
         until("busy") { state.busy }
         // Setup's Open settings, meanwhile: its connect in the background.
         vm.reconnect()
-        until("the first action's end") { !state.busy }
-        repeat(30) {
+        // Start recorder ends a moment after it says why (its refresh); the
+        // connect then holds busy for as long as it looks, 6 s a try. It was
+        // dropped, and the screen was free from then on.
+        until("Start recorder's answer") { "could not start the recorder" in state.log }
+        repeat(150) {
             shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(10)
         }
-        // Pins today's behaviour, which looks like a bug: the connect is
-        // dropped, not queued - nothing runs once the screen is free (to be
-        // fixed in its own commit)
-        assertFalse(state.busy)
+        assertTrue(state.busy)
     }
 
     @Test fun openSettingsWithTheScreenFreeStartsItsConnect() {

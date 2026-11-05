@@ -192,7 +192,7 @@ class DebugSwitchesOffRecorderTest {
 
         // It may be waiting out the call still: left alone.
         DebugSwitchesOff.finishOffLeftUndone(context)
-        assertTrue(DebugSwitchesOff.stayingOff(context))
+        assertEquals(Admit.StandDown, RecorderLifecycle.admit(context, Trigger.REVIVE))
 
         assertEquals(emptyList<String>(), writes.seen())
         assertTrue(pending())

@@ -785,17 +785,33 @@ class MainViewModel @JvmOverloads constructor(
      * for a while, catching the window while the user is still on the Settings
      * screen with Wireless debugging up. We are already paired, so a connect that
      * lands lets recheckSetup finish setup outright.
+     *
+     * Waits its turn rather than being dropped: Open settings is tapped
+     * whatever the screen is doing - a resume's check holds busy for seconds
+     * - and goes to Settings at once, so a connect dropped there never ran
+     * while the user was in Settings. One at a time: a tap while one waits
+     * or runs adds nothing, each looking for up to 36 s.
      */
-    fun reconnect() = launchAction("connect") {
-        val app = getApplication<Application>()
-        repeat(6) {
-            if (AdbTransport.autoConnect(app, timeoutMs = 6_000).isSuccess) {
+    fun reconnect() {
+        if (!reconnecting.compareAndSet(false, true)) return
+        launchActionWhenFree("connect") {
+            try {
+                val app = getApplication<Application>()
+                repeat(6) {
+                    if (AdbTransport.autoConnect(app, timeoutMs = 6_000).isSuccess) {
+                        recheckSetup()
+                        return@launchActionWhenFree
+                    }
+                }
                 recheckSetup()
-                return@launchAction
+            } finally {
+                reconnecting.set(false)
             }
         }
-        recheckSetup()
     }
+
+    /** A connect of [reconnect]'s waiting or under way. */
+    private val reconnecting = AtomicBoolean(false)
 
     private suspend fun finishSetupInternal() {
         _state.update { it.copy(step = SetupStep.FINISHING, finishFailed = null) }

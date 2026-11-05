@@ -139,7 +139,8 @@ object RecorderSwitch {
             RecorderLifecycle.arm(context, Trigger.TURN_ON)
             CaptureDaemon.pushMode(context)
         } else {
-            CaptureDaemon.setDaemonMode(context, CaptureDaemon.MODE_OFF)
+            // Off, as the switch now says (admitted above).
+            CaptureDaemon.sendMode(context)
             CallMonitorService.stop(context)
             // Then whatever else the user chose to have off with it: Settings,
             // When JemRec is off. The default switches nothing.

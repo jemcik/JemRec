@@ -10,6 +10,8 @@ import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipApps
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.EOFException
@@ -262,7 +264,7 @@ object DaemonClient {
      *  daemon as its recording mode, and the messenger apps with it.
      *  Best-effort. */
     suspend fun pushMode(context: Context) {
-        setDaemonMode(context, currentMode(context))
+        sendMode(context)
         setVoipApps(context)
         setTracking(context)
         syncGreeting(context)
@@ -644,13 +646,25 @@ object DaemonClient {
     }
 
     /**
+     * The mode as the settings say it now ([currentMode]), sent to the
+     * recorder: what every send of the mode is - an Off's, a revive's, the
+     * screen's check, the self-test's correction. One at a time, each read
+     * as it is sent: two at once, a check's read before an Off was saved
+     * could reach the recorder after the Off's own, and leave it recording
+     * calls with JemRec off.
+     */
+    suspend fun sendMode(context: Context): Boolean = modeSends.withLock { setDaemonMode(context, currentMode(context)) }
+
+    private val modeSends = Mutex()
+
+    /**
      * Push the recording policy to the daemon: OFF (recorder switch off),
      * AUTOMATIC (record every call from off-hook), or ON_DEMAND (record nothing
      * until the user answers the start-of-call prompt with yes). The shell UID
      * cannot read the app's prefs, so the daemon has to be told. Best-effort;
      * a daemon that has never been told records nothing.
      */
-    suspend fun setDaemonMode(context: Context, mode: Int): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun setDaemonMode(context: Context, mode: Int): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             open(context, COMMAND_SET_ENABLED, byteArrayOf(mode.toByte()), readMs = 1_500).use { socket ->
                 socket.getInputStream().read() >= 0

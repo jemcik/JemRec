@@ -209,7 +209,7 @@ object SelfTest {
         val wanted = CaptureDaemon.currentMode(context)
         when {
             watch.mode == wanted -> lines += "mode:      ${modeName(wanted)}"
-            CaptureDaemon.setDaemonMode(context, wanted) ->
+            CaptureDaemon.sendMode(context) ->
                 lines += "mode:      ${modeName(wanted)} (was ${modeName(watch.mode)}, corrected)"
             else -> return "the recorder is set to \"${modeName(watch.mode)}\", " +
                 "not \"${modeName(wanted)}\""

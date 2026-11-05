@@ -15,6 +15,9 @@ import com.jemcik.jemrec.capture.HeldWork.Companion.WIFI
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.RecorderHealth
 import com.jemcik.jemrec.recorder.RecorderSwitch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -30,6 +33,8 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * A revive, a start, the keep-alive and the USB watch with a recorder that
@@ -174,6 +179,33 @@ class RecorderUpTest {
         val log = TestPhone.reviveLog(context)
         assertEquals("revive: start", log.first())
         assertEquals("revive: recorder down (connect NONE)", log.last())
+    }
+
+    @Test fun aModeSendWaitsForOneUnderWayAndSendsTheSwitchAsItIsThen() = runBlocking {
+        up()
+        val sends = { recorder!!.heard.filter { it.key == "E" } }
+        // The first send - a screen's check, say - is slow to be answered...
+        val first = CountDownLatch(1)
+        recorder!!.stall = { key ->
+            if (key == "E" && sends().size == 1) {
+                first.countDown()
+                Thread.sleep(800)
+            }
+        }
+        val check = async(Dispatchers.IO) { CaptureDaemon.sendMode(context) }
+        assertTrue(first.await(5, TimeUnit.SECONDS))
+        // ...when JemRec goes off, and its Off sends the mode too.
+        RecorderSwitch.set(context, false)
+        val off = async(Dispatchers.IO) { CaptureDaemon.sendMode(context) }
+        delay(400)
+        // It waits its turn, and the recorder hears the Off's last.
+        assertEquals(1, sends().size)
+        assertTrue(check.await())
+        assertTrue(off.await())
+        assertEquals(
+            listOf(CaptureDaemon.MODE_AUTOMATIC, CaptureDaemon.MODE_OFF),
+            sends().map { it.payload.single().toInt() },
+        )
     }
 
     private fun keepAlive(): Result = runBlocking {

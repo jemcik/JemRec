@@ -183,11 +183,12 @@ object RecorderLifecycle {
 
     /** Whether [trigger] goes on, by what it finds now (admit). Standing
      *  down ([standDown]) under the lock, as every write of the switches
-     *  outside a revive is. */
+     *  outside a revive is - and asked again once the lock is had: an On
+     *  that came while this waited for it has the switch on, and an off
+     *  finished then would take the recorder from under it. */
     internal suspend fun admit(context: Context, trigger: Trigger): Admit {
         val admitted = admit(trigger, gates(context))
-        if (admitted == Admit.StandDown) lifecycle.withLock { standDown(context) }
-        return admitted
+        return if (admitted == Admit.StandDown) lifecycle.withLock { admitLocked(context, trigger) } else admitted
     }
 
     /** [admit], with the lock already held (a revive's). */
@@ -203,12 +204,21 @@ object RecorderLifecycle {
     }
 
     /** Off: what When JemRec is off switches off with it
-     *  (DebugSwitchesOff.switchOff), under the lock. */
-    internal suspend fun switchOff(context: Context) = lifecycle.withLock { DebugSwitchesOff.switchOff(context) }
+     *  (DebugSwitchesOff.switchOff), under the lock - if JemRec is still
+     *  off once the lock is had. A revive can hold it for tens of seconds,
+     *  and an On tapped meanwhile waits behind this Off (RecorderSwitch.turn):
+     *  switched off then, all debugging would take the recorder, and the On
+     *  would need Wi-Fi, or Start without Wi-Fi's port, to start it again. */
+    internal suspend fun switchOff(context: Context) = lifecycle.withLock {
+        if (admit(Trigger.TURN_OFF, gates(context)) is Admit.Go) DebugSwitchesOff.switchOff(context)
+    }
 
     /** On: what the last Off switched off, put back
-     *  (DebugSwitchesOff.switchBackOn), under the lock. */
-    internal suspend fun switchBackOn(context: Context) = lifecycle.withLock { DebugSwitchesOff.switchBackOn(context) }
+     *  (DebugSwitchesOff.switchBackOn), under the lock - if JemRec is still
+     *  on once the lock is had, for the same reason as [switchOff]. */
+    internal suspend fun switchBackOn(context: Context) = lifecycle.withLock {
+        if (admit(Trigger.TURN_ON, gates(context)) is Admit.Go) DebugSwitchesOff.switchBackOn(context)
+    }
 
     /** Start fresh: When JemRec is off forgotten, and Developer options back
      *  if it hid them (DebugSwitchesOff.forget), under the lock. */

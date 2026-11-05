@@ -5,6 +5,7 @@ import android.provider.Settings
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.capture.HeldWork
 import com.jemcik.jemrec.capture.TestPhone
 import com.jemcik.jemrec.system.GlobalSettings
 import kotlinx.coroutines.Dispatchers
@@ -239,7 +240,7 @@ class DebugSwitchesOffStateTest {
 
         assertFalse(CaptureDaemon.revive(context))
 
-        // The gate writes as it answers (stayingOff): Wireless debugging, then
+        // The gate writes as it answers (standing down): Wireless debugging, then
         // USB debugging, once a confirmed probe finds no recorder.
         assertEquals(listOf(wifi, usb), writes.seen())
         assertEquals(
@@ -332,5 +333,88 @@ class DebugSwitchesOffStateTest {
             log.indexOf("revive: recorder down (connect NONE)") < log.indexOf("debugging off: the recorder says nothing"),
         )
         assertEquals(listOf(0, 0, 0), listOf(dev, wifi, usb).map(::get))
+    }
+
+    /** A revive holding the lock, as one probing a recorder that is not
+     *  there does for about 2.4 s; its own writes are over by its start. */
+    private suspend fun kotlinx.coroutines.CoroutineScope.aReviveUnderWay() =
+        async(Dispatchers.IO) { CaptureDaemon.revive(context) }.also {
+            withTimeout(5_000) { while ("revive: start" !in TestPhone.reviveLog(context)) delay(20) }
+        }
+
+    @Test fun anOffWaitingForTheLockWritesNothingIfJemRecIsOnAgainByThen() = runBlocking {
+        aPhoneSetUpOffWifi()
+        DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
+        val revive = aReviveUnderWay()
+        val writes = TestPhone.Writes(context)
+        // Off, turned with JemRec off, waits for the revive's lock...
+        RecorderSwitch.set(context, false)
+        val off = async(Dispatchers.IO) { RecorderSwitch.turn(context, false) }
+        delay(1_000)
+        // ...and JemRec is on again before it has it.
+        RecorderSwitch.set(context, true)
+        assertFalse(revive.await())
+        off.await()
+
+        // Nothing switched off under a JemRec that is on: the recorder kept.
+        assertEquals(emptyList<String>(), writes.seen())
+        assertTrue(DebugSwitchesOff.switchedOff(context).isEmpty())
+        assertEquals(listOf(1, 1, 1), listOf(dev, wifi, usb).map(::get))
+        writes.close()
+    }
+
+    @Test fun anOnWaitingForTheLockPutsNothingBackIfJemRecIsOffAgainByThen() = runBlocking {
+        aPhoneSetUpOffWifi()
+        DebugSwitchesOff.setMode(context, OffMode.HIDE_DEVELOPER_OPTIONS)
+        RecorderSwitch.set(context, false)
+        DebugSwitchesOff.switchOff(context)
+        val off = DebugSwitchesOff.switchedOff(context)
+        // On's own revive arms the keep-alive after.
+        val work = HeldWork(context)
+        val revive = aReviveUnderWay()
+        val writes = TestPhone.Writes(context)
+        // On, turned with JemRec on, waits for the revive's lock to put
+        // back what the Off took...
+        RecorderSwitch.set(context, true)
+        val on = async(Dispatchers.IO) { RecorderSwitch.turn(context, true) }
+        delay(1_000)
+        // ...and JemRec is off again before it has it.
+        RecorderSwitch.set(context, false)
+        assertFalse(revive.await())
+        on.await()
+
+        // Developer options stay hidden, and the record stays for the next On.
+        assertEquals(emptyList<String>(), writes.seen())
+        assertEquals(off, DebugSwitchesOff.switchedOff(context))
+        assertEquals(0, get(dev))
+        writes.close()
+        work.close()
+    }
+
+    @Test fun aStandDownWaitingForTheLockFinishesNothingIfJemRecIsOnAgainByThen() = runBlocking {
+        aPhoneSetUpOffWifi()
+        DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
+        val revive = aReviveUnderWay()
+        // Meanwhile JemRec went off with all debugging, and the recorder left
+        // its off undone: debugging still on under the record.
+        RecorderSwitch.set(context, false)
+        DebugSwitchesOff.switchOff(context)
+        put(wifi, 1)
+        put(usb, 1)
+        DebugSwitchesOff.notePending(context, true)
+        val writes = TestPhone.Writes(context)
+        // A keep-alive finds JemRec standing down and waits for the lock to
+        // finish that off...
+        val keepAlive = async(Dispatchers.IO) { RecorderLifecycle.admit(context, Trigger.KEEP_ALIVE) }
+        delay(1_000)
+        // ...and JemRec is on again before it has it.
+        RecorderSwitch.set(context, true)
+        assertFalse(revive.await())
+
+        // It goes on with the recorder instead, and writes nothing.
+        assertEquals(Admit.Go(), keepAlive.await())
+        assertEquals(emptyList<String>(), writes.seen())
+        assertEquals(listOf(1, 1), listOf(wifi, usb).map(::get))
+        writes.close()
     }
 }

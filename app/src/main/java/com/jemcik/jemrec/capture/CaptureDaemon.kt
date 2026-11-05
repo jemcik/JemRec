@@ -109,7 +109,7 @@ object CaptureDaemon {
     internal fun currentMode(context: Context): Int = DaemonClient.currentMode(context)
     suspend fun quit(context: Context): Boolean = DaemonClient.quit(context)
     suspend fun pushMode(context: Context) = DaemonClient.pushMode(context)
-    suspend fun setDaemonMode(context: Context, mode: Int): Boolean = DaemonClient.setDaemonMode(context, mode)
+    suspend fun sendMode(context: Context): Boolean = DaemonClient.sendMode(context)
     suspend fun setVoipApps(context: Context): Boolean = DaemonClient.setVoipApps(context)
     suspend fun setTracking(context: Context): Boolean = DaemonClient.setTracking(context)
     suspend fun setAnswering(context: Context): Boolean = DaemonClient.setAnswering(context)
