@@ -231,10 +231,11 @@ Measured on the Honor (MagicOS 11, Android 17), 2026-10-28, off the cable:
 
 **When the port is opened and closed.** Changing it restarts `adbd`, and the
 recorder with it, so it is changed only where the recorder can be started
-again at once: on Wi-Fi, never in a call, which is asked again once the revive
-has connected, up to half a minute on - and not while *When JemRec is off*
-has debugging switched off, which a revive would have to switch Wireless
-debugging on for; the change waits for On. After a reboot the first start opens
+again at once: on Wi-Fi, never in a call, and only while the switch still asks
+for it, both asked again once the revive has connected, up to half a minute on
+- and not while *When JemRec is off* has debugging switched off, which a revive
+would have to switch Wireless debugging on for; the change waits for On. After
+a reboot the first start opens
 it before starting the recorder, so nothing restarts twice. Switched on while
 the recorder runs, the next revive - the switch's own, at once on Wi-Fi -
 opens it and restarts the recorder; switched off, the next revive on Wi-Fi

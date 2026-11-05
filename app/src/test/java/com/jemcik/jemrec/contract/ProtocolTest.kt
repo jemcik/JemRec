@@ -43,7 +43,7 @@ class ProtocolTest {
 
     @Test
     fun everyCommandTheAppSendsHasItsReplies() {
-        // The app's command bytes (CaptureDaemon.COMMAND_*) against the
+        // The app's command bytes (DaemonClient.COMMAND_*) against the
         // fixture's first column: a command added on one side shows up here.
         val sent = Regex("""const val COMMAND_\w+\s*=\s*'(.)'""").findAll(Repo.app).map { it.groupValues[1] }.toSet()
         assertTrue("no COMMAND_ constants found: is the pattern stale?", sent.isNotEmpty())

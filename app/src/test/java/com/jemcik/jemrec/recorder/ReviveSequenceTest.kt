@@ -129,6 +129,34 @@ class ReviveSequenceTest {
         assertTrue("revive: port 5555 left as it is: a call came" in phone.log)
     }
 
+    @Test fun aSwitchFlippedBackWhileItWaitsForAnAllowLeavesThePortAlone() = runTest {
+        val phone = FakePhone().apply {
+            recorder = DaemonClient.Answer(2, "1a2b3c4d")
+            step = PortStep.OPEN
+            wireless = false
+            refusing = true
+            connects += ConnectOutcome.CONNECTED
+        }
+        // Flipped back eight seconds in, with Android's question still up:
+        // nothing to change now, so the flip asks for no revive. Allow at ten.
+        launch {
+            delay(8_000)
+            phone.step = PortStep.LEAVE
+            delay(2_000)
+            phone.refusing = false
+            phone.wireless = true
+        }
+        var portChange = 0
+
+        val (up, _) = revive(phone, onPortChange = { portChange++ })
+
+        // Connected, and adbd left alone: the switch no longer asks for the port.
+        assertTrue(up)
+        assertEquals(0, portChange)
+        assertEquals(listOf("probe", wifiOn, "note switched on", "autoConnect 5000") + started, phone.did)
+        assertTrue("revive: port 5555 left as it is: the switch moved" in phone.log)
+    }
+
     @Test fun aRoutineReviveSwitchesOffAndOnOncePerConnection() = runTest {
         // Both switches on and adbd stopped: after a restart of the Honor.
         val phone = FakePhone().apply {
