@@ -433,7 +433,9 @@ debugging switches. A revive that has the lock runs to its end, as Start
 fresh does: its changes come in pairs - Wireless debugging off and on, adbd
 on the port and the port noted as JemRec's, an old recorder retired and the
 new one started, Wireless debugging on and off again - and one cut between
-the two, by a worker stopped or a screen left, left the first half alone.
+the two, by a worker stopped or a screen left, left the first half alone
+(shown in the unit tests on a stand-in phone; what that left behind is read
+from the code).
 Start fresh ends the recorder under the same lock, from asking it to quit to
 forgetting the pairing key: a revive under way finishes first, and one queued
 behind finds no key and starts nothing. Asked to quit before the lock, a

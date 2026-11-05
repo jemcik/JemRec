@@ -53,7 +53,9 @@ object Revive {
      * with Developer options hidden. A revive cancelled in between - a
      * worker WorkManager stops, a screen left - left the first half alone:
      * Wireless debugging off, a port open that JemRec would never close, no
-     * recorder, Wireless debugging on for good.
+     * recorder, Wireless debugging on for good. The first half left alone is
+     * shown on a stand-in phone (ReviveCancelTest); what each then left is
+     * read from the code.
      */
     internal suspend fun reviveLocked(
         w: ReviveWorld,
