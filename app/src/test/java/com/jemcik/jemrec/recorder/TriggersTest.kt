@@ -133,6 +133,20 @@ class TriggersTest {
         }
     }
 
+    @Test fun aFollowUpAndAnAdmissionSayWhatTheyHoldOneByOne() {
+        // As their users read them, field by field (RecorderKeepAlive,
+        // RecorderLifecycle, RecorderSwitch), not whole.
+        val up = followUp(Trigger.KEEP_ALIVE, alive = true, onWifi = false)
+        assertEquals(listOf(WIFI_WATCH), up.arm)
+        assertTrue(up.collect)
+        assertFalse(up.retry)
+        val down = followUp(Trigger.KEEP_ALIVE, alive = false, onWifi = true)
+        assertFalse(down.collect)
+        assertTrue(down.retry)
+        assertTrue((admit(Trigger.REVIVE, gates(recorded = true)) as Admit.Go).putBack)
+        assertFalse((admit(Trigger.REVIVE, gates()) as Admit.Go).putBack)
+    }
+
     @Test fun theRestDoNothingAfter() {
         val rest = Trigger.entries - setOf(Trigger.KEEP_ALIVE, Trigger.USB_CHANGED, Trigger.CABLE)
         for (trigger in rest) {
