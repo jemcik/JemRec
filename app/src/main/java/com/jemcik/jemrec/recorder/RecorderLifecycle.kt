@@ -9,6 +9,7 @@ import com.jemcik.jemrec.capture.UsbDebuggingWatch
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.system.GlobalSettings
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -151,7 +152,10 @@ object RecorderLifecycle {
      * after a reboot - not when a call starts, by which time it may be too late.
      */
     suspend fun ensureRunning(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
-        lifecycle.withLock { DaemonLauncher.ensureRunningLocked(context) }
+        // To its end once it has the lock, as a revive's start is: cut
+        // between retiring an old recorder and starting the new one, it left
+        // none (Revive.reviveLocked).
+        lifecycle.withLock { withContext(NonCancellable) { DaemonLauncher.ensureRunningLocked(context) } }
     }
 
     /**

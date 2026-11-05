@@ -44,7 +44,25 @@ object Revive {
         var connect = AdbTransport.ConnectOutcome.NONE
     }
 
+    /**
+     * A revive's steps, all of them once begun, under the recorder's lock.
+     * Its changes come in pairs whose second half comes later: Wireless
+     * debugging off, then on; adbd restarted on the port, then the port
+     * noted as JemRec's; an old recorder retired, then the new one started;
+     * Wireless debugging on to start it, then off again where JemRec is off
+     * with Developer options hidden. A revive cancelled in between - a
+     * worker WorkManager stops, a screen left - left the first half alone:
+     * Wireless debugging off, a port open that JemRec would never close, no
+     * recorder, Wireless debugging on for good.
+     */
     internal suspend fun reviveLocked(
+        w: ReviveWorld,
+        onPortChange: (() -> Unit)?,
+        request: Request,
+        found: Found,
+    ): Boolean = withContext(NonCancellable) { steps(w, onPortChange, request, found) }
+
+    private suspend fun steps(
         w: ReviveWorld,
         onPortChange: (() -> Unit)?,
         request: Request,
@@ -255,15 +273,13 @@ object Revive {
     }
 
     /** Wireless debugging off, then on: what puts the network question back
-     *  on screen, and what starts an adbd a cable stopped. Not to be cut
-     *  between the two: a revive cancelled there - a worker WorkManager
-     *  stops, a screen left - left Wireless debugging off until the next
-     *  revive. */
-    private suspend fun cycleWirelessDebugging(w: ReviveWorld): Boolean = withContext(NonCancellable) {
-        if (!w.write(GlobalSettings.ADB_WIFI_ENABLED, false)) return@withContext false
+     *  on screen, and what starts an adbd a cable stopped. Never cut between
+     *  the two: a revive runs to its end (reviveLocked). */
+    private suspend fun cycleWirelessDebugging(w: ReviveWorld): Boolean {
+        if (!w.write(GlobalSettings.ADB_WIFI_ENABLED, false)) return false
         // Long enough for the off to land as its own change.
         delay(1_000)
-        w.write(GlobalSettings.ADB_WIFI_ENABLED, true)
+        return w.write(GlobalSettings.ADB_WIFI_ENABLED, true)
     }
 
     internal fun wirelessDebuggingOn(w: ReviveWorld) = w.read(GlobalSettings.ADB_WIFI_ENABLED) == GlobalSettings.Reading.ON

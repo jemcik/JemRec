@@ -3,6 +3,7 @@ package com.jemcik.jemrec.recorder
 import com.jemcik.jemrec.adb.AdbTransport.ConnectOutcome
 import com.jemcik.jemrec.system.AdbdState
 import com.jemcik.jemrec.system.GlobalSettings
+import kotlinx.coroutines.delay
 import java.io.IOException
 
 /**
@@ -28,6 +29,8 @@ internal class FakePhone : ReviveWorld {
     var recorder: DaemonClient.Answer? = null
     var currentBuild = true
     var startResult: Result<Unit> = Result.success(Unit)
+    /** How long a start takes: a jar copied and a recorder waited for. */
+    var startMs = 0L
 
     var usb = GlobalSettings.Reading.ON
     var wireless = true
@@ -66,7 +69,10 @@ internal class FakePhone : ReviveWorld {
     override suspend fun recorder(): DaemonClient.Answer? = recorder.also { did += "probe" }
     override fun current(answer: DaemonClient.Answer) = currentBuild
     override fun bundledBuild() = "1a2b3c4d"
-    override suspend fun start(): Result<Unit> = startResult.also { did += "start" }
+    override suspend fun start(): Result<Unit> {
+        delay(startMs)
+        return startResult.also { did += "start" }
+    }
     override suspend fun pushMode() {
         did += "push"
     }

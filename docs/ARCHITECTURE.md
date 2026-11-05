@@ -429,7 +429,11 @@ and every revive asks that first; and what follows a revive (`followUp`) -
 the keep-alive's Wi-Fi watch off Wi-Fi and its retry, the watches' hand-over
 of a recorder still down. `RecorderLifecycle` reads what the table needs,
 holds the recorder's lock, and is the one place in the app that writes the
-debugging switches.
+debugging switches. A revive that has the lock runs to its end, as Start
+fresh does: its changes come in pairs - Wireless debugging off and on, adbd
+on the port and the port noted as JemRec's, an old recorder retired and the
+new one started, Wireless debugging on and off again - and one cut between
+the two, by a worker stopped or a screen left, left the first half alone.
 
 **In the release build, from 0.5 to 0.25.2, no one-time run ran**
 ([#69](https://github.com/jemcik/JemRec/issues/69)): not the restart's, not
