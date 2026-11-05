@@ -10,7 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
-import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.ReviveLog
 import com.jemcik.jemrec.system.GlobalSettings
 import java.time.Duration
@@ -85,8 +85,7 @@ class UsbDebuggingWatch(
         if (!CaptureDaemon.revive(applicationContext)) {
             // Down and not startable now: the keep-alive owns the retrying,
             // and off Wi-Fi the Wi-Fi watch the moment there is some.
-            if (!NetworkRevive.onWifi(applicationContext)) NetworkRevive.arm(applicationContext)
-            RecorderKeepAlive.kickNow(applicationContext)
+            RecorderLifecycle.afterFailedRevive(applicationContext)
         }
         return Result.success()
     }

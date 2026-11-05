@@ -11,7 +11,6 @@ import com.jemcik.jemrec.calls.VoipCallNotes
 import com.jemcik.jemrec.capture.AudioStream
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
-import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.system.ShellGrant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -194,7 +193,7 @@ object SelfTest {
             // be garbage-collected: it may be deaf right now, and nothing short
             // of a call can tell. A revive replaces it, so one is asked for now
             // rather than at the next keep-alive tick, up to fifteen minutes on.
-            RecorderKeepAlive.kickNow(context)
+            RecorderLifecycle.arm(context, Trigger.SELF_TEST)
             return "this recorder is an older build that can stop noticing calls. " +
                 "JemRec replaces it as soon as the phone is on Wi-Fi."
         }

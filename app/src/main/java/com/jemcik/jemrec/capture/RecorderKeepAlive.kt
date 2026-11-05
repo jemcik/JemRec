@@ -13,7 +13,9 @@ import androidx.work.workDataOf
 import com.jemcik.jemrec.calls.MissedCalls
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.ReviveLog
+import com.jemcik.jemrec.recorder.Trigger
 import com.jemcik.jemrec.recordings.RecordingSaver
 import com.jemcik.jemrec.rethrowingCancellation
 import java.util.concurrent.TimeUnit
@@ -74,7 +76,7 @@ class RecorderKeepAlive(
         // A force-stop clears the system's trigger with every other job; this
         // run is the next chance to put it back. KEEP, so a watch already
         // waiting is left alone.
-        UsbDebuggingWatch.arm(applicationContext)
+        RecorderLifecycle.arm(applicationContext, Trigger.KEEP_ALIVE)
         val alive = CaptureDaemon.revive(applicationContext)
         // Off Wi-Fi is exactly when the Wi-Fi watch must be armed, and the
         // one place it reliably can be: armed on Wi-Fi it fires at once and
@@ -130,6 +132,12 @@ class RecorderKeepAlive(
          *  Idempotent - safe to call on every app open. */
         fun schedule(context: Context) {
             UsbDebuggingWatch.arm(context)
+            heartbeat(context)
+        }
+
+        /** The steady heartbeat alone (RecorderLifecycle.arm arms the watch
+         *  beside it). Idempotent. */
+        fun heartbeat(context: Context) {
             val work = PeriodicWorkRequestBuilder<RecorderKeepAlive>(
                 15, TimeUnit.MINUTES,
             ).build()

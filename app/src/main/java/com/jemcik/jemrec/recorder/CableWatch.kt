@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.capture.RecorderKeepAlive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -188,7 +187,6 @@ internal object CableWatch {
         // way this would have (see stoppedAdbd).
         Log.w(TAG, "cable: the recorder is not back yet; leaving it to the keep-alive")
         ReviveLog.note(context, "cable: not back after $ATTEMPTS attempts; keep-alive")
-        if (!NetworkRevive.onWifi(context)) NetworkRevive.arm(context)
-        RecorderKeepAlive.kickNow(context)
+        RecorderLifecycle.afterFailedRevive(context)
     }
 }

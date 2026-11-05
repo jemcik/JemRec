@@ -33,9 +33,11 @@ import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.NetworkRevive
 import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recorder.RecorderHealth
+import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.SelfTest
 import com.jemcik.jemrec.recorder.StartWithoutWifi
+import com.jemcik.jemrec.recorder.Trigger
 import com.jemcik.jemrec.setup.PairingNotification
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
@@ -59,7 +61,6 @@ import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.LastCallReport
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
-import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.DeleteResult
 import com.jemcik.jemrec.capture.BulkDeleteResult
 import com.jemcik.jemrec.capture.Recording
@@ -595,14 +596,10 @@ class MainViewModel @JvmOverloads constructor(
         // Keep the daemon alive from a scheduled job rather than a permanent
         // service. Idempotent, so it is safe to (re-)arm on every check; it does
         // nothing while the app is switched off.
-        if (RecorderSwitch.isOn(getApplication())) {
-            RecorderKeepAlive.schedule(getApplication())
-            RecorderKeepAlive.kickNow(getApplication())
-            // Re-arm the Wi-Fi watch on every open: it is lost to a force-stop
-            // or an app update, and opening the app is when the user most
-            // expects "back on Wi-Fi means ready" to hold.
-            NetworkRevive.arm(getApplication())
-        }
+        // The Wi-Fi watch too, on every open: it is lost to a force-stop or an
+        // app update, and opening the app is when the user most expects "back
+        // on Wi-Fi means ready" to hold.
+        if (RecorderSwitch.isOn(getApplication())) RecorderLifecycle.arm(getApplication(), Trigger.SETUP_CHECK)
         // Keep the daemon's recording mode in step with the app's settings, even
         // when the daemon was already up (so revive did not run). Cheap, and it
         // is how the daemon learns automatic vs ask-first after a plain reopen.

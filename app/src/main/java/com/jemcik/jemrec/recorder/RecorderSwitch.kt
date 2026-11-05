@@ -9,7 +9,6 @@ import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.calls.MissedCalls
 import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.ui.RecorderTile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -124,8 +123,7 @@ object RecorderSwitch {
             DebugSwitchesOff.switchBackOn(context)
             // The user's own On: not held to a routine revive's limits.
             CaptureDaemon.revive(context, request = CaptureDaemon.Request.USER)
-            RecorderKeepAlive.schedule(context)
-            NetworkRevive.arm(context)
+            RecorderLifecycle.arm(context, Trigger.TURN_ON)
             CaptureDaemon.pushMode(context)
         } else {
             CaptureDaemon.setDaemonMode(context, CaptureDaemon.MODE_OFF)

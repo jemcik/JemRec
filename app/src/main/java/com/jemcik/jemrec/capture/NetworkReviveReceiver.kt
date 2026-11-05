@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.jemcik.jemrec.recorder.RecorderLifecycle
+import com.jemcik.jemrec.recorder.Trigger
 
 /**
  * Woken by the system when Wi-Fi comes back (see [NetworkRevive]). Starts a
@@ -23,7 +25,7 @@ class NetworkReviveReceiver : BroadcastReceiver() {
         // if recording is currently switched off.
         if (!CaptureDaemon.isSetUp(context)) return
         Log.i(TAG, "netrevive: Wi-Fi is back, reviving the recorder now")
-        RecorderKeepAlive.kickForWifi(context)
+        RecorderLifecycle.arm(context, Trigger.WIFI_BACK)
     }
 
     private companion object {

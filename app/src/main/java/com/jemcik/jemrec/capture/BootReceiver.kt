@@ -4,7 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.recorder.RecorderLifecycle
+import com.jemcik.jemrec.recorder.Trigger
 
 /**
  * Brings the monitor back after a reboot.
@@ -47,11 +48,10 @@ class BootReceiver : BroadcastReceiver() {
                     return
                 }
                 Log.i(TAG, "boot: arming the keep-alive job to revive the recorder")
-                RecorderKeepAlive.schedule(context)
-                RecorderKeepAlive.kickNow(context)
-                // The system-held Wi-Fi watch is cleared by a reboot, so
-                // re-arm it here to keep instant recovery working from boot on.
-                NetworkRevive.arm(context)
+                // The heartbeat, the USB watch and a kick; and the system-held
+                // Wi-Fi watch, which a reboot clears, to keep instant recovery
+                // working from boot on.
+                RecorderLifecycle.arm(context, Trigger.BOOT)
             }
         }
     }

@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.jemcik.jemrec.adb.AdbIdentity
 import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.capture.RecorderKeepAlive
+import com.jemcik.jemrec.capture.UsbDebuggingWatch
 import com.jemcik.jemrec.setup.Setup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -151,6 +153,23 @@ object RecorderLifecycle {
         // Under the recorder's lock: adbd's restart would cut off a revive
         // the keep-alive had under way, halfway through starting the recorder.
         lifecycle.withLock { PortChange.closeForReset(context) }
+    }
+
+    /** Arm what keeps the recorder alive, as [trigger] does (armedBy). */
+    internal fun arm(context: Context, trigger: Trigger) = arm(context, armedBy(trigger))
+
+    /** A watch's revive left the recorder down: the hand-over to the
+     *  keep-alive and the Wi-Fi watch (afterFailedRevive). */
+    fun afterFailedRevive(context: Context) = arm(context, afterFailedRevive(NetworkRevive.onWifi(context)))
+
+    private fun arm(context: Context, keepers: List<Keeper>) = keepers.forEach {
+        when (it) {
+            Keeper.USB_WATCH -> UsbDebuggingWatch.arm(context)
+            Keeper.HEARTBEAT -> RecorderKeepAlive.heartbeat(context)
+            Keeper.KICK -> RecorderKeepAlive.kickNow(context)
+            Keeper.WIFI_RUN -> RecorderKeepAlive.kickForWifi(context)
+            Keeper.WIFI_WATCH -> NetworkRevive.arm(context)
+        }
     }
 
     /** Setup.finish() ran to the end at least once. Setup owns the flag. */
