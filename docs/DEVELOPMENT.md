@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1290 JVM tests, no device needed - 1094 for the app and 196 for the daemon:
+1366 JVM tests, no device needed - 1170 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -134,6 +134,19 @@ returns does so every time; its rule for standing down (`StandDown`) is
 tested apart, with jobs whose ends the test decides, so two jobs ending
 together do too.
 
+**The recorder's lifecycle** (from 0.28): a recorder for the tests on the
+loopback port (`FakeRecorder`), which proves itself with this install's
+token and answers each command as the test says, so a revive, a start, the
+keep-alive, the USB and cable watches, Turn all debugging off and Diagnostics'
+Start recorder run against a recorder that is up, out of date, or
+answering anything the protocol allows. Behind the revive's seam
+(`ReviveWorld`), a phone of the tests' own (`FakePhone`) runs a revive's
+whole sequence - the switches, adbd, the connect, the port, the start - in
+virtual time (`ReviveSequenceTest`). What each trigger arms, whether it goes
+on, and what follows its revive are tables (`Triggers.kt`, tested in the pure
+module below); `SwitchWritersTest` holds that only `RecorderLifecycle`
+writes the debugging switches.
+
 **Names and words something else depends on** (`app/src/test/.../contract`):
 the component and worker class names the phone and the tools remember,
 the recorder's own class name, and the actions and extras of its wakes
@@ -148,7 +161,7 @@ comments, so a file moved between packages changes nothing for them, and a
 comment that quotes a line does not stand in for the line.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13, 16 and 17 for 0.27 -
+emulator, for each Android version it claims (12, 13, 16 and 17 for 0.28 -
 16 is what the Galaxy phones of the issues run), each booted cold
 (`emulator -avd <name> -no-snapshot`):
 
@@ -353,9 +366,10 @@ Reports, not gates - run them when wanted:
   printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
 - **The app's mutation testing:** `./gradlew :pure-tests:pitest`, then
   `app/pure-tests/build/reports/pitest`: PIT over the pure module's files
-  (the gate above). 218 of the 223 changes its tests reach fail one
-  (2026-11-02; 119 of 123 before 0.27 added the saver's and the call
-  service's decisions). The five left change nothing: frame lengths at Opus
+  (the gate above). 254 of the 259 changes its tests reach fail one
+  (2026-11-03; 218 of 223 before 0.28 added the lifecycle's tables, all 36
+  of whose changes fail one; 119 of 123 before 0.27 added the saver's and
+  the call service's decisions). The five left change nothing: frame lengths at Opus
   config 12, which SILK and hybrid give alike; two `setTimeZone` calls on
   formatters built in that zone already; and two shortcuts inside the
   standard library, inlined: a bound in `trim` (`AudioStream`) and `none`'s

@@ -419,6 +419,18 @@ watch on USB debugging (`UsbDebuggingWatch`, a one-time run itself), and after
 a cable is pulled the app's own revive (`CableWatch`), which falls back to a
 one-time run. Opening JemRec starts it too, on the app's own.
 
+**What each does is one table** (`Triggers.kt`): what each of these, boot,
+opening the app, its check of setup, On and Off arms to keep the recorder
+alive (`armedBy`); whether it goes on, by what it finds (`admit`) - boot and
+Wi-Fi coming back ask whether the phone is set up, not the switch, as the
+recorder is kept for an On anywhere; the app's own ask the switch; the
+keep-alive and the USB watch ask setup, then whether JemRec is standing down;
+and every revive asks that first; and what follows a revive (`followUp`) -
+the keep-alive's Wi-Fi watch off Wi-Fi and its retry, the watches' hand-over
+of a recorder still down. `RecorderLifecycle` reads what the table needs,
+holds the recorder's lock, and is the one place in the app that writes the
+debugging switches.
+
 **In the release build, from 0.5 to 0.25.2, no one-time run ran**
 ([#69](https://github.com/jemcik/JemRec/issues/69)): not the restart's, not
 Wi-Fi's, not the USB debugging watch, not the cable's fallback. The cable's
@@ -1625,14 +1637,22 @@ choice made while JemRec is off applies from the next off.
 **Nothing brings debugging back behind the user's back.** Every way the
 recorder is revived - the keep-alive job, the Wi-Fi and cable watches, boot,
 opening the app, and the USB-debugging watch - goes through one function, and
-it stands down while the third choice is in force. While JemRec is off with
+it stands down while the third choice is in force. It asks under the
+recorder's lock, and Off writes the switches under the same lock: a revive
+under way when Off comes finishes before Off writes, and one queued behind it
+stands down. Until 0.28 a revive asked before the lock and not again, and one
+queued as Off came had USB debugging back on - reproduced in the unit tests,
+two revives queued and an Off between them. While JemRec is off with
 Developer options hidden, a revive (after a reboot, or a cable from a computer)
 turns Wireless debugging on to start the recorder and off again once it is up.
 A recorder that dies while it waits out a call - a computer's cable pulled -
 leaves its off unfinished; the next revive or keep-alive run that finds no
-recorder finishes it, once. USB debugging the user switches on themselves while
-JemRec is off stays on. Start fresh puts Developer options back, since setup
-sends the user there.
+recorder finishes it, once; one still up whose Off was cut short before it
+answered - the app killed while it asked - is asked again by the next look,
+and goes. USB debugging the user switches on themselves while JemRec is off
+stays on. Standing down, JemRec takes down the recorder-down alert too: a
+recorder down is no problem then. Start fresh puts Developer options back,
+since setup sends the user there.
 
 Not measured: a banking app that refuses. Ours open with debugging on, so what
 any one bank looks at is not known here; the order to try is the order above.

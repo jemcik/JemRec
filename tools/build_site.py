@@ -2251,7 +2251,8 @@ SETUP = [
          "minutes. The notification says why: it needs a few seconds of Wi-Fi, "
          "or this Wi-Fi is not allowed for Wireless debugging (with **Allow "
          "this Wi-Fi**), or it cannot connect (with **Pair again**), or it could "
-         "not start. It goes away by itself when the recorder is back."],
+         "not start. It goes away by itself when the recorder is back, and once "
+         "JemRec is switched off."],
         ["**A call was not recorded**", "An answered call in your call log has no "
          "recording. Only in Record every call mode, and only with call log "
          "access. Run the self-test."],
