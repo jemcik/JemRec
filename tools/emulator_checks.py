@@ -1586,10 +1586,7 @@ def usb_debugging():
         try:
             wait_for(switched_back_on, 60, "")
         except TimeoutError:
-            adb("emu", "avd", "snapshot", "load", USB_GUARD)
-            adb("wait-for-device", timeout=60)
-            raise TimeoutError("the app never switched USB debugging back on; "
-                               "the emulator was put back from the snapshot")
+            back_from_snapshot("the app never switched USB debugging back on")
     finally:
         adb("emu", "avd", "snapshot", "delete", USB_GUARD)
     wait_for(lambda: "usbwatch: USB debugging changed" in revive_since(log_before), 10,
@@ -1676,9 +1673,7 @@ def _adbd_stopped_and_started(before):
         try:
             wait_for(adb_ready, 90, "")
         except TimeoutError:
-            adb("emu", "avd", "snapshot", "load", USB_GUARD)
-            adb("wait-for-device", timeout=60)
-            raise TimeoutError("adbd never came back; the emulator was put back from the snapshot")
+            back_from_snapshot("adbd never came back")
     finally:
         adb("emu", "avd", "snapshot", "delete", USB_GUARD)
     wait_for(lambda: "recorder up (connect CONNECTED)" in revive_since(log_before), 60, "the recorder started")
@@ -1764,9 +1759,7 @@ def debugging_off():
         try:
             wait_for(all_back, 120, "")
         except TimeoutError:
-            adb("emu", "avd", "snapshot", "load", USB_GUARD)
-            adb("wait-for-device", timeout=60)
-            raise TimeoutError("debugging never came back on; the emulator was put back from the snapshot")
+            back_from_snapshot("debugging never came back on")
     finally:
         adb("emu", "avd", "snapshot", "delete", USB_GUARD)
         set_prefs(off_mode=None)
@@ -1960,7 +1953,11 @@ def allow_this_wifi():
             sh(f"am start -n {PKG}/.MainActivity")
             return False
 
-        wait_for(asking, 90, "the header asking to allow this Wi-Fi")
+        try:
+            wait_for(asking, 90, "the header asking to allow this Wi-Fi")
+        except TimeoutError:
+            print(where_things_stood())  # before the finally below moves it on
+            raise
         log_before = revive_log()
         # Tapped until Android asks: a tap at the first dump can be lost (#49),
         # and while the tap's revive runs the header says Starting instead.
@@ -2142,9 +2139,7 @@ def start_without_wifi():
             try:
                 wait_for(lambda: adb_ready() and global_setting("adb_enabled") == "1", 120, "")
             except TimeoutError:
-                adb("emu", "avd", "snapshot", "load", USB_GUARD)
-                adb("wait-for-device", timeout=60)
-                raise TimeoutError("debugging never came back on; the emulator was put back from the snapshot")
+                back_from_snapshot("debugging never came back on")
         finally:
             adb("emu", "avd", "snapshot", "delete", USB_GUARD)
         after = wait_for(daemon_pid, 60, "a recorder process")
@@ -2271,6 +2266,46 @@ def what_happened():
     return "\n".join("       " + l[6:170] for l in lines[-25:])
 
 
+def where_things_stood():
+    """What a failed check saw, read now: what_happened has the call lines
+    alone. On the Android 16 AVD, 2026-11-05, allow_this_wifi and
+    start_without_wifi failed in a full run and passed alone, and neither
+    left a trace of why: the first's cleanup had moved the screen on, and the
+    second's snapshot took the log back. So these checks call this before
+    either, and it says so when there is no adb to read anything over."""
+    def read(command):
+        try:
+            return adb("shell", command, timeout=15).strip()
+        except subprocess.TimeoutExpired:
+            return f"(no answer in 15 s: {command})"
+
+    if not adb_ready():
+        return "       no adb connection, nothing to read over"
+    state = {
+        "on screen": " | ".join(re.findall(r'text="([^"]+)"', read("uiautomator dump /sdcard/ui.xml >/dev/null; cat /sdcard/ui.xml"))),
+        "adb_enabled": read("settings get global adb_enabled"),
+        "adb_wifi_enabled": read("settings get global adb_wifi_enabled"),
+        "adbd": read("getprop init.svc.adbd"),
+        "port": read("getprop service.adb.tcp.port"),
+        "wifi": read("cmd wifi status | head -2").replace("\n", " "),
+        "standby bucket": read(f"am get-standby-bucket {PKG}"),
+    }
+    jobs = read(f"dumpsys jobscheduler | grep -A4 'JOB .*{PKG}' | head -30")
+    revive = read(f"su 0 tail -n 30 {APP_DIR}/files/revive.log")
+    lines = [f"{k}: {v[:600]}" for k, v in state.items()] + jobs.splitlines() + revive.splitlines()
+    return "\n".join("       " + l[:170] for l in lines)
+
+
+def back_from_snapshot(what):
+    """A check that took adb away and did not get it back: the emulator put
+    back, so that the checks after it can run, and [what] raised. Where things
+    stood is read first: the snapshot takes that back too."""
+    print(where_things_stood())
+    adb("emu", "avd", "snapshot", "load", USB_GUARD)
+    adb("wait-for-device", timeout=60)
+    raise TimeoutError(f"{what}; the emulator was put back from the snapshot")
+
+
 SHRUNK_APK = "app/build/outputs/apk/shrunk/app-shrunk.apk"
 
 
@@ -2324,6 +2359,7 @@ def main():
         except Exception as e:  # report every check, whatever one does
             failed += 1
             print(f"FAIL {check.__name__:11} {e}" + ("" if "\n" in str(e) else f"\n{what_happened()}"))
+            print(where_things_stood())
     set_prefs(rules_other_numbers=True)
     print(f"API {sdk}: {len(checks) - failed} of {len(checks)} passed")
     sys.exit(1 if failed else 0)
