@@ -327,8 +327,8 @@ Wi-Fi before telling `adbd` to start, every time (2026-10-27). It is not built.
 
 ## Unplugged from a computer
 
-**Pulling the cable out of a computer stops the recorder, and JemRec starts it
-again by itself.** Measured on the Honor (Android 17), 2026-10-24: three
+**On some phones, pulling the cable out of a computer stops the recorder, and
+JemRec starts it again by itself.** Measured on the Honor (Android 17), 2026-10-24: three
 seconds after the cable came out - Android's debounce of a USB disconnect -
 the phone took USB debugging off the cable's functions and `adbd` was stopped.
 The recorder was started through `adbd`, so it is in `adbd`'s cgroup, and
@@ -366,8 +366,17 @@ The setting decides the keep-alive too: on *Manage automatically* the
 was not met; switched to *Manage manually*, it was met at once.
 
 A wall charger, plugged in or pulled out, stopped nothing, and the app's watch
-ends before Android would show its notification. Plugging into a computer
-stopped nothing either, the three times it was measured; the watch covers it anyway.
+ends before Android would show its notification. Plugging the Honor into a
+computer stopped nothing either, the three times it was measured.
+
+**Other phones do it differently, and the same watch covers them.** On a Galaxy
+S20 (One UI 5.1, Android 13), 2026-11-04, it was the other way round. Pulling
+the cable out stopped nothing. Plugging into a computer stopped `adbd`, all
+three times: a few seconds later `android.process.media` had the USB functions
+set again, the USB configuration went to none and back, and `adbd` restarted,
+taking the recorder with it. The two times a recorder was running, the app's
+watch saw it go and had it back 15.5 and 19.7 seconds after the plug-in. On a
+OnePlus 13 (LineageOS 23.2, Android 16), the same day, neither stopped it.
 
 The recorder polls rather than listens: Android refuses a broadcast receiver to
 a process it did not start ("registerReceiverWithFeature: no app for null", on
@@ -414,6 +423,23 @@ a Wi-Fi Android has not allowed it asks once (`cycleAfterNotFound`). *Tap to
 allow this Wi-Fi* is now said only with adbd running, or after that once
 (`RecorderHealth.notAllowed`), and the tap starts the recorder itself, waiting
 for a start under way instead of cutting it off.
+
+**Android decides when the boot reaches JemRec.** Nothing of JemRec's runs
+until Android hands it `BOOT_COMPLETED`, which it gives apps one after another,
+and the queue hardly moves while the phone sleeps. Measured on a Galaxy S20
+(One UI 5.1, Android 13), 2026-11-04, the phone locked again straight after the
+first unlock: the broadcast was queued at 23:46:17, the phone slept from
+23:46:59 to 23:50:40 but for a few wakes of a second or two, JemRec's turn came
+at 23:51:03, and the recorder was up at 23:51:18, the app never opened. That is
+five minutes after the unlock, about 70 seconds of them awake. How long it
+takes with nobody waking the phone was not measured. Opening JemRec does not
+wait for it.
+
+**Android can cut the first start.** On a OnePlus 13 (LineageOS 23.2, Android
+16), 2026-11-04, three seconds after JemRec connected at boot Android logged
+`Detected wifi network change. Disabling adbwifi` and the session went, half way
+through starting the recorder. The keep-alive's retry had it up 82 seconds
+after the first try, the app never opened.
 
 Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 recording carries on with Wi-Fi off, on mobile data, anywhere.

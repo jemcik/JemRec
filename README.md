@@ -356,8 +356,10 @@ Only to *start* the recorder: that is the one step that needs Wireless
 debugging, which Android runs over Wi-Fi. Once started, the recorder carries on
 with Wi-Fi off, on mobile data, anywhere. A reboot stops it, and the next few
 seconds of Wi-Fi bring it back by themselves (see
-[Get started](#get-started), step 3). Unplugging the phone from a computer can
-stop it too (a charger does not); on Wi-Fi it is back within seconds, by
+[Get started](#get-started), step 3), once Android gets round to starting
+JemRec: five minutes after the unlock on a Galaxy S20 locked again at once.
+Unplugging the phone from a computer can stop it too, or on a Galaxy S20
+plugging it in (a charger does not); on Wi-Fi it is back within seconds, by
 itself. With the screen off, step 3 matters here as well: without it, an
 Honor's battery manager kept the recorder down for about four minutes in two
 tests of three, and 8.5 minutes in another. Until then nothing is recorded -

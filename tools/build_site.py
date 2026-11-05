@@ -2163,6 +2163,11 @@ SETUP = [
           "off and on itself: recording again **eleven seconds** after its "
           "first try, which came as the phone was unlocked, with the app never "
           "opened."),
+    ("p", "Android decides when the boot reaches JemRec, though: it hands the "
+          "boot broadcast to one app after another, and the queue hardly moves "
+          "while the phone sleeps. On a Galaxy S20 locked again straight after "
+          "unlocking, the recorder was back five minutes after the unlock, the "
+          "app never opened."),
     ("h3", "Without it, open JemRec once"),
     ("p", "The same phone with auto-launch off does nothing at all. The system "
           "declined to start the app for the boot broadcast — *don't meet "
@@ -2178,9 +2183,10 @@ SETUP = [
     ("h2", "Unplugging from a computer"),
     ("p", "On some phones, pulling the cable out of a computer stops the "
           "recorder: measured on an Honor, three seconds after the cable came "
-          "out. A charger does not. JemRec starts it again by itself - on "
-          "Wi-Fi, within seconds; off Wi-Fi, at the next Wi-Fi, as after a "
-          "restart. Nothing to open - but with the screen off, which is how a "
+          "out. A charger does not. On a Galaxy S20 it is the other way round: "
+          "plugging into a computer stops it, pulling the cable out does not. "
+          "JemRec starts it again by itself - on Wi-Fi, within seconds; off "
+          "Wi-Fi, at the next Wi-Fi, as after a restart. Nothing to open - but with the screen off, which is how a "
           "cable usually comes out, only if JemRec may start automatically "
           "(the setting just above): measured on that Honor, 13 seconds with "
           "it; without it, the phone's battery manager froze JemRec until the "
@@ -3222,9 +3228,11 @@ FAQ = [
      "Wireless debugging, which Android runs over Wi-Fi. Once started, the "
      "recorder carries on with Wi-Fi off, on mobile data, anywhere. A reboot "
      "stops it, and the next few seconds of Wi-Fi bring it back by themselves "
-     "(see <a href=\"#get-started\">Get started</a>, step 3). Unplugging the "
-     "phone from a computer can stop it too (a charger does not); on Wi-Fi it "
-     "is back within seconds, by itself. With the screen off, step 3 matters "
+     "(see <a href=\"#get-started\">Get started</a>, step 3), once Android "
+     "gets round to starting JemRec: five minutes after the unlock on a Galaxy "
+     "S20 locked again at once. Unplugging the phone from a computer can stop "
+     "it too, or on a Galaxy S20 plugging it in (a charger does not); on Wi-Fi "
+     "it is back within seconds, by itself. With the screen off, step 3 matters "
      "here as well: without it, an Honor&rsquo;s battery manager kept the "
      "recorder down for about four minutes in two tests of three, and 8.5 "
      "minutes in another. Until then nothing is recorded &mdash; the header says "
@@ -3613,8 +3621,9 @@ HOW_BODY = f"""
      is the single operation that needs ADB. A scheduled job and a system-held
      Wi-Fi watcher rebuild it without you within seconds of the phone joining a
      network &mdash; when the phone lets the app start in the background at boot
-     to arm them. Where it does not, nothing is armed and nothing begins, which
-     is why the manual says to open the app once after a restart. Either way the
+     to arm them, and once Android gets to the app, which took five minutes on a
+     Galaxy S20 left locked. Where it does not, nothing is armed and nothing
+     begins, which is why the manual says to open the app once after a restart. Either way the
      app says plainly that it cannot record rather than looking healthy, and
      after two minutes a notification says it too.</p>
   <p>Unplugging the phone from a computer is the other. Measured on an Honor:
@@ -3627,7 +3636,9 @@ HOW_BODY = f"""
      that needs the app allowed to start by itself: left to the phone, an
      Honor froze it until it was woken &mdash; about four minutes, once 8.5
      &mdash; and JemRec says so the moment it may run again, with a button to
-     the setting. A charger stops nothing.</p>
+     the setting. On a Galaxy S20 it is plugging in that restarts the ADB
+     daemon, and the same watch has the recorder back 15 to 20 seconds later. A
+     charger stops nothing.</p>
   {timeline("unplug")}
   <p>Some phones also stop apps in the background to save power, and a stopped
      JemRec cannot start the recorder again once it goes. JemRec cannot change
