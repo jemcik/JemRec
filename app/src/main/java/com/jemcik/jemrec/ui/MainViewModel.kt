@@ -599,7 +599,9 @@ class MainViewModel @JvmOverloads constructor(
         // The Wi-Fi watch too, on every open: it is lost to a force-stop or an
         // app update, and opening the app is when the user most expects "back
         // on Wi-Fi means ready" to hold.
-        if (RecorderSwitch.isOn(getApplication())) RecorderLifecycle.arm(getApplication(), Trigger.SETUP_CHECK)
+        if (RecorderLifecycle.goes(getApplication(), Trigger.SETUP_CHECK)) {
+            RecorderLifecycle.arm(getApplication(), Trigger.SETUP_CHECK)
+        }
         // Keep the daemon's recording mode in step with the app's settings, even
         // when the daemon was already up (so revive did not run). Cheap, and it
         // is how the daemon learns automatic vs ask-first after a plain reopen.

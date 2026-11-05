@@ -58,7 +58,8 @@ object RecorderLifecycle {
         // Switched off with debugging, by choice: every revive stands down
         // here, or one of them would have debugging back on within seconds.
         // Not a failure either, so RecorderHealth is not told of one.
-        if (DebugSwitchesOff.stayingOff(context)) {
+        val admitted = admit(context, Trigger.REVIVE)
+        if (admitted !is Admit.Go) {
             ReviveLog.note(context, "revive: debugging is off with JemRec; nothing to do until it is on")
             return@withContext false
         }
@@ -67,7 +68,7 @@ object RecorderLifecycle {
         // Any, not only one that took the recorder: Developer options would
         // otherwise stay hidden, and Wireless debugging go off after this
         // revive, with JemRec on.
-        if (RecorderSwitch.isOn(context) && DebugSwitchesOff.switchedOff(context).isNotEmpty()) {
+        if (admitted.putBack) {
             ReviveLog.note(context, "revive: JemRec is on with debugging still recorded off; putting it back")
             DebugSwitchesOff.switchBackOn(context)
         }
@@ -158,9 +159,31 @@ object RecorderLifecycle {
     /** Arm what keeps the recorder alive, as [trigger] does (armedBy). */
     internal fun arm(context: Context, trigger: Trigger) = arm(context, armedBy(trigger))
 
-    /** A watch's revive left the recorder down: the hand-over to the
-     *  keep-alive and the Wi-Fi watch (afterFailedRevive). */
-    fun afterFailedRevive(context: Context) = arm(context, afterFailedRevive(NetworkRevive.onWifi(context)))
+    /** What [Trigger]s are admitted by, read now (Gates). */
+    internal fun gates(context: Context): Gates {
+        val off = DebugSwitchesOff.switchedOff(context)
+        return Gates(
+            setUp = isSetUp(context),
+            switchOn = RecorderSwitch.isOn(context),
+            recorded = off.isNotEmpty(),
+            recorderGone = off.takesTheRecorder(),
+        )
+    }
+
+    /** Whether [trigger] goes on, by what it finds now (admit). Standing
+     *  down, an off the recorder left undone is finished first, as each
+     *  stand-down always has (DebugSwitchesOff.finishOffLeftUndone). */
+    internal suspend fun admit(context: Context, trigger: Trigger): Admit =
+        admit(trigger, gates(context)).also { if (it == Admit.StandDown) DebugSwitchesOff.finishOffLeftUndone(context) }
+
+    /** Whether [trigger] goes on: for the triggers that never stand down,
+     *  outside a coroutine - boot, Wi-Fi coming back, the app's own. */
+    internal fun goes(context: Context, trigger: Trigger): Boolean = admit(trigger, gates(context)) is Admit.Go
+
+    /** What [trigger] does after its revive (followUp): what it arms is
+     *  armed here, the rest is the caller's. */
+    internal fun followUp(context: Context, trigger: Trigger, alive: Boolean, forWifi: Boolean = false): FollowUp =
+        followUp(trigger, alive, NetworkRevive.onWifi(context), forWifi).also { arm(context, it.arm) }
 
     private fun arm(context: Context, keepers: List<Keeper>) = keepers.forEach {
         when (it) {

@@ -95,3 +95,108 @@ internal fun armedBy(trigger: Trigger): List<Keeper> = when (trigger) {
  */
 internal fun afterFailedRevive(onWifi: Boolean): List<Keeper> =
     listOfNotNull(Keeper.WIFI_WATCH.takeUnless { onWifi }, Keeper.KICK)
+
+/**
+ * What a trigger finds when it comes, read anew each time from the
+ * preferences: the app sleeps between triggers, and nothing it held in
+ * memory is still true when the next one wakes it.
+ */
+internal data class Gates(
+    /** Setup finished, with an identity to revive with (RecorderLifecycle.isSetUp). */
+    val setUp: Boolean,
+    /** JemRec on (RecorderSwitch). */
+    val switchOn: Boolean,
+    /** The last Off switched something off that On has not put back
+     *  (DebugSwitchesOff.switchedOff). */
+    val recorded: Boolean,
+    /** ...and the recorder with it: USB debugging among them. */
+    val recorderGone: Boolean,
+)
+
+/** JemRec off with the recorder gone by choice: nothing may start it again
+ *  until On. With JemRec on, a record left is an On cut short instead. */
+internal fun standingDown(recorderGone: Boolean, switchOn: Boolean): Boolean = recorderGone && !switchOn
+
+/** What a trigger may do, by its [Gates] ([admit]). */
+internal sealed interface Admit {
+    /** Nothing: not set up, or JemRec off where the switch is asked. */
+    data object Skip : Admit
+
+    /** Standing down ([standingDown]): no revive, no arming; an off the
+     *  recorder left undone is finished (DebugSwitchesOff.finishOffLeftUndone). */
+    data object StandDown : Admit
+
+    /** On with it - having first put back what the last Off switched off,
+     *  where [putBack] says so. */
+    data class Go(val putBack: Boolean = false) : Admit
+}
+
+/**
+ * Whether [trigger] goes on, by [gates]. The rules differ, and each has its
+ * reason: boot and Wi-Fi coming back ask setup and not the switch - the
+ * recorder is kept for an On anywhere, with no Wi-Fi to start it then; the
+ * app's own (opening, the screen's check) ask the switch and not setup;
+ * the keep-alive and the USB watch ask setup, then whether JemRec is
+ * standing down; every revive asks that first, whoever asked for it, and
+ * with JemRec on puts back what an On cut short left switched off; a turn
+ * goes only if the switch still says what it was turned to; the cable's
+ * watch, woken with the token, always.
+ */
+internal fun admit(trigger: Trigger, gates: Gates): Admit {
+    val standingDown = standingDown(gates.recorderGone, gates.switchOn)
+    return when (trigger) {
+        Trigger.BOOT, Trigger.WIFI_BACK -> if (gates.setUp) Admit.Go() else Admit.Skip
+        Trigger.APP_OPEN, Trigger.SETUP_CHECK -> if (gates.switchOn) Admit.Go() else Admit.Skip
+        Trigger.KEEP_ALIVE, Trigger.USB_CHANGED -> when {
+            !gates.setUp -> Admit.Skip
+            standingDown -> Admit.StandDown
+            else -> Admit.Go()
+        }
+        Trigger.REVIVE -> when {
+            standingDown -> Admit.StandDown
+            else -> Admit.Go(putBack = gates.switchOn && gates.recorded)
+        }
+        Trigger.TURN_ON -> if (gates.switchOn) Admit.Go(putBack = gates.recorded) else Admit.Skip
+        Trigger.TURN_OFF -> if (!gates.switchOn) Admit.Go() else Admit.Skip
+        Trigger.CABLE, Trigger.SELF_TEST -> Admit.Go()
+    }
+}
+
+/** What a trigger does after its revive ([followUp]). */
+internal data class FollowUp(
+    /** What to arm, in order (RecorderLifecycle.arm). */
+    val arm: List<Keeper> = emptyList(),
+    /** Collect what the recorder still holds, then look for missed calls. */
+    val collect: Boolean = false,
+    /** Run again, with backoff. */
+    val retry: Boolean = false,
+)
+
+/**
+ * What [trigger] does once its revive has found the recorder [alive] or not,
+ * [onWifi] or not. The keep-alive arms the Wi-Fi watch off Wi-Fi whatever it
+ * found - off Wi-Fi is when the watch has something to wait for, and on
+ * Wi-Fi it fires at once and is dropped (NetworkRevive) - collects only from
+ * a recorder that is up, and tries again by [triesAgain]. The watches hand
+ * over only a recorder still down ([afterFailedRevive]) and never try again
+ * themselves. The rest do nothing after.
+ */
+internal fun followUp(trigger: Trigger, alive: Boolean, onWifi: Boolean, forWifi: Boolean = false): FollowUp =
+    when (trigger) {
+        Trigger.KEEP_ALIVE -> FollowUp(
+            arm = listOfNotNull(Keeper.WIFI_WATCH.takeUnless { onWifi }),
+            collect = alive,
+            retry = triesAgain(alive, forWifi, onWifi),
+        )
+        Trigger.USB_CHANGED, Trigger.CABLE -> FollowUp(arm = if (alive) emptyList() else afterFailedRevive(onWifi))
+        else -> FollowUp()
+    }
+
+/** Whether a keep-alive run that ended with the recorder down tries again
+ *  with backoff. A kick or the heartbeat does, Wi-Fi or not: the retry is
+ *  what brings the recorder back if nothing else does. The Wi-Fi run does
+ *  only while it is on Wi-Fi: off it, the watch is armed again and will
+ *  wake a new one, which a retry still waiting would be taken for, as the
+ *  kick's was (RecorderKeepAlive.kickForWifi). */
+internal fun triesAgain(alive: Boolean, forWifi: Boolean, onWifi: Boolean): Boolean =
+    !alive && (!forWifi || onWifi)

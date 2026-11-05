@@ -187,6 +187,6 @@ internal object CableWatch {
         // way this would have (see stoppedAdbd).
         Log.w(TAG, "cable: the recorder is not back yet; leaving it to the keep-alive")
         ReviveLog.note(context, "cable: not back after $ATTEMPTS attempts; keep-alive")
-        RecorderLifecycle.afterFailedRevive(context)
+        RecorderLifecycle.followUp(context, Trigger.CABLE, alive = false)
     }
 }

@@ -43,7 +43,7 @@ class BootReceiver : BroadcastReceiver() {
                 // daemon must be alive so recording can be turned on later
                 // without Wi-Fi. When the switch is off the daemon runs but
                 // captures nothing (CallMonitorService gates that).
-                if (!CaptureDaemon.isSetUp(context)) {
+                if (!RecorderLifecycle.goes(context, Trigger.BOOT)) {
                     Log.i(TAG, "boot: JemRec is not set up, nothing to revive")
                     return
                 }

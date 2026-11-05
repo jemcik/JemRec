@@ -9,9 +9,10 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.Admit
 import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.ReviveLog
+import com.jemcik.jemrec.recorder.Trigger
 import com.jemcik.jemrec.system.GlobalSettings
 import java.time.Duration
 
@@ -70,10 +71,10 @@ class UsbDebuggingWatch(
         // this run still holds the name: KEEP would see it and arm nothing, and
         // REPLACE would cancel this run.
         arm(applicationContext, ExistingWorkPolicy.APPEND_OR_REPLACE)
-        if (!CaptureDaemon.isSetUp(applicationContext)) return Result.success()
-        // JemRec switched USB debugging off itself, by the user's choice -
-        // and an off still pending sees here that the recorder finished it.
-        if (DebugSwitchesOff.stayingOff(applicationContext)) return Result.success()
+        // Not set up; or JemRec switched USB debugging off itself, by the
+        // user's choice - and an off still pending sees here that the
+        // recorder finished it.
+        if (RecorderLifecycle.admit(applicationContext, Trigger.USB_CHANGED) !is Admit.Go) return Result.success()
         Log.i(TAG, "usbwatch: USB debugging changed, checking the recorder")
         ReviveLog.note(applicationContext, "usbwatch: USB debugging changed")
         // The revive itself, not a kick of the keep-alive: a kick is KEEP, and
@@ -82,11 +83,10 @@ class UsbDebuggingWatch(
         // emulator, where USB debugging then stayed off past 90 s. revive()
         // takes the recorder's lifecycle lock, so it never runs alongside
         // another one, and it puts USB debugging back before anything else.
-        if (!CaptureDaemon.revive(applicationContext)) {
-            // Down and not startable now: the keep-alive owns the retrying,
-            // and off Wi-Fi the Wi-Fi watch the moment there is some.
-            RecorderLifecycle.afterFailedRevive(applicationContext)
-        }
+        val alive = CaptureDaemon.revive(applicationContext)
+        // Down and not startable now: the keep-alive owns the retrying, and
+        // off Wi-Fi the Wi-Fi watch the moment there is some.
+        RecorderLifecycle.followUp(applicationContext, Trigger.USB_CHANGED, alive)
         return Result.success()
     }
 

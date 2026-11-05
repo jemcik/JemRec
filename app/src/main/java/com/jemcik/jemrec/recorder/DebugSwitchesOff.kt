@@ -148,7 +148,7 @@ object DebugSwitchesOff {
      * finishes the On instead (CaptureDaemon.revive), as it does for any
      * record left under a JemRec that is on.
      */
-    fun standingDown(context: Context): Boolean = recorderGone(context) && !RecorderSwitch.isOn(context)
+    fun standingDown(context: Context): Boolean = standingDown(recorderGone(context), RecorderSwitch.isOn(context))
 
     /**
      * Whether turning off asks first, here and now (OffMode.asksFirst): the

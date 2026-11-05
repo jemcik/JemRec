@@ -116,11 +116,12 @@ object RecorderSwitch {
      * needs Wi-Fi.
      */
     suspend fun turn(context: Context, on: Boolean) = turning.withLock {
-        if (isOn(context) != on) return@withLock
+        val admitted = RecorderLifecycle.admit(context, if (on) Trigger.TURN_ON else Trigger.TURN_OFF)
+        if (admitted !is Admit.Go) return@withLock
         if (on) {
             // What the last off switched off, back first: the revive below
             // stands down while it is still off (DebugSwitchesOff).
-            DebugSwitchesOff.switchBackOn(context)
+            if (admitted.putBack) DebugSwitchesOff.switchBackOn(context)
             // The user's own On: not held to a routine revive's limits.
             CaptureDaemon.revive(context, request = CaptureDaemon.Request.USER)
             RecorderLifecycle.arm(context, Trigger.TURN_ON)
