@@ -1640,7 +1640,9 @@ opening the app, and the USB-debugging watch - goes through one function, and
 it stands down while the third choice is in force. It asks under the
 recorder's lock, and Off writes the switches under the same lock: a revive
 under way when Off comes finishes before Off writes, and one queued behind it
-stands down. Until 0.28 a revive asked before the lock and not again, and one
+stands down. Off and On ask the switch again once they have the lock, and a
+keep-alive or watch about to stand down asks again too: an Off taken back
+while it waited writes nothing. Until 0.28 a revive asked before the lock and not again, and one
 queued as Off came had USB debugging back on - reproduced in the unit tests,
 two revives queued and an Off between them. While JemRec is off with
 Developer options hidden, a revive (after a reboot, or a cable from a computer)
@@ -1650,8 +1652,8 @@ leaves its off unfinished; the next revive or keep-alive run that finds no
 recorder finishes it, once; one still up whose Off was cut short before it
 answered - the app killed while it asked - is asked again by the next look,
 and goes. USB debugging the user switches on themselves while JemRec is off
-stays on. Standing down, JemRec takes down the recorder-down alert too: a
-recorder down is no problem then. Start fresh puts Developer options back,
+stays on. Switched off, JemRec takes down the recorder-down alert at once,
+and again whenever it stands down: a recorder down is no problem then. Start fresh puts Developer options back,
 since setup sends the user there.
 
 Not measured: a banking app that refuses. Ours open with debugging on, so what

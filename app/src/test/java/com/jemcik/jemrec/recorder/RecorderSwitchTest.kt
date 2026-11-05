@@ -59,7 +59,12 @@ class RecorderSwitchTest {
         work = HeldWork(context)
     }
 
-    @After fun closeWorkManager() = work.close()
+    /** turnInBackground's turn runs in the process's scope: done before
+     *  the next test. */
+    @After fun closeWorkManager() {
+        runBlocking { RecorderSwitch.turnsDone() }
+        work.close()
+    }
 
     /**
      * What the tile is asked to look again for. TileService.requestListeningState

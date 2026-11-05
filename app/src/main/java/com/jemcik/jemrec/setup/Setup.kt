@@ -26,6 +26,7 @@ import com.jemcik.jemrec.system.DeviceSkin
 import com.jemcik.jemrec.system.GlobalSettings
 import com.jemcik.jemrec.system.ShellGrant
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 /**
@@ -742,7 +743,17 @@ object Setup {
      * Uninstalling remains the only true zero, and that is fine: it is one tap
      * away and it is what it is for.
      */
-    suspend fun reset(context: Context): Result<Unit> = runCatching {
+    suspend fun reset(context: Context): Result<Unit> = withContext(NonCancellable) { resetSteps(context) }
+
+    /**
+     * [reset]'s steps, all of them once begun: Start fresh runs from the
+     * screen, whose scope Back takes away, and it waits for the recorder's
+     * lock - behind a revive, for tens of seconds - after the pairing key is
+     * forgotten. Cut there, it left setup marked complete, Developer options
+     * hidden if JemRec hid them, and this process, whose ADB library keeps
+     * the forgotten key, alive to pair again in.
+     */
+    private suspend fun resetSteps(context: Context): Result<Unit> = runCatching {
         // Over loopback, NOT over ADB. There is usually no ADB session by
         // this point - there does not need to be one for the app to work - so
         // the old `pkill` route silently did nothing and left the daemon

@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.service.quicksettings.TileService
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.calls.MissedCalls
@@ -95,6 +96,12 @@ object RecorderSwitch {
         set(app, on)
         turnLater(app, on)
     }
+
+    /** Every turn begun or waiting when this is called, done: the lock is
+     *  fair, so this has it after them. For the tests, whose turns in the
+     *  process's scope would otherwise outlive them. */
+    @VisibleForTesting
+    internal suspend fun turnsDone() = turning.withLock {}
 
     /**
      * [turn], in the process's own scope, for a switch the caller has just

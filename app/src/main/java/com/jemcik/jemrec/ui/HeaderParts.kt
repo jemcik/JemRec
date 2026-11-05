@@ -165,7 +165,8 @@ internal fun SettingsGear(vm: MainViewModel, tint: Color) {
  * shape, and does what the switch did - turns recording on and off - and is
  * still a switch to a screen reader. Busy or not: the switch was disabled
  * while busy, and showed it; these looked the same and dropped the tap.
- * Now it flips at once and the recorder follows when free (setEnabled).
+ * Now it flips at once, and the recorder follows at once in the process's
+ * own scope, after any turn before it (setEnabled).
  *
  * Round in every look, so it is clipped round here: the press ripple fills
  * whatever it is clipped to, and Multitrack's button - no shadow, which is

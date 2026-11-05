@@ -50,9 +50,12 @@ class RecordControlBackTest {
         vm = MainViewModel(context, connectSession = { SettableFuture.create() })
     }
 
+    /** The turns too, which run in the process's scope and outlive the view
+     *  model: an On's revive and arming would reach into the next test. */
     @After fun closeAll() {
         vm.viewModelScope.cancel()
         until("the view model's work to stop", seconds = 5) { vm.viewModelScope.coroutineContext.job.isCompleted }
+        kotlinx.coroutines.runBlocking { RecorderSwitch.turnsDone() }
         work.close()
     }
 
