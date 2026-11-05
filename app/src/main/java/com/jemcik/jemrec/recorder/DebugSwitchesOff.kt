@@ -184,7 +184,7 @@ object DebugSwitchesOff {
         }.toSet()
         if (off.isEmpty()) return
         record(context, switchedOff(context) + off)
-        if (DebugSwitch.DEVELOPER_OPTIONS in off) GlobalSettings.set(context, GlobalSettings.DEVELOPMENT_SETTINGS_ENABLED, false)
+        if (DebugSwitch.DEVELOPER_OPTIONS in off) RecorderLifecycle.write(context, GlobalSettings.DEVELOPMENT_SETTINGS_ENABLED, false)
         if (off.takesTheRecorder()) {
             val reply = CaptureDaemon.debuggingOff(context, go = true)
             Log.i(TAG, "debugging off: the recorder says ${reply ?: "nothing"}")
@@ -210,8 +210,8 @@ object DebugSwitchesOff {
                     // recorder is gone the app writes them too, which changes
                     // nothing where they landed.
                     if (gone) {
-                        GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)
-                        GlobalSettings.set(context, GlobalSettings.ADB_ENABLED, false)
+                        RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+                        RecorderLifecycle.write(context, GlobalSettings.ADB_ENABLED, false)
                         notePending(context, false)
                     }
                 } else {
@@ -219,11 +219,11 @@ object DebugSwitchesOff {
                 }
             }
             if (reply == null) {
-                GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)
-                GlobalSettings.set(context, GlobalSettings.ADB_ENABLED, false)
+                RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+                RecorderLifecycle.write(context, GlobalSettings.ADB_ENABLED, false)
             }
         } else if (DebugSwitch.WIRELESS_DEBUGGING in off) {
-            GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+            RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
         }
     }
 
@@ -251,7 +251,7 @@ object DebugSwitchesOff {
         // The switches first, the record after: killed in between, the record
         // is still there to finish from (standingDown); cleared first, what
         // was switched off would be lost - Developer options hidden for good.
-        off.inOrderBackOn().forEach { GlobalSettings.set(context, it.setting, true) }
+        off.inOrderBackOn().forEach { RecorderLifecycle.write(context, it.setting, true) }
         record(context, emptySet())
         Prefs.of(context).edit { remove(KEY_OFF_PENDING) }
         ReviveLog.note(
@@ -301,8 +301,8 @@ object DebugSwitchesOff {
             GlobalSettings.Reading.ON -> Unit
         }
         if (CaptureDaemon.isRunningConfirmed(context)) return
-        GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)
-        GlobalSettings.set(context, GlobalSettings.ADB_ENABLED, false)
+        RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+        RecorderLifecycle.write(context, GlobalSettings.ADB_ENABLED, false)
         prefs.edit { remove(KEY_OFF_PENDING) }
         ReviveLog.note(context, "debugging off: finished what the recorder left undone")
     }
@@ -314,7 +314,7 @@ object DebugSwitchesOff {
      */
     fun forget(context: Context) {
         if (DebugSwitch.DEVELOPER_OPTIONS in switchedOff(context)) {
-            GlobalSettings.set(context, GlobalSettings.DEVELOPMENT_SETTINGS_ENABLED, true)
+            RecorderLifecycle.write(context, GlobalSettings.DEVELOPMENT_SETTINGS_ENABLED, true)
         }
         Prefs.of(context).edit {
             remove(KEY_MODE)
@@ -339,6 +339,6 @@ object DebugSwitchesOff {
         if (off.isEmpty() || off.takesTheRecorder()) return
         if (!GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED)) return
         record(context, off + DebugSwitch.WIRELESS_DEBUGGING)
-        GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+        RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
     }
 }

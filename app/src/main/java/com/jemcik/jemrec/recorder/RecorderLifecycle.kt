@@ -7,6 +7,7 @@ import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.UsbDebuggingWatch
 import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.system.GlobalSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -194,6 +195,22 @@ object RecorderLifecycle {
             Keeper.WIFI_WATCH -> NetworkRevive.arm(context)
         }
     }
+
+    /**
+     * Every write the app makes of the debugging switches - USB debugging,
+     * Wireless debugging, Developer options: a revive's (ReviveWorld), When
+     * JemRec is off's (DebugSwitchesOff), Start fresh's (Setup.reset). One
+     * place, so that what writes them, in what order and under which lock,
+     * is read here (SwitchWritersTest holds it). The recorder writes them
+     * too, as the shell: its shield, and Turn all debugging off (Main.java).
+     */
+    internal fun write(context: Context, setting: String, on: Boolean): Boolean = GlobalSettings.set(context, setting, on)
+
+    /** Setup's off-Wi-Fi shield, written over the session setup opened, as
+     *  the shell: the app's own WRITE_SECURE_SETTINGS is not live in this
+     *  process until it restarts after setup granted it (Setup.finish). */
+    internal suspend fun shieldOverAdb(): String =
+        AdbTransport.exec("settings put global adb_enabled 1 && echo shielded").getOrElse { "failed: ${it.message}" }
 
     /** Setup.finish() ran to the end at least once. Setup owns the flag. */
     internal fun setupComplete(context: Context): Boolean = Setup.isComplete(context)

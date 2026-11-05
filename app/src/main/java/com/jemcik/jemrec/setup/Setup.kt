@@ -19,6 +19,7 @@ import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.RecordingStore
 import com.jemcik.jemrec.recorder.BackgroundKill
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.system.AutoStart
@@ -670,8 +671,7 @@ object Setup {
         // "Re-assert", because the user now turns this on in step 2, before
         // pairing: on this phone the FIRST connect needs it too (see
         // usbDebuggingOn), so it could not wait until here. Idempotent.
-        val shield = AdbTransport.exec("settings put global adb_enabled 1 && echo shielded")
-            .getOrElse { "failed: ${it.message}" }
+        val shield = RecorderLifecycle.shieldOverAdb()
         Log.i(TAG, "setup: off-Wi-Fi shield -> $shield")
 
         CaptureDaemon.ensureRunning(context).getOrThrow()
@@ -780,7 +780,7 @@ object Setup {
         }
 
         if (hasSecureSettings(context) &&
-            GlobalSettings.set(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+            RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
         ) {
             Log.i(TAG, "reset: Wireless debugging turned off")
         }

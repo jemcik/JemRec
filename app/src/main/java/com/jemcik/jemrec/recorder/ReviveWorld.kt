@@ -82,7 +82,7 @@ internal interface ReviveWorld {
         override fun onWifi() = NetworkRevive.onWifi(context)
         override fun inCall() = DaemonLauncher.callInProgress(context)
         override fun read(setting: String) = GlobalSettings.read(context, setting)
-        override fun write(setting: String, on: Boolean) = GlobalSettings.set(context, setting, on)
+        override fun write(setting: String, on: Boolean) = RecorderLifecycle.write(context, setting, on)
         override fun adbd() = AdbdState.read()
         override fun cableStopped() = CableWatch.stoppedAdbd(context)
         override fun forgetCable() = CableWatch.forget(context)
