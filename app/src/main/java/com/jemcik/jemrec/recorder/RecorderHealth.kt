@@ -94,15 +94,7 @@ internal object RecorderHealth {
 
         val watching = CaptureDaemon.isSetUp(context) && RecorderSwitch.isOn(context)
         if (alive || !watching) {
-            if (prefs.contains(KEY_DOWN_SINCE) || prefs.contains(KEY_ALERTED)) {
-                if (alive) Log.i(TAG, "health: recorder is back")
-                prefs.edit {
-                    remove(KEY_DOWN_SINCE)
-                    remove(KEY_ALERTED)
-                    remove(KEY_CAUSE)
-                }
-                cancel(context)
-            }
+            forgetDown(context, back = alive)
             return@runCatching
         }
 
@@ -127,6 +119,29 @@ internal object RecorderHealth {
             prefs.edit { putString(KEY_ALERTED, problem.name) }
         }
     }.onFailure { Log.w(TAG, "health: could not judge the recorder", it) }
+
+    /**
+     * JemRec stands down: off with all debugging, the recorder gone by
+     * choice. No revive reaches onRevive then - each stands down first - so
+     * a recorder down from before the Off, and its alert, would stay until
+     * JemRec was on again; they go now, as they do at a revive while JemRec
+     * is off.
+     */
+    fun standingDown(context: Context) = runCatching { forgetDown(context, back = false) }
+        .onFailure { Log.w(TAG, "health: could not forget the recorder down", it) }
+
+    /** The recorder is up ([back]), or not watched: what was said of it down goes. */
+    private fun forgetDown(context: Context, back: Boolean) {
+        val prefs = Prefs.of(context)
+        if (!prefs.contains(KEY_DOWN_SINCE) && !prefs.contains(KEY_ALERTED)) return
+        if (back) Log.i(TAG, "health: recorder is back")
+        prefs.edit {
+            remove(KEY_DOWN_SINCE)
+            remove(KEY_ALERTED)
+            remove(KEY_CAUSE)
+        }
+        cancel(context)
+    }
 
     /**
      * Nothing advertised, and this Wi-Fi not allowed the reason: Android

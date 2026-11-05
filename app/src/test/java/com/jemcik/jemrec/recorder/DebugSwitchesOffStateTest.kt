@@ -15,6 +15,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -191,7 +192,7 @@ class DebugSwitchesOffStateTest {
         it in setOf("recorder_down_since", "recorder_down_alerted", "recorder_down_cause", "adb_refused_in_a_row")
     }
 
-    @Test fun aReviveWhileStayingOffStandsDownAndWritesNothing() = runBlocking {
+    @Test fun aReviveWhileStayingOffStandsDownWritesNothingAndTheAlertGoes() = runBlocking {
         aPhoneSetUpOffWifi()
         // The recorder had been down past the grace, its alert up, when the
         // user turned JemRec off with all debugging.
@@ -210,17 +211,17 @@ class DebugSwitchesOffStateTest {
         assertFalse(CaptureDaemon.revive(context))
 
         // Not one switch written - armShield would have put USB debugging
-        // back on - and the lock never taken: no "revive: start", no probe.
+        // back on - and nothing else under the lock: no "revive: start", no
+        // probe.
         assertEquals(emptyList<String>(), writes.seen())
         assertEquals(listOf(0, 0, 0), listOf(dev, wifi, usb).map(::get))
         assertEquals(listOf(stoodDown), TestPhone.reviveLog(context))
-        // Not a failure, so RecorderHealth is not told.
-        // Pins today's behaviour, which looks like a bug: the recorder-down
-        // alert and its cause, from before the Off, outlive it - only a
-        // revive's onRevive clears them, and every revive now stands down
-        // before it (to be fixed in its own commit)
-        assertEquals(before, health())
-        assertNotNull(alerts.getNotification(34))
+        // Not a failure; but a recorder down is no problem while JemRec
+        // stands down, so the alert and its cause, from before the Off, go.
+        // The refusals' count is a pairing's, and stays.
+        assertEquals(mapOf("adb_refused_in_a_row" to before["adb_refused_in_a_row"]), health())
+        assertNull(alerts.getNotification(34))
+        assertNull(RecorderHealth.cause(context))
         writes.close()
     }
 

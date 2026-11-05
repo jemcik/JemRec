@@ -74,8 +74,8 @@ object RecorderLifecycle {
         val alive = lifecycle.withLock {
             // Switched off with debugging, by choice: every revive stands down
             // here, or one of them would have debugging back on within
-            // seconds. Asked under the lock (see it). Not a failure either, so
-            // RecorderHealth is not told of one.
+            // seconds. Asked under the lock (see it). Not a failure either:
+            // RecorderHealth hears that JemRec stands down (standDown).
             val admitted = admitLocked(context, Trigger.REVIVE)
             if (admitted !is Admit.Go) {
                 ReviveLog.note(context, "revive: debugging is off with JemRec; nothing to do until it is on")
@@ -182,18 +182,25 @@ object RecorderLifecycle {
     }
 
     /** Whether [trigger] goes on, by what it finds now (admit). Standing
-     *  down, an off the recorder left undone is finished first, as each
-     *  stand-down always has (DebugSwitchesOff.finishOffLeftUndone) - under
-     *  the lock, as every write of the switches outside a revive is. */
+     *  down ([standDown]) under the lock, as every write of the switches
+     *  outside a revive is. */
     internal suspend fun admit(context: Context, trigger: Trigger): Admit {
         val admitted = admit(trigger, gates(context))
-        if (admitted == Admit.StandDown) lifecycle.withLock { DebugSwitchesOff.finishOffLeftUndone(context) }
+        if (admitted == Admit.StandDown) lifecycle.withLock { standDown(context) }
         return admitted
     }
 
     /** [admit], with the lock already held (a revive's). */
     private suspend fun admitLocked(context: Context, trigger: Trigger): Admit =
-        admit(trigger, gates(context)).also { if (it == Admit.StandDown) DebugSwitchesOff.finishOffLeftUndone(context) }
+        admit(trigger, gates(context)).also { if (it == Admit.StandDown) standDown(context) }
+
+    /** What standing down does, whoever stands down: an off the recorder left
+     *  undone finished, as each always has (DebugSwitchesOff.finishOffLeftUndone),
+     *  and a recorder down no longer said to be (RecorderHealth.standingDown). */
+    private suspend fun standDown(context: Context) {
+        DebugSwitchesOff.finishOffLeftUndone(context)
+        RecorderHealth.standingDown(context)
+    }
 
     /** Off: what When JemRec is off switches off with it
      *  (DebugSwitchesOff.switchOff), under the lock. */
