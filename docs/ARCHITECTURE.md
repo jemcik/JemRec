@@ -232,11 +232,11 @@ Measured on the Honor (MagicOS 11, Android 17), 2026-10-28, off the cable:
 **When the port is opened and closed.** Changing it restarts `adbd`, and the
 recorder with it, so it is changed only where the recorder can be started
 again at once: on Wi-Fi, never in a call, and only while the switch still asks
-for it, both asked again once the revive has connected, up to half a minute on
-- and not while *When JemRec is off* has debugging switched off, which a revive
-would have to switch Wireless debugging on for; the change waits for On. After
-a reboot the first start opens
-it before starting the recorder, so nothing restarts twice. Switched on while
+for it, both asked again once the revive has connected, up to half a minute
+on - and not while *When JemRec is off* has debugging switched off, which a
+revive would have to switch Wireless debugging on for; the change waits for
+On. After a reboot the first start opens it before starting the recorder, so
+nothing restarts twice. Switched on while
 the recorder runs, the next revive - the switch's own, at once on Wi-Fi -
 opens it and restarts the recorder; switched off, the next revive on Wi-Fi
 closes it (`usb:`), but only a port JemRec opened this boot: one a computer
@@ -1190,8 +1190,8 @@ worked out from the file itself, decoded by Android's own decoder - the one
 the silence check after each call already uses - so there is no library, no
 native code, and nothing new for the reproducible build to match. It is
 worked out as a call is saved, an older recording's while the list is on
-screen (one at a time, stopping with the screen), or one played before then
-- with a plain slider until it is there - and kept in the app's cache: 800
+screen (one at a time, stopping with the screen), or one played before
+then - with a plain slider until it is there - and kept in the app's cache: 800
 levels, a byte each, under a hash of the file name, which can hold a
 caller's, until the recording is deleted. A recording still being written is
 left until it is finished, and one decode runs at a time a recording. Android's `Visualizer`, which draws whatever is playing, was not an
@@ -1299,8 +1299,8 @@ deleted, the dialogs and sheets - not only for the look's own pieces: until
 Recordings and Calls keys with them (the user found it, 2026-10-23).
 
 Multitrack gives each caller a colour of their own, and keeps it. By the
-name's hash alone, two callers shared one of its six colours one time in six
-- on the Honor the user's two most frequent callers were both blue. Now a
+name's hash alone, two callers shared one of its six colours one time in
+six - on the Honor the user's two most frequent callers were both blue. Now a
 caller seen for the first time gets the colour fewest of the callers in the
 lists have (most frequent first, when many are new at once), so the first six
 are six colours, and the colour stays theirs. What is kept is a one-way key -

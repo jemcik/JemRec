@@ -60,7 +60,6 @@ object CaptureDaemon {
     internal fun inCall(mode: Int): Boolean = DaemonLauncher.inCall(mode)
     internal fun callInProgress(context: Context): Boolean = DaemonLauncher.callInProgress(context)
     suspend fun readLog(): String = DaemonLauncher.readLog()
-    suspend fun stop(): String = DaemonLauncher.stop()
 
     // The lock and what takes it (RecorderLifecycle).
     suspend fun revive(
@@ -132,7 +131,6 @@ object CaptureDaemon {
     suspend fun connect(context: Context, timeoutMs: Int = 3_000): Socket = DaemonClient.connect(context, timeoutMs)
     suspend fun fetch(context: Context, name: String, timeoutMs: Int = 3_000): Socket =
         DaemonClient.fetch(context, name, timeoutMs)
-    suspend fun listPending(context: Context): List<String> = DaemonClient.listPending(context)
     suspend fun listPendingOrNull(context: Context): List<String>? = DaemonClient.listPendingOrNull(context)
     suspend fun deleteRecording(context: Context, name: String): Boolean = DaemonClient.deleteRecording(context, name)
     suspend fun startOnDemand(context: Context): String? = DaemonClient.startOnDemand(context)

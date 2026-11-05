@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1385 JVM tests, no device needed - 1189 for the app and 196 for the daemon:
+1386 JVM tests, no device needed - 1190 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -172,9 +172,10 @@ snapshot at every start and throws away whatever happened since it was taken:
 the 17 AVD showed JemRec 0.9 for eight days that way, until 2026-10-28 (every
 run installed the current build first, so the results were for it).
 
+Any crash of the app during a check fails that check, whatever else it found.
+
 It installs the shrunk build (see above), sets JemRec up from nothing and
-places simulated calls, and any crash of the app during a check fails that
-check, whatever else it found: the ringing cut, the same cut with nothing captured
+places simulated calls: the ringing cut, the same cut with nothing captured
 until the answer (as over Wi-Fi Calling on a Pixel, issue #40: the recorder
 is stopped while the call rings), an unanswered call not kept, an incoming
 call kept to the second, a stranger skipped before recording, two calls in

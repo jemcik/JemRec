@@ -18,10 +18,10 @@ import org.robolectric.shadows.ShadowService
 
 /**
  * The call service told to stop by a plain start, as the app tells it
- * (CallMonitorService.stop), with Android refusing it the foreground: it does
- * so for about a minute after an app leaves the screen, from Android 12. The
- * refusal is an exception on the main thread; the emulator check off_just_left
- * shows it on the real thing.
+ * (CallMonitorService.stop), with Android refusing it the foreground. The
+ * refusal is an exception on the main thread: on the Android 12, 13, 16 and 17
+ * AVDs, 2026-11-05, with the app 20 s off the screen, where 2 s off it was
+ * allowed. The emulator check off_just_left has it on the real thing.
  */
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)

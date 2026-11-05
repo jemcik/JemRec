@@ -572,8 +572,8 @@ Android 17.
 
 ## After a restart
 
-A reboot kills the recorder, and building it again takes a few seconds of Wi-
-Fi. Until that has happened, calls are not recorded and the header says so —
+A reboot kills the recorder, and building it again takes a few seconds of
+Wi-Fi. Until that has happened, calls are not recorded and the header says so —
 and if it lasts more than two minutes, a notification does too. Whether it
 happens without you comes down to one setting on your phone.
 
@@ -621,12 +621,12 @@ is up, calls are recorded with Wi-Fi off, on mobile data, anywhere.
 On some phones, pulling the cable out of a computer stops the recorder:
 measured on an Honor, three seconds after the cable came out. A charger does
 not. On a Galaxy S20 it is the other way round: plugging into a computer stops
-it, pulling the cable out does not. JemRec starts it again by itself - on Wi-
-Fi, within seconds; off Wi-Fi, at the next Wi-Fi, as after a restart. Nothing
-to open - but with the screen off, which is how a cable usually comes out, only
-if JemRec may start automatically (the setting just above): measured on that
-Honor, 13 seconds with it; without it, the phone's battery manager froze JemRec
-until the phone was woken or charged, about four minutes.
+it, pulling the cable out does not. JemRec starts it again by itself - on
+Wi-Fi, within seconds; off Wi-Fi, at the next Wi-Fi, as after a restart.
+Nothing to open - but with the screen off, which is how a cable usually comes
+out, only if JemRec may start automatically (the setting just above): measured
+on that Honor, 13 seconds with it; without it, the phone's battery manager
+froze JemRec until the phone was woken or charged, about four minutes.
 
 ## Stopped in the background
 

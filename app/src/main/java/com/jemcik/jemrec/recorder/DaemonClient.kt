@@ -618,12 +618,9 @@ object DaemonClient {
     /**
      * Every recording still sitting on the daemon, one name per line. The app
      * asks for this on startup to collect anything a crash or a reboot left
-     * behind between hang-up and the fetch.
+     * behind between hang-up and the fetch. Null when the daemon could not be
+     * asked, which the missed-call check must not mistake for nothing pending.
      */
-    suspend fun listPending(context: Context): List<String> = listPendingOrNull(context) ?: emptyList()
-
-    /** The same, but null when the daemon could not be asked - which the
-     *  missed-call check must not mistake for "nothing pending". */
     suspend fun listPendingOrNull(context: Context): List<String>? = withContext(Dispatchers.IO) {
         runCatching {
             open(context, COMMAND_LIST).use { socket ->

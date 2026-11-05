@@ -963,6 +963,8 @@ class MainViewModel @JvmOverloads constructor(
                 val began = AtomicBoolean(false)
                 try {
                     CaptureDaemon.revive(app, onPortChange = { if (began.compareAndSet(false, true)) starts.begin() })
+                } catch (e: CancellationException) {
+                    throw e // the screen gone: not a failure to report
                 } catch (t: Throwable) {
                     Log.w("JemRec", "the port change's revive failed", t)
                 } finally {

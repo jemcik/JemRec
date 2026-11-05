@@ -384,9 +384,10 @@ def set_up(apk):
     # cut short leaves its picked folder set.
     set_prefs(recordings_tree_uri=None)
     # On through the switch too, not the preference above alone: the switch
-    # notes what the save reads (CoverageHistory), and a run cut short with
-    # JemRec off left that note saying off, so that every recording of the next
-    # run was discarded as switched off (the Android 12 and 16 AVDs, 2026-11-05).
+    # notes what the save reads (CoverageHistory). On the Android 12 and 16
+    # AVDs, 2026-11-05, 17 and 18 recordings in a run were discarded as switched
+    # off, and none after this line. Inferred, the note not read at the time: a
+    # run cut short with JemRec off had left it saying off.
     diag("switch", "--ez", "on", "true")
     start_recorder()
 
@@ -1995,7 +1996,7 @@ def allow_this_wifi():
         # an answer later than that is the next revive's. On the Android 13 AVD,
         # 2026-11-05, this check's own Allow took 33 s, the system starting a
         # dozen apps at the time, and the recorder was back 11 s after it.
-        if answered_in > 20:
+        if answered_in > 23:
             return f"asked on a Wi-Fi not allowed; Allow took {answered_in:.0f} s, past the tap's revive, and the next had the recorder back"
 
         # That revive's own end: the first end line after its CYCLE. Revives
@@ -2275,21 +2276,19 @@ def off_just_left():
     screen). 2 s off the screen it was allowed, and so was a tap on the tile
     20 s off, on 12 and 17. An Off that waited behind a revive, the app closed
     from Recents meanwhile, has neither: read from the code, not run."""
-    def on_screen():
+    def in_front():
         return PKG in sh("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity:'")
 
     sh(f"am start -n {PKG}/.MainActivity")
-    wait_for(on_screen, 15, "JemRec on the screen")
+    wait_for(in_front, 15, "JemRec on the screen")
     sh("input keyevent KEYCODE_HOME")
-    wait_for(lambda: not on_screen(), 15, "JemRec off the screen")
+    wait_for(lambda: not in_front(), 15, "JemRec off the screen")
     time.sleep(20)
     process = sh(f"pidof {PKG}").strip()
     assert process, "no process to watch"
     try:
         diag("switch", "--ez", "on", "false")
         time.sleep(3)
-        crash = adb("logcat", "-d", "-b", "crash", "-t", "20")
-        assert "ForegroundServiceStartNotAllowedException" not in crash, "refused the foreground, and the process went"
         assert sh(f"pidof {PKG}").strip() == process, "the process went"
     finally:
         diag("switch", "--ez", "on", "true")
@@ -2338,16 +2337,19 @@ def nothing_pending():
 def what_happened():
     """The call lines from the daemon and the app, for a check that failed."""
     keep = re.compile(r"callwatch|recording:|rules leave|calltrack|save:|reconcile|never answered|answer:")
-    lines = [l for l in log().splitlines() if keep.search(l)]
+    try:
+        lines = [l for l in log().splitlines() if keep.search(l)]
+    except subprocess.TimeoutExpired:  # adb hung: the check is still reported, and the next still run
+        return "       (no log: adb did not answer)"
     return "\n".join("       " + l[6:170] for l in lines[-25:])
 
 
 def app_crashes():
     """How many crashes of the app Android's DropBox holds, or None with no
     adb to ask over. A check reads what it is after, so a crash beside that
-    passes it: the app died in full runs that reported 34 of 34 on 2026-11-05,
-    and only a read of the logcat found it. DropBox and not the log's crash
-    buffer, which every `logcat -c` here clears."""
+    passes it: the app died in a full run on the Android 12 AVD that reported
+    34 of 34, 2026-11-05, and only a read of the logcat found it. DropBox and
+    not the log's crash buffer, which every `logcat -c` here clears."""
     try:
         said = adb("shell", f"dumpsys dropbox --print data_app_crash | grep -c 'Process: {PKG}'", timeout=30).strip()
     except subprocess.TimeoutExpired:
@@ -2380,7 +2382,8 @@ def where_things_stood():
         "standby bucket": read(f"am get-standby-bucket {PKG}"),
     }
     jobs = read(f"dumpsys jobscheduler | awk '/^ *JOB /{{on=index($0,\"{PKG}\")>0}} on' | "
-                "grep -E 'JOB |[Cc]onstraints|Backoff|Minimum latency|Earliest|Ready|Pending' | head -60")
+                "grep -E 'JOB |[Cc]onstraints|Backoff|Minimum latency|Earliest|Ready|Pending' | "
+                "grep -v 'Num Required Constraints' | head -60")
     revive = read(f"su 0 tail -n 30 {APP_DIR}/files/revive.log")
     lines = [f"{k}: {v[:600]}" for k, v in state.items()] + jobs.splitlines() + revive.splitlines()
     return "\n".join("       " + l[:170] for l in lines)
@@ -2443,9 +2446,9 @@ def main():
         start_recorder()
     failed = 0
     for check in checks:
-        nothing_pending()
-        crashes = app_crashes()
         try:
+            nothing_pending()
+            crashes = app_crashes()
             result = check()
             after = app_crashes()
             assert crashes is None or after is None or after <= crashes, f"the app crashed during it: {result}"
@@ -2453,8 +2456,14 @@ def main():
         except Exception as e:  # report every check, whatever one does
             failed += 1
             print(f"FAIL {check.__name__:11} {e}" + ("" if "\n" in str(e) else f"\n{what_happened()}"))
+            # After its cleanup: a check that prints it as it fails prints it
+            # above this, and a snapshot's load has taken the phone back.
+            print("       -- now, the check's cleanup done:")
             print(where_things_stood())
-    set_prefs(rules_other_numbers=True)
+    try:
+        set_prefs(rules_other_numbers=True)
+    except (TimeoutError, subprocess.TimeoutExpired) as e:  # after every check has reported: not in place of the count
+        print(f"     (the rules could not be put back: {e})")
     print(f"API {sdk}: {len(checks) - failed} of {len(checks)} passed")
     sys.exit(1 if failed else 0)
 
