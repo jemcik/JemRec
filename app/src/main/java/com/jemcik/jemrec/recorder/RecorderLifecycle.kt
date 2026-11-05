@@ -15,7 +15,11 @@ import kotlinx.coroutines.withContext
 
 /**
  * The recorder's lock, and what takes it: a revive, a start, Start fresh's
- * close of the port. Whether this phone is set up for a recorder at all.
+ * close of the port, and every write of the debugging switches outside a
+ * revive - Off, On's putting back, a stand-down, Start fresh's. Whether a
+ * trigger goes on (admit), what it arms (arm) and what follows its revive
+ * (followUp), by the tables in Triggers.kt. The one writer of the switches
+ * (write). Whether this phone is set up for a recorder at all.
  */
 object RecorderLifecycle {
 

@@ -128,7 +128,9 @@ class RecorderKeepAlive(
 
         /** The steady heartbeat, and the watch on USB debugging that cuts it
          *  short when the phone switches that off (see UsbDebuggingWatch).
-         *  Idempotent - safe to call on every app open. */
+         *  Idempotent. The app arms these two through the trigger table
+         *  (RecorderLifecycle.arm), which calls the same two in this order;
+         *  this is the tests' way to arm them, as boot and the app did. */
         fun schedule(context: Context) {
             UsbDebuggingWatch.arm(context)
             heartbeat(context)
