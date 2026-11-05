@@ -995,9 +995,11 @@ class MainViewModel @JvmOverloads constructor(
         // Saved at once, outside the action below, which waits its turn.
         RecorderSwitch.set(getApplication(), on)
         // The recorder follows in the process's own scope, as for the Quick
-        // Settings tile (RecorderSwitch.turn), not in this screen's: Back
-        // takes this screen's scope away, and an Off waiting there for the
-        // screen to be free was lost with it, debugging never switched off.
+        // Settings tile (RecorderSwitch.turn), not in this screen's: closing
+        // JemRec from Recents ends this screen's scope with the process
+        // alive - Back does not, since Android 12 - and an Off waiting there
+        // for the screen to be free was lost with it, debugging never
+        // switched off.
         // Turns queue there, each dropped if the switch has moved on - a
         // quick on and off ends off.
         val turned = RecorderSwitch.turnLater(getApplication(), on)

@@ -745,12 +745,12 @@ object Setup {
 
     /**
      * [reset]'s steps, all of them once begun: Start fresh runs from the
-     * screen, whose scope Back takes away, and it waits for the recorder's
-     * lock - behind a revive, for tens of seconds - after the pairing key is
-     * forgotten. Cut there, it left setup marked complete and Developer
-     * options hidden if JemRec hid them (StartFreshTest), and - read from the
-     * code - this process, whose ADB library keeps the forgotten key, alive to
-     * pair again in.
+     * screen, whose scope ends when JemRec is closed from Recents, and it
+     * waits for the recorder's lock - behind a revive, for tens of seconds -
+     * after the pairing key is forgotten. Cut there, it left setup marked
+     * complete and Developer options hidden if JemRec hid them
+     * (StartFreshTest), and - read from the code - this process, whose ADB
+     * library keeps the forgotten key, alive to pair again in.
      */
     private suspend fun resetSteps(context: Context): Result<Unit> = runCatching {
         // The recorder quit, its service stopped, Start without Wi-Fi's port

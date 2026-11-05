@@ -106,8 +106,10 @@ object RecorderSwitch {
     /**
      * [turn], in the process's own scope, for a switch the caller has just
      * saved: the tile's (turnInBackground) and the app's record control,
-     * whose screen Back takes away - an Off lost with it never switched
-     * debugging off. Its job, for a caller still there to wait for it.
+     * whose screen goes when JemRec is closed from Recents - an Off lost
+     * with it never switched debugging off. (Back only moves it to the
+     * background, since Android 12.) Its job, for a caller still there to
+     * wait for it.
      */
     fun turnLater(context: Context, on: Boolean): Job {
         val app = context.applicationContext

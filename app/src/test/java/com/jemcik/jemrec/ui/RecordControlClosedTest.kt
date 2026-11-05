@@ -25,15 +25,17 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 
 /**
- * The record control's Off and On, flipped while the screen is busy and
- * then left with Back - the activity finishing, and with it the view
- * model's scope (MainViewModel.setEnabled). The switch is saved at once;
- * what it switches has to follow even so, as the tile's does.
+ * The record control's Off and On, flipped while the screen is busy, and
+ * JemRec then closed from Recents: the activity destroyed, and with it the
+ * view model's scope, the process alive - as on the Honor, 2026-11-04. Back
+ * does not do this: since Android 12 it moves the task to the background. The
+ * switch is saved at once; what it switches has to follow even so, as the
+ * tile's does (MainViewModel.setEnabled).
  */
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)
 @Config(sdk = [36])
-class RecordControlBackTest {
+class RecordControlClosedTest {
 
     private val context = RuntimeEnvironment.getApplication()
     private lateinit var work: HeldWork
@@ -81,13 +83,13 @@ class RecordControlBackTest {
         until("its revive past its gate") { "revive: start" in TestPhone.reviveLog(context) }
     }
 
-    @Test fun anOffFlippedWhileBusyStillSwitchesDebuggingOffAfterBack() {
+    @Test fun anOffFlippedWhileBusyStillSwitchesDebuggingOffOnceClosed() {
         DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
         busy()
         vm.setEnabled(false)
         assertFalse(RecorderSwitch.isOn(context))
 
-        // Back.
+        // Closed from Recents.
         vm.viewModelScope.cancel()
 
         // The Off follows all the same: all debugging off, and recorded.
@@ -95,7 +97,7 @@ class RecordControlBackTest {
         assertEquals(DebugSwitch.entries.toSet(), DebugSwitchesOff.switchedOff(context))
     }
 
-    @Test fun anOnFlippedWhileBusyStillPutsDebuggingBackAfterBack() = kotlinx.coroutines.runBlocking {
+    @Test fun anOnFlippedWhileBusyStillPutsDebuggingBackOnceClosed() = kotlinx.coroutines.runBlocking {
         DebugSwitchesOff.setMode(context, OffMode.HIDE_DEVELOPER_OPTIONS)
         RecorderSwitch.set(context, false)
         DebugSwitchesOff.switchOff(context)

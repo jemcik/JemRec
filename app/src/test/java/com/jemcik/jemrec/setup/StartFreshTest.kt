@@ -27,7 +27,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Start fresh (Setup.reset) beside a revive. It runs from the screen, whose
- * scope Back takes away, and waits for the recorder's lock behind a revive:
+ * scope ends when JemRec is closed from Recents, and waits for the recorder's
+ * lock behind a revive:
  * once begun, it has to finish - half a reset leaves a forgotten pairing
  * under a setup still marked complete. And it ends the recorder under that
  * lock, so a revive under way cannot start one after it.
@@ -56,7 +57,8 @@ class StartFreshTest {
         // there (about 2.4 s)...
         val revive = async(Dispatchers.IO) { CaptureDaemon.revive(context) }
         withTimeout(5_000) { while ("revive: start" !in TestPhone.reviveLog(context)) delay(20) }
-        // ...when Start fresh begins, and waits for it; then Back.
+        // ...when Start fresh begins, and waits for it; then JemRec is closed
+        // from Recents.
         val reset = launch(Dispatchers.IO) { Setup.reset(context) }
         delay(500)
         reset.cancel()

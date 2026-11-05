@@ -51,11 +51,15 @@ object Revive {
      * noted as JemRec's; an old recorder retired, then the new one started;
      * Wireless debugging on to start it, then off again where JemRec is off
      * with Developer options hidden. A revive cancelled in between - a
-     * worker WorkManager stops, a screen left - left the first half alone:
-     * Wireless debugging off, a port open that JemRec would never close, no
-     * recorder, Wireless debugging on for good. The first half left alone is
-     * shown on a stand-in phone (ReviveCancelTest); what each then left is
-     * read from the code.
+     * worker WorkManager stops, a screen closed from Recents - left the
+     * first half alone: Wireless debugging off, a port open that JemRec would
+     * never close, no recorder, Wireless debugging on for good. The first
+     * half left alone is shown on a stand-in phone (ReviveCancelTest); what
+     * each then left is read from the code. Measured the other way on the
+     * Honor, 2026-11-04: Start without Wi-Fi switched off and JemRec closed
+     * from Recents, the screen gone 6 s into the revive, after adbd's restart
+     * had taken the recorder, and the revive ran on: recorder back 3.7 s
+     * later.
      */
     internal suspend fun reviveLocked(
         w: ReviveWorld,

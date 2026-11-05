@@ -441,9 +441,14 @@ debugging switches. A revive that has the lock runs to its end, as Start
 fresh does: its changes come in pairs - Wireless debugging off and on, adbd
 on the port and the port noted as JemRec's, an old recorder retired and the
 new one started, Wireless debugging on and off again - and one cut between
-the two, by a worker stopped or a screen left, left the first half alone
-(shown in the unit tests on a stand-in phone; what that left behind is read
-from the code).
+the two, by a worker stopped or a screen closed from Recents, left the first
+half alone (shown in the unit tests on a stand-in phone; what that left behind
+is read from the code). Closing from Recents is what ends the screen: Back
+only moves it to the background, since Android 12. Measured on the Honor,
+2026-11-04: Start without Wi-Fi switched off and JemRec closed from Recents
+6 seconds into the revive, with adbd's restart having taken the recorder: the
+screen went, the process stayed, the revive ran on, and the recorder was back
+3.7 seconds later.
 Start fresh ends the recorder under the same lock, from asking it to quit to
 forgetting the pairing key: a revive under way finishes first, and one queued
 behind finds no key and starts nothing. Asked to quit before the lock, a

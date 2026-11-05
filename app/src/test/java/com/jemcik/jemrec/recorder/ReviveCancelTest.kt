@@ -15,9 +15,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * A revive cancelled half way - a worker WorkManager stops, a screen left -
- * on a FakePhone: each of its changes whose second half comes later gets
- * that second half all the same, for the revive runs to its end
+ * A revive cancelled half way - a worker WorkManager stops, a screen closed
+ * from Recents - on a FakePhone: each of its changes whose second half comes
+ * later gets that second half all the same, for the revive runs to its end
  * (Revive.reviveLocked).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
