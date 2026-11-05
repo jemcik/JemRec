@@ -1,0 +1,173 @@
+package com.jemcik.jemrec.recorder
+
+import android.content.Context
+import android.util.Log
+import com.jemcik.jemrec.adb.AdbIdentity
+import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.setup.Setup
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+/**
+ * The recorder's lock, and what takes it: a revive, a start, Start fresh's
+ * close of the port. Whether this phone is set up for a recorder at all.
+ */
+object RecorderLifecycle {
+
+    private const val TAG = "JemRec"
+
+    /**
+     * revive() and ensureRunning() take this, so two callers arriving together
+     * - the keep-alive job and a Wi-Fi return, a resume and the switch - cannot
+     * both conclude the daemon is down and both spawn one. The second spawn
+     * used to die on EADDRINUSE and, worse, truncate the first one's log.
+     */
+    private val lifecycle = Mutex()
+
+    /**
+     * Bring the daemon back if it is down and can be reached.
+     *
+     * This was the DaemonWatchdog's repair(), moved here unchanged when the
+     * permanent monitor service went away. A dormant app has no service running
+     * a poll loop, so reviving the daemon is now the job of a scheduled worker
+     * and of boot - both of which call this, so the logic lives with the rest
+     * of the daemon's lifecycle rather than in a service that no longer exists.
+     *
+     * Returns true if the daemon is running when this returns, false if it
+     * could not be reached - almost always no Wi-Fi, since restarting it needs
+     * an ADB session and an ADB session needs Wi-Fi, or Start without Wi-Fi's
+     * port.
+     *
+     * [onPortChange] is told when a change of Start without Wi-Fi's port
+     * begins - the restart of adbd, and of the recorder with it: the
+     * switch's own revive says Starting from then, and not for one that ends
+     * up changing nothing (MainViewModel.setStartWithoutWifi).
+     *
+     * [request] says who asked, which decides how far it goes to start adbd
+     * (wirelessDebuggingStep).
+     */
+    suspend fun revive(
+        context: Context,
+        onPortChange: (() -> Unit)? = null,
+        request: Revive.Request = Revive.Request.ROUTINE,
+    ): Boolean = withContext(Dispatchers.IO) {
+        // Switched off with debugging, by choice: every revive stands down
+        // here, or one of them would have debugging back on within seconds.
+        // Not a failure either, so RecorderHealth is not told of one.
+        if (DebugSwitchesOff.stayingOff(context)) {
+            ReviveLog.note(context, "revive: debugging is off with JemRec; nothing to do until it is on")
+            return@withContext false
+        }
+        // With JemRec on, any record is an On cut short - the switch saved,
+        // the process gone before the switches came back - finished here.
+        // Any, not only one that took the recorder: Developer options would
+        // otherwise stay hidden, and Wireless debugging go off after this
+        // revive, with JemRec on.
+        if (RecorderSwitch.isOn(context) && DebugSwitchesOff.switchedOff(context).isNotEmpty()) {
+            ReviveLog.note(context, "revive: JemRec is on with debugging still recorded off; putting it back")
+            DebugSwitchesOff.switchBackOn(context)
+        }
+        // What this revive's own connect found, kept as it connects, under
+        // the lock: AdbTransport.lastConnect is any connect's. Read after the
+        // lock, it was the next revive's, which reset it on its way in - on
+        // the Android 13 and 16 AVDs, 2026-10-29, a keep-alive queued behind
+        // Allow this Wi-Fi's revive had it log "recorder up (connect NONE)".
+        val found = Revive.Found()
+        val alive = lifecycle.withLock {
+            AdbTransport.forgetLastConnect()
+            ReviveLog.note(context, "revive: start")
+            Revive.reviveLocked(context, onPortChange, request, found)
+        }
+        ReviveLog.note(context, "revive: ${if (alive) "recorder up" else "recorder down"} (connect ${found.connect})")
+        // Every revive is a reading of whether the recorder is up, and the
+        // one place the user hears about it when it is not. See RecorderHealth.
+        RecorderHealth.onRevive(context, alive, found.connect)
+        if (alive) {
+            CableWatch.forget(context)
+            NetworkRevive.forgetSwitchedOn(context)
+        }
+        alive
+    }
+
+    /**
+     * The header's Allow this Wi-Fi, and the alert's: put Android's "Allow
+     * wireless debugging on this network?" back on screen, for a Wi-Fi it
+     * has not allowed (see RecorderHealth), and start the recorder once
+     * adbd is advertised.
+     *
+     * SystemUI asks when Wireless debugging is switched ON on such a network,
+     * not while it stays on, so the revive switches it off and on whatever
+     * else it finds (Request.ALLOW_WIFI). Measured on the Android 17 QPR2
+     * emulator: the question appeared within a second of the second write,
+     * and after Always allow and Allow, adbd advertised and the recorder came
+     * back. It revives itself rather than leaving that to the screen's
+     * re-check when the question closes: where no question comes - a Wi-Fi
+     * allowed already, adbd merely not running - nothing closes. On the
+     * Honor, 2026-10-28, the tap started adbd two seconds after it and the
+     * recorder waited a minute, for the keep-alive. Under the revive's lock,
+     * so it waits for a start under way instead of cutting it off: the third
+     * of three taps that evening switched Wireless debugging off two seconds
+     * into a keep-alive's start, which then failed.
+     *
+     * False without WRITE_SECURE_SETTINGS, which leaves the user to do it by
+     * hand in Settings: nothing can be switched then. Asked of the permission,
+     * not tried with a write, which would race the switch's other writers -
+     * a keep-alive's off and on among them. The permission and the writes go
+     * live together (Setup.hasSecureSettings: not until the process restarts
+     * after setup granted it).
+     */
+    suspend fun askToAllowNetwork(context: Context): Boolean {
+        Log.i(TAG, "daemon: asking Android to allow Wireless debugging on this Wi-Fi")
+        if (!Setup.hasSecureSettings(context)) return false
+        revive(context, request = Revive.Request.ALLOW_WIFI)
+        return true
+    }
+
+    /**
+     * Make sure the daemon is running, starting it over ADB if not.
+     *
+     * This is the one operation in the whole app that needs a working ADB
+     * session, so it is also the one that needs Wi-Fi. Call it at setup and
+     * after a reboot - not when a call starts, by which time it may be too late.
+     */
+    suspend fun ensureRunning(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
+        lifecycle.withLock { DaemonLauncher.ensureRunningLocked(context) }
+    }
+
+    /**
+     * Start fresh: Start without Wi-Fi's port closed, if JemRec opened it,
+     * over the port itself - so with or without Wi-Fi. adbd restarts, which
+     * is no loss: the recorder has been told to quit. Whether it is closed
+     * now - or was never JemRec's - read back from the property: with adbd
+     * stopped (Turn all debugging off) nothing answers to close it, and then
+     * the note that JemRec opened it has to outlive the reset, or nothing
+     * would close it before a reboot (Setup.reset).
+     */
+
+    suspend fun closePortForReset(context: Context): Boolean = withContext(Dispatchers.IO) {
+        // On IO: Start fresh is run from the screen, and getprop is a process.
+        // Under the recorder's lock: adbd's restart would cut off a revive
+        // the keep-alive had under way, halfway through starting the recorder.
+        lifecycle.withLock { PortChange.closeForReset(context) }
+    }
+
+    /** Setup.finish() ran to the end at least once. Setup owns the flag. */
+    internal fun setupComplete(context: Context): Boolean = Setup.isComplete(context)
+
+    /**
+     * Whether a daemon should exist on this phone at all: setup finished, and an
+     * ADB identity to revive it with. This is the SAME guard revive() applies.
+     *
+     * The daemon's lifecycle is tied to this, NOT to the recorder switch. The
+     * switch is a soft gate over whether a call is captured (CallMonitorService
+     * reads it); turning recording off leaves the daemon running, so turning it
+     * back on needs no Wi-Fi. That is why the keep-alive job, boot and the
+     * Wi-Fi-return revival all ask this rather than the switch - if they gated
+     * on the switch, an off in the field would strand the daemon with no way
+     * back until Wi-Fi returned.
+     */
+    fun isSetUp(context: Context): Boolean =
+        setupComplete(context) && AdbIdentity.exists(context)
+}
