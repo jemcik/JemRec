@@ -383,8 +383,10 @@ class DebugSwitchesOffStateTest {
         assertFalse(revive.await())
         on.await()
 
-        // Developer options stay hidden, and the record stays for the next On.
+        // Developer options stay hidden, and the record stays for the next On;
+        // nor does On revive for a JemRec that is off again.
         assertEquals(emptyList<String>(), writes.seen())
+        assertEquals(1, TestPhone.reviveLog(context).count { it == "revive: start" })
         assertEquals(off, DebugSwitchesOff.switchedOff(context))
         assertEquals(0, get(dev))
         writes.close()

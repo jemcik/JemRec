@@ -208,6 +208,31 @@ class RecorderUpTest {
         )
     }
 
+    @Test fun anOffWhoseSwitchIsOnAgainAfterItsModeSendStopsNoService() = runBlocking {
+        up()
+        shadowOf(context).clearStartedServices()
+        // The Off's mode send is slow to be answered...
+        val sent = CountDownLatch(1)
+        recorder!!.stall = { key ->
+            if (key == "E") {
+                sent.countDown()
+                Thread.sleep(800)
+            }
+        }
+        RecorderSwitch.set(context, false)
+        val off = async(Dispatchers.IO) { RecorderSwitch.turn(context, false) }
+        assertTrue(sent.await(5, TimeUnit.SECONDS))
+        // ...and JemRec is on again before it is.
+        RecorderSwitch.set(context, true)
+        off.await()
+
+        // The call service is left as it is, under a JemRec that is on.
+        assertEquals(
+            emptyList<android.content.Intent>(),
+            shadowOf(context).allStartedServices.filter { it.component?.className == CallMonitorService::class.java.name },
+        )
+    }
+
     private fun keepAlive(): Result = runBlocking {
         TestListenableWorkerBuilder<RecorderKeepAlive>(context)
             .setInputData(workDataOf("for_wifi" to false))

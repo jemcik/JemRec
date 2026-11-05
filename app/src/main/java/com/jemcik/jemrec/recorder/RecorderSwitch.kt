@@ -114,7 +114,12 @@ object RecorderSwitch {
      * Make the recorder agree with the switch, which the caller has just
      * saved as [on]. The one path the app's switch and the Quick Settings tile
      * share. It waits its turn, and is dropped if the switch has moved on by
-     * then - a quick off and on ends on, whichever of the two turned it.
+     * then - a quick off and on ends on, whichever of the two turned it. And
+     * looked at again after each wait inside it - the put-back's for the
+     * recorder's lock, the mode's for a send under way: an On whose switch
+     * is off again starts no revive, which may switch Wireless debugging off
+     * and on for a JemRec that is off; an Off whose switch is on again stops
+     * no call service.
      *
      * On is instant anywhere: off leaves the daemon running (see above), so
      * revive() finds it up and only checks it over loopback, with no Wi-Fi
@@ -134,13 +139,16 @@ object RecorderSwitch {
             // What the last off switched off, back first: the revive below
             // stands down while it is still off (DebugSwitchesOff).
             if (admitted.putBack) RecorderLifecycle.switchBackOn(context)
+            if (!isOn(context)) return@withLock
             // The user's own On: not held to a routine revive's limits.
             CaptureDaemon.revive(context, request = CaptureDaemon.Request.USER)
             RecorderLifecycle.arm(context, Trigger.TURN_ON)
             CaptureDaemon.pushMode(context)
         } else {
-            // Off, as the switch now says (admitted above).
+            // The mode as the switch says it when sent: Off, unless it is
+            // on again by then.
             CaptureDaemon.sendMode(context)
+            if (isOn(context)) return@withLock
             CallMonitorService.stop(context)
             // Then whatever else the user chose to have off with it: Settings,
             // When JemRec is off. The default switches nothing.

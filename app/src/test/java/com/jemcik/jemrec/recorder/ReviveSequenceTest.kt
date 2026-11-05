@@ -4,6 +4,7 @@ import com.jemcik.jemrec.adb.AdbTransport.ConnectOutcome
 import com.jemcik.jemrec.recorder.Revive.Request
 import com.jemcik.jemrec.recorder.StartWithoutWifi.PortStep
 import com.jemcik.jemrec.system.AdbdState.State
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -39,6 +40,7 @@ class ReviveSequenceTest {
 
     private val started = listOf("start", "push", "stand down", "after start")
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun TestScope.ms() = testScheduler.currentTime
 
     @Test fun anUpToDateRecorderWithNoPortChangeIsLeftAsItIs() = runTest {
