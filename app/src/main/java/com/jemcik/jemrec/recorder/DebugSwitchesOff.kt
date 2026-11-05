@@ -162,8 +162,9 @@ object DebugSwitchesOff {
         mode(context).asksFirst(NetworkRevive.onWifi(context), portReady)
 
     /**
-     * Switch off what the choice says. Recorded first, so a revive racing
-     * this already stands down.
+     * Switch off what the choice says. Under the recorder's lock
+     * (RecorderLifecycle.switchOff), so a revive under way finishes first,
+     * and one queued behind finds the record and stands down.
      *
      * With the recorder going too, the recorder switches Wireless and USB
      * debugging off itself (CaptureDaemon.debuggingOff): it is never frozen,

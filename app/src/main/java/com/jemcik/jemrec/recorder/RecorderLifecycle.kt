@@ -26,6 +26,15 @@ object RecorderLifecycle {
      * - the keep-alive job and a Wi-Fi return, a resume and the switch - cannot
      * both conclude the daemon is down and both spawn one. The second spawn
      * used to die on EADDRINUSE and, worse, truncate the first one's log.
+     *
+     * And every write of the debugging switches outside a revive takes it
+     * too - Off and what it switches off, On's putting back, an off finished
+     * where the recorder left it, Start fresh's - so a revive and an Off never
+     * interleave: one under way finishes before the Off writes, and one
+     * queued behind it asks, once it has the lock, whether JemRec is staying
+     * off. Asked before the lock and not again, a revive queued when Off
+     * came had USB debugging back on (its armShield) under a JemRec off with
+     * all debugging.
      */
     private val lifecycle = Mutex()
 
@@ -56,23 +65,6 @@ object RecorderLifecycle {
         onPortChange: (() -> Unit)? = null,
         request: Revive.Request = Revive.Request.ROUTINE,
     ): Boolean = withContext(Dispatchers.IO) {
-        // Switched off with debugging, by choice: every revive stands down
-        // here, or one of them would have debugging back on within seconds.
-        // Not a failure either, so RecorderHealth is not told of one.
-        val admitted = admit(context, Trigger.REVIVE)
-        if (admitted !is Admit.Go) {
-            ReviveLog.note(context, "revive: debugging is off with JemRec; nothing to do until it is on")
-            return@withContext false
-        }
-        // With JemRec on, any record is an On cut short - the switch saved,
-        // the process gone before the switches came back - finished here.
-        // Any, not only one that took the recorder: Developer options would
-        // otherwise stay hidden, and Wireless debugging go off after this
-        // revive, with JemRec on.
-        if (admitted.putBack) {
-            ReviveLog.note(context, "revive: JemRec is on with debugging still recorded off; putting it back")
-            DebugSwitchesOff.switchBackOn(context)
-        }
         // What this revive's own connect found, kept as it connects, under
         // the lock: AdbTransport.lastConnect is any connect's. Read after the
         // lock, it was the next revive's, which reset it on its way in - on
@@ -80,10 +72,28 @@ object RecorderLifecycle {
         // Allow this Wi-Fi's revive had it log "recorder up (connect NONE)".
         val found = Revive.Found()
         val alive = lifecycle.withLock {
+            // Switched off with debugging, by choice: every revive stands down
+            // here, or one of them would have debugging back on within
+            // seconds. Asked under the lock (see it). Not a failure either, so
+            // RecorderHealth is not told of one.
+            val admitted = admitLocked(context, Trigger.REVIVE)
+            if (admitted !is Admit.Go) {
+                ReviveLog.note(context, "revive: debugging is off with JemRec; nothing to do until it is on")
+                return@withLock null
+            }
+            // With JemRec on, any record is an On cut short - the switch saved,
+            // the process gone before the switches came back - finished here.
+            // Any, not only one that took the recorder: Developer options would
+            // otherwise stay hidden, and Wireless debugging go off after this
+            // revive, with JemRec on.
+            if (admitted.putBack) {
+                ReviveLog.note(context, "revive: JemRec is on with debugging still recorded off; putting it back")
+                DebugSwitchesOff.switchBackOn(context)
+            }
             AdbTransport.forgetLastConnect()
             ReviveLog.note(context, "revive: start")
             Revive.reviveLocked(ReviveWorld.Live(context), onPortChange, request, found)
-        }
+        } ?: return@withContext false
         ReviveLog.note(context, "revive: ${if (alive) "recorder up" else "recorder down"} (connect ${found.connect})")
         // Every revive is a reading of whether the recorder is up, and the
         // one place the user hears about it when it is not. See RecorderHealth.
@@ -173,9 +183,33 @@ object RecorderLifecycle {
 
     /** Whether [trigger] goes on, by what it finds now (admit). Standing
      *  down, an off the recorder left undone is finished first, as each
-     *  stand-down always has (DebugSwitchesOff.finishOffLeftUndone). */
-    internal suspend fun admit(context: Context, trigger: Trigger): Admit =
+     *  stand-down always has (DebugSwitchesOff.finishOffLeftUndone) - under
+     *  the lock, as every write of the switches outside a revive is. */
+    internal suspend fun admit(context: Context, trigger: Trigger): Admit {
+        val admitted = admit(trigger, gates(context))
+        if (admitted == Admit.StandDown) lifecycle.withLock { DebugSwitchesOff.finishOffLeftUndone(context) }
+        return admitted
+    }
+
+    /** [admit], with the lock already held (a revive's). */
+    private suspend fun admitLocked(context: Context, trigger: Trigger): Admit =
         admit(trigger, gates(context)).also { if (it == Admit.StandDown) DebugSwitchesOff.finishOffLeftUndone(context) }
+
+    /** Off: what When JemRec is off switches off with it
+     *  (DebugSwitchesOff.switchOff), under the lock. */
+    internal suspend fun switchOff(context: Context) = lifecycle.withLock { DebugSwitchesOff.switchOff(context) }
+
+    /** On: what the last Off switched off, put back
+     *  (DebugSwitchesOff.switchBackOn), under the lock. */
+    internal suspend fun switchBackOn(context: Context) = lifecycle.withLock { DebugSwitchesOff.switchBackOn(context) }
+
+    /** Start fresh: When JemRec is off forgotten, and Developer options back
+     *  if it hid them (DebugSwitchesOff.forget), under the lock. */
+    internal suspend fun forgetDebugging(context: Context) = lifecycle.withLock { DebugSwitchesOff.forget(context) }
+
+    /** [write], for a writer outside a revive: under the lock. */
+    internal suspend fun writeOutsideRevive(context: Context, setting: String, on: Boolean): Boolean =
+        lifecycle.withLock { write(context, setting, on) }
 
     /** Whether [trigger] goes on: for the triggers that never stand down,
      *  outside a coroutine - boot, Wi-Fi coming back, the app's own. */

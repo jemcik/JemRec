@@ -18,7 +18,6 @@ import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.RecordingStore
 import com.jemcik.jemrec.recorder.BackgroundKill
-import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.StartWithoutWifi
@@ -770,7 +769,7 @@ object Setup {
         BackgroundKill.forget(context)
         // When JemRec is off back to its default, and Developer options back
         // if it hid them: setup's second step goes there.
-        DebugSwitchesOff.forget(context)
+        RecorderLifecycle.forgetDebugging(context)
         // Or the very next launch reads a flag from the setup being undone.
         Prefs.of(context).edit {
             remove(KEY_COMPLETE)
@@ -780,7 +779,7 @@ object Setup {
         }
 
         if (hasSecureSettings(context) &&
-            RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
+            RecorderLifecycle.writeOutsideRevive(context, GlobalSettings.ADB_WIFI_ENABLED, false)
         ) {
             Log.i(TAG, "reset: Wireless debugging turned off")
         }

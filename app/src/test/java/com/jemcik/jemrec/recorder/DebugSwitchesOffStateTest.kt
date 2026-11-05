@@ -280,18 +280,17 @@ class DebugSwitchesOffStateTest {
         writes.close()
     }
 
-    @Test fun aReviveQueuedBeforeAnOffStillPutsUsbDebuggingBackOn() = runBlocking {
+    @Test fun aReviveQueuedBeforeAnOffStandsDownUnderTheLock() = runBlocking {
         aPhoneSetUpOffWifi()
         DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
         // One revive holds the lock, probing a recorder that is not there
         // (about 2.4 s)...
         val first = async(Dispatchers.IO) { CaptureDaemon.revive(context) }
         withTimeout(5_000) { while ("revive: start" !in TestPhone.reviveLog(context)) delay(20) }
-        // ...a second is past the staying-off gate - a few preference reads -
-        // and waits for the lock. Nothing shows from outside when it is past,
-        // so a second is given: the first holds the lock for at least 2.4 s
-        // (its probe's four 600 ms gaps), which leaves both sides a second's
-        // margin or more...
+        // ...a second waits for the lock. Nothing shows from outside when it
+        // waits, so a second is given: the first holds the lock for at least
+        // 2.4 s (its probe's four 600 ms gaps), which leaves both sides a
+        // second's margin or more...
         val second = async(Dispatchers.IO) { CaptureDaemon.revive(context) }
         delay(1_000)
         // ...when JemRec goes off with all debugging.
@@ -303,13 +302,34 @@ class DebugSwitchesOffStateTest {
         assertFalse(first.await())
         assertFalse(second.await())
 
-        // Pins today's behaviour, which looks like a bug: the second revive
-        // asked about staying off before the lock and not again under it, so
-        // its armShield has USB debugging back on under a JemRec that is off
-        // with all debugging - on Wi-Fi it would go on to switch Wireless
-        // debugging on and start the recorder (to be fixed in its own commit)
-        assertEquals(1, get(usb))
+        // The second asks whether JemRec is staying off under the lock, once
+        // it has it: it stands down, and its armShield never puts USB
+        // debugging back on.
+        assertEquals(0, get(usb))
         assertTrue(DebugSwitchesOff.standingDown(context))
-        assertEquals(2, TestPhone.reviveLog(context).count { it == "revive: start" })
+        assertEquals(1, TestPhone.reviveLog(context).count { it == "revive: start" })
+        assertEquals(stoodDown, TestPhone.reviveLog(context).last())
+    }
+
+    @Test fun anOffWaitsForARevivesUnderWayBeforeItWrites() = runBlocking {
+        aPhoneSetUpOffWifi()
+        DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
+        // A revive holds the lock, probing a recorder that is not there...
+        val revive = async(Dispatchers.IO) { CaptureDaemon.revive(context) }
+        withTimeout(5_000) { while ("revive: start" !in TestPhone.reviveLog(context)) delay(20) }
+        // ...when JemRec goes off with all debugging, as the app and the tile
+        // turn it off.
+        RecorderSwitch.set(context, false)
+        RecorderSwitch.turn(context, false)
+        assertFalse(revive.await())
+
+        // The Off wrote once the revive was done with the switches: its line
+        // comes after the revive's end.
+        val log = TestPhone.reviveLog(context)
+        assertTrue(
+            log.toString(),
+            log.indexOf("revive: recorder down (connect NONE)") < log.indexOf("debugging off: the recorder says nothing"),
+        )
+        assertEquals(listOf(0, 0, 0), listOf(dev, wifi, usb).map(::get))
     }
 }

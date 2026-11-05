@@ -121,7 +121,7 @@ object RecorderSwitch {
         if (on) {
             // What the last off switched off, back first: the revive below
             // stands down while it is still off (DebugSwitchesOff).
-            if (admitted.putBack) DebugSwitchesOff.switchBackOn(context)
+            if (admitted.putBack) RecorderLifecycle.switchBackOn(context)
             // The user's own On: not held to a routine revive's limits.
             CaptureDaemon.revive(context, request = CaptureDaemon.Request.USER)
             RecorderLifecycle.arm(context, Trigger.TURN_ON)
@@ -131,7 +131,7 @@ object RecorderSwitch {
             CallMonitorService.stop(context)
             // Then whatever else the user chose to have off with it: Settings,
             // When JemRec is off. The default switches nothing.
-            DebugSwitchesOff.switchOff(context)
+            RecorderLifecycle.switchOff(context)
         }
     }
 }
