@@ -229,9 +229,9 @@ object Revive {
             change != null && w.inCall() ->
                 w.note("revive: port ${StartWithoutWifi.PORT} left as it is: a call came")
             // Nor a change the switch no longer asks for. Flipped back before
-            // the port moved, the flip finds nothing to change and asks for no
-            // revive, so this one would open the port under a switch that says
-            // off, or close it under one that says on, until the next revive.
+            // the port moved, nothing is due, and the flip's own revive, queued
+            // behind this one, would only undo it, the recorder restarted
+            // twice for nothing.
             change != null && w.portStep() != change ->
                 w.note("revive: port ${StartWithoutWifi.PORT} left as it is: the switch moved")
             change != null -> {

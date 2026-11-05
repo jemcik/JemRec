@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.ui
 
 import android.os.Looper
+import android.provider.Settings
 import androidx.lifecycle.viewModelScope
 import com.google.common.util.concurrent.SettableFuture
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
@@ -12,6 +13,7 @@ import com.jemcik.jemrec.capture.HeldWork.Companion.USB_WATCH
 import com.jemcik.jemrec.capture.TestPhone
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.RecorderSwitch
+import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.setup.Setup
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
@@ -77,6 +79,17 @@ class MainViewModelRecorderTest {
             main.idle()
             if (done()) return
             if (System.nanoTime() > deadline) fail("never happened: $what")
+            Thread.sleep(10)
+        }
+    }
+
+    /** The main looper turned for a while: the view model's coroutines run
+     *  only as it turns, so a sleep here would let none of them go on. */
+    private fun turnFor(ms: Long) {
+        val main = shadowOf(Looper.getMainLooper())
+        val deadline = System.nanoTime() + ms * 1_000_000L
+        while (System.nanoTime() < deadline) {
+            main.idle()
             Thread.sleep(10)
         }
     }
@@ -157,6 +170,41 @@ class MainViewModelRecorderTest {
         vm.reconnect()
         // Its connect runs as an action, holding busy for as long as it looks.
         until("busy") { state.busy }
+    }
+
+    @Test fun everyFlipOfStartWithoutWifiHasARevive() {
+        // Off Wi-Fi nothing is due, as nothing was for the flip that came while
+        // a revive changed the port, the change not noted yet. Asked before
+        // the lock, that flip asked for no revive, and 5555 stayed open under a
+        // switch saying off (the Honor, 2026-11-05).
+        vm.setStartWithoutWifi(false)
+        until("its revive") { "revive: start" in TestPhone.reviveLog(context) }
+    }
+
+    @Test fun aCloseStillDueAfterAFlipIsTriedOnceMore() {
+        recorder = FakeRecorder(context)
+        vm.viewModelScope.cancel()
+        vm = MainViewModel(context, connectSession = { SettableFuture.create() }, portCloseAgainMs = 0)
+        // JemRec's port, the switch going off, and no revive able to close it:
+        // here no Wi-Fi, on the Honor a connect that had only the port itself.
+        Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
+        StartWithoutWifi.noteOpened(context, true)
+        vm.setStartWithoutWifi(false)
+        fun revives() = TestPhone.reviveLog(context).count { it == "revive: start" }
+        until("the second revive") { revives() == 2 }
+        // Once more, not over and over.
+        turnFor(500)
+        assertEquals(2, revives())
+    }
+
+    @Test fun aFlipWithNoCloseDueHasOneRevive() {
+        recorder = FakeRecorder(context)
+        vm.viewModelScope.cancel()
+        vm = MainViewModel(context, connectSession = { SettableFuture.create() }, portCloseAgainMs = 0)
+        vm.setStartWithoutWifi(false)
+        until("its revive") { "revive: recorder up (connect NONE)" in TestPhone.reviveLog(context) }
+        turnFor(500)
+        assertEquals(1, TestPhone.reviveLog(context).count { it == "revive: start" })
     }
 
     @Test fun anActionCutShortByClosingTheScreenIsNoFailure() {

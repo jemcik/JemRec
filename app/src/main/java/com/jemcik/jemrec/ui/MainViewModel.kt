@@ -44,6 +44,7 @@ import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.system.GlobalSettings
 import com.jemcik.jemrec.system.ShellGrant
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.asSharedFlow
@@ -386,6 +387,9 @@ class MainViewModel @JvmOverloads constructor(
     private val lookForAdb: suspend (Application) -> Boolean = { a ->
         AdbTransport.autoConnect(a, timeoutMs = 6_000).isSuccess
     },
+    /** How long after a flip of Start without Wi-Fi a close still due is
+     *  tried again (setStartWithoutWifi). The tests' is short. */
+    private val portCloseAgainMs: Long = 10_000,
 ) : AndroidViewModel(app) {
 
     // Whether messenger calls can work here is known at once (a cached
@@ -925,8 +929,8 @@ class MainViewModel @JvmOverloads constructor(
 
     /**
      * Settings, Start without Wi-Fi. Saved at once; the port follows at the
-     * first revive that can change it - this one, if it can now
-     * (CaptureDaemon.portChangeDue), or a later one. The change restarts
+     * first revive that can change it - this one, if it can
+     * (PortChange.portChangeDue), or a later one. The change restarts
      * adbd, and the recorder with it, so it is revived in the background:
      * Starting in the header until it is back, and the rest of the screen
      * left usable - an action would hold `busy`, and every control with it,
@@ -937,6 +941,20 @@ class MainViewModel @JvmOverloads constructor(
      * run already going), may have read the switch before this flip. Revives
      * queue on the recorder's lock, so this one comes after them and finds
      * the switch as it is now.
+     *
+     * Every flip has one, and what is due is asked there, under the lock.
+     * Asked here, a flip that came while a revive changed the port found
+     * nothing to change, the change not noted yet, and asked for none: on the
+     * Honor, 2026-11-05, on and straight off, the off landing as adbd
+     * restarted, left 5555 open under a switch that says off.
+     *
+     * A close still due after it is tried once more, a moment on. adbd's
+     * restart takes Wireless debugging's advertisement with it, and a revive
+     * that can connect only over the port does not close it (portChangeOver):
+     * on the same phone and day, on and off half a second apart, nothing was
+     * advertised 9 s after the restart, and on the first try the port stayed
+     * open. It was advertised again 15 s after one. Once, as on a Wi-Fi
+     * Android has not allowed it never comes; the keep-alive is left the rest.
      *
      * A refusal of this Wi-Fi a background revive noted is forgotten
      * (NetworkRevive.noteWirelessRefused) when the flip asks for a change of
@@ -950,29 +968,36 @@ class MainViewModel @JvmOverloads constructor(
         StartWithoutWifi.setEnabled(app, on)
         _state.update { it.copy(startWithoutWifi = on) }
         viewModelScope.launch {
-            val changes = withContext(Dispatchers.IO) {
-                val step = StartWithoutWifi.step(app)
-                if (step != StartWithoutWifi.PortStep.LEAVE) NetworkRevive.forgetWirelessRefused(app)
-                CaptureDaemon.portChangeDue(app, step = step) != null
+            withContext(Dispatchers.IO) {
+                if (StartWithoutWifi.step(app) != StartWithoutWifi.PortStep.LEAVE) NetworkRevive.forgetWirelessRefused(app)
             }
-            if (changes) {
-                // Starting once the change begins - the restart of adbd and
-                // the recorder - not for a revive that ends up changing
-                // nothing: one that connects over the port itself leaves a
-                // close for a Wi-Fi with Wireless debugging (portChangeOver).
-                val began = AtomicBoolean(false)
-                try {
-                    CaptureDaemon.revive(app, onPortChange = { if (began.compareAndSet(false, true)) starts.begin() })
-                } catch (e: CancellationException) {
-                    throw e // the screen gone: not a failure to report
-                } catch (t: Throwable) {
-                    Log.w("JemRec", "the port change's revive failed", t)
-                } finally {
-                    if (began.get()) starts.end()
-                }
+            reviveForThePort()
+            if (withContext(Dispatchers.IO) { StartWithoutWifi.step(app) } == StartWithoutWifi.PortStep.CLOSE) {
+                delay(portCloseAgainMs)
+                reviveForThePort()
             }
-            refreshNow()
         }
+    }
+
+    /**
+     * A revive for Start without Wi-Fi's switch: Starting once the change
+     * begins - the restart of adbd and the recorder - not for one that ends
+     * up changing nothing, as most find: one that connects over the port
+     * itself leaves a close for a Wi-Fi with Wireless debugging
+     * (portChangeOver).
+     */
+    private suspend fun reviveForThePort() {
+        val began = AtomicBoolean(false)
+        try {
+            CaptureDaemon.revive(getApplication(), onPortChange = { if (began.compareAndSet(false, true)) starts.begin() })
+        } catch (e: CancellationException) {
+            throw e // the screen gone: not a failure to report
+        } catch (t: Throwable) {
+            Log.w("JemRec", "the port change's revive failed", t)
+        } finally {
+            if (began.get()) starts.end()
+        }
+        refreshNow()
     }
 
     /**

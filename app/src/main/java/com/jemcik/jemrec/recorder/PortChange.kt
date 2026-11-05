@@ -133,22 +133,19 @@ object PortChange {
      * while When JemRec is off has debugging switched off, which a revive
      * would have to switch Wireless debugging on for, and leave on if it then
      * failed; the On puts debugging back, and the change is made after it.
-     * Shared with the switch's own revive (MainViewModel), which has read
-     * the [step] already.
      */
     internal fun portChangeDue(
         context: Context,
         onWifi: Boolean = NetworkRevive.onWifi(context),
-        step: StartWithoutWifi.PortStep? = null,
-    ): StartWithoutWifi.PortStep? = portChangeDue(ReviveWorld.Live(context), onWifi, step)
+    ): StartWithoutWifi.PortStep? = portChangeDue(ReviveWorld.Live(context), onWifi)
 
-    internal fun portChangeDue(w: ReviveWorld, onWifi: Boolean, step: StartWithoutWifi.PortStep? = null): StartWithoutWifi.PortStep? {
+    internal fun portChangeDue(w: ReviveWorld, onWifi: Boolean): StartWithoutWifi.PortStep? {
         if (!onWifi || !w.setUp() || w.inCall()) return null
         if (w.switchedOff()) return null
         // Nor where Android refused Wireless debugging on this Wi-Fi and it is
         // still off: switching it on for the port would only ask again.
         if (w.stillRefusedHere(Revive.wirelessDebuggingOn(w))) return null
-        return (step ?: w.portStep()).takeIf { it != StartWithoutWifi.PortStep.LEAVE }
+        return w.portStep().takeIf { it != StartWithoutWifi.PortStep.LEAVE }
     }
 
     /**

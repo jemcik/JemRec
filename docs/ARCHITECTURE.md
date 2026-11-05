@@ -236,8 +236,15 @@ for it, both asked again once the revive has connected, up to half a minute
 on - and not while *When JemRec is off* has debugging switched off, which a
 revive would have to switch Wireless debugging on for; the change waits for
 On. After a reboot the first start opens it before starting the recorder, so
-nothing restarts twice. Switched on while
-the recorder runs, the next revive - the switch's own, at once on Wi-Fi -
+nothing restarts twice. Every flip of the switch has a revive of its own, and
+what is due is asked there, under the recorder's lock: asked before it, a flip
+that came while a revive was changing the port found nothing to change, and on
+the Honor, 2026-11-05, on and straight off left 5555 open under a switch that
+says off for nine minutes, until the next keep-alive closed it. A close still due
+after that revive is tried once more ten seconds on: `adbd`'s restart takes
+Wireless debugging's advertisement with it, for over 9 seconds on the same phone,
+and a revive that can connect only over the port does not close it. Switched on
+while the recorder runs, the next revive - the switch's own, at once on Wi-Fi -
 opens it and restarts the recorder; switched off, the next revive on Wi-Fi
 closes it (`usb:`), but only a port JemRec opened this boot: one a computer
 opened with `adb tcpip` is the computer's - and never over the port itself: on
