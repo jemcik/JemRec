@@ -121,9 +121,11 @@
      Wi-Fi watcher rebuild it without you within seconds of the phone joining a
      network &mdash; when the phone lets the app start in the background at boot
      to arm them. Where it does not, nothing is armed and nothing begins, which
-     is why the manual says to open the app once after a restart. Either way the
-     app says plainly that it cannot record rather than looking healthy, and
-     after two minutes a notification says it too.</p>
+     is why the manual says to open the app once after a restart. Android may
+     also take its time getting to the app: five minutes on a Galaxy S20 left
+     locked. Once it is running, the app says plainly that it cannot record
+     rather than looking healthy, and after two minutes a notification says it
+     too.</p>
   <p>Unplugging the phone from a computer is the other. Measured on an Honor:
      three seconds after the cable came out, the phone stopped the ADB daemon,
      the recorder went with it, and nothing started the ADB daemon again. So the
@@ -134,7 +136,9 @@
      that needs the app allowed to start by itself: left to the phone, an
      Honor froze it until it was woken &mdash; about four minutes, once 8.5
      &mdash; and JemRec says so the moment it may run again, with a button to
-     the setting. A charger stops nothing.</p>
+     the setting. On a Galaxy S20 it is plugging in that restarts the ADB
+     daemon, and the same watch has the recorder back 15 to 20 seconds later. A
+     charger stops nothing.</p>
   <figure class="chart"><p class="chart-title">Unplugged from a computer, back by itself</p><div class="tl-row"><span class="tl-label">Screen on</span><div class="tl-track"><span class="seg ok" style="left: 0.00%; width: 15.00%"></span><span class="seg down" style="left: 15.00%; width: 45.00%">not recording</span><span class="seg ok" style="left: 60.00%; width: 40.00%">12 s</span></div></div><div class="tl-row"><span class="tl-label">Screen on, again</span><div class="tl-track"><span class="seg ok" style="left: 0.00%; width: 15.00%"></span><span class="seg down" style="left: 15.00%; width: 65.00%">not recording</span><span class="seg ok" style="left: 80.00%; width: 20.00%">16 s</span></div></div><div class="tl-row"><span class="tl-label">Screen off, on Manage manually</span><div class="tl-track"><span class="seg ok" style="left: 0.00%; width: 15.00%"></span><span class="seg down" style="left: 15.00%; width: 50.00%">not recording</span><span class="seg ok" style="left: 65.00%; width: 35.00%">13 s</span></div></div><div class="tl-axis" aria-hidden="true"><span style="left: 0.00%">0</span><span style="left: 15.00%">3</span><span style="left: 50.00%">10</span><span style="left: 100.00%">20 s</span></div><figcaption>Three seconds after the cable comes out Android stops its ADB daemon, and the recorder goes with it. JemRec, woken in those seconds, starts it again over Wi-Fi with nothing tapped.<span class="src">Honor Magic 8 Pro, Android 17, October 2026 &middot; ARCHITECTURE.md, Unplugged from a computer</span></figcaption></figure>
   <p>Some phones also stop apps in the background to save power, and a stopped
      JemRec cannot start the recorder again once it goes. JemRec cannot change

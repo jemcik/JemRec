@@ -5,8 +5,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.jemcik.jemrec.capture.AdbdState
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.system.AdbdState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext

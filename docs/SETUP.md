@@ -572,8 +572,8 @@ Android 17.
 
 ## After a restart
 
-A reboot kills the recorder, and building it again takes a few seconds of Wi-
-Fi. Until that has happened, calls are not recorded and the header says so —
+A reboot kills the recorder, and building it again takes a few seconds of
+Wi-Fi. Until that has happened, calls are not recorded and the header says so —
 and if it lasts more than two minutes, a notification does too. Whether it
 happens without you comes down to one setting on your phone.
 
@@ -597,6 +597,11 @@ starting it. Since 0.25.1 JemRec sees that and switches it off and on itself:
 recording again **eleven seconds** after its first try, which came as the phone
 was unlocked, with the app never opened.
 
+Android decides when the boot reaches JemRec, though: it hands the boot
+broadcast to one app after another, and the queue hardly moves while the phone
+sleeps. On a Galaxy S20 locked again straight after unlocking, the recorder was
+back five minutes after the unlock, the app never opened.
+
 ### Without it, open JemRec once
 
 The same phone with auto-launch off does nothing at all. The system declined to
@@ -615,12 +620,13 @@ is up, calls are recorded with Wi-Fi off, on mobile data, anywhere.
 
 On some phones, pulling the cable out of a computer stops the recorder:
 measured on an Honor, three seconds after the cable came out. A charger does
-not. JemRec starts it again by itself - on Wi-Fi, within seconds; off Wi-Fi, at
-the next Wi-Fi, as after a restart. Nothing to open - but with the screen off,
-which is how a cable usually comes out, only if JemRec may start automatically
-(the setting just above): measured on that Honor, 13 seconds with it; without
-it, the phone's battery manager froze JemRec until the phone was woken or
-charged, about four minutes.
+not. On a Galaxy S20 it is the other way round: plugging into a computer stops
+it, pulling the cable out does not. JemRec starts it again by itself - on
+Wi-Fi, within seconds; off Wi-Fi, at the next Wi-Fi, as after a restart.
+Nothing to open - but with the screen off, which is how a cable usually comes
+out, only if JemRec may start automatically (the setting just above): measured
+on that Honor, 13 seconds with it; without it, the phone's battery manager
+froze JemRec until the phone was woken or charged, about four minutes.
 
 ## Stopped in the background
 
@@ -673,7 +679,7 @@ And when the app is closed, in notifications:
 |---|---|
 | The caller's name, **Recorded** | After every recorded call, silently, with Play, Share and Delete. Can be switched off in Settings. |
 | **Last call recorded, but silent** | The file has the right length and no sound in it. Usually Wi-Fi calling, or a phone that does not hand calls over at all. Run the self-test, or copy a report for GitHub (Settings → Diagnostics). |
-| **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with **Allow this Wi-Fi**), or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back. |
+| **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with **Allow this Wi-Fi**), or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back, and once JemRec is switched off. |
 | **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test. |
 | **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. |
 | **Checking the recorder** | A USB cable went in or came out, and the recorder went with it: JemRec is starting it again. A few seconds; a cable that changed nothing shows nothing. Minutes on a phone that holds JemRec back with the screen off - see *Unplugging from a computer*. |

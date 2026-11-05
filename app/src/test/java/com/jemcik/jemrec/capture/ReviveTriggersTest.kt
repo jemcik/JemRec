@@ -8,6 +8,9 @@ import com.jemcik.jemrec.capture.HeldWork.Companion.NOW
 import com.jemcik.jemrec.capture.HeldWork.Companion.PERIODIC
 import com.jemcik.jemrec.capture.HeldWork.Companion.USB_WATCH
 import com.jemcik.jemrec.capture.HeldWork.Companion.WIFI
+import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.recorder.RecorderSwitch
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

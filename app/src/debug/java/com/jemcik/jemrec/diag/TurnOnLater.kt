@@ -5,7 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.jemcik.jemrec.capture.RecorderSwitch
+import com.jemcik.jemrec.recorder.RecorderSwitch
 import java.util.concurrent.TimeUnit
 
 /**

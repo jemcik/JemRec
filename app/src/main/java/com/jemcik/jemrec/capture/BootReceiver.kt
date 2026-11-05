@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.jemcik.jemrec.recorder.RecorderLifecycle
+import com.jemcik.jemrec.recorder.Trigger
 
 /**
  * Brings the monitor back after a reboot.
@@ -13,6 +15,10 @@ import android.util.Log
  * matter - but BOOT_COMPLETED is delivered to stopped-but-installed apps by
  * design, and is one of the few cases where Android 12+ still permits starting
  * a foreground service from the background.
+ *
+ * It can be late, and only Android decides: on a Galaxy S20 locked again
+ * straight after the first unlock, 2026-11-04, it came 4 min 46 s after the
+ * unlock, the phone asleep for most of them.
  *
  * LOCKED_BOOT_COMPLETED is handled too, and deliberately does nothing but log.
  * It arrives before the user has unlocked the phone for the first time, while
@@ -41,16 +47,15 @@ class BootReceiver : BroadcastReceiver() {
                 // daemon must be alive so recording can be turned on later
                 // without Wi-Fi. When the switch is off the daemon runs but
                 // captures nothing (CallMonitorService gates that).
-                if (!CaptureDaemon.isSetUp(context)) {
+                if (!RecorderLifecycle.goes(context, Trigger.BOOT)) {
                     Log.i(TAG, "boot: JemRec is not set up, nothing to revive")
                     return
                 }
                 Log.i(TAG, "boot: arming the keep-alive job to revive the recorder")
-                RecorderKeepAlive.schedule(context)
-                RecorderKeepAlive.kickNow(context)
-                // The system-held Wi-Fi watch is cleared by a reboot, so
-                // re-arm it here to keep instant recovery working from boot on.
-                NetworkRevive.arm(context)
+                // The heartbeat, the USB watch and a kick; and the system-held
+                // Wi-Fi watch, which a reboot clears, to keep instant recovery
+                // working from boot on.
+                RecorderLifecycle.arm(context, Trigger.BOOT)
             }
         }
     }

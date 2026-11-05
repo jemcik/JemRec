@@ -347,6 +347,11 @@ dependencies {
     // doWork and for what each trigger enqueues: an in-process WorkManager
     // over a synchronous executor. Its version is work-runtime-ktx's above.
     testImplementation("androidx.work:work-testing:2.12.0")
+    // Virtual time for the revive's sequence tests (ReviveSequenceTest): its
+    // waits - adbd's four seconds, Allow's twenty - pass at once. The version
+    // the app's own coroutines resolve to, which the UI test library already
+    // brings to the tests; named here because they use it.
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }
 
 kotlin {

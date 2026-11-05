@@ -7,7 +7,8 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import com.jemcik.jemrec.ui.Setup
+import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.system.GlobalSettings
 import org.robolectric.Shadows.shadowOf
 import java.io.File
 

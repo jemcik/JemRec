@@ -11,6 +11,10 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.jemcik.jemrec.calls.MissedCalls
+import com.jemcik.jemrec.recorder.Admit
+import com.jemcik.jemrec.recorder.RecorderLifecycle
+import com.jemcik.jemrec.recorder.ReviveLog
+import com.jemcik.jemrec.recorder.Trigger
 import com.jemcik.jemrec.recordings.RecordingSaver
 import com.jemcik.jemrec.rethrowingCancellation
 import java.util.concurrent.TimeUnit
@@ -50,18 +54,22 @@ class RecorderKeepAlive(
         // whenever this phone is set up, so turning recording off (and back on)
         // never needs the daemon torn down or a Wi-Fi trip to rebuild it. The
         // switch only gates capture, in CallMonitorService.
-        if (!CaptureDaemon.isSetUp(applicationContext)) {
-            Log.i(TAG, "keepalive: not set up, nothing to do")
-            return Result.success()
-        }
+        //
         // Off with debugging, by choice: no recorder to keep, and a retry
         // would only back off and come again. Only an off the recorder left
         // unfinished is worth a look - and the day's auto-delete, which needs
         // no recorder.
-        if (DebugSwitchesOff.stayingOff(applicationContext)) {
-            Log.i(TAG, "keepalive: debugging is off with JemRec, no recorder to keep")
-            retention()
-            return Result.success()
+        when (RecorderLifecycle.admit(applicationContext, Trigger.KEEP_ALIVE)) {
+            Admit.Skip -> {
+                Log.i(TAG, "keepalive: not set up, nothing to do")
+                return Result.success()
+            }
+            Admit.StandDown -> {
+                Log.i(TAG, "keepalive: debugging is off with JemRec, no recorder to keep")
+                retention()
+                return Result.success()
+            }
+            is Admit.Go -> Unit
         }
         val forWifi = inputData.getBoolean(FOR_WIFI, false)
         ReviveLog.note(
@@ -71,14 +79,13 @@ class RecorderKeepAlive(
         // A force-stop clears the system's trigger with every other job; this
         // run is the next chance to put it back. KEEP, so a watch already
         // waiting is left alone.
-        UsbDebuggingWatch.arm(applicationContext)
+        RecorderLifecycle.arm(applicationContext, Trigger.KEEP_ALIVE)
         val alive = CaptureDaemon.revive(applicationContext)
         // Off Wi-Fi is exactly when the Wi-Fi watch must be armed, and the
         // one place it reliably can be: armed on Wi-Fi it fires at once and
         // the system drops it. See NetworkRevive.
-        val onWifi = NetworkRevive.onWifi(applicationContext)
-        if (!onWifi) NetworkRevive.arm(applicationContext)
-        if (alive) {
+        val next = RecorderLifecycle.followUp(applicationContext, Trigger.KEEP_ALIVE, alive, forWifi)
+        if (next.collect) {
             // Collect anything the daemon still holds - normally nothing, but a
             // crash or a reboot between hang-up and the fetch can strand a
             // recording. This is the app's safety net for exactly that; it
@@ -95,7 +102,7 @@ class RecorderKeepAlive(
         // daemon that could not be revived now - almost always no Wi-Fi - is
         // the thing worth trying again shortly with backoff. Except Wi-Fi's
         // run off Wi-Fi: the watch armed above starts the next (triesAgain).
-        return if (triesAgain(alive, forWifi, onWifi)) Result.retry() else Result.success()
+        return if (next.retry) Result.retry() else Result.success()
     }
 
     /** Auto-delete and the trash's expiry, once a day at most. Needs no
@@ -114,19 +121,24 @@ class RecorderKeepAlive(
         private const val FOR_WIFI = "for_wifi"
 
         /** Whether a run that ended with the recorder down tries again with
-         *  backoff. A kick or the heartbeat does, Wi-Fi or not: the retry is
-         *  what brings the recorder back if nothing else does. The Wi-Fi run
-         *  does only while it is on Wi-Fi: off it, the watch is armed again
-         *  (doWork) and will wake a new one, which a retry still waiting
-         *  would be taken for, as the kick's was (kickForWifi). */
+         *  backoff: the rule is the lifecycle's (Triggers.kt), where a run's
+         *  follow-up is decided. */
         internal fun triesAgain(alive: Boolean, forWifi: Boolean, onWifi: Boolean): Boolean =
-            !alive && (!forWifi || onWifi)
+            com.jemcik.jemrec.recorder.triesAgain(alive, forWifi, onWifi)
 
         /** The steady heartbeat, and the watch on USB debugging that cuts it
          *  short when the phone switches that off (see UsbDebuggingWatch).
-         *  Idempotent - safe to call on every app open. */
+         *  Idempotent. The app arms these two through the trigger table
+         *  (RecorderLifecycle.arm), which calls the same two in this order;
+         *  this is the tests' way to arm them, as boot and the app did. */
         fun schedule(context: Context) {
             UsbDebuggingWatch.arm(context)
+            heartbeat(context)
+        }
+
+        /** The steady heartbeat alone (RecorderLifecycle.arm arms the watch
+         *  beside it). Idempotent. */
+        fun heartbeat(context: Context) {
             val work = PeriodicWorkRequestBuilder<RecorderKeepAlive>(
                 15, TimeUnit.MINUTES,
             ).build()
@@ -168,14 +180,6 @@ class RecorderKeepAlive(
                 .setInputData(workDataOf(FOR_WIFI to forWifi))
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(name, ExistingWorkPolicy.KEEP, work)
-        }
-
-        /** Switched off: stop trying to keep anything alive. */
-        fun cancel(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(PERIODIC)
-            WorkManager.getInstance(context).cancelUniqueWork(IMMEDIATE)
-            WorkManager.getInstance(context).cancelUniqueWork(WIFI)
-            UsbDebuggingWatch.cancel(context)
         }
     }
 }

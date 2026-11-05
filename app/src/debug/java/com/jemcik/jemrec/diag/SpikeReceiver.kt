@@ -11,9 +11,9 @@ import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.adb.ResultFile
-import com.jemcik.jemrec.capture.SelfTest
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.LastCallReport
+import com.jemcik.jemrec.recorder.SelfTest
 import com.jemcik.jemrec.ui.appVersion
 import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.RecorderKeepAlive
@@ -324,7 +324,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     // domain and proves nothing), whether the port answers,
                     // and what a revive would do about it.
                     "port" -> {
-                        val sw = com.jemcik.jemrec.capture.StartWithoutWifi
+                        val sw = com.jemcik.jemrec.recorder.StartWithoutWifi
                         // What one read costs the screen's refresh, which
                         // makes it each time (MainViewModel's snapshot).
                         val readStart = System.nanoTime()
@@ -344,9 +344,9 @@ class SpikeReceiver : BroadcastReceiver() {
                     // against `getprop` from a shell: whether an app may read
                     // them at all is sepolicy's to say (AdbdState).
                     "adbd" -> {
-                        val sp = com.jemcik.jemrec.capture.SystemProperty
+                        val sp = com.jemcik.jemrec.system.SystemProperty
                         val readStart = System.nanoTime()
-                        val state = com.jemcik.jemrec.capture.AdbdState.read()
+                        val state = com.jemcik.jemrec.system.AdbdState.read()
                         val readMs = (System.nanoTime() - readStart) / 1_000_000.0
                         report(
                             appContext, "adbd",
@@ -390,11 +390,11 @@ class SpikeReceiver : BroadcastReceiver() {
                         val about = "sdk=${android.os.Build.VERSION.SDK_INT}" +
                             (if (android.os.Build.VERSION.SDK_INT >= 36) " sdkFull=${android.os.Build.VERSION.SDK_INT_FULL}" else "") +
                             " target=${appContext.applicationInfo.targetSdkVersion}" +
-                            " secureSettings=${com.jemcik.jemrec.ui.Setup.hasSecureSettings(appContext)}"
-                        val concluded = "app concludes: usb=${com.jemcik.jemrec.ui.Setup.usbDebugging(appContext)}" +
-                            " wireless=${com.jemcik.jemrec.ui.Setup.wirelessDebuggingOn(appContext)}" +
-                            " devOptions=${com.jemcik.jemrec.ui.Setup.developerOptions(appContext)}" +
-                            " actAsHidden=${com.jemcik.jemrec.capture.GlobalSettings.actAsHidden}"
+                            " secureSettings=${com.jemcik.jemrec.setup.Setup.hasSecureSettings(appContext)}"
+                        val concluded = "app concludes: usb=${com.jemcik.jemrec.setup.Setup.usbDebugging(appContext)}" +
+                            " wireless=${com.jemcik.jemrec.setup.Setup.wirelessDebuggingOn(appContext)}" +
+                            " devOptions=${com.jemcik.jemrec.setup.Setup.developerOptions(appContext)}" +
+                            " actAsHidden=${com.jemcik.jemrec.system.GlobalSettings.actAsHidden}"
                         report(appContext, "settings", listOfNotNull(about, wrote, reads, concluded).joinToString("\n"))
                     }
 
@@ -405,7 +405,7 @@ class SpikeReceiver : BroadcastReceiver() {
                         val on = intent.getBooleanExtra("on", true)
                         appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                             .edit { putBoolean(HIDE_SETTINGS_KEY, on) }
-                        com.jemcik.jemrec.capture.GlobalSettings.actAsHidden = on
+                        com.jemcik.jemrec.system.GlobalSettings.actAsHidden = on
                         report(appContext, "hidesettings", "acting as if hidden: $on")
                     }
 
@@ -414,7 +414,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     // For this process only.
                     "refusegrant" -> {
                         val on = intent.getBooleanExtra("on", true)
-                        com.jemcik.jemrec.ui.ShellGrant.actAsRefused = on
+                        com.jemcik.jemrec.system.ShellGrant.actAsRefused = on
                         report(appContext, "refusegrant", "acting as if the grant is refused: $on")
                     }
 
@@ -429,7 +429,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     // the session `connect` opened: what Try again runs.
                     "finish" -> report(
                         appContext, "finish",
-                        com.jemcik.jemrec.ui.Setup.finish(appContext)
+                        com.jemcik.jemrec.setup.Setup.finish(appContext)
                             .fold({ "finished" }, { "failed: ${it.message}" }),
                     )
 
@@ -452,10 +452,10 @@ class SpikeReceiver : BroadcastReceiver() {
                             appContext, "switch",
                             "turning ${if (on) "on" else "off"}" +
                                 (if (!on && backAfter > 0) ", on again in $backAfter s" else "") +
-                                ", with ${com.jemcik.jemrec.capture.DebugSwitchesOff.mode(appContext)}",
+                                ", with ${com.jemcik.jemrec.recorder.DebugSwitchesOff.mode(appContext)}",
                         )
-                        com.jemcik.jemrec.capture.RecorderSwitch.set(appContext, on)
-                        com.jemcik.jemrec.capture.RecorderSwitch.turn(appContext, on)
+                        com.jemcik.jemrec.recorder.RecorderSwitch.set(appContext, on)
+                        com.jemcik.jemrec.recorder.RecorderSwitch.turn(appContext, on)
                     }
 
                     // The emulator's sounds turned down for a check run
@@ -485,6 +485,18 @@ class SpikeReceiver : BroadcastReceiver() {
                         RecorderKeepAlive.kickNow(appContext)
                         kotlinx.coroutines.delay(2_000)
                         report(appContext, "monitor", "keep-alive kicked; see the log")
+                    }
+
+                    // A keep-alive retry left by the check before, ended: a
+                    // force-stop does not end one, WorkManager schedules it
+                    // again at the next start, and it ran a revive in the
+                    // middle of the next check (tools/emulator_checks.py).
+                    // The unique names, as the tests' HeldWork has them.
+                    "forgetkicks" -> {
+                        val work = androidx.work.WorkManager.getInstance(appContext)
+                        work.cancelUniqueWork("jemrec.keepalive.now")
+                        work.cancelUniqueWork("jemrec.keepalive.wifi")
+                        report(appContext, "forgetkicks", "ended")
                     }
 
                     // The README's screenshots: swap the real list for invented
@@ -533,7 +545,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     }
 
                     "pairnotif" -> {
-                        com.jemcik.jemrec.ui.PairingNotification.show(appContext)
+                        com.jemcik.jemrec.setup.PairingNotification.show(appContext)
                         kotlinx.coroutines.delay(1_500)
                         report(appContext, "pairnotif", "pairing notification posted")
                     }

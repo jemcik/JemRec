@@ -231,11 +231,20 @@ Measured on the Honor (MagicOS 11, Android 17), 2026-10-28, off the cable:
 
 **When the port is opened and closed.** Changing it restarts `adbd`, and the
 recorder with it, so it is changed only where the recorder can be started
-again at once: on Wi-Fi, never in a call - and not while *When JemRec is off*
-has debugging switched off, which a revive would have to switch Wireless
-debugging on for; the change waits for On. After a reboot the first start opens
-it before starting the recorder, so nothing restarts twice. Switched on while
-the recorder runs, the next revive - the switch's own, at once on Wi-Fi -
+again at once: on Wi-Fi, never in a call, and only while the switch still asks
+for it, both asked again once the revive has connected, up to half a minute
+on - and not while *When JemRec is off* has debugging switched off, which a
+revive would have to switch Wireless debugging on for; the change waits for
+On. After a reboot the first start opens it before starting the recorder, so
+nothing restarts twice. Every flip of the switch has a revive of its own, and
+what is due is asked there, under the recorder's lock: asked before it, a flip
+that came while a revive was changing the port found nothing to change, and on
+the Honor, 2026-11-05, on and straight off left 5555 open under a switch that
+says off for nine minutes, until the next keep-alive closed it. A close still due
+after that revive is tried once more ten seconds on: `adbd`'s restart takes
+Wireless debugging's advertisement with it, for over 9 seconds on the same phone,
+and a revive that can connect only over the port does not close it. Switched on
+while the recorder runs, the next revive - the switch's own, at once on Wi-Fi -
 opens it and restarts the recorder; switched off, the next revive on Wi-Fi
 closes it (`usb:`), but only a port JemRec opened this boot: one a computer
 opened with `adb tcpip` is the computer's - and never over the port itself: on
@@ -257,6 +266,14 @@ found on after all, an Allow tapped later on the question that stayed up,
 which ends the refusal. Asking again
 is left to "Allow this Wi-Fi", in the header and the alert, and to Start
 without Wi-Fi's switch flipped by hand, whose user is there to answer.
+After a refusal, mDNS can still hand out the port of a connection made before
+it, and a connect there is turned away at once: nothing listens. Measured on
+the Android 16 emulator, 2026-11-03: three revives in a row were given the
+port of a connection 45 seconds earlier, each turned away within 2 ms, and as
+two refusals in a row mean a lost pairing, the header said Pair again - whose
+tap forgets a pairing that works. A refusal with the switch read off is now
+taken for nothing advertised (`RecorderHealth.meant`), and the header asks to
+allow the Wi-Fi.
 Measured on the Android 12 emulator, 2026-10-28, with port 5555 blocked for
 the app so that nothing but Wireless debugging could start the recorder:
 before, with JemRec open, each revive asked again over it (and, by the code,
@@ -319,9 +336,9 @@ Wi-Fi before telling `adbd` to start, every time (2026-10-27). It is not built.
 
 ## Unplugged from a computer
 
-**Pulling the cable out of a computer stops the recorder, and JemRec starts it
-again by itself.** Measured on the Honor (Android 17), 2026-10-24: three
-seconds after the cable came out - Android's debounce of a USB disconnect -
+**On some phones, pulling the cable out of a computer stops the recorder, and
+JemRec starts it again by itself.** Measured on the Honor (Android 17),
+2026-10-24: three seconds after the cable came out - Android's debounce of a USB disconnect -
 the phone took USB debugging off the cable's functions and `adbd` was stopped.
 The recorder was started through `adbd`, so it is in `adbd`'s cgroup, and
 Android kills the whole group: the recorder went at the same instant. Shell
@@ -358,8 +375,18 @@ The setting decides the keep-alive too: on *Manage automatically* the
 was not met; switched to *Manage manually*, it was met at once.
 
 A wall charger, plugged in or pulled out, stopped nothing, and the app's watch
-ends before Android would show its notification. Plugging into a computer
-stopped nothing either, the three times it was measured; the watch covers it anyway.
+ends before Android would show its notification. Plugging the Honor into a
+computer stopped nothing either, the three times it was measured.
+
+**Other phones do it differently, and the same watch covers them.** On a Galaxy
+S20 (One UI 5.1, Android 13), 2026-11-04, it was the other way round. Pulling
+the cable out stopped nothing. Plugging into a computer restarted `adbd`, all
+three times, by its process's age, and took the recorder with it. The first
+time's log shows why: about four seconds in, `android.process.media` had the
+USB functions set again, and the USB configuration went to none and back. The
+two times a recorder was running, the app's watch saw it go and had it back
+15.5 and 19.7 seconds after the plug-in. On a OnePlus 13 (LineageOS 23.2,
+Android 16), the same day, neither stopped it.
 
 The recorder polls rather than listens: Android refuses a broadcast receiver to
 a process it did not start ("registerReceiverWithFeature: no app for null", on
@@ -407,6 +434,23 @@ allow this Wi-Fi* is now said only with adbd running, or after that once
 (`RecorderHealth.notAllowed`), and the tap starts the recorder itself, waiting
 for a start under way instead of cutting it off.
 
+**Android decides when the boot reaches JemRec.** Nothing of JemRec's runs
+until Android hands it `BOOT_COMPLETED`, which it gives apps one after another,
+and the queue hardly moves while the phone sleeps. Measured on a Galaxy S20
+(One UI 5.1, Android 13), 2026-11-04, the phone locked again straight after the
+first unlock: the broadcast was queued at 23:46:17, the phone slept from
+23:46:59 to 23:50:40 but for a few wakes of a second or two, JemRec's turn came
+at 23:51:03, and the recorder was up at 23:51:18, the app never opened. That is
+five minutes after the unlock, about 70 seconds of them awake. How long it
+takes with nobody waking the phone was not measured. Opening JemRec does not
+wait for it.
+
+**Android can cut the first start.** On a OnePlus 13 (LineageOS 23.2, Android
+16), 2026-11-04, three seconds after JemRec connected at boot Android logged
+`Detected wifi network change. Disabling adbwifi` and the session went, half way
+through starting the recorder. The keep-alive's retry had it up 82 seconds
+after the first try, the app never opened.
+
 Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 recording carries on with Wi-Fi off, on mobile data, anywhere.
 
@@ -418,6 +462,34 @@ a one-time run at a restart, another when Wi-Fi returns (`NetworkRevive`), the
 watch on USB debugging (`UsbDebuggingWatch`, a one-time run itself), and after
 a cable is pulled the app's own revive (`CableWatch`), which falls back to a
 one-time run. Opening JemRec starts it too, on the app's own.
+
+**What each does is one table** (`Triggers.kt`): what each of these, boot,
+opening the app, its check of setup, On and Off arms to keep the recorder
+alive (`armedBy`); whether it goes on, by what it finds (`admit`) - boot and
+Wi-Fi coming back ask whether the phone is set up, not the switch, as the
+recorder is kept for an On anywhere; the app's own ask the switch; the
+keep-alive and the USB watch ask setup, then whether JemRec is standing down;
+and every revive asks that first; and what follows a revive (`followUp`) -
+the keep-alive's Wi-Fi watch off Wi-Fi and its retry, the watches' hand-over
+of a recorder still down. `RecorderLifecycle` reads what the table needs,
+holds the recorder's lock, and is the one place in the app that writes the
+debugging switches. A revive that has the lock runs to its end, as Start
+fresh does: its changes come in pairs - Wireless debugging off and on, adbd
+on the port and the port noted as JemRec's, an old recorder retired and the
+new one started, Wireless debugging on and off again - and one cut between
+the two, by a worker stopped or a screen closed from Recents, left the first
+half alone (shown in the unit tests on a stand-in phone; what that left behind
+is read from the code). Closing from Recents is what ends the screen: Back
+only moves it to the background, since Android 12. Measured on the Honor,
+2026-11-04: Start without Wi-Fi switched off and JemRec closed from Recents
+6 seconds into the revive, with adbd's restart having taken the recorder: the
+screen went, the process stayed, the revive ran on, and the recorder was back
+3.7 seconds later.
+Start fresh ends the recorder under the same lock, from asking it to quit to
+forgetting the pairing key: a revive under way finishes first, and one queued
+behind finds no key and starts nothing. Asked to quit before the lock, a
+recorder a revive was starting could come up after the quit and run on - read
+from the code, not seen on a phone; the unit tests show the order.
 
 **In the release build, from 0.5 to 0.25.2, no one-time run ran**
 ([#69](https://github.com/jemcik/JemRec/issues/69)): not the restart's, not
@@ -471,7 +543,7 @@ each only on a phone that has such a screen (never a Pixel):
   before the first call rather than after the first lost one. It is asked once
   — JemRec has no way to check the setting — and blocks nothing. The card and
   the warnings name that screen and say what to do on it in its maker's words
-  ([`AutoStart.instructionFor`](../app/src/main/java/com/jemcik/jemrec/ui/AutoStart.kt)):
+  ([`AutoStart.instructionFor`](../app/src/main/java/com/jemcik/jemrec/system/AutoStart.kt)):
   *Manage manually* in an Honor's or Huawei's App launch, a switch in a
   Xiaomi's Autostart, OPPO's startup manager or vivo's, *Never sleeping apps*
   on a Samsung's battery page. Honor's is measured; the others follow
@@ -493,7 +565,7 @@ each only on a phone that has such a screen (never a Pixel):
 - **Warns when JemRec next starts.** At every start of its process, and
   again at every open, the app reads its *own* exit records
   (`getHistoricalProcessExitReasons`, the same decision in
-  [`BackgroundKill`](../app/src/main/java/com/jemcik/jemrec/capture/BackgroundKill.kt)),
+  [`BackgroundKill`](../app/src/main/java/com/jemcik/jemrec/recorder/BackgroundKill.kt)),
   as a net for a stop the daemon's wake did not land — the recorder down, say.
   Starting clears the stopped flag, but from Android 15 Android's record of
   the process's own start says whether it began stopped
@@ -513,7 +585,7 @@ each only on a phone that has such a screen (never a Pixel):
   the screen was touched. The cable watch times its own restart, and one that
   took longer than a restart can by itself — the 90 seconds its wake lock is
   sized for, against 12–16 s measured on *Manage manually* —
-  ([`CableWatch.heldBack`](../app/src/main/java/com/jemcik/jemrec/capture/CableWatch.kt))
+  ([`CableWatch.heldBack`](../app/src/main/java/com/jemcik/jemrec/recorder/CableWatch.kt))
   posts the same warning. It does not wait for the restart to finish: on the
   Honor the phone froze JemRec again mid-restart, so the recorder came back
   only when the app was opened, seven minutes on. Instead the warning goes up
@@ -1125,8 +1197,8 @@ worked out from the file itself, decoded by Android's own decoder - the one
 the silence check after each call already uses - so there is no library, no
 native code, and nothing new for the reproducible build to match. It is
 worked out as a call is saved, an older recording's while the list is on
-screen (one at a time, stopping with the screen), or one played before then
-- with a plain slider until it is there - and kept in the app's cache: 800
+screen (one at a time, stopping with the screen), or one played before
+then - with a plain slider until it is there - and kept in the app's cache: 800
 levels, a byte each, under a hash of the file name, which can hold a
 caller's, until the recording is deleted. A recording still being written is
 left until it is finished, and one decode runs at a time a recording. Android's `Visualizer`, which draws whatever is playing, was not an
@@ -1234,8 +1306,8 @@ deleted, the dialogs and sheets - not only for the look's own pieces: until
 Recordings and Calls keys with them (the user found it, 2026-10-23).
 
 Multitrack gives each caller a colour of their own, and keeps it. By the
-name's hash alone, two callers shared one of its six colours one time in six
-- on the Honor the user's two most frequent callers were both blue. Now a
+name's hash alone, two callers shared one of its six colours one time in
+six - on the Honor the user's two most frequent callers were both blue. Now a
 caller seen for the first time gets the colour fewest of the callers in the
 lists have (most frequent first, when many are new at once), so the first six
 are six colours, and the colour stays theirs. What is kept is a one-way key -
@@ -1625,14 +1697,24 @@ choice made while JemRec is off applies from the next off.
 **Nothing brings debugging back behind the user's back.** Every way the
 recorder is revived - the keep-alive job, the Wi-Fi and cable watches, boot,
 opening the app, and the USB-debugging watch - goes through one function, and
-it stands down while the third choice is in force. While JemRec is off with
+it stands down while the third choice is in force. It asks under the
+recorder's lock, and Off writes the switches under the same lock: a revive
+under way when Off comes finishes before Off writes, and one queued behind it
+stands down. Off and On ask the switch again once they have the lock, and a
+keep-alive or watch about to stand down asks again too: an Off taken back
+while it waited writes nothing. Until 0.28 a revive asked before the lock and not again, and one
+queued as Off came had USB debugging back on - reproduced in the unit tests,
+two revives queued and an Off between them. While JemRec is off with
 Developer options hidden, a revive (after a reboot, or a cable from a computer)
 turns Wireless debugging on to start the recorder and off again once it is up.
 A recorder that dies while it waits out a call - a computer's cable pulled -
 leaves its off unfinished; the next revive or keep-alive run that finds no
-recorder finishes it, once. USB debugging the user switches on themselves while
-JemRec is off stays on. Start fresh puts Developer options back, since setup
-sends the user there.
+recorder finishes it, once; one still up whose Off was cut short before it
+answered - the app killed while it asked - is asked again by the next look,
+and goes. USB debugging the user switches on themselves while JemRec is off
+stays on. Switched off, JemRec takes down the recorder-down alert at once,
+and again whenever it stands down: a recorder down is no problem then. Start fresh puts Developer options back,
+since setup sends the user there.
 
 Not measured: a banking app that refuses. Ours open with debugging on, so what
 any one bank looks at is not known here; the order to try is the order above.

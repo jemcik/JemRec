@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.jemcik.jemrec.capture.OffMode
+import com.jemcik.jemrec.recorder.OffMode
 
 /** A choice's name: the row in Settings shows it as the setting's value, the
  *  screen as the choice - one wording, so the two cannot drift. */

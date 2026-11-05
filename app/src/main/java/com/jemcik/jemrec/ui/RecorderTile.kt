@@ -11,10 +11,11 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.TurnOffQuestionActivity
-import com.jemcik.jemrec.capture.DebugSwitchesOff
-import com.jemcik.jemrec.capture.switchesOff
-import com.jemcik.jemrec.capture.takesTheRecorder
-import com.jemcik.jemrec.capture.RecorderSwitch
+import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.RecorderSwitch
+import com.jemcik.jemrec.recorder.switchesOff
+import com.jemcik.jemrec.recorder.takesTheRecorder
+import com.jemcik.jemrec.setup.Setup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

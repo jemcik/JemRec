@@ -3,8 +3,8 @@ package com.jemcik.jemrec.calls
 import android.content.Context
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
-import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.recorder.RecorderSwitch
 
 /**
  * Whether calls were being recorded, and how, at any moment since this was
@@ -46,7 +46,14 @@ internal object CoverageHistory {
     fun note(context: Context, now: Long = System.currentTimeMillis()) {
         val prefs = Prefs.of(context)
         val entries = parse(prefs.getStringSet(KEY, emptySet()) ?: emptySet()).toMutableList()
-        entries += now to current(context)
+        // Each note in a millisecond of its own: the entries are a set of
+        // "time:STATE", so two notes in one millisecond were one entry when
+        // their states matched, and in no known order when they did not -
+        // seen 2026-11-03, once in a full run of the app's tests, when one
+        // saved the switch three times in a row and found two entries.
+        var at = now
+        while (entries.any { it.first == at }) at++
+        entries += at to current(context)
         val kept = entries.sortedBy { it.first }.takeLast(KEEP)
         prefs.edit { putStringSet(KEY, kept.map { "${it.first}:${it.second.name}" }.toSet()) }
     }

@@ -1,8 +1,9 @@
 package com.jemcik.jemrec.capture
 
-import com.jemcik.jemrec.capture.AdbdState.State
 import com.jemcik.jemrec.capture.CaptureDaemon.Request
 import com.jemcik.jemrec.capture.CaptureDaemon.WirelessStep
+import com.jemcik.jemrec.system.AdbdState
+import com.jemcik.jemrec.system.AdbdState.State
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

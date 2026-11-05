@@ -9,7 +9,7 @@ import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.capture.Waveforms
-import com.jemcik.jemrec.ui.SetupStep
+import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.ui.UiState
 import java.text.SimpleDateFormat
 import java.util.Locale

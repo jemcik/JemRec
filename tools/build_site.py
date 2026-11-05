@@ -2163,6 +2163,11 @@ SETUP = [
           "off and on itself: recording again **eleven seconds** after its "
           "first try, which came as the phone was unlocked, with the app never "
           "opened."),
+    ("p", "Android decides when the boot reaches JemRec, though: it hands the "
+          "boot broadcast to one app after another, and the queue hardly moves "
+          "while the phone sleeps. On a Galaxy S20 locked again straight after "
+          "unlocking, the recorder was back five minutes after the unlock, the "
+          "app never opened."),
     ("h3", "Without it, open JemRec once"),
     ("p", "The same phone with auto-launch off does nothing at all. The system "
           "declined to start the app for the boot broadcast — *don't meet "
@@ -2178,9 +2183,10 @@ SETUP = [
     ("h2", "Unplugging from a computer"),
     ("p", "On some phones, pulling the cable out of a computer stops the "
           "recorder: measured on an Honor, three seconds after the cable came "
-          "out. A charger does not. JemRec starts it again by itself - on "
-          "Wi-Fi, within seconds; off Wi-Fi, at the next Wi-Fi, as after a "
-          "restart. Nothing to open - but with the screen off, which is how a "
+          "out. A charger does not. On a Galaxy S20 it is the other way round: "
+          "plugging into a computer stops it, pulling the cable out does not. "
+          "JemRec starts it again by itself - on Wi-Fi, within seconds; off "
+          "Wi-Fi, at the next Wi-Fi, as after a restart. Nothing to open - but with the screen off, which is how a "
           "cable usually comes out, only if JemRec may start automatically "
           "(the setting just above): measured on that Honor, 13 seconds with "
           "it; without it, the phone's battery manager froze JemRec until the "
@@ -2251,7 +2257,8 @@ SETUP = [
          "minutes. The notification says why: it needs a few seconds of Wi-Fi, "
          "or this Wi-Fi is not allowed for Wireless debugging (with **Allow "
          "this Wi-Fi**), or it cannot connect (with **Pair again**), or it could "
-         "not start. It goes away by itself when the recorder is back."],
+         "not start. It goes away by itself when the recorder is back, and once "
+         "JemRec is switched off."],
         ["**A call was not recorded**", "An answered call in your call log has no "
          "recording. Only in Record every call mode, and only with call log "
          "access. Run the self-test."],
@@ -2584,6 +2591,13 @@ def render_html(blocks) -> str:
     return "\n".join(out)
 
 
+def fill(text, **options):
+    """textwrap.fill at the manual's width, for docs/SETUP.md, never breaking a
+    word at its hyphen: a Markdown line ending in "Wi-" and the next starting
+    "Fi" read as "Wi- Fi"."""
+    return textwrap.fill(text, 79, break_on_hyphens=False, **options)
+
+
 def render_markdown(blocks) -> str:
     """The same manual as the file people read in the repository.
 
@@ -2598,27 +2612,26 @@ def render_markdown(blocks) -> str:
         elif kind == "h3":
             out.append(f"### {payload}\n")
         elif kind == "p":
-            out.append(textwrap.fill(payload, 79) + "\n")
+            out.append(fill(payload) + "\n")
         elif kind == "ol":
             for n, item in enumerate(payload, 1):
-                out.append(textwrap.fill(
-                    item, 79, initial_indent=f"{n}. ", subsequent_indent="   "))
+                out.append(fill(
+                    item, initial_indent=f"{n}. ", subsequent_indent="   "))
             out.append("")
         elif kind == "ul":
             for item in payload:
-                out.append(textwrap.fill(
-                    item, 79, initial_indent="- ", subsequent_indent="  "))
+                out.append(fill(
+                    item, initial_indent="- ", subsequent_indent="  "))
             out.append("")
         elif kind == "note":
-            out.append(textwrap.fill(
-                payload, 79, initial_indent="> ", subsequent_indent="> ") + "\n")
+            out.append(fill(
+                payload, initial_indent="> ", subsequent_indent="> ") + "\n")
         elif kind == "video":
             # GitHub plays no video inside a Markdown file, so the still links out.
             out.append(f"[![The setup video, {VIDEO_LENGTH}](video/setup.jpg)]({VIDEO_URL})\n")
-            out.append(textwrap.fill(
+            out.append(fill(
                 f"**Prefer to watch?** The whole setup, start to finish, in "
-                f"{VIDEO_LENGTH} [on YouTube]({VIDEO_URL}), filmed on an Honor Magic 8 Pro.",
-                79) + "\n")
+                f"{VIDEO_LENGTH} [on YouTube]({VIDEO_URL}), filmed on an Honor Magic 8 Pro.") + "\n")
         elif kind == "status":
             # A table here, in Memo's words, the app's default.
             words = header_words()["memo"]
@@ -2877,7 +2890,7 @@ def trio() -> str:
 
 # Three of the app's notifications in its own words - the one after each call
 # and a silent recording (calls/AfterCall.kt), and a recorder down on a
-# Wi-Fi Android has not allowed (capture/RecorderHealth.kt) - with two of the
+# Wi-Fi Android has not allowed (recorder/RecorderHealth.kt) - with two of the
 # debug build's invented people. (when, title, text, buttons)
 NOTIFICATIONS = [
     ("now", "Olivia Bennett", "Recorded, 4:12", ["Play", "Share", "Delete"]),
@@ -3221,9 +3234,11 @@ FAQ = [
      "Wireless debugging, which Android runs over Wi-Fi. Once started, the "
      "recorder carries on with Wi-Fi off, on mobile data, anywhere. A reboot "
      "stops it, and the next few seconds of Wi-Fi bring it back by themselves "
-     "(see <a href=\"#get-started\">Get started</a>, step 3). Unplugging the "
-     "phone from a computer can stop it too (a charger does not); on Wi-Fi it "
-     "is back within seconds, by itself. With the screen off, step 3 matters "
+     "(see <a href=\"#get-started\">Get started</a>, step 3), once Android "
+     "gets round to starting JemRec: five minutes after the unlock on a Galaxy "
+     "S20 locked again at once. Unplugging the phone from a computer can stop "
+     "it too, or on a Galaxy S20 plugging it in (a charger does not); on Wi-Fi "
+     "it is back within seconds, by itself. With the screen off, step 3 matters "
      "here as well: without it, an Honor&rsquo;s battery manager kept the "
      "recorder down for about four minutes in two tests of three, and 8.5 "
      "minutes in another. Until then nothing is recorded &mdash; the header says "
@@ -3613,9 +3628,11 @@ HOW_BODY = f"""
      Wi-Fi watcher rebuild it without you within seconds of the phone joining a
      network &mdash; when the phone lets the app start in the background at boot
      to arm them. Where it does not, nothing is armed and nothing begins, which
-     is why the manual says to open the app once after a restart. Either way the
-     app says plainly that it cannot record rather than looking healthy, and
-     after two minutes a notification says it too.</p>
+     is why the manual says to open the app once after a restart. Android may
+     also take its time getting to the app: five minutes on a Galaxy S20 left
+     locked. Once it is running, the app says plainly that it cannot record
+     rather than looking healthy, and after two minutes a notification says it
+     too.</p>
   <p>Unplugging the phone from a computer is the other. Measured on an Honor:
      three seconds after the cable came out, the phone stopped the ADB daemon,
      the recorder went with it, and nothing started the ADB daemon again. So the
@@ -3626,7 +3643,9 @@ HOW_BODY = f"""
      that needs the app allowed to start by itself: left to the phone, an
      Honor froze it until it was woken &mdash; about four minutes, once 8.5
      &mdash; and JemRec says so the moment it may run again, with a button to
-     the setting. A charger stops nothing.</p>
+     the setting. On a Galaxy S20 it is plugging in that restarts the ADB
+     daemon, and the same watch has the recorder back 15 to 20 seconds later. A
+     charger stops nothing.</p>
   {timeline("unplug")}
   <p>Some phones also stop apps in the background to save power, and a stopped
      JemRec cannot start the recorder again once it goes. JemRec cannot change
@@ -4038,7 +4057,7 @@ if __name__ == "__main__":
     # The same manual for whoever is reading the repository rather than the site.
     (DOCS / "SETUP.md").write_text(
         f"# {SETUP_TITLE}\n\n"
-        + textwrap.fill(SETUP_LEAD, 79) + "\n\n"
+        + fill(SETUP_LEAD) + "\n\n"
         + "<!-- Generated by tools/build_site.py - edit the SETUP blocks there. -->\n\n"
         + render_markdown(SETUP)
     )

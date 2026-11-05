@@ -17,6 +17,10 @@ import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.RecordPrompt
+import com.jemcik.jemrec.recorder.BackgroundKill
+import com.jemcik.jemrec.recorder.CableWatch
+import com.jemcik.jemrec.recorder.RecorderSwitch
+import com.jemcik.jemrec.recorder.ReviveLog
 import com.jemcik.jemrec.recordings.AfterSave
 import com.jemcik.jemrec.recordings.RecordingSaver
 import com.jemcik.jemrec.recordings.react
@@ -171,9 +175,14 @@ class CallMonitorService : Service() {
         // The same for the daemon's background-kill wake, which without this
         // fell through to "Call in progress" with no call at all.
         if (intent?.action == ACTION_BACKGROUND_KILLED && fromDaemon) warningOnly = true
-        // Owed within seconds whatever the action, because every start of this
-        // service is a startForegroundService.
-        startForegroundCompat()
+        // Owed within seconds to a startForegroundService: the recorder's wakes
+        // and the prompt's. A plain start - the app's stop(), or another app's
+        // - owes nothing, and Android may refuse it: the app 20 s off the
+        // screen, an Off from the background took the process with it on the
+        // Android 12, 13, 16 and 17 AVDs, 2026-11-05. (2 s off the screen it
+        // was allowed, and so was a tap on the tile 20 s off, on 12 and 17.)
+        runCatching { startForegroundCompat() }
+            .onFailure { Log.i(TAG, "monitor: not in the foreground for ${intent?.action}: ${it.javaClass.simpleName}") }
 
         // The changes this start makes, made under the lock every look at
         // whether to stand down takes (finishIfIdle): a look sees them
@@ -751,7 +760,7 @@ class CallMonitorService : Service() {
         /**
          * Whether this service exists in this process right now. For the one
          * caller that must not start it by asking it to stop: retiring a
-         * wedged daemon (CaptureDaemon.retire) clears a notification that
+         * wedged daemon (DaemonLauncher.retire) clears a notification that
          * daemon left up, and a STOP to a service that is not running would
          * first bring it up, notification and all.
          */
@@ -772,6 +781,9 @@ class CallMonitorService : Service() {
         @VisibleForTesting
         internal var handOver: suspend (Context, Boolean) -> Boolean = CaptureDaemon::handOver
 
+        /** Told to stop: a plain start, which needs no foreground and may be
+         *  refused one (onStartCommand). Refused the start itself, with the
+         *  app long in the background, there is nothing running to stop. */
         fun stop(context: Context) {
             runCatching {
                 context.startService(

@@ -11,6 +11,8 @@ import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.RecordPrompt
+import com.jemcik.jemrec.recorder.BackgroundKill
+import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.SaverFakes
 import kotlinx.coroutines.Job
 import org.junit.After
@@ -184,7 +186,7 @@ class CallMonitorServiceTest {
     }
 
     @Test fun runningIsTrueForTheServicesLife() {
-        // CaptureDaemon.retire reads it, so as not to start the service by stopping it.
+        // DaemonLauncher.retire reads it, so as not to start the service by stopping it.
         assertTrue(CallMonitorService.running)
         controller.destroy()
         assertFalse(CallMonitorService.running)

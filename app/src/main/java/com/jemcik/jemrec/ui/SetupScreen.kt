@@ -21,7 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
-import com.jemcik.jemrec.capture.GlobalSettings
+import com.jemcik.jemrec.setup.PairingNotification
+import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.setup.SetupStep
+import com.jemcik.jemrec.system.AutoStart
+import com.jemcik.jemrec.system.DeviceSkin
+import com.jemcik.jemrec.system.GlobalSettings
+import com.jemcik.jemrec.system.ShellGrant
 
 /**
  * Setup, as three things the user does by hand and nothing else.

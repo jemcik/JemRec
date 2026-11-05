@@ -34,6 +34,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
+import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
 import androidx.compose.runtime.Composable
@@ -390,7 +391,7 @@ internal fun headerAside(widthDp: Int, heightDp: Int): Boolean = heightDp < 480 
  * - the on/off switch: each record control (recordToggle). It was disabled
  *   while busy, which showed; the controls looked the same and dropped the
  *   tap, so now a tap while busy applies at once and the recorder follows
- *   when the app is free (setEnabled);
+ *   at once, in the process's own scope (setEnabled);
  * - the gear, and Recordings | Calls: on each header;
  * - the gradient rule, moving while busy: each look's own busy signal in
  *   its status instead (Deck's LCD segments, Memo's ring, Multitrack's

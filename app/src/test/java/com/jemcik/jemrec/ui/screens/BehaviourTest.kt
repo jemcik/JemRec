@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
+import com.jemcik.jemrec.recorder.RecorderSwitch
 import java.util.Locale
 import com.jemcik.jemrec.capture.Recording
 import android.net.Uri
@@ -86,7 +87,6 @@ import com.jemcik.jemrec.ui.theme.Looks
 import com.jemcik.jemrec.ui.LOOK_PREVIEW
 import com.jemcik.jemrec.ui.SETTINGS_BAR
 import com.jemcik.jemrec.ui.CallsNarrowing
-import com.jemcik.jemrec.capture.RecorderSwitch
 import androidx.compose.ui.semantics.getOrNull
 import com.jemcik.jemrec.ui.SettingsBar
 import com.jemcik.jemrec.ui.headerMarks
@@ -488,14 +488,14 @@ class BehaviourTest : ScreenTest() {
 
     private fun headerPairsAgain(look: Look) {
         val app = RuntimeEnvironment.getApplication()
-        com.jemcik.jemrec.ui.Setup.markPaired(app)
+        com.jemcik.jemrec.setup.Setup.markPaired(app)
         val refused = Fixtures.ready().copy(daemonRunning = false, pairingRefused = true)
         val vm = viewModel(Fixtures.ready())
         show(look = LookChoice(look)) { AppScaffold(refused, vm) }
         compose.onNode(
             SemanticsMatcher("taps to pair again") { it.config.getOrNull(SemanticsActions.OnClick)?.label == "Pair again" },
         ).performClick()
-        assertFalse(com.jemcik.jemrec.ui.Setup.hasPaired(app))
+        assertFalse(com.jemcik.jemrec.setup.Setup.hasPaired(app))
         assertTrue(vm.state.value.pairingLost)
     }
 
@@ -505,18 +505,18 @@ class BehaviourTest : ScreenTest() {
         // refresh still read Starting, and the header was left saying Tap to
         // pair again. Here Settings, left for home.
         val app = RuntimeEnvironment.getApplication()
-        com.jemcik.jemrec.ui.Setup.markPaired(app)
+        com.jemcik.jemrec.setup.Setup.markPaired(app)
         val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS, daemonRunning = false, pairingRefused = true))
         vm.screenShown() // as MainScreen does as it starts
-        assertTrue("left alone in Settings", com.jemcik.jemrec.ui.Setup.hasPaired(app))
+        assertTrue("left alone in Settings", com.jemcik.jemrec.setup.Setup.hasPaired(app))
         vm.showScreen(Screen.HOME)
-        assertFalse(com.jemcik.jemrec.ui.Setup.hasPaired(app))
+        assertFalse(com.jemcik.jemrec.setup.Setup.hasPaired(app))
         assertTrue(vm.state.value.pairingLost)
         assertFalse(vm.state.value.pairingRefused)
     }
 
     @Test fun thePairingStepSaysWhyItIsBack() {
-        val lost = Fixtures.ready().copy(step = com.jemcik.jemrec.ui.SetupStep.NEEDS_PAIRING, pairingLost = true)
+        val lost = Fixtures.ready().copy(step = com.jemcik.jemrec.setup.SetupStep.NEEDS_PAIRING, pairingLost = true)
         show { AppScaffold(lost, viewModel(lost)) }
         compose.onNodeWithText("Wireless debugging no longer lets JemRec in", substring = true).assertIsDisplayed()
     }

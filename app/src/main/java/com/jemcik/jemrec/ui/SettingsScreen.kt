@@ -6,6 +6,8 @@ import android.content.Context
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Log
+import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.ui.theme.lookMono
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts

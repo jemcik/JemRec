@@ -6,10 +6,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import com.jemcik.jemrec.capture.BackgroundKill
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
-import com.jemcik.jemrec.capture.RecorderKeepAlive
-import com.jemcik.jemrec.capture.RecorderSwitch
+import com.jemcik.jemrec.recorder.BackgroundKill
+import com.jemcik.jemrec.recorder.RecorderLifecycle
+import com.jemcik.jemrec.recorder.Trigger
 import com.jemcik.jemrec.ui.MainScreen
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.Looks
@@ -27,10 +27,7 @@ class MainActivity : ComponentActivity() {
         // Opening the app no longer starts a permanent service. It arms the
         // keep-alive job, which revives the daemon if it is down and keeps it
         // that way. Idempotent, and a no-op while switched off.
-        if (RecorderSwitch.isOn(this)) {
-            RecorderKeepAlive.schedule(this)
-            RecorderKeepAlive.kickNow(this)
-        }
+        if (RecorderLifecycle.goes(this, Trigger.APP_OPEN)) RecorderLifecycle.arm(this, Trigger.APP_OPEN)
 
         // Hide Android's debugging notification only if the user said to, and
         // rebind the listener if the ROM dropped it. See apply().

@@ -27,8 +27,24 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.calls.AfterCall
-import com.jemcik.jemrec.capture.BackgroundKill
 import com.jemcik.jemrec.calls.MissedCalls
+import com.jemcik.jemrec.recorder.BackgroundKill
+import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.recorder.OffMode
+import com.jemcik.jemrec.recorder.RecorderHealth
+import com.jemcik.jemrec.recorder.RecorderLifecycle
+import com.jemcik.jemrec.recorder.RecorderSwitch
+import com.jemcik.jemrec.recorder.SelfTest
+import com.jemcik.jemrec.recorder.StartWithoutWifi
+import com.jemcik.jemrec.recorder.Trigger
+import com.jemcik.jemrec.setup.PairingNotification
+import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.setup.SetupStep
+import com.jemcik.jemrec.system.AutoStart
+import com.jemcik.jemrec.system.GlobalSettings
+import com.jemcik.jemrec.system.ShellGrant
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.asSharedFlow
@@ -46,12 +62,6 @@ import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.LastCallReport
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
-import com.jemcik.jemrec.capture.DebugSwitchesOff
-import com.jemcik.jemrec.capture.GlobalSettings
-import com.jemcik.jemrec.capture.NetworkRevive
-import com.jemcik.jemrec.capture.OffMode
-import com.jemcik.jemrec.capture.RecorderHealth
-import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.DeleteResult
 import com.jemcik.jemrec.capture.BulkDeleteResult
 import com.jemcik.jemrec.capture.Recording
@@ -60,17 +70,14 @@ import com.jemcik.jemrec.capture.Recordings
 import com.jemcik.jemrec.capture.Transcoder
 import androidx.core.content.FileProvider
 import java.io.File
-import com.jemcik.jemrec.capture.RecorderSwitch
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.capture.PlaybackRules
 import com.jemcik.jemrec.capture.PlaybackService
 import com.jemcik.jemrec.capture.RecordingStore
-import com.jemcik.jemrec.capture.StartWithoutWifi
 import com.jemcik.jemrec.capture.Trash
 import com.jemcik.jemrec.capture.Waveforms
 import com.jemcik.jemrec.capture.Retention
 import com.jemcik.jemrec.capture.KeepMarks
-import com.jemcik.jemrec.capture.SelfTest
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.Looks
@@ -351,6 +358,16 @@ data class UiState(
     val log: String = "",
 )
 
+/** Why Start recorder did not start it, by the cause its revive left; null
+ *  is no cause kept - JemRec off, or setup unfinished. */
+internal fun notStarted(cause: RecorderHealth.Problem?): String = when (cause) {
+    RecorderHealth.Problem.NEEDS_WIFI -> "it needs Wi-Fi for a few seconds, or Start without Wi-Fi's port"
+    RecorderHealth.Problem.NETWORK_NOT_ALLOWED -> "Android has not allowed Wireless debugging on this Wi-Fi"
+    RecorderHealth.Problem.CANNOT_CONNECT -> "JemRec cannot connect to Wireless debugging - the pairing may be gone"
+    RecorderHealth.Problem.CANNOT_START -> "it would not start on this network"
+    null -> "JemRec is off, or setup has not finished"
+}
+
 class MainViewModel @JvmOverloads constructor(
     app: Application,
     /** Tests seed the list through this; the app never passes it. Without it
@@ -365,6 +382,14 @@ class MainViewModel @JvmOverloads constructor(
     private val connectSession: (Application) -> ListenableFuture<MediaController> = { a ->
         MediaController.Builder(a, SessionToken(a, ComponentName(a, PlaybackService::class.java))).buildAsync()
     },
+    /** One look of setup's background connect (reconnect) for adbd, true
+     *  once connected. The tests count the looks. */
+    private val lookForAdb: suspend (Application) -> Boolean = { a ->
+        AdbTransport.autoConnect(a, timeoutMs = 6_000).isSuccess
+    },
+    /** How long after a flip of Start without Wi-Fi a close still due is
+     *  tried again (setStartWithoutWifi). The tests' is short. */
+    private val portCloseAgainMs: Long = 10_000,
 ) : AndroidViewModel(app) {
 
     // Whether messenger calls can work here is known at once (a cached
@@ -590,13 +615,11 @@ class MainViewModel @JvmOverloads constructor(
         // Keep the daemon alive from a scheduled job rather than a permanent
         // service. Idempotent, so it is safe to (re-)arm on every check; it does
         // nothing while the app is switched off.
-        if (RecorderSwitch.isOn(getApplication())) {
-            RecorderKeepAlive.schedule(getApplication())
-            RecorderKeepAlive.kickNow(getApplication())
-            // Re-arm the Wi-Fi watch on every open: it is lost to a force-stop
-            // or an app update, and opening the app is when the user most
-            // expects "back on Wi-Fi means ready" to hold.
-            NetworkRevive.arm(getApplication())
+        // The Wi-Fi watch too, on every open: it is lost to a force-stop or an
+        // app update, and opening the app is when the user most expects "back
+        // on Wi-Fi means ready" to hold.
+        if (RecorderLifecycle.goes(getApplication(), Trigger.SETUP_CHECK)) {
+            RecorderLifecycle.arm(getApplication(), Trigger.SETUP_CHECK)
         }
         // Keep the daemon's recording mode in step with the app's settings, even
         // when the daemon was already up (so revive did not run). Cheap, and it
@@ -726,6 +749,8 @@ class MainViewModel @JvmOverloads constructor(
             try {
                 CaptureDaemon.revive(getApplication(), request = request)
                 refreshNow()
+            } catch (e: CancellationException) {
+                throw e // the screen gone: not a failure to report
             } catch (t: Throwable) {
                 Log.w("JemRec", "reviving the recorder failed", t)
             } finally {
@@ -771,17 +796,33 @@ class MainViewModel @JvmOverloads constructor(
      * for a while, catching the window while the user is still on the Settings
      * screen with Wireless debugging up. We are already paired, so a connect that
      * lands lets recheckSetup finish setup outright.
+     *
+     * Waits its turn rather than being dropped: Open settings is tapped
+     * whatever the screen is doing - a resume's check holds busy for seconds
+     * - and goes to Settings at once, so a connect dropped there never ran
+     * while the user was in Settings. One at a time: a tap while one waits
+     * or runs adds nothing, each looking for up to 36 s.
      */
-    fun reconnect() = launchAction("connect") {
-        val app = getApplication<Application>()
-        repeat(6) {
-            if (AdbTransport.autoConnect(app, timeoutMs = 6_000).isSuccess) {
+    fun reconnect() {
+        if (!reconnecting.compareAndSet(false, true)) return
+        launchActionWhenFree("connect") {
+            try {
+                val app = getApplication<Application>()
+                repeat(6) {
+                    if (lookForAdb(app)) {
+                        recheckSetup()
+                        return@launchActionWhenFree
+                    }
+                }
                 recheckSetup()
-                return@launchAction
+            } finally {
+                reconnecting.set(false)
             }
         }
-        recheckSetup()
     }
+
+    /** A connect of [reconnect]'s waiting or under way. */
+    private val reconnecting = AtomicBoolean(false)
 
     private suspend fun finishSetupInternal() {
         _state.update { it.copy(step = SetupStep.FINISHING, finishFailed = null) }
@@ -800,15 +841,23 @@ class MainViewModel @JvmOverloads constructor(
     fun retryFinish() = launchAction("finish setup") { finishSetupInternal() }
 
     /**
-     * Start the shell-side daemon from the jar bundled in this APK.
+     * Start the recorder: Diagnostics' Start recorder.
      *
-     * The one operation that genuinely needs a working ADB session, and so the
-     * one that needs Wi-Fi. Everything afterwards runs over loopback.
+     * A revive the user asked for, as Tap to start again is
+     * (CaptureDaemon.Request.USER): Wireless debugging switched on, or off
+     * and on, where a revive would; the session opened; the recorder started
+     * from the jar this APK carries; the session closed again. It asked for
+     * the start alone, which never connects - and a revive closes its session
+     * once the recorder is up - so it failed unless a session happened to be
+     * open. Why not, when not: the cause the revive left (RecorderHealth).
      */
     fun bootstrapDaemon() = launchAction("start recorder") {
-        CaptureDaemon.ensureRunning(getApplication())
-            .onSuccess { say("recorder running on 127.0.0.1:${CaptureDaemon.PORT}") }
-            .onFailure { say("could not start the recorder: ${it.message}") }
+        val app = getApplication<Application>()
+        if (CaptureDaemon.revive(app, request = CaptureDaemon.Request.USER)) {
+            say("recorder running on 127.0.0.1:${CaptureDaemon.PORT}")
+        } else {
+            say("could not start the recorder: ${notStarted(RecorderHealth.cause(app))}")
+        }
         refresh()
     }
 
@@ -880,8 +929,8 @@ class MainViewModel @JvmOverloads constructor(
 
     /**
      * Settings, Start without Wi-Fi. Saved at once; the port follows at the
-     * first revive that can change it - this one, if it can now
-     * (CaptureDaemon.portChangeDue), or a later one. The change restarts
+     * first revive that can change it - this one, if it can
+     * (PortChange.portChangeDue), or a later one. The change restarts
      * adbd, and the recorder with it, so it is revived in the background:
      * Starting in the header until it is back, and the rest of the screen
      * left usable - an action would hold `busy`, and every control with it,
@@ -892,6 +941,20 @@ class MainViewModel @JvmOverloads constructor(
      * run already going), may have read the switch before this flip. Revives
      * queue on the recorder's lock, so this one comes after them and finds
      * the switch as it is now.
+     *
+     * Every flip has one, and what is due is asked there, under the lock.
+     * Asked here, a flip that came while a revive changed the port found
+     * nothing to change, the change not noted yet, and asked for none: on the
+     * Honor, 2026-11-05, on and straight off, the off landing as adbd
+     * restarted, left 5555 open under a switch that says off.
+     *
+     * A close still due after it is tried once more, a moment on. adbd's
+     * restart takes Wireless debugging's advertisement with it, and a revive
+     * that can connect only over the port does not close it (portChangeOver):
+     * on the same phone and day, on and off half a second apart, nothing was
+     * advertised 9 s after the restart, and on the first try the port stayed
+     * open. It was advertised again 15 s after one. Once, as on a Wi-Fi
+     * Android has not allowed it never comes; the keep-alive is left the rest.
      *
      * A refusal of this Wi-Fi a background revive noted is forgotten
      * (NetworkRevive.noteWirelessRefused) when the flip asks for a change of
@@ -905,27 +968,36 @@ class MainViewModel @JvmOverloads constructor(
         StartWithoutWifi.setEnabled(app, on)
         _state.update { it.copy(startWithoutWifi = on) }
         viewModelScope.launch {
-            val changes = withContext(Dispatchers.IO) {
-                val step = StartWithoutWifi.step(app)
-                if (step != StartWithoutWifi.PortStep.LEAVE) NetworkRevive.forgetWirelessRefused(app)
-                CaptureDaemon.portChangeDue(app, step = step) != null
+            withContext(Dispatchers.IO) {
+                if (StartWithoutWifi.step(app) != StartWithoutWifi.PortStep.LEAVE) NetworkRevive.forgetWirelessRefused(app)
             }
-            if (changes) {
-                // Starting once the change begins - the restart of adbd and
-                // the recorder - not for a revive that ends up changing
-                // nothing: one that connects over the port itself leaves a
-                // close for a Wi-Fi with Wireless debugging (portChangeOver).
-                val began = AtomicBoolean(false)
-                try {
-                    CaptureDaemon.revive(app, onPortChange = { if (began.compareAndSet(false, true)) starts.begin() })
-                } catch (t: Throwable) {
-                    Log.w("JemRec", "the port change's revive failed", t)
-                } finally {
-                    if (began.get()) starts.end()
-                }
+            reviveForThePort()
+            if (withContext(Dispatchers.IO) { StartWithoutWifi.step(app) } == StartWithoutWifi.PortStep.CLOSE) {
+                delay(portCloseAgainMs)
+                reviveForThePort()
             }
-            refreshNow()
         }
+    }
+
+    /**
+     * A revive for Start without Wi-Fi's switch: Starting once the change
+     * begins - the restart of adbd and the recorder - not for one that ends
+     * up changing nothing, as most find: one that connects over the port
+     * itself leaves a close for a Wi-Fi with Wireless debugging
+     * (portChangeOver).
+     */
+    private suspend fun reviveForThePort() {
+        val began = AtomicBoolean(false)
+        try {
+            CaptureDaemon.revive(getApplication(), onPortChange = { if (began.compareAndSet(false, true)) starts.begin() })
+        } catch (e: CancellationException) {
+            throw e // the screen gone: not a failure to report
+        } catch (t: Throwable) {
+            Log.w("JemRec", "the port change's revive failed", t)
+        } finally {
+            if (began.get()) starts.end()
+        }
+        refreshNow()
     }
 
     /**
@@ -951,17 +1023,23 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(enabled = on) }
         // Saved at once, outside the action below, which waits its turn.
         RecorderSwitch.set(getApplication(), on)
-        // Waits its turn rather than being dropped: the record control takes
-        // a tap while the app is busy - each opening's check holds busy for
-        // seconds - and the tap was dropped without a sign, the control
-        // looking as ever. The control flips at once; the recorder follows
-        // when the app is free, as the switch then is - a quick on and off
-        // ends off.
+        // The recorder follows in the process's own scope, as for the Quick
+        // Settings tile (RecorderSwitch.turn), not in this screen's: closing
+        // JemRec from Recents ends this screen's scope with the process
+        // alive - Back does not, since Android 12 - and an Off waiting there
+        // for the screen to be free was lost with it, debugging never
+        // switched off.
+        // Turns queue there, each dropped if the switch has moved on - a
+        // quick on and off ends off.
+        val turned = RecorderSwitch.turnLater(getApplication(), on)
+        // What the screen does after it waits its turn rather than being
+        // dropped: the record control takes a tap while the app is busy -
+        // each opening's check holds busy for seconds - and the tap was
+        // dropped without a sign, the control looking as ever.
         launchActionWhenFree(if (on) "turn on" else "turn off") {
             try {
+                turned.join()
                 if (RecorderSwitch.isOn(getApplication()) != on) return@launchActionWhenFree
-                // Shared with the Quick Settings tile. See RecorderSwitch.turn.
-                RecorderSwitch.turn(getApplication(), on)
                 // Ask what the world looks like rather than assuming. Called
                 // directly, not via refreshSetup(), because that is a launchAction
                 // and one will not start while this one is running.
@@ -1664,6 +1742,8 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(busy = true) }
         try {
             block()
+        } catch (e: CancellationException) {
+            throw e // the screen gone: not a failure to report
         } catch (t: Throwable) {
             Log.w("JemRec", "$label failed", t)
             say("$label failed: ${t.javaClass.simpleName}: ${t.message}")

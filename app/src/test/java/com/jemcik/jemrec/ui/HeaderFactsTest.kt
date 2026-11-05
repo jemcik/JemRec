@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.ui
 
 import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.setup.SetupStep
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
