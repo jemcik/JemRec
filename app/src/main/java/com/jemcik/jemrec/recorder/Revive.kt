@@ -4,7 +4,9 @@ import android.util.Log
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.system.AdbdState
 import com.jemcik.jemrec.system.GlobalSettings
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -253,12 +255,15 @@ object Revive {
     }
 
     /** Wireless debugging off, then on: what puts the network question back
-     *  on screen, and what starts an adbd a cable stopped. */
-    private suspend fun cycleWirelessDebugging(w: ReviveWorld): Boolean {
-        if (!w.write(GlobalSettings.ADB_WIFI_ENABLED, false)) return false
+     *  on screen, and what starts an adbd a cable stopped. Not to be cut
+     *  between the two: a revive cancelled there - a worker WorkManager
+     *  stops, a screen left - left Wireless debugging off until the next
+     *  revive. */
+    private suspend fun cycleWirelessDebugging(w: ReviveWorld): Boolean = withContext(NonCancellable) {
+        if (!w.write(GlobalSettings.ADB_WIFI_ENABLED, false)) return@withContext false
         // Long enough for the off to land as its own change.
         delay(1_000)
-        return w.write(GlobalSettings.ADB_WIFI_ENABLED, true)
+        w.write(GlobalSettings.ADB_WIFI_ENABLED, true)
     }
 
     internal fun wirelessDebuggingOn(w: ReviveWorld) = w.read(GlobalSettings.ADB_WIFI_ENABLED) == GlobalSettings.Reading.ON
