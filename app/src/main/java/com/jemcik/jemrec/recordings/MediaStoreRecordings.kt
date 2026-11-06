@@ -117,11 +117,15 @@ internal object MediaStoreRecordings {
         context.contentResolver.query(collection, COLUMNS, args, null)?.use { cursor ->
             while (cursor.moveToNext()) {
                 val shown = cursor.getString(1) ?: continue
+                val uri = ContentUris.withAppendedId(collection, cursor.getLong(0))
+                // Android's own pending row is left out of this query. One made
+                // through a chosen folder that is this one has no such mark.
+                if (!trashed && cursor.getLong(2) == 0L && RecordingStore.holdsNothing(context, uri)) continue
                 val recording = Recordings.describe(
                     // Android renames the file on disk while it is trashed,
                     // and the name column follows it; the original is inside.
                     name = if (trashed) TrashNames.parse(shown)?.first ?: shown else shown,
-                    uri = ContentUris.withAppendedId(collection, cursor.getLong(0)),
+                    uri = uri,
                     sizeBytes = cursor.getLong(2),
                     durationMillis = cursor.getLong(4),
                     // DATE_MODIFIED is in SECONDS, not milliseconds. Treating

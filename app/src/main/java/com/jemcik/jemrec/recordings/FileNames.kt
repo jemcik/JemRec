@@ -35,8 +35,9 @@ import java.util.Locale
  * The three with a caller in them need the call log, read when the call is
  * saved; without it, or for a call it does not have, the name falls back to
  * DATE. A name is chosen once, when the recording is saved, and never changed
- * afterwards: everything that remembers a recording - the keep mark, Recently
- * deleted, a link from a notification - remembers it by name.
+ * afterwards - but for a recording restored onto a name taken meanwhile:
+ * everything that remembers a recording - the keep mark, Recently deleted, a
+ * link from a notification - remembers it by name.
  *
  * MESSENGER CALLS (VoipApps) carry the app instead of a number:
  * 20261020_203501_in_viber.ogg, with the caller after it in the formats that

@@ -45,6 +45,10 @@ internal object RecordingLibrary {
                 FolderRecordings.list(context, scan.documents) +
                 AppRecordings.list(context, scan.files)
             )
+            // Not a recording yet. Its file is there under its name as it fills,
+            // in a chosen folder or app storage, and that is known only here,
+            // in the process writing it (RecordingStore.open).
+            .filterNot { Waveforms.isBeingWritten(it.name) }
             .distinctBy { it.name }
             // By when the call was, not by name: a name can start with the
             // caller now (FileNames.Format.HONOR).

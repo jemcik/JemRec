@@ -71,7 +71,7 @@ internal object AppRecordings {
     /**
      * [name] in [dir], or, if a file has it, what Android's own providers
      * make of a name that is taken: a rename replaces what is there, an open
-     * truncates it, and a recording cannot be made again. An empty file is no
+     * writes over it, and a recording cannot be made again. An empty file is no
      * recording: a save killed before its copy in leaves one, and its retry
      * may have the name.
      */
@@ -92,10 +92,9 @@ internal object AppRecordings {
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
 
-    /** The files there, less the empty, the trashed and what is being
-     *  written: as in a chosen folder, nothing else says it is not finished. */
+    /** The files there, less the empty and the trashed. */
     fun list(context: Context, files: List<File>): List<Recording> =
-        files.filter { it.isFile && it.length() > 0 && TrashNames.parse(it.name) == null && !Waveforms.isBeingWritten(it.name) }
+        files.filter { it.isFile && it.length() > 0 && TrashNames.parse(it.name) == null }
             .mapNotNull { file ->
                 runCatching {
                     Recordings.describe(context, file.name, uriOf(context, file), file.length(), whenMillis = file.lastModified())

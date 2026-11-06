@@ -214,6 +214,13 @@ object RecordingStore {
         return target
     }
 
+    /** Whether a file that says it is empty is: a provider may say 0 for a size
+     *  it does not know, an index may be behind its file, and a recording left
+     *  out for that is in neither list. One that cannot be opened stays listed. */
+    internal fun holdsNothing(context: Context, uri: Uri): Boolean = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { it.read() < 0 } ?: false
+    }.getOrDefault(false)
+
     /** What a provider calls the file at [uri]; null if it will not say. */
     internal fun nameOf(context: Context, uri: Uri): String? = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)

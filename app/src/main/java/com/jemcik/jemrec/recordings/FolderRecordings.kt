@@ -108,25 +108,14 @@ internal object FolderRecordings {
     }.onFailure { Log.w(TAG, "recordings: chosen folder query failed", it) }.getOrDefault(emptyList())
 
     /**
-     * The folder, less what is in the trash there, and less what is not a
-     * recording yet. A folder has nothing like MediaStore's IS_PENDING: a save
-     * creates the document at its first packet, and it stays empty until the
-     * tags are copied in, so a save under way, or one killed half way, was a
-     * row of 0 bytes. And filling it takes as long as the copy, or the whole
-     * save where it is written in place: that part is known only here, in the
-     * process that is writing it.
+     * The folder, less what is in the trash there, and less what is empty. A
+     * folder has nothing like MediaStore's IS_PENDING: a save creates the
+     * document at its first packet, and it stays empty until the tags are
+     * copied in, so a save under way, or one killed half way, was a row of 0 B.
      */
     fun list(context: Context, documents: List<Document>): List<Recording> =
-        documents.filter { it.trashed == null && !Waveforms.isBeingWritten(it.name) && !holdsNothing(context, it) }
+        documents.filter { it.trashed == null && (it.sizeBytes != 0L || !RecordingStore.holdsNothing(context, it.uri)) }
             .map { Recordings.describe(context, it.name, it.uri, it.sizeBytes ?: 0L, whenMillis = it.modifiedMillis) }
-
-    /** Whether a file that says it is empty is: a provider may say 0 for a size
-     *  it does not know, and a recording left out here is in neither list.
-     *  Asked only of those: one that cannot be opened stays listed. */
-    private fun holdsNothing(context: Context, document: Document): Boolean =
-        document.sizeBytes == 0L && runCatching {
-            context.contentResolver.openInputStream(document.uri)?.use { it.read() < 0 } ?: false
-        }.getOrDefault(false)
 
     /** What is in the trash there. */
     fun trashed(context: Context, documents: List<Document>): List<Recording> =

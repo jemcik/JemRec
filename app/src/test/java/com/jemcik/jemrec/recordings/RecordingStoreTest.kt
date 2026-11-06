@@ -193,6 +193,7 @@ class RecordingStoreTest {
     }
 
     @Test fun aNameThatCannotBeReadBackStaysTheOneAsked() {
+        FakeMediaStore.finishesAs = { taken }
         val target = RecordingStore.open(app, name)!!
         FakeMediaStore.listing = IllegalStateException("no")
         assertTrue(target.publish())

@@ -126,6 +126,28 @@ class RecordingsListTest {
         assertEquals(listOf("20261022_101010_in.ogg"), listed().map { it.name })
     }
 
+    @Test fun anEmptyRowInMediaStoreIsLeftOutAndAStaleOneIsNot() {
+        // With Recordings/JemRec itself chosen, a save through the folder is
+        // a row of MediaStore's too: no IS_PENDING to hide it.
+        val dir = File(app.cacheDir, "media").apply { mkdirs() }
+        FakeMediaStore.install(dir)
+        FakeMediaStore.rows += FakeMediaStore.Row(1, "20261020_101010_in.ogg", sizeBytes = 0, file = File(dir, "empty").apply { writeBytes(ByteArray(0)) })
+        FakeMediaStore.rows += FakeMediaStore.Row(2, "20261021_101010_in.ogg", sizeBytes = 0, file = File(dir, "stale").apply { writeBytes(ByteArray(3)) })
+        assertEquals(listOf("20261021_101010_in.ogg"), listed().map { it.name })
+    }
+
+    @Test fun aRecordingBeingWrittenThatMediaStoreSeesIsNotListed() {
+        FakeMediaStore.install()
+        FakeMediaStore.rows += FakeMediaStore.Row(1, "20261020_101010_in.ogg")
+        Waveforms.writingStarted("20261020_101010_in.ogg")
+        try {
+            assertTrue(listed().isEmpty())
+        } finally {
+            Waveforms.writingEnded(app, "20261020_101010_in.ogg")
+        }
+        assertEquals(1, listed().size)
+    }
+
     @Test fun aRecordingBeingWrittenIsNotListedInAnyPlace() {
         FakeMediaStore.install(File(app.cacheDir, "media"))
         FakeFolder.install(app)

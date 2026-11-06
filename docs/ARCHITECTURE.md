@@ -752,11 +752,14 @@ that name is already there, Android makes another, ` (1)` before the extension,
 in the Recordings folder and in a folder you chose alike (the Android 12 and 17
 emulators, 2026-11-06), and JemRec does the same in app storage. That is the
 recording's name from then on: JemRec reads it back as it saves, and goes by it
-for everything a name is kept for. Up to
-0.28 it went on with the name it asked for, so the marks landed on the other
-file. Such a name reads as the one asked for: the same time and direction,
-and any caller in it; after a caller the ` (1)` stays, as it may be the caller's
-own. Google's Phone app has no equivalent: it keeps its own recordings in a
+for everything a name is kept for. Up to 0.28 it went on with the name it asked
+for, so the marks landed on the other file. Such a name reads as the one asked
+for: the same time and direction, and any caller in it; after a caller the
+` (1)` stays, as it may be the caller's own. The one exception to "never
+changed" is a recording restored onto a name taken meanwhile: in app storage it
+gets a ` (1)`, what Android's providers do then was not measured, and a mark
+kept only in the app stays with the old name.
+Google's Phone app has no equivalent: it keeps its own recordings in a
 database of its own, and nothing in it is open to another app.
 
 ## Messenger calls
@@ -1402,11 +1405,11 @@ only from medium height up in their example; the width is where the room is.
   have nothing of the kind, and the file is there under its name while it
   fills: a save creates it at the first packet and fills it at the end, so a
   save under way, or one killed half way, was a row of 0 B. The list now leaves
-  out what this process is writing, and an empty file in a folder you chose. A
-  folder that does not say how big its files are keeps them listed, and one
-  that says 0 of a file with something in it is looked at: unknown is not empty.
-  A file left empty by a save that was killed stays in the folder, unlisted, as
-  nothing can tell it from somebody else's.
+  out what this process is writing, and an empty file wherever it is. A folder
+  that does not say how big its files are keeps them listed, and a file said to
+  be 0 bytes is looked at first: unknown is not empty. A file left empty by a
+  save that was killed stays in the folder, unlisted, as nothing can tell it from
+  somebody else's.
 - **Recordings Android does not count as JemRec's** - typically ones made
   before a reinstall. Android asks before JemRec may move them, in its own
   dialog. Deleting them from the list, or changing an auto-delete rule, shows
