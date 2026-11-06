@@ -14,6 +14,10 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 /** Where the waveforms are kept: what the list's fill-in asks, what waits
  *  for a recording to be finished, and what goes with a deleted one. */
@@ -36,7 +40,11 @@ class WaveformsCacheTest {
 
     @After fun clean() {
         File(app.cacheDir, "waveforms-v2").deleteRecursively()
+        Waveforms.prune(app, emptyList())
+        Waveforms.decode = theAppsDecode
     }
+
+    private val theAppsDecode = Waveforms.decode
 
     @Test fun whetherARecordingHasItsLevelsIsTheFilesSize() {
         assertFalse(Waveforms.has(app, "a.ogg"))
@@ -152,5 +160,74 @@ class WaveformsCacheTest {
         val old = File(app.cacheDir, "waveforms-v1").apply { mkdirs(); resolve("x.lvl").writeText("x") }
         Waveforms.cacheFile(app, "a.ogg")
         assertFalse(old.exists())
+    }
+
+    @Test fun whatIsWorkedOutIsKeptAndSaidSo() {
+        val levels = Waveforms.invented(3)
+        val decodes = AtomicInteger()
+        Waveforms.decode = { _, _, _, _ -> decodes.incrementAndGet(); levels }
+        val before = Waveforms.kept.value
+        val worked = Waveforms.levels(app, "new.ogg", Uri.EMPTY)!!
+        assertEquals(1, decodes.get())
+        assertEquals(before + 1, Waveforms.kept.value)
+        assertTrue(Waveforms.has(app, "new.ogg"))
+        assertEquals(Waveforms.fromBytes(Waveforms.toBytes(levels)), Waveforms.fromBytes(Waveforms.cacheFile(app, "new.ogg").readBytes()))
+        // Asked again: from memory, nothing decoded and nothing said.
+        assertEquals(worked, Waveforms.levels(app, "new.ogg", Uri.EMPTY))
+        assertEquals(1, decodes.get())
+        assertEquals(before + 1, Waveforms.kept.value)
+    }
+
+    @Test fun aDecodeThatGivesNothingKeepsNothing() {
+        Waveforms.decode = { _, _, _, _ -> null }
+        val before = Waveforms.kept.value
+        assertNull(Waveforms.levels(app, "bad.ogg", Uri.EMPTY))
+        assertFalse(Waveforms.has(app, "bad.ogg"))
+        assertEquals(before, Waveforms.kept.value)
+    }
+
+    @Test fun oneBegunAgainWhileItWasDecodedKeepsNothing() {
+        val levels = Waveforms.invented(4)
+        Waveforms.decode = { name, _, _, _ ->
+            Waveforms.writingStarted(name)
+            levels
+        }
+        val before = Waveforms.kept.value
+        try {
+            // What was decoded is given to who asked, and is not the file's now.
+            assertEquals(levels, Waveforms.levels(app, "again.ogg", Uri.EMPTY))
+            assertFalse(Waveforms.has(app, "again.ogg"))
+            assertNull(Waveforms.peek("again.ogg"))
+            assertEquals(before, Waveforms.kept.value)
+        } finally {
+            Waveforms.writingEnded(app, "again.ogg")
+        }
+    }
+
+    @Test fun twoAskingAtOnceDecodeOnce() {
+        val levels = Waveforms.invented(5)
+        val decoding = CountDownLatch(1)
+        val finish = CountDownLatch(1)
+        val decodes = AtomicInteger()
+        Waveforms.decode = { _, _, _, _ ->
+            decodes.incrementAndGet()
+            decoding.countDown()
+            finish.await(5, TimeUnit.SECONDS)
+            levels
+        }
+        var first: List<Float>? = null
+        var second: List<Float>? = null
+        val one = thread { first = Waveforms.levels(app, "both.ogg", Uri.EMPTY) }
+        assertTrue(decoding.await(5, TimeUnit.SECONDS))
+        val other = thread { second = Waveforms.levels(app, "both.ogg", Uri.EMPTY) }
+        // Waiting for the first, not finished before it was asked.
+        while (other.state != Thread.State.BLOCKED && other.isAlive) Thread.onSpinWait()
+        finish.countDown()
+        one.join(5_000)
+        other.join(5_000)
+        assertEquals(1, decodes.get())
+        assertEquals(levels, first)
+        // The second read what the first kept: a byte a level.
+        assertEquals(Waveforms.fromBytes(Waveforms.toBytes(levels)), second)
     }
 }
