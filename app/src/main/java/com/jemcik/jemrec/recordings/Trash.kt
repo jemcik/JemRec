@@ -1,15 +1,8 @@
 package com.jemcik.jemrec.recordings
 
-import android.content.ContentResolver
-import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
-import android.os.Bundle
-import android.os.Environment
-import android.provider.DocumentsContract
-import android.provider.MediaStore
 import android.util.Log
-import androidx.core.content.FileProvider
 
 /**
  * Recently deleted: where a deleted recording waits for [DAYS] days before it
@@ -190,70 +183,15 @@ object Trash {
      *  say when it goes ([inFolder]). Each has [Recording.name] as it was
      *  before, and [Recording.expiresAtMillis] set where it is known. */
     fun list(context: Context): List<Recording> {
-        val found = (fromMediaStore(context) + fromChosenFolder(context) + fromAppStorage(context))
+        val found = (
+            MediaStoreRecordings.trashed(context) +
+                FolderRecordings.trashed(context, FolderRecordings.documents(context)) +
+                AppRecordings.trashed(context, AppRecordings.files(context))
+            )
             .distinctBy { it.name }
             .sortedWith(compareBy(nullsLast()) { it.expiresAtMillis })
         return Recordings.withCallers(context, found)
     }
-
-    private fun fromMediaStore(context: Context): List<Recording> = runCatching {
-        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val args = Bundle().apply {
-            putString(
-                ContentResolver.QUERY_ARG_SQL_SELECTION,
-                "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?",
-            )
-            putStringArray(
-                ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
-                arrayOf("%${Environment.DIRECTORY_RECORDINGS}/${RecordingStore.FOLDER}%"),
-            )
-            putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
-        }
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.DISPLAY_NAME,
-            MediaStore.Audio.Media.SIZE,
-            MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DATE_EXPIRES,
-            MediaStore.Audio.Media.DATE_MODIFIED,
-        )
-        val out = mutableListOf<Recording>()
-        context.contentResolver.query(collection, projection, args, null)?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val shown = cursor.getString(1) ?: continue
-                // Android renames the file on disk while it is trashed, and
-                // the name column follows it; the original is inside.
-                val name = parse(shown)?.first ?: shown
-                out += Recordings.describe(
-                    name = name,
-                    uri = ContentUris.withAppendedId(collection, cursor.getLong(0)),
-                    sizeBytes = cursor.getLong(2),
-                    durationMillis = cursor.getLong(3),
-                    // Dated the way the list dates it, or a recording would
-                    // change its time on the way into the trash. Seconds.
-                    whenMillis = cursor.getLong(5) * 1000,
-                ).copy(expiresAtMillis = cursor.getLong(4) * 1000)
-            }
-        }
-        out
-    }.onFailure { Log.w(TAG, "trash: MediaStore query failed", it) }.getOrDefault(emptyList())
-
-    private fun fromChosenFolder(context: Context): List<Recording> =
-        Recordings.chosenFolderDocuments(context).mapNotNull { doc ->
-            val (name, expires) = doc.trashed ?: return@mapNotNull null
-            Recordings.describe(context, name, doc.uri, doc.sizeBytes, whenMillis = doc.modifiedMillis)
-                .copy(expiresAtMillis = expires)
-        }
-
-    private fun fromAppStorage(context: Context): List<Recording> =
-        RecordingStore.listAppStorage(context).mapNotNull { file ->
-            val (name, expires) = parse(file.name) ?: return@mapNotNull null
-            runCatching {
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.recordings", file)
-                Recordings.describe(context, name, uri, file.length(), whenMillis = file.lastModified())
-                    .copy(filePath = file.absolutePath, expiresAtMillis = expires)
-            }.getOrNull()
-        }
 
     /**
      * Delete for good whatever has waited its [DAYS] days, in the two places
@@ -261,18 +199,8 @@ object Trash {
      * its own trash. How many went.
      */
     fun purgeExpired(context: Context, now: Long = System.currentTimeMillis()): Int {
-        var gone = 0
-        Recordings.chosenFolderDocuments(context).forEach { doc ->
-            // Not one whose expiry nothing says: that waits for the user.
-            val expires = doc.trashed?.second ?: return@forEach
-            if (expires <= now && runCatching { DocumentsContract.deleteDocument(context.contentResolver, doc.uri) }.getOrDefault(false)) {
-                gone++
-            }
-        }
-        RecordingStore.listAppStorage(context).forEach { file ->
-            val (_, expires) = parse(file.name) ?: return@forEach
-            if (expires <= now && file.delete()) gone++
-        }
+        val gone = FolderRecordings.purgeExpired(context, FolderRecordings.documents(context), now) +
+            AppRecordings.purgeExpired(AppRecordings.files(context), now)
         if (gone > 0) Log.i(TAG, "trash: removed $gone expired recording(s) for good")
         return gone
     }

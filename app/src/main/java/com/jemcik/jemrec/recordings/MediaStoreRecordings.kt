@@ -1,10 +1,13 @@
 package com.jemcik.jemrec.recordings
 
+import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.IntentSender
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
@@ -46,6 +49,67 @@ internal class MediaStoreItem(private val uri: Uri) : RecordingLocation {
 internal object MediaStoreRecordings {
 
     private const val TAG = "JemRec"
+
+    private val collection: Uri
+        get() = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+
+    /** The columns the list reads, by place: MediaStore's own names. */
+    private val COLUMNS = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.Audio.Media.DISPLAY_NAME,
+        MediaStore.Audio.Media.SIZE,
+        MediaStore.Audio.Media.DATE_MODIFIED,
+        MediaStore.Audio.Media.DURATION,
+        MediaStore.Audio.Media.DATE_EXPIRES,
+    )
+
+    /** The default location. MediaStore knows the duration already, which
+     *  saves opening every file just to ask how long it is. */
+    fun list(context: Context): List<Recording> = runCatching {
+        val newestFirst = inRecordingsFolder().apply {
+            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${MediaStore.Audio.Media.DATE_MODIFIED} DESC")
+        }
+        rows(context, newestFirst, trashed = false)
+    }.onFailure { Log.w(TAG, "recordings: MediaStore query failed", it) }.getOrDefault(emptyList())
+
+    /** What is in Android's trash. */
+    fun trashed(context: Context): List<Recording> = runCatching {
+        val onlyTrashed = inRecordingsFolder().apply { putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY) }
+        rows(context, onlyTrashed, trashed = true)
+    }.onFailure { Log.w(TAG, "trash: MediaStore query failed", it) }.getOrDefault(emptyList())
+
+    /** The one selection: Recordings/JemRec, however the path is written. */
+    private fun inRecordingsFolder() = Bundle().apply {
+        putString(ContentResolver.QUERY_ARG_SQL_SELECTION, "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?")
+        putStringArray(
+            ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
+            arrayOf("%${Environment.DIRECTORY_RECORDINGS}/${RecordingStore.FOLDER}%"),
+        )
+    }
+
+    private fun rows(context: Context, args: Bundle, trashed: Boolean): List<Recording> {
+        val out = mutableListOf<Recording>()
+        context.contentResolver.query(collection, COLUMNS, args, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val shown = cursor.getString(1) ?: continue
+                val recording = Recordings.describe(
+                    // Android renames the file on disk while it is trashed,
+                    // and the name column follows it; the original is inside.
+                    name = if (trashed) Trash.parse(shown)?.first ?: shown else shown,
+                    uri = ContentUris.withAppendedId(collection, cursor.getLong(0)),
+                    sizeBytes = cursor.getLong(2),
+                    durationMillis = cursor.getLong(4),
+                    // DATE_MODIFIED is in SECONDS, not milliseconds. Treating
+                    // it as millis dates every recording to January 1970.
+                    // The same in the trash, or a recording would change its
+                    // time on the way in.
+                    whenMillis = cursor.getLong(3) * 1000,
+                )
+                out += if (trashed) recording.copy(expiresAtMillis = cursor.getLong(5) * 1000) else recording
+            }
+        }
+        return out
+    }
 
     /** Including trashed rows, or a restore matches nothing: they are left
      *  out of every query and update by default. */

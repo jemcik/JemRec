@@ -265,11 +265,4 @@ object RecordingStore {
     }.onFailure {
         Log.e(TAG, "store: nowhere at all to write a recording", it)
     }.getOrNull()
-
-    /** Older recordings, from before the standard folder was the default. */
-    fun listAppStorage(context: Context): List<File> =
-        File(context.getExternalFilesDir(null), "recordings")
-            .listFiles()
-            ?.sortedByDescending { it.lastModified() }
-            ?: emptyList()
 }

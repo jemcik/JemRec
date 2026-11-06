@@ -2,6 +2,7 @@ package com.jemcik.jemrec.recordings
 
 import android.content.Context
 import android.os.ParcelFileDescriptor
+import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -33,4 +34,45 @@ internal class AppFile(private val file: File) : RecordingLocation {
 
     override fun change(context: Context): ParcelFileDescriptor? =
         ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_WRITE)
+}
+
+/** App-private storage: recordings from before the standard folder was the
+ *  default, and the last resort when neither other place will take one. */
+internal object AppRecordings {
+
+    /** The files there, newest first, trashed or not. */
+    fun files(context: Context): List<File> =
+        File(context.getExternalFilesDir(null), "recordings")
+            .listFiles()
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
+
+    /** The files there, less the empty and the trashed. */
+    fun list(context: Context, files: List<File>): List<Recording> =
+        files.filter { it.isFile && it.length() > 0 && !Trash.isTrashedName(it.name) }
+            .mapNotNull { file ->
+                runCatching {
+                    Recordings.describe(context, file.name, uriOf(context, file), file.length(), whenMillis = file.lastModified())
+                        .copy(filePath = file.absolutePath)
+                }.getOrNull()
+            }
+
+    /** What is in the trash there. */
+    fun trashed(context: Context, files: List<File>): List<Recording> =
+        files.mapNotNull { file ->
+            val (name, expires) = Trash.parse(file.name) ?: return@mapNotNull null
+            runCatching {
+                Recordings.describe(context, name, uriOf(context, file), file.length(), whenMillis = file.lastModified())
+                    .copy(filePath = file.absolutePath, expiresAtMillis = expires)
+            }.getOrNull()
+        }
+
+    /** Delete for good what has waited its time, by [now]. How many went. */
+    fun purgeExpired(files: List<File>, now: Long): Int = files.count { file ->
+        val (_, expires) = Trash.parse(file.name) ?: return@count false
+        expires <= now && file.delete()
+    }
+
+    /** The content uri of a file there: who has it may read it, for a grant. */
+    fun uriOf(context: Context, file: File) = FileProvider.getUriForFile(context, "${context.packageName}.recordings", file)
 }

@@ -1,16 +1,10 @@
 package com.jemcik.jemrec.recordings
 
-import android.content.ContentUris
 import android.content.Context
 import android.content.IntentSender
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.DocumentsContract
-import android.provider.MediaStore
 import android.util.Log
-import androidx.core.content.FileProvider
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.VoipApps
 import java.text.SimpleDateFormat
@@ -163,7 +157,11 @@ internal object Recordings {
      */
     fun list(context: Context, withCallers: Boolean = true): List<Recording> {
         override?.let { return it(context) }
-        val listed = (fromMediaStore(context) + fromChosenFolder(context) + fromAppStorage(context))
+        val listed = (
+            MediaStoreRecordings.list(context) +
+                FolderRecordings.list(context, FolderRecordings.documents(context)) +
+                AppRecordings.list(context, AppRecordings.files(context))
+            )
             .distinctBy { it.name }
             // By when the call was, not by name: a name can start with the
             // caller now (FileNames.Format.HONOR).
@@ -261,113 +259,6 @@ internal object Recordings {
         sizeBytes: Long,
         whenMillis: Long = 0L,
     ) = describe(name, uri, sizeBytes, durationOf(context, uri), whenMillis)
-
-    /** One file in the folder the user picked; [trashed] as [Trash.inFolder]
-     *  reads it, null if it is not in the trash. */
-    internal class Document(
-        val name: String,
-        val uri: Uri,
-        val sizeBytes: Long,
-        val modifiedMillis: Long,
-        val trashed: Pair<String, Long?>?,
-    )
-
-    /** Every recording-shaped file in the folder the user picked, trashed or not. */
-    internal fun chosenFolderDocuments(context: Context): List<Document> = runCatching {
-        val tree = RecordingStore.treeUri(context) ?: return emptyList()
-        val children = DocumentsContract.buildChildDocumentsUriUsingTree(
-            tree, DocumentsContract.getTreeDocumentId(tree),
-        )
-        val out = mutableListOf<Document>()
-        context.contentResolver.query(
-            children,
-            arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_SIZE,
-                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-                DocumentsContract.Document.COLUMN_FLAGS,
-            ),
-            null, null, null,
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val name = cursor.getString(1) ?: continue
-                if (!name.endsWith(".${RecordingStore.EXTENSION}")) continue
-                val id = cursor.getString(0) ?: continue
-                // Before Android 17 the bit means nothing.
-                val restorable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
-                    (cursor.getInt(4) and DocumentsContract.Document.FLAG_SUPPORTS_RESTORE) != 0
-                out += Document(
-                    name,
-                    DocumentsContract.buildDocumentUriUsingTree(tree, id),
-                    cursor.getLong(2),
-                    cursor.getLong(3),
-                    Trash.inFolder(name, id, restorable),
-                )
-            }
-        }
-        out
-    }.onFailure { Log.w(TAG, "recordings: chosen folder query failed", it) }.getOrDefault(emptyList())
-
-    /** The default location. MediaStore knows the duration already, which
-     *  saves opening every file just to ask how long it is. */
-    private fun fromMediaStore(context: Context): List<Recording> = runCatching {
-        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.DISPLAY_NAME,
-            MediaStore.Audio.Media.SIZE,
-            MediaStore.Audio.Media.DATE_MODIFIED,
-            MediaStore.Audio.Media.DURATION,
-        )
-        val out = mutableListOf<Recording>()
-        context.contentResolver.query(
-            collection,
-            projection,
-            "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?",
-            arrayOf("%${Environment.DIRECTORY_RECORDINGS}/${RecordingStore.FOLDER}%"),
-            "${MediaStore.Audio.Media.DATE_MODIFIED} DESC",
-        )?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
-            val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
-            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
-            val durCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-            while (cursor.moveToNext()) {
-                val name = cursor.getString(nameCol) ?: continue
-                out += describe(
-                    name = name,
-                    uri = ContentUris.withAppendedId(collection, cursor.getLong(idCol)),
-                    sizeBytes = cursor.getLong(sizeCol),
-                    durationMillis = cursor.getLong(durCol),
-                    // DATE_MODIFIED is in SECONDS, not milliseconds. Treating
-                    // it as millis dates every recording to January 1970.
-                    whenMillis = cursor.getLong(dateCol) * 1000,
-                )
-            }
-        }
-        out
-    }.onFailure { Log.w(TAG, "recordings: MediaStore query failed", it) }.getOrDefault(emptyList())
-
-    /** The folder the user picked, less what is in the trash there. */
-    private fun fromChosenFolder(context: Context): List<Recording> =
-        chosenFolderDocuments(context)
-            .filter { it.trashed == null }
-            .map { describe(context, it.name, it.uri, it.sizeBytes, whenMillis = it.modifiedMillis) }
-
-    /** Recordings made before the standard folder became the default. */
-    private fun fromAppStorage(context: Context): List<Recording> =
-        RecordingStore.listAppStorage(context)
-            .filter { it.isFile && it.length() > 0 && !Trash.isTrashedName(it.name) }
-            .mapNotNull { file ->
-                runCatching {
-                    val uri = FileProvider.getUriForFile(
-                        context, "${context.packageName}.recordings", file,
-                    )
-                    describe(context, file.name, uri, file.length(), whenMillis = file.lastModified())
-                        .copy(filePath = file.absolutePath)
-                }.getOrNull()
-            }
 
     /** "Today 16:53" reads better than a date for the common case, which is a
      *  call from the last few minutes. */
