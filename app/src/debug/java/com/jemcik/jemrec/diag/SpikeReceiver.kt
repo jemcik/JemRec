@@ -521,8 +521,10 @@ class SpikeReceiver : BroadcastReceiver() {
                             ""
                         }
                         val listed = recordings.list(appContext, withCallers = false).any { it.name == name }
-                        val trashed = com.jemcik.jemrec.recordings.Trash.list(appContext).any { it.name == name }
-                        report(appContext, "trash", "$name: listed=$listed trashed=$trashed$moved")
+                        val waiting = com.jemcik.jemrec.recordings.Trash.list(appContext).filter { it.name == name }
+                        val trashed = waiting.isNotEmpty()
+                        val expires = waiting.joinToString(",") { "${it.expiresAtMillis}" }
+                        report(appContext, "trash", "$name: listed=$listed trashed=$trashed expires=$expires$moved")
                     }
 
                     // A file written as a save writes one, under a name a test

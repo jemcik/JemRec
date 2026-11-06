@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.recordings
 
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import com.jemcik.jemrec.recordings.OggSamples.recording
 import com.jemcik.jemrec.recordings.OggSamples.splice
 import org.junit.Assert.assertEquals
@@ -102,22 +103,35 @@ class PlacesTest {
 
     @Test fun aPlaceThatCannotBeAskedLeavesTheOthers() {
         val dir = FakeFolder.install(app)
+        val soon = System.currentTimeMillis() + 86_400_000L
+        val trashedInMedia = "20261023_101010_in.ogg"
+        val trashedInFolder = "20261024_101010_in.ogg"
         File(dir, later).writeBytes(recording())
+        FakeFolder.file(Trash.nameFor(trashedInFolder, soon))
         FakeMediaStore.rows += FakeMediaStore.Row(1, name)
+        FakeMediaStore.rows += FakeMediaStore.Row(
+            2, Trash.nameFor(trashedInMedia, 1_795_000_000_000L), trashed = true, expiresSeconds = 1_795_000_000,
+        )
         FakeMediaStore.listing = IllegalStateException("no")
         assertEquals(listOf(later), Recordings.list(app).map { it.name })
-        assertTrue(Trash.list(app).isEmpty())
+        assertEquals(listOf(trashedInFolder), Trash.list(app).map { it.name })
         FakeMediaStore.listing = null
         FakeFolder.listing = IllegalStateException("no")
         assertEquals(listOf(name), Recordings.list(app).map { it.name })
-        assertTrue(Trash.list(app).isEmpty())
-        assertEquals(0, Trash.purgeExpired(app))
+        assertEquals(listOf(trashedInMedia), Trash.list(app).map { it.name })
     }
 
-    @Test fun aFolderThatIsNotThereAnyMoreListsNothing() {
-        RecordingStore.setTree(app, FakeFolder.tree)
-        FakeFolder.listing = IllegalStateException("gone")
+    @Test fun thePurgeGoesOnInAppStorageWhenTheFolderCannotBeAsked() {
+        FakeFolder.install(app)
+        val expired = FakeStorage.appFile(app, Trash.nameFor(name, System.currentTimeMillis() - 86_400_000L))
+        FakeFolder.listing = IllegalStateException("no")
+        assertEquals(1, Trash.purgeExpired(app))
+        assertFalse(expired.exists())
+    }
+
+    @Test fun aFolderWithNoProviderListsNothing() {
+        RecordingStore.setTree(app, "content://no.such.provider/tree/primary%3ACalls".toUri())
         assertTrue(Recordings.list(app).isEmpty())
-        RecordingStore.clearTree(app)
+        assertTrue(Trash.list(app).isEmpty())
     }
 }

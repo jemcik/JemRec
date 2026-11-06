@@ -141,6 +141,18 @@ class RecentlyDeletedTest {
         assertEquals(setOf(FakeMediaStore.uriOf(5), FakeStorage.appUri(app, file)), trashed.map { it.uri }.toSet())
     }
 
+    @Test fun oneFileSeenThroughTwoPlacesIsOneRow() {
+        // Recordings/JemRec itself chosen as the folder: MediaStore's trashed
+        // row and the folder's document are one file, by one name and expiry.
+        FakeMediaStore.install()
+        FakeFolder.install(app)
+        val name = "20261020_101010_in.ogg"
+        val onDisk = Trash.nameFor(name, 1_795_000_000_000L)
+        FakeMediaStore.rows += FakeMediaStore.Row(id = 5, name = onDisk, trashed = true, expiresSeconds = 1_795_000_000)
+        FakeFolder.file(onDisk)
+        assertEquals(listOf(FakeMediaStore.uriOf(5)), Trash.list(app).map { it.uri })
+    }
+
     @Test fun aChosenFoldersRecordingIsTrashedByRenameAndRestoredTheSameWay() {
         val dir = FakeFolder.install(app)
         val name = "20261020_101010_in.ogg"

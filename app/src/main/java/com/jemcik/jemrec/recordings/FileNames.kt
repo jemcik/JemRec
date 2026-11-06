@@ -205,14 +205,16 @@ object FileNames {
     }
 
     private val HONOR_NAME = Regex("""^(.*)@(\+?\d+)_(\d{14})\.\w+$""")
-    private val TAKEN = Regex(""" \(\d+\)(\.\w+)$""")
+
+    /** What a provider adds to a name that is taken (RecordingStore.Target.name). */
+    private val TAKEN = Regex(""" \(\d+\)$""")
 
     /** Read a recording's name back, in any of the formats; null if it is not one. Pure. */
-    internal fun parse(saved: String): Parsed? {
-        // The name it was given, if its place found that one taken: the same
-        // call, and the name says the same of it (RecordingStore.Target.name).
-        val name = TAKEN.replace(saved, "$1")
-        HONOR_NAME.matchEntire(name)?.let { m ->
+    internal fun parse(name: String): Parsed? {
+        // A name its place had to change says the same of its call. Honor's
+        // has its time last, so the addition is cut first.
+        val stem = name.substringBeforeLast('.')
+        HONOR_NAME.matchEntire(TAKEN.replace(stem, "") + name.removePrefix(stem))?.let { m ->
             val at = runCatching { honorStamp().parse(m.groupValues[3])?.time }.getOrNull() ?: return null
             return Parsed(at, null, m.groupValues[1].trim().ifEmpty { null }, m.groupValues[2])
         }
@@ -224,17 +226,19 @@ object FileNames {
         // "_in_viber_Priya Raman" from "..._in_viber_Priya Raman.ogg": an
         // optional direction, an optional messenger, an optional caller.
         var rest = name.drop(15).substringBeforeLast('.').removePrefix("_")
+        // After a caller the addition stays: it may be the caller's own.
+        val cut = TAKEN.replace(rest, "")
         val incoming = when {
-            rest == "in" || rest.startsWith("in_") -> true
-            rest == "out" || rest.startsWith("out_") -> false
+            cut == "in" || rest.startsWith("in_") -> true
+            cut == "out" || rest.startsWith("out_") -> false
             else -> null
         }
         if (incoming != null) rest = rest.removePrefix(if (incoming) "in" else "out").removePrefix("_")
-        val app = rest.substringBefore('_').takeIf { it in VoipApps.TAGS }
+        val app = TAKEN.replace(rest, "").substringBefore('_').takeIf { it in VoipApps.TAGS }
         if (app != null) rest = rest.removePrefix(app).removePrefix("_")
         // A caller only where the name has said what it is; anything else
         // after the time is a name that is not one of ours.
-        val caller = rest.trim().ifEmpty { null }?.takeIf { incoming != null || app != null }
+        val caller = rest.takeUnless { TAKEN.matches(it) }?.trim()?.ifEmpty { null }?.takeIf { incoming != null || app != null }
         return Parsed(at, incoming, caller, app = app)
     }
 

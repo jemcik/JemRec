@@ -1467,18 +1467,29 @@ def name_taken():
             made[place] = store(name, recordings)
         there = {place: [f for f in lines_in(place) if stem in f] for place in made}
         assert all(said != name and said in there[place] for place, said in made.items()), f"said {made}, there: {there}"
-        for each in (name, name, *made.values()):
+        # A second apart: one name in both, at one expiry, reads as one file.
+        trash_all = (name, name, *made.values())
+        for each in trash_all:
             trash_place(f"'{each}'", move=True)
+            time.sleep(1.1)
         assert place_of(made[RECORDINGS]) == (False, True) and place_of(made[folder]) == (False, True) \
             and place_of(name) == (False, True), "not all four in the trash"
+        # What says one file seen through two places is one: Android's expiry
+        # for the row is the one in the file's name (RecordingLibrary.trashed).
+        said = trash_place(f"'{made[RECORDINGS]}'")[1]
+        expires = int(re.search(r"expires=(\d+)", said).group(1))
+        waiting = [f for f in lines_in(RECORDINGS) if f.endswith(made[RECORDINGS])]
+        assert waiting == [f".trashed-{expires // 1000}-{made[RECORDINGS]}"], f"expires {expires}, the file: {waiting}"
         open_trash()
         wait_for(lambda: ui().count('text="Restore"') >= 4, 20, "a row for each copy")
         shown = ui().count('text="Restore"')
         assert sh(f"pidof {PKG}").strip(), "the app stopped showing them"
         tap("Restore all")
-        wait_for(lambda: name in lines_in(RECORDINGS) and name in lines_in(folder), 20, "Restore all to bring back both copies")
-        for each in (name, name, *made.values()):
+        wait_for(lambda: all(name in lines_in(place) and made[place] in lines_in(place) for place in made), 20,
+                 "Restore all to bring back all four")
+        for each in trash_all:
             trash_place(f"'{each}'", move=True)
+            time.sleep(1.1)
         sh(f"am force-stop {PKG}")
         open_trash()
         tap("Delete all for good")

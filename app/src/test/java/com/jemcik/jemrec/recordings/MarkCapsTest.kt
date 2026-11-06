@@ -10,6 +10,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -151,5 +152,26 @@ class MarkCapsTest {
         onThePhone(old)
         FileNames.noteCallers(app, minutes(2000).map(::viberName).associateWith { "Priya Raman" })
         assertEquals("Sam", FileNames.callers(app)[old])
+    }
+
+    /** A reinstall: [names] on the phone, each saying [facts], the app's
+     *  preferences empty. */
+    private fun readBack(names: List<String>, facts: RecordingTags.Facts) {
+        val bytes = OggSamples.splice(OggSamples.recording(), facts)
+        names.forEach { File(FakeStorage.appFolder(app), it).writeBytes(bytes) }
+        Recordings.list(app)
+    }
+
+    @Test fun aReinstallLosesNoMessageOrDirectionToTheBound() {
+        val names = minutes(2010).map(::honorName)
+        readBack(names, RecordingTags.Facts(message = true, incoming = true))
+        assertEquals(names.toSet(), MessageMarks.all(app))
+        assertEquals(names.toSet(), FileNames.directions(app).keys)
+    }
+
+    @Test fun aReinstallLosesNoCallerToTheBound() {
+        val names = minutes(2010).map(::viberName)
+        readBack(names, RecordingTags.Facts(incoming = true, caller = "Priya Raman"))
+        assertEquals(names.toSet(), FileNames.callers(app).keys)
     }
 }

@@ -117,8 +117,16 @@ internal object FolderRecordings {
      * process that is writing it.
      */
     fun list(context: Context, documents: List<Document>): List<Recording> =
-        documents.filter { it.trashed == null && it.sizeBytes != 0L && !Waveforms.isBeingWritten(it.name) }
+        documents.filter { it.trashed == null && !Waveforms.isBeingWritten(it.name) && !holdsNothing(context, it) }
             .map { Recordings.describe(context, it.name, it.uri, it.sizeBytes ?: 0L, whenMillis = it.modifiedMillis) }
+
+    /** Whether a file that says it is empty is: a provider may say 0 for a size
+     *  it does not know, and a recording left out here is in neither list.
+     *  Asked only of those: one that cannot be opened stays listed. */
+    private fun holdsNothing(context: Context, document: Document): Boolean =
+        document.sizeBytes == 0L && runCatching {
+            context.contentResolver.openInputStream(document.uri)?.use { it.read() < 0 } ?: false
+        }.getOrDefault(false)
 
     /** What is in the trash there. */
     fun trashed(context: Context, documents: List<Document>): List<Recording> =

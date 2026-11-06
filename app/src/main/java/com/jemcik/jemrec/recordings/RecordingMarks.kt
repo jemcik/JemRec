@@ -33,16 +33,18 @@ internal object RecordingMarks {
 
     /**
      * [entries] held to the bound, each read as a name by [name]: the newest,
-     * and any older the list has read ([readNames]), which is every file on
-     * the phone. It is marks of gone files the bound is for: an old message
-     * past the newest 2000 lost its mark while its file stayed, and with it
-     * the short-call rule's exception, so auto-delete could take it for a
-     * wrong number; a direction or a caller, what its row shows.
+     * and any older the list has read ([readNames]) or is reading now
+     * ([listed]), which is every file on the phone. It is marks of gone files
+     * the bound is for: an old message past the newest 2000 lost its mark while
+     * its file stayed, and with it the short-call rule's exception, so
+     * auto-delete could take it for a wrong number; a direction or a caller,
+     * what its row shows. And a reinstall read every file back at once, none
+     * of them read yet, and noted them as read when the oldest had gone.
      */
-    private fun bounded(context: Context, entries: Set<String>, name: (String) -> String): Set<String> {
+    private fun bounded(context: Context, entries: Set<String>, listed: Set<String>, name: (String) -> String): Set<String> {
         if (entries.size <= NEWEST) return entries
-        val read = readNames(context)
-        return (newest(entries, name) + entries.filter { name(it) in read }).toSet()
+        val here = readNames(context) + listed
+        return (newest(entries, name) + entries.filter { name(it) in here }).toSet()
     }
 
     /** The newest [NEWEST] of [entries], by the time each one's name holds;
@@ -102,8 +104,8 @@ internal object RecordingMarks {
         fun mark(context: Context, name: String) = mark(context, listOf(name))
 
         @Synchronized
-        fun mark(context: Context, names: Collection<String>) {
-            val kept = bounded(context, all(context) + names) { it }
+        fun mark(context: Context, names: Collection<String>, listed: Set<String> = emptySet()) {
+            val kept = bounded(context, all(context) + names, listed) { it }
             Prefs.of(context).edit { putStringSet(KEY_MESSAGES, kept) }
         }
     }
@@ -122,14 +124,14 @@ internal object RecordingMarks {
 
         /** The same, for many at once: one write of the preferences. */
         @Synchronized
-        fun note(context: Context, directions: Map<String, Boolean>) {
+        fun note(context: Context, directions: Map<String, Boolean>, listed: Set<String> = emptySet()) {
             val unsaid = directions.filterKeys { FileNames.parse(it)?.incoming == null }
             if (unsaid.isEmpty()) return
             val prefs = Prefs.of(context)
             val entries = (prefs.getStringSet(KEY_DIRECTIONS, emptySet()) ?: emptySet()).toMutableSet()
             entries.removeAll { it.drop(2) in unsaid }
             unsaid.forEach { (name, incoming) -> entries += "${if (incoming) "i" else "o"}:$name" }
-            prefs.edit { putStringSet(KEY_DIRECTIONS, bounded(context, entries) { it.drop(2) }) }
+            prefs.edit { putStringSet(KEY_DIRECTIONS, bounded(context, entries, listed) { it.drop(2) }) }
         }
 
         /** Every direction noted, by name: true for incoming. */
@@ -151,13 +153,13 @@ internal object RecordingMarks {
 
         /** The same, for many at once: one write of the preferences. */
         @Synchronized
-        fun note(context: Context, callers: Map<String, String>) {
+        fun note(context: Context, callers: Map<String, String>, listed: Set<String> = emptySet()) {
             if (callers.isEmpty()) return
             val prefs = Prefs.of(context)
             val entries = (prefs.getStringSet(KEY_CALLERS, emptySet()) ?: emptySet()).toMutableSet()
             entries.removeAll { it.substringBefore('\u0000') in callers }
             callers.forEach { (name, caller) -> entries += "$name\u0000$caller" }
-            prefs.edit { putStringSet(KEY_CALLERS, bounded(context, entries) { it.substringBefore('\u0000') }) }
+            prefs.edit { putStringSet(KEY_CALLERS, bounded(context, entries, listed) { it.substringBefore('\u0000') }) }
         }
 
         /** Every caller noted, by name. */
@@ -192,7 +194,8 @@ internal object RecordingMarks {
      * back from it. A file leaves the list for Recently deleted, for a query
      * that failed, for a permission taken back or another folder chosen, and
      * only the first can be told from here; none of them makes it a new file.
-     * The bound is so this does not grow with every recording ever deleted.
+     * The bound is so this does not grow with every recording ever deleted:
+     * past it a name goes, and its file is read again if it ever returns.
      */
     @Synchronized
     fun recover(context: Context, recordings: List<Recording>) {
@@ -203,7 +206,7 @@ internal object RecordingMarks {
         val found = results.mapNotNull { (name, result) -> result.getOrNull()?.let { name to it } }
         val failed = results.count { it.second.isFailure }
         if (found.isNotEmpty() || failed > 0) {
-            note(context, found)
+            note(context, found, names)
             Log.i(TAG, "tags: read ${unread.size - failed} recording(s), ${found.size} with JemRec's tags, $failed to try again")
         }
         val now = (seen intersect names) + results.filter { it.second.isSuccess }.map { it.first } + newest(seen - names) { it }
@@ -213,12 +216,12 @@ internal object RecordingMarks {
     }
 
     /** What [found] says, into the store each mark has always lived in. */
-    private fun note(context: Context, found: List<Pair<String, RecordingTags.Facts>>) {
+    private fun note(context: Context, found: List<Pair<String, RecordingTags.Facts>>, listed: Set<String>) {
         val messages = found.filter { it.second.message }.map { it.first }
-        if (messages.isNotEmpty()) Messages.mark(context, messages)
+        if (messages.isNotEmpty()) Messages.mark(context, messages, listed)
         val keeps = found.filter { it.second.kept }.map { it.first }
         if (keeps.isNotEmpty()) Keep.set(context, keeps, kept = true)
-        Directions.note(context, found.mapNotNull { (name, f) -> f.incoming?.let { name to it } }.toMap())
+        Directions.note(context, found.mapNotNull { (name, f) -> f.incoming?.let { name to it } }.toMap(), listed)
         // Only where the name does not say who: the date and number formats'.
         Callers.note(
             context,
@@ -226,6 +229,7 @@ internal object RecordingMarks {
                 val parsed = FileNames.parse(name)
                 f.caller?.takeIf { parsed?.app != null && parsed.caller == null }?.let { name to it }
             }.toMap(),
+            listed,
         )
     }
 

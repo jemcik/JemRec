@@ -66,12 +66,19 @@ internal object RecordingLibrary {
      * list stands for a call, but here each is a file with a time left, and
      * one not shown could be neither restored nor deleted, and went unseen
      * when its time was up. Delete all for good left it there. [Recording.uri]
-     * tells them apart.
+     * tells them apart. But one file is one row: with Recordings/JemRec itself
+     * chosen as the folder, a trashed file is both MediaStore's row and the
+     * folder's document, by one name and, in the file's name as in
+     * DATE_EXPIRES, one expiry (the emulator check name_taken holds the two
+     * equal); its second row would fail on the first's restore, and count
+     * twice in Delete all for good's question.
      */
     fun trashed(context: Context, scan: Scan = scan(context)): List<Recording> {
+        val inMediaStore = MediaStoreRecordings.trashed(context)
+        val sameFile = inMediaStore.mapTo(HashSet()) { it.name to it.expiresAtMillis }
         val found = (
-            MediaStoreRecordings.trashed(context) +
-                FolderRecordings.trashed(context, scan.documents) +
+            inMediaStore +
+                FolderRecordings.trashed(context, scan.documents).filter { (it.name to it.expiresAtMillis) !in sameFile } +
                 AppRecordings.trashed(context, scan.files)
             )
             .sortedWith(compareBy(nullsLast()) { it.expiresAtMillis })

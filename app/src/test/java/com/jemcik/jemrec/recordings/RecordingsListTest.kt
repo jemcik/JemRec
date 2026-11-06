@@ -118,6 +118,14 @@ class RecordingsListTest {
         assertEquals(listOf("20261020_101010_in.ogg"), listed().map { it.name })
     }
 
+    @Test fun aFolderThatSaysEmptyOfAFileWithBytesKeepsItListed() {
+        FakeFolder.install(app)
+        FakeFolder.shows = { FakeFolder.Shown(it.name, "primary:Calls/${it.name}", saysEmpty = true) }
+        FakeFolder.file("20261020_101010_in.ogg", bytes = 0)
+        FakeFolder.file("20261022_101010_in.ogg", bytes = 1)
+        assertEquals(listOf("20261022_101010_in.ogg"), listed().map { it.name })
+    }
+
     @Test fun aRecordingBeingWrittenIsNotListedInAnyPlace() {
         FakeMediaStore.install(File(app.cacheDir, "media"))
         FakeFolder.install(app)

@@ -753,8 +753,9 @@ in the Recordings folder and in a folder you chose alike (the Android 12 and 17
 emulators, 2026-11-06). That is the recording's name from then on: JemRec reads
 it back as it saves, and goes by it for everything a name is kept for. Up to
 0.28 it went on with the name it asked for, so the marks landed on the other
-file. Such a name reads as the one asked for: the same time, direction and
-caller. Google's Phone app has no equivalent: it keeps its own recordings in a
+file. Such a name reads as the one asked for: the same time and direction,
+and any caller in it; after a caller the ` (1)` stays, as it may be the caller's
+own. Google's Phone app has no equivalent: it keeps its own recordings in a
 database of its own, and nothing in it is open to another app.
 
 ## Messenger calls
@@ -1381,7 +1382,10 @@ only from medium height up in their example; the width is where the room is.
   are two rows, each restored or deleted on its own. Up to 0.28 it showed one
   per name: the other could be neither restored nor deleted, *Delete all for
   good* left it there, and it went unseen when its time was up. The list keeps
-  one row per name, as a row there stands for a call. In app storage a restore,
+  one row per name, as a row there stands for a call. One file is one row, even
+  with `Recordings/JemRec` itself chosen as the folder, where it is seen through
+  both Android's trash and the folder, by one name and one expiry. In app
+  storage a restore,
   or the rename into the trash, takes a free name if that one is taken: a plain
   rename replaces the file that has it, and until 0.29 a restore there did.
   An emulator check saves one name twice in each of the two places Android
@@ -1398,9 +1402,10 @@ only from medium height up in their example; the width is where the room is.
   fills: a save creates it at the first packet and fills it at the end, so a
   save under way, or one killed half way, was a row of 0 B. The list now leaves
   out what this process is writing, and an empty file in a folder you chose. A
-  folder that does not say how big its files are keeps them listed: unknown is
-  not empty. A file left empty by a save that was killed stays in the folder,
-  unlisted, as nothing can tell it from somebody else's.
+  folder that does not say how big its files are keeps them listed, and one
+  that says 0 of a file with something in it is looked at: unknown is not empty.
+  A file left empty by a save that was killed stays in the folder, unlisted, as
+  nothing can tell it from somebody else's.
 - **Recordings Android does not count as JemRec's** - typically ones made
   before a reinstall. Android asks before JemRec may move them, in its own
   dialog. Deleting them from the list, or changing an auto-delete rule, shows
@@ -1475,13 +1480,15 @@ recording now carries its own marks.
   as it left, so the file was read again on its return, and a keep mark taken
   off a file JemRec may not write came back from the file. A name that is not
   listed now stays read, the newest 2000 of them, so the record does not grow
-  with every recording ever deleted.
+  with every recording ever deleted; past that a name goes, and its file is read
+  again if it ever returns.
 - **What holds to 2000, and what does not.** A message, a direction and a
   messenger's caller outlive their recordings in the app's preferences, so those
-  three keep the newest 2000 names. A name the list has read stays past that: an
-  old message used to lose its mark with its file still there, and with it the
-  short-call rule's exception, so auto-delete could take it for a wrong number.
-  Keep marks have no bound.
+  three keep the newest 2000 names. A name the list has read stays past that, or
+  is reading, as it does all of them after a reinstall: an old message used to
+  lose its mark with its file still there, and with it the short-call rule's
+  exception, so auto-delete could take it for a wrong number. Keep marks have no
+  bound.
 - **A row's time is the call's.** Writing the keep mark moves the file's
   date (by 4 s on the Android 17 emulator), and a row with no caller showed
   that date: it would have jumped to the moment of the tap. It now shows the

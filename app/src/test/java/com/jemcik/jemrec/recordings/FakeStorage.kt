@@ -295,7 +295,14 @@ internal class FakeMediaStore : ContentProvider() {
  */
 internal class FakeFolder : ContentProvider() {
 
-    class Shown(val name: String, val id: String, val flags: Int = 0, val sizeKnown: Boolean = true)
+    class Shown(
+        val name: String,
+        val id: String,
+        val flags: Int = 0,
+        val sizeKnown: Boolean = true,
+        /** Reports 0 for a file that has bytes. */
+        val saysEmpty: Boolean = false,
+    )
 
     companion object {
         const val AUTHORITY = "com.jemcik.jemrec.test.documents"
@@ -363,7 +370,7 @@ internal class FakeFolder : ContentProvider() {
                     when (column) {
                         Document.COLUMN_DOCUMENT_ID -> shown.id
                         Document.COLUMN_DISPLAY_NAME -> shown.name
-                        Document.COLUMN_SIZE -> file.length().takeIf { shown.sizeKnown }
+                        Document.COLUMN_SIZE -> if (shown.saysEmpty) 0L else file.length().takeIf { shown.sizeKnown }
                         Document.COLUMN_LAST_MODIFIED -> file.lastModified()
                         Document.COLUMN_FLAGS -> shown.flags
                         else -> null

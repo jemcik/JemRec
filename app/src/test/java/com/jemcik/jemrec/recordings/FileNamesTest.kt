@@ -138,15 +138,16 @@ class FileNamesTest {
     @Test fun aNameAProviderMadeWhenTheOneAskedWasTakenReadsAsTheOneAsked() {
         // " (1)" before the extension: what Android's file providers add.
         assertEquals(FileNames.parse("20261020_165705_in.ogg"), FileNames.parse("20261020_165705_in (1).ogg"))
-        assertEquals(FileNames.parse("20261020_165705_out_Priya Shah.ogg"), FileNames.parse("20261020_165705_out_Priya Shah (2).ogg"))
         assertEquals(FileNames.parse("20261020_203501_in_viber.ogg"), FileNames.parse("20261020_203501_in_viber (1).ogg"))
+        assertEquals(FileNames.parse("20261020_203501_viber.ogg"), FileNames.parse("20261020_203501_viber (2).ogg"))
         assertEquals(
             FileNames.parse("Priya Shah@+447700900123_20261020165705.ogg"),
             FileNames.parse("Priya Shah@+447700900123_20261020165705 (1).ogg"),
         )
-        // Only there.
+        // After a caller it may be the caller's own: "Team (2)" stays.
+        assertEquals("Team (2)", FileNames.parse("20261020_165705_out_Team (2).ogg")?.caller)
+        assertEquals("Team (2)", FileNames.parse("20261020_203501_in_viber_Team (2).ogg")?.caller)
         assertNull(FileNames.parse("voice note (1).ogg"))
-        assertEquals("Sam (1) Lee", FileNames.parse("20261020_165705_out_Sam (1) Lee.ogg")?.caller)
     }
 }
 
