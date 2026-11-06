@@ -1137,6 +1137,8 @@ class MainViewModel @JvmOverloads constructor(
                     refreshNow()
                     val recording = _state.value.recordings.firstOrNull { it.name == link.name }
                     if (recording == null) {
+                        // Gone by another way than JemRec's: a file manager's.
+                        link.name?.let { AfterCall.gone(app, it) }
                         tell("that recording is no longer there")
                         return@launch
                     }

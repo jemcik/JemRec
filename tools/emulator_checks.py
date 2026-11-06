@@ -1296,12 +1296,19 @@ def files_named(name, folder):
     return [f for f in sh(f"ls -a {folder}/").split() if name in f]
 
 
+def after_call_up():
+    """Whether the last call's notification is up (AfterCall's id 33)."""
+    return re.search(rf"NotificationRecord\(.*pkg={PKG} .*id=33 ", sh("dumpsys notification --noredact")) is not None
+
+
 def restore_then_delete(name, folder):
     """[name] moved to Recently deleted comes back with Restore all, tapped
     there; moved again, Delete all for good and its question remove it, its
     file in [folder] with it. The file's name while it waited."""
+    wait_for(after_call_up, 20, "the after-call notification")
     place, said = trash_place(name, move=True)
     assert place == (False, True), f"not moved to the trash: {said}"
+    assert not after_call_up(), "the recording went to the trash, and its notification stayed"
     open_trash()
     tap("Restore all")
     wait_for(lambda: trash_place(name)[0] == (True, False), 20, "Restore all to bring it back")

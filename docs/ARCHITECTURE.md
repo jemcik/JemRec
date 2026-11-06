@@ -1523,7 +1523,11 @@ out on the day you need the call. So JemRec says so, in four notifications.
 
 - **After each call** - who it was with and how long, with Play, Share and
   Delete. An icon in the status bar but no sound, one at a time, and it can be
-  switched off in Settings. Delete asks first, in the notification itself.
+  switched off in Settings. Delete asks first, in the notification itself. It
+  goes when its recording does, whatever deleted it: a message's has no timeout,
+  and one deleted from the list stayed, with Play, Share and Delete on nothing
+  (the Honor, 2026-11-06). One a file manager deleted goes at the tap that finds
+  it gone.
 - **The recording came out silent** - every recording is decoded and measured
   once it is saved. A muted capture still produces a file of the right length;
   this is what catches it. A recording with only one side is NOT reported,

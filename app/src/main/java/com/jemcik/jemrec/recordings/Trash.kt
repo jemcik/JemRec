@@ -3,6 +3,7 @@ package com.jemcik.jemrec.recordings
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.jemcik.jemrec.calls.AfterCall
 
 /**
  * Recently deleted: where a deleted recording waits for [DAYS] days before it
@@ -63,6 +64,7 @@ object Trash {
     /** Move one recording to the trash. Deleted means it is there now. */
     fun trash(context: Context, uri: Uri, filePath: String?, name: String): DeleteResult =
         RecordingLocation.of(uri, filePath).trash(context, name, System.currentTimeMillis() + DAYS * DAY_MS)
+            .also { if (it is DeleteResult.Deleted) AfterCall.gone(context, name) }
 
     /** Move these to the trash, asking once for whatever MediaStore will not
      *  take this app's word for. */
@@ -127,7 +129,10 @@ object Trash {
                 false
             }
             when (gone) {
-                true -> done++
+                true -> {
+                    done++
+                    AfterCall.gone(context, recording.name)
+                }
                 false -> failed++
                 null -> disputed += recording.uri
             }

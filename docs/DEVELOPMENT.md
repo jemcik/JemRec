@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1485 JVM tests, no device needed - 1289 for the app and 196 for the daemon:
+1497 JVM tests, no device needed - 1301 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -213,7 +213,8 @@ call on the call capture. Then a call's waveform, kept as it is
 saved; a recording played from its row going on with the screen off, named
 only "Call recording" while locked and by its caller again once unlocked,
 held back by a ringing call and playing on after it; a deleted recording
-brought back by Restore all in Recently deleted, then deleted again and gone
+brought back by Restore all in Recently deleted, its notification gone with it
+as it went there, then deleted again and gone
 for good by Delete all for good, from Android's own trash and the disk; the
 same in a folder picked through Android's own picker, where it waits renamed
 in its folder (Android 17 reports that file under its old name, issue #51),
@@ -382,8 +383,8 @@ Reports, not gates - run them when wanted:
   printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
 - **The app's mutation testing:** `./gradlew :pure-tests:pitest`, then
   `app/pure-tests/build/reports/pitest`: PIT over the pure module's files
-  (the gate above). 267 of the 272 changes its tests reach fail one
-  (2026-11-06; 254 of 259 before 0.29 added the trashed names, all 13 of whose
+  (the gate above). 271 of the 276 changes its tests reach fail one
+  (2026-11-06; 254 of 259 before 0.29 added the trashed names, all 17 of whose
   changes fail one; 218 of 223 before 0.28 added the lifecycle's tables, all 36
   of whose changes fail one; 119 of 123 before 0.27 added the saver's and
   the call service's decisions). The five left change nothing: frame lengths at Opus

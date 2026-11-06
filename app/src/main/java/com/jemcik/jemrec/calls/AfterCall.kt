@@ -210,6 +210,7 @@ internal object AfterCall {
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .setTimeoutAfter(TIMEOUT_MS)
+            .addExtras(recordingOf(call))
             // A caller's name is not for the lock screen. The public version
             // says only that a call was recorded.
             .setVisibility(Notification.VISIBILITY_PRIVATE)
@@ -263,7 +264,32 @@ internal object AfterCall {
 
     /** One notification for the last call; one for each message. */
     private fun idFor(call: Call): Int =
-        if (call.message) MESSAGE_ID_BASE + (call.name.hashCode() and 0xffff) else NOTIFICATION_ID
+        if (call.message) messageId(call.name) else NOTIFICATION_ID
+
+    private fun messageId(name: String) = MESSAGE_ID_BASE + (name.hashCode() and 0xffff)
+
+    /** What ties a notification to its recording: see [gone]. */
+    private const val EXTRA_RECORDING = "com.jemcik.jemrec.aftercall.RECORDING"
+
+    private fun recordingOf(call: Call) = Bundle().apply { putString(EXTRA_RECORDING, call.name) }
+
+    /**
+     * The recording [name] has left the list: its notification goes with it,
+     * if one is up. A message's has no timeout, and one deleted from the list
+     * stayed, with Play, Share and Delete on nothing (the Honor, 2026-11-06).
+     * The everyday one is shared by each last call, so it goes only if it is
+     * this recording's. A notification failing is no reason to fail a delete.
+     */
+    fun gone(context: Context, name: String) {
+        runCatching {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.activeNotifications
+                .filter { it.notification.extras.getString(EXTRA_RECORDING) == name }
+                .forEach { manager.cancel(it.id) }
+            // One posted before the notifications said whose they are.
+            manager.cancel(messageId(name))
+        }
+    }
 
     /** The second tap: the notification turns into the question. */
     fun askDelete(context: Context, call: Call) {
@@ -278,6 +304,7 @@ internal object AfterCall {
             .setWhen(call.startMillis)
             .setShowWhen(true)
             .setOnlyAlertOnce(true)
+            .addExtras(recordingOf(call))
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             // A message's question stays as long as the message would have.
             .setTimeoutAfter(if (call.message) 0 else TIMEOUT_MS)
