@@ -747,9 +747,15 @@ permissions, to tell who a call was with.
 The caller and the number come from what Android gave exact call tracking,
 or else from the call log as the call is saved - either way, only with the
 call-log permission. Without it, or for a call neither knows, a recording is
-named by date and time. A name is given once and never changed. Google's
-Phone app has no equivalent: it keeps its own recordings in a database of its
-own, and nothing in it is open to another app.
+named by date and time. A name is given once and never changed. If a file of
+that name is already there, Android makes another, ` (1)` before the extension,
+in the Recordings folder and in a folder you chose alike (the Android 12 and 17
+emulators, 2026-11-06). That is the recording's name from then on: JemRec reads
+it back as it saves, and goes by it for everything a name is kept for. Up to
+0.28 it went on with the name it asked for, so the marks landed on the other
+file. Such a name reads as the one asked for: the same time, direction and
+caller. Google's Phone app has no equivalent: it keeps its own recordings in a
+database of its own, and nothing in it is open to another app.
 
 ## Messenger calls
 
@@ -1370,16 +1376,43 @@ only from medium height up in their example; the width is where the room is.
   JemRec's grant on the folder. A second emulator check repeats the first in a
   folder picked through Android's picker, and backdates one there for the
   daily pass to remove; on the code before the fix it fails on Android 17.
+- **Every copy is a row.** In Recently deleted a file is a file with a time
+  left, so two of one name - the same call in two places, or one saved twice -
+  are two rows, each restored or deleted on its own. Up to 0.28 it showed one
+  per name: the other could be neither restored nor deleted, *Delete all for
+  good* left it there, and it went unseen when its time was up. The list keeps
+  one row per name, as a row there stands for a call. In app storage a restore,
+  or the rename into the trash, takes a free name if that one is taken: a plain
+  rename replaces the file that has it, and until 0.29 a restore there did.
+  An emulator check saves one name twice in each of the two places Android
+  runs, trashes the same name in both, and taps Restore all and Delete all for
+  good on the four rows; a unit test holds app storage, which it does not reach.
 - **Auto-delete** - off until you choose. It removes recordings older than 30
   days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30
   seconds - wrong numbers, hang-ups. A short call is caught as it is saved,
   so it never gets a notification. What auto-delete removes goes to Recently
   deleted like anything else.
+- **A recording not finished is not listed.** In the Recordings folder Android
+  keeps it out of sight until it is finished. A folder you chose and app storage
+  have nothing of the kind, and the file is there under its name while it
+  fills: a save creates it at the first packet and fills it at the end, so a
+  save under way, or one killed half way, was a row of 0 B. The list now leaves
+  out what this process is writing, and an empty file in a folder you chose. A
+  folder that does not say how big its files are keeps them listed: unknown is
+  not empty. A file left empty by a save that was killed stays in the folder,
+  unlisted, as nothing can tell it from somebody else's.
 - **Recordings Android does not count as JemRec's** - typically ones made
   before a reinstall. Android asks before JemRec may move them, in its own
   dialog. Deleting them from the list, or changing an auto-delete rule, shows
   that dialog. The daily auto-delete pass has nobody to ask, so it leaves them
   alone.
+- **One rule for the three places.** A recording reaches the rest of the app
+  as a uri and, for app storage, a path. Which place that means is worked out
+  once (`RecordingLocation`), and each place keeps its own ways of writing,
+  listing, trashing, restoring and deleting (`MediaStoreRecordings`,
+  `FolderRecordings`, `AppRecordings`). The screen reads the recordings and
+  Recently deleted together (`RecordingLibrary`), from one listing of a chosen
+  folder, as auto-delete's pass does for its purge and its rules.
 
 ## Marks inside the recording
 
@@ -1436,6 +1469,19 @@ recording now carries its own marks.
   emulator check saves a message, keeps it from its row, uninstalls and
   installs again: on Android 17 and 13 the row is a kept message again
   (2026-10-24), and Android's index still reads the file's full length.
+- **Still read after it has left the list.** A file leaves the list for Recently
+  deleted, for a query that failed, for a permission taken back or another
+  folder chosen, and comes back the same file. Up to 0.28 its name was forgotten
+  as it left, so the file was read again on its return, and a keep mark taken
+  off a file JemRec may not write came back from the file. A name that is not
+  listed now stays read, the newest 2000 of them, so the record does not grow
+  with every recording ever deleted.
+- **What holds to 2000, and what does not.** A message, a direction and a
+  messenger's caller outlive their recordings in the app's preferences, so those
+  three keep the newest 2000 names. A name the list has read stays past that: an
+  old message used to lose its mark with its file still there, and with it the
+  short-call rule's exception, so auto-delete could take it for a wrong number.
+  Keep marks have no bound.
 - **A row's time is the call's.** Writing the keep mark moves the file's
   date (by 4 s on the Android 17 emulator), and a row with no caller showed
   that date: it would have jumped to the moment of the tap. It now shows the

@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1389 JVM tests, no device needed - 1193 for the app and 196 for the daemon:
+1476 JVM tests, no device needed - 1280 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -147,6 +147,15 @@ on, and what follows its revive are tables (`Triggers.kt`, tested in the pure
 module below); `SwitchWritersTest` holds that only `RecorderLifecycle`
 writes the debugging switches.
 
+**Each of the three places** (from 0.29): Robolectric has no MediaStore and no
+folder provider, so `FakeMediaStore` and `FakeFolder` stand in for them, far
+enough to take what JemRec writes as well as what it reads. Over them, what a
+save asks of each place and how it falls back (`RecordingStoreTest`); what
+each is asked to trash, restore and delete for good, and what comes of each
+answer, Android's own yes included (`TrashPlacesTest`); and marks through the
+providers, and a place that cannot be asked (`PlacesTest`). These hold what
+JemRec asks for. What Android makes of it is the emulator checks' to show.
+
 **Names and words something else depends on** (`app/src/test/.../contract`):
 the component and worker class names the phone and the tools remember,
 the recorder's own class name, and the actions and extras of its wakes
@@ -161,7 +170,7 @@ comments, so a file moved between packages changes nothing for them, and a
 comment that quotes a line does not stand in for the line.
 
 Before a release, the same calls go through the real app and daemon on an
-emulator, for each Android version it claims (12, 13, 16 and 17 for 0.28 -
+emulator, for each Android version it claims (12, 13, 16 and 17 for 0.29 -
 16 is what the Galaxy phones of the issues run), each booted cold
 (`emulator -avd <name> -no-snapshot`):
 
@@ -208,7 +217,9 @@ brought back by Restore all in Recently deleted, then deleted again and gone
 for good by Delete all for good, from Android's own trash and the disk; the
 same in a folder picked through Android's own picker, where it waits renamed
 in its folder (Android 17 reports that file under its old name, issue #51),
-and one there whose 30 days are up removed by the daily pass;
+and one there whose 30 days are up removed by the daily pass; one name saved
+twice in each, the second under the name Android made, then trashed in both, a
+row each on the real screen, Restore all and Delete all for good;
 the app started again in Deck (dark), Multitrack and Memo, opening in each;
 and a message, kept from its row, a kept message again after the app is
 uninstalled and installed again - its marks read back from the file.
@@ -371,8 +382,9 @@ Reports, not gates - run them when wanted:
   printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
 - **The app's mutation testing:** `./gradlew :pure-tests:pitest`, then
   `app/pure-tests/build/reports/pitest`: PIT over the pure module's files
-  (the gate above). 254 of the 259 changes its tests reach fail one
-  (2026-11-03; 218 of 223 before 0.28 added the lifecycle's tables, all 36
+  (the gate above). 267 of the 272 changes its tests reach fail one
+  (2026-11-06; 254 of 259 before 0.29 added the trashed names, all 13 of whose
+  changes fail one; 218 of 223 before 0.28 added the lifecycle's tables, all 36
   of whose changes fail one; 119 of 123 before 0.27 added the saver's and
   the call service's decisions). The five left change nothing: frame lengths at Opus
   config 12, which SILK and hybrid give alike; two `setTimeZone` calls on
