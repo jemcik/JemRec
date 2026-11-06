@@ -148,6 +148,9 @@ internal class SaverFakes(private val context: Context) {
 
     /** Names whose file cannot be written into once opened. */
     @Volatile var unwritable = setOf<String>()
+
+    /** What the storage makes of a name it is given. */
+    @Volatile var madeAs: (String) -> String = { it }
     val descriptors: MutableMap<String, FileDescriptor> = ConcurrentHashMap()
 
     fun file(name: String) = File(dir, name)
@@ -163,7 +166,7 @@ internal class SaverFakes(private val context: Context) {
         descriptors[name] = pfd.fileDescriptor
         if (name in unwritable) pfd.close()
         return RecordingStore.Target(
-            name, pfd, Uri.fromFile(file), file.path,
+            madeAs(name), pfd, Uri.fromFile(file), file.path,
             onFinish = {
                 if (name in unpublishable) throw IOException("not published")
                 published += name

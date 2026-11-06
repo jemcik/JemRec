@@ -162,6 +162,44 @@ class RecordingStoreTest {
         level.delete()
     }
 
+    private val taken = "20261101_120000_in (1).ogg"
+
+    @Test fun aFolderThatFindsTheNameTakenGivesAnotherAndThatIsTheOneBeingWritten() {
+        FakeFolder.install(app)
+        FakeFolder.creates = { taken }
+        val theOther = keptLevels()
+        val target = RecordingStore.open(app, name)!!
+        assertEquals(taken, target.name)
+        assertTrue(Waveforms.isBeingWritten(taken))
+        assertFalse(Waveforms.isBeingWritten(name))
+        assertTrue(target.publish())
+        assertEquals(taken, target.name)
+        assertFalse(Waveforms.isBeingWritten(taken))
+        // The file that has the name is another recording, levels and all.
+        assertTrue(theOther.exists())
+        theOther.delete()
+    }
+
+    @Test fun mediaStoreMayNameItAsItFinishes() {
+        val theOther = keptLevels()
+        FakeMediaStore.finishesAs = { taken }
+        val target = RecordingStore.open(app, name)!!
+        assertEquals(name, target.name)
+        assertTrue(target.publish())
+        assertEquals(taken, target.name)
+        assertFalse(Waveforms.isBeingWritten(name))
+        assertFalse(Waveforms.isBeingWritten(taken))
+        assertTrue(theOther.exists())
+        theOther.delete()
+    }
+
+    @Test fun aNameThatCannotBeReadBackStaysTheOneAsked() {
+        val target = RecordingStore.open(app, name)!!
+        FakeMediaStore.listing = IllegalStateException("no")
+        assertTrue(target.publish())
+        assertEquals(name, target.name)
+    }
+
     private fun keptLevels() = Waveforms.cacheFile(app, name).apply {
         parentFile?.mkdirs()
         writeBytes(ByteArray(Waveforms.LEVELS))

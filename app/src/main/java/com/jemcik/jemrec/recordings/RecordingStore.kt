@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.content.edit
 import androidx.core.net.toUri
@@ -81,7 +82,8 @@ object RecordingStore {
     internal fun relativePath(): String = "${Environment.DIRECTORY_RECORDINGS}/$FOLDER"
 
     class Target(
-        val name: String,
+        /** The name it was made under, as its place gave it. */
+        name: String,
         val descriptor: ParcelFileDescriptor,
         /** Where the finished recording can be read back from - by the
          *  after-call check, which decodes it, and by the notification's Play,
@@ -91,16 +93,29 @@ object RecordingStore {
         val filePath: String? = null,
         private val onFinish: () -> Unit,
         private val onAbandon: () -> Unit,
+        /** The name its place gave it once finished, where that can differ
+         *  from the one it was made under: see [name]. */
+        private val nameWhenFinished: () -> String? = { null },
     ) : AutoCloseable {
 
-        /** Told once, when it is finished or abandoned (see open). */
-        internal var whenDone: () -> Unit = {}
+        /**
+         * What the file is called. A provider asked for a name that is taken
+         * makes another, " (1)" and on, and says so only when asked: this is
+         * read back, and everything that goes by a recording's name goes by
+         * this one, or by the other file's. MediaStore's may change as it
+         * finishes, so after [publish] it is the last word.
+         */
+        var name: String = name
+            private set
+
+        /** Told once, with its name, when it is finished or abandoned (see open). */
+        internal var whenDone: (String) -> Unit = {}
         private var done = false
 
         private fun ended() {
             if (done) return
             done = true
-            runCatching { whenDone() }
+            runCatching { whenDone(name) }
         }
 
         /** Delete it: a call that produced nothing should leave nothing. */
@@ -121,6 +136,7 @@ object RecordingStore {
         fun publish(): Boolean {
             val closed = runCatching { descriptor.close() }.isSuccess
             val finished = runCatching { onFinish() }.isSuccess
+            if (finished) runCatching { nameWhenFinished() }.getOrNull()?.let { name = it }
             ended()
             return closed && finished
         }
@@ -182,10 +198,23 @@ object RecordingStore {
             ?: AppRecordings.open(context, name)
         if (target == null) {
             Waveforms.writingEnded(context, name)
-        } else {
-            target.whenDone = { Waveforms.writingEnded(context, name) }
+            return null
+        }
+        // A name its place changed: the file of the one asked for is another
+        // recording, finished, and its levels are its own.
+        val opened = target.name
+        if (opened != name) Waveforms.writingRenamed(name, opened)
+        target.whenDone = { finished ->
+            if (finished != opened) Waveforms.writingRenamed(opened, finished)
+            Waveforms.writingEnded(context, finished)
         }
         return target
     }
+
+    /** What a provider calls the file at [uri]; null if it will not say. */
+    internal fun nameOf(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+    }.getOrNull()
 
 }

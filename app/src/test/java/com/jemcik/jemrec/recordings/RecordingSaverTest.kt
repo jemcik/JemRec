@@ -512,6 +512,30 @@ class RecordingSaverTest {
         assertTrue(logged("save: $file - nothing after the message's start; the caller hung up during the greeting"))
     }
 
+    private val inBrackets: (String) -> String = { "${it.removeSuffix(".ogg")} (1).ogg" }
+
+    @Test fun whatTheStorageNamedItIsTheNameEverythingRemembers() {
+        val file = recfile(tag = "_msg2000")
+        fakes.files[file] = stream(500)
+        fakes.madeAs = inBrackets
+        val saved = save(file) as Outcome.Saved
+        assertEquals(inBrackets(dateName(t, true)), saved.name)
+        assertEquals(setOf(saved.name), MessageMarks.all(context))
+        assertEquals(listOf(saved.name), announced)
+    }
+
+    @Test fun whatTheStorageNamedAMessengerCallIsWhatItsCallerIsNotedUnder() {
+        val file = "jemrec_rec_${t}_voip-com.viber.voip.dat"
+        Prefs.of(context).edit {
+            putStringSet("voip_call_notes", setOf(VoipCallNotes.encode(VoipCallNotes.Note("com.viber.voip", t - 5_000, "Alice", true))))
+        }
+        fakes.files[file] = stream(10)
+        fakes.madeAs = inBrackets
+        val saved = save(file, incoming = false) as Outcome.Saved
+        assertEquals(inBrackets(FileNames.buildVoip(FileNames.Format.DATE, t, true, "viber", "Alice")), saved.name)
+        assertEquals(mapOf(saved.name to "Alice"), FileNames.callers(context))
+    }
+
     // ---- a messenger's call ----------------------------------------------------------
 
     @Test fun aMessengerCallIsNamedForItsAppAndItsCaller() {

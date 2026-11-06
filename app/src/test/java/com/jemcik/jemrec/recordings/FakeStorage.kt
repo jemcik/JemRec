@@ -135,6 +135,9 @@ internal class FakeMediaStore : ContentProvider() {
         /** Asking for the rows fails, with this. */
         var listing: Exception? = null
 
+        /** What a row's name becomes as it stops being pending. */
+        var finishesAs: (String) -> String = { it }
+
         fun install(writesIn: File? = null) {
             rows.clear()
             queries.clear()
@@ -148,6 +151,7 @@ internal class FakeMediaStore : ContentProvider() {
             refuses = null
             changesNothing = false
             listing = null
+            finishesAs = { it }
             Robolectric.setupContentProvider(FakeMediaStore::class.java, MediaStore.AUTHORITY)
         }
 
@@ -183,13 +187,15 @@ internal class FakeMediaStore : ContentProvider() {
             ?.let { pattern -> Regex(pattern.split('%').joinToString(".*") { Regex.escape(it) }) }
         val columns = projection ?: arrayOf(MediaStore.MediaColumns._ID)
         val cursor = MatrixCursor(columns)
+        // One row, by its own uri: as Android answers it, whatever else matches.
+        val one = uri.lastPathSegment?.toLongOrNull()
         rows.filter { row ->
             val trashedOk = when (match) {
                 MediaStore.MATCH_ONLY -> row.trashed
                 MediaStore.MATCH_INCLUDE -> true
                 else -> !row.trashed
             }
-            trashedOk && !row.pending && (like == null || like.matches(row.relativePath))
+            (one == null || one == row.id) && trashedOk && !row.pending && (like == null || like.matches(row.relativePath))
         }.forEach { row ->
             cursor.addRow(
                 columns.map { column ->
@@ -239,7 +245,10 @@ internal class FakeMediaStore : ContentProvider() {
         val asked = values!!.keySet().associateWith { values.get(it) }
         changes += Change(row.id, asked, extras?.getInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_EXCLUDE) ?: MediaStore.MATCH_EXCLUDE)
         asked[MediaStore.MediaColumns.IS_TRASHED]?.let { row.trashed = it == 1 }
-        asked[MediaStore.MediaColumns.IS_PENDING]?.let { row.pending = it == 1 }
+        asked[MediaStore.MediaColumns.IS_PENDING]?.let {
+            if (row.pending && it == 0) row.name = finishesAs(row.name)
+            row.pending = it == 1
+        }
         return if (changesNothing) 0 else 1
     }
 
@@ -344,7 +353,9 @@ internal class FakeFolder : ContentProvider() {
         listed++
         val columns = projection ?: arrayOf(Document.COLUMN_DOCUMENT_ID)
         val cursor = MatrixCursor(columns)
-        dir.listFiles().orEmpty().sortedBy { it.name }.forEach { file ->
+        // A document's own uri asks for that one: its file, by the ID it was given.
+        val only = uri.takeIf { it.lastPathSegment != "children" }?.let { byId[DocumentsContract.getDocumentId(it)] }
+        (only?.let(::listOf) ?: dir.listFiles().orEmpty().sortedBy { it.name }).forEach { file ->
             val shown = shows(file)
             byId[shown.id] = file
             cursor.addRow(

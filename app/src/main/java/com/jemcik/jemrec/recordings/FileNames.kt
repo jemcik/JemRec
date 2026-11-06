@@ -205,9 +205,13 @@ object FileNames {
     }
 
     private val HONOR_NAME = Regex("""^(.*)@(\+?\d+)_(\d{14})\.\w+$""")
+    private val TAKEN = Regex(""" \(\d+\)(\.\w+)$""")
 
     /** Read a recording's name back, in any of the formats; null if it is not one. Pure. */
-    internal fun parse(name: String): Parsed? {
+    internal fun parse(saved: String): Parsed? {
+        // The name it was given, if its place found that one taken: the same
+        // call, and the name says the same of it (RecordingStore.Target.name).
+        val name = TAKEN.replace(saved, "$1")
         HONOR_NAME.matchEntire(name)?.let { m ->
             val at = runCatching { honorStamp().parse(m.groupValues[3])?.time }.getOrNull() ?: return null
             return Parsed(at, null, m.groupValues[1].trim().ifEmpty { null }, m.groupValues[2])

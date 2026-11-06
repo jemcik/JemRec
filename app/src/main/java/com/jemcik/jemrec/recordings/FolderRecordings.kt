@@ -69,7 +69,8 @@ internal object FolderRecordings {
             // finalises, and a write-only descriptor cannot.
             val pfd = context.contentResolver.openFileDescriptor(doc, "rw")
                 ?: error("openFileDescriptor returned null")
-            RecordingStore.Target(name, pfd, doc, onFinish = {}, onAbandon = {
+            val made = RecordingStore.nameOf(context, doc) ?: name
+            RecordingStore.Target(made, pfd, doc, onFinish = {}, onAbandon = {
                 DocumentsContract.deleteDocument(context.contentResolver, doc)
             })
         }.onFailure {

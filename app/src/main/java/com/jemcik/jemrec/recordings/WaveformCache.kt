@@ -46,6 +46,13 @@ internal object WaveformCache {
         runCatching { cacheFile(context, name).delete() }
     }
 
+    /** Its place gave it another name (RecordingStore.Target.name): that is
+     *  the one not finished. Whatever is kept under the first is left. */
+    fun writingRenamed(from: String, to: String) {
+        writing += to
+        writing -= from
+    }
+
     fun isBeingWritten(name: String): Boolean = name in writing
 
     /**

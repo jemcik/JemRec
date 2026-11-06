@@ -90,6 +90,7 @@ internal object MediaStoreRecordings {
                 )
             },
             onAbandon = { resolver.delete(uri, null, null) },
+            nameWhenFinished = { RecordingStore.nameOf(context, uri) },
         )
     }.onFailure {
         Log.w(TAG, "store: could not write to ${RecordingStore.relativePath()}", it)

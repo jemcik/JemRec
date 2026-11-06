@@ -90,6 +90,8 @@ internal object Waveforms {
 
     fun writingEnded(context: Context, name: String) = WaveformCache.writingEnded(context, name)
 
+    fun writingRenamed(from: String, to: String) = WaveformCache.writingRenamed(from, to)
+
     fun isBeingWritten(name: String): Boolean = WaveformCache.isBeingWritten(name)
 
     /** Moves each time levels are kept (WaveformCache.kept). */
