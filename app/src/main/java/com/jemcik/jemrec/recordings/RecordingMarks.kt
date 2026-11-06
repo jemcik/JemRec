@@ -32,6 +32,24 @@ internal object RecordingMarks {
     private const val NEWEST = 2000
 
     /**
+     * [entries] held to the bound, each read as a name by [name]: the newest,
+     * and any older whose file is still on the phone. It is marks of gone
+     * files the bound is for: an old message past the newest 2000 lost its
+     * mark while its file stayed, and with it the short-call rule's exception,
+     * so auto-delete could take it for a wrong number; a direction or a
+     * caller, what its row shows.
+     */
+    private fun bounded(context: Context, entries: Set<String>, name: (String) -> String): Set<String> {
+        if (entries.size <= NEWEST) return entries
+        val here = readNames(context)
+        // Each name read once: the sort's selector runs at every comparison,
+        // some 40,000 of them for 2,000 names.
+        val newest = entries.associateWith { FileNames.parse(name(it))?.startedAt ?: 0L }
+            .entries.sortedByDescending { it.value }.take(NEWEST).map { it.key }
+        return (newest + entries.filter { name(it) in here }).toSet()
+    }
+
+    /**
      * The recordings the user has marked to keep: what auto-delete never
      * touches.
      *
@@ -79,15 +97,7 @@ internal object RecordingMarks {
 
         @Synchronized
         fun mark(context: Context, names: Collection<String>) {
-            val marks = all(context) + names
-            val kept = if (marks.size <= NEWEST) {
-                marks
-            } else {
-                // Each name read once: the sort's selector runs at every
-                // comparison, some 40,000 of them for 2,000 names.
-                marks.associateWith { FileNames.parse(it)?.startedAt ?: 0L }
-                    .entries.sortedByDescending { it.value }.take(NEWEST).map { it.key }.toSet()
-            }
+            val kept = bounded(context, all(context) + names) { it }
             Prefs.of(context).edit { putStringSet(KEY_MESSAGES, kept) }
         }
     }
@@ -113,14 +123,7 @@ internal object RecordingMarks {
             val entries = (prefs.getStringSet(KEY_DIRECTIONS, emptySet()) ?: emptySet()).toMutableSet()
             entries.removeAll { it.drop(2) in unsaid }
             unsaid.forEach { (name, incoming) -> entries += "${if (incoming) "i" else "o"}:$name" }
-            // The newest only: a direction outlives its file here at the cost of a
-            // few bytes, and a bound keeps that from adding up.
-            val kept = if (entries.size <= NEWEST) {
-                entries
-            } else {
-                entries.sortedByDescending { FileNames.parse(it.drop(2))?.startedAt ?: 0L }.take(NEWEST).toSet()
-            }
-            prefs.edit { putStringSet(KEY_DIRECTIONS, kept) }
+            prefs.edit { putStringSet(KEY_DIRECTIONS, bounded(context, entries) { it.drop(2) }) }
         }
 
         /** Every direction noted, by name: true for incoming. */
@@ -148,12 +151,7 @@ internal object RecordingMarks {
             val entries = (prefs.getStringSet(KEY_CALLERS, emptySet()) ?: emptySet()).toMutableSet()
             entries.removeAll { it.substringBefore('\u0000') in callers }
             callers.forEach { (name, caller) -> entries += "$name\u0000$caller" }
-            val kept = if (entries.size <= NEWEST) {
-                entries
-            } else {
-                entries.sortedByDescending { FileNames.parse(it.substringBefore('\u0000'))?.startedAt ?: 0L }.take(NEWEST).toSet()
-            }
-            prefs.edit { putStringSet(KEY_CALLERS, kept) }
+            prefs.edit { putStringSet(KEY_CALLERS, bounded(context, entries) { it.substringBefore('\u0000') }) }
         }
 
         /** Every caller noted, by name. */
