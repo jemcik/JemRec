@@ -1,7 +1,10 @@
 package com.jemcik.jemrec.calls
 
+import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.pm.PackageManager
+import androidx.core.net.toUri
 import com.jemcik.jemrec.capture.AudioCheck
 import com.jemcik.jemrec.recordings.FakeStorage
 import com.jemcik.jemrec.recordings.RecordingStore
@@ -69,9 +72,10 @@ class NoticeOfAGoneRecordingTest {
     }
 
     @Test fun soDoesOneAskingWhetherToDelete() {
-        val message = recorded(message = true)
-        AfterCall.askDelete(app, message)
-        Trash.trashAll(app, listOf(row(message)))
+        // The last call's: a message's goes by its id in any case.
+        val call = recorded()
+        AfterCall.askDelete(app, call)
+        Trash.trashAll(app, listOf(row(call)))
         assertEquals(0, shown())
     }
 
@@ -81,6 +85,53 @@ class NoticeOfAGoneRecordingTest {
         Trash.trashAll(app, listOf(row(first)))
         assertEquals(1, shown())
         Trash.trashAll(app, listOf(row(other)))
+        assertEquals(0, shown())
+    }
+
+    @Test fun theLastCallsNotificationIsOnlyThatCallsToTake() {
+        val earlier = recorded(daysAgo = 2)
+        recorded(daysAgo = 1)
+        // One notification for each last call: this one is the newer's.
+        Trash.trashAll(app, listOf(row(earlier)))
+        assertEquals(1, shown())
+    }
+
+    @Test fun aMessageWhoseIdIsAnothersIsNotTakenForIt() {
+        // "Aa" and "BB" hash alike, so their notifications share an id.
+        val message = AfterCall.Call(
+            "Aa.ogg", "content://media/external/audio/media/5".toUri(), null, 12.0, true, 0L, null, AudioCheck.Verdict.FINE, true,
+        )
+        assertEquals(true, AfterCall.show(app, message))
+        AfterCall.gone(app, "BB.ogg")
+        assertEquals(1, shown())
+    }
+
+    @Test fun aMessagesNotificationFromBeforeTheySaidWhoseGoesByItsId() {
+        val name = "20261020_101010_in.ogg"
+        val id = 3400 + (name.hashCode() and 0xffff)
+        val old = Notification.Builder(app, "x").setSmallIcon(android.R.drawable.ic_btn_speak_now).build()
+        manager.createNotificationChannel(NotificationChannel("x", "x", NotificationManager.IMPORTANCE_LOW))
+        manager.notify(id, old)
+        assertEquals(1, shown())
+        AfterCall.gone(app, name)
+        assertEquals(0, shown())
+    }
+
+    @Test fun aNoteThatItCouldNotBeDeletedGoesWithTheRecordingToo() {
+        val call = recorded()
+        val gone = java.io.File(call.filePath!!)
+        // The folder will not take the rename: said in the notification's place.
+        val folder = FakeStorage.appFolder(app).apply { setWritable(false) }
+        val row = row(call)
+        try {
+            assumeFalse("the tests run as root", folder.canWrite())
+            AfterCall.delete(app, call)
+            assertEquals(1, shown())
+        } finally {
+            folder.setWritable(true)
+        }
+        assertEquals(true, gone.exists())
+        Trash.trashAll(app, listOf(row))
         assertEquals(0, shown())
     }
 

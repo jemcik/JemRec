@@ -1308,7 +1308,7 @@ def restore_then_delete(name, folder):
     wait_for(after_call_up, 20, "the after-call notification")
     place, said = trash_place(name, move=True)
     assert place == (False, True), f"not moved to the trash: {said}"
-    assert not after_call_up(), "the recording went to the trash, and its notification stayed"
+    wait_for(lambda: not after_call_up(), 5, "the notification to go with the recording")
     open_trash()
     tap("Restore all")
     wait_for(lambda: trash_place(name)[0] == (True, False), 20, "Restore all to bring it back")

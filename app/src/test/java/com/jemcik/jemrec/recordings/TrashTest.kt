@@ -30,8 +30,8 @@ class TrashTest {
     }
 
     @Test fun anHonorNameLosesItsAtInTheTrashAndGetsItBack() {
-        // Honor's Phone app plays any name with "@<number>_<time>" in it,
-        // dot or no dot: a trashed one must not have it.
+        // Honor's Phone app plays any name with its number and time in it,
+        // dot or no dot: see TrashNames.nameFor for what a trashed one has.
         val honor = "Priya Shah@+447700900123_20261020165705.ogg"
         val trashed = Trash.nameFor(honor, expires)
         assertFalse(trashed.contains('@'))

@@ -6,6 +6,7 @@ import androidx.core.net.toUri
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.capture.AudioCheck
+import com.jemcik.jemrec.recordings.FakeStorage
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,5 +37,22 @@ class RecordingNoLongerThereTest : ScreenTest() {
         vm.open(DeepLink.Link(DeepLink.Kind.PLAY, name))
         settle(vm)
         assertEquals(0, manager.activeNotifications.size)
+    }
+
+    @Test fun aTapThatFindsItThereLeavesTheNotificationAlone() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        FakeStorage.forgetFileProviderFolders()
+        val manager = app.getSystemService(NotificationManager::class.java)
+        val name = "20261020_101010_in.ogg"
+        val file = FakeStorage.appFile(app, name)
+        val call = AfterCall.Call(
+            name, FakeStorage.appUri(app, file), file.absolutePath, 12.0, true, 0L, "Priya Shah", AudioCheck.Verdict.FINE, true,
+        )
+        assertEquals(true, AfterCall.show(app, call))
+        val vm = viewModel()
+        vm.open(DeepLink.Link(DeepLink.Kind.SHARE, name))
+        settle(vm)
+        assertEquals(1, manager.activeNotifications.size)
     }
 }

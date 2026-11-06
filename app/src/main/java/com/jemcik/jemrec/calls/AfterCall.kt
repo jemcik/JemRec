@@ -284,10 +284,14 @@ internal object AfterCall {
         runCatching {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.activeNotifications
-                .filter { it.notification.extras.getString(EXTRA_RECORDING) == name }
+                .filter {
+                    // One posted before they said whose they are is known by
+                    // its id alone. Only that one: ids are 16 bits of a hash,
+                    // and two messages can share one.
+                    val whose = it.notification.extras.getString(EXTRA_RECORDING)
+                    whose == name || (whose == null && it.id == messageId(name))
+                }
                 .forEach { manager.cancel(it.id) }
-            // One posted before the notifications said whose they are.
-            manager.cancel(messageId(name))
         }
     }
 
@@ -324,8 +328,8 @@ internal object AfterCall {
             }
             // MediaStore wants the user to confirm in a system dialog, which
             // only an activity can show. The list can.
-            is DeleteResult.NeedsConsent -> note(context, "Open JemRec to delete this recording.", idFor(call))
-            is DeleteResult.Failed -> note(context, "Could not delete the recording.", idFor(call))
+            is DeleteResult.NeedsConsent -> note(context, "Open JemRec to delete this recording.", call)
+            is DeleteResult.Failed -> note(context, "Could not delete the recording.", call)
         }
     }
 
@@ -337,8 +341,8 @@ internal object AfterCall {
         context.getSystemService(NotificationManager::class.java).cancel(idFor(call))
     }
 
-    /** [text] in place of the notification [id] - the question it answers. */
-    private fun note(context: Context, text: String, id: Int) {
+    /** [text] in place of [call]'s notification - the question it answers. */
+    private fun note(context: Context, text: String, call: Call) {
         ensureChannels(context)
         post(
             context,
@@ -346,6 +350,7 @@ internal object AfterCall {
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("JemRec")
                 .setContentText(text)
+                .addExtras(recordingOf(call))
                 .setContentIntent(
                     PendingIntent.getActivity(
                         context, 0, Intent(context, MainActivity::class.java),
@@ -354,7 +359,7 @@ internal object AfterCall {
                 )
                 .setAutoCancel(true)
                 .build(),
-            id,
+            idFor(call),
         )
     }
 
