@@ -5,7 +5,7 @@ import android.net.Uri
 import android.provider.CallLog
 import android.util.Log
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.capture.Recording
+import com.jemcik.jemrec.recordings.Recording
 
 /**
  * The phone's call log, each call matched to its recording or told why it has

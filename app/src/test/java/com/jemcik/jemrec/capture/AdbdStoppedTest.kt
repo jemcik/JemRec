@@ -4,10 +4,10 @@ import com.jemcik.jemrec.capture.CaptureDaemon.Request
 import com.jemcik.jemrec.capture.CaptureDaemon.WirelessStep
 import com.jemcik.jemrec.system.AdbdState
 import com.jemcik.jemrec.system.AdbdState.State
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
 /**

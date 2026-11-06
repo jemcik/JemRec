@@ -1,0 +1,364 @@
+package com.jemcik.jemrec.recordings
+
+import android.content.ContentResolver
+import android.content.ContentUris
+import android.content.ContentValues
+import android.content.Context
+import android.net.Uri
+import android.os.Bundle
+import android.os.Environment
+import android.provider.DocumentsContract
+import android.provider.MediaStore
+import android.util.Log
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.IOException
+
+/**
+ * Recently deleted: where a deleted recording waits for [DAYS] days before it
+ * is gone for good, and where it can be restored from until then.
+ *
+ * A call recording is the one thing in this app that cannot be made again, and
+ * delete used to be immediate and final - from the list, from the after-call
+ * notification, and soon from auto-delete, which deletes things nobody is
+ * looking at. So delete now means "move to the trash", and only time empties
+ * it.
+ *
+ * THE THREE PLACES A RECORDING CAN LIVE TRASH DIFFERENTLY, and none of the
+ * ways generalises:
+ *
+ *   - The phone's Recordings folder, through MediaStore (the default): Android
+ *     has a trash of its own (IS_TRASHED, Android 11+). The file disappears
+ *     from every other app at once, shows in the Files app's trash, and
+ *     Android itself removes it when DATE_EXPIRES passes - 30 days - with no
+ *     help from JemRec. An app may trash and restore what it owns without
+ *     asking. Anything it does not own - a file from before a reinstall -
+ *     needs the user's yes in a system dialog, as delete always did.
+ *   - A folder the user picked: no trash exists there, so the file is renamed
+ *     to the name Android's own trash uses on disk, ".trashed-<expiry>-<name>".
+ *     The leading dot hides it from most file managers, the expiry is in the
+ *     name, and JemRec deletes it once that passes (see [purgeExpired]).
+ *     Android 17 added a trash to folders, and its folder provider now
+ *     reports such a name stripped ([inFolder]). Its own trashDocument is no
+ *     use here: it moves the file out of the folder, to /sdcard/.trash-storage,
+ *     and restoring it from there was refused to JemRec's grant on the folder,
+ *     "not a descendant" (the Android 17 emulator, 2026-10-26). The rename
+ *     still trashes and restores there, on the emulator and the Honor.
+ *   - App storage, for recordings from before the Recordings folder was the
+ *     default: the same rename, on the file.
+ */
+object Trash {
+
+    private const val TAG = "JemRec"
+
+    /** How long a deleted recording waits. Android's own trash keeps 30 days,
+     *  and the other two places match it. */
+    const val DAYS = 30
+    private const val DAY_MS = 24L * 60 * 60 * 1000
+    private const val PREFIX = ".trashed-"
+
+    // --- names, for the two places that trash by renaming -------------------
+
+    /**
+     * The trashed name of [name], expiring at [expiresAtMillis].
+     *
+     * With no @ in it. Honor's Phone app plays any file in its folder whose
+     * name holds "@<number>_<time>" - tested: a leading dot does not stop
+     * it, and nor does anything after the time - so a recording deleted from
+     * there (FileNames.Format.HONOR) would stay playable from the call
+     * history for its 30 days here. The @ is written %40, and % as %25 so
+     * that reads back unchanged; names from before this had neither.
+     */
+    internal fun nameFor(name: String, expiresAtMillis: Long): String =
+        "$PREFIX${expiresAtMillis / 1000}-${name.replace("%", "%25").replace("@", "%40")}"
+
+    /** The original name and expiry of a trashed name, or null if it is not one. */
+    internal fun parse(trashedName: String): Pair<String, Long>? {
+        if (!trashedName.startsWith(PREFIX)) return null
+        val rest = trashedName.removePrefix(PREFIX)
+        val seconds = rest.substringBefore('-', "").toLongOrNull() ?: return null
+        val name = rest.substringAfter('-', "").takeIf { it.isNotEmpty() } ?: return null
+        return unescape(name) to seconds * 1000
+    }
+
+    private fun unescape(name: String) = ESCAPED.replace(name) { if (it.value == "%40") "@" else "%" }
+
+    private val ESCAPED = Regex("%40|%25")
+
+    fun isTrashedName(name: String): Boolean = parse(name) != null
+
+    /**
+     * Whether a file in the folder the user picked is in the trash: its
+     * original name and expiry, the expiry null if nothing says it.
+     *
+     * Its name says so, as given, on the Android 12 and 13 emulators - and,
+     * with no trash in folders before Android 17, on 14 to 16. Android 17
+     * has one, and its folder provider reads the name JemRec gives a deleted
+     * file as one of its own: ".trashed-1795000000-<name>" is reported as
+     * "<name>", the prefix stripped and a %40 left as it is, and marked
+     * [restorable] - the Android 17 emulator and the Honor, 2026-10-26
+     * (issue #51: deleted recordings stayed in the list). The name as given
+     * is still at the end of the document ID there. An ID is the provider's
+     * own to shape, so where it does not say, the mark alone still keeps the
+     * file out of the list.
+     */
+    internal fun inFolder(name: String, documentId: String, restorable: Boolean): Pair<String, Long?>? =
+        parse(name)
+            // "primary:Calls/<name>", or "primary:<name>" at a volume's root.
+            ?: parse(documentId.substringAfterLast('/', documentId.substringAfter(':')))
+            ?: if (restorable) unescape(name) to null else null
+
+    // --- trash and restore ----------------------------------------------------
+
+    /** Move one recording to the trash. Deleted means it is there now. */
+    fun trash(context: Context, uri: Uri, filePath: String?, name: String): DeleteResult {
+        val expires = System.currentTimeMillis() + DAYS * DAY_MS
+        filePath?.let { path ->
+            val file = File(path)
+            if (!file.exists()) return DeleteResult.Deleted
+            val target = File(file.parentFile, nameFor(name, expires))
+            return if (file.renameTo(target)) DeleteResult.Deleted
+            else DeleteResult.Failed(IOException("could not move $path to the trash"))
+        }
+        return if (uri.authority == MediaStore.AUTHORITY) {
+            setTrashed(context, listOf(uri), trashed = true)
+        } else {
+            renameDocument(context, uri, nameFor(name, expires))
+        }
+    }
+
+    /** Move these to the trash, asking once for whatever MediaStore will not
+     *  take this app's word for. */
+    fun trashAll(context: Context, recordings: List<Recording>): BulkDeleteResult =
+        inBulk(context, recordings, trashed = true) { trash(context, it.uri, it.filePath, it.name) }
+
+    /** Bring one back from the trash, as it was. Deleted means restored. */
+    fun restore(context: Context, recording: Recording): DeleteResult {
+        recording.filePath?.let { path ->
+            val file = File(path)
+            val target = File(file.parentFile, recording.name)
+            return if (file.renameTo(target)) DeleteResult.Deleted
+            else DeleteResult.Failed(IOException("could not restore $path"))
+        }
+        return if (recording.uri.authority == MediaStore.AUTHORITY) {
+            setTrashed(context, listOf(recording.uri), trashed = false)
+        } else {
+            renameDocument(context, recording.uri, recording.name)
+        }
+    }
+
+    /** Bring all of these back, asking once for whatever MediaStore will not
+     *  take this app's word for. [BulkDeleteResult.deleted] is the restored. */
+    fun restoreAll(context: Context, recordings: List<Recording>): BulkDeleteResult =
+        inBulk(context, recordings, trashed = false) { restore(context, it) }
+
+    /**
+     * [one] for each of [recordings], into the trash or out of it, and one
+     * request for what MediaStore would not take this app's word for. Those
+     * count as failed if the request cannot be made: left out of both
+     * counts, they went unreported and stayed where they were.
+     */
+    private fun inBulk(
+        context: Context,
+        recordings: List<Recording>,
+        trashed: Boolean,
+        one: (Recording) -> DeleteResult,
+    ): BulkDeleteResult {
+        var done = 0
+        var failed = 0
+        val disputed = mutableListOf<Uri>()
+        recordings.forEach { recording ->
+            when (val result = one(recording)) {
+                is DeleteResult.Deleted -> done++
+                is DeleteResult.NeedsConsent -> disputed += recording.uri
+                is DeleteResult.Failed -> {
+                    failed++
+                    Log.w(TAG, "trash: could not ${if (trashed) "trash" else "restore"} ${FileNames.forLog(recording.name)}", result.error)
+                }
+            }
+        }
+        val ask = consent(context, disputed, trashed)
+        return BulkDeleteResult(done, failed + if (ask == null) disputed.size else 0, ask)
+    }
+
+    /**
+     * Delete these for good, now, wherever each waits: Android's trash, a
+     * chosen folder, app storage. Otherwise only time empties Recently
+     * deleted; this is the user's own way to (2026-10-23), behind a question.
+     * What MediaStore will not delete on this app's word - a recording from
+     * before a reinstall - is asked about once, in Android's own dialog, as
+     * trashing it was.
+     */
+    fun deleteForGood(context: Context, recordings: List<Recording>): BulkDeleteResult {
+        var done = 0
+        var failed = 0
+        val disputed = mutableListOf<Uri>()
+        recordings.forEach { recording ->
+            val path = recording.filePath
+            val gone = try {
+                when {
+                    path != null -> File(path).let { !it.exists() || it.delete() }
+                    recording.uri.authority == MediaStore.AUTHORITY -> {
+                        // Trashed rows included, as the restore's update must
+                        // ask (setTrashed). A delete by the recording's own uri
+                        // reached its trashed row without it as well, on the
+                        // Android 17 emulator (2026-10-23, the emulator check
+                        // recently_deleted); asked anyway, as nothing promises
+                        // that.
+                        val extras = Bundle().apply { putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE) }
+                        context.contentResolver.delete(recording.uri, extras) > 0
+                    }
+                    else -> DocumentsContract.deleteDocument(context.contentResolver, recording.uri)
+                }
+            } catch (e: SecurityException) {
+                // MediaStore's is a question for the user; a chosen folder's -
+                // its access taken back - is a failure, said as one.
+                if (recording.uri.authority == MediaStore.AUTHORITY) {
+                    disputed += recording.uri
+                    null
+                } else {
+                    Log.w(TAG, "trash: could not delete ${FileNames.forLog(recording.name)} for good", e)
+                    false
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "trash: could not delete ${FileNames.forLog(recording.name)} for good", t)
+                false
+            }
+            when (gone) {
+                true -> done++
+                false -> failed++
+                null -> Unit
+            }
+        }
+        val ask = if (disputed.isEmpty()) {
+            null
+        } else {
+            runCatching { MediaStore.createDeleteRequest(context.contentResolver, disputed).intentSender }.getOrNull()
+        }
+        if (done > 0) Log.i(TAG, "trash: deleted $done recording(s) for good")
+        return BulkDeleteResult(done, failed + if (ask == null) disputed.size else 0, ask)
+    }
+
+    private fun setTrashed(context: Context, uris: List<Uri>, trashed: Boolean): DeleteResult = try {
+        val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, if (trashed) 1 else 0) }
+        // Including trashed rows, or a restore matches nothing: they are left
+        // out of every query and update by default.
+        val extras = Bundle().apply { putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE) }
+        val rows = uris.sumOf { context.contentResolver.update(it, values, extras) }
+        if (rows > 0) DeleteResult.Deleted
+        else DeleteResult.Failed(IOException("MediaStore changed no rows for $uris"))
+    } catch (e: SecurityException) {
+        // Not ours as far as MediaStore is concerned - typically a recording
+        // made before a reinstall. The user still owns it, and can say so.
+        Log.i(TAG, "trash: need the user's consent for $uris")
+        consent(context, uris, trashed)?.let { DeleteResult.NeedsConsent(it) } ?: DeleteResult.Failed(e)
+    } catch (t: Throwable) {
+        DeleteResult.Failed(t)
+    }
+
+    private fun consent(context: Context, uris: List<Uri>, trashed: Boolean) =
+        if (uris.isEmpty()) null
+        else runCatching { MediaStore.createTrashRequest(context.contentResolver, uris, trashed).intentSender }
+            .getOrNull()
+
+    private fun renameDocument(context: Context, uri: Uri, to: String): DeleteResult = runCatching {
+        if (DocumentsContract.renameDocument(context.contentResolver, uri, to) != null) {
+            DeleteResult.Deleted
+        } else {
+            DeleteResult.Failed(IOException("the folder would not rename $uri")) as DeleteResult
+        }
+    }.getOrElse { DeleteResult.Failed(it) }
+
+    // --- what is in it --------------------------------------------------------
+
+    /** Everything in the trash, soonest to go first, and last what does not
+     *  say when it goes ([inFolder]). Each has [Recording.name] as it was
+     *  before, and [Recording.expiresAtMillis] set where it is known. */
+    fun list(context: Context): List<Recording> {
+        val found = (fromMediaStore(context) + fromChosenFolder(context) + fromAppStorage(context))
+            .distinctBy { it.name }
+            .sortedWith(compareBy(nullsLast()) { it.expiresAtMillis })
+        return Recordings.withCallers(context, found)
+    }
+
+    private fun fromMediaStore(context: Context): List<Recording> = runCatching {
+        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val args = Bundle().apply {
+            putString(
+                ContentResolver.QUERY_ARG_SQL_SELECTION,
+                "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?",
+            )
+            putStringArray(
+                ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
+                arrayOf("%${Environment.DIRECTORY_RECORDINGS}/${RecordingStore.FOLDER}%"),
+            )
+            putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
+        }
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATE_EXPIRES,
+            MediaStore.Audio.Media.DATE_MODIFIED,
+        )
+        val out = mutableListOf<Recording>()
+        context.contentResolver.query(collection, projection, args, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val shown = cursor.getString(1) ?: continue
+                // Android renames the file on disk while it is trashed, and
+                // the name column follows it; the original is inside.
+                val name = parse(shown)?.first ?: shown
+                out += Recordings.describe(
+                    name = name,
+                    uri = ContentUris.withAppendedId(collection, cursor.getLong(0)),
+                    sizeBytes = cursor.getLong(2),
+                    durationMillis = cursor.getLong(3),
+                    // Dated the way the list dates it, or a recording would
+                    // change its time on the way into the trash. Seconds.
+                    whenMillis = cursor.getLong(5) * 1000,
+                ).copy(expiresAtMillis = cursor.getLong(4) * 1000)
+            }
+        }
+        out
+    }.onFailure { Log.w(TAG, "trash: MediaStore query failed", it) }.getOrDefault(emptyList())
+
+    private fun fromChosenFolder(context: Context): List<Recording> =
+        Recordings.chosenFolderDocuments(context).mapNotNull { doc ->
+            val (name, expires) = doc.trashed ?: return@mapNotNull null
+            Recordings.describe(context, name, doc.uri, doc.sizeBytes, whenMillis = doc.modifiedMillis)
+                .copy(expiresAtMillis = expires)
+        }
+
+    private fun fromAppStorage(context: Context): List<Recording> =
+        RecordingStore.listAppStorage(context).mapNotNull { file ->
+            val (name, expires) = parse(file.name) ?: return@mapNotNull null
+            runCatching {
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.recordings", file)
+                Recordings.describe(context, name, uri, file.length(), whenMillis = file.lastModified())
+                    .copy(filePath = file.absolutePath, expiresAtMillis = expires)
+            }.getOrNull()
+        }
+
+    /**
+     * Delete for good whatever has waited its [DAYS] days, in the two places
+     * that trash by renaming. MediaStore needs none of this: Android empties
+     * its own trash. How many went.
+     */
+    fun purgeExpired(context: Context, now: Long = System.currentTimeMillis()): Int {
+        var gone = 0
+        Recordings.chosenFolderDocuments(context).forEach { doc ->
+            // Not one whose expiry nothing says: that waits for the user.
+            val expires = doc.trashed?.second ?: return@forEach
+            if (expires <= now && runCatching { DocumentsContract.deleteDocument(context.contentResolver, doc.uri) }.getOrDefault(false)) {
+                gone++
+            }
+        }
+        RecordingStore.listAppStorage(context).forEach { file ->
+            val (_, expires) = parse(file.name) ?: return@forEach
+            if (expires <= now && file.delete()) gone++
+        }
+        if (gone > 0) Log.i(TAG, "trash: removed $gone expired recording(s) for good")
+        return gone
+    }
+}

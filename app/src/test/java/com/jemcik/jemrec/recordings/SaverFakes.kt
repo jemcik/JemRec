@@ -8,8 +8,7 @@ import android.database.MatrixCursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.ContactsContract
-import com.jemcik.jemrec.capture.OggSink
-import com.jemcik.jemrec.capture.RecordingStore
+import com.jemcik.jemrec.audio.OggSink
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext

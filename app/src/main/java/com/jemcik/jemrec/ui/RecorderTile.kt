@@ -1,15 +1,15 @@
 package com.jemcik.jemrec.ui
 
-import androidx.core.content.edit
-import com.jemcik.jemrec.Prefs
-import android.content.Context
 import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.core.content.edit
 import com.jemcik.jemrec.MainActivity
+import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.TurnOffQuestionActivity
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.RecorderSwitch

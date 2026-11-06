@@ -2,7 +2,7 @@ package com.jemcik.jemrec.ui
 
 import android.app.Application
 import android.net.Uri
-import com.jemcik.jemrec.capture.Recording
+import com.jemcik.jemrec.recordings.Recording
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

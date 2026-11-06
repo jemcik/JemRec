@@ -4,7 +4,7 @@ import android.net.Uri
 import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.calls.CallHistory.Kind
 import com.jemcik.jemrec.calls.CallHistory.Status
-import com.jemcik.jemrec.capture.Recording
+import com.jemcik.jemrec.recordings.Recording
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

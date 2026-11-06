@@ -1,12 +1,12 @@
 package com.jemcik.jemrec.recorder
 
+import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLedger.Recorded
-import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.recorder.RecorderHealth.Problem
-import com.jemcik.jemrec.system.GlobalSettings
 import com.jemcik.jemrec.system.AdbdState
+import com.jemcik.jemrec.system.GlobalSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

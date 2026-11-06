@@ -6,9 +6,6 @@ import android.content.Context
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Log
-import com.jemcik.jemrec.setup.Setup
-import com.jemcik.jemrec.system.AutoStart
-import com.jemcik.jemrec.ui.theme.lookMono
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
@@ -58,11 +55,14 @@ import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.R
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallRules
-import com.jemcik.jemrec.capture.FileNames
-import com.jemcik.jemrec.capture.Retention
-import com.jemcik.jemrec.capture.Trash
+import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.Retention
+import com.jemcik.jemrec.recordings.Trash
+import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.ui.theme.JemRecColors
 import com.jemcik.jemrec.ui.theme.LocalLookChoice
+import com.jemcik.jemrec.ui.theme.lookMono
 
 /** Which of Settings' dialogs is open. Saved by name, so a rotation keeps it. */
 private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT, TRACKING_OFF }

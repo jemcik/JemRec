@@ -7,8 +7,8 @@ import com.jemcik.jemrec.calls.CallHistory.Status
 import com.jemcik.jemrec.calls.CallLedger.Ledger
 import com.jemcik.jemrec.calls.CallLedger.Recorded
 import com.jemcik.jemrec.calls.CoverageHistory.State
-import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.RecordingStore
+import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.RecordingStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

@@ -6,7 +6,6 @@ import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.PhoneNumbers
-import com.jemcik.jemrec.capture.FileNames
 
 /**
  * What becomes of a daemon recording of a phone call: which calls it holds,

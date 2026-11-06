@@ -2,9 +2,9 @@ package com.jemcik.jemrec.ui.screens
 
 import android.net.Uri
 import android.os.Looper
-import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.Recordings
-import com.jemcik.jemrec.capture.Waveforms
+import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.Recordings
+import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.UiState

@@ -11,7 +11,7 @@ import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.AfterCallReceiver
 import com.jemcik.jemrec.capture.AudioCheck
-import com.jemcik.jemrec.capture.Trash
+import com.jemcik.jemrec.recordings.Trash
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

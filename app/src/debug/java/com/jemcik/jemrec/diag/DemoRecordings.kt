@@ -8,11 +8,11 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import com.jemcik.jemrec.audio.OpusOggWriter
 import com.jemcik.jemrec.calls.CallHistory
-import com.jemcik.jemrec.capture.OpusOggWriter
-import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.Recordings
-import com.jemcik.jemrec.capture.Waveforms
+import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.Recordings
+import com.jemcik.jemrec.recordings.Waveforms
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -260,7 +260,7 @@ class DemoProvider : ContentProvider() {
         }
         // How long a waveform took to work out, the same way.
         val waveforms = java.io.File(context.filesDir, "waveform.log")
-        com.jemcik.jemrec.capture.Waveforms.onMeasured = { line ->
+        com.jemcik.jemrec.recordings.Waveforms.onMeasured = { line ->
             waveforms.appendText("${java.util.Date()} $line\n")
         }
         return true

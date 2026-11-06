@@ -26,31 +26,31 @@ plugins {
 }
 
 val pure = listOf(
-    "capture/AudioStream",
+    "audio/AudioStream",
+    "audio/OpusHead",
+    "audio/OpusPackets",
     "capture/CallNotice",
-    "capture/OpusHead",
-    "capture/OpusPackets",
-    "capture/PlaybackRules",
     "capture/StandDown",
+    "playback/PlaybackRules",
+    "recorder/Triggers",
     "recordings/AfterSave",
     "recordings/DaemonFile",
     "recordings/WriteOutcome",
-    "recorder/Triggers",
     "system/SystemProperty",
     "ui/DaySections",
 )
 
 val pureTests = listOf(
-    "capture/AudioStreamTest",
+    "audio/AudioStreamTest",
+    "audio/OpusHeadTest",
+    "audio/OpusPacketsTest",
     "capture/CallNoticeTest",
-    "capture/OpusHeadTest",
-    "capture/OpusPacketsTest",
-    "capture/PlaybackRulesTest",
     "capture/StandDownTest",
+    "playback/PlaybackRulesTest",
+    "recorder/TriggersTest",
     "recordings/AfterSaveTest",
     "recordings/DaemonFileTest",
     "recordings/WriteOutcomeTest",
-    "recorder/TriggersTest",
     "ui/DaySectionsTest",
 )
 

@@ -5,10 +5,10 @@ import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.calls.CallHistory.Kind
 import com.jemcik.jemrec.calls.CallHistory.Status
 import com.jemcik.jemrec.calls.CallRules
-import com.jemcik.jemrec.capture.FileNames
-import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.calls.VoipApps
-import com.jemcik.jemrec.capture.Waveforms
+import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.ui.UiState
 import java.text.SimpleDateFormat

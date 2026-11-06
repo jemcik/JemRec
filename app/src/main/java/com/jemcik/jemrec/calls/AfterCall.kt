@@ -17,14 +17,14 @@ import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.AfterCallReceiver
 import com.jemcik.jemrec.capture.AudioCheck
-import com.jemcik.jemrec.capture.DeleteResult
-import com.jemcik.jemrec.capture.FileNames
-import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.Recordings
-import com.jemcik.jemrec.capture.Retention
-import com.jemcik.jemrec.capture.Trash
-import com.jemcik.jemrec.capture.Waveforms
+import com.jemcik.jemrec.recordings.DeleteResult
+import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.recordings.Recordings
+import com.jemcik.jemrec.recordings.Retention
+import com.jemcik.jemrec.recordings.Trash
+import com.jemcik.jemrec.recordings.Waveforms
 import java.util.Locale
 
 /**

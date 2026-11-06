@@ -11,12 +11,12 @@ import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.adb.ResultFile
+import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.LastCallReport
+import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.recorder.SelfTest
 import com.jemcik.jemrec.ui.appVersion
-import com.jemcik.jemrec.capture.CallMonitorService
-import com.jemcik.jemrec.capture.RecorderKeepAlive
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -510,18 +510,18 @@ class SpikeReceiver : BroadcastReceiver() {
                     //   --es op trash --es name <file name> [--ez move true] [--ez purge true]
                     "trash" -> {
                         val name = intent.getStringExtra("name").orEmpty()
-                        val recordings = com.jemcik.jemrec.capture.Recordings
-                        if (intent.getBooleanExtra("purge", false)) com.jemcik.jemrec.capture.Trash.purgeExpired(appContext)
+                        val recordings = com.jemcik.jemrec.recordings.Recordings
+                        if (intent.getBooleanExtra("purge", false)) com.jemcik.jemrec.recordings.Trash.purgeExpired(appContext)
                         val moved = if (intent.getBooleanExtra("move", false)) {
                             recordings.list(appContext, withCallers = false).firstOrNull { it.name == name }
-                                ?.let { com.jemcik.jemrec.capture.Trash.trashAll(appContext, listOf(it)) }
+                                ?.let { com.jemcik.jemrec.recordings.Trash.trashAll(appContext, listOf(it)) }
                                 ?.let { " (moved ${it.deleted}, failed ${it.failed}, asks ${it.needsConsent != null})" }
                                 ?: " (no recording named so)"
                         } else {
                             ""
                         }
                         val listed = recordings.list(appContext, withCallers = false).any { it.name == name }
-                        val trashed = com.jemcik.jemrec.capture.Trash.list(appContext).any { it.name == name }
+                        val trashed = com.jemcik.jemrec.recordings.Trash.list(appContext).any { it.name == name }
                         report(appContext, "trash", "$name: listed=$listed trashed=$trashed$moved")
                     }
 
@@ -589,13 +589,13 @@ class SpikeReceiver : BroadcastReceiver() {
                     // than a broadcast may.
                     "waveform" -> {
                         val name = intent.getStringExtra("name").orEmpty()
-                        val recording = com.jemcik.jemrec.capture.Recordings.list(appContext, withCallers = false)
+                        val recording = com.jemcik.jemrec.recordings.Recordings.list(appContext, withCallers = false)
                             .firstOrNull { it.name == name }
                         if (recording == null) {
                             report(appContext, "waveform", "no recording named '$name'")
                         } else {
                             val started = android.os.SystemClock.elapsedRealtime()
-                            val levels = com.jemcik.jemrec.capture.Waveforms.measure(
+                            val levels = com.jemcik.jemrec.recordings.Waveforms.measure(
                                 appContext, recording.name, recording.uri,
                                 workers = intent.getIntExtra("workers", 0),
                                 join = intent.getBooleanExtra("join", true),
@@ -603,7 +603,7 @@ class SpikeReceiver : BroadcastReceiver() {
                             report(
                                 appContext, "waveform",
                                 // The levels themselves, to compare the ways of working them out.
-                                "$name: ${if (levels == null) "could not be worked out" else "levels " + com.jemcik.jemrec.capture.Waveforms.toBytes(levels).joinToString(",")} " +
+                                "$name: ${if (levels == null) "could not be worked out" else "levels " + com.jemcik.jemrec.recordings.Waveforms.toBytes(levels).joinToString(",")} " +
                                     "in ${android.os.SystemClock.elapsedRealtime() - started} ms (timings in files/waveform.log)",
                             )
                         }
@@ -616,7 +616,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     //   [--el from <us>] [--el until <us>] [--ei skip <samples>]
                     "pcmhash" -> {
                         val name = intent.getStringExtra("name").orEmpty()
-                        val recording = com.jemcik.jemrec.capture.Recordings.list(appContext, withCallers = false)
+                        val recording = com.jemcik.jemrec.recordings.Recordings.list(appContext, withCallers = false)
                             .firstOrNull { it.name == name }
                         if (recording == null) {
                             report(appContext, "pcmhash", "no recording named '$name'")
@@ -629,7 +629,7 @@ class SpikeReceiver : BroadcastReceiver() {
                             val bytes = ByteArray(64 * 1024)
                             // Samples (all channels) left out of the CRC at the start.
                             var skip = intent.getIntExtra("skip", 0)
-                            com.jemcik.jemrec.capture.PcmDecoder.decode(
+                            com.jemcik.jemrec.audio.PcmDecoder.decode(
                                 appContext, recording.uri,
                                 onFormat = { rate, channels -> formats.append("$rate/$channels ") },
                                 onPcm = { pcm, atUs ->

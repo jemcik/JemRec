@@ -36,10 +36,10 @@ import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.answering.EmergencyPause
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.delay
 
 /** Which of the answering machine's dialogs is open. Saved by name. */
 private enum class AnswerDialog { DELAY, DND, LONGEST, NO_LIMIT, SIM, TEST, CARRIER, RESUME }
