@@ -100,10 +100,13 @@ object RecordingStore {
 
         /**
          * What the file is called. A provider asked for a name that is taken
-         * makes another, " (1)" and on, and says so only when asked: this is
-         * read back, and everything that goes by a recording's name goes by
-         * this one, or by the other file's. MediaStore's may change as it
-         * finishes, so after [publish] it is the last word.
+         * makes another, " (1)" before the extension - MediaStore and the
+         * folder provider alike, on the Android 12 and 17 emulators,
+         * 2026-11-06 - and says so only when asked: this is read back, and
+         * everything that goes by a recording's name goes by this one, or by
+         * the other file's. MediaStore's is read once it is finished, the
+         * last it can change; when it changes was not measured, only what it
+         * is then. So after [publish] it is the last word.
          */
         var name: String = name
             private set

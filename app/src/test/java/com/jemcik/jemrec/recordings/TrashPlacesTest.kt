@@ -20,10 +20,9 @@ import java.io.File
  * What each of the three places is asked when a recording goes to the trash,
  * comes back, or goes for good, and what comes of each answer - Android's own
  * yes included, which no list test reaches. A recording cannot be made again,
- * so every arm is here, on the code as it is, before each place gets a
- * backend of its own. What Android itself does with them is the emulator
- * checks' (recently_deleted, recently_deleted_folder): these hold what JemRec
- * asks for.
+ * so every arm is here. What Android itself does with them is the emulator
+ * checks' (recently_deleted, recently_deleted_folder, name_taken): these hold
+ * what JemRec asks for.
  */
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)

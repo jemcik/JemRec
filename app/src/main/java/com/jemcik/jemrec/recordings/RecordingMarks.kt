@@ -45,12 +45,15 @@ internal object RecordingMarks {
         return (newest(entries, name) + entries.filter { name(it) in read }).toSet()
     }
 
-    /** The newest [NEWEST] of [entries], by the time each one's name holds. */
-    private fun newest(entries: Set<String>, name: (String) -> String): List<String> =
+    /** The newest [NEWEST] of [entries], by the time each one's name holds;
+     *  all of them, unread, when they fit: the list asks at every refresh. */
+    private fun newest(entries: Set<String>, name: (String) -> String): Collection<String> {
+        if (entries.size <= NEWEST) return entries
         // Each name read once: the sort's selector runs at every comparison,
         // some 40,000 of them for 2,000 names.
-        entries.associateWith { FileNames.parse(name(it))?.startedAt ?: 0L }
+        return entries.associateWith { FileNames.parse(name(it))?.startedAt ?: 0L }
             .entries.sortedByDescending { it.value }.take(NEWEST).map { it.key }
+    }
 
     /**
      * The recordings the user has marked to keep: what auto-delete never

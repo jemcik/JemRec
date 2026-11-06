@@ -46,3 +46,14 @@ internal sealed interface RecordingLocation {
         }
     }
 }
+
+/** A recording behind a content provider: read and written through its uri,
+ *  whichever provider that is. */
+internal abstract class ProviderItem(protected val uri: Uri) : RecordingLocation {
+
+    override fun read(context: Context): InputStream =
+        context.contentResolver.openInputStream(uri) ?: error("no stream")
+
+    override fun change(context: Context): ParcelFileDescriptor? =
+        context.contentResolver.openFileDescriptor(uri, "rw")
+}

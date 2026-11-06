@@ -23,8 +23,7 @@ import java.io.FileOutputStream
  * Where a recording goes as it is saved, in each of the three places:
  * a folder the user picked, then Recordings/JemRec through MediaStore, then
  * app storage, each falling back to the next; what finishing one does, and
- * what giving it up does. Pinned before the 1.0 restructuring gives each place
- * a backend of its own. What Android itself makes of it is the emulator
+ * what giving it up does. What Android itself makes of it is the emulator
  * checks': these hold what JemRec asks for.
  */
 @RunWith(RobolectricTestRunner::class)

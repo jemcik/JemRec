@@ -19,8 +19,7 @@ import java.io.File
 /**
  * What the list and the marks read from a place that is not plain files:
  * rows and tags through MediaStore and a chosen folder's provider, the
- * dates a row shows, and what a place that cannot be asked leaves. Pinned
- * before the 1.0 restructuring gives each place a backend of its own.
+ * dates a row shows, and what a place that cannot be asked leaves.
  */
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)

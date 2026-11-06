@@ -8,14 +8,12 @@ import android.content.IntentSender
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import java.io.IOException
-import java.io.InputStream
 
 /** A recording in the phone's Recordings folder, through MediaStore. */
-internal class MediaStoreItem(private val uri: Uri) : RecordingLocation {
+internal class MediaStoreItem(uri: Uri) : ProviderItem(uri) {
 
     override fun trash(context: Context, name: String, expiresAtMillis: Long): DeleteResult =
         MediaStoreRecordings.setTrashed(context, uri, trashed = true)
@@ -33,12 +31,6 @@ internal class MediaStoreItem(private val uri: Uri) : RecordingLocation {
     } catch (_: SecurityException) {
         null
     }
-
-    override fun read(context: Context): InputStream =
-        context.contentResolver.openInputStream(uri) ?: error("no stream")
-
-    override fun change(context: Context): ParcelFileDescriptor? =
-        context.contentResolver.openFileDescriptor(uri, "rw")
 }
 
 /**

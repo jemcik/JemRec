@@ -3,17 +3,15 @@ package com.jemcik.jemrec.recordings
 import android.content.Context
 import android.net.Uri
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.util.Log
 import java.io.IOException
-import java.io.InputStream
 
 /**
  * A recording in the folder the user picked, through its documents provider.
  * No trash exists there, so it is trashed by a rename (see Trash).
  */
-internal class FolderDocument(private val uri: Uri) : RecordingLocation {
+internal class FolderDocument(uri: Uri) : ProviderItem(uri) {
 
     override fun trash(context: Context, name: String, expiresAtMillis: Long): DeleteResult =
         rename(context, TrashNames.nameFor(name, expiresAtMillis))
@@ -32,12 +30,6 @@ internal class FolderDocument(private val uri: Uri) : RecordingLocation {
      *  there is nobody to ask here, as there is for MediaStore. */
     override fun deleteForGood(context: Context): Boolean =
         DocumentsContract.deleteDocument(context.contentResolver, uri)
-
-    override fun read(context: Context): InputStream =
-        context.contentResolver.openInputStream(uri) ?: error("no stream")
-
-    override fun change(context: Context): ParcelFileDescriptor? =
-        context.contentResolver.openFileDescriptor(uri, "rw")
 }
 
 /** The folder the user picked, if they picked one. */

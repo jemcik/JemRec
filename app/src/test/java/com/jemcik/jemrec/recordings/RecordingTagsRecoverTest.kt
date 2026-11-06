@@ -84,7 +84,8 @@ class RecordingTagsRecoverTest {
         assertTrue(telegram in RecordingTags.readNames(app))
         assertTrue(message in RecordingTags.readNames(app))
         // Newer than every file here, and gone: only the bound moves it.
-        val newer = (1..2000).map { RecordingStore.nameFor(java.util.Date(System.currentTimeMillis() + it * 1000L), incoming = true) }
+        val after = FileNames.parse("20270101_000000_in.ogg")!!.startedAt
+        val newer = (1..2000).map { RecordingStore.nameFor(java.util.Date(after + it * 1000L), incoming = true) }
         app.getSharedPreferences("jemrec_tags_read", android.content.Context.MODE_PRIVATE).edit()
             .putStringSet("names", RecordingTags.readNames(app) + newer).commit()
         listed()
