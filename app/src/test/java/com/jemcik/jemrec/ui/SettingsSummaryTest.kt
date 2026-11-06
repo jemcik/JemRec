@@ -2,9 +2,9 @@ package com.jemcik.jemrec.ui
 
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.CallRules.Contacts
-import com.jemcik.jemrec.capture.FileNames
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.recorder.OffMode
+import com.jemcik.jemrec.recordings.FileNames
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

@@ -6,6 +6,10 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.edit
+import com.jemcik.jemrec.audio.AudioStream
+import com.jemcik.jemrec.audio.OggSink
+import com.jemcik.jemrec.audio.OpusOggWriter
+import com.jemcik.jemrec.audio.PacketClock
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLogLookup
@@ -15,23 +19,13 @@ import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.calls.VoipCallNotes
-import com.jemcik.jemrec.capture.AudioStream
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.capture.FileNames
-import com.jemcik.jemrec.capture.MessageMarks
-import com.jemcik.jemrec.capture.OggSink
-import com.jemcik.jemrec.capture.OpusOggWriter
-import com.jemcik.jemrec.capture.PacketClock
-import com.jemcik.jemrec.capture.RecordingStore
-import com.jemcik.jemrec.capture.RecordingTags
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileDescriptor
@@ -177,15 +171,12 @@ object RecordingSaver {
      * call - into a folder the file manager showed and the list did not, until
      * the app was closed and reopened.
      */
-    private val _saved = MutableSharedFlow<String>(extraBufferCapacity = 16)
-    val saved: SharedFlow<String> = _saved.asSharedFlow()
+    val saved: SharedFlow<String> get() = RecordingLibrary.changed
 
     /** A recording appeared or went away somewhere the list cannot see -
      *  deleted from the after-call notification, say. Same flow: the list
      *  only needs to know to read the disk again. */
-    fun announce(name: String) {
-        _saved.tryEmit(name)
-    }
+    fun announce(name: String) = RecordingLibrary.announce(name)
 
     /** Whether a daemon file name is for an incoming call, from its "_in." / "_out." tag. */
     fun isIncoming(recfile: String): Boolean = RecordingStore.isIncoming(recfile)
@@ -335,7 +326,7 @@ object RecordingSaver {
                     // The recorder's copy went with the empty read.
                     Log.i(TAG, "save: $recfile - nothing after the message's start; the caller hung up during the greeting")
                     CallLedger.noteGreetingHangUp(context, startedAt.time, incoming)
-                    _saved.tryEmit(recfile)
+                    RecordingLibrary.announce(recfile)
                     Outcome.GreetingHangUp
                 } else {
                     written
@@ -352,7 +343,7 @@ object RecordingSaver {
     private suspend fun dropFromDaemon(context: Context, recfile: String, announce: Boolean, note: () -> Unit = {}) {
         daemon.delete(context, recfile)
         note()
-        if (announce) _saved.tryEmit(recfile)
+        if (announce) RecordingLibrary.announce(recfile)
     }
 
     /** The phone behind SavePlan: the contacts and the call log. */
@@ -404,8 +395,8 @@ object RecordingSaver {
         }
         // Where the name does not say who: the date and number formats, or a
         // caller with nothing a file name can take.
-        if (outcome is Outcome.Saved && note?.name != null && FileNames.parse(name)?.caller == null) {
-            FileNames.noteCaller(context, name, note.name)
+        if (outcome is Outcome.Saved && note?.name != null && FileNames.parse(outcome.name)?.caller == null) {
+            RecordingMarks.Callers.note(context, outcome.name, note.name)
         }
         return outcome
     }
@@ -752,12 +743,15 @@ object RecordingSaver {
                 "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile) +
                     if (undelivered > 0) ", %.2fs not delivered by the capture".format(undelivered) else "",
             )
-            if (phoneCall) FileNames.noteDirection(context, o.part.name, o.part.incoming)
+            // As the file is called: the part's name is the one asked for,
+            // and a place that found it taken gave another.
+            val name = o.target.name
+            if (phoneCall) RecordingMarks.Directions.note(context, name, o.part.incoming)
             published += o.part to seconds.toInt()
-            if (message) MessageMarks.mark(context, o.part.name)
-            _saved.tryEmit(o.part.name)
+            if (message) RecordingMarks.Messages.mark(context, name)
+            RecordingLibrary.announce(name)
             last = Outcome.Saved(
-                o.part.name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis,
+                name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis,
                 message = message,
             )
         }

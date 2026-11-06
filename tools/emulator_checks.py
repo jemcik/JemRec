@@ -1296,12 +1296,19 @@ def files_named(name, folder):
     return [f for f in sh(f"ls -a {folder}/").split() if name in f]
 
 
+def after_call_up():
+    """Whether the last call's notification is up (AfterCall's id 33)."""
+    return re.search(rf"NotificationRecord\(.*pkg={PKG} .*id=33 ", sh("dumpsys notification --noredact")) is not None
+
+
 def restore_then_delete(name, folder):
     """[name] moved to Recently deleted comes back with Restore all, tapped
     there; moved again, Delete all for good and its question remove it, its
     file in [folder] with it. The file's name while it waited."""
+    wait_for(after_call_up, 20, "the after-call notification")
     place, said = trash_place(name, move=True)
     assert place == (False, True), f"not moved to the trash: {said}"
+    wait_for(lambda: not after_call_up(), 5, "the notification to go with the recording")
     open_trash()
     tap("Restore all")
     wait_for(lambda: trash_place(name)[0] == (True, False), 20, "Restore all to bring it back")
@@ -1428,6 +1435,87 @@ def recently_deleted_folder():
         sh(f"am force-stop {PKG}")
         sh(f"rm -rf {folder}")
     return f"in {PICKED}: waited as {trashed}, restored, deleted for good; one expired, gone after the daily pass"
+
+
+def store(name, recordings=False):
+    """A file written under [name] as a save writes one (the debug build's diag
+    'store'): what the place called it."""
+    said = diag("store", "--es", "name", f"'{name}'", *(("--ez", "recordings", "true") if recordings else ()))
+    m = re.search(r"published as (.+?) *$", said, re.M)
+    assert m, said
+    return m.group(1)
+
+
+def lines_in(folder):
+    """The files in [folder], one name a line: a name a provider made has a space."""
+    return sh(f"ls -a {folder}/").splitlines()
+
+
+def place_of(name):
+    return trash_place(f"'{name}'")[0]
+
+
+def name_taken():
+    """A name already taken, in Recordings/JemRec and in a folder picked in
+    Settings: Android's provider makes another, and the save says which. And
+    the same name in both, trashed: Recently deleted shows a row for each,
+    Restore all brings back each, Delete all for good leaves neither."""
+    folder = f"/sdcard/{PICKED}"
+    # Its time differs each run: what a run cut short left is no name taken.
+    stem = time.strftime("20200102_%H%M%S_in")
+    name = f"{stem}.ogg"
+    sh(f"rm -rf {folder}; mkdir -p {folder}")
+    made = {}
+    try:
+        pick_folder(PICKED)
+        for place, recordings in ((RECORDINGS, True), (folder, False)):
+            first = store(name, recordings)
+            assert first == name, f"in {place}, a free name came back as {first}"
+            made[place] = store(name, recordings)
+        there = {place: [f for f in lines_in(place) if stem in f] for place in made}
+        assert all(said != name and said in there[place] for place, said in made.items()), f"said {made}, there: {there}"
+        # A second apart: one name in both, at one expiry, reads as one file.
+        trash_all = (name, name, *made.values())
+        for each in trash_all:
+            trash_place(f"'{each}'", move=True)
+            time.sleep(1.1)
+        assert place_of(made[RECORDINGS]) == (False, True) and place_of(made[folder]) == (False, True) \
+            and place_of(name) == (False, True), "not all four in the trash"
+        # What says one file seen through two places is one: Android's expiry
+        # for the row is the one in the file's name (RecordingLibrary.trashed).
+        said = trash_place(f"'{made[RECORDINGS]}'")[1]
+        expires = int(re.search(r"expires=(\d+)", said).group(1))
+        waiting = [f for f in lines_in(RECORDINGS) if f.endswith(made[RECORDINGS])]
+        assert waiting == [f".trashed-{expires // 1000}-{made[RECORDINGS]}"], f"expires {expires}, the file: {waiting}"
+        open_trash()
+        wait_for(lambda: ui().count('text="Restore"') >= 4, 20, "a row for each copy")
+        shown = ui().count('text="Restore"')
+        assert sh(f"pidof {PKG}").strip(), "the app stopped showing them"
+        tap("Restore all")
+        wait_for(lambda: all(name in lines_in(place) and made[place] in lines_in(place) for place in made), 20,
+                 "Restore all to bring back all four")
+        for each in trash_all:
+            trash_place(f"'{each}'", move=True)
+            time.sleep(1.1)
+        sh(f"am force-stop {PKG}")
+        open_trash()
+        tap("Delete all for good")
+        wait_for(lambda: on_screen("Delete for good"), 10, "the question")
+        tap("Delete for good")
+        gone = lambda: not [f for place in (RECORDINGS, folder) for f in lines_in(place) if stem in f]
+        wait_for(gone, 20, "Delete all for good to leave none")
+    finally:
+        for _ in range(3):
+            if "documentsui" in sh("dumpsys window | grep mCurrentFocus"):
+                sh("input keyevent KEYCODE_BACK")
+                time.sleep(1)
+        try:
+            set_prefs(recordings_tree_uri=None)
+        except Exception as e:  # whatever went wrong: printed, not raised
+            print(f"       {PICKED} still set as the folder to save to: {e}")
+        sh(f"am force-stop {PKG}")
+        sh(f"rm -rf {folder}")
+    return f"made {made[RECORDINGS]!r}, and the same in {PICKED}; {shown} rows on screen, each restored, none left"
 
 
 # What each look's header shows uiautomator, with the recorder ready. Deck's
@@ -2306,7 +2394,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, app_call, mode_switch, app_call_in_front, waveform,
           background_playback,
-          recently_deleted, recently_deleted_folder, looks, reinstall, cable, usb_debugging, adbd_stopped,
+          recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
           debugging_off, off_just_left, background, allow_this_wifi, refused_grant,
           # Last, these two: they turn the emulator's Wi-Fi off and on, and a

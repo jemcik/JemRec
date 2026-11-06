@@ -6,52 +6,49 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import com.jemcik.jemrec.setup.SetupStep
-import com.jemcik.jemrec.ui.theme.LocalLook
-import com.jemcik.jemrec.ui.theme.Look
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.ReadOnlyComposable
-import androidx.activity.compose.LocalActivity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,10 +59,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.recordings.RecordingLibrary
+import com.jemcik.jemrec.setup.SetupStep
+import com.jemcik.jemrec.ui.theme.LocalLook
+import com.jemcik.jemrec.ui.theme.Look
 import kotlinx.coroutines.delay
-import kotlin.system.exitProcess
 import kotlinx.coroutines.flow.conflate
+import kotlin.system.exitProcess
 
 /**
  * Routes between setup and the running app.
@@ -109,7 +109,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     // Conflated behind a short pause, so a reconcile saving several files is
     // one refresh.
     LaunchedEffect(Unit) {
-        RecordingSaver.saved.conflate().collect {
+        RecordingLibrary.changed.conflate().collect {
             delay(250)
             vm.refresh()
         }

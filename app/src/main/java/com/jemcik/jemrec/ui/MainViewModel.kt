@@ -1,22 +1,20 @@
 package com.jemcik.jemrec.ui
 
-import androidx.annotation.RequiresApi
-import android.os.Build
-import android.app.StatusBarManager
 import android.app.Application
+import android.app.StatusBarManager
+import android.content.ComponentName
+import android.content.Intent
+import android.content.IntentSender
+import android.media.AudioManager
+import android.net.Uri
+import android.os.Build
+import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.jemcik.jemrec.Prefs
-import com.jemcik.jemrec.adb.AdbTransport
-import android.content.Intent
-import android.content.IntentSender
-import android.net.Uri
-import android.os.SystemClock
-import android.content.ComponentName
-import android.media.AudioManager
-import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -26,8 +24,25 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
+import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.answering.AnsweringMachine
+import com.jemcik.jemrec.audio.Transcoder
 import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.calls.CallHistory
+import com.jemcik.jemrec.calls.CallLogLookup
+import com.jemcik.jemrec.calls.CallRules
+import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.MissedCalls
+import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.calls.VoipCallNotes
+import com.jemcik.jemrec.capture.AudioAccess
+import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.capture.DebugNotificationCleaner
+import com.jemcik.jemrec.capture.LastCallReport
+import com.jemcik.jemrec.capture.PlaybackService
+import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.playback.PlaybackRules
 import com.jemcik.jemrec.recorder.BackgroundKill
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.NetworkRevive
@@ -38,64 +53,50 @@ import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.SelfTest
 import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.recorder.Trigger
+import com.jemcik.jemrec.recordings.AppRecordings
+import com.jemcik.jemrec.recordings.BulkDeleteResult
+import com.jemcik.jemrec.recordings.DeleteResult
+import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.RecordingLibrary
+import com.jemcik.jemrec.recordings.RecordingMarks
+import com.jemcik.jemrec.recordings.RecordingStore
+import com.jemcik.jemrec.recordings.RecordingTags
+import com.jemcik.jemrec.recordings.Recordings
+import com.jemcik.jemrec.recordings.Retention
+import com.jemcik.jemrec.recordings.Trash
+import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.setup.PairingNotification
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.system.GlobalSettings
 import com.jemcik.jemrec.system.ShellGrant
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
-import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import com.jemcik.jemrec.answering.AnsweringMachine
-import com.jemcik.jemrec.capture.AudioAccess
-import com.jemcik.jemrec.calls.CallHistory
-import com.jemcik.jemrec.calls.CallRules
-import com.jemcik.jemrec.calls.CallTracking
-import com.jemcik.jemrec.capture.FileNames
-import com.jemcik.jemrec.calls.VoipApps
-import com.jemcik.jemrec.calls.VoipCallNotes
-import com.jemcik.jemrec.calls.CallLogLookup
-import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.capture.LastCallReport
-import com.jemcik.jemrec.capture.DebugNotificationCleaner
-import com.jemcik.jemrec.capture.DeleteResult
-import com.jemcik.jemrec.capture.BulkDeleteResult
-import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.RecordingTags
-import com.jemcik.jemrec.capture.Recordings
-import com.jemcik.jemrec.capture.Transcoder
-import androidx.core.content.FileProvider
-import java.io.File
-import com.jemcik.jemrec.capture.RecordingMode
-import com.jemcik.jemrec.capture.PlaybackRules
-import com.jemcik.jemrec.capture.PlaybackService
-import com.jemcik.jemrec.capture.RecordingStore
-import com.jemcik.jemrec.capture.Trash
-import com.jemcik.jemrec.capture.Waveforms
-import com.jemcik.jemrec.capture.Retention
-import com.jemcik.jemrec.capture.KeepMarks
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.Looks
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Recordings added to the list per "show more" tap. */
 private const val PAGE = 20
@@ -1136,6 +1137,8 @@ class MainViewModel @JvmOverloads constructor(
                     refreshNow()
                     val recording = _state.value.recordings.firstOrNull { it.name == link.name }
                     if (recording == null) {
+                        // Gone by another way than JemRec's: a file manager's.
+                        link.name?.let { AfterCall.gone(app, it) }
                         tell("that recording is no longer there")
                         return@launch
                     }
@@ -1205,7 +1208,7 @@ class MainViewModel @JvmOverloads constructor(
     /** Mark one recording to keep, or take the mark off. Kept recordings are
      *  never auto-deleted. */
     fun toggleKept(recording: Recording) {
-        KeepMarks.set(getApplication(), listOf(recording.name), !recording.kept)
+        RecordingMarks.Keep.set(getApplication(), listOf(recording.name), !recording.kept)
         refresh()
         keepInFiles(listOf(recording))
     }
@@ -1225,7 +1228,7 @@ class MainViewModel @JvmOverloads constructor(
         val picked = current.recordings.filter { it.name in current.selected }
         if (picked.isEmpty()) return
         val kept = !picked.all { it.kept }
-        KeepMarks.set(getApplication(), picked.map { it.name }, kept = kept)
+        RecordingMarks.Keep.set(getApplication(), picked.map { it.name }, kept = kept)
         _state.update { it.copy(selecting = false, selected = emptySet()) }
         refresh()
         keepInFiles(picked.filter { it.kept != kept })
@@ -1235,7 +1238,7 @@ class MainViewModel @JvmOverloads constructor(
     fun restore(recording: Recording) = launchAction("restore") {
         when (val result = withContext(Dispatchers.IO) { Trash.restore(getApplication(), recording) }) {
             is DeleteResult.Deleted -> say("restored ${recording.name}")
-            is DeleteResult.NeedsConsent -> _state.update { it.copy(deleteConsent = result.request) }
+            is DeleteResult.NeedsConsent -> askAndroid(result.request)
             is DeleteResult.Failed -> say("could not restore ${recording.name}: ${result.error.message}")
         }
         refreshNow()
@@ -1265,14 +1268,14 @@ class MainViewModel @JvmOverloads constructor(
         if (all.isEmpty()) return
         launchActionWhenFree("delete for good") {
             val result = withContext(Dispatchers.IO) { Trash.deleteForGood(getApplication(), all) }
-            report(all.size, result, "deleted for good")
+            report(all.size, result, "deleted for good", leaving = true)
             refreshNow()
         }
     }
 
     /** How a bulk restore or delete went, and Android's question next for
      *  what it wants confirmed - counted as asked, not as failed. */
-    private fun report(of: Int, result: BulkDeleteResult, did: String) {
+    private fun report(of: Int, result: BulkDeleteResult, did: String, leaving: Boolean = false) {
         val asked = of - result.deleted - result.failed
         val summary = listOfNotNull(
             "$did ${result.deleted}".takeIf { result.deleted > 0 },
@@ -1280,7 +1283,7 @@ class MainViewModel @JvmOverloads constructor(
             "could not do ${result.failed}".takeIf { result.failed > 0 },
         ).joinToString(", ")
         if (result.failed > 0) tell(summary) else if (summary.isNotEmpty()) say(summary)
-        result.needsConsent?.let { request -> _state.update { it.copy(deleteConsent = request) } }
+        result.needsConsent?.let { askAndroid(it, if (leaving) result.disputed else emptyList()) }
     }
 
     /** One of auto-delete's two rules changed: saved, and applied at once. */
@@ -1292,7 +1295,7 @@ class MainViewModel @JvmOverloads constructor(
         if (result.deleted > 0) say("auto-delete moved ${result.deleted} recording(s) to Recently deleted")
         // Recordings Android wants confirmed are asked about now, while the
         // user is here; the daily pass cannot ask.
-        result.needsConsent?.let { request -> _state.update { it.copy(deleteConsent = request) } }
+        result.needsConsent?.let { askAndroid(it, result.disputed) }
         refreshNow()
     }
 
@@ -1430,8 +1433,7 @@ class MainViewModel @JvmOverloads constructor(
         // dialer's touches with it. An unresponsive phone right after a call is
         // about the worst thing this app could do.
         val snapshot = withContext(Dispatchers.IO) {
-            val recordings = Recordings.list(app)
-            val trashed = if (Recordings.override != null) emptyList() else Trash.list(app)
+            val (recordings, trashed) = RecordingLibrary.read(app)
             // Only while the tab is up: it is the call log and a contacts
             // lookup per number, and nobody is looking at it otherwise. Null
             // when not read, so this refresh leaves alone a list a later one
@@ -2057,7 +2059,7 @@ class MainViewModel @JvmOverloads constructor(
                 tell("could not prepare that recording to share")
                 return@launch
             }
-            val uri = FileProvider.getUriForFile(app, "${app.packageName}.recordings", m4a)
+            val uri = AppRecordings.uriOf(app, m4a)
             openShareSheet(uri, "audio/mp4")
         }
     }
@@ -2110,6 +2112,18 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(deleteConsent = null) }
         if (!granted) say("deletion cancelled")
         refresh()
+        val left = leavingOnYes
+        leavingOnYes = emptyList()
+        if (granted) left.forEach { AfterCall.gone(getApplication(), it) }
+    }
+
+    /** What Android's question is moving or deleting: the answer says only yes
+     *  or no, and a yes takes their notifications with them. Not a restore. */
+    private var leavingOnYes: List<String> = emptyList()
+
+    private fun askAndroid(request: IntentSender, leaving: List<String> = emptyList()) {
+        leavingOnYes = leaving
+        _state.update { it.copy(deleteConsent = request) }
     }
 
     /**
@@ -2212,9 +2226,7 @@ class MainViewModel @JvmOverloads constructor(
                 "could not move ${result.failed}".takeIf { result.failed > 0 },
             ).joinToString(", ")
             if (result.failed > 0) tell(summary) else say(summary)
-            result.needsConsent?.let { request ->
-                _state.update { it.copy(deleteConsent = request) }
-            }
+            result.needsConsent?.let { askAndroid(it, result.disputed) }
             _state.update { it.copy(selecting = false, selected = emptySet()) }
             refresh()
         }

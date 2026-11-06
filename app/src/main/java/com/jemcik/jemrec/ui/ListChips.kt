@@ -2,8 +2,8 @@ package com.jemcik.jemrec.ui
 
 import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.calls.CallHistory.Status
-import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.recordings.Recording
 
 /*
  * The chips over the two lists: the one rule that says which are drawn (the

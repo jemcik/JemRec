@@ -10,8 +10,8 @@ import android.util.Log
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.jemcik.jemrec.Prefs
-import com.jemcik.jemrec.capture.FileNames
-import com.jemcik.jemrec.capture.Recording
+import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.Recording
 
 /**
  * Who each call was with, if the user has said we may look.

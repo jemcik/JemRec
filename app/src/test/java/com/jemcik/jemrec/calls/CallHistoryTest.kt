@@ -6,8 +6,8 @@ import com.jemcik.jemrec.calls.CallHistory.Kind
 import com.jemcik.jemrec.calls.CallHistory.Logged
 import com.jemcik.jemrec.calls.CallHistory.Status
 import com.jemcik.jemrec.calls.CoverageHistory.State
-import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.RecordingStore
+import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.RecordingStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

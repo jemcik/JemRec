@@ -14,8 +14,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.Waveforms
+import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.Waveforms
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max

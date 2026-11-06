@@ -1,7 +1,7 @@
 package com.jemcik.jemrec.calls
 
-import com.jemcik.jemrec.capture.Recording
 import com.jemcik.jemrec.recordings.DaemonFile
+import com.jemcik.jemrec.recordings.Recording
 
 /**
  * Which call a recording is, and which recording a call has: the rules the

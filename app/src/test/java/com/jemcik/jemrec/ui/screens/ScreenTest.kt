@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -18,10 +19,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Density
+import androidx.lifecycle.viewModelScope
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
+import com.google.common.util.concurrent.SettableFuture
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.LocalNow
@@ -32,12 +35,9 @@ import com.jemcik.jemrec.ui.iconsLoadOn
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.LookChoice
 import com.jemcik.jemrec.ui.theme.Looks
-import org.junit.After
-import androidx.lifecycle.viewModelScope
-import android.os.Looper
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.job
-import com.google.common.util.concurrent.SettableFuture
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.rules.ExternalResource

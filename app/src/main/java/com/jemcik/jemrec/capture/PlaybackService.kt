@@ -23,6 +23,10 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.R
+import com.jemcik.jemrec.playback.FocusHolder
+import com.jemcik.jemrec.playback.PlaybackRules
+import com.jemcik.jemrec.playback.RecordingPlayer
+import com.jemcik.jemrec.playback.SessionPlayer
 
 /**
  * Plays a recording with the screen off and the app out of sight, under the

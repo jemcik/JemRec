@@ -2,20 +2,20 @@ package com.jemcik.jemrec.ui.theme
 
 import android.content.Context
 import android.graphics.Typeface
-import android.graphics.fonts.Font as AndroidFontFile
-import android.graphics.fonts.FontFamily as AndroidFontFamily
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.text.font.AndroidFont
-import androidx.compose.ui.text.font.FontLoadingStrategy
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.AndroidFont
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontLoadingStrategy
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import com.jemcik.jemrec.R
+import android.graphics.fonts.Font as AndroidFontFile
+import android.graphics.fonts.FontFamily as AndroidFontFamily
 
 /**
  * The colours each look draws its own pieces in - Deck's face and LCD, Memo's

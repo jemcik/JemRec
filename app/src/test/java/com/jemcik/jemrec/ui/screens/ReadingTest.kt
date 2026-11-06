@@ -6,9 +6,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.CallHistory
-import com.jemcik.jemrec.capture.Recording
-import com.jemcik.jemrec.capture.Recordings
-import com.jemcik.jemrec.capture.Waveforms
+import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.Recordings
+import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.HomeTab

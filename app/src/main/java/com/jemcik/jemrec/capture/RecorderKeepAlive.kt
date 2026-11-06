@@ -16,6 +16,7 @@ import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.ReviveLog
 import com.jemcik.jemrec.recorder.Trigger
 import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.rethrowingCancellation
 import java.util.concurrent.TimeUnit
 

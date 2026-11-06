@@ -2,10 +2,10 @@ package com.jemcik.jemrec.ui.screens
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
-import com.jemcik.jemrec.capture.Waveforms
+import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.ui.AnswerUi
-import com.jemcik.jemrec.ui.CallsNarrowing
 import com.jemcik.jemrec.ui.AppScaffold
+import com.jemcik.jemrec.ui.CallsNarrowing
 import com.jemcik.jemrec.ui.HomeTab
 import com.jemcik.jemrec.ui.RecordingsNarrowing
 import com.jemcik.jemrec.ui.UiState

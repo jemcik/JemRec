@@ -1,7 +1,7 @@
 package com.jemcik.jemrec.calls
 
 import com.jemcik.jemrec.calls.VoipCallNotes.Note
-import com.jemcik.jemrec.capture.FileNames
+import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.RecordingSaver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

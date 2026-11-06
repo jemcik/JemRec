@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.recordings
 
 import com.jemcik.jemrec.calls.VoipApps
-import com.jemcik.jemrec.capture.RecordingStore
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
