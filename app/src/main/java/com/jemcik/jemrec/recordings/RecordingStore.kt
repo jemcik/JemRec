@@ -1,19 +1,15 @@
 package com.jemcik.jemrec.recordings
 
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
-import android.provider.MediaStore
 import android.util.Log
-import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.jemcik.jemrec.Prefs
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -81,10 +77,8 @@ object RecordingStore {
         is DaemonFile.Message.Starts -> message.ms
     }
 
-    private val collection: Uri
-        get() = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-
-    private fun relativePath(): String = "${Environment.DIRECTORY_RECORDINGS}/$FOLDER"
+    /** Where the standard folder is, as MediaStore and a person write it. */
+    internal fun relativePath(): String = "${Environment.DIRECTORY_RECORDINGS}/$FOLDER"
 
     class Target(
         val name: String,
@@ -182,9 +176,9 @@ object RecordingStore {
      */
     fun open(context: Context, name: String): Target? {
         Waveforms.writingStarted(name)
-        val target = openInChosenFolder(context, name)
-            ?: openInRecordings(context, name)
-            ?: openInAppStorage(context, name)
+        val target = FolderRecordings.open(context, name)
+            ?: MediaStoreRecordings.open(context, name)
+            ?: AppRecordings.open(context, name)
         if (target == null) {
             Waveforms.writingEnded(context, name)
         } else {
@@ -193,76 +187,4 @@ object RecordingStore {
         return target
     }
 
-    private fun openInChosenFolder(context: Context, name: String): Target? {
-        val tree = treeUri(context) ?: return null
-        return runCatching {
-            val parent = DocumentsContract.buildDocumentUriUsingTree(
-                tree, DocumentsContract.getTreeDocumentId(tree),
-            )
-            val doc = DocumentsContract.createDocument(context.contentResolver, parent, MIME, name)
-                ?: error("createDocument returned null")
-            // "rw" and not "w": MediaMuxer seeks back to patch headers when it
-            // finalises, and a write-only descriptor cannot.
-            val pfd = context.contentResolver.openFileDescriptor(doc, "rw")
-                ?: error("openFileDescriptor returned null")
-            Target(name, pfd, doc, onFinish = {}, onAbandon = {
-                DocumentsContract.deleteDocument(context.contentResolver, doc)
-            })
-        }.onFailure {
-            Log.w(TAG, "store: chosen folder unusable, falling back", it)
-        }.getOrNull()
-    }
-
-    private fun openInRecordings(context: Context, name: String): Target? = runCatching {
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, name)
-            put(MediaStore.Audio.Media.MIME_TYPE, MIME)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, relativePath())
-            // Hidden from other apps until the recording is finished, so a
-            // half-written file never shows up in a music app mid-call.
-            put(MediaStore.Audio.Media.IS_PENDING, 1)
-        }
-        val uri = resolver.insert(collection, values) ?: error("MediaStore insert returned null")
-        val pfd = resolver.openFileDescriptor(uri, "rw")
-            ?: error("openFileDescriptor returned null")
-
-        Target(
-            name = name,
-            descriptor = pfd,
-            uri = uri,
-            onFinish = {
-                resolver.update(
-                    uri,
-                    ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) },
-                    null, null,
-                )
-            },
-            onAbandon = { resolver.delete(uri, null, null) },
-        )
-    }.onFailure {
-        Log.w(TAG, "store: could not write to ${relativePath()}", it)
-    }.getOrNull()
-
-    private fun openInAppStorage(context: Context, name: String): Target? = runCatching {
-        val dir = File(context.getExternalFilesDir(null), "recordings").apply { mkdirs() }
-        val file = File(dir, name)
-        // Truncated, as MediaStore's new row and a new document are empty: a
-        // file of the name from before - a save that failed half way, then
-        // tried again untagged and shorter - kept its tail past the new end.
-        val pfd = ParcelFileDescriptor.open(
-            file,
-            ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE or ParcelFileDescriptor.MODE_TRUNCATE,
-        )
-        Target(
-            name,
-            pfd,
-            FileProvider.getUriForFile(context, "${context.packageName}.recordings", file),
-            filePath = file.absolutePath,
-            onFinish = {},
-            onAbandon = { file.delete() },
-        )
-    }.onFailure {
-        Log.e(TAG, "store: nowhere at all to write a recording", it)
-    }.getOrNull()
 }

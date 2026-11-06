@@ -63,6 +63,38 @@ internal object MediaStoreRecordings {
         MediaStore.Audio.Media.DATE_EXPIRES,
     )
 
+    /** Somewhere to write [name] in Recordings/JemRec. */
+    fun open(context: Context, name: String): RecordingStore.Target? = runCatching {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Audio.Media.DISPLAY_NAME, name)
+            put(MediaStore.Audio.Media.MIME_TYPE, RecordingStore.MIME)
+            put(MediaStore.Audio.Media.RELATIVE_PATH, RecordingStore.relativePath())
+            // Hidden from other apps until the recording is finished, so a
+            // half-written file never shows up in a music app mid-call.
+            put(MediaStore.Audio.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(collection, values) ?: error("MediaStore insert returned null")
+        val pfd = resolver.openFileDescriptor(uri, "rw")
+            ?: error("openFileDescriptor returned null")
+
+        RecordingStore.Target(
+            name = name,
+            descriptor = pfd,
+            uri = uri,
+            onFinish = {
+                resolver.update(
+                    uri,
+                    ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) },
+                    null, null,
+                )
+            },
+            onAbandon = { resolver.delete(uri, null, null) },
+        )
+    }.onFailure {
+        Log.w(TAG, "store: could not write to ${RecordingStore.relativePath()}", it)
+    }.getOrNull()
+
     /** The default location. MediaStore knows the duration already, which
      *  saves opening every file just to ask how long it is. */
     fun list(context: Context): List<Recording> = runCatching {

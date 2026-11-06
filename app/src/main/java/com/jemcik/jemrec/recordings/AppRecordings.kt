@@ -1,7 +1,9 @@
 package com.jemcik.jemrec.recordings
 
 import android.content.Context
+import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileInputStream
@@ -40,9 +42,36 @@ internal class AppFile(private val file: File) : RecordingLocation {
  *  default, and the last resort when neither other place will take one. */
 internal object AppRecordings {
 
+    private const val TAG = "JemRec"
+
+    private fun folder(context: Context) = File(context.getExternalFilesDir(null), "recordings")
+
+    /** Somewhere to write [name], the last resort. */
+    fun open(context: Context, name: String): RecordingStore.Target? = runCatching {
+        val dir = folder(context).apply { mkdirs() }
+        val file = File(dir, name)
+        // Truncated, as MediaStore's new row and a new document are empty: a
+        // file of the name from before - a save that failed half way, then
+        // tried again untagged and shorter - kept its tail past the new end.
+        val pfd = ParcelFileDescriptor.open(
+            file,
+            ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE or ParcelFileDescriptor.MODE_TRUNCATE,
+        )
+        RecordingStore.Target(
+            name,
+            pfd,
+            uriOf(context, file),
+            filePath = file.absolutePath,
+            onFinish = {},
+            onAbandon = { file.delete() },
+        )
+    }.onFailure {
+        Log.e(TAG, "store: nowhere at all to write a recording", it)
+    }.getOrNull()
+
     /** The files there, newest first, trashed or not. */
     fun files(context: Context): List<File> =
-        File(context.getExternalFilesDir(null), "recordings")
+        folder(context)
             .listFiles()
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
@@ -73,6 +102,8 @@ internal object AppRecordings {
         expires <= now && file.delete()
     }
 
-    /** The content uri of a file there: who has it may read it, for a grant. */
-    fun uriOf(context: Context, file: File) = FileProvider.getUriForFile(context, "${context.packageName}.recordings", file)
+    /** A file's content uri, as the list and the notification carry it, and
+     *  a shared copy beside it (MainViewModel): file_paths.xml says which. */
+    fun uriOf(context: Context, file: File): Uri =
+        FileProvider.getUriForFile(context, "${context.packageName}.recordings", file)
 }

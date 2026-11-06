@@ -55,6 +55,27 @@ internal object FolderRecordings {
         val trashed: Pair<String, Long?>?,
     )
 
+    /** Somewhere to write [name], if a folder is picked and will take it. */
+    fun open(context: Context, name: String): RecordingStore.Target? {
+        val tree = RecordingStore.treeUri(context) ?: return null
+        return runCatching {
+            val parent = DocumentsContract.buildDocumentUriUsingTree(
+                tree, DocumentsContract.getTreeDocumentId(tree),
+            )
+            val doc = DocumentsContract.createDocument(context.contentResolver, parent, RecordingStore.MIME, name)
+                ?: error("createDocument returned null")
+            // "rw" and not "w": MediaMuxer seeks back to patch headers when it
+            // finalises, and a write-only descriptor cannot.
+            val pfd = context.contentResolver.openFileDescriptor(doc, "rw")
+                ?: error("openFileDescriptor returned null")
+            RecordingStore.Target(name, pfd, doc, onFinish = {}, onAbandon = {
+                DocumentsContract.deleteDocument(context.contentResolver, doc)
+            })
+        }.onFailure {
+            Log.w(TAG, "store: chosen folder unusable, falling back", it)
+        }.getOrNull()
+    }
+
     /** Every recording-shaped file in the folder, trashed or not. */
     fun documents(context: Context): List<Document> = runCatching {
         val tree = RecordingStore.treeUri(context) ?: return emptyList()

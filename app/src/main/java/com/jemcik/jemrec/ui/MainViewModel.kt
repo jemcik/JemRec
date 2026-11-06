@@ -12,7 +12,6 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -54,6 +53,7 @@ import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.SelfTest
 import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.recorder.Trigger
+import com.jemcik.jemrec.recordings.AppRecordings
 import com.jemcik.jemrec.recordings.BulkDeleteResult
 import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
@@ -2057,7 +2057,7 @@ class MainViewModel @JvmOverloads constructor(
                 tell("could not prepare that recording to share")
                 return@launch
             }
-            val uri = FileProvider.getUriForFile(app, "${app.packageName}.recordings", m4a)
+            val uri = AppRecordings.uriOf(app, m4a)
             openShareSheet(uri, "audio/mp4")
         }
     }
