@@ -33,21 +33,24 @@ internal object RecordingMarks {
 
     /**
      * [entries] held to the bound, each read as a name by [name]: the newest,
-     * and any older whose file is still on the phone. It is marks of gone
-     * files the bound is for: an old message past the newest 2000 lost its
-     * mark while its file stayed, and with it the short-call rule's exception,
-     * so auto-delete could take it for a wrong number; a direction or a
-     * caller, what its row shows.
+     * and any older the list has read ([readNames]), which is every file on
+     * the phone. It is marks of gone files the bound is for: an old message
+     * past the newest 2000 lost its mark while its file stayed, and with it
+     * the short-call rule's exception, so auto-delete could take it for a
+     * wrong number; a direction or a caller, what its row shows.
      */
     private fun bounded(context: Context, entries: Set<String>, name: (String) -> String): Set<String> {
         if (entries.size <= NEWEST) return entries
-        val here = readNames(context)
+        val read = readNames(context)
+        return (newest(entries, name) + entries.filter { name(it) in read }).toSet()
+    }
+
+    /** The newest [NEWEST] of [entries], by the time each one's name holds. */
+    private fun newest(entries: Set<String>, name: (String) -> String): List<String> =
         // Each name read once: the sort's selector runs at every comparison,
         // some 40,000 of them for 2,000 names.
-        val newest = entries.associateWith { FileNames.parse(name(it))?.startedAt ?: 0L }
+        entries.associateWith { FileNames.parse(name(it))?.startedAt ?: 0L }
             .entries.sortedByDescending { it.value }.take(NEWEST).map { it.key }
-        return (newest + entries.filter { name(it) in here }).toSet()
-    }
 
     /**
      * The recordings the user has marked to keep: what auto-delete never
@@ -163,9 +166,9 @@ internal object RecordingMarks {
     // --- reading them back ---------------------------------------------------
 
     /**
-     * The names read, in a file of their own: one per recording, with no cap,
-     * and the one preferences file is rewritten whole at every write anywhere
-     * in the app ([Messages] caps its set at 2000 for that reason).
+     * The names read, in a file of their own: one per recording, and the one
+     * preferences file is rewritten whole at every write anywhere in the app
+     * ([Messages] caps its set at 2000 for that reason).
      */
     private const val READ_FILE = "jemrec_tags_read"
     private const val KEY_READ = "names"
@@ -178,9 +181,15 @@ internal object RecordingMarks {
      * noted where the list looks: the preferences. After a reinstall that is
      * every recording, once; after that, only one that came from somewhere
      * else. Each is read once - a mark changed since is the preferences' to
-     * say - unless reading it failed, when it is tried again at the next
-     * list; and forgotten when it is no longer listed, so this does not grow
-     * with every recording ever deleted.
+     * say - unless reading it failed, when it is tried again at the next list.
+     *
+     * A name not listed stays read, the newest [NEWEST] of them. It used to go
+     * at once, so a file that left the list and came back was read again, and
+     * a keep mark the user had removed, on a file this app may not write, came
+     * back from it. A file leaves the list for Recently deleted, for a query
+     * that failed, for a permission taken back or another folder chosen, and
+     * only the first can be told from here; none of them makes it a new file.
+     * The bound is so this does not grow with every recording ever deleted.
      */
     @Synchronized
     fun recover(context: Context, recordings: List<Recording>) {
@@ -194,7 +203,7 @@ internal object RecordingMarks {
             note(context, found)
             Log.i(TAG, "tags: read ${unread.size - failed} recording(s), ${found.size} with JemRec's tags, $failed to try again")
         }
-        val now = (seen intersect names) + results.filter { it.second.isSuccess }.map { it.first }
+        val now = (seen intersect names) + results.filter { it.second.isSuccess }.map { it.first } + newest(seen - names) { it }
         if (now != seen) {
             context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).edit { putStringSet(KEY_READ, now) }
         }

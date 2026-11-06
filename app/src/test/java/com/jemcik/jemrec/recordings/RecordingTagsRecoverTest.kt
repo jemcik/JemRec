@@ -76,13 +76,22 @@ class RecordingTagsRecoverTest {
         assertFalse(listed().getValue(kept).kept)
     }
 
-    @Test fun aRecordingNoLongerListedIsForgotten() {
+    @Test fun aNameNoLongerListedStaysReadUntil2000NewerHaveGone() {
         saveAll()
         listed()
         File(folder, telegram).delete()
         listed()
-        assertFalse(telegram in RecordingTags.readNames(app))
+        assertTrue(telegram in RecordingTags.readNames(app))
         assertTrue(message in RecordingTags.readNames(app))
+        // Newer than every file here, and gone: only the bound moves it.
+        val newer = (1..2000).map { RecordingStore.nameFor(java.util.Date(System.currentTimeMillis() + it * 1000L), incoming = true) }
+        app.getSharedPreferences("jemrec_tags_read", android.content.Context.MODE_PRIVATE).edit()
+            .putStringSet("names", RecordingTags.readNames(app) + newer).commit()
+        listed()
+        val read = RecordingTags.readNames(app)
+        assertFalse(telegram in read)
+        assertTrue(message in read)
+        assertEquals(2000, newer.count { it in read })
     }
 
     @Test fun aFileThatCouldNotBeReadIsTriedAgain() {
@@ -160,28 +169,43 @@ class RecordingTagsRecoverTest {
         assertTrue(MessageMarks.all(app).isEmpty())
     }
 
-    @Test fun aRemovedKeepMarkComesBackWhenItsFileLeavesTheListAndReturns() {
+    /** Kept in its file and un-kept since, on a file this app may not write -
+     *  as after a reinstall, when Android counts the old install's files as
+     *  nobody's: only the preferences say so. Root writes a read-only file all
+     *  the same, so run as root this has nothing to show. */
+    private fun unkeptInThePreferencesAlone() {
         save(kept, RecordingTags.Facts(incoming = false, kept = true))
         assertTrue(listed().getValue(kept).kept)
-        // Un-kept, on a file this app may not write - as after a reinstall,
-        // when Android counts the old install's files as nobody's. Root writes
-        // a read-only file all the same, so run as root this has nothing to show.
         val file = File(folder, kept).apply { setWritable(false) }
         assumeFalse("the tests run as root", file.canWrite())
         KeepMarks.set(app, listOf(kept), kept = false)
         assertEquals(0, RecordingTags.writeKept(app, listOf(listed().getValue(kept))))
         assertFalse(listed().getValue(kept).kept)
-        // To Recently deleted and back.
+    }
+
+    private fun stillUnkept() {
+        assertFalse(listed().getValue(kept).kept)
+        assertEquals(emptySet<String>(), KeepMarks.all(app))
+    }
+
+    @Test fun aRemovedKeepMarkStaysRemovedThroughRecentlyDeleted() {
+        unkeptInThePreferencesAlone()
         val row = listed().getValue(kept)
         Trash.trash(app, row.uri, row.filePath, row.name)
         listed()
         Trash.restore(app, Trash.list(app).single())
-        // Pins today's behaviour, which looks like a bug: recover forgets a
-        // name once it is not listed, reads the file again when it returns,
-        // and the file's old keep mark undoes the user's unkeep
-        // (to be fixed in its own commit).
-        assertTrue(listed().getValue(kept).kept)
-        assertEquals(setOf(kept), KeepMarks.all(app))
+        stillUnkept()
+    }
+
+    @Test fun aRemovedKeepMarkStaysRemovedWhenItsFileIsAwayAndReturns() {
+        unkeptInThePreferencesAlone()
+        // However it left the list - a query that failed, a permission taken
+        // back, another folder chosen - it is not a new file when it returns.
+        val away = File(app.cacheDir, kept)
+        File(folder, kept).renameTo(away)
+        assertFalse(kept in listed())
+        away.renameTo(File(folder, kept))
+        stillUnkept()
     }
 
     @Test fun theFileEndsAsThePreferencesWhateverOrderTheWritesRunIn() {
