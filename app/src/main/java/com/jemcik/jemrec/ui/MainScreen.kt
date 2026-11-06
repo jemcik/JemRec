@@ -59,7 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.capture.CaptureDaemon
-import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
@@ -109,7 +109,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     // Conflated behind a short pause, so a reconcile saving several files is
     // one refresh.
     LaunchedEffect(Unit) {
-        RecordingSaver.saved.conflate().collect {
+        RecordingLibrary.changed.conflate().collect {
             delay(250)
             vm.refresh()
         }

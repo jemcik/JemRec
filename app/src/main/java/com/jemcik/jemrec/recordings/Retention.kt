@@ -95,16 +95,19 @@ object Retention {
         if (Recordings.override != null) return BulkDeleteResult(0, 0, null)
         val now = System.currentTimeMillis()
         Prefs.of(context).edit { putLong(KEY_LAST_RUN, now) }
-        Trash.purgeExpired(context, now)
+        // One listing for the purge and the rules: nothing the purge takes
+        // was in the list, and a chosen folder was asked twice.
+        val scan = RecordingLibrary.scan(context)
+        Trash.purgeExpired(context, now, scan)
 
         val maxAge = maxAgeDays(context)
         val minSeconds = minSeconds(context)
         if (maxAge == 0 && minSeconds == 0) return BulkDeleteResult(0, 0, null)
-        val doomed = select(Recordings.list(context, withCallers = false), now, maxAge, minSeconds)
+        val doomed = select(RecordingLibrary.list(context, scan, withCallers = false), now, maxAge, minSeconds)
         if (doomed.isEmpty()) return BulkDeleteResult(0, 0, null)
         val result = Trash.trashAll(context, doomed)
         // An open list has these on screen still; it reads the disk again.
-        if (result.deleted > 0) RecordingSaver.announce("retention")
+        if (result.deleted > 0) RecordingLibrary.announce("retention")
         Log.i(
             TAG,
             "retention: ${doomed.size} due (older than $maxAge days / under ${minSeconds}s): " +
@@ -131,7 +134,7 @@ object Retention {
         if (result !is DeleteResult.Deleted) return false
         // The list refreshed when the save was announced, a moment ago, and
         // showed it; this has it look again.
-        RecordingSaver.announce(saved.name)
+        RecordingLibrary.announce(saved.name)
         return true
     }
 }

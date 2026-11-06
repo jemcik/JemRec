@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.IntentSender
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.util.Log
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.VoipApps
 import java.text.SimpleDateFormat
@@ -127,8 +126,6 @@ sealed interface DeleteResult {
 
 internal object Recordings {
 
-    private const val TAG = "JemRec"
-
     /**
      * A stand-in list, for taking the README's screenshots.
      *
@@ -146,37 +143,10 @@ internal object Recordings {
     @Volatile
     var override: ((Context) -> List<Recording>)? = null
 
-    /**
-     * Everywhere a recording might be, newest first.
-     *
-     * Three sources rather than one, because the default moved: recordings now
-     * go to the phone's standard Recordings folder, a user may have chosen
-     * somewhere else, and older ones are still in app storage from before.
-     * Listing only the current default would make a user's earlier calls
-     * silently vanish from the app.
-     */
+    /** Every recording, newest first: RecordingLibrary's, or the stand-in. */
     fun list(context: Context, withCallers: Boolean = true): List<Recording> {
         override?.let { return it(context) }
-        val listed = (
-            MediaStoreRecordings.list(context) +
-                FolderRecordings.list(context, FolderRecordings.documents(context)) +
-                AppRecordings.list(context, AppRecordings.files(context))
-            )
-            .distinctBy { it.name }
-            // By when the call was, not by name: a name can start with the
-            // caller now (FileNames.Format.HONOR).
-            .sortedWith(compareByDescending<Recording> { it.startedAtMillis ?: 0L }.thenByDescending { it.name })
-        // What the files say of themselves, for any the preferences have not
-        // heard of: every one, after a reinstall (RecordingTags). Before the
-        // marks are read - and auto-delete reads them from here.
-        RecordingTags.recover(context, listed)
-        val kept = KeepMarks.all(context)
-        val messages = MessageMarks.all(context)
-        val found = listed
-            .map { if (it.name in kept) it.copy(kept = true) else it }
-            .map { if (it.name in messages) it.copy(message = true) else it }
-        if (!withCallers) return withDirections(context, found, emptyMap())
-        return withCallers(context, found)
+        return RecordingLibrary.list(context, withCallers = withCallers)
     }
 
     /**
@@ -207,7 +177,7 @@ internal object Recordings {
 
     /** Which way each call went, for the names that do not say: as the saver
      *  noted it, else as the call log has it. */
-    private fun withDirections(
+    internal fun withDirections(
         context: Context,
         recordings: List<Recording>,
         callers: Map<String, CallLogLookup.Caller>,

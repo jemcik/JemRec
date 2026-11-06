@@ -20,6 +20,7 @@ import com.jemcik.jemrec.capture.AudioCheck
 import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.recordings.RecordingSaver
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Retention
@@ -291,7 +292,7 @@ internal object AfterCall {
         Log.i(TAG, "aftercall: delete ${FileNames.forLog(call.name)} -> ${result.javaClass.simpleName}")
         when (result) {
             is DeleteResult.Deleted -> {
-                RecordingSaver.announce(call.name)
+                RecordingLibrary.announce(call.name)
                 cancel(context, call)
             }
             // MediaStore wants the user to confirm in a system dialog, which

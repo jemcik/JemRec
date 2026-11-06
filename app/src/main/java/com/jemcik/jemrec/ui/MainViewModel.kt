@@ -59,6 +59,7 @@ import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.KeepMarks
 import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.recordings.RecordingStore
 import com.jemcik.jemrec.recordings.RecordingTags
 import com.jemcik.jemrec.recordings.Recordings
@@ -1430,8 +1431,7 @@ class MainViewModel @JvmOverloads constructor(
         // dialer's touches with it. An unresponsive phone right after a call is
         // about the worst thing this app could do.
         val snapshot = withContext(Dispatchers.IO) {
-            val recordings = Recordings.list(app)
-            val trashed = if (Recordings.override != null) emptyList() else Trash.list(app)
+            val (recordings, trashed) = RecordingLibrary.read(app)
             // Only while the tab is up: it is the call log and a contacts
             // lookup per number, and nobody is looking at it otherwise. Null
             // when not read, so this refresh leaves alone a list a later one

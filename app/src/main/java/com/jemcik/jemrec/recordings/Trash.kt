@@ -179,28 +179,20 @@ object Trash {
 
     // --- what is in it --------------------------------------------------------
 
-    /** Everything in the trash, soonest to go first, and last what does not
-     *  say when it goes ([inFolder]). Each has [Recording.name] as it was
-     *  before, and [Recording.expiresAtMillis] set where it is known. */
-    fun list(context: Context): List<Recording> {
-        val found = (
-            MediaStoreRecordings.trashed(context) +
-                FolderRecordings.trashed(context, FolderRecordings.documents(context)) +
-                AppRecordings.trashed(context, AppRecordings.files(context))
-            )
-            .distinctBy { it.name }
-            .sortedWith(compareBy(nullsLast()) { it.expiresAtMillis })
-        return Recordings.withCallers(context, found)
-    }
+    /** Everything in the trash: RecordingLibrary.trashed. */
+    fun list(context: Context): List<Recording> = RecordingLibrary.trashed(context)
 
     /**
      * Delete for good whatever has waited its [DAYS] days, in the two places
      * that trash by renaming. MediaStore needs none of this: Android empties
      * its own trash. How many went.
      */
-    fun purgeExpired(context: Context, now: Long = System.currentTimeMillis()): Int {
-        val gone = FolderRecordings.purgeExpired(context, FolderRecordings.documents(context), now) +
-            AppRecordings.purgeExpired(AppRecordings.files(context), now)
+    fun purgeExpired(context: Context, now: Long = System.currentTimeMillis()): Int =
+        purgeExpired(context, now, RecordingLibrary.scan(context))
+
+    /** The same, over what was just listed (RecordingLibrary.Scan). */
+    internal fun purgeExpired(context: Context, now: Long, scan: RecordingLibrary.Scan): Int {
+        val gone = FolderRecordings.purgeExpired(context, scan.documents, now) + AppRecordings.purgeExpired(scan.files, now)
         if (gone > 0) Log.i(TAG, "trash: removed $gone expired recording(s) for good")
         return gone
     }
