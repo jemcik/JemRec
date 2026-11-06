@@ -58,7 +58,7 @@ internal object RecordingLibrary {
     }
 
     /** Everything in the trash, soonest to go first, and last what does not
-     *  say when it goes (Trash.inFolder). Each has [Recording.name] as it was
+     *  say when it goes (TrashNames.inFolder). Each has [Recording.name] as it was
      *  before, and [Recording.expiresAtMillis] set where it is known. */
     fun trashed(context: Context, scan: Scan = scan(context)): List<Recording> {
         val found = (

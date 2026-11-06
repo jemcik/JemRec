@@ -19,7 +19,7 @@ internal class AppFile(private val file: File) : RecordingLocation {
 
     override fun trash(context: Context, name: String, expiresAtMillis: Long): DeleteResult {
         if (!file.exists()) return DeleteResult.Deleted
-        val target = File(file.parentFile, Trash.nameFor(name, expiresAtMillis))
+        val target = File(file.parentFile, TrashNames.nameFor(name, expiresAtMillis))
         return if (file.renameTo(target)) DeleteResult.Deleted
         else DeleteResult.Failed(IOException("could not move $file to the trash"))
     }
@@ -78,7 +78,7 @@ internal object AppRecordings {
 
     /** The files there, less the empty and the trashed. */
     fun list(context: Context, files: List<File>): List<Recording> =
-        files.filter { it.isFile && it.length() > 0 && !Trash.isTrashedName(it.name) }
+        files.filter { it.isFile && it.length() > 0 && TrashNames.parse(it.name) == null }
             .mapNotNull { file ->
                 runCatching {
                     Recordings.describe(context, file.name, uriOf(context, file), file.length(), whenMillis = file.lastModified())
@@ -89,7 +89,7 @@ internal object AppRecordings {
     /** What is in the trash there. */
     fun trashed(context: Context, files: List<File>): List<Recording> =
         files.mapNotNull { file ->
-            val (name, expires) = Trash.parse(file.name) ?: return@mapNotNull null
+            val (name, expires) = TrashNames.parse(file.name) ?: return@mapNotNull null
             runCatching {
                 Recordings.describe(context, name, uriOf(context, file), file.length(), whenMillis = file.lastModified())
                     .copy(filePath = file.absolutePath, expiresAtMillis = expires)
@@ -98,7 +98,7 @@ internal object AppRecordings {
 
     /** Delete for good what has waited its time, by [now]. How many went. */
     fun purgeExpired(files: List<File>, now: Long): Int = files.count { file ->
-        val (_, expires) = Trash.parse(file.name) ?: return@count false
+        val (_, expires) = TrashNames.parse(file.name) ?: return@count false
         expires <= now && file.delete()
     }
 

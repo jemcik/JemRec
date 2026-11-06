@@ -16,7 +16,7 @@ import java.io.InputStream
 internal class FolderDocument(private val uri: Uri) : RecordingLocation {
 
     override fun trash(context: Context, name: String, expiresAtMillis: Long): DeleteResult =
-        rename(context, Trash.nameFor(name, expiresAtMillis))
+        rename(context, TrashNames.nameFor(name, expiresAtMillis))
 
     override fun restore(context: Context, name: String): DeleteResult = rename(context, name)
 
@@ -45,7 +45,7 @@ internal object FolderRecordings {
 
     private const val TAG = "JemRec"
 
-    /** One file in the folder; [trashed] as [Trash.inFolder] reads it, null
+    /** One file in the folder; [trashed] as [TrashNames.inFolder] reads it, null
      *  if it is not in the trash. */
     class Document(
         val name: String,
@@ -106,7 +106,7 @@ internal object FolderRecordings {
                     DocumentsContract.buildDocumentUriUsingTree(tree, id),
                     cursor.getLong(2),
                     cursor.getLong(3),
-                    Trash.inFolder(name, id, restorable),
+                    TrashNames.inFolder(name, id, restorable),
                 )
             }
         }

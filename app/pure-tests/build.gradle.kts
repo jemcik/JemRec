@@ -35,6 +35,7 @@ val pure = listOf(
     "recorder/Triggers",
     "recordings/AfterSave",
     "recordings/DaemonFile",
+    "recordings/TrashNames",
     "recordings/WriteOutcome",
     "system/SystemProperty",
     "ui/DaySections",
@@ -50,6 +51,7 @@ val pureTests = listOf(
     "recorder/TriggersTest",
     "recordings/AfterSaveTest",
     "recordings/DaemonFileTest",
+    "recordings/TrashNamesTest",
     "recordings/WriteOutcomeTest",
     "ui/DaySectionsTest",
 )

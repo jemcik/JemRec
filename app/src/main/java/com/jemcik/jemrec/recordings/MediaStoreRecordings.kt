@@ -127,7 +127,7 @@ internal object MediaStoreRecordings {
                 val recording = Recordings.describe(
                     // Android renames the file on disk while it is trashed,
                     // and the name column follows it; the original is inside.
-                    name = if (trashed) Trash.parse(shown)?.first ?: shown else shown,
+                    name = if (trashed) TrashNames.parse(shown)?.first ?: shown else shown,
                     uri = ContentUris.withAppendedId(collection, cursor.getLong(0)),
                     sizeBytes = cursor.getLong(2),
                     durationMillis = cursor.getLong(4),
