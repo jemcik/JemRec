@@ -2112,6 +2112,12 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(deleteConsent = null) }
         if (!granted) say("deletion cancelled")
         refresh()
+        if (granted) {
+            val app = getApplication<Application>()
+            viewModelScope.launch(Dispatchers.IO) {
+                AfterCall.goneBut(app, RecordingLibrary.read(app).recordings.map { it.name })
+            }
+        }
     }
 
     /**

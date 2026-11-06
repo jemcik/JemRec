@@ -126,7 +126,8 @@ class NoticeOfAGoneRecordingTest {
         try {
             assumeFalse("the tests run as root", folder.canWrite())
             AfterCall.delete(app, call)
-            assertEquals(1, shown())
+            val note = manager.activeNotifications.single().notification
+            assertEquals("Could not delete the recording.", note.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
         } finally {
             folder.setWritable(true)
         }
@@ -152,6 +153,23 @@ class NoticeOfAGoneRecordingTest {
         Trash.trash(app, trashed.uri, trashed.filePath, trashed.name)
         assertEquals(true, AfterCall.show(app, message))
         Trash.deleteForGood(app, Trash.list(app))
+        assertEquals(0, shown())
+    }
+
+    @Test fun aNotificationDoesNotCarryTheFileNameForAListenerToRead() {
+        // A name can hold a caller's number.
+        val call = recorded(message = true)
+        val extras = manager.activeNotifications.single().notification.extras
+        extras.keySet().forEach { assertEquals(it, false, "${extras.get(it)}".contains(call.name)) }
+    }
+
+    @Test fun whatAndroidMovedOnTheUsersYesTakesItsNotificationAtTheNextLook() {
+        recorded(daysAgo = 1, message = true)
+        val here = recorded(daysAgo = 2, message = true)
+        AfterCall.goneBut(app, setOf(here.name))
+        assertEquals(1, shown())
+        // The one left is the one still listed.
+        AfterCall.gone(app, here.name)
         assertEquals(0, shown())
     }
 

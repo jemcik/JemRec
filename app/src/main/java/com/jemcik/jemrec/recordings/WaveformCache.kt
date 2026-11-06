@@ -127,7 +127,7 @@ internal object WaveformCache {
         return File(File(context.cacheDir, DIR), "${hashOf(name)}.lvl")
     }
 
-    private fun hashOf(name: String): String =
+    internal fun hashOf(name: String): String =
         MessageDigest.getInstance("SHA-256").digest(name.toByteArray())
             .take(12).joinToString("") { "%02x".format(it) }
 

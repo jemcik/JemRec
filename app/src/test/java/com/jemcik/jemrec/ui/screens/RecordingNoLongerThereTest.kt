@@ -39,6 +39,33 @@ class RecordingNoLongerThereTest : ScreenTest() {
         assertEquals(0, manager.activeNotifications.size)
     }
 
+    private fun aMessageWithNoFile(): NotificationManager {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val call = AfterCall.Call(
+            "20261020_101010_in.ogg", "content://media/external/audio/media/5".toUri(), null, 12.0, true, 0L, "Priya Shah",
+            AudioCheck.Verdict.FINE, true,
+        )
+        assertEquals(true, AfterCall.show(app, call))
+        return app.getSystemService(NotificationManager::class.java)
+    }
+
+    @Test fun androidsYesTakesTheNotificationOfWhatItMoved() {
+        val manager = aMessageWithNoFile()
+        val vm = viewModel()
+        vm.onDeleteConsentResult(true)
+        settle(vm)
+        assertEquals(0, manager.activeNotifications.size)
+    }
+
+    @Test fun androidsNoLeavesIt() {
+        val manager = aMessageWithNoFile()
+        val vm = viewModel()
+        vm.onDeleteConsentResult(false)
+        settle(vm)
+        assertEquals(1, manager.activeNotifications.size)
+    }
+
     @Test fun aTapThatFindsItThereLeavesTheNotificationAlone() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)

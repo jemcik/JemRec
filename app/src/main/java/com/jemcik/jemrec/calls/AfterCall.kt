@@ -25,6 +25,7 @@ import com.jemcik.jemrec.recordings.RecordingMarks
 import com.jemcik.jemrec.recordings.RecordingSaver
 import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.recordings.Trash
+import com.jemcik.jemrec.recordings.WaveformCache
 import com.jemcik.jemrec.recordings.Waveforms
 import java.util.Locale
 
@@ -271,7 +272,13 @@ internal object AfterCall {
     /** What ties a notification to its recording: see [gone]. */
     private const val EXTRA_RECORDING = "com.jemcik.jemrec.aftercall.RECORDING"
 
-    private fun recordingOf(call: Call) = Bundle().apply { putString(EXTRA_RECORDING, call.name) }
+    private fun recordingOf(call: Call) = Bundle().apply { putString(EXTRA_RECORDING, tag(call.name)) }
+
+    /** The name's hash: extras are open to any notification listener the user
+     *  allowed, and a file name can hold a caller's number. */
+    private fun tag(name: String) = WaveformCache.hashOf(name)
+
+    private fun tagOf(notification: Notification) = notification.extras.getString(EXTRA_RECORDING)
 
     /**
      * The recording [name] has left the list: its notification goes with it,
@@ -288,9 +295,25 @@ internal object AfterCall {
                     // One posted before they said whose they are is known by
                     // its id alone. Only that one: ids are 16 bits of a hash,
                     // and two messages can share one.
-                    val whose = it.notification.extras.getString(EXTRA_RECORDING)
-                    whose == name || (whose == null && it.id == messageId(name))
+                    val whose = tagOf(it.notification)
+                    whose == tag(name) || (whose == null && it.id == messageId(name))
                 }
+                .forEach { manager.cancel(it.id) }
+        }
+    }
+
+    /**
+     * [gone] for every notification whose recording is not in [listed]: after
+     * Android moved or deleted something on the user's yes, which says only
+     * that it did. A file saved through a chosen folder that is Recordings/JemRec
+     * can be one (read from the code, not seen on a phone).
+     */
+    fun goneBut(context: Context, listed: Collection<String>) {
+        runCatching {
+            val here = listed.mapTo(HashSet()) { tag(it) }
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.activeNotifications
+                .filter { sbn -> tagOf(sbn.notification)?.let { it !in here } == true }
                 .forEach { manager.cancel(it.id) }
         }
     }
