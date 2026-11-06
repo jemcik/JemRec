@@ -76,9 +76,10 @@ internal object AppRecordings {
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
 
-    /** The files there, less the empty and the trashed. */
+    /** The files there, less the empty, the trashed and what is being
+     *  written: as in a chosen folder, nothing else says it is not finished. */
     fun list(context: Context, files: List<File>): List<Recording> =
-        files.filter { it.isFile && it.length() > 0 && TrashNames.parse(it.name) == null }
+        files.filter { it.isFile && it.length() > 0 && TrashNames.parse(it.name) == null && !Waveforms.isBeingWritten(it.name) }
             .mapNotNull { file ->
                 runCatching {
                     Recordings.describe(context, file.name, uriOf(context, file), file.length(), whenMillis = file.lastModified())

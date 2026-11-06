@@ -27,9 +27,10 @@ internal object WaveformCache {
 
     /**
      * The recordings being written now (RecordingStore.open, until publish or
-     * abandon). In a chosen folder or app storage a recording is listed under
-     * its final name while it fills, and its levels, worked out then, were the
-     * first minutes', kept as the whole call's for good.
+     * abandon). In a chosen folder or app storage a recording is there under
+     * its final name while it fills: it is left out of the list until it is
+     * finished, and its levels, worked out then, were the first minutes', kept
+     * as the whole call's for good.
      */
     private val writing: MutableSet<String> = ConcurrentHashMap.newKeySet()
 

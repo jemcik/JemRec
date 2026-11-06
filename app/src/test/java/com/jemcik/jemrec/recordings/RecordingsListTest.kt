@@ -101,17 +101,39 @@ class RecordingsListTest {
         assertEquals(listOf("20261022_101010_in.ogg"), listed().map { it.name })
     }
 
-    @Test fun anEmptyFileInTheChosenFolderIsListed() {
+    @Test fun anEmptyFileInTheChosenFolderIsLeftOut() {
         FakeFolder.install(app)
+        // A save creates the document at the first packet and writes its bytes
+        // only at the copy: one in progress, or killed half way, is this.
         FakeFolder.file("20261020_101010_in.ogg", bytes = 0)
-        // Pins today's behaviour, which looks like a bug: a chosen folder's
-        // file is listed at 0 bytes, unlike app storage's - and a save into
-        // it creates the document at the first packet but writes its bytes
-        // only at the copy, so a save in progress or killed half way shows
-        // as an empty row (to be fixed in its own commit).
-        val row = listed().single()
-        assertEquals("20261020_101010_in.ogg", row.name)
-        assertEquals("0 B", row.sizeLabel)
+        FakeFolder.file("20261022_101010_in.ogg", bytes = 1)
+        assertEquals(listOf("20261022_101010_in.ogg"), listed().map { it.name })
+    }
+
+    @Test fun aFolderThatDoesNotSayHowBigItsFilesAreKeepsThemListed() {
+        FakeFolder.install(app)
+        // COLUMN_SIZE may be null: unknown, not empty.
+        FakeFolder.shows = { FakeFolder.Shown(it.name, "primary:Calls/${it.name}", sizeKnown = false) }
+        FakeFolder.file("20261020_101010_in.ogg")
+        assertEquals(listOf("20261020_101010_in.ogg"), listed().map { it.name })
+    }
+
+    @Test fun aRecordingBeingWrittenIsNotListedInAnyPlace() {
+        FakeMediaStore.install(File(app.cacheDir, "media"))
+        FakeFolder.install(app)
+        val inFolder = RecordingStore.open(app, "20261020_101010_in.ogg")!!
+        val bytes = byteArrayOf(1, 2, 3)
+        java.io.FileOutputStream(inFolder.descriptor.fileDescriptor).run { write(bytes); flush() }
+        RecordingStore.clearTree(app)
+        FakeMediaStore.install()
+        val inApp = RecordingStore.open(app, "20261021_101010_in.ogg")!!
+        java.io.FileOutputStream(inApp.descriptor.fileDescriptor).run { write(bytes); flush() }
+        RecordingStore.setTree(app, FakeFolder.tree)
+        // Written to, and not finished.
+        assertTrue(listed().isEmpty())
+        inFolder.publish()
+        inApp.publish()
+        assertEquals(listOf("20261021_101010_in.ogg", "20261020_101010_in.ogg"), listed().map { it.name })
     }
 
     @Test fun theChosenFolderListsItsOggFilesLessItsTrash() {

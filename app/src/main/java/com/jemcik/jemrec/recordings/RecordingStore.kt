@@ -170,9 +170,10 @@ object RecordingStore {
      * worst moment to discover a storage problem, so a deleted folder or a
      * revoked permission drops to the next option instead of losing the call.
      *
-     * Until it is finished its waveform waits (Waveforms.writingStarted): in a
-     * chosen folder or app storage it is listed while it fills, and a decode
-     * then would keep the first minutes' levels as the whole call's.
+     * Until it is finished it is not listed, and its waveform waits
+     * (Waveforms.writingStarted): in a chosen folder or app storage the file
+     * is there under its name while it fills, and a decode then would keep
+     * the first minutes' levels as the whole call's.
      */
     fun open(context: Context, name: String): Target? {
         Waveforms.writingStarted(name)

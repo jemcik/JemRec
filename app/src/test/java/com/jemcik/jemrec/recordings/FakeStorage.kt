@@ -286,7 +286,7 @@ internal class FakeMediaStore : ContentProvider() {
  */
 internal class FakeFolder : ContentProvider() {
 
-    class Shown(val name: String, val id: String, val flags: Int = 0)
+    class Shown(val name: String, val id: String, val flags: Int = 0, val sizeKnown: Boolean = true)
 
     companion object {
         const val AUTHORITY = "com.jemcik.jemrec.test.documents"
@@ -352,7 +352,7 @@ internal class FakeFolder : ContentProvider() {
                     when (column) {
                         Document.COLUMN_DOCUMENT_ID -> shown.id
                         Document.COLUMN_DISPLAY_NAME -> shown.name
-                        Document.COLUMN_SIZE -> file.length()
+                        Document.COLUMN_SIZE -> file.length().takeIf { shown.sizeKnown }
                         Document.COLUMN_LAST_MODIFIED -> file.lastModified()
                         Document.COLUMN_FLAGS -> shown.flags
                         else -> null

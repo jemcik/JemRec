@@ -50,7 +50,8 @@ internal object FolderRecordings {
     class Document(
         val name: String,
         val uri: Uri,
-        val sizeBytes: Long,
+        /** Null where the provider does not say: unknown, not empty. */
+        val sizeBytes: Long?,
         val modifiedMillis: Long,
         val trashed: Pair<String, Long?>?,
     )
@@ -104,7 +105,7 @@ internal object FolderRecordings {
                 out += Document(
                     name,
                     DocumentsContract.buildDocumentUriUsingTree(tree, id),
-                    cursor.getLong(2),
+                    if (cursor.isNull(2)) null else cursor.getLong(2),
                     cursor.getLong(3),
                     TrashNames.inFolder(name, id, restorable),
                 )
@@ -113,16 +114,24 @@ internal object FolderRecordings {
         out
     }.onFailure { Log.w(TAG, "recordings: chosen folder query failed", it) }.getOrDefault(emptyList())
 
-    /** The folder, less what is in the trash there. */
+    /**
+     * The folder, less what is in the trash there, and less what is not a
+     * recording yet. A folder has nothing like MediaStore's IS_PENDING: a save
+     * creates the document at its first packet, and it stays empty until the
+     * tags are copied in, so a save under way, or one killed half way, was a
+     * row of 0 bytes. And filling it takes as long as the copy, or the whole
+     * save where it is written in place: that part is known only here, in the
+     * process that is writing it.
+     */
     fun list(context: Context, documents: List<Document>): List<Recording> =
-        documents.filter { it.trashed == null }
-            .map { Recordings.describe(context, it.name, it.uri, it.sizeBytes, whenMillis = it.modifiedMillis) }
+        documents.filter { it.trashed == null && it.sizeBytes != 0L && !Waveforms.isBeingWritten(it.name) }
+            .map { Recordings.describe(context, it.name, it.uri, it.sizeBytes ?: 0L, whenMillis = it.modifiedMillis) }
 
     /** What is in the trash there. */
     fun trashed(context: Context, documents: List<Document>): List<Recording> =
         documents.mapNotNull { doc ->
             val (name, expires) = doc.trashed ?: return@mapNotNull null
-            Recordings.describe(context, name, doc.uri, doc.sizeBytes, whenMillis = doc.modifiedMillis)
+            Recordings.describe(context, name, doc.uri, doc.sizeBytes ?: 0L, whenMillis = doc.modifiedMillis)
                 .copy(expiresAtMillis = expires)
         }
 
