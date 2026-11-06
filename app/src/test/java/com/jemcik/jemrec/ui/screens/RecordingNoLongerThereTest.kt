@@ -6,8 +6,13 @@ import androidx.core.net.toUri
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.capture.AudioCheck
+import com.jemcik.jemrec.recordings.FakeMediaStore
 import com.jemcik.jemrec.recordings.FakeStorage
+import com.jemcik.jemrec.recordings.Recordings
+import com.jemcik.jemrec.ui.MainViewModel
+import com.jemcik.jemrec.ui.UiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -15,6 +20,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import java.io.File
 
 /** A notification's Play for a recording something else deleted: it says so,
  *  and the notification goes, as nothing is left for it to offer. */
@@ -39,29 +45,51 @@ class RecordingNoLongerThereTest : ScreenTest() {
         assertEquals(0, manager.activeNotifications.size)
     }
 
-    private fun aMessageWithNoFile(): NotificationManager {
+    /** A message Android will not let this app move, its notification up,
+     *  selected and deleted, and Android's question out. */
+    private fun askedAbout(): Pair<MainViewModel, NotificationManager> {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val name = "20261020_101010_in.ogg"
+        FakeMediaStore.install(File(app.cacheDir, "media"))
+        FakeMediaStore.rows += FakeMediaStore.Row(5, name, notOurs = true)
         val call = AfterCall.Call(
-            "20261020_101010_in.ogg", "content://media/external/audio/media/5".toUri(), null, 12.0, true, 0L, "Priya Shah",
-            AudioCheck.Verdict.FINE, true,
+            name, FakeMediaStore.uriOf(5), null, 12.0, true, 0L, "Priya Shah", AudioCheck.Verdict.FINE, true,
         )
         assertEquals(true, AfterCall.show(app, call))
-        return app.getSystemService(NotificationManager::class.java)
+        val row = Recordings.describe(name, FakeMediaStore.uriOf(5), 1000, 1000)
+        val vm = viewModel(UiState(recordings = listOf(row), selected = setOf(name), selecting = true))
+        vm.confirmDeleteSelected()
+        settle(vm)
+        assertNotNull(vm.state.value.deleteConsent)
+        return vm to app.getSystemService(NotificationManager::class.java)
     }
 
     @Test fun androidsYesTakesTheNotificationOfWhatItMoved() {
-        val manager = aMessageWithNoFile()
-        val vm = viewModel()
+        val (vm, manager) = askedAbout()
+        assertEquals(1, manager.activeNotifications.size)
         vm.onDeleteConsentResult(true)
         settle(vm)
         assertEquals(0, manager.activeNotifications.size)
     }
 
     @Test fun androidsNoLeavesIt() {
-        val manager = aMessageWithNoFile()
-        val vm = viewModel()
+        val (vm, manager) = askedAbout()
         vm.onDeleteConsentResult(false)
+        settle(vm)
+        assertEquals(1, manager.activeNotifications.size)
+    }
+
+    @Test fun aListingThatFailsTakesNoNotificationWithIt() {
+        val (vm, manager) = askedAbout()
+        // Nothing is listed: that says nothing of a recording not asked about.
+        FakeMediaStore.listing = IllegalStateException("no")
+        val app = RuntimeEnvironment.getApplication()
+        val other = AfterCall.Call(
+            "20261021_101010_in.ogg", FakeMediaStore.uriOf(6), null, 12.0, true, 0L, "Sam", AudioCheck.Verdict.FINE, true,
+        )
+        assertEquals(true, AfterCall.show(app, other))
+        vm.onDeleteConsentResult(true)
         settle(vm)
         assertEquals(1, manager.activeNotifications.size)
     }

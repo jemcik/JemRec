@@ -104,6 +104,8 @@ data class BulkDeleteResult(
     /** One request covering everything MediaStore would not take our word for,
      *  so the user sees a single dialog rather than one per recording. */
     val needsConsent: IntentSender?,
+    /** The names that request is about. */
+    val disputed: List<String> = emptyList(),
 )
 
 /**

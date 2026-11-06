@@ -163,14 +163,48 @@ class NoticeOfAGoneRecordingTest {
         extras.keySet().forEach { assertEquals(it, false, "${extras.get(it)}".contains(call.name)) }
     }
 
-    @Test fun whatAndroidMovedOnTheUsersYesTakesItsNotificationAtTheNextLook() {
-        recorded(daysAgo = 1, message = true)
-        val here = recorded(daysAgo = 2, message = true)
-        AfterCall.goneBut(app, setOf(here.name))
+    private fun silent() = AfterCall.Call(
+        "20261020_101010_in.ogg", "content://media/external/audio/media/5".toUri(), null, 12.0, true, 0L, null, AudioCheck.Verdict.SILENT,
+    )
+
+    @Test fun aSilentRecordingsQuestionStaysOnItsOwnChannel() {
+        val call = silent()
+        AfterCall.askDelete(app, call)
+        assertEquals(AfterCall.PROBLEM_CHANNEL_ID, manager.activeNotifications.single().notification.channelId)
+    }
+
+    @Test fun switchingTheEverydayNoticeOffLeavesASilentRecordingsWarning() {
+        AfterCall.show(app, silent())
+        AfterCall.setEnabled(app, false)
         assertEquals(1, shown())
-        // The one left is the one still listed.
-        AfterCall.gone(app, here.name)
+        AfterCall.setEnabled(app, true)
+        recorded()
+        assertEquals(1, shown())
+        AfterCall.setEnabled(app, false)
         assertEquals(0, shown())
+        AfterCall.setEnabled(app, true)
+    }
+
+    @Test fun deletingAnEarlierCallLeavesTheNewerOnesNotification() {
+        val earlier = recorded(daysAgo = 2)
+        recorded(daysAgo = 1)
+        AfterCall.delete(app, earlier)
+        assertEquals(1, shown())
+    }
+
+    @Test fun aNoteDoesNotStayForever() {
+        val call = recorded()
+        val folder = FakeStorage.appFolder(app).apply { setWritable(false) }
+        try {
+            assumeFalse("the tests run as root", folder.canWrite())
+            AfterCall.delete(app, call)
+            val note = manager.activeNotifications.single().notification
+            assertEquals(12L * 60 * 60 * 1000, note.timeoutAfter)
+            // It replaces a notification: no second sound for that.
+            assertEquals(Notification.FLAG_ONLY_ALERT_ONCE, note.flags and Notification.FLAG_ONLY_ALERT_ONCE)
+        } finally {
+            folder.setWritable(true)
+        }
     }
 
     @Test fun aRecordingThatCouldNotBeMovedKeepsIt() {

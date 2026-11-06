@@ -1238,7 +1238,7 @@ class MainViewModel @JvmOverloads constructor(
     fun restore(recording: Recording) = launchAction("restore") {
         when (val result = withContext(Dispatchers.IO) { Trash.restore(getApplication(), recording) }) {
             is DeleteResult.Deleted -> say("restored ${recording.name}")
-            is DeleteResult.NeedsConsent -> _state.update { it.copy(deleteConsent = result.request) }
+            is DeleteResult.NeedsConsent -> askAndroid(result.request)
             is DeleteResult.Failed -> say("could not restore ${recording.name}: ${result.error.message}")
         }
         refreshNow()
@@ -1268,14 +1268,14 @@ class MainViewModel @JvmOverloads constructor(
         if (all.isEmpty()) return
         launchActionWhenFree("delete for good") {
             val result = withContext(Dispatchers.IO) { Trash.deleteForGood(getApplication(), all) }
-            report(all.size, result, "deleted for good")
+            report(all.size, result, "deleted for good", leaving = true)
             refreshNow()
         }
     }
 
     /** How a bulk restore or delete went, and Android's question next for
      *  what it wants confirmed - counted as asked, not as failed. */
-    private fun report(of: Int, result: BulkDeleteResult, did: String) {
+    private fun report(of: Int, result: BulkDeleteResult, did: String, leaving: Boolean = false) {
         val asked = of - result.deleted - result.failed
         val summary = listOfNotNull(
             "$did ${result.deleted}".takeIf { result.deleted > 0 },
@@ -1283,7 +1283,7 @@ class MainViewModel @JvmOverloads constructor(
             "could not do ${result.failed}".takeIf { result.failed > 0 },
         ).joinToString(", ")
         if (result.failed > 0) tell(summary) else if (summary.isNotEmpty()) say(summary)
-        result.needsConsent?.let { request -> _state.update { it.copy(deleteConsent = request) } }
+        result.needsConsent?.let { askAndroid(it, if (leaving) result.disputed else emptyList()) }
     }
 
     /** One of auto-delete's two rules changed: saved, and applied at once. */
@@ -1295,7 +1295,7 @@ class MainViewModel @JvmOverloads constructor(
         if (result.deleted > 0) say("auto-delete moved ${result.deleted} recording(s) to Recently deleted")
         // Recordings Android wants confirmed are asked about now, while the
         // user is here; the daily pass cannot ask.
-        result.needsConsent?.let { request -> _state.update { it.copy(deleteConsent = request) } }
+        result.needsConsent?.let { askAndroid(it, result.disputed) }
         refreshNow()
     }
 
@@ -2112,12 +2112,18 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(deleteConsent = null) }
         if (!granted) say("deletion cancelled")
         refresh()
-        if (granted) {
-            val app = getApplication<Application>()
-            viewModelScope.launch(Dispatchers.IO) {
-                AfterCall.goneBut(app, RecordingLibrary.read(app).recordings.map { it.name })
-            }
-        }
+        val left = leavingOnYes
+        leavingOnYes = emptyList()
+        if (granted) left.forEach { AfterCall.gone(getApplication(), it) }
+    }
+
+    /** What Android's question is moving or deleting: the answer says only yes
+     *  or no, and a yes takes their notifications with them. Not a restore. */
+    private var leavingOnYes: List<String> = emptyList()
+
+    private fun askAndroid(request: IntentSender, leaving: List<String> = emptyList()) {
+        leavingOnYes = leaving
+        _state.update { it.copy(deleteConsent = request) }
     }
 
     /**
@@ -2220,9 +2226,7 @@ class MainViewModel @JvmOverloads constructor(
                 "could not move ${result.failed}".takeIf { result.failed > 0 },
             ).joinToString(", ")
             if (result.failed > 0) tell(summary) else say(summary)
-            result.needsConsent?.let { request ->
-                _state.update { it.copy(deleteConsent = request) }
-            }
+            result.needsConsent?.let { askAndroid(it, result.disputed) }
             _state.update { it.copy(selecting = false, selected = emptySet()) }
             refresh()
         }

@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.recordings
 
 import android.content.Context
+import android.content.IntentSender
 import android.net.Uri
 import android.util.Log
 import com.jemcik.jemrec.calls.AfterCall
@@ -94,19 +95,19 @@ object Trash {
     ): BulkDeleteResult {
         var done = 0
         var failed = 0
-        val disputed = mutableListOf<Uri>()
+        val disputed = mutableListOf<Recording>()
         recordings.forEach { recording ->
             when (val result = one(recording)) {
                 is DeleteResult.Deleted -> done++
-                is DeleteResult.NeedsConsent -> disputed += recording.uri
+                is DeleteResult.NeedsConsent -> disputed += recording
                 is DeleteResult.Failed -> {
                     failed++
                     Log.w(TAG, "trash: could not ${if (trashed) "trash" else "restore"} ${FileNames.forLog(recording.name)}", result.error)
                 }
             }
         }
-        val ask = MediaStoreRecordings.askToTrash(context, disputed, trashed)
-        return BulkDeleteResult(done, failed + if (ask == null) disputed.size else 0, ask)
+        val ask = MediaStoreRecordings.askToTrash(context, disputed.map { it.uri }, trashed)
+        return outcome(done, failed, disputed, ask)
     }
 
     /**
@@ -120,7 +121,7 @@ object Trash {
     fun deleteForGood(context: Context, recordings: List<Recording>): BulkDeleteResult {
         var done = 0
         var failed = 0
-        val disputed = mutableListOf<Uri>()
+        val disputed = mutableListOf<Recording>()
         recordings.forEach { recording ->
             val gone = try {
                 recording.location.deleteForGood(context)
@@ -134,13 +135,17 @@ object Trash {
                     AfterCall.gone(context, recording.name)
                 }
                 false -> failed++
-                null -> disputed += recording.uri
+                null -> disputed += recording
             }
         }
-        val ask = MediaStoreRecordings.askToDelete(context, disputed)
+        val ask = MediaStoreRecordings.askToDelete(context, disputed.map { it.uri })
         if (done > 0) Log.i(TAG, "trash: deleted $done recording(s) for good")
-        return BulkDeleteResult(done, failed + if (ask == null) disputed.size else 0, ask)
+        return outcome(done, failed, disputed, ask)
     }
+
+    private fun outcome(done: Int, failed: Int, disputed: List<Recording>, ask: IntentSender?) =
+        if (ask == null) BulkDeleteResult(done, failed + disputed.size, null)
+        else BulkDeleteResult(done, failed, ask, disputed.map { it.name })
 
     // --- what is in it --------------------------------------------------------
 

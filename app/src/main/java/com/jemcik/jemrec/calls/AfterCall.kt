@@ -103,6 +103,15 @@ internal object AfterCall {
         if (!on) cancel(context)
     }
 
+    /** The everyday notification. Not a silent recording's warning, which
+     *  shares its id and does not depend on the switch. */
+    private fun cancel(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.activeNotifications
+            .filter { it.id == NOTIFICATION_ID && it.notification.channelId != PROBLEM_CHANNEL_ID }
+            .forEach { manager.cancel(it.id) }
+    }
+
     /** One saved call, as much as the notification and its buttons need. */
     data class Call(
         val name: String,
@@ -190,7 +199,7 @@ internal object AfterCall {
         // people to ignore the true one. Nor in a message: the user's side is
         // muted, and a caller who says nothing after the beep is a silent
         // message, not a recording gone wrong.
-        val problem = call.verdict == AudioCheck.Verdict.SILENT && !call.message
+        val problem = silent(call)
         // A message is something the user did not hear: posted whether or not
         // they want the everyday after-call notice.
         if (!problem && !call.message && !enabled(context)) return false
@@ -198,11 +207,7 @@ internal object AfterCall {
 
         val who = call.caller ?: if (call.incoming) "Incoming call" else "Outgoing call"
         val length = length(call.seconds)
-        val channel = when {
-            problem -> PROBLEM_CHANNEL_ID
-            call.message -> MESSAGE_CHANNEL_ID
-            else -> CHANNEL_ID
-        }
+        val channel = channelFor(call)
         val builder = Notification.Builder(context, channel)
             .setSmallIcon(if (problem) android.R.drawable.stat_notify_error else android.R.drawable.ic_btn_speak_now)
             .setWhen(call.startMillis)
@@ -263,6 +268,17 @@ internal object AfterCall {
         return true
     }
 
+    private fun silent(call: Call) = call.verdict == AudioCheck.Verdict.SILENT && !call.message
+
+    /** A call's channel, for the notification and for all that takes its
+     *  place: with one channel switched off in Android, a question or a note
+     *  on it would not be shown, and its button would seem to do nothing. */
+    private fun channelFor(call: Call) = when {
+        silent(call) -> PROBLEM_CHANNEL_ID
+        call.message -> MESSAGE_CHANNEL_ID
+        else -> CHANNEL_ID
+    }
+
     /** One notification for the last call; one for each message. */
     private fun idFor(call: Call): Int =
         if (call.message) messageId(call.name) else NOTIFICATION_ID
@@ -302,28 +318,12 @@ internal object AfterCall {
         }
     }
 
-    /**
-     * [gone] for every notification whose recording is not in [listed]: after
-     * Android moved or deleted something on the user's yes, which says only
-     * that it did. A file saved through a chosen folder that is Recordings/JemRec
-     * can be one (read from the code, not seen on a phone).
-     */
-    fun goneBut(context: Context, listed: Collection<String>) {
-        runCatching {
-            val here = listed.mapTo(HashSet()) { tag(it) }
-            val manager = context.getSystemService(NotificationManager::class.java)
-            manager.activeNotifications
-                .filter { sbn -> tagOf(sbn.notification)?.let { it !in here } == true }
-                .forEach { manager.cancel(it.id) }
-        }
-    }
-
     /** The second tap: the notification turns into the question. */
     fun askDelete(context: Context, call: Call) {
         ensureChannels(context)
         val text = "Delete the recording of this call? It goes to Recently deleted, where it " +
             "can be restored for ${Trash.DAYS} days."
-        val notification = Notification.Builder(context, if (call.message) MESSAGE_CHANNEL_ID else CHANNEL_ID)
+        val notification = Notification.Builder(context, channelFor(call))
             .setSmallIcon(android.R.drawable.ic_menu_delete)
             .setContentTitle(call.caller ?: if (call.incoming) "Incoming call" else "Outgoing call")
             .setContentText(text)
@@ -345,19 +345,14 @@ internal object AfterCall {
         val result = Trash.trash(context, call.uri, call.filePath, call.name)
         Log.i(TAG, "aftercall: delete ${FileNames.forLog(call.name)} -> ${result.javaClass.simpleName}")
         when (result) {
-            is DeleteResult.Deleted -> {
-                RecordingLibrary.announce(call.name)
-                cancel(context, call)
-            }
+            // Its notification has gone with it (Trash.trash): by id here would
+            // take a newer call's.
+            is DeleteResult.Deleted -> RecordingLibrary.announce(call.name)
             // MediaStore wants the user to confirm in a system dialog, which
             // only an activity can show. The list can.
             is DeleteResult.NeedsConsent -> note(context, "Open JemRec to delete this recording.", call)
             is DeleteResult.Failed -> note(context, "Could not delete the recording.", call)
         }
-    }
-
-    fun cancel(context: Context) {
-        context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
     }
 
     fun cancel(context: Context, call: Call) {
@@ -369,11 +364,13 @@ internal object AfterCall {
         ensureChannels(context)
         post(
             context,
-            Notification.Builder(context, CHANNEL_ID)
+            Notification.Builder(context, channelFor(call))
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("JemRec")
                 .setContentText(text)
                 .addExtras(recordingOf(call))
+                .setOnlyAlertOnce(true)
+                .setTimeoutAfter(TIMEOUT_MS)
                 .setContentIntent(
                     PendingIntent.getActivity(
                         context, 0, Intent(context, MainActivity::class.java),
