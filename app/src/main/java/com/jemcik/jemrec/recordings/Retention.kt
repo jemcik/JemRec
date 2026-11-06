@@ -12,7 +12,7 @@ import com.jemcik.jemrec.Prefs
  * NOTHING HERE DELETES. Everything it removes goes to Recently deleted (see
  * Trash) and waits there 30 days, because this runs while nobody is looking,
  * and a rule set to 30 days by someone who meant 90 should cost a restore,
- * not a call. Recordings marked to keep (KeepMarks) are never touched.
+ * not a call. Recordings marked to keep (RecordingMarks) are never touched.
  *
  * Two moments:
  *   - a short call is caught as it is saved ([dropIfTooShort]), before its

@@ -52,14 +52,9 @@ internal object RecordingLibrary {
         // What the files say of themselves, for any the preferences have not
         // heard of: every one, after a reinstall (RecordingTags). Before the
         // marks are read - and auto-delete reads them from here.
-        RecordingTags.recover(context, listed)
-        val kept = KeepMarks.all(context)
-        val messages = MessageMarks.all(context)
-        val found = listed
-            .map { if (it.name in kept) it.copy(kept = true) else it }
-            .map { if (it.name in messages) it.copy(message = true) else it }
-        if (!withCallers) return Recordings.withDirections(context, found, emptyMap())
-        return Recordings.withCallers(context, found)
+        RecordingMarks.recover(context, listed)
+        val found = RecordingMarks.onto(context, listed)
+        return if (withCallers) RecordingMarks.withCallers(context, found) else RecordingMarks.withDirections(context, found)
     }
 
     /** Everything in the trash, soonest to go first, and last what does not
@@ -73,7 +68,7 @@ internal object RecordingLibrary {
             )
             .distinctBy { it.name }
             .sortedWith(compareBy(nullsLast()) { it.expiresAtMillis })
-        return Recordings.withCallers(context, found)
+        return RecordingMarks.withCallers(context, found)
     }
 
     private val _changed = MutableSharedFlow<String>(extraBufferCapacity = 16)

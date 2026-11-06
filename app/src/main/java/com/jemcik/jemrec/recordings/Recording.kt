@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.IntentSender
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.VoipApps
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,9 +53,9 @@ data class Recording(
     /** How long the call was, in milliseconds; 0 when it could not be read.
      *  [durationLabel] is what is shown; this is what auto-delete compares. */
     val durationMillis: Long = 0,
-    /** Marked to keep: never auto-deleted. See KeepMarks. */
+    /** Marked to keep: never auto-deleted. See RecordingMarks. */
     val kept: Boolean = false,
-    /** A message the answering machine took. See MessageMarks. */
+    /** A message the answering machine took. See RecordingMarks. */
     val message: Boolean = false,
     /** Set only for a recording in the trash: when it goes for good. */
     val expiresAtMillis: Long? = null,
@@ -147,48 +146,6 @@ internal object Recordings {
     fun list(context: Context, withCallers: Boolean = true): List<Recording> {
         override?.let { return it(context) }
         return RecordingLibrary.list(context, withCallers = withCallers)
-    }
-
-    /**
-     * Who each call was with. Looked up in one query for the whole list, and
-     * only if the user has allowed it; ungranted, a name with the caller in
-     * it (FileNames) still says who, and anything else keeps its time as its
-     * headline.
-     */
-    internal fun withCallers(context: Context, recordings: List<Recording>): List<Recording> {
-        val callers = CallLogLookup.labelsFor(context, recordings)
-        val noted = if (recordings.any { it.parsedName?.app != null }) FileNames.callers(context) else emptyMap()
-        val named = recordings.map { recording ->
-            val caller = callers[recording.name]
-            val fromName = recording.parsedName
-            // A messenger call is never in the call log: who it was comes
-            // from its name, or from what was noted when it was saved, or it
-            // is simply that app's call.
-            val messenger = recording.app?.let { app -> noted[recording.name] ?: "$app call" }
-            recording.copy(
-                caller = caller?.label ?: fromName?.caller ?: fromName?.number ?: messenger,
-                callerPhoto = caller?.photo,
-                number = caller?.number ?: fromName?.number,
-                callerFavorite = caller?.favorite ?: false,
-            )
-        }
-        return withDirections(context, named, callers)
-    }
-
-    /** Which way each call went, for the names that do not say: as the saver
-     *  noted it, else as the call log has it. */
-    internal fun withDirections(
-        context: Context,
-        recordings: List<Recording>,
-        callers: Map<String, CallLogLookup.Caller>,
-    ): List<Recording> {
-        if (recordings.none { it.parsedName != null && it.parsedName?.incoming == null }) return recordings
-        val noted = FileNames.directions(context)
-        return recordings.map { recording ->
-            if (recording.parsedName?.incoming != null) return@map recording
-            val incoming = noted[recording.name] ?: callers[recording.name]?.incoming ?: return@map recording
-            recording.copy(incoming = incoming)
-        }
     }
 
     /**

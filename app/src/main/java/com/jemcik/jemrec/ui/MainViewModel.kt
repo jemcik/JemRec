@@ -57,9 +57,9 @@ import com.jemcik.jemrec.recordings.AppRecordings
 import com.jemcik.jemrec.recordings.BulkDeleteResult
 import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
-import com.jemcik.jemrec.recordings.KeepMarks
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.RecordingLibrary
+import com.jemcik.jemrec.recordings.RecordingMarks
 import com.jemcik.jemrec.recordings.RecordingStore
 import com.jemcik.jemrec.recordings.RecordingTags
 import com.jemcik.jemrec.recordings.Recordings
@@ -1206,7 +1206,7 @@ class MainViewModel @JvmOverloads constructor(
     /** Mark one recording to keep, or take the mark off. Kept recordings are
      *  never auto-deleted. */
     fun toggleKept(recording: Recording) {
-        KeepMarks.set(getApplication(), listOf(recording.name), !recording.kept)
+        RecordingMarks.Keep.set(getApplication(), listOf(recording.name), !recording.kept)
         refresh()
         keepInFiles(listOf(recording))
     }
@@ -1226,7 +1226,7 @@ class MainViewModel @JvmOverloads constructor(
         val picked = current.recordings.filter { it.name in current.selected }
         if (picked.isEmpty()) return
         val kept = !picked.all { it.kept }
-        KeepMarks.set(getApplication(), picked.map { it.name }, kept = kept)
+        RecordingMarks.Keep.set(getApplication(), picked.map { it.name }, kept = kept)
         _state.update { it.copy(selecting = false, selected = emptySet()) }
         refresh()
         keepInFiles(picked.filter { it.kept != kept })

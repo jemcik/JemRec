@@ -45,7 +45,7 @@ import java.util.Locale
  * calls to match, nor the number format: a messenger call has no number, and
  * a name in its place is what that format is for keeping out. Where the name
  * does not carry the caller - those two and the date format - it is noted
- * here by name instead ([noteCaller]), since nothing else can say it:
+ * by name instead (RecordingMarks.Callers), since nothing else can say it:
  * messenger calls are not in the phone's call log. The recording's own tags
  * carry it too (RecordingTags), and a reinstall notes it here again from them.
  *
@@ -54,7 +54,7 @@ import java.util.Locale
  * The list, auto-delete and the Calls tab all need a recording's start time,
  * and the list its direction; both come from the name ([parse]), in every
  * format. Honor's format has no direction in it, so for those the saver
- * notes it here, by name ([noteDirection]), and in the file's tags for a
+ * notes it by name (RecordingMarks.Directions), and in the file's tags for a
  * reinstall (RecordingTags) - and the list falls back to the call log,
  * matched on the number the name does carry.
  */
@@ -63,9 +63,6 @@ object FileNames {
     enum class Format { DATE, DATE_AND_CALLER, DATE_AND_NUMBER, HONOR }
 
     private const val KEY = "file_names"
-    private const val KEY_DIRECTIONS = "name_directions"
-    private const val KEY_CALLERS = "name_callers"
-    private const val KEEP_DIRECTIONS = 2000
 
     /** Honor's Phone app, which plays recordings it finds in [HONOR_FOLDER]. */
     const val HONOR_DIALER = "com.hihonor.contacts"
@@ -239,59 +236,17 @@ object FileNames {
 
     private fun honorStamp() = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply { isLenient = false }
 
-    // --- direction, for the names that do not carry it -----------------------
+    // --- what the name does not carry: RecordingMarks' ---------------------
 
-    /** The saver just saved [name]: if its name will not say which way the
-     *  call went, remember it here. */
-    fun noteDirection(context: Context, name: String, incoming: Boolean) =
-        noteDirections(context, mapOf(name to incoming))
+    fun noteDirection(context: Context, name: String, incoming: Boolean) = RecordingMarks.Directions.note(context, name, incoming)
 
-    /** The same, for many at once: one write of the preferences. */
-    @Synchronized
-    fun noteDirections(context: Context, directions: Map<String, Boolean>) {
-        val unsaid = directions.filterKeys { parse(it)?.incoming == null }
-        if (unsaid.isEmpty()) return
-        val prefs = Prefs.of(context)
-        val entries = (prefs.getStringSet(KEY_DIRECTIONS, emptySet()) ?: emptySet()).toMutableSet()
-        entries.removeAll { it.drop(2) in unsaid }
-        unsaid.forEach { (name, incoming) -> entries += "${if (incoming) "i" else "o"}:$name" }
-        // The newest only: a direction outlives its file here at the cost of a
-        // few bytes, and a bound keeps that from adding up.
-        val kept = if (entries.size <= KEEP_DIRECTIONS) {
-            entries
-        } else {
-            entries.sortedByDescending { parse(it.drop(2))?.startedAt ?: 0L }.take(KEEP_DIRECTIONS).toSet()
-        }
-        prefs.edit { putStringSet(KEY_DIRECTIONS, kept) }
-    }
+    fun noteDirections(context: Context, directions: Map<String, Boolean>) = RecordingMarks.Directions.note(context, directions)
 
-    /** A messenger call's caller, by the recording's name, when the name
-     *  itself does not carry it (the date and number formats). */
-    fun noteCaller(context: Context, name: String, caller: String) = noteCallers(context, mapOf(name to caller))
+    fun noteCaller(context: Context, name: String, caller: String) = RecordingMarks.Callers.note(context, name, caller)
 
-    /** The same, for many at once: one write of the preferences. */
-    @Synchronized
-    fun noteCallers(context: Context, callers: Map<String, String>) {
-        if (callers.isEmpty()) return
-        val prefs = Prefs.of(context)
-        val entries = (prefs.getStringSet(KEY_CALLERS, emptySet()) ?: emptySet()).toMutableSet()
-        entries.removeAll { it.substringBefore('\u0000') in callers }
-        callers.forEach { (name, caller) -> entries += "$name\u0000$caller" }
-        val kept = if (entries.size <= KEEP_DIRECTIONS) {
-            entries
-        } else {
-            entries.sortedByDescending { parse(it.substringBefore('\u0000'))?.startedAt ?: 0L }.take(KEEP_DIRECTIONS).toSet()
-        }
-        prefs.edit { putStringSet(KEY_CALLERS, kept) }
-    }
+    fun noteCallers(context: Context, callers: Map<String, String>) = RecordingMarks.Callers.note(context, callers)
 
-    /** Every caller noted, by name. */
-    fun callers(context: Context): Map<String, String> =
-        (Prefs.of(context).getStringSet(KEY_CALLERS, emptySet()) ?: emptySet())
-            .associate { it.substringBefore('\u0000') to it.substringAfter('\u0000') }
+    fun callers(context: Context): Map<String, String> = RecordingMarks.Callers.all(context)
 
-    /** Every direction noted, by name: true for incoming. */
-    fun directions(context: Context): Map<String, Boolean> =
-        (Prefs.of(context).getStringSet(KEY_DIRECTIONS, emptySet()) ?: emptySet())
-            .associate { it.drop(2) to it.startsWith("i:") }
+    fun directions(context: Context): Map<String, Boolean> = RecordingMarks.Directions.all(context)
 }

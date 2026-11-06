@@ -21,8 +21,8 @@ import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.RecordingLibrary
+import com.jemcik.jemrec.recordings.RecordingMarks
 import com.jemcik.jemrec.recordings.RecordingSaver
-import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.recordings.Waveforms
@@ -178,7 +178,7 @@ internal object AfterCall {
      *  the name or the notes for a messenger call ("Viber call" at least). */
     private fun callerFor(context: Context, saved: RecordingSaver.Outcome.Saved, incoming: Boolean): String? {
         val probe = Recording(saved.name, saved.uri, "", incoming, "", "")
-        return Recordings.withCallers(context, listOf(probe)).firstOrNull()?.caller
+        return RecordingMarks.withCallers(context, listOf(probe)).firstOrNull()?.caller
     }
 
     /** Posts it, unless the user has the everyday one switched off. Whether

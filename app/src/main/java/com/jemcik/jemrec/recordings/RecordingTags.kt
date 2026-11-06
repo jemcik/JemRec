@@ -3,7 +3,6 @@ package com.jemcik.jemrec.recordings
 import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import androidx.core.content.edit
 import java.io.File
 import java.io.FileDescriptor
 import java.io.FileInputStream
@@ -57,7 +56,7 @@ internal object RecordingTags {
 
     /** What a recording carries. */
     data class Facts(
-        /** A message the answering machine took (MessageMarks). */
+        /** A message the answering machine took (RecordingMarks.Messages). */
         val message: Boolean = false,
         /** Which way the call went; null where nobody said - a messenger
          *  call whose notification did not. */
@@ -65,7 +64,7 @@ internal object RecordingTags {
         /** A messenger call's caller, as its notification named them
          *  (VoipCallNotes): never in the phone's call log. */
         val caller: String? = null,
-        /** Marked to keep (KeepMarks). */
+        /** Marked to keep (RecordingMarks.Keep). */
         val kept: Boolean = false,
     )
 
@@ -352,7 +351,7 @@ internal object RecordingTags {
      * the preferences alone, as before. How many took it.
      */
     fun writeKept(context: Context, recordings: List<Recording>): Int = synchronized(keeping) {
-        val marked = KeepMarks.all(context)
+        val marked = RecordingMarks.Keep.all(context)
         var written = 0
         for (recording in recordings) {
             val kept = recording.name in marked
@@ -392,60 +391,8 @@ internal object RecordingTags {
         return buffer.array().inputStream(0, buffer.position())
     }
 
-    // --- reading them back ---------------------------------------------------
+    /** RecordingMarks.recover's, under the names from before it. */
+    fun recover(context: Context, recordings: List<Recording>) = RecordingMarks.recover(context, recordings)
 
-    /**
-     * The names read, in a file of their own: one per recording, with no cap,
-     * and the one preferences file is rewritten whole at every write anywhere
-     * in the app (MessageMarks caps its set at 2000 for that reason).
-     */
-    private const val READ_FILE = "jemrec_tags_read"
-    private const val KEY_READ = "names"
-
-    internal fun readNames(context: Context): Set<String> =
-        context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).getStringSet(KEY_READ, emptySet()).orEmpty()
-
-    /**
-     * For each of [recordings] whose file has not been read yet, what it says,
-     * noted where the list looks: the preferences. After a reinstall that is
-     * every recording, once; after that, only one that came from somewhere
-     * else. Each is read once - a mark changed since is the preferences' to
-     * say - unless reading it failed, when it is tried again at the next
-     * list; and forgotten when it is no longer listed, so this does not grow
-     * with every recording ever deleted.
-     */
-    @Synchronized
-    fun recover(context: Context, recordings: List<Recording>) {
-        val seen = readNames(context)
-        val names = recordings.map { it.name }.toSet()
-        val unread = recordings.filter { it.name !in seen && it.parsedName != null }
-        val results = unread.map { it.name to read(context, it) }
-        val found = results.mapNotNull { (name, result) -> result.getOrNull()?.let { name to it } }
-        val failed = results.count { it.second.isFailure }
-        if (found.isNotEmpty() || failed > 0) {
-            note(context, found)
-            Log.i(TAG, "tags: read ${unread.size - failed} recording(s), ${found.size} with JemRec's tags, $failed to try again")
-        }
-        val now = (seen intersect names) + results.filter { it.second.isSuccess }.map { it.first }
-        if (now != seen) {
-            context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).edit { putStringSet(KEY_READ, now) }
-        }
-    }
-
-    /** What [found] says, into the preferences each mark has always lived in. */
-    internal fun note(context: Context, found: List<Pair<String, Facts>>) {
-        val messages = found.filter { it.second.message }.map { it.first }
-        if (messages.isNotEmpty()) MessageMarks.mark(context, messages)
-        val keeps = found.filter { it.second.kept }.map { it.first }
-        if (keeps.isNotEmpty()) KeepMarks.set(context, keeps, kept = true)
-        FileNames.noteDirections(context, found.mapNotNull { (name, f) -> f.incoming?.let { name to it } }.toMap())
-        // Only where the name does not say who: the date and number formats'.
-        FileNames.noteCallers(
-            context,
-            found.mapNotNull { (name, f) ->
-                val parsed = FileNames.parse(name)
-                f.caller?.takeIf { parsed?.app != null && parsed.caller == null }?.let { name to it }
-            }.toMap(),
-        )
-    }
+    internal fun readNames(context: Context): Set<String> = RecordingMarks.readNames(context)
 }

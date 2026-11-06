@@ -396,7 +396,7 @@ object RecordingSaver {
         // Where the name does not say who: the date and number formats, or a
         // caller with nothing a file name can take.
         if (outcome is Outcome.Saved && note?.name != null && FileNames.parse(name)?.caller == null) {
-            FileNames.noteCaller(context, name, note.name)
+            RecordingMarks.Callers.note(context, name, note.name)
         }
         return outcome
     }
@@ -743,9 +743,9 @@ object RecordingSaver {
                 "save: wrote %d packets, %.1fs from %s".format(packets, seconds, recfile) +
                     if (undelivered > 0) ", %.2fs not delivered by the capture".format(undelivered) else "",
             )
-            if (phoneCall) FileNames.noteDirection(context, o.part.name, o.part.incoming)
+            if (phoneCall) RecordingMarks.Directions.note(context, o.part.name, o.part.incoming)
             published += o.part to seconds.toInt()
-            if (message) MessageMarks.mark(context, o.part.name)
+            if (message) RecordingMarks.Messages.mark(context, o.part.name)
             RecordingLibrary.announce(o.part.name)
             last = Outcome.Saved(
                 o.part.name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis,
