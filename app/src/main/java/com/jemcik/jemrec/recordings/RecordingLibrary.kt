@@ -57,16 +57,23 @@ internal object RecordingLibrary {
         return if (withCallers) RecordingMarks.withCallers(context, found) else RecordingMarks.withDirections(context, found)
     }
 
-    /** Everything in the trash, soonest to go first, and last what does not
-     *  say when it goes (TrashNames.inFolder). Each has [Recording.name] as it was
-     *  before, and [Recording.expiresAtMillis] set where it is known. */
+    /**
+     * Everything in the trash, soonest to go first, and last what does not
+     * say when it goes (TrashNames.inFolder). Each has [Recording.name] as it
+     * was before, and [Recording.expiresAtMillis] set where it is known.
+     *
+     * Every copy of a name, each its own row, unlike the list: a row of the
+     * list stands for a call, but here each is a file with a time left, and
+     * one not shown could be neither restored nor deleted, and went unseen
+     * when its time was up. Delete all for good left it there. [Recording.uri]
+     * tells them apart.
+     */
     fun trashed(context: Context, scan: Scan = scan(context)): List<Recording> {
         val found = (
             MediaStoreRecordings.trashed(context) +
                 FolderRecordings.trashed(context, scan.documents) +
                 AppRecordings.trashed(context, scan.files)
             )
-            .distinctBy { it.name }
             .sortedWith(compareBy(nullsLast()) { it.expiresAtMillis })
         return RecordingMarks.withCallers(context, found)
     }

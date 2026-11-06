@@ -73,7 +73,8 @@ fun TrashScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                 }
             }
         }
-        itemsIndexed(state.trashed, key = { _, recording -> recording.name }) { index, recording ->
+        // By its uri: two copies of one name are two rows here.
+        itemsIndexed(state.trashed, key = { _, recording -> recording.uri.toString() }) { index, recording ->
             if (index > 0) HorizontalDivider()
             Row(
                 modifier = Modifier

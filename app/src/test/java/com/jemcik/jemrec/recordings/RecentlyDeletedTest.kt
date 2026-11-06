@@ -121,25 +121,24 @@ class RecentlyDeletedTest {
         assertEquals(listOf("%Recordings/JemRec%"), query.args)
     }
 
-    @Test fun twoTrashedCopiesOfOneNameShowAsOneTheNewerFile() {
+    @Test fun twoTrashedCopiesOfOneNameAreBothListed() {
         val now = System.currentTimeMillis()
         val name = "20261020_101010_in.ogg"
-        appFile(app, Trash.nameFor(name, now + 2 * day), modified = now - 60_000)
-        val newer = appFile(app, Trash.nameFor(name, now + 9 * day), modified = now)
-        // App storage is read newest file first, and the first of a name stays.
-        assertEquals(listOf(newer.absolutePath), Trash.list(app).map { it.filePath })
+        val sooner = appFile(app, Trash.nameFor(name, now + 2 * day), modified = now - 60_000)
+        val later = appFile(app, Trash.nameFor(name, now + 9 * day), modified = now)
+        assertEquals(listOf(sooner.absolutePath, later.absolutePath), Trash.list(app).map { it.filePath })
     }
 
-    @Test fun oneRowPerNameAndMediaStoreWins() {
+    @Test fun aNameTrashedInTwoPlacesIsListedFromBoth() {
         FakeMediaStore.install()
         val name = "20261020_101010_in.ogg"
         FakeMediaStore.rows += FakeMediaStore.Row(
             id = 5, name = Trash.nameFor(name, 1_795_000_000_000L), trashed = true, expiresSeconds = 1_795_000_000,
         )
-        appFile(app, Trash.nameFor(name, System.currentTimeMillis() + day))
-        val trashed = Trash.list(app).single()
-        assertEquals(FakeMediaStore.uriOf(5), trashed.uri)
-        assertNull(trashed.filePath)
+        val file = appFile(app, Trash.nameFor(name, System.currentTimeMillis() + day))
+        val trashed = Trash.list(app)
+        assertEquals(listOf(name, name), trashed.map { it.name })
+        assertEquals(setOf(FakeMediaStore.uriOf(5), FakeStorage.appUri(app, file)), trashed.map { it.uri }.toSet())
     }
 
     @Test fun aChosenFoldersRecordingIsTrashedByRenameAndRestoredTheSameWay() {

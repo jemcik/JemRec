@@ -251,6 +251,52 @@ class TrashPlacesTest {
         assertEquals(BulkDeleteResult(0, 1, null), Trash.deleteForGood(app, listOf(recording)))
     }
 
+    @Test fun aRestoreOntoANameTakenOverwritesNothing() {
+        val here = appFile(app, a, bytes = 10)
+        val trashed = appFile(app, Trash.nameFor(a, System.currentTimeMillis() + day), bytes = 20)
+        assertEquals(DeleteResult.Deleted, Trash.restore(app, Trash.list(app).single()))
+        assertEquals(10L, here.length())
+        assertFalse(trashed.exists())
+        // As Android's own providers do with a name that is taken.
+        assertEquals(20L, File(FakeStorage.appFolder(app), "20261020_101010_in (1).ogg").length())
+    }
+
+    @Test fun aTrashedNameTakenOverwritesNothing() {
+        val expires = System.currentTimeMillis() + day
+        val here = appFile(app, Trash.nameFor(a, expires), bytes = 10)
+        val file = appFile(app, a, bytes = 20)
+        val location = RecordingLocation.of(FakeStorage.appUri(app, file), file.absolutePath)
+        assertEquals(DeleteResult.Deleted, location.trash(app, a, expires))
+        assertEquals(10L, here.length())
+        assertEquals(setOf(10L, 20L), FakeStorage.appFolder(app).listFiles()!!.map { it.length() }.toSet())
+    }
+
+    // ---- two copies of a name ------------------------------------------------
+
+    @Test fun restoreAllBringsBackEveryCopyAndLosesNone() {
+        val now = System.currentTimeMillis()
+        appFile(app, Trash.nameFor(a, now + 2 * day), bytes = 10)
+        appFile(app, Trash.nameFor(a, now + 9 * day), bytes = 20)
+        assertEquals(2, Trash.list(app).size)
+        val back = Trash.restoreAll(app, Trash.list(app))
+        assertEquals(BulkDeleteResult(2, 0, null), back)
+        assertTrue(Trash.list(app).isEmpty())
+        val folder = FakeStorage.appFolder(app)
+        assertEquals(setOf(10L, 20L), folder.listFiles()!!.map { it.length() }.toSet())
+    }
+
+    @Test fun deleteAllForGoodLeavesNoCopyBehind() {
+        FakeFolder.install(app)
+        val soon = System.currentTimeMillis() + day
+        FakeMediaStore.rows += FakeMediaStore.Row(5, Trash.nameFor(a, 1_795_000_000_000L), trashed = true, expiresSeconds = 1_795_000_000)
+        FakeFolder.file(Trash.nameFor(a, soon))
+        appFile(app, Trash.nameFor(a, soon))
+        val all = Trash.list(app)
+        assertEquals(3, all.size)
+        assertEquals(BulkDeleteResult(3, 0, null), Trash.deleteForGood(app, all))
+        assertTrue(Trash.list(app).isEmpty())
+    }
+
     // ---- all three ----------------------------------------------------------
 
     @Test fun oneRecordingInEachPlaceGoesItsOwnWay() {

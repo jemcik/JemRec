@@ -19,15 +19,28 @@ internal class AppFile(private val file: File) : RecordingLocation {
 
     override fun trash(context: Context, name: String, expiresAtMillis: Long): DeleteResult {
         if (!file.exists()) return DeleteResult.Deleted
-        val target = File(file.parentFile, TrashNames.nameFor(name, expiresAtMillis))
+        val target = free(TrashNames.nameFor(name, expiresAtMillis))
         return if (file.renameTo(target)) DeleteResult.Deleted
         else DeleteResult.Failed(IOException("could not move $file to the trash"))
     }
 
     override fun restore(context: Context, name: String): DeleteResult {
-        val target = File(file.parentFile, name)
+        val target = free(name)
         return if (file.renameTo(target)) DeleteResult.Deleted
         else DeleteResult.Failed(IOException("could not restore $file"))
+    }
+
+    /** [name] beside this file, or, if a file has it, what Android's own
+     *  providers make of a name that is taken: File.renameTo replaces what is
+     *  there, and a recording cannot be made again. */
+    private fun free(name: String): File {
+        val asked = File(file.parentFile, name)
+        if (!asked.exists()) return asked
+        val stem = name.substringBeforeLast('.')
+        val extension = name.substringAfterLast('.')
+        return generateSequence(1) { it + 1 }
+            .map { File(file.parentFile, "$stem ($it).$extension") }
+            .first { !it.exists() }
     }
 
     override fun deleteForGood(context: Context): Boolean = !file.exists() || file.delete()
