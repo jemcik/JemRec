@@ -2,6 +2,7 @@ package com.jemcik.jemrec.recordings
 
 import android.net.Uri
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -70,5 +71,86 @@ class WaveformsCacheTest {
         assertFalse(Waveforms.has(app, "deleted.ogg"))
         // Kept a moment ago: a call saved since the list was read.
         assertTrue(Waveforms.has(app, "just-saved.ogg"))
+    }
+
+    private fun levelsIn(name: String): List<Float> = List(Waveforms.LEVELS) { if (it == 0) 1f else 0f }.also {
+        keep(name)
+        Waveforms.cacheFile(app, name).writeBytes(Waveforms.toBytes(it))
+    }
+
+    @Test fun whatIsReadIsRememberedAndAskedOfMemoryFirst() {
+        val levels = levelsIn("mem.ogg")
+        assertNull(Waveforms.peek("mem.ogg"))
+        assertEquals(levels, Waveforms.levels(app, "mem.ogg", Uri.EMPTY))
+        assertEquals(levels, Waveforms.peek("mem.ogg"))
+        // The file gone, memory still has it: the row scrolled back into view.
+        Waveforms.cacheFile(app, "mem.ogg").delete()
+        assertEquals(levels, Waveforms.cached(app, "mem.ogg"))
+        assertEquals(levels, Waveforms.levels(app, "mem.ogg", Uri.EMPTY))
+        Waveforms.prune(app, emptyList())
+    }
+
+    @Test fun readingOneWithNoLevelsLeavesNothing() {
+        assertNull(Waveforms.cached(app, "none.ogg"))
+        assertNull(Waveforms.peek("none.ogg"))
+        keep("short.ogg", bytes = 10)
+        assertNull(Waveforms.cached(app, "short.ogg"))
+    }
+
+    @Test fun aHundredAreRememberedTheOldestReadGoingFirst() {
+        (0..100).forEach { i ->
+            levelsIn("r$i.ogg")
+            Waveforms.cached(app, "r$i.ogg")
+        }
+        assertNull(Waveforms.peek("r0.ogg"))
+        assertTrue(Waveforms.peek("r1.ogg") != null)
+        assertTrue(Waveforms.peek("r100.ogg") != null)
+        Waveforms.prune(app, emptyList())
+    }
+
+    @Test fun pruningForgetsWhatMemoryHadOfTheOthers() {
+        levelsIn("gone.ogg")
+        levelsIn("stays.ogg")
+        Waveforms.cached(app, "gone.ogg")
+        Waveforms.cached(app, "stays.ogg")
+        Waveforms.prune(app, listOf("stays.ogg"))
+        assertNull(Waveforms.peek("gone.ogg"))
+        assertTrue(Waveforms.peek("stays.ogg") != null)
+        Waveforms.prune(app, emptyList())
+    }
+
+    @Test fun beginningToWriteOneForgetsNothingUntilItEnds() {
+        val levels = levelsIn("w.ogg")
+        Waveforms.cached(app, "w.ogg")
+        Waveforms.writingStarted("w.ogg")
+        try {
+            assertEquals(levels, Waveforms.peek("w.ogg"))
+        } finally {
+            Waveforms.writingEnded(app, "w.ogg")
+        }
+        assertNull(Waveforms.peek("w.ogg"))
+    }
+
+    @Test fun theStandInAnswersEverything() {
+        val invented = Waveforms.invented(7)
+        Waveforms.override = { invented }
+        try {
+            assertEquals(invented, Waveforms.levels(app, "any.ogg", Uri.EMPTY))
+            assertEquals(invented, Waveforms.cached(app, "any.ogg"))
+            assertEquals(invented, Waveforms.peek("any.ogg"))
+            assertTrue(Waveforms.has(app, "any.ogg"))
+            // Even for one being written.
+            Waveforms.writingStarted("any.ogg")
+            assertEquals(invented, Waveforms.levels(app, "any.ogg", Uri.EMPTY))
+        } finally {
+            Waveforms.override = null
+            Waveforms.writingEnded(app, "any.ogg")
+        }
+    }
+
+    @Test fun theFolderOfTheWayBeforeIsCleared() {
+        val old = File(app.cacheDir, "waveforms-v1").apply { mkdirs(); resolve("x.lvl").writeText("x") }
+        Waveforms.cacheFile(app, "a.ogg")
+        assertFalse(old.exists())
     }
 }

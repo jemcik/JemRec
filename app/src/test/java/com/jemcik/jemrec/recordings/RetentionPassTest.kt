@@ -219,4 +219,21 @@ class RetentionPassTest {
         Retention.setMaxAgeDays(app, 0)
         assertEquals(0L, lastRun())
     }
+
+    @Test fun whatAndroidWantsConfirmedComesBackAsOneRequest() {
+        FakeMediaStore.install(File(app.cacheDir, "media"))
+        val at = System.currentTimeMillis() - 40 * day
+        FakeMediaStore.rows += FakeMediaStore.Row(1, RecordingStore.nameFor(Date(at), true), notOurs = true)
+        FakeMediaStore.rows += FakeMediaStore.Row(2, RecordingStore.nameFor(Date(at - 60_000), true), notOurs = true)
+        Retention.setMaxAgeDays(app, 30)
+        val heard = announced {
+            val result = Retention.run(app)
+            assertEquals(0, result.deleted)
+            assertEquals(0, result.failed)
+            assertTrue(result.needsConsent != null)
+        }
+        // Nothing moved yet, so nothing for the list to say.
+        assertEquals(emptyList<String>(), heard)
+        assertEquals(2, FakeMediaStore.asked.last().uris.size)
+    }
 }
