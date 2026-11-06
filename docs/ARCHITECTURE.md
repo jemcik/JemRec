@@ -750,8 +750,9 @@ call-log permission. Without it, or for a call neither knows, a recording is
 named by date and time. A name is given once and never changed. If a file of
 that name is already there, Android makes another, ` (1)` before the extension,
 in the Recordings folder and in a folder you chose alike (the Android 12 and 17
-emulators, 2026-11-06). That is the recording's name from then on: JemRec reads
-it back as it saves, and goes by it for everything a name is kept for. Up to
+emulators, 2026-11-06), and JemRec does the same in app storage. That is the
+recording's name from then on: JemRec reads it back as it saves, and goes by it
+for everything a name is kept for. Up to
 0.28 it went on with the name it asked for, so the marks landed on the other
 file. Such a name reads as the one asked for: the same time and direction,
 and any caller in it; after a caller the ` (1)` stays, as it may be the caller's
@@ -1385,9 +1386,9 @@ only from medium height up in their example; the width is where the room is.
   one row per name, as a row there stands for a call. One file is one row, even
   with `Recordings/JemRec` itself chosen as the folder, where it is seen through
   both Android's trash and the folder, by one name and one expiry. In app
-  storage a restore,
-  or the rename into the trash, takes a free name if that one is taken: a plain
-  rename replaces the file that has it, and until 0.29 a restore there did.
+  storage a restore, the rename into the trash and a save each take a free name
+  if that one is taken: a rename replaces the file that has it, and until 0.29 a
+  restore there did, and a retried save truncated it.
   An emulator check saves one name twice in each of the two places Android
   runs, trashes the same name in both, and taps Restore all and Delete all for
   good on the four rows; a unit test holds app storage, which it does not reach.

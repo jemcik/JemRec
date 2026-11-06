@@ -19,28 +19,15 @@ internal class AppFile(private val file: File) : RecordingLocation {
 
     override fun trash(context: Context, name: String, expiresAtMillis: Long): DeleteResult {
         if (!file.exists()) return DeleteResult.Deleted
-        val target = free(TrashNames.nameFor(name, expiresAtMillis))
+        val target = AppRecordings.free(file.parentFile, TrashNames.nameFor(name, expiresAtMillis))
         return if (file.renameTo(target)) DeleteResult.Deleted
         else DeleteResult.Failed(IOException("could not move $file to the trash"))
     }
 
     override fun restore(context: Context, name: String): DeleteResult {
-        val target = free(name)
+        val target = AppRecordings.free(file.parentFile, name)
         return if (file.renameTo(target)) DeleteResult.Deleted
         else DeleteResult.Failed(IOException("could not restore $file"))
-    }
-
-    /** [name] beside this file, or, if a file has it, what Android's own
-     *  providers make of a name that is taken: File.renameTo replaces what is
-     *  there, and a recording cannot be made again. */
-    private fun free(name: String): File {
-        val asked = File(file.parentFile, name)
-        if (!asked.exists()) return asked
-        val stem = name.substringBeforeLast('.')
-        val extension = name.substringAfterLast('.')
-        return generateSequence(1) { it + 1 }
-            .map { File(file.parentFile, "$stem ($it).$extension") }
-            .first { !it.exists() }
     }
 
     override fun deleteForGood(context: Context): Boolean = !file.exists() || file.delete()
@@ -62,16 +49,15 @@ internal object AppRecordings {
     /** Somewhere to write [name], the last resort. */
     fun open(context: Context, name: String): RecordingStore.Target? = runCatching {
         val dir = folder(context).apply { mkdirs() }
-        val file = File(dir, name)
-        // Truncated, as MediaStore's new row and a new document are empty: a
-        // file of the name from before - a save that failed half way, then
-        // tried again untagged and shorter - kept its tail past the new end.
-        val pfd = ParcelFileDescriptor.open(
-            file,
-            ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE or ParcelFileDescriptor.MODE_TRUNCATE,
-        )
+        // A new file, as MediaStore's row and a document are new: a file of
+        // the name may be a part of this very call, published when another
+        // part was not, and this a retry of the whole. It was truncated, and
+        // deleted with the retry if that failed too, and the recorder's copy
+        // given up a week on.
+        val file = free(dir, name)
+        val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE)
         RecordingStore.Target(
-            name,
+            file.name,
             pfd,
             uriOf(context, file),
             filePath = file.absolutePath,
@@ -81,6 +67,23 @@ internal object AppRecordings {
     }.onFailure {
         Log.e(TAG, "store: nowhere at all to write a recording", it)
     }.getOrNull()
+
+    /**
+     * [name] in [dir], or, if a file has it, what Android's own providers
+     * make of a name that is taken: a rename replaces what is there, an open
+     * truncates it, and a recording cannot be made again. An empty file is no
+     * recording: a save killed before its copy in leaves one, and its retry
+     * may have the name.
+     */
+    fun free(dir: File?, name: String): File {
+        val asked = File(dir, name)
+        if (!asked.exists() || asked.length() == 0L) return asked
+        val stem = name.substringBeforeLast('.')
+        val extension = name.substringAfterLast('.')
+        return generateSequence(1) { it + 1 }
+            .map { File(dir, "$stem ($it).$extension") }
+            .first { !it.exists() }
+    }
 
     /** The files there, newest first, trashed or not. */
     fun files(context: Context): List<File> =
