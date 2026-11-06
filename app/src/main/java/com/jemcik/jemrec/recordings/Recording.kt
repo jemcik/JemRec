@@ -78,6 +78,9 @@ data class Recording(
      *  instance: the list groups and sorts every row by it. */
     val startedAtMillis: Long? get() = parsedName?.startedAt
 
+    /** Which of the three places it lives in. */
+    internal val location: RecordingLocation get() = RecordingLocation.of(uri, filePath)
+
     /** What the name says - time, and for some formats direction, caller and
      *  number. Read once: the list asks it of every row more than once. */
     internal val parsedName: FileNames.Parsed? by lazy { FileNames.parse(name) }

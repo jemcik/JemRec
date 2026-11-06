@@ -10,7 +10,6 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
@@ -338,10 +337,7 @@ internal object RecordingTags {
     /** What [recording]'s own file says - null if nothing of ours - or a
      *  failure, if it could not be read. */
     fun read(context: Context, recording: Recording): Result<Facts?> = runCatching {
-        val input = recording.filePath?.let { FileInputStream(it) }
-            ?: context.contentResolver.openInputStream(recording.uri)
-            ?: error("no stream")
-        input.buffered().use { read(it) }
+        recording.location.read(context).buffered().use { read(it) }
     }
 
     private val keeping = Any()
@@ -370,10 +366,7 @@ internal object RecordingTags {
     }
 
     private fun writeKept(context: Context, recording: Recording, kept: Boolean): Boolean {
-        recording.filePath?.let { path ->
-            return RandomAccessFile(path, "rw").use { file -> rewriteIn(file.channel, kept).also { if (it) file.fd.sync() } }
-        }
-        val pfd = context.contentResolver.openFileDescriptor(recording.uri, "rw") ?: return false
+        val pfd = recording.location.change(context) ?: return false
         return pfd.use { rewriteIn(it, kept) }
     }
 
@@ -384,12 +377,6 @@ internal object RecordingTags {
         val (offset, page) = rewrite(headStart(reading), kept) ?: return false
         writing.write(ByteBuffer.wrap(page), offset.toLong())
         pfd.fileDescriptor.sync()
-        return true
-    }
-
-    private fun rewriteIn(channel: FileChannel, kept: Boolean): Boolean {
-        val (offset, page) = rewrite(headStart(channel), kept) ?: return false
-        channel.write(ByteBuffer.wrap(page), offset.toLong())
         return true
     }
 

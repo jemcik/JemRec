@@ -2,7 +2,6 @@ package com.jemcik.jemrec.recordings
 
 import android.content.ContentResolver
 import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
@@ -11,8 +10,6 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
-import java.io.File
-import java.io.IOException
 
 /**
  * Recently deleted: where a deleted recording waits for [DAYS] days before it
@@ -111,21 +108,8 @@ object Trash {
     // --- trash and restore ----------------------------------------------------
 
     /** Move one recording to the trash. Deleted means it is there now. */
-    fun trash(context: Context, uri: Uri, filePath: String?, name: String): DeleteResult {
-        val expires = System.currentTimeMillis() + DAYS * DAY_MS
-        filePath?.let { path ->
-            val file = File(path)
-            if (!file.exists()) return DeleteResult.Deleted
-            val target = File(file.parentFile, nameFor(name, expires))
-            return if (file.renameTo(target)) DeleteResult.Deleted
-            else DeleteResult.Failed(IOException("could not move $path to the trash"))
-        }
-        return if (uri.authority == MediaStore.AUTHORITY) {
-            setTrashed(context, listOf(uri), trashed = true)
-        } else {
-            renameDocument(context, uri, nameFor(name, expires))
-        }
-    }
+    fun trash(context: Context, uri: Uri, filePath: String?, name: String): DeleteResult =
+        RecordingLocation.of(uri, filePath).trash(context, name, System.currentTimeMillis() + DAYS * DAY_MS)
 
     /** Move these to the trash, asking once for whatever MediaStore will not
      *  take this app's word for. */
@@ -133,19 +117,8 @@ object Trash {
         inBulk(context, recordings, trashed = true) { trash(context, it.uri, it.filePath, it.name) }
 
     /** Bring one back from the trash, as it was. Deleted means restored. */
-    fun restore(context: Context, recording: Recording): DeleteResult {
-        recording.filePath?.let { path ->
-            val file = File(path)
-            val target = File(file.parentFile, recording.name)
-            return if (file.renameTo(target)) DeleteResult.Deleted
-            else DeleteResult.Failed(IOException("could not restore $path"))
-        }
-        return if (recording.uri.authority == MediaStore.AUTHORITY) {
-            setTrashed(context, listOf(recording.uri), trashed = false)
-        } else {
-            renameDocument(context, recording.uri, recording.name)
-        }
-    }
+    fun restore(context: Context, recording: Recording): DeleteResult =
+        recording.location.restore(context, recording.name)
 
     /** Bring all of these back, asking once for whatever MediaStore will not
      *  take this app's word for. [BulkDeleteResult.deleted] is the restored. */
@@ -177,7 +150,7 @@ object Trash {
                 }
             }
         }
-        val ask = consent(context, disputed, trashed)
+        val ask = MediaStoreRecordings.askToTrash(context, disputed, trashed)
         return BulkDeleteResult(done, failed + if (ask == null) disputed.size else 0, ask)
     }
 
@@ -194,32 +167,8 @@ object Trash {
         var failed = 0
         val disputed = mutableListOf<Uri>()
         recordings.forEach { recording ->
-            val path = recording.filePath
             val gone = try {
-                when {
-                    path != null -> File(path).let { !it.exists() || it.delete() }
-                    recording.uri.authority == MediaStore.AUTHORITY -> {
-                        // Trashed rows included, as the restore's update must
-                        // ask (setTrashed). A delete by the recording's own uri
-                        // reached its trashed row without it as well, on the
-                        // Android 17 emulator (2026-10-23, the emulator check
-                        // recently_deleted); asked anyway, as nothing promises
-                        // that.
-                        val extras = Bundle().apply { putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE) }
-                        context.contentResolver.delete(recording.uri, extras) > 0
-                    }
-                    else -> DocumentsContract.deleteDocument(context.contentResolver, recording.uri)
-                }
-            } catch (e: SecurityException) {
-                // MediaStore's is a question for the user; a chosen folder's -
-                // its access taken back - is a failure, said as one.
-                if (recording.uri.authority == MediaStore.AUTHORITY) {
-                    disputed += recording.uri
-                    null
-                } else {
-                    Log.w(TAG, "trash: could not delete ${FileNames.forLog(recording.name)} for good", e)
-                    false
-                }
+                recording.location.deleteForGood(context)
             } catch (t: Throwable) {
                 Log.w(TAG, "trash: could not delete ${FileNames.forLog(recording.name)} for good", t)
                 false
@@ -227,47 +176,13 @@ object Trash {
             when (gone) {
                 true -> done++
                 false -> failed++
-                null -> Unit
+                null -> disputed += recording.uri
             }
         }
-        val ask = if (disputed.isEmpty()) {
-            null
-        } else {
-            runCatching { MediaStore.createDeleteRequest(context.contentResolver, disputed).intentSender }.getOrNull()
-        }
+        val ask = MediaStoreRecordings.askToDelete(context, disputed)
         if (done > 0) Log.i(TAG, "trash: deleted $done recording(s) for good")
         return BulkDeleteResult(done, failed + if (ask == null) disputed.size else 0, ask)
     }
-
-    private fun setTrashed(context: Context, uris: List<Uri>, trashed: Boolean): DeleteResult = try {
-        val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, if (trashed) 1 else 0) }
-        // Including trashed rows, or a restore matches nothing: they are left
-        // out of every query and update by default.
-        val extras = Bundle().apply { putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE) }
-        val rows = uris.sumOf { context.contentResolver.update(it, values, extras) }
-        if (rows > 0) DeleteResult.Deleted
-        else DeleteResult.Failed(IOException("MediaStore changed no rows for $uris"))
-    } catch (e: SecurityException) {
-        // Not ours as far as MediaStore is concerned - typically a recording
-        // made before a reinstall. The user still owns it, and can say so.
-        Log.i(TAG, "trash: need the user's consent for $uris")
-        consent(context, uris, trashed)?.let { DeleteResult.NeedsConsent(it) } ?: DeleteResult.Failed(e)
-    } catch (t: Throwable) {
-        DeleteResult.Failed(t)
-    }
-
-    private fun consent(context: Context, uris: List<Uri>, trashed: Boolean) =
-        if (uris.isEmpty()) null
-        else runCatching { MediaStore.createTrashRequest(context.contentResolver, uris, trashed).intentSender }
-            .getOrNull()
-
-    private fun renameDocument(context: Context, uri: Uri, to: String): DeleteResult = runCatching {
-        if (DocumentsContract.renameDocument(context.contentResolver, uri, to) != null) {
-            DeleteResult.Deleted
-        } else {
-            DeleteResult.Failed(IOException("the folder would not rename $uri")) as DeleteResult
-        }
-    }.getOrElse { DeleteResult.Failed(it) }
 
     // --- what is in it --------------------------------------------------------
 
