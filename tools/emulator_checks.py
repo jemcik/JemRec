@@ -1430,6 +1430,76 @@ def recently_deleted_folder():
     return f"in {PICKED}: waited as {trashed}, restored, deleted for good; one expired, gone after the daily pass"
 
 
+def store(name, recordings=False):
+    """A file written under [name] as a save writes one (the debug build's diag
+    'store'): what the place called it."""
+    said = diag("store", "--es", "name", f"'{name}'", *(("--ez", "recordings", "true") if recordings else ()))
+    m = re.search(r"published as (.+?) *$", said, re.M)
+    assert m, said
+    return m.group(1)
+
+
+def lines_in(folder):
+    """The files in [folder], one name a line: a name a provider made has a space."""
+    return sh(f"ls -a {folder}/").splitlines()
+
+
+def place_of(name):
+    return trash_place(f"'{name}'")[0]
+
+
+def name_taken():
+    """A name already taken, in Recordings/JemRec and in a folder picked in
+    Settings: Android's provider makes another, and the save says which. And
+    the same name in both, trashed: Recently deleted shows a row for each,
+    Restore all brings back each, Delete all for good leaves neither."""
+    folder = f"/sdcard/{PICKED}"
+    # Its time differs each run: what a run cut short left is no name taken.
+    stem = time.strftime("20200102_%H%M%S_in")
+    name = f"{stem}.ogg"
+    sh(f"rm -rf {folder}; mkdir -p {folder}")
+    made = {}
+    try:
+        pick_folder(PICKED)
+        for place, recordings in ((RECORDINGS, True), (folder, False)):
+            first = store(name, recordings)
+            assert first == name, f"in {place}, a free name came back as {first}"
+            made[place] = store(name, recordings)
+        there = {place: [f for f in lines_in(place) if stem in f] for place in made}
+        assert all(said != name and said in there[place] for place, said in made.items()), f"said {made}, there: {there}"
+        for each in (name, name, *made.values()):
+            trash_place(f"'{each}'", move=True)
+        assert place_of(made[RECORDINGS]) == (False, True) and place_of(made[folder]) == (False, True) \
+            and place_of(name) == (False, True), "not all four in the trash"
+        open_trash()
+        wait_for(lambda: ui().count('text="Restore"') >= 4, 20, "a row for each copy")
+        shown = ui().count('text="Restore"')
+        assert sh(f"pidof {PKG}").strip(), "the app stopped showing them"
+        tap("Restore all")
+        wait_for(lambda: name in lines_in(RECORDINGS) and name in lines_in(folder), 20, "Restore all to bring back both copies")
+        for each in (name, name, *made.values()):
+            trash_place(f"'{each}'", move=True)
+        sh(f"am force-stop {PKG}")
+        open_trash()
+        tap("Delete all for good")
+        wait_for(lambda: on_screen("Delete for good"), 10, "the question")
+        tap("Delete for good")
+        gone = lambda: not [f for place in (RECORDINGS, folder) for f in lines_in(place) if stem in f]
+        wait_for(gone, 20, "Delete all for good to leave none")
+    finally:
+        for _ in range(3):
+            if "documentsui" in sh("dumpsys window | grep mCurrentFocus"):
+                sh("input keyevent KEYCODE_BACK")
+                time.sleep(1)
+        try:
+            set_prefs(recordings_tree_uri=None)
+        except Exception as e:  # whatever went wrong: printed, not raised
+            print(f"       {PICKED} still set as the folder to save to: {e}")
+        sh(f"am force-stop {PKG}")
+        sh(f"rm -rf {folder}")
+    return f"made {made[RECORDINGS]!r}, and the same in {PICKED}; {shown} rows on screen, each restored, none left"
+
+
 # What each look's header shows uiautomator, with the recorder ready. Deck's
 # and Multitrack's headers are one sentence to a screen reader (headerSpeech),
 # Memo's its own words; Multitrack's tabs are in capitals.
@@ -2306,7 +2376,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, app_call, mode_switch, app_call_in_front, waveform,
           background_playback,
-          recently_deleted, recently_deleted_folder, looks, reinstall, cable, usb_debugging, adbd_stopped,
+          recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
           debugging_off, off_just_left, background, allow_this_wifi, refused_grant,
           # Last, these two: they turn the emulator's Wi-Fi off and on, and a
