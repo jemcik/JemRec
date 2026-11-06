@@ -23,8 +23,29 @@ class TrashNamesTest {
     @Test fun anAtAndAPercentAreWrittenOutAndReadBack() {
         val honor = "Priya 100%@+447700900123_20261020223141.ogg"
         val trashed = TrashNames.nameFor(honor, expires)
-        assertEquals(".trashed-1795000000-Priya 100%25%40+447700900123_20261020223141.ogg", trashed)
+        assertEquals(".trashed-1795000000-Priya 100%25%40+447700900123%5F20261020223141.ogg", trashed)
         assertEquals(honor to expires, TrashNames.parse(trashed))
+    }
+
+    @Test fun onlyHonorsNameLosesItsUnderscore() {
+        assertEquals(".trashed-1795000000-20261020_161205_out_Priya Shah.ogg", TrashNames.nameFor("20261020_161205_out_Priya Shah.ogg", expires))
+    }
+
+    @Test fun aNameTrashedBeforeTheUnderscoreWasWrittenOutReadsAsItWas() {
+        val honor = "Priya@+447700900123_20261020223141.ogg"
+        assertEquals(honor to expires, TrashNames.parse(".trashed-1795000000-Priya%40+447700900123_20261020223141.ogg"))
+    }
+
+    @Test fun aPercentWrittenOutIsNotTakenForAnUnderscore() {
+        val odd = "a%5Fb@1_20261020223141.ogg"
+        assertEquals(odd to expires, TrashNames.parse(TrashNames.nameFor(odd, expires)))
+    }
+
+    @Test fun onAndroid17AStrippedHonorNameComesBackWhole() {
+        assertEquals(
+            "Priya@+447700900123_20261020223141.ogg" to null,
+            TrashNames.inFolder("Priya%40+447700900123%5F20261020223141.ogg", "doc-1", restorable = true),
+        )
     }
 
     @Test fun aNameFromBeforeEscapingReadsAsItIs() {

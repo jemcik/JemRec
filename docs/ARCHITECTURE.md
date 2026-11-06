@@ -1358,9 +1358,12 @@ only from medium height up in their example; the width is where the room is.
   then, and is then removed for good. In the standard Recordings folder that
   is Android's own trash, so other apps stop seeing the file at once. In a
   folder you chose, the file is renamed the way Android's trash names it
-  (`.trashed-<expiry>-<name>`, hidden from most file managers, with any `@`
-  written `%40` so Honor's Phone app stops offering it), and JemRec removes
-  it when the 30 days are up. Recently deleted restores one at a time, or
+  (`.trashed-<expiry>-<name>`, hidden from most file managers), and JemRec
+  removes it when the 30 days are up. In a name with an `@` the `@` is written
+  `%40` and the `_` `%5F`, as Honor's Phone app plays any file in its folder that
+  holds the number and the time: with the `@` gone alone, a deleted recording kept
+  its play button and played; with the `_` gone too, the button went (the Honor,
+  2026-11-06). Recently deleted restores one at a time, or
   all at once (*Restore all*), and *Delete all for good* empties it now,
   after a question saying it cannot be undone - wherever each waits, with
   Android's own dialog for a file it does not count as JemRec's. Until 0.19

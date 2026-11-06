@@ -13,15 +13,23 @@ internal object TrashNames {
     /**
      * The trashed name of [name], expiring at [expiresAtMillis].
      *
-     * With no @ in it. Honor's Phone app plays any file in its folder whose
-     * name holds "@<number>_<time>" - tested: a leading dot does not stop
+     * Not one Honor's Phone app can match. It plays any file in its folder
+     * whose name holds "<number>_<time>" - tested: a leading dot does not stop
      * it, and nor does anything after the time - so a recording deleted from
-     * there (FileNames.Format.HONOR) would stay playable from the call
-     * history for its 30 days here. The @ is written %40, and % as %25 so
-     * that reads back unchanged; names from before this had neither.
+     * there (FileNames.Format.HONOR) stayed playable from the call history for
+     * its 30 days here, the @ written %40 or not (the Honor, Phone app
+     * 19.0.8.606, 2026-11-06: the button stayed and played, then with the _
+     * written %5F it went). So in such a name the @ is written %40 and the _
+     * %5F; in any name % is written %25, so that reads back unchanged. Other
+     * names keep their _; older trashed names, with no %5F, read back too.
      */
     internal fun nameFor(name: String, expiresAtMillis: Long): String =
-        "$PREFIX${expiresAtMillis / 1000}-${name.replace("%", "%25").replace("@", "%40")}"
+        "$PREFIX${expiresAtMillis / 1000}-${escape(name)}"
+
+    private fun escape(name: String): String {
+        val percent = name.replace("%", "%25")
+        return if ('@' in name) percent.replace("@", "%40").replace("_", "%5F") else percent
+    }
 
     /** The original name and expiry of a trashed name, or null if it is not one. */
     internal fun parse(trashedName: String): Pair<String, Long>? {
@@ -32,9 +40,15 @@ internal object TrashNames {
         return unescape(name) to seconds * 1000
     }
 
-    private fun unescape(name: String) = ESCAPED.replace(name) { if (it.value == "%40") "@" else "%" }
+    private fun unescape(name: String) = ESCAPED.replace(name) {
+        when (it.value) {
+            "%40" -> "@"
+            "%5F" -> "_"
+            else -> "%"
+        }
+    }
 
-    private val ESCAPED = Regex("%40|%25")
+    private val ESCAPED = Regex("%40|%5F|%25")
 
     /**
      * Whether a file in the folder the user picked is in the trash: its
