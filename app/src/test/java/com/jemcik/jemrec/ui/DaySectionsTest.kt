@@ -42,8 +42,6 @@ class DaySectionsTest {
     }
 
     @Test fun rowsUnderADayShowOnlyTheTime() {
-        // The date follows the phone's language; pinned here so the test does
-        // not depend on the machine running it.
         val before = Locale.getDefault()
         Locale.setDefault(Locale.UK)
         try {
@@ -51,9 +49,15 @@ class DaySectionsTest {
             assertEquals("18:00", timeUnder(Day.YESTERDAY, at(20, 18)))
             // Under Earlier the date is the only place the day is said.
             assertEquals("12 Oct, 11:00", timeUnder(Day.EARLIER, at(12, 11)))
-            // The cached formatters follow a change of language.
-            Locale.setDefault(Locale.GERMANY)
-            assertEquals(true, timeUnder(Day.EARLIER, at(12, 11)).startsWith("12 Okt"))
+            // In Latin digits and English words in any language, as the app's
+            // other times are: the phone's own gave Arabic-Indic digits the
+            // looks' fonts lack, or a month in its language among English
+            // words ("12 Okt" in German, until 0.30).
+            for (language in listOf("de", "uk", "ar", "fa")) {
+                Locale.setDefault(Locale.forLanguageTag(language))
+                assertEquals(language, "12 Oct, 11:00", timeUnder(Day.EARLIER, at(12, 11)))
+                assertEquals(language, "09:05", timeUnder(Day.TODAY, at(21, 9, 5)))
+            }
         } finally {
             Locale.setDefault(before)
         }

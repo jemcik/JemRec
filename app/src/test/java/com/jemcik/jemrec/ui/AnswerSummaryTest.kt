@@ -61,6 +61,8 @@ class AnswerSummaryTest {
                 // 3 November 2026, 14:30 UTC.
                 assertEquals(language, "14:30", timeOfDay(1_793_716_200_000L))
                 assertEquals(language, "3 Nov at 14:30", pauseEnd(1_793_716_200_000L))
+                // The greeting's take, counting.
+                assertEquals(language, "12 s", takeSeconds(12_400L))
             }
         } finally {
             Locale.setDefault(locale)

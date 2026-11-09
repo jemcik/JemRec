@@ -402,7 +402,7 @@ private fun TakeTimer(since: Long) {
         }
     }
     Text(
-        "%d s".format(((now - since) / 1000).coerceAtLeast(0)),
+        takeSeconds(now - since),
         style = MaterialTheme.typography.bodyLarge,
         modifier = Modifier.padding(16.dp),
     )
@@ -510,6 +510,9 @@ private fun seconds(s: Int): String = when {
 }
 
 private fun longestLabel(s: Int): String = if (s == AnsweringMachine.NO_LIMIT) "No limit" else seconds(s)
+
+/** How long the take has run, in whole seconds. */
+internal fun takeSeconds(elapsedMs: Long): String = "%d s".format(Locale.US, (elapsedMs / 1000).coerceAtLeast(0))
 
 /** A time of day, as the screen writes it: in Latin digits in any
  *  language, as the rest of the app's times are (clock) - the phone's own

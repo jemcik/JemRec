@@ -16,6 +16,8 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import java.io.File
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * The recordings list as it reads its three places today - MediaStore's
@@ -247,5 +249,24 @@ class RecordingsListTest {
         val invented = Recordings.describe("20261021_101010_out.ogg", FakeMediaStore.uriOf(1), 10, 10)
         Recordings.override = { listOf(invented) }
         assertEquals(listOf(invented), listed())
+    }
+
+    /** A recording's time as Recently deleted and the media controls say it,
+     *  in Latin digits and English words in any language, as the app's other
+     *  times are: the phone's own gave digits the looks' fonts lack. */
+    @Test fun aRecordingsTimeIsWrittenAsTheAppsOthersInAnyLanguage() {
+        val locale = Locale.getDefault()
+        val zone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+            for (language in listOf("uk", "ar", "fa")) {
+                Locale.setDefault(Locale.forLanguageTag(language))
+                // 3 November 2026, 14:30 UTC: not today.
+                assertEquals(language, "3 Nov, 14:30", Recordings.whenLabel(1_793_716_200_000L))
+            }
+        } finally {
+            Locale.setDefault(locale)
+            TimeZone.setDefault(zone)
+        }
     }
 }
