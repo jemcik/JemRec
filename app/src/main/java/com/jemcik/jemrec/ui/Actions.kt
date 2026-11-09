@@ -101,7 +101,7 @@ internal enum class Action(val label: String, val whenBusy: WhenBusy) {
     /** A picker's answer - a contact for the rules, a folder - arrives as
      *  the screen resumes, while the resume's check holds busy: dropped,
      *  the contact was picked and nothing was added (measured on an
-     *  emulator). */
+     *  emulator while 0.12 was made, 2026-10-20). */
     RULE_CONTACT_ADDED("add a contact", WhenBusy.BYPASSES),
     FOLDER_CHOSEN("choose a folder", WhenBusy.BYPASSES),
 

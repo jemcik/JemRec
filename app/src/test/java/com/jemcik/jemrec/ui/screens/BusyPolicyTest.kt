@@ -295,8 +295,9 @@ class BusyPolicyTest : ScreenTest() {
     /**
      * What a picker brings back, and what the recorder is told, does not
      * wait for busy: coming back from the picker resumes the screen, whose
-     * check holds busy then (measured on an emulator: a contact picked and
-     * nothing added). Each is done while auto-delete still runs.
+     * check holds busy then (measured on an emulator while 0.12 was made,
+     * 2026-10-20: a contact picked and nothing added). Each is done while
+     * auto-delete still runs.
      */
     @Test fun whileBusyAPickersAnswerIsTakenAtOnce() {
         CallRules.setContacts(app, CallRules.Contacts.ONLY)

@@ -92,6 +92,8 @@ class AnswerController(
      *  microphone: over the loudspeaker, the call would go into the greeting
      *  every caller hears. */
     private val quiet: () -> Unit = {},
+    /** The greeting's player, made for each preview: a test counts them. */
+    private val previewOf: (ByteArray) -> AudioTrack? = Greeting::preview,
 ) {
     private val _state = MutableStateFlow(initial ?: AnswerUi())
     val state: StateFlow<AnswerUi> = _state.asStateFlow()
@@ -99,6 +101,7 @@ class AnswerController(
     private var take: Job? = null
     private var preview: AudioTrack? = null
     private var testWatch: Job? = null
+    private var previewing: Job? = null
     /** Tests seed the state; nothing is then read from disk over it. */
     private val seeded = initial != null
 
@@ -258,14 +261,17 @@ class AnswerController(
             stopPreview()
             return
         }
+        // One being started - its file still being read - is the one: a
+        // second made then played on under it, and was never let go.
+        if (previewing?.isActive == true) return
         quiet()
-        scope.launch {
+        previewing = scope.launch {
             // Read where it may be gone: deleted just then (on a second
             // JemRec), it threw, and nothing caught it.
             val pcm = withContext(Dispatchers.IO) {
                 runCatching { Greeting.file(app).takeIf { it.isFile }?.readBytes() }.getOrNull()
             } ?: return@launch
-            val track = Greeting.preview(pcm) ?: return@launch
+            val track = previewOf(pcm) ?: return@launch
             preview = track
             _state.update { it.copy(playing = true) }
             delay((pcm.size / 2.0 / Greeting.RATE * 1000).toLong() + 300)
@@ -350,6 +356,15 @@ class AnswerController(
             say("an emergency number is never called for a test")
             return
         }
+        // A test from before still to be read is read first. Armed by the
+        // recorder and not answered, the new one would leave the old entry
+        // to be read with its result (the recorder's result names no
+        // arming).
+        if (AnswerDiagnostics.pendingTest(app) is AnswerDiagnostics.PendingTest.Armed) {
+            say("the last test call is read first; start the next one when it is")
+            readPendingTest()
+            return
+        }
         // Shown at once: arming takes the recorder a moment - an outgoing
         // test's call goes out before it answers - and the greeting deleted
         // meanwhile left the test nothing to play.
@@ -381,6 +396,14 @@ class AnswerController(
                         TestArming.EMERGENCY -> "an emergency number is never called for a test"
                         TestArming.NO_GREETING -> "the recorder does not have your greeting yet - try again in a moment"
                         TestArming.BUSY -> "the last test call is still going on"
+                        // It may have armed all the same: told, not watched
+                        // (DaemonClient.armTest).
+                        TestArming.UNANSWERED -> if (incoming) {
+                            "the recorder did not answer, and may have armed the test all the same: " +
+                                "a call in the next three minutes may be answered with your greeting, unread"
+                        } else {
+                            "the recorder did not answer, and may be placing the call all the same; how it goes is not read"
+                        }
                         else -> "the recorder could not arm a test call"
                     },
                 )

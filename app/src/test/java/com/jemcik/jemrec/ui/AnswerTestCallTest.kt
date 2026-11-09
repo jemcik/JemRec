@@ -81,13 +81,38 @@ class AnswerTestCallTest {
         assertEquals("the recorder could not arm a test call", armedWith("TEST none"))
     }
 
-    /** Sent, and no word back: it may have armed all the same, but nothing
-     *  the recorder says later tells which arming a result is, so no test is
-     *  watched - rather than one read with another test's result. */
-    @Test fun aRecorderThatHangsUpCouldNotEither() {
-        assertEquals("the recorder could not arm a test call", armedWith(null))
+    /** Sent, and no word back: it may have armed all the same - an outgoing
+     *  test's call going out, an incoming one's next caller answered - and
+     *  the screen says so, rather than that it could not. Nothing the
+     *  recorder says later tells which arming a result is, so no test is
+     *  watched, rather than one read with another test's result. */
+    @Test fun aRecorderThatHangsUpMayHaveArmed() {
+        recorder.replies.remove("XA")
+        assertEquals("the recorder did not answer, and may be placing the call all the same; how it goes is not read", armedWith(null))
         assertNull(controller.state.value.test)
         assertNull(AnswerDiagnostics.pendingTest(context))
+        said.clear()
+        controller.startTest(incoming = true)
+        eventually("an answer") { said.isNotEmpty() }
+        assertEquals(
+            listOf("the recorder did not answer, and may have armed the test all the same: a call in the next three minutes may be answered with your greeting, unread"),
+            said.toList(),
+        )
+        assertNull(AnswerDiagnostics.pendingTest(context))
+    }
+
+    /** A test from before still to be read - its watch ended unanswered - is
+     *  read before another is armed: armed by the recorder and not answered,
+     *  the new one would leave the old entry to be read with its result. */
+    @Test fun aTestStillToBeReadIsReadBeforeTheNext() {
+        val older = System.currentTimeMillis() - 10 * 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, older)
+        recorder.replies["XR"] = passed
+        recorder.replies["XA"] = "TEST armed"
+        controller.startTest(incoming = true)
+        eventually("the older one read") { AnswerDiagnostics.results(context)["2G"] != null }
+        assertTrue(said.toString(), said.any { "read first" in it })
+        assertFalse(recorder.heard.any { it.key == "XA" })
     }
 
     /** No recorder to send it to: nothing armed, and the screen says so. */
@@ -278,17 +303,17 @@ class AnswerTestCallTest {
     }
 
     /** Read again at the front while the recorder arms a new test - the
-     *  dialer's call screen over JemRec, say - an older test still kept is
-     *  not taken up: the arming stands, and the older test is not said to
-     *  have had no call. */
+     *  dialer's call screen over JemRec, say - a test another screen keeps
+     *  is not taken up: the arming stands, and that test is not said to have
+     *  had no call. */
     @Test fun aReadWhileArmingLeavesTheArmingAlone() {
-        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
         recorder.replies["XR"] = "RESULT 1 state=armed"
         val gate = CountDownLatch(1)
         recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
         recorder.replies["XA"] = "TEST armed"
         controller.startTest(incoming = true)
         eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
         controller.readPendingTest()
         assertEquals("arming", controller.state.value.test)
         gate.countDown()
@@ -358,6 +383,71 @@ class AnswerTestCallTest {
         gate.countDown()
         eventually("the newer test watched") { screen.state.value.testUntil == newer && screen.state.value.test != null }
         assertFalse(said.toString(), said.any { "still going on" in it })
+    }
+
+    /** A watch ending unanswered, its test taken meanwhile by another screen
+     *  that armed a newer one: the newer one is watched on, not "could not
+     *  be asked" said of a test no longer this screen's. */
+    @Test fun aWatchEndingUnansweredFollowsANewerTest() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies.remove("XR")
+        val screen = opened(scope)
+        eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
+        val newer = System.currentTimeMillis() + 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, newer)
+        gate.countDown()
+        eventually("the newer test watched") { screen.state.value.testUntil == newer && screen.state.value.test != null }
+        assertFalse(said.toString(), said.any { "could not be asked" in it })
+    }
+
+    /** ...and taken there and asking its question, from a call under way here:
+     *  the question is asked here too, and nothing said of this watch's
+     *  test. */
+    @Test fun aWatchEndingOnACallUnderWayShowsTheQuestionAskedElsewhere() {
+        val older = System.currentTimeMillis() - 10 * 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, older)
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XR"] = "RESULT 1 state=running"
+        val screen = opened(scope)
+        eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
+        assertTrue(AnswerDiagnostics.takeArmedTest(context, older, asking = "2G"))
+        gate.countDown()
+        eventually("asked here") { screen.state.value.askHeard == "2G" && screen.state.value.test == null }
+        assertFalse(said.toString(), said.any { "still going on" in it })
+    }
+
+    /** ...and taken there and done with: nothing shown, nothing said. */
+    @Test fun aWatchEndingUnansweredAfterTheTestWasDoneElsewhereSaysNothing() {
+        val older = System.currentTimeMillis() - 10 * 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, older)
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies.remove("XR")
+        val screen = opened(scope)
+        eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
+        assertTrue(AnswerDiagnostics.takeArmedTest(context, older, asking = null))
+        gate.countDown()
+        eventually("the watch over") { screen.state.value.test == null }
+        Thread.sleep(300)
+        assertFalse(said.toString(), said.any { "could not be asked" in it })
+        assertNull(screen.state.value.askHeard)
+    }
+
+    /** Two taps on the greeting quicker than its file is read: one preview.
+     *  Two were made, and the first - no longer the screen's - played on
+     *  under the second and was never let go. */
+    @Test fun twoQuickTapsMakeOnePreview() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        val made = java.util.concurrent.atomic.AtomicInteger()
+        val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm -> made.incrementAndGet(); Greeting.preview(pcm) })
+        screen.togglePreview()
+        screen.togglePreview()
+        eventually("playing") { screen.state.value.playing }
+        Thread.sleep(300)
+        assertEquals(1, made.get())
     }
 
     /** The greeting, unreadable as its preview starts - deleted on a second
