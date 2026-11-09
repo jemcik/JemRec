@@ -257,24 +257,24 @@ class ReadingTest : ScreenTest() {
 
     /**
      * Exact call tracking switched off before the first refresh: the
-     * answering machine is on in the preferences, but the screen's copy of
-     * it is not read yet (AnswerUi's default, off), so Settings does not ask
-     * - and the view model turns the machine off anyway, as it acts on the
-     * preference too.
+     * answering machine is on in the preferences, though the screen's copy
+     * of it is not read yet (AnswerUi's default, off). Settings asks all the
+     * same - the question and the switching off go by one rule - and
+     * nothing is off until the answer.
      */
-    @Test fun trackingOffBeforeTheFirstRefreshTurnsTheMachineOffUnasked() {
+    @Test fun trackingOffBeforeTheFirstRefreshAsksAboutTheMachine() {
         AnsweringMachine.setEnabled(app, true)
         val shown = Fixtures.ready().copy(screen = Screen.SETTINGS)
         val vm = viewModel(shown)
         show { AppScaffold(shown, vm) }
         compose.onNodeWithText("Exact call tracking").performScrollTo().performClick()
         compose.waitForIdle()
-        // Pins today's behaviour, which looks like a bug: the dialog asks only
-        // when AnswerUi.enabled (SettingsScreen's tracking row), the action
-        // turns the machine off on AnswerUi.enabled || AnsweringMachine.enabled
-        // (MainViewModel.setCallTracking), so before the first refresh it goes
-        // off without the question (to be fixed in its own commit)
-        compose.onNodeWithText("Turn off the answering machine too?").assertDoesNotExist()
+        compose.onNodeWithText("Turn off the answering machine too?").assertExists()
+        assertTrue(vm.state.value.callTracking)
+        assertTrue(AnsweringMachine.enabled(app))
+
+        compose.onNodeWithText("Turn both off").performClick()
+        compose.waitForIdle()
         assertFalse(vm.state.value.callTracking)
         assertFalse(AnsweringMachine.enabled(app))
     }

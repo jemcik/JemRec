@@ -272,7 +272,7 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                     // Off with the answering machine on turns that off too:
                     // asked first (SettingsDialog.TRACKING_OFF).
                     onCheckedChange = { on ->
-                        if (!on && answer.enabled) dialog = SettingsDialog.TRACKING_OFF else vm.setCallTracking(on)
+                        if (!on && vm.trackingOffTakesTheMachine()) dialog = SettingsDialog.TRACKING_OFF else vm.setCallTracking(on)
                     },
                 )
             }

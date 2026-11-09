@@ -341,6 +341,8 @@ class MainViewModel @JvmOverloads constructor(
 
     fun removeRuleContact(key: String) = settings.removeRuleContact(key)
 
+    fun trackingOffTakesTheMachine() = settings.trackingOffTakesTheMachine()
+
     fun setCallTracking(on: Boolean) = settings.setCallTracking(on)
 
     fun setVoipApp(pkg: String, on: Boolean) = settings.setVoipApp(pkg, on)

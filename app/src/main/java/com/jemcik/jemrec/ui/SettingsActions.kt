@@ -162,6 +162,16 @@ internal class SettingsActions(
         }
     }
 
+    /**
+     * Whether exact call tracking off takes the answering machine with it:
+     * on as the screen has it, or as the preferences have it - before the
+     * first reading the screen's copy says off (AnswerUi's default). Settings'
+     * question (SettingsDialog.TRACKING_OFF) and the switching off below ask
+     * this one rule: the question asked only the screen's copy, and before
+     * the first reading the machine went off unasked.
+     */
+    fun trackingOffTakesTheMachine(): Boolean = answer.state.value.enabled || AnsweringMachine.enabled(app)
+
     /** Exact call tracking on or off; the daemon allows or withdraws it at once. */
     fun setCallTracking(on: Boolean) {
         CallTracking.setEnabled(app, on)
@@ -169,7 +179,7 @@ internal class SettingsActions(
         // The answering machine answers on tracking's word alone: left on
         // without it, it would say it answers and never would. Settings asks
         // before this (SettingsDialog.TRACKING_OFF).
-        if (!on && (answer.state.value.enabled || AnsweringMachine.enabled(app))) {
+        if (!on && trackingOffTakesTheMachine()) {
             answer.setEnabled(false)
             log.say("the answering machine is off too: it needs exact call tracking")
         }
