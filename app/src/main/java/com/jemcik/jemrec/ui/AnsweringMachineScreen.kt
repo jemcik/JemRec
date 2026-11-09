@@ -33,9 +33,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.answering.EmergencyPause
+import com.jemcik.jemrec.answering.Greeting
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,10 +57,26 @@ private enum class AnswerDialog { DELAY, DND, LONGEST, NO_LIMIT, SIM, TEST, CARR
 @Composable
 fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     val a by vm.answer.state.collectAsState()
+    // A take holding the microphone, this screen's or another window's: the
+    // greeting takes no tap - a preview would go into the take - and Record
+    // and Delete wait, as for this screen's own take.
+    val holder by Greeting.holder.collectAsState()
+    val listening = a.takeListening || holder != null
+    // A take being made a greeting of, here or in another window: Record
+    // would overwrite the file being read, and the saving undo a Delete.
+    val making by Greeting.making.collectAsState()
+    val processing = a.processingTake || making != null
+    // A take made a greeting of past its screen - closed meanwhile - is
+    // shown once saved: the screen opened since said "No greeting yet".
+    LaunchedEffect(making) { if (making == null) vm.answer.reload() }
     val haptics = LocalHapticFeedback.current
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
 
-    LaunchedEffect(Unit) { vm.answer.opened() }
+    LaunchedEffect(Unit) { vm.answeringMachineOpened() }
+    // Back at the front: where a test kept when its watch ended unanswered,
+    // or still under way, stands.
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.answer.readPendingTest() }
+    val now = LocalNow.current
 
     when (dialog) {
         AnswerDialog.DELAY -> ChoiceDialog(
@@ -268,19 +287,26 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                     },
                     summary = when {
                         a.recordingTake -> "Speak now. Tap Stop when you are done (${com.jemcik.jemrec.answering.Greeting.MAX_SECONDS} seconds at most)."
+                        // Asked to start, or to stop, and not yet answered:
+                        // no "Tap to play it" on a row that takes no tap.
+                        listening -> "Waiting for the recorder..."
                         a.greetingProblem != null -> a.greetingProblem
                         a.greetingSeconds != null ->
                             "${seconds((a.greetingSeconds ?: 0.0).toInt().coerceAtLeast(1))}. " +
                                 if (a.playing) "Playing - tap to stop" else "Tap to play it"
                         else -> "Record what callers hear before the beep"
                     },
-                    summaryColor = if (a.greetingProblem != null && !a.recordingTake) {
+                    // Red only for the problem itself: "Waiting for the
+                    // recorder..." over an earlier take's problem showed red.
+                    summaryColor = if (a.greetingProblem != null && !a.recordingTake && !listening) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     icon = if (a.recordingTake) SettingsIcons.Mic else Icons.Filled.PlayArrow,
-                    onClick = if (a.greetingSeconds != null && !a.recordingTake) vm.answer::togglePreview else null,
+                    // Not while the recorder's microphone may be open for a
+                    // take: the greeting would go into it.
+                    onClick = if (a.greetingSeconds != null && !listening) vm.answer::togglePreview else null,
                 )
             }
         }
@@ -296,13 +322,21 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                     onClick = { haptics.tap(); vm.answer.stopTake() },
                     modifier = modifier,
                 ) { ButtonLabel("Stop") }
+                // Not while a test call is being armed, armed or under way: the
+                // test plays this greeting. With it deleted the recorder did
+                // not answer an incoming test's caller - the screen waited on,
+                // and said no call came - and an outgoing test measured
+                // nothing played, and was put down as not working.
                 "Delete" -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.deleteGreeting() },
+                    enabled = a.test == null && !processing && !listening,
                     modifier = modifier,
                 ) { ButtonLabel("Delete") }
                 else -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.startTake() },
-                    enabled = state.daemonRunning,
+                    // Not while the last take is made a greeting of: tapped
+                    // then, it did nothing, with no sign.
+                    enabled = state.daemonRunning && !processing && !listening,
                     modifier = modifier,
                 ) { ButtonLabel(record) }
             }
@@ -334,10 +368,13 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                 SettingsRow(
                     title = "Test call",
                     summary = when (a.test) {
-                        "armed" -> if (a.testIncoming) {
-                            "Waiting for someone to call, until ${clock(a.testUntil)}"
-                        } else {
-                            "Calling..."
+                        "arming" -> if (a.testIncoming) "Getting the recorder ready..." else "Calling..."
+                        "armed" -> when {
+                            // Read late, its window over: not "until" a time
+                            // gone by.
+                            a.testUntil < now() -> "Asking the recorder how it went..."
+                            a.testIncoming -> "Waiting for someone to call, until ${timeOfDay(a.testUntil)}"
+                            else -> "Calling..."
                         }
                         "running" -> "Testing - your greeting is playing to the call"
                         else -> AnswerDiagnostics.summary(a.results) ?: "Not tested on this phone yet"
@@ -402,7 +439,7 @@ private fun TakeTimer(since: Long) {
         }
     }
     Text(
-        "%d s".format(((now - since) / 1000).coerceAtLeast(0)),
+        takeSeconds(now - since),
         style = MaterialTheme.typography.bodyLarge,
         modifier = Modifier.padding(16.dp),
     )
@@ -511,12 +548,20 @@ private fun seconds(s: Int): String = when {
 
 private fun longestLabel(s: Int): String = if (s == AnsweringMachine.NO_LIMIT) "No limit" else seconds(s)
 
-private fun clock(millis: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(millis))
+/** How long the take has run, in whole seconds. */
+internal fun takeSeconds(elapsedMs: Long): String = "%d s".format(Locale.US, (elapsedMs / 1000).coerceAtLeast(0))
+
+/** A time of day, as the screen writes it: in Latin digits in any
+ *  language, as the rest of the app's times are (clock) - the phone's own
+ *  made Arabic-Indic digits in Arabic or Persian, which the looks' fonts do
+ *  not have. */
+internal fun timeOfDay(millis: Long): String = SimpleDateFormat("HH:mm", Locale.US).format(Date(millis))
 
 /** When a pause ends, with its day: a pause is a day long, so "14:30" alone
- *  would read as today. */
+ *  would read as today. The month in English, as the words around it are,
+ *  and Latin digits (timeOfDay). */
 internal fun pauseEnd(millis: Long): String =
-    SimpleDateFormat("d MMM 'at' HH:mm", Locale.getDefault()).format(Date(millis))
+    SimpleDateFormat("d MMM 'at' HH:mm", Locale.US).format(Date(millis))
 
 /** The answering machine in a few words, for its row in Settings. Tested in
  *  AnswerSummaryTest. */

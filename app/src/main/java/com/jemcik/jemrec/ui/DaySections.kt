@@ -70,23 +70,25 @@ internal fun timeUnder(day: Day, at: Long): String {
 
 /**
  * The two formatters, made once per thread and remade only when the phone's
- * language or time zone changes: rows compose three times a second while a
- * recording plays, and a SimpleDateFormat is not cheap to build - nor safe to
- * share across threads, hence one per thread.
+ * time zone changes: rows compose three times a second while a recording
+ * plays, and a SimpleDateFormat is not cheap to build - nor safe to share
+ * across threads, hence one per thread. Both in Latin digits and English
+ * words, as the app's other times are, whatever the phone's language: the
+ * date was in the phone's, which gave Arabic-Indic digits the looks' fonts do
+ * not have, and a month in another language among English words.
  */
-private class Formats(val locale: Locale, val zone: TimeZone) {
+private class Formats(val zone: TimeZone) {
     val time = SimpleDateFormat("HH:mm", Locale.US).apply { timeZone = zone }
-    val date = SimpleDateFormat("d MMM, HH:mm", locale).apply { timeZone = zone }
+    val date = SimpleDateFormat("d MMM, HH:mm", Locale.US).apply { timeZone = zone }
 }
 
 private val formatsHere = ThreadLocal<Formats>()
 
 private fun formats(): Formats {
-    val locale = Locale.getDefault()
     // getDefault() hands back a fresh copy each time, so compared by id.
     val zone = TimeZone.getDefault()
-    return formatsHere.get()?.takeIf { it.locale == locale && it.zone.id == zone.id }
-        ?: Formats(locale, zone).also(formatsHere::set)
+    return formatsHere.get()?.takeIf { it.zone.id == zone.id }
+        ?: Formats(zone).also(formatsHere::set)
 }
 
 private fun sameDay(a: Calendar, b: Calendar): Boolean =

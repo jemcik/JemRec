@@ -72,7 +72,33 @@ import com.jemcik.jemrec.ui.theme.deckColors
 import com.jemcik.jemrec.ui.theme.memoColors
 import com.jemcik.jemrec.ui.theme.multitrackColors
 import java.util.Locale
-import kotlin.math.abs
+
+/**
+ * What a recording's row can ask for: playing it, seeking and stopping,
+ * keeping and sharing it, and selecting it. MainViewModel's, in the app; a
+ * picture's rows (ThemePreview) take [None], as they take no taps. A row
+ * gets this and the state it draws, not the whole view model.
+ */
+interface RowEvents {
+    fun play(recording: Recording)
+    fun seekTo(ms: Int)
+    fun stopPlaying()
+    fun toggleKept(recording: Recording)
+    fun share(recording: Recording)
+    fun startSelecting(recording: Recording)
+    fun toggleSelected(recording: Recording)
+
+    /** Asks for nothing: a picture's rows. */
+    object None : RowEvents {
+        override fun play(recording: Recording) = Unit
+        override fun seekTo(ms: Int) = Unit
+        override fun stopPlaying() = Unit
+        override fun toggleKept(recording: Recording) = Unit
+        override fun share(recording: Recording) = Unit
+        override fun startSelecting(recording: Recording) = Unit
+        override fun toggleSelected(recording: Recording) = Unit
+    }
+}
 
 /**
  * One recording in the list, as the look draws it: Memo a card, Deck a
@@ -107,11 +133,11 @@ import kotlin.math.abs
  * every clip is full width now, so none gives up room for its name.
  */
 @Composable
-internal fun RecordingRow(recording: Recording, day: Day, state: UiState, vm: MainViewModel) {
+internal fun RecordingRow(recording: Recording, day: Day, state: UiState, events: RowEvents) {
     when (LocalLook.current) {
-        Look.MEMO -> MemoRow(recording, day, state, vm)
-        Look.DECK -> DeckRow(recording, day, state, vm)
-        Look.MULTITRACK -> MultitrackRow(recording, day, state, vm)
+        Look.MEMO -> MemoRow(recording, day, state, events)
+        Look.DECK -> DeckRow(recording, day, state, events)
+        Look.MULTITRACK -> MultitrackRow(recording, day, state, events)
     }
 }
 
@@ -140,10 +166,10 @@ internal val LocalPlayerHere = staticCompositionLocalOf { true }
  *  group of their own (instructionTap, HeaderParts). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun Modifier.rowTaps(recording: Recording, state: UiState, vm: MainViewModel): Modifier {
+internal fun Modifier.rowTaps(recording: Recording, state: UiState, events: RowEvents): Modifier {
     val haptics = LocalHapticFeedback.current
     if (!LocalRowsSelectable.current) {
-        return clickable(onClickLabel = "Play") { haptics.tap(); vm.play(recording) }
+        return clickable(onClickLabel = "Play") { haptics.tap(); events.play(recording) }
     }
     return combinedClickable(
         onClickLabel = if (state.selecting) "Select" else "Play",
@@ -151,19 +177,19 @@ internal fun Modifier.rowTaps(recording: Recording, state: UiState, vm: MainView
         onClick = {
             if (state.selecting) {
                 haptics.toggle(recording.name !in state.selected)
-                vm.toggleSelected(recording)
+                events.toggleSelected(recording)
             } else {
                 haptics.tap()
-                vm.play(recording)
+                events.play(recording)
             }
         },
         onLongClick = {
             if (state.selecting) {
                 haptics.toggle(recording.name !in state.selected)
-                vm.toggleSelected(recording)
+                events.toggleSelected(recording)
             } else {
                 haptics.longPress()
-                vm.startSelecting(recording)
+                events.startSelecting(recording)
             }
         },
     )
@@ -175,7 +201,7 @@ internal fun Modifier.rowTaps(recording: Recording, state: UiState, vm: MainView
 internal fun RowAvatar(
     recording: Recording,
     state: UiState,
-    vm: MainViewModel,
+    events: RowEvents,
     container: Color = MaterialTheme.colorScheme.secondary,
     content: Color = MaterialTheme.colorScheme.onSecondary,
     edge: Color? = null,
@@ -190,10 +216,10 @@ internal fun RowAvatar(
     SelectableAvatar(recording.caller, recording.callerPhoto, selected, size, container, content, edge) {
         if (state.selecting) {
             haptics.toggle(!selected)
-            vm.toggleSelected(recording)
+            events.toggleSelected(recording)
         } else {
             haptics.longPress()
-            vm.startSelecting(recording)
+            events.startSelecting(recording)
         }
     }
 }
@@ -372,10 +398,10 @@ private fun SmallIconButton(onClick: () -> Unit, size: Dp, content: @Composable 
  *  itself, filled when kept. Delete is not here: it lives in selection, a
  *  deliberate step. */
 @Composable
-internal fun RowActions(recording: Recording, vm: MainViewModel, tint: Color, kept: Color, size: Dp = 36.dp) {
+internal fun RowActions(recording: Recording, events: RowEvents, tint: Color, kept: Color, size: Dp = 36.dp) {
     val haptics = LocalHapticFeedback.current
     Row {
-        SmallIconButton({ haptics.tap(); vm.toggleKept(recording) }, size) {
+        SmallIconButton({ haptics.tap(); events.toggleKept(recording) }, size) {
             Icon(
                 if (recording.kept) KeepIcons.Kept else KeepIcons.NotKept,
                 contentDescription = if (recording.kept) "Kept - tap to stop keeping" else "Keep: never auto-delete",
@@ -383,7 +409,7 @@ internal fun RowActions(recording: Recording, vm: MainViewModel, tint: Color, ke
                 modifier = Modifier.size(20.dp),
             )
         }
-        SmallIconButton({ haptics.tap(); vm.share(recording) }, size) {
+        SmallIconButton({ haptics.tap(); events.share(recording) }, size) {
             Icon(Icons.Filled.Share, contentDescription = "Share", tint = tint, modifier = Modifier.size(20.dp))
         }
     }
@@ -423,7 +449,7 @@ internal fun RowHead(avatar: @Composable () -> Unit, modifier: Modifier = Modifi
 private fun WaveLine(
     recording: Recording,
     state: UiState,
-    vm: MainViewModel,
+    events: RowEvents,
     wave: Color,
     tint: Color,
     kept: Color,
@@ -442,7 +468,7 @@ private fun WaveLine(
             if (levels != null) MiniWave(levels, wave, Modifier.fillMaxSize())
         }
         length()
-        if (!state.selecting) RowActions(recording, vm, tint, kept)
+        if (!state.selecting) RowActions(recording, events, tint, kept)
     }
 }
 
@@ -453,7 +479,7 @@ private fun WaveLine(
 @Composable
 private fun Seeker(
     state: UiState,
-    vm: MainViewModel,
+    events: RowEvents,
     dragging: Int?,
     onDrag: (Int?) -> Unit,
     played: Color,
@@ -468,7 +494,7 @@ private fun Seeker(
             positionMs = dragging ?: state.positionMs,
             durationMs = state.durationMs,
             onDrag = onDrag,
-            onSeek = { vm.seekTo(it) },
+            onSeek = { events.seekTo(it) },
             modifier = modifier,
             played = played,
             rest = rest,
@@ -488,7 +514,7 @@ private fun Seeker(
         DisposableEffect(Unit) {
             onDispose {
                 pending.value?.let {
-                    vm.seekTo(it)
+                    events.seekTo(it)
                     pending.value = null
                     drag(null)
                 }
@@ -501,7 +527,7 @@ private fun Seeker(
                 onDrag(it.toInt())
             },
             onValueChangeFinished = {
-                pending.value?.let { vm.seekTo(it) }
+                pending.value?.let { events.seekTo(it) }
                 pending.value = null
                 onDrag(null)
             },
@@ -526,7 +552,7 @@ private fun Seeker(
 private fun PlayKey(
     state: UiState,
     recording: Recording,
-    vm: MainViewModel,
+    events: RowEvents,
     width: Dp,
     height: Dp,
     ink: Color,
@@ -537,7 +563,7 @@ private fun PlayKey(
     Box(
         modifier
             .size(width, height)
-            .clickable(onClickLabel = if (playing) "Pause" else "Play") { haptics.tap(); vm.play(recording) }
+            .clickable(onClickLabel = if (playing) "Pause" else "Play") { haptics.tap(); events.play(recording) }
             .semantics { contentDescription = if (playing) "Pause" else "Play" },
         contentAlignment = Alignment.Center,
     ) {
@@ -558,7 +584,7 @@ private fun PlayKey(
 @Composable
 private fun TransportBar(
     recording: Recording,
-    vm: MainViewModel,
+    events: RowEvents,
     tint: Color,
     kept: Color,
     key: @Composable () -> Unit,
@@ -573,8 +599,8 @@ private fun TransportBar(
         key()
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, content = time)
         Row {
-            RowActions(recording, vm, tint, kept, size = 40.dp)
-            SmallIconButton({ haptics.tap(); vm.stopPlaying() }, 40.dp) {
+            RowActions(recording, events, tint, kept, size = 40.dp)
+            SmallIconButton({ haptics.tap(); events.stopPlaying() }, 40.dp) {
                 Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Collapse player", tint = tint)
             }
         }
@@ -623,7 +649,7 @@ internal val MultitrackClipPadding = PaddingValues(start = 9.dp, end = 2.dp, top
 // MEMO: a card per recording; playing, the card holds the player.
 
 @Composable
-private fun MemoRow(recording: Recording, day: Day, state: UiState, vm: MainViewModel) {
+private fun MemoRow(recording: Recording, day: Day, state: UiState, events: RowEvents) {
     val c = memoColors()
     val scheme = MaterialTheme.colorScheme
     val current = !state.selecting && state.playingName == recording.name
@@ -635,13 +661,13 @@ private fun MemoRow(recording: Recording, day: Day, state: UiState, vm: MainView
         ),
     ) {
         RowHead(
-            modifier = Modifier.memoHead(taps = Modifier.rowTaps(recording, state, vm), bottom = if (shows) 6.dp else 4.dp),
-            avatar = { RowAvatar(recording, state, vm) },
+            modifier = Modifier.memoHead(taps = Modifier.rowTaps(recording, state, events), bottom = if (shows) 6.dp else 4.dp),
+            avatar = { RowAvatar(recording, state, events) },
         ) {
             RowName(recording, MaterialTheme.typography.bodyLarge)
             RowMeta(recording, day, MaterialTheme.typography.bodySmall, scheme.onSurfaceVariant)
             if (!shows) {
-                WaveLine(recording, state, vm, c.strip, tint = scheme.secondary, kept = scheme.primary) {
+                WaveLine(recording, state, events, c.strip, tint = scheme.secondary, kept = scheme.primary) {
                     Box(
                         Modifier
                             .clip(CircleShape)
@@ -667,15 +693,15 @@ private fun MemoRow(recording: Recording, day: Day, state: UiState, vm: MainView
             // that 12dp, so they curve round with the card's.
             Column(Modifier.padding(start = 12.dp, end = 6.dp, bottom = 10.dp)) {
                 Seeker(
-                    state, vm, dragging, { dragging = it },
+                    state, events, dragging, { dragging = it },
                     played = scheme.primary, rest = scheme.secondaryContainer, head = scheme.primary,
                     modifier = Modifier.fillMaxWidth().padding(end = 6.dp),
                 )
                 TransportBar(
-                    recording, vm, tint = scheme.secondary, kept = scheme.primary,
+                    recording, events, tint = scheme.secondary, kept = scheme.primary,
                     key = {
                         PlayKey(
-                            state, recording, vm, 48.dp, 36.dp,
+                            state, recording, events, 48.dp, 36.dp,
                             ink = scheme.onPrimary,
                             modifier = Modifier.clip(RoundedCornerShape(20.dp - 12.dp)).background(scheme.primary),
                         )
@@ -697,9 +723,9 @@ private fun MemoRow(recording: Recording, day: Day, state: UiState, vm: MainView
 // DECK: a recorder's track; playing, one aluminium card with the LCD.
 
 @Composable
-private fun DeckRow(recording: Recording, day: Day, state: UiState, vm: MainViewModel) {
+private fun DeckRow(recording: Recording, day: Day, state: UiState, events: RowEvents) {
     if (playerShows(recording, state)) {
-        DeckPlaying(recording, day, state, vm, deckColors())
+        DeckPlaying(recording, day, state, events, deckColors())
         return
     }
     val c = deckColors()
@@ -707,13 +733,13 @@ private fun DeckRow(recording: Recording, day: Day, state: UiState, vm: MainView
     val current = !state.selecting && state.playingName == recording.name
     val mono = deckMono
     RowHead(
-        modifier = Modifier.deckTrack(ground = if (current) c.rowPlaying else Color.Transparent, taps = Modifier.rowTaps(recording, state, vm)),
-        avatar = { RowAvatar(recording, state, vm) },
+        modifier = Modifier.deckTrack(ground = if (current) c.rowPlaying else Color.Transparent, taps = Modifier.rowTaps(recording, state, events)),
+        avatar = { RowAvatar(recording, state, events) },
     ) {
         RowName(recording, MaterialTheme.typography.bodyLarge)
         RowMeta(recording, day, mono, scheme.onSurfaceVariant)
         WaveLine(
-            recording, state, vm,
+            recording, state, events,
             wave = if (current) c.wavePlaying else c.wave,
             tint = scheme.secondary, kept = scheme.onSurface,
         ) {
@@ -756,7 +782,7 @@ private fun DeckClock(ms: Int, style: TextStyle, ink: Color, modifier: Modifier 
  * row's own small waveform and length are not drawn twice.
  */
 @Composable
-private fun DeckPlaying(recording: Recording, day: Day, state: UiState, vm: MainViewModel, c: DeckColors) {
+private fun DeckPlaying(recording: Recording, day: Day, state: UiState, events: RowEvents, c: DeckColors) {
     val scheme = MaterialTheme.colorScheme
     var dragging by remember { mutableStateOf<Int?>(null) }
     val position = dragging ?: state.positionMs
@@ -777,9 +803,9 @@ private fun DeckPlaying(recording: Recording, day: Day, state: UiState, vm: Main
     ) {
         RowHead(
             modifier = Modifier
-                .rowTaps(recording, state, vm)
+                .rowTaps(recording, state, events)
                 .padding(start = 10.dp, end = 2.dp, top = 8.dp, bottom = 6.dp),
-            avatar = { RowAvatar(recording, state, vm) },
+            avatar = { RowAvatar(recording, state, events) },
         ) {
             RowName(recording, MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface))
             RowMeta(recording, day, deckMono, c.label)
@@ -799,7 +825,7 @@ private fun DeckPlaying(recording: Recording, day: Day, state: UiState, vm: Main
                 DeckClock((state.durationMs - position).coerceAtLeast(0), lcdText, c.ink, sign = "-")
             }
             Seeker(
-                state, vm, dragging, { dragging = it },
+                state, events, dragging, { dragging = it },
                 played = c.ink, rest = c.ink.copy(alpha = 0.28f), head = c.ink,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -810,10 +836,10 @@ private fun DeckPlaying(recording: Recording, day: Day, state: UiState, vm: Main
             TransportBar(
                 // The rows' Keep and Share grey, not the face's darker icon
                 // grey: the same buttons, one grey.
-                recording, vm, tint = scheme.secondary, kept = scheme.onSurface,
+                recording, events, tint = scheme.secondary, kept = scheme.onSurface,
                 key = {
                     PlayKey(
-                        state, recording, vm, 52.dp, 36.dp,
+                        state, recording, events, 52.dp, 36.dp,
                         ink = c.keyMark,
                         modifier = Modifier.deckKey(c, on = true, RoundedCornerShape(18.dp - 10.dp)),
                     )
@@ -857,19 +883,19 @@ internal val multitrackName =
 internal val multitrackMono = TextStyle(fontFamily = LookFonts.mono, fontSize = 11.sp, letterSpacing = 0.04.em)
 
 @Composable
-private fun MultitrackRow(recording: Recording, day: Day, state: UiState, vm: MainViewModel) {
+private fun MultitrackRow(recording: Recording, day: Day, state: UiState, events: RowEvents) {
     val c = multitrackColors()
     val hue = hueOf(recording, c)
     if (playerShows(recording, state)) {
-        MultitrackPlaying(recording, day, state, vm, c, hue)
+        MultitrackPlaying(recording, day, state, events, c, hue)
         return
     }
     val current = !state.selecting && state.playingName == recording.name
     val clip = RoundedCornerShape(8.dp)
     RowHead(
-        modifier = Modifier.multitrackRow(c, ground = if (current) c.lanePlaying else Color.Transparent, taps = Modifier.rowTaps(recording, state, vm)),
+        modifier = Modifier.multitrackRow(c, ground = if (current) c.lanePlaying else Color.Transparent, taps = Modifier.rowTaps(recording, state, events)),
         avatar = {
-            RowAvatar(recording, state, vm, container = hue.copy(alpha = c.tint), content = hue, edge = hue.copy(alpha = c.edge))
+            RowAvatar(recording, state, events, container = hue.copy(alpha = c.tint), content = hue, edge = hue.copy(alpha = c.edge))
         },
         gap = 10.dp,
     ) {
@@ -886,7 +912,7 @@ private fun MultitrackRow(recording: Recording, day: Day, state: UiState, vm: Ma
             RowName(recording, multitrackName.copy(color = c.text))
             RowMeta(recording, day, multitrackMono, c.muted)
             WaveLine(
-                recording, state, vm,
+                recording, state, events,
                 wave = hue.copy(alpha = 0.85f),
                 tint = c.control, kept = MaterialTheme.colorScheme.primary,
             ) {
@@ -911,7 +937,7 @@ private fun timecode(ms: Int): String {
  * apart at 1.5x).
  */
 @Composable
-private fun MultitrackPlaying(recording: Recording, day: Day, state: UiState, vm: MainViewModel, c: MultitrackColors, hue: Color) {
+private fun MultitrackPlaying(recording: Recording, day: Day, state: UiState, events: RowEvents, c: MultitrackColors, hue: Color) {
     var dragging by remember { mutableStateOf<Int?>(null) }
     val clip = RoundedCornerShape(8.dp)
     Column(
@@ -930,26 +956,26 @@ private fun MultitrackPlaying(recording: Recording, day: Day, state: UiState, vm
                 .padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 4.dp),
         ) {
             RowHead(
-                modifier = Modifier.rowTaps(recording, state, vm),
-                avatar = { RowAvatar(recording, state, vm, container = c.panel, content = hue, edge = hue.copy(alpha = c.edge)) },
+                modifier = Modifier.rowTaps(recording, state, events),
+                avatar = { RowAvatar(recording, state, events, container = c.panel, content = hue, edge = hue.copy(alpha = c.edge)) },
                 gap = 10.dp,
             ) {
                 RowName(recording, multitrackName.copy(color = c.text))
                 RowMeta(recording, day, multitrackMono, c.muted)
             }
             Seeker(
-                state, vm, dragging, { dragging = it },
+                state, events, dragging, { dragging = it },
                 played = hue, rest = hue.copy(alpha = 0.3f), head = c.text,
                 modifier = Modifier.fillMaxWidth().padding(end = 4.dp),
             )
             TransportBar(
-                recording, vm, tint = c.control, kept = MaterialTheme.colorScheme.primary,
+                recording, events, tint = c.control, kept = MaterialTheme.colorScheme.primary,
                 // The clip's 8dp corners less the 8dp to its edge would leave
                 // none, and a square key looked wrong (the user, 2026-10-23):
                 // 4dp, never square.
                 key = {
                     PlayKey(
-                        state, recording, vm, 44.dp, 32.dp,
+                        state, recording, events, 44.dp, 32.dp,
                         ink = c.keyInk,
                         modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(c.key),
                     )

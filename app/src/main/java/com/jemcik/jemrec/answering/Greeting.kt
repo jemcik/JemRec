@@ -4,7 +4,11 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.log10
 import kotlin.math.max
@@ -29,6 +33,105 @@ object Greeting {
 
     /** Thirty seconds at most, as the recorder records it. */
     const val MAX_SECONDS = 30
+
+    /**
+     * The take that may have the microphone, for the whole process: nothing
+     * JemRec plays starts meanwhile - not from any of its screens, not from
+     * the media notification - as over the loudspeaker it would go into the
+     * greeting. Left in the background, a take records on, and a recording
+     * played from the notification then would have. Held by one take and let
+     * go by that one only: a hold left from a screen closed since, or from a
+     * second window, let go of another's.
+     */
+    private val takeHolder = MutableStateFlow<Any?>(null)
+
+    /** The take holding the microphone, null if none, for a screen to show:
+     *  another window's take greys this one's Record, Delete and preview, as
+     *  its own does - a preview would go into the take, and a delete take the
+     *  greeting it may replace. */
+    val holder: StateFlow<Any?> = takeHolder.asStateFlow()
+
+    /** A take may have the microphone ([hold]). */
+    val takeListening: Boolean get() = takeHolder.value != null
+
+    /** [take] may have the microphone; false if another holds it. A take
+     *  that takes it stops the greeting's preview, in whichever window it
+     *  plays: over the loudspeaker it would go into the take. */
+    fun hold(take: Any): Boolean {
+        if (maker.value.let { it != null && it !== take }) return false
+        if (!takeHolder.compareAndSet(null, take) && takeHolder.value !== take) return false
+        stopPreview()
+        ending.set(null)
+        return true
+    }
+
+    /**
+     * The take stopped and being made a greeting of - fetched from the
+     * recorder, evened, saved and sent back - in whichever window it began,
+     * which may close meanwhile: no take starts then, as it would overwrite
+     * the file being read, and the greeting is not deleted, which the saving
+     * would undo. A preview may play: the microphone is shut.
+     */
+    private val maker = MutableStateFlow<Any?>(null)
+
+    /** The take being made a greeting of ([make]), null if none. */
+    val making: StateFlow<Any?> = maker.asStateFlow()
+
+    /** [take], stopped, is being made a greeting of. */
+    fun make(take: Any) {
+        maker.value = take
+    }
+
+    /** [take] is a greeting now, or will not be. */
+    fun made(take: Any) {
+        maker.compareAndSet(take, null)
+    }
+
+    /** [take] no longer may: let go, if it is the one that holds it. */
+    fun letGo(take: Any) {
+        takeHolder.compareAndSet(take, null)
+    }
+
+    /** Between tests, whatever a test left holding. */
+    internal fun letGoOfAnyTake() {
+        takeHolder.value = null
+        maker.value = null
+        previewStop.set(null)
+        ending.set(null)
+    }
+
+    /** How the last take made past its screen ended, when not as a
+     *  greeting: for the screen opened since, which showed the old greeting
+     *  with no word of it. Shown once; a new take makes it moot. */
+    private val ending = AtomicReference<String?>(null)
+
+    fun ended(words: String) = ending.set(words)
+
+    /** The ending kept, once; null if none. */
+    fun takeEnding(): String? = ending.getAndSet(null)
+
+    /**
+     * How to stop the greeting's preview now playing, in whichever window:
+     * one at a time for the whole process, as within a screen, and none
+     * under a take. A preview in a second window played on under the first
+     * one's take, into the new greeting (read from the code).
+     */
+    private val previewStop = AtomicReference<(() -> Unit)?>(null)
+
+    /** A preview started, [stop] stopping it: one playing in another window
+     *  stops. */
+    fun previewing(stop: () -> Unit) {
+        previewStop.getAndSet(stop)?.takeIf { it !== stop }?.invoke()
+    }
+
+    /** The preview [stop] stops has ended. */
+    fun previewEnded(stop: () -> Unit) {
+        previewStop.compareAndSet(stop, null)
+    }
+
+    private fun stopPreview() {
+        previewStop.getAndSet(null)?.invoke()
+    }
 
     fun file(context: Context): File = File(context.filesDir, FILE)
 

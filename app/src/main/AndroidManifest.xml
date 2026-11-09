@@ -232,6 +232,11 @@
           excludeFromRecents and noHistory because it is a question, not a
           place: it should never be something the user swipes back to later and
           answers about a call that ended an hour ago.
+
+          A task of its own: started with NEW_TASK and CLEAR_TASK (RecordPrompt),
+          it cleared JemRec's own task, whose affinity it had - the window
+          there, with its place, its question and a greeting's take, went
+          with it (read from the code).
         -->
         <activity
             android:name=".RecordPromptActivity"
@@ -239,6 +244,7 @@
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:launchMode="singleTop"
+            android:taskAffinity="${applicationId}.prompt"
             android:showOnLockScreen="true" />
 
         <!--
@@ -257,9 +263,24 @@
             android:noHistory="true"
             android:theme="@style/Theme.JemRec.Question" />
 
+        <!--
+          One window. JemRec's own ways in - the Quick Settings tile, the
+          media notification, every notification - start it with
+          MainActivity.open's flags, as deep links did already: the one window
+          there is comes forward, its intent through onNewIntent, and what is
+          on top of it in its task (a picker opened from JemRec) is finished.
+          singleTop catches the tile's long press, which Android starts, when
+          JemRec is on top. The launcher brings the task forward with a picker
+          left open still there; over a task begun another way the window it
+          makes goes at once (MainActivity.onCreate). Not singleTask: that
+          finished the picker, a permission's question or Android's "delete
+          this recording?" on a tap of the launcher too (the author's choice,
+          2026-11-08).
+        -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

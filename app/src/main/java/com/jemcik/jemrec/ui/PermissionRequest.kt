@@ -43,6 +43,12 @@ fun rememberPermissionRequest(onResult: (Map<String, Boolean>) -> Unit): Permiss
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
+        // Nothing back is no answer: Android's dialog was closed under the
+        // user - a link opening JemRec's window finishes what is above it -
+        // and its interrupted request comes back empty, "to be treated as a
+        // cancellation" (Android's onRequestPermissionsResult). Taken for an
+        // answer, the call-log offer went for good, the user never asked.
+        if (result.isEmpty()) return@rememberLauncherForActivityResult
         onResult(result)
         val refused = result.filterValues { granted -> !granted }.keys
         if (refused.isEmpty() || activity == null) return@rememberLauncherForActivityResult

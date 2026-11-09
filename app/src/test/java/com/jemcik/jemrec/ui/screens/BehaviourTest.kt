@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
@@ -64,9 +65,16 @@ import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.capture.FakeRecorder
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.ui.AnswerUi
+import com.jemcik.jemrec.ui.AnsweringMachineScreen
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.CallsNarrowing
 import com.jemcik.jemrec.ui.ChoiceDialog
@@ -77,6 +85,7 @@ import com.jemcik.jemrec.ui.HomeTab
 import com.jemcik.jemrec.ui.LOOK_PREVIEW
 import com.jemcik.jemrec.ui.MEMO_MARK_IN_SETTINGS
 import com.jemcik.jemrec.ui.MainViewModel
+import com.jemcik.jemrec.ui.headerSpeech
 import com.jemcik.jemrec.ui.RecorderStatus
 import com.jemcik.jemrec.ui.RecordingsNarrowing
 import com.jemcik.jemrec.ui.SETTINGS_BAR
@@ -345,6 +354,179 @@ class BehaviourTest : ScreenTest() {
         }
     }
 
+    /** While a test call is armed or under way, the greeting it plays cannot
+     *  be deleted: deleted, the recorder did not answer an incoming test's
+     *  caller, and the screen waited on and said no call came. */
+    @Test fun theGreetingStaysWhileATestCallIsOn() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        fun machine(test: String?) = viewModel(state, AnswerUi(greetingSeconds = 6.0, test = test, testUntil = Fixtures.NOW + 60_000))
+        val shown = mutableStateOf(machine("arming"))
+        show { AppScaffold(state, shown.value) }
+        compose.onNodeWithText("Delete").performScrollTo().assertIsNotEnabled()
+        shown.value = machine("armed")
+        compose.onNodeWithText("Delete").performScrollTo().assertIsNotEnabled()
+        shown.value = machine("running")
+        compose.onNodeWithText("Delete").performScrollTo().assertIsNotEnabled()
+        // No test on: Delete as before.
+        shown.value = machine(null)
+        compose.onNodeWithText("Delete").performScrollTo().assertIsEnabled()
+    }
+
+    /** While a take is made a greeting of, or the recorder's microphone may
+     *  be open for one, Record and Delete are greyed and the greeting takes
+     *  no tap: tapped then, Record did nothing with no sign, Delete was undone
+     *  when the new greeting was saved, and a preview went into the take. */
+    @Test fun theGreetingWaitsForATake() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val shown = mutableStateOf(viewModel(state, AnswerUi(greetingSeconds = 6.0, processingTake = true)))
+        show { AppScaffold(state, shown.value) }
+        compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Delete").assertIsNotEnabled()
+        shown.value = viewModel(state, AnswerUi(greetingSeconds = 6.0, takeListening = true))
+        compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Delete").assertIsNotEnabled()
+        // No "Tap to play it" on a row that takes no tap.
+        compose.onNodeWithText("Waiting for the recorder...").assertHasNoClickAction()
+        compose.onAllNodesWithText("Tap to play it", substring = true).assertCountEquals(0)
+        shown.value = viewModel(state, AnswerUi(greetingSeconds = 6.0))
+        compose.onNodeWithText("Record again").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("Delete").assertIsEnabled()
+    }
+
+    /** Another window's take holding the microphone holds this one's
+     *  greeting too: Record, Delete and the preview did nothing then, with
+     *  no sign. */
+    @Test fun anotherWindowsTakeHoldsTheGreetingToo() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state, AnswerUi(greetingSeconds = 6.0))
+        val elsewhere = Any()
+        com.jemcik.jemrec.answering.Greeting.hold(elsewhere)
+        try {
+            show { AppScaffold(state, vm) }
+            compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("Delete").assertIsNotEnabled()
+            compose.onNodeWithText("Waiting for the recorder...").assertHasNoClickAction()
+            com.jemcik.jemrec.answering.Greeting.letGo(elsewhere)
+            compose.waitForIdle()
+            compose.onNodeWithText("Record again").performScrollTo().assertIsEnabled()
+            compose.onNodeWithText("Delete").assertIsEnabled()
+        } finally {
+            com.jemcik.jemrec.answering.Greeting.letGo(elsewhere)
+        }
+    }
+
+    /** A take being made a greeting of in another window: Record and
+     *  Delete wait here too - a take would overwrite the file being read,
+     *  and the saving undo the delete. */
+    @Test fun anotherWindowsTakeBeingMadeHoldsRecordAndDelete() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state, AnswerUi(greetingSeconds = 6.0))
+        val elsewhere = Any()
+        com.jemcik.jemrec.answering.Greeting.make(elsewhere)
+        try {
+            show { AppScaffold(state, vm) }
+            compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("Delete").assertIsNotEnabled()
+            com.jemcik.jemrec.answering.Greeting.made(elsewhere)
+            compose.waitForIdle()
+            compose.onNodeWithText("Record again").performScrollTo().assertIsEnabled()
+            compose.onNodeWithText("Delete").assertIsEnabled()
+        } finally {
+            com.jemcik.jemrec.answering.Greeting.made(elsewhere)
+        }
+    }
+
+    /** A take made a greeting of past its screen - closed meanwhile - shows
+     *  on the screen opened since once it is saved: it said "No greeting
+     *  yet" until something else read the greeting again. */
+    @Test fun aGreetingMadeElsewhereShowsOnceSaved() {
+        val app = RuntimeEnvironment.getApplication()
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state)
+        val elsewhere = Any()
+        com.jemcik.jemrec.answering.Greeting.make(elsewhere)
+        try {
+            show { AppScaffold(state, vm) }
+            compose.onNodeWithText("No greeting yet").performScrollTo().assertExists()
+            com.jemcik.jemrec.answering.Greeting.save(app, ByteArray(com.jemcik.jemrec.answering.Greeting.RATE * 2 * 3))
+            com.jemcik.jemrec.answering.Greeting.made(elsewhere)
+            compose.waitForIdle()
+            compose.onNodeWithText("Your greeting").performScrollTo().assertExists()
+        } finally {
+            com.jemcik.jemrec.answering.Greeting.made(elsewhere)
+        }
+    }
+
+    /** "Waiting for the recorder..." is not in the error's red, over an
+     *  earlier take's problem: it showed red, as if waiting were the fault. */
+    @Test fun waitingForTheRecorderIsNotAProblem() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(
+            state,
+            AnswerUi(greetingSeconds = 6.0, takeListening = true, greetingProblem = "Nothing was heard. Hold the phone as for a call, and speak."),
+        )
+        show { AppScaffold(state, vm) }
+        fun colourOf(text: String): androidx.compose.ui.graphics.Color {
+            val laid = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            compose.onNodeWithText(text, useUnmergedTree = true).performScrollTo().fetchSemanticsNode()
+                .config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(laid)
+            return laid.first().layoutInput.style.color
+        }
+        assertEquals(colourOf("Not run yet - tap to run"), colourOf("Waiting for the recorder..."))
+    }
+
+    /** Back from the answering machine with a take recording: the screen,
+     *  opened, watches for being left, and the take is stopped on the
+     *  recorder - it went on unseen, and saved whatever played as the
+     *  greeting. */
+    @Test fun backFromTheAnsweringMachineStopsATake() {
+        val recorder = FakeRecorder(RuntimeEnvironment.getApplication())
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        try {
+            val vm = viewModel(Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE))
+            showApp(vm)
+            vm.answer.startTake()
+            awaitMain("recording") { vm.answer.state.value.recordingTake }
+            vm.back()
+            compose.waitForIdle()
+            awaitMain("the take stopped") { recorder.heard.any { it.key == "GS" } }
+        } finally {
+            recorder.close()
+        }
+    }
+
+    /** A test armed before and read late - its window over as the screen
+     *  opens - is not shown waiting until a time already past. */
+    @Test fun aTestReadLateSaysTheRecorderIsAsked() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state, AnswerUi(greetingSeconds = 6.0, test = "armed", testUntil = Fixtures.NOW - 60_000))
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Asking the recorder how it went...").performScrollTo().assertIsDisplayed()
+    }
+
+    /** Back at the front, the screen reads again where the test call stands,
+     *  as kept: what changed meanwhile shows - here, a question no longer
+     *  waiting is asked no more. */
+    @Test fun backAtTheFrontTheScreenReadsTheTestAgain() {
+        val app = RuntimeEnvironment.getApplication()
+        AnswerDiagnostics.noteTestArmed(app, true, 1_000L)
+        AnswerDiagnostics.takeArmedTest(app, 1_000L, asking = "2G")
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state)
+        val owner = object : LifecycleOwner {
+            val registry = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+            override val lifecycle: Lifecycle get() = registry
+        }
+        show { CompositionLocalProvider(LocalLifecycleOwner provides owner) { AnsweringMachineScreen(state, vm) } }
+        compose.waitUntil(5_000) { vm.answer.state.value.askHeard == "2G" }
+        AnswerDiagnostics.takeQuestion(app, "2G")
+        compose.runOnUiThread { owner.registry.currentState = Lifecycle.State.CREATED }
+        compose.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
+        compose.waitForIdle()
+        assertNull(vm.answer.state.value.askHeard)
+    }
+
     @Test fun noLimitOnAMessageIsAskedAboutFirst() {
         val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
         val vm = viewModel(state, AnswerUi(enabled = true, greetingSeconds = 6.0, longest = 60))
@@ -450,13 +632,6 @@ class BehaviourTest : ScreenTest() {
         compose.onAllNodesWithText("OFF").assertCountEquals(0)
     }
 
-    /**
-     * And it is the header's mark as drawn, not a likeness: drawn apart,
-     * Memo's sat in circles the header never had and Multitrack's stood its
-     * LED over a smaller label (the user found it, 2026-10-23), while the
-     * test below held only that they said the same. Held here by size: each
-     * mark the header shows is the same size in Settings, in every look.
-     */
     /** "Allow this Wi-Fi" takes a tap while the app is busy, as the record
      *  control does: it shows while the recorder is down, when each
      *  opening's check is busiest, and a tap then did nothing at all. */
@@ -533,6 +708,13 @@ class BehaviourTest : ScreenTest() {
         compose.onAllNodesWithText("Marcus Chen").assertCountEquals(1)
     }
 
+    /**
+     * And it is the header's mark as drawn, not a likeness: drawn apart,
+     * Memo's sat in circles the header never had and Multitrack's stood its
+     * LED over a smaller label (the user found it, 2026-10-23), while the
+     * test below held only that they said the same. Held here by size: each
+     * mark the header shows is the same size in Settings, in every look.
+     */
     @Test fun settingsDrawsMemosMarksAsItsHeaderDoes() = marksDrawnAlike(Look.MEMO)
 
     @Test fun settingsDrawsDecksMarksAsItsHeaderDoes() = marksDrawnAlike(Look.DECK)
@@ -1153,6 +1335,16 @@ class BehaviourTest : ScreenTest() {
     @Test fun decksRecKeyPressesRound() = pressStaysRound(Look.DECK)
 
     @Test fun multitracksButtonPressesRound() = pressStaysRound(Look.MULTITRACK)
+
+    /** Memo's state and marks are heard as the sentence the other two looks
+     *  say (headerSpeech), and only it: merged, its drawn words and the
+     *  marks' own names were read, "Every call" and "Answering machine on". */
+    @Test fun memosHeaderIsOneSentenceToAScreenReader() {
+        val vm = homeIn(Look.MEMO)
+        val said = compose.onNodeWithContentDescription("Ready to record. Records every call.", substring = true)
+            .fetchSemanticsNode().config[SemanticsProperties.ContentDescription]
+        assertEquals(listOf(headerSpeech(vm.state.value, marks(vm.state.value, answering = false))), said)
+    }
 
     @Test fun decksLcdIsOneSentenceToAScreenReader() {
         // "AUTO ANS MSG DEL 90D" means nothing read out; the LCD is heard as

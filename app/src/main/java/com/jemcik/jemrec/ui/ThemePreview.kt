@@ -108,7 +108,7 @@ internal fun LookPreview(vm: MainViewModel, modifier: Modifier = Modifier) {
                 }
                 for ((day, rows) in home.days) {
                     DayHeading(day, rows.size)
-                    for (recording in rows) RecordingRow(recording, day, home.state, vm)
+                    for (recording in rows) RecordingRow(recording, day, home.state, RowEvents.None)
                 }
             }
         }

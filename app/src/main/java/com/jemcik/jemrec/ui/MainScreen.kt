@@ -10,7 +10,6 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
@@ -31,7 +31,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -51,13 +50,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jemcik.jemrec.DeepLink
+import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.setup.SetupStep
@@ -94,8 +93,8 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     // Out of sight, the scrubber is not driven and the fill-in stops; a
     // recording plays on, under the system's media controls. Back in sight,
-    // the screen shows what played on meanwhile. See MainViewModel.screenHidden
-    // and fillInWaveforms.
+    // the screen shows what played on meanwhile. See Playback.hidden and
+    // WaveformFill.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         vm.screenHidden()
         vm.stopFillingIn()
@@ -187,6 +186,12 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AppScaffold(state: UiState, vm: MainViewModel) {
+    // The call log and the contacts, asked for from four places - the
+    // Recordings tab's offer, the Calls tab, Settings and Whose calls -
+    // through one request, registered here above them all: the answer is
+    // read back from Android in each case (onCallLogResult).
+    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
+    val askForCallLog = { callLogPermission.launch(CallLogLookup.PERMISSIONS) }
     // The record control's question, when turning off would leave JemRec
     // needing Wi-Fi it has not got (MainViewModel.toggleRecording). Here, not
     // in MainScreen, so the screen tests draw it as the app does.
@@ -197,6 +202,14 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
         )
     }
     val ready = state.step == SetupStep.READY
+    // A link's row asked into view while setup shows instead of the list -
+    // the pairing lost, say - is let go: kept, the list jumped to it
+    // whenever it next showed. Not while the opening's check still works out
+    // which to show.
+    LaunchedEffect(state.reveal, state.step) {
+        val name = state.reveal ?: return@LaunchedEffect
+        if (!ready && state.step != SetupStep.CHECKING) vm.onRevealed(name)
+    }
     val offHome = ready && state.screen != Screen.HOME
     val inTrash = ready && state.screen == Screen.TRASH
     val inDiagnostics = ready && state.screen == Screen.DIAGNOSTICS
@@ -275,11 +288,20 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
             // takes the padding and fills the area itself. Setup and Settings are
             // short, static content, so they keep the plain page scroll.
             if (ready && !offHome) {
+                // Each tab's place in its list, held here, above the two ways
+                // the list is drawn below - upright, and beside the header on
+                // a phone on its side - so turning the phone, which remakes
+                // the screen and restores what it saved, finds the list where
+                // it was. Held in each of them, it was a place of each
+                // branch's, and a turn brought the list back to its top. A
+                // place per tab, as before: another tab, or Settings and back,
+                // starts at the top.
+                val listState = key(state.homeTab) { rememberLazyListState() }
                 val list = @Composable { modifier: Modifier, narrowingAside: Boolean ->
                     if (state.homeTab == HomeTab.CALLS) {
-                        CallsScreen(state, vm, modifier = modifier, narrowingAside = narrowingAside)
+                        CallsScreen(state, vm, askForCallLog, listState, modifier = modifier, narrowingAside = narrowingAside)
                     } else {
-                        HomeScreen(state, vm, modifier = modifier, narrowingAside = narrowingAside)
+                        HomeScreen(state, vm, askForCallLog, listState, modifier = modifier, narrowingAside = narrowingAside)
                     }
                 }
                 if (aside) {
@@ -351,12 +373,12 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                     } else {
                         when (state.screen) {
                             Screen.THEME -> ThemeScreen(vm)
-                            Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm)
+                            Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm, askForCallLog)
                             Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
                             Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
                             Screen.ANSWERING_MACHINE -> AnsweringMachineScreen(state, vm)
                             Screen.WHEN_OFF -> WhenOffScreen(state, vm)
-                            else -> SettingsScreen(state, vm)
+                            else -> SettingsScreen(state, vm, askForCallLog)
                         }
                     }
                 }

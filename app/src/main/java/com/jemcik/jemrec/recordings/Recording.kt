@@ -146,7 +146,7 @@ internal object Recordings {
 
     /** Every recording, newest first: RecordingLibrary's, or the stand-in. */
     fun list(context: Context, withCallers: Boolean = true): List<Recording> {
-        override?.let { return it(context) }
+        override?.let { stand -> return stand(context).filter { it.expiresAtMillis == null } }
         return RecordingLibrary.list(context, withCallers = withCallers)
     }
 
@@ -190,7 +190,9 @@ internal object Recordings {
     ) = describe(name, uri, sizeBytes, durationOf(context, uri), whenMillis)
 
     /** "Today 16:53" reads better than a date for the common case, which is a
-     *  call from the last few minutes. */
+     *  call from the last few minutes. In Latin digits and English words in
+     *  any language, as the app's other times are (the looks' fonts have no
+     *  Arabic-Indic digits). */
     internal fun whenLabel(millis: Long): String {
         val stamp = Date(millis)
         val day = SimpleDateFormat("yyyyMMdd", Locale.US)
@@ -198,7 +200,7 @@ internal object Recordings {
         return if (day.format(stamp) == day.format(Date())) {
             "Today $time"
         } else {
-            SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(stamp)
+            SimpleDateFormat("d MMM, HH:mm", Locale.US).format(stamp)
         }
     }
 

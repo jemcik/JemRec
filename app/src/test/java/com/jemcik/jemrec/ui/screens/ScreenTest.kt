@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui.screens
 
+import android.app.Application
 import android.content.ComponentName
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
@@ -20,10 +21,12 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.viewModelScope
+import androidx.media3.session.MediaController
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
@@ -99,12 +102,15 @@ abstract class ScreenTest {
     }
 
     /** A view model over [state] - and the answering machine's [answer] -
-     *  that only the taps reach. Its playback session never connects: a tap
-     *  that plays changes the screen as the app does before the session
-     *  answers, and no further. */
-    fun viewModel(state: UiState = UiState(), answer: AnswerUi? = null) =
-        MainViewModel(RuntimeEnvironment.getApplication(), state, answer, connectSession = { SettableFuture.create() })
-            .also { models += it }
+     *  that only the taps reach. Its playback session never connects, unless
+     *  [connectSession] says otherwise: a tap that plays changes the screen as
+     *  the app does before the session answers, and no further. */
+    fun viewModel(
+        state: UiState = UiState(),
+        answer: AnswerUi? = null,
+        connectSession: (Application) -> ListenableFuture<MediaController> = { SettableFuture.create() },
+    ) = MainViewModel(RuntimeEnvironment.getApplication(), state, answer, connectSession = connectSession)
+        .also { models += it }
 
     private val models = mutableListOf<MainViewModel>()
 

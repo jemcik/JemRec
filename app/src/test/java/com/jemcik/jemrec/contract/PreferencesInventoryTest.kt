@@ -118,12 +118,13 @@ class PreferencesInventoryTest {
 
     private companion object {
         /** Every `const val ...KEY... = "..."` in app/src/main on 2026-11-01
-         *  (0.26): preference keys, plus the few key-named constants that are
-         *  file and extra names, which a rename breaks just the same. */
+         *  (0.26), and answer_test from 0.30: preference keys, plus the
+         *  few key-named constants that are file and extra names, which a
+         *  rename breaks just the same. */
         val KEYS = listOf(
             "adb_private_key.der", "adb_refused_in_a_row", "after_call_notice", "answer_default_sim",
             "answer_delay_s", "answer_dnd_short", "answer_longest_s", "answer_on", "answer_result_",
-            "answer_route", "answer_sim", "answer_sim_count", "answer_stage_one", "auto_delete_after_days",
+            "answer_route", "answer_sim", "answer_sim_count", "answer_stage_one", "answer_test", "auto_delete_after_days",
             "auto_delete_last_run", "auto_delete_shorter_than", "background_kill_warned_ms", "cable_stopped_adbd",
             "call_ledger", "call_tracking", "caller_banner_dismissed", "calls_covered_since", "coverage_history",
             "daemon_token", "debug_notification_snoozed", "debug_off_pending", "debug_switched_off",

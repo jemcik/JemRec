@@ -185,12 +185,14 @@ internal object MissedCalls {
         AfterCall.cancelProblem(context, NOTIFICATION_ID)
     }
 
-    /** "14:05" today, "3 Oct 14:05" before that. */
-    private fun at(millis: Long): String {
+    /** "14:05" today, "3 Oct 14:05" before that: Latin digits and English
+     *  months, as the rest of JemRec's times, among the notification's
+     *  English words. */
+    internal fun at(millis: Long, now: Long = System.currentTimeMillis()): String {
         val then = Calendar.getInstance().apply { timeInMillis = millis }
-        val now = Calendar.getInstance()
-        val today = then.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
-            then.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)
-        return SimpleDateFormat(if (today) "HH:mm" else "d MMM HH:mm", Locale.getDefault()).format(Date(millis))
+        val day = Calendar.getInstance().apply { timeInMillis = now }
+        val today = then.get(Calendar.YEAR) == day.get(Calendar.YEAR) &&
+            then.get(Calendar.DAY_OF_YEAR) == day.get(Calendar.DAY_OF_YEAR)
+        return SimpleDateFormat(if (today) "HH:mm" else "d MMM HH:mm", Locale.US).format(Date(millis))
     }
 }

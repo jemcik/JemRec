@@ -6,7 +6,6 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.DeepLink
-import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.calls.AfterCall
@@ -233,7 +232,7 @@ internal object RecorderHealth {
         }
         val open = PendingIntent.getActivity(
             context, 3401,
-            button?.second ?: Intent(context, MainActivity::class.java),
+            button?.second ?: DeepLink.home(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = AfterCall.problem(context, "JemRec is not recording calls", text, open, button?.first)

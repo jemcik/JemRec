@@ -27,6 +27,7 @@ this one is - or to check that it does what it says.
   [the answering machine](#the-answering-machine) ·
   [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
   [playing in the background](#playing-in-the-background) · [three looks](#three-looks) ·
+  [a tap while it checks](#a-tap-while-the-app-is-checking) · [one window](#one-window) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [marks inside the recording](#marks-inside-the-recording) ·
   [notifications](#after-the-call-and-when-something-is-wrong) ·
@@ -664,9 +665,10 @@ turn it off in Settings (*Exact call tracking*). Off, the daemon takes the
 permission back and JemRec works exactly as it did before 0.14. The answering
 machine answers on tracking's word, so it goes off with it: with the machine
 on, the switch first asks *Turn off the answering machine too?* - until 0.19
-it turned the machine off without a word (the user found it, 2026-10-24) - and
-the machine's row in Settings then says it is off for want of tracking. JemRec keeps
-what Android said about the last 40 calls - when each began, was answered and
+it turned the machine off without a word (the user found it, 2026-10-24), and
+until 0.30 it still did in the moment after the app opened, before the screen
+had read the machine's setting - and the machine's row in Settings then says
+it is off for want of tracking. JemRec keeps what Android said about the last 40 calls - when each began, was answered and
 ended, which way it went, how far apart the phone's two clocks were during it
 (below), and the number only with the call-log permission.
 
@@ -1111,6 +1113,35 @@ never removed by the short-calls auto-delete rule.
 **Your greeting** is recorded by the recorder, not the app, which holds no
 microphone permission; the app trims the silence at both ends and evens the
 level, because a call's uplink plays at full volume with no control over it.
+From Record until the recorder answers Stop, the greeting takes no tap -
+over the loudspeaker it would go into the take - and Record and Delete are
+greyed until the take is a greeting (until 0.30 Record then did nothing,
+with no sign, and a Delete was undone when the new greeting was saved). A
+preview of the old greeting ends as the new one is saved, and a greeting
+that cannot be saved - a full disk - is said on its row, as a take the
+recorder did not send is (it was "Nothing was heard"), and one with nothing
+in it ("Nothing was recorded"). A take stopped is made a greeting of past its
+screen - closed from Recents while the take was fetched, the greeting was
+never saved - and meanwhile no window starts a take, which would overwrite
+the file being read, or deletes the greeting, which the saving would undo; a
+screen opened meanwhile shows the new greeting once it is saved - or, when
+the take is no greeting, why. A
+Stop the recorder does not answer holds the
+greeting until its own thirty seconds are out - let go by that take only.
+Leaving the screen - Back, a link - stops a take still recording, and one
+asked to start once the recorder has started it (a stop sent first is lost
+to the start), and does not keep it: it went on unseen. A notification's
+Play plays once the recorder has answered that stop, waited for up to five
+seconds (in 0.29 it played into the take, which was kept). While a take may
+have the microphone, as far as the app knows, nothing JemRec plays starts -
+from any of its screens or the media notification - and no other screen
+starts a take, previews the greeting or deletes it - Record, Delete and the
+preview are greyed there too - and a preview already playing in another
+window stops as the take begins; one preview plays at a time. Left in the
+background - Home, another app - a take records on to its thirty seconds and
+is kept, and a recording played over the loudspeaker then would have become
+the greeting (read from the code). The hold is the take's own, let go by that
+take only, and timed on a clock that setting the phone's time does not move.
 
 **Whether it works on a phone** is found out, not assumed. Android's own answer
 said yes on the Honor for a route that failed, so the app checks three ways:
@@ -1125,7 +1156,32 @@ said yes on the Honor for a route that failed, so the app checks three ways:
    at real-time pace (the route that failed was consumed three times too fast),
    and looks for a check tone in the phone's own recording of its side - which
    proves the route when found, and proves nothing when not: on the Honor's 2G
-   calls it never was, though the caller heard it.
+   calls it never was, though the caller heard it. An armed test is kept until
+   it is read (until 0.30 it went with the screen that armed it, and one
+   closed while arming went unread): the screen opened again, or back at the
+   front, asks the recorder how it went, and the recorder keeps that until
+   the next test. One restarted since keeps none, and the screen says so; a
+   recorder that cannot be asked, or a call still under way, leaves the test
+   for the next opening, and it is read before another is armed. One test is
+   armed at a time, an arming that outlived its screen included, and a
+   screen opened while it is under way shows the test once it is noted. An arming
+   the recorder does not answer is not watched: it may have armed all the
+   same - for an outgoing test the recorder checks the number first, with no
+   time limit, and starts the call before it answers - and nothing it says
+   later tells one test's result from another's, so the screen says it may
+   have. Each result is acted on once, and the question below is asked until
+   it is answered, put aside, or a new test is armed. What answers a tap on
+   the answering machine - an arming, the carrier's answer, a take's upload,
+   a delete the recorder missed - and, while its screen is shown, a test
+   call's ending and a setting that did not reach the recorder, is a
+   snackbar as well as a line in Diagnostics' log; the rest, such as the
+   checks run on opening, is the log's alone, as all of it was until 0.30.
+   The screen that arms
+   or watches a test greys the greeting's Delete meanwhile: with no greeting
+   the recorder answers no incoming call, a test's included, and an outgoing
+   test plays nothing (until 0.30 the screen then waited out an incoming
+   test and said no call came, or put the route down as not working on an
+   outgoing one).
 3. After a test someone made, one question: did they hear it?
 
 Results are kept per call type - 2G, VoLTE and Wi-Fi Calling take different
@@ -1187,8 +1243,9 @@ leaves something other than it promised.
 
 A narrowed list says so. A line under the chips names what narrows it - each
 lit chip, what is typed - with how many of how many are shown, and *Show all*
-turns every chip off and folds the search away; and a chip lit past the
-row's edge is scrolled into view as the screen opens. On the Honor
+turns every chip off and folds the search away - over a list with nothing
+in it, on either tab, there is nothing to narrow and no line; and a chip
+lit past the row's edge is scrolled into view as the screen opens. On the Honor
 (2026-10-23) Messages was lit off the screen's edge and the list showed 2 of
 52 with nothing saying why: recordings that seemed gone. The row's chips
 cannot all be in view on a phone with three messengers; the line can.
@@ -1263,7 +1320,9 @@ holds all of this below on each release AVD.
   pauses it until you play it again; asked to duck, speech pauses instead,
   so no word is missed; headphones coming out pause it, so a call never
   moves to the loudspeaker by itself. During a call it does not start -
-  Android refuses it the audio - and the app says so.
+  Android refuses it the audio - and the app says so; nor while a greeting
+  is being recorded, as over the loudspeaker it would go into the greeting:
+  the app's Play says why, and the notification's Play does nothing.
 - **Who may use it.** Android lets any app ask to connect to a session. JemRec
   alone chooses what plays; the system's controls, and apps the user lets read
   notifications - which see the media notification anyway - may play, pause
@@ -1296,7 +1355,9 @@ each look shows is the same: the header's one strip (the record control, the
 state, a line of marks or of what to do, the gear, the tabs) is one height in
 every state and at every text size, and each setting the header marks -
 AUTO or ASK, ANS, MSG, DEL - carries the same mark in Settings, from one
-function. A look draws nothing that is not data: no meter moves between calls,
+function. To a screen reader each header is one sentence, the same in all
+three: the state, then what is on (Memo's read its marks' own names until
+0.30). A look draws nothing that is not data: no meter moves between calls,
 no LED is lit for show.
 
 The Theme screen previews the picked look with the home screen's own parts,
@@ -1343,11 +1404,100 @@ height, and wider than it is tall - home's header becomes a side panel at the
 left, at its portrait width, its ground the full height: the state at the
 top, the list's chips and search in the middle, named there (the row has room
 only for icons), and the tabs at the foot, under the left thumb. The list
-beside it takes the full height, with no chip row of its own.
+beside it takes the full height, with no chip row of its own. Turned either
+way, the list stays where it was scrolled to: until 0.30 it went back to its
+top.
 On top, the header and the chips took half a landscape screen and left about
 one row in view (800 x 360 dp, every look). Android's window size classes put
 "99.78% of phones in landscape" in compact height, and show the top app bar
 only from medium height up in their example; the width is where the room is.
+
+## A tap while the app is checking
+
+Each time JemRec comes to the front it checks where setup stands and reads
+again everything it shows - the recordings, the recorder, every setting.
+What a tap does meanwhile is one table, an action a row with its reason (`Action`, in
+`ui/Actions.kt`):
+
+- **Not taken, the control greyed meanwhile:** Diagnostics' Self-test and
+  Start recorder, Recently deleted's Restore and Restore all, auto-delete's
+  choices, Messenger calls' caller-names switch, the folder dialog's Use
+  default, setup's buttons that only move it on. The check itself is one of
+  these: one at a time is enough, and the next return asks again.
+- **Waits its turn, then runs:** an answer already given in a dialog that has
+  closed - Delete, Delete all for good, Start fresh - and a control that is
+  never greyed: the record control, setup's Open settings, Settings' switch
+  for Android's debugging notification. Dropped, each did nothing, without a
+  sign. A delete takes what its question counted, not what is selected when
+  its turn comes: until 0.30 a row picked in the wait went too. Said yes to
+  twice in the wait - nothing seen to happen - the second takes only what the
+  first did not: each counted the same rows, and the second moved them again,
+  "could not move" after a delete that worked. A row gone by its turn - from
+  its notification, or auto-delete - is left out, as is one gone from
+  Recently deleted, where Delete all for good takes every copy of a name - one
+  for each place it is trashed in; where Android must be asked about two
+  deletes, it is asked about each in turn. Delete, Delete all for good, Start
+  fresh and the debugging notification's switch wait their turn past the
+  screen, as the record control's own turn does: closed from Recents in the
+  wait, each runs all the same, where it went with the screen, without a
+  word. A delete, or Delete all for good, has any list open - a screen
+  opened meanwhile - read again.
+- **Taken at once:** what a picker brings back - a contact for the rules, a
+  folder - which arrives as the app comes back to the front, while it
+  checks (dropped, the contact was picked and nothing added: measured on an
+  emulator while 0.12 was made, 2026-10-20); a chosen contact's removal, one
+  preference written, and Diagnostics' Copy a report, which changes nothing;
+  and what the recorder is told as a setting changes, as the next call can
+  come seconds later.
+- **Allow this Wi-Fi** waits for the check, then asks Android, with
+  *Starting* in the header meanwhile rather than the screen held still.
+
+## One window
+
+JemRec's own ways in to its screen - the Quick Settings tile, the media
+notification, every notification that opens it - start it with
+`MainActivity.open`'s flags: NEW_TASK, CLEAR_TOP and SINGLE_TOP, as deep links
+did already. A plain tap - a notification without a button, the tile, the
+media notification - is a link of its own (`DeepLink.home`) to the recordings
+list and its header, nothing narrowing it and nothing selected, as a Play
+link opens it; until 0.30 each of these opened a window of its own on that
+list. A notification's button opens what it names; Play and Share also bring
+the recording's row into view unless it is in view already, below the pinned
+header and with its day's heading when it is the first of its day, the
+list's window widened to hold it - from a list left scrolled down, the
+recording played with its player off the screen - and followed for a few
+seconds as its player opens, which grew a row at the screen's foot past the
+edge. While setup shows in the list's place - the pairing lost - a link's
+row is let go, not kept to jump to later. Any link lets a question
+left open go - "Start fresh?", "Delete all for good?": left, it came back
+unasked on the next visit. The window there is comes forward, its intent
+through `onNewIntent`, and what is on top of it in its task, such as a picker
+opened from JemRec, is finished - Android's permission question too, which
+is then no answer: the call-log offer stays, where it went for good. For an
+opening - a plain tap, or the
+launcher with JemRec on top - what a new window did, the keep-alive armed,
+the notification listener rebound, a background kill looked for, the window
+brought forward does too; a button's link never opened a window, and does
+not. The activity is `singleTop`, so the tile's long press, which Android
+starts, reaches it when it is on top. The launcher brings JemRec's task
+forward with a picker left open still there. Over a task JemRec began
+another way - by a notification, the tile - the launcher makes a new window
+over the picker (measured with `am start` on the Android 12 and 17 AVDs,
+2026-11-08), which
+goes at once and leaves the task as it was (on a fresh start only: remade,
+as when the phone is turned, a window stays); started into another app's
+task, it opens there, as ever.
+(`singleTask`, tried in review, finished the picker on a tap of the launcher
+too, and a permission's question, and "delete this recording?".)
+Notifications posted by 0.29 keep their old intents until they are posted
+again. Until 0.30 the tile, the media notification and a
+notification's tap each could open a second window over the first - read from
+the code, not measured: their intents had no CLEAR_TOP, and only the media
+notification's had SINGLE_TOP - and two answering machine screens could then
+arm a test, or play the greeting into a take, unseen by each other. The
+record prompt, full screen on a locked phone, has a task of its own: in
+JemRec's, its NEW_TASK and CLEAR_TASK cleared that task, and the window in
+it (read from the code; 0.29 did the same).
 
 ## Keeping, deleting and cleaning up
 

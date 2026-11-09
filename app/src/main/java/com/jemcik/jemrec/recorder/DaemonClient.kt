@@ -397,16 +397,20 @@ object DaemonClient {
      * it lacks it or has another, and loses its own when the app has none.
      * The daemon's copy survives a restart of the daemon, but not every way
      * a daemon can be replaced, and a greeting that silently went missing
-     * would turn the answering machine off without a word.
+     * would turn the answering machine off without a word. True when the
+     * recorder has the app's greeting, or none as the app has none.
      */
-    suspend fun syncGreeting(context: Context) {
-        val there = greetingBytes(context) ?: return
+    suspend fun syncGreeting(context: Context): Boolean {
+        val there = greetingBytes(context) ?: return false
         val here = Greeting.file(context)
-        when {
+        return when {
+            // Read where it may be gone: deleted between the look and the
+            // read, it threw, and nothing caught it.
             Greeting.present(context) && there != here.length() ->
-                uploadGreeting(context, here.readBytes())
+                runCatching { here.readBytes() }.getOrNull()?.let { uploadGreeting(context, it) } ?: false
             !Greeting.present(context) && there > 0 ->
-                ask(context, COMMAND_GREETING, byteArrayOf('D'.code.toByte()))
+                ask(context, COMMAND_GREETING, byteArrayOf('D'.code.toByte())) != null
+            else -> true
         }
     }
 
@@ -421,28 +425,46 @@ object DaemonClient {
     suspend fun stageOne(context: Context): Map<String, String>? =
         fields(ask(context, COMMAND_DIAGNOSE, byteArrayOf('C'.code.toByte()), readMs = 15_000), "DIAG 1")
 
-    /** Arm a test call: the next incoming call within three minutes, or -
-     *  [number] given - one the daemon dials now. The recorder's answer;
-     *  null for any other, or none. */
+    /**
+     * Arm a test call: the next incoming call within three minutes, or -
+     * [number] given - one the daemon dials now. The recorder's answer;
+     * [TestArming.UNANSWERED] if the arming reached it and no answer came;
+     * null if it never did, or for an answer not known. Unanswered, it may
+     * have armed all the same: the recorder arms after its emergency-number
+     * check, which has no time limit, and before `am` starts an outgoing
+     * test's call, and answers after both - and nothing it says later tells
+     * which arming a result is. So it is told, not watched.
+     */
     suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): TestArming? =
-        parseTestArming(
-            ask(
-                context, COMMAND_DIAGNOSE,
-                byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number),
-                readMs = 5_000,
-            ),
-        )
+        withContext(Dispatchers.IO) {
+            val payload = byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number)
+            // An outgoing test's call is started before the recorder answers,
+            // with `am`, which it runs there with no time limit (its wakes
+            // allow `am` ten seconds a try): a longer wait for those.
+            val socket = runCatching {
+                open(context, COMMAND_DIAGNOSE, payload, readMs = if (incoming) 5_000 else 15_000)
+            }.getOrNull() ?: return@withContext null
+            val line = try {
+                runCatching { socket.getInputStream().bufferedReader().readLine()?.trim() }.getOrNull()
+            } finally {
+                runCatching { socket.close() }
+            }
+            if (line == null) TestArming.UNANSWERED else parseTestArming(line)
+        }
 
-    /** The recorder's answers to arming a test call, as it writes them. */
-    enum class TestArming(val line: String) {
+    /** The recorder's answers to arming a test call, as it writes them; and
+     *  [UNANSWERED], none written. */
+    enum class TestArming(val line: String?) {
         ARMED("TEST armed"),
         BAD_NUMBER("TEST bad-number"),
         EMERGENCY("TEST emergency"),
         NO_GREETING("TEST no-greeting"),
         BUSY("TEST busy"),
+        UNANSWERED(null),
     }
 
-    internal fun parseTestArming(line: String?): TestArming? = TestArming.entries.firstOrNull { it.line == line }
+    internal fun parseTestArming(line: String?): TestArming? =
+        line?.let { said -> TestArming.entries.firstOrNull { it.line == said } }
 
     /** What the last test call measured; null if the daemon cannot say. */
     suspend fun testResult(context: Context): Map<String, String>? =
@@ -533,7 +555,13 @@ object DaemonClient {
      * would be wrong the moment the app process was recreated while the daemon
      * was not, which is the normal case. It reaches the daemon only through
      * its environment at spawn (see ensureRunning) and never crosses a socket.
+     * Made under a lock, as DeepLink's is: asked for by two at once before
+     * there was one, each made its own, and a command proved with the one
+     * not kept was refused (seen in the app's tests, 2026-11-08: the
+     * answering machine screen's checks and its test call's watch, asking
+     * at once against a fake recorder).
      */
+    @Synchronized
     fun token(context: Context): String {
         val prefs = Prefs.of(context)
         prefs.getString(KEY_TOKEN, null)?.let { return it }

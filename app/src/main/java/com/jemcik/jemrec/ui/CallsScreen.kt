@@ -1,12 +1,6 @@
 package com.jemcik.jemrec.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,25 +10,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.calls.CallHistory
-import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.recordings.Recording
 
 /**
@@ -53,9 +43,15 @@ import com.jemcik.jemrec.recordings.Recording
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier, narrowingAside: Boolean = false) {
+fun CallsScreen(
+    state: UiState,
+    vm: MainViewModel,
+    askForCallLog: () -> Unit,
+    listState: LazyListState,
+    modifier: Modifier = Modifier,
+    narrowingAside: Boolean = false,
+) {
     val haptics = LocalHapticFeedback.current
-    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
     // The tab is the call log; without it there is nothing to show but the
     // reason, and the way to change it.
@@ -76,7 +72,7 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     FilledTonalButton(
-                        onClick = { haptics.tap(); callLogPermission.launch(CallLogLookup.PERMISSIONS) },
+                        onClick = { haptics.tap(); askForCallLog() },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Allow") }
                 }
@@ -97,11 +93,8 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
     val playerRow = remember(days) {
         buildMap { for ((_, rows) in days) for ((key, call) in rows) call.recording?.let { putIfAbsent(it.name, key) } }
     }
-    val searchFocus = remember { FocusRequester() }
-    LaunchedEffect(narrowing.searchOpen, narrowingAside) {
-        if (narrowing.searchOpen && !narrowingAside) runCatching { searchFocus.requestFocus() }
-    }
-    val listState = rememberLazyListState()
+    val narrowed = narrowingOf(state, vm, calls = true)
+    val searchFocus = rememberSearchFocus(narrowed.searchOpen, narrowingAside)
     val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
 
     // No selection here: a recorded call's row is its Recordings row in
@@ -116,29 +109,19 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
             // search; pinned and on the list's ground, as there.
             if (state.calls.isNotEmpty()) {
                 stickyHeader {
-                    Column(Modifier.keepsItsPlace().background(MaterialTheme.colorScheme.surface)) {
-                        // Beside the list instead, on a phone on its side
-                        // (NarrowingPanel).
-                        if (!narrowingAside) {
-                            val on = narrowing.chipsOn()
-                            val chips = remember(state.calls, on) { chipsFor(state.calls.map { it.chipFacts() }, on) }
-                            ListChipRow(chips, on, calls = true) { chip -> haptics.tap(); vm.tapCallsChip(chip) }
-                            AnimatedVisibility(
-                                visible = narrowing.searchOpen,
-                                enter = expandVertically() + fadeIn(),
-                                exit = shrinkVertically() + fadeOut(),
-                            ) {
-                                ListSearchField(narrowing.query, vm::setCallsQuery, searchFocus, "Search by name or number")
-                            }
-                        }
-                        NarrowingLine(
-                            narrowedBy(narrowing.chipsOn(), narrowing.query),
-                            shown = shown.size,
-                            of = state.calls.size,
-                            onShowAll = vm::showAllCalls,
-                        )
-                        if (scrolled) HorizontalDivider()
-                    }
+                    // Beside the list instead, on a phone on its side
+                    // (NarrowingPanel).
+                    NarrowingHeader(
+                        narrowed,
+                        shown = shown.size,
+                        of = state.calls.size,
+                        onShowAll = vm::showAllCalls,
+                        aside = narrowingAside,
+                        focus = searchFocus,
+                        listed = true,
+                        chipsShown = true,
+                        scrolled = scrolled,
+                    )
                 }
             }
             if (state.calls.isEmpty()) {

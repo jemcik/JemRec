@@ -119,7 +119,7 @@ object CaptureDaemon {
     suspend fun stopTake(context: Context): Long? = DaemonClient.stopTake(context)
     suspend fun fetchTake(context: Context): ByteArray? = DaemonClient.fetchTake(context)
     suspend fun uploadGreeting(context: Context, pcm: ByteArray): Boolean = DaemonClient.uploadGreeting(context, pcm)
-    suspend fun syncGreeting(context: Context) = DaemonClient.syncGreeting(context)
+    suspend fun syncGreeting(context: Context): Boolean = DaemonClient.syncGreeting(context)
     suspend fun stageOne(context: Context): Map<String, String>? = DaemonClient.stageOne(context)
     suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): DaemonClient.TestArming? =
         DaemonClient.armTest(context, incoming, number)

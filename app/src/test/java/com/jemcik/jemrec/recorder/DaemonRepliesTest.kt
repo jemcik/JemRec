@@ -59,7 +59,7 @@ class DaemonRepliesTest {
                 "TEST emergency" to TestArming.EMERGENCY,
                 "TEST no-greeting" to TestArming.NO_GREETING,
                 "TEST busy" to TestArming.BUSY,
-                // Nothing armed, for no reason the app shows: as no answer.
+                // Nothing armed, for no reason the app shows: "could not arm".
                 "TEST none" to null,
             ),
             kinds,

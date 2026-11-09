@@ -13,7 +13,6 @@ import android.util.Log
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.jemcik.jemrec.DeepLink
-import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.AfterCallReceiver
 import com.jemcik.jemrec.capture.AudioCheck
@@ -373,7 +372,7 @@ internal object AfterCall {
                 .setTimeoutAfter(TIMEOUT_MS)
                 .setContentIntent(
                     PendingIntent.getActivity(
-                        context, 0, Intent(context, MainActivity::class.java),
+                        context, 0, DeepLink.home(context),
                         PendingIntent.FLAG_IMMUTABLE,
                     ),
                 )
@@ -456,7 +455,7 @@ internal object AfterCall {
             // A collection can get here before the call service ever ran:
             // problem makes sure the channel exists.
             val tap = PendingIntent.getActivity(
-                context, 0, Intent(context, MainActivity::class.java),
+                context, 0, DeepLink.home(context),
                 PendingIntent.FLAG_IMMUTABLE,
             )
             notifyProblem(context, NOT_RECORDED_ID, problem(context, "Call not recorded", reason, tap).build(), "monitor")

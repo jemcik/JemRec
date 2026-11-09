@@ -49,6 +49,10 @@ android {
 
 // Through AGP's new DSL type: android { sourceSets } in a library script is
 // still typed as the old API's source set, and AGP 9 throws a
-// ClassCastException at it.
+// ClassCastException at it. The daemon's sources in place of the defaults,
+// as setSrcDirs had them (deprecated in AGP 9.5 for this set).
 extensions.getByType(com.android.build.api.dsl.LibraryExtension::class.java)
-    .sourceSets.getByName("main").java.setSrcDirs(listOf("../src"))
+    .sourceSets.getByName("main").java.directories.apply {
+        clear()
+        add("../src")
+    }

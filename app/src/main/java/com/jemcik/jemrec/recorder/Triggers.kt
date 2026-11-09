@@ -13,11 +13,13 @@ internal enum class Trigger {
     /** Wi-Fi is back: the system-held watch fired (NetworkReviveReceiver). */
     WIFI_BACK,
 
-    /** The app's activity is created (MainActivity). */
+    /** The app's activity is created, or brought forward by an opening - a
+     *  plain notification, the tile, the launcher with JemRec on top
+     *  (MainActivity.cameIn). */
     APP_OPEN,
 
     /** The home screen's look at where setup stands, at every resume
-     *  (MainViewModel.recheckSetup). */
+     *  (RecorderAndSetup.recheckSetup). */
     SETUP_CHECK,
 
     /** JemRec turned on, from the app or the tile (RecorderSwitch.turn). */

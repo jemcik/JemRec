@@ -12,6 +12,7 @@ import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.jemcik.jemrec.answering.Greeting
 
 /** Audio focus as SessionPlayer asks for it: AndroidAudioFocus on the
  *  phone, a stand-in in the tests. */
@@ -47,6 +48,10 @@ internal class SessionPlayer(
     looper: Looper,
     private val engine: PlaybackEngine,
     private val focus: FocusHolder,
+    /** False while a greeting's take may have the microphone (Greeting.takeListening).
+     *  The session's Play then does nothing - the notification has no word to
+     *  give; the app's own Play says why (Playback.play). */
+    private val mayPlay: () -> Boolean = { !Greeting.takeListening },
 ) : SimpleBasePlayer(looper) {
 
     private var item: MediaItem? = null
@@ -141,9 +146,11 @@ internal class SessionPlayer(
         return done()
     }
 
-    /** Playing, if Android gives it the audio: refused during a call. */
+    /** Playing, if Android gives it the audio - refused during a call - and
+     *  no greeting's take may be recording: over the loudspeaker it would go
+     *  into the greeting. */
     private fun begin() {
-        if (focus.request()) {
+        if (mayPlay() && focus.request()) {
             playing = PlaybackRules.Playing(wanted = true)
             sound()
         } else {

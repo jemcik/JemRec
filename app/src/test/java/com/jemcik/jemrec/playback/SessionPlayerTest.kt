@@ -5,6 +5,7 @@ import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import com.jemcik.jemrec.answering.Greeting
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -144,6 +145,36 @@ class SessionPlayerTest {
         play()
         assertFalse(player.playWhenReady)
         assertFalse(engine.sounding)
+    }
+
+    /** A greeting's take may have the microphone: nothing plays - the media
+     *  notification's Play included - as over the loudspeaker it would go into
+     *  the greeting; and the audio is not even asked for. */
+    @Test fun whileAGreetingIsRecordedItDoesNotPlay() {
+        val taking = SessionPlayer(Looper.getMainLooper(), engine, focus, mayPlay = { false })
+        taking.setMediaItem(
+            MediaItem.Builder().setMediaId("a.ogg").setUri("file:///recordings/a.ogg").build(),
+        )
+        taking.prepare()
+        taking.play()
+        idle()
+        assertFalse(taking.playWhenReady)
+        assertFalse(engine.sounding)
+        assertFalse("the audio not taken", focus.held)
+        taking.release()
+    }
+
+    /** ...as the service makes it: by the process's own mark of a take. */
+    @Test fun aTakeHeldAnywhereInTheAppStopsIt() {
+        val take = Any()
+        Greeting.hold(take)
+        try {
+            play()
+            assertFalse(player.playWhenReady)
+            assertFalse(focus.held)
+        } finally {
+            Greeting.letGo(take)
+        }
     }
 
     @Test fun theEndRewindsToTheStartPausedAndGivesTheAudioBack() {
