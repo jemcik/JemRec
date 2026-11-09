@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.ui.theme.JemRecColors
+import kotlinx.coroutines.flow.first
+
 /**
  * The recordings, and nothing else.
  *
@@ -145,6 +148,37 @@ fun HomeScreen(
         if (nearEnd && filtered.size > state.visibleCount) vm.showMore()
     }
     val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
+
+    // A notification's Play or Share: its row brought into view, below the
+    // pinned header - from a list left scrolled down, the recording played
+    // with its player off the screen. Its place counted as the LazyColumn
+    // below adds its items: the call-log offer, the header, the tip, then
+    // each day's heading and rows.
+    val reveal = state.reveal
+    LaunchedEffect(reveal, days) {
+        val name = reveal ?: return@LaunchedEffect
+        val header = if (state.offerCallLog && state.recordings.isNotEmpty()) 1 else 0
+        var at = header + 1 + if (!state.selectHintSeen && !state.selecting) 1 else 0
+        for ((run, day) in days.withIndex()) {
+            val row = day.second.indexOfFirst { it.name == name }
+            if (row < 0) {
+                at += 1 + day.second.size
+                continue
+            }
+            // Laid out first, for the header's height.
+            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
+            if (run == 0 && row == 0) {
+                listState.scrollToItem(0)
+            } else {
+                // The first of its day under its heading.
+                val target = if (row == 0) at else at + 1 + row
+                val pinned = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == header }?.size ?: 0
+                listState.scrollToItem(target, -pinned)
+            }
+            vm.onRevealed(name)
+            return@LaunchedEffect
+        }
+    }
 
     // THE LIST IS ITS OWN SCROLL, so its header can PIN. It used to be one item
     // in the page-wide scroll, which meant "Recordings / Select" scrolled away

@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui
 
+import android.media.AudioTrack
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.capture.CaptureDaemon
@@ -765,6 +766,106 @@ class AnswerTestCallTest {
         screen.stopTake()
         eventually("the stop asked") { recorder.heard.any { it.key == "GS" } }
         eventually("let go") { !screen.state.value.takeListening && !Greeting.takeListening }
+    }
+
+    /** The hold after an unanswered Stop is timed on a clock that only goes
+     *  forward: on the wall clock, set back mid-take, it lasted that much
+     *  longer, and every playing in the app was refused meanwhile. */
+    @Test fun aTakesHoldIsTimedOnAClockThatOnlyGoesForward() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies.remove("GS")
+        val now = java.util.concurrent.atomic.AtomicLong(1_000)
+        val screen = AnswerController(context, scope, { said += it }, takeLimitMs = 30_000, clock = { now.get() })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        // All but half a second of its limit gone, on that clock.
+        now.addAndGet(29_500)
+        screen.left()
+        eventually("the stop asked") { recorder.heard.any { it.key == "GS" } }
+        eventually("let go at the limit") { !Greeting.takeListening }
+    }
+
+    /** Closed mid-preview: its player is stopped and let go, not only
+     *  marked stopped - played on to its end, it was never released. */
+    @Test fun closingStopsAndReleasesThePreview() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 10))
+        val made = java.util.concurrent.atomic.AtomicReference<AudioTrack?>()
+        val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm -> Greeting.preview(pcm).also { made.set(it) } })
+        screen.togglePreview()
+        eventually("playing") { screen.state.value.playing }
+        val track = made.get()!!
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, track.playState)
+        screen.close()
+        assertFalse(screen.state.value.playing)
+        assertEquals(AudioTrack.PLAYSTATE_STOPPED, track.playState)
+        assertEquals("let go", AudioTrack.STATE_UNINITIALIZED, track.state)
+    }
+
+    /** A take begun in one window stops the greeting's preview playing in
+     *  another: it played on under the take, into the new greeting. */
+    @Test fun aTakeStopsAPreviewInAnotherWindow() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 10))
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val made = java.util.concurrent.atomic.AtomicReference<AudioTrack?>()
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val playing = AnswerController(context, other, { said += it }, previewOf = { pcm -> Greeting.preview(pcm).also { made.set(it) } })
+            playing.togglePreview()
+            eventually("playing") { playing.state.value.playing }
+            controller.startTake()
+            assertFalse("stopped", playing.state.value.playing)
+            assertEquals("let go", AudioTrack.STATE_UNINITIALIZED, made.get()!!.state)
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** A preview whose player is being made as another window's take
+     *  begins does not start: the take's stop came before it played. */
+    @Test fun aPreviewMadeAsATakeBeginsDoesNotStart() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 10))
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val making = CountDownLatch(1)
+        val made = CountDownLatch(1)
+        val track = java.util.concurrent.atomic.AtomicReference<AudioTrack?>()
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val previewing = AnswerController(context, other, { said += it }, previewOf = { pcm ->
+                making.countDown()
+                made.await(5, TimeUnit.SECONDS)
+                Greeting.preview(pcm).also { track.set(it) }
+            })
+            previewing.togglePreview()
+            assertTrue(making.await(5, TimeUnit.SECONDS))
+            controller.startTake()
+            made.countDown()
+            eventually("its player made") { track.get() != null }
+            Thread.sleep(300)
+            assertFalse("not started", previewing.state.value.playing)
+            assertEquals("let go", AudioTrack.STATE_UNINITIALIZED, track.get()!!.state)
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** One preview at a time for the whole process, as within a screen: a
+     *  second window's stops the first's, which played on under it. */
+    @Test fun aPreviewInAnotherWindowStopsTheFirst() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 10))
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val one = AnswerController(context, scope, { said += it })
+            val two = AnswerController(context, other, { said += it })
+            one.togglePreview()
+            eventually("the first playing") { one.state.value.playing }
+            two.togglePreview()
+            eventually("the second playing") { two.state.value.playing }
+            assertFalse(one.state.value.playing)
+        } finally {
+            other.cancel()
+        }
     }
 
     /** A hold left from an earlier take - its stop unanswered, a later stop

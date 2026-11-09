@@ -188,6 +188,7 @@ class DeepLinksTest : ScreenTest() {
         // row is on it.
         assertEquals(RecordingsNarrowing(), s.recordingsNarrowing)
         assertFalse(s.selecting)
+        assertEquals(emptySet<String>(), s.selected)
     }
 
     /** A link lets a question left open go: one that changed the screen left

@@ -93,6 +93,9 @@ internal class RecordingsList(
      */
     fun showMore() = state.update { it.copy(visibleCount = it.visibleCount + PAGE) }
 
+    /** [name]'s row brought into view (UiState.reveal). */
+    fun onRevealed(name: String) = state.update { if (it.reveal == name) it.copy(reveal = null) else it }
+
     /**
      * Enter selection mode from the header, with nothing chosen yet.
      *
@@ -175,25 +178,33 @@ internal class RecordingsList(
         // for good does: read after the wait for busy, a row picked meanwhile
         // went to Recently deleted unasked.
         val current = state.value
-        val doomed = current.recordings.filter { it.name in current.selected }
+        // Less what a yes still waiting its turn has: said yes to again
+        // while busy, the rows were moved twice (Claims).
+        val doomed = claims.take(current.recordings.filter { it.name in current.selected })
         if (doomed.isEmpty()) return
         actions.run(Action.DELETE_SELECTED) {
-            if (doomed.any { it.name == state.value.playingName }) playback.stopPlayback()
+            try {
+                if (doomed.any { it.name == state.value.playingName }) playback.stopPlayback()
 
-            val result = withContext(Dispatchers.IO) {
-                Trash.trashAll(app, doomed)
+                val result = withContext(Dispatchers.IO) {
+                    Trash.trashAll(app, doomed)
+                }
+                // Whatever Android wants confirmed is not moved yet - its own
+                // dialog comes next - so it is counted as asked, not as failed.
+                trash.report(
+                    doomed.size,
+                    result,
+                    done = { "moved $it to Recently deleted" },
+                    couldNot = { "could not move $it" },
+                    leaving = true,
+                )
+                state.update { it.copy(selecting = false, selected = emptySet()) }
+                reading.refresh()
+            } finally {
+                claims.letGo(doomed)
             }
-            // Whatever Android wants confirmed is not moved yet - its own
-            // dialog comes next - so it is counted as asked, not as failed.
-            trash.report(
-                doomed.size,
-                result,
-                done = { "moved $it to Recently deleted" },
-                couldNot = { "could not move $it" },
-                leaving = true,
-            )
-            state.update { it.copy(selecting = false, selected = emptySet()) }
-            reading.refresh()
         }
     }
+
+    private val claims = Claims()
 }

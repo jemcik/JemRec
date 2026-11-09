@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.answering.EmergencyPause
+import com.jemcik.jemrec.answering.Greeting
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -56,6 +57,11 @@ private enum class AnswerDialog { DELAY, DND, LONGEST, NO_LIMIT, SIM, TEST, CARR
 @Composable
 fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     val a by vm.answer.state.collectAsState()
+    // A take holding the microphone, this screen's or another window's: the
+    // greeting takes no tap. Another window's left Record, Delete and the
+    // preview as ever, each doing nothing with no sign.
+    val holder by Greeting.holder.collectAsState()
+    val listening = a.takeListening || holder != null
     val haptics = LocalHapticFeedback.current
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
 
@@ -276,7 +282,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                         a.recordingTake -> "Speak now. Tap Stop when you are done (${com.jemcik.jemrec.answering.Greeting.MAX_SECONDS} seconds at most)."
                         // Asked to start, or to stop, and not yet answered:
                         // no "Tap to play it" on a row that takes no tap.
-                        a.takeListening -> "Waiting for the recorder..."
+                        listening -> "Waiting for the recorder..."
                         a.greetingProblem != null -> a.greetingProblem
                         a.greetingSeconds != null ->
                             "${seconds((a.greetingSeconds ?: 0.0).toInt().coerceAtLeast(1))}. " +
@@ -291,7 +297,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                     icon = if (a.recordingTake) SettingsIcons.Mic else Icons.Filled.PlayArrow,
                     // Not while the recorder's microphone may be open for a
                     // take: the greeting would go into it.
-                    onClick = if (a.greetingSeconds != null && !a.takeListening) vm.answer::togglePreview else null,
+                    onClick = if (a.greetingSeconds != null && !listening) vm.answer::togglePreview else null,
                 )
             }
         }
@@ -314,14 +320,14 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                 // nothing played, and was put down as not working.
                 "Delete" -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.deleteGreeting() },
-                    enabled = a.test == null && !a.processingTake && !a.takeListening,
+                    enabled = a.test == null && !a.processingTake && !listening,
                     modifier = modifier,
                 ) { ButtonLabel("Delete") }
                 else -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.startTake() },
                     // Not while the last take is made a greeting of: tapped
                     // then, it did nothing, with no sign.
-                    enabled = state.daemonRunning && !a.processingTake && !a.takeListening,
+                    enabled = state.daemonRunning && !a.processingTake && !listening,
                     modifier = modifier,
                 ) { ButtonLabel(record) }
             }

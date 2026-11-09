@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.unit.IntSize
 import com.jemcik.jemrec.ui.LocalNow
 import com.jemcik.jemrec.ui.theme.JemRecTheme
@@ -226,6 +227,54 @@ class ListScreensTest : ScreenTest() {
         restoring.emulateSavedInstanceStateRestore()
         compose.waitForIdle()
         assertTrue("still scrolled upright", scrolled() > 0f)
+    }
+
+    /**
+     * A notification's Play, with the list left scrolled down: its row is
+     * brought into view, below the pinned header - the recording played with
+     * its player off the screen. One past the list's window too, which had
+     * no row drawn at all.
+     */
+    @Test fun aNotificationsPlayBringsItsRowIntoView() {
+        // A minute apart, back from 17:59 on the day the screens show.
+        val many = List(70) { i ->
+            val at = 17 * 3600 + 59 * 60 - i * 60
+            val stamp = "%02d%02d%02d".format(at / 3600, at / 60 % 60, at % 60)
+            Fixtures.recordings()[1].copy(name = "20261021_${stamp}_out.ogg", caller = "Caller $i")
+        }
+        Recordings.override = { many }
+        com.jemcik.jemrec.recordings.Waveforms.override = { name -> Fixtures.waveform(name.hashCode().toLong()) }
+        try {
+            val vm = viewModel(Fixtures.ready().copy(recordings = many))
+            showApp(vm)
+            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(15)
+            compose.waitForIdle()
+            assertTrue(compose.onAllNodesWithText("Caller 0").fetchSemanticsNodes().isEmpty())
+
+            fun plays(at: Int) {
+                vm.open(com.jemcik.jemrec.DeepLink.Link(com.jemcik.jemrec.DeepLink.Kind.PLAY, many[at].name))
+                awaitMain("playing $at") { vm.state.value.playingName == many[at].name }
+                // The list's frames, which the main looper alone does not draw.
+                val until = System.currentTimeMillis() + 10_000
+                while (vm.state.value.reveal != null) {
+                    compose.waitForIdle()
+                    check(System.currentTimeMillis() < until) { "row $at never brought into view" }
+                }
+                compose.waitForIdle()
+                val row = compose.onAllNodesWithText("Caller $at")[0].assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+                val chips = compose.onNodeWithContentDescription("Search recordings").fetchSemanticsNode().boundsInRoot
+                assertTrue("row $at at ${row.top}, under the header to ${chips.bottom}", row.top >= chips.bottom)
+            }
+            plays(0)
+            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(15)
+            compose.waitForIdle()
+            plays(12)
+            // Past the rows drawn: forty, once the list was scrolled.
+            assertTrue(vm.state.value.visibleCount <= 40)
+            plays(60)
+        } finally {
+            com.jemcik.jemrec.recordings.Waveforms.override = null
+        }
     }
 
     /** ...while another tab, and back, starts the list at its top, as it did. */

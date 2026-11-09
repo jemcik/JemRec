@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui
 
 import android.util.Log
 import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.recordings.Recording
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -171,5 +172,27 @@ internal class Actions(
         } finally {
             state.update { it.copy(busy = false, connected = AdbTransport.lastKnownConnected) }
         }
+    }
+}
+
+/**
+ * The recordings a delete said yes to waits its turn or runs for (a
+ * QUEUED action). Said yes to twice while the screen is busy - nothing seen
+ * to happen, so the user asks again - each counted the same rows, and the
+ * second moved them again: "could not move 1" after a delete that worked,
+ * or a second "deleted for good". A later yes takes only what no earlier
+ * one has; one done lets its rows go.
+ */
+internal class Claims {
+    private val names = mutableSetOf<String>()
+
+    /** Of [rows], those no earlier yes has: now this one's. */
+    @Synchronized
+    fun take(rows: List<Recording>): List<Recording> = rows.filter { names.add(it.name) }
+
+    /** [rows] done with: a later question may count them again. */
+    @Synchronized
+    fun letGo(rows: List<Recording>) {
+        rows.forEach { names.remove(it.name) }
     }
 }

@@ -35,3 +35,14 @@ internal fun UiState.revealed(): UiState = copy(
     recordingsNarrowing = RecordingsNarrowing(),
     selecting = false, selected = emptySet(),
 )
+
+/** [revealed], and [name]'s row in the list's window and asked into view
+ *  (UiState.reveal): from a list left scrolled down, a notification's Play
+ *  played a recording whose player was off the screen, and one past the
+ *  window had no row drawn at all. */
+internal fun UiState.revealing(name: String): UiState {
+    val all = revealed()
+    val at = filterRecordings(all.recordings, all.recordingsNarrowing).indexOfFirst { it.name == name }
+    if (at < 0) return all
+    return all.copy(visibleCount = maxOf(all.visibleCount, (at / PAGE + 1) * PAGE), reveal = name)
+}

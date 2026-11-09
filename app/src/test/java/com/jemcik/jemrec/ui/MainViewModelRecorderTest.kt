@@ -212,6 +212,34 @@ class MainViewModelRecorderTest {
         assertEquals(1, TestPhone.reviveLog(context).count { it == "revive: start" })
     }
 
+    /** Wi-Fi arriving twice at once, the recorder down: one revive. Each
+     *  started its own, the second waiting on the first's lock. */
+    @Test fun oneReviveAtATime() {
+        over(UiState(step = SetupStep.READY, enabled = true, daemonRunning = false))
+        vm.onWifiAvailable()
+        vm.onWifiAvailable()
+        until("its revive") { "revive: start" in TestPhone.reviveLog(context) }
+        until("the revive over") { !state.starting }
+        turnFor(1_000)
+        assertEquals(1, TestPhone.reviveLog(context).count { it == "revive: start" })
+    }
+
+    /** Open settings tapped twice: one connect, six looks. A second tap,
+     *  queued, looked six times more after the first. */
+    @Test fun twoOpenSettingsTapsConnectOnce() {
+        val looks = AtomicInteger()
+        vm.viewModelScope.cancel()
+        vm = MainViewModel(context, connectSession = { SettableFuture.create() }, lookForAdb = {
+            looks.incrementAndGet()
+            false
+        })
+        vm.reconnect()
+        vm.reconnect()
+        until("its six looks and its setup check") { looks.get() == 6 && !state.busy }
+        turnFor(3_000)
+        assertEquals(6, looks.get())
+    }
+
     @Test fun anActionCutShortByClosingTheScreenIsNoFailure() {
         val looks = AtomicInteger()
         vm.viewModelScope.cancel()

@@ -244,8 +244,9 @@ class MainViewModel @JvmOverloads constructor(
                         return@launch
                     }
                     // Its row has to be on screen for its player to be, so
-                    // whatever was narrowing the list goes.
-                    _state.update { it.revealed() }
+                    // whatever was narrowing the list goes, and the list
+                    // brings the row into view.
+                    _state.update { it.revealing(recording.name) }
                     if (link.kind == DeepLink.Kind.SHARE) {
                         share(recording)
                     } else if (_state.value.playingName != recording.name || !_state.value.playing) {
@@ -347,6 +348,8 @@ class MainViewModel @JvmOverloads constructor(
     fun keepSelected() = list.keepSelected()
 
     fun showMore() = list.showMore()
+
+    fun onRevealed(name: String) = list.onRevealed(name)
 
     fun startSelecting() = list.startSelecting()
 

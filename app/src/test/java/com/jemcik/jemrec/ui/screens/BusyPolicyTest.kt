@@ -185,6 +185,111 @@ class BusyPolicyTest : ScreenTest() {
     }
 
     /**
+     * Delete, said yes to twice while busy - nothing seen to happen, so
+     * asked again: each row moves once, and the second question, counting a
+     * row picked between the two, takes that one. Each counted the rows
+     * the other had, and the second moved them again: "could not move 1"
+     * after a delete that worked.
+     */
+    @Test fun deleteSaidYesToTwiceWhileBusyMovesEachRowOnce() {
+        val olivia = recording(file("20261021_160200_in.ogg"))
+        val marcus = recording(file("20261021_152400_out.ogg"))
+        val vm = viewModel(UiState(recordings = listOf(olivia, marcus), selecting = true, selected = setOf(olivia.name)))
+        val busy = HeldBusy(listOf(olivia, marcus))
+        busy.hold(vm)
+
+        vm.askDeleteSelected()
+        vm.confirmDeleteSelected()
+        vm.toggleSelected(marcus)
+        vm.askDeleteSelected()
+        vm.confirmDeleteSelected()
+        busy.release()
+        settle(vm)
+
+        assertFalse(File(olivia.filePath!!).exists())
+        assertFalse(File(marcus.filePath!!).exists())
+        assertEquals(2, dir.list()!!.count { it.startsWith(".trashed-") })
+        assertFalse(log(vm), log(vm).contains("could not"))
+        assertEquals(log(vm), 2, Regex("moved 1 to Recently deleted").findAll(log(vm)).count())
+    }
+
+    /** Delete all for good, said yes to twice while busy: deleted once,
+     *  with no "could not" for the files the first had deleted. */
+    @Test fun deleteForGoodSaidYesToTwiceWhileBusyDeletesOnce() {
+        val inTrash = file(".trashed-1795000000-20261021_160200_in.ogg")
+        val trashed = recording(inTrash, "20261021_160200_in.ogg")
+        val vm = viewModel(UiState(screen = Screen.TRASH, trashed = listOf(trashed), confirmingEmptyTrash = true))
+        val busy = HeldBusy(emptyList())
+        busy.hold(vm)
+
+        vm.confirmEmptyTrash()
+        vm.askEmptyTrash()
+        vm.confirmEmptyTrash()
+        busy.release()
+        settle(vm)
+
+        assertFalse(inTrash.exists())
+        assertEquals(log(vm), 1, Regex("deleted for good 1").findAll(log(vm)).count())
+        assertFalse(log(vm), log(vm).contains("could not"))
+    }
+
+    /** The record control, switched on while busy: its work waits its turn
+     *  and runs, and its Starting ends. Dropped, the header said Starting
+     *  for the screen's life. */
+    @Test fun theRecordControlSwitchedOnWhileBusyRunsOnceFree() {
+        com.jemcik.jemrec.recorder.RecorderSwitch.set(app, false)
+        val vm = viewModel(UiState(step = SetupStep.READY, enabled = false))
+        val busy = HeldBusy(emptyList())
+        busy.hold(vm)
+
+        vm.setEnabled(true)
+        assertTrue(vm.state.value.starting)
+        busy.release()
+        settle(vm)
+
+        assertTrue(vm.state.value.enabled)
+        assertFalse("Starting ends", vm.state.value.starting)
+    }
+
+    /**
+     * Allow this Wi-Fi, tapped twice while busy: Android is asked once,
+     * once the screen is free - a second tap is the same question - and the
+     * screen is not held while it asks. Dropped, the tap was lost, and every
+     * later one with it; held, every control was greyed while Android asked.
+     */
+    @Test fun allowThisWifiTappedWhileBusyAsksOnceFreeHoldingNothing() {
+        val vm = viewModel(UiState(step = SetupStep.READY))
+        val busy = HeldBusy(emptyList())
+        busy.hold(vm)
+        val seen = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
+        val watch = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+            .launch { vm.state.collect { seen += it.busy } }
+        try {
+            vm.allowThisWifi()
+            vm.allowThisWifi()
+            assertTrue(vm.state.value.starting)
+            busy.release()
+            settle(vm)
+        } finally {
+            watch.cancel()
+        }
+
+        assertEquals(log(vm), 1, Regex("could not switch Wireless debugging").findAll(log(vm)).count())
+        assertFalse("Starting ends", vm.state.value.starting)
+        // Busy for auto-delete alone.
+        assertEquals(listOf(true, false), seen.fold(listOf<Boolean>()) { acc, b -> if (acc.lastOrNull() == b) acc else acc + b })
+    }
+
+    /** The self-test replaces the log: its report alone, nothing older. */
+    @Test fun theSelfTestReplacesTheLog() {
+        val vm = viewModel(UiState(log = "[10:00:00] an older line"))
+        vm.selfTest()
+        settle(vm)
+        assertTrue(log(vm), log(vm).contains("FAIL - the recorder is not answering"))
+        assertFalse(log(vm), log(vm).contains("an older line"))
+    }
+
+    /**
      * The rest of what a busy screen drops: each action whose control is
      * greyed while busy, tapped while auto-delete runs. None runs when the
      * screen is free again - and once free, each does (the test after).

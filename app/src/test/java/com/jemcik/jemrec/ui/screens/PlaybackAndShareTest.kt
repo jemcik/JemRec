@@ -106,6 +106,23 @@ class PlaybackAndShareTest : ScreenTest() {
         }
     }
 
+    /** A take pauses a recording playing: over the loudspeaker it went into
+     *  the new greeting. */
+    @Test fun aTakePausesARecordingPlaying() {
+        val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
+        val vm = viewModel(UiState(recordings = listOf(olivia)), connectSession = { Futures.immediateFuture(session) })
+        vm.play(olivia)
+        shadowOf(Looper.getMainLooper()).idle()
+        org.mockito.Mockito.verify(session).play()
+        org.mockito.Mockito.clearInvocations(session)
+        try {
+            vm.answer.startTake()
+            org.mockito.Mockito.verify(session).pause()
+        } finally {
+            Greeting.letGoOfAnyTake()
+        }
+    }
+
     /** A pause is never refused: a voice app can hold the call's audio
      *  mode with a recording still playing. */
     @Test fun aPauseIsNotRefusedDuringACall() {

@@ -225,6 +225,9 @@ data class UiState(
      * would cost real time - but it has to announce itself.
      */
     val visibleCount: Int = PAGE,
+    /** A recording a notification's Play or Share asked for: the list
+     *  brings its row into view, then lets this go (RecordingsList.onRevealed). */
+    val reveal: String? = null,
     /** MediaStore wants the user's own say-so, through a system dialog. */
     val deleteConsent: IntentSender? = null,
     /**

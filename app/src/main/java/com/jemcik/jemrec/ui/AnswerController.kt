@@ -119,6 +119,9 @@ class AnswerController(
     /** How long a take may record on, unstopped: the recorder's own limit,
      *  and a second. A test shortens it. */
     private val takeLimitMs: Long = Greeting.MAX_SECONDS * 1000L + 1_000L,
+    /** Milliseconds on a clock that only goes forward, whatever the phone's
+     *  clock is set to, for timing the take's hold. A test sets it. */
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
     private val _state = MutableStateFlow(initial ?: AnswerUi())
     val state: StateFlow<AnswerUi> = _state.asStateFlow()
@@ -133,6 +136,14 @@ class AnswerController(
     /** Left while the recorder was asked to start: stopped, and not kept,
      *  once it has started - a stop sent first was lost to the start. */
     private var dropWhenStarted = false
+    /** When the take began recording, on [clock], which the user cannot set: the
+     *  hold after an unanswered Stop is timed from it. On the wall clock, a
+     *  clock set back mid-take stretched the hold, and every playing in the
+     *  app was refused that much longer. ([AnswerUi.takeStartedAt], the
+     *  wall clock's, is for the screen's counter.) */
+    @Volatile private var takeBegan: Long? = null
+    /** This screen's preview stopped, from any window (Greeting.previewing). */
+    private val stopThis: () -> Unit = { stopPreview() }
     /** Tests seed the state; nothing is then read from disk over it. */
     private val seeded = initial != null
 
@@ -263,6 +274,7 @@ class AnswerController(
         stopPreview()
         quiet()
         takeToken = mine
+        takeBegan = null
         dropWhenStarted = false
         _state.update { it.copy(takeListening = true) }
         take = scope.launch {
@@ -273,10 +285,11 @@ class AnswerController(
             }
             if (dropWhenStarted) {
                 // Left meanwhile: stopped now that it has started, not kept.
-                stopOnTheRecorder(mine, since = System.currentTimeMillis())
+                stopOnTheRecorder(mine, since = clock())
                 say("the greeting's take was stopped as its screen was left, and not kept")
                 return@launch
             }
+            takeBegan = clock()
             _state.update { it.copy(recordingTake = true, takeStartedAt = System.currentTimeMillis(), greetingProblem = null) }
             // The recorder stops by itself at thirty seconds; so does this.
             delay(Greeting.MAX_SECONDS * 1000L + 500)
@@ -295,7 +308,7 @@ class AnswerController(
         // when the new greeting was saved, the machine left off.
         _state.update { it.copy(processingTake = true) }
         val mine = takeToken ?: Any()
-        val since = _state.value.takeStartedAt
+        val since = takeBegan
         take = scope.launch {
             try {
                 processTake(mine, since)
@@ -307,7 +320,7 @@ class AnswerController(
 
     /** The stopped take fetched from the recorder, made a greeting of, saved
      *  and sent back. */
-    private suspend fun processTake(mine: Any, since: Long) {
+    private suspend fun processTake(mine: Any, since: Long?) {
         // Answered, the microphone is shut, and a preview cannot reach the
         // take; not answered, the recorder may record on to its own limit.
         val length = CaptureDaemon.stopTake(app)
@@ -362,10 +375,10 @@ class AnswerController(
      *  until the recorder's own limit from [since] - the take's start, or
      *  now if it has none - and let go by this take only: a later one, or
      *  another screen's, keeps its own. */
-    private fun holdUntilTheRecorderStopsByItself(mine: Any, since: Long) {
-        val limit = (if (since > 0) since else System.currentTimeMillis()) + takeLimitMs
+    private fun holdUntilTheRecorderStopsByItself(mine: Any, since: Long?) {
+        val limit = (since ?: clock()) + takeLimitMs
         outliving.launch {
-            delay((limit - System.currentTimeMillis()).coerceAtLeast(0))
+            delay((limit - clock()).coerceAtLeast(0))
             letGo(mine)
         }
     }
@@ -373,7 +386,7 @@ class AnswerController(
     /** The take [mine], started at [since], stopped on the recorder from
      *  outside this screen's scope - the screen gone, or left - and the
      *  microphone held until it answers, or its own limit. */
-    private fun stopOnTheRecorder(mine: Any, since: Long) {
+    private fun stopOnTheRecorder(mine: Any, since: Long?) {
         outliving.launch {
             if (runCatching { CaptureDaemon.stopTake(app) }.getOrNull() != null) {
                 letGo(mine)
@@ -403,7 +416,7 @@ class AnswerController(
         // Timed from the take's start, read before recordingTake goes: from
         // now, every playing in the app was refused up to half a minute too
         // long.
-        val since = _state.value.takeStartedAt
+        val since = takeBegan
         _state.update { it.copy(recordingTake = false) }
         takeToken?.let { stopOnTheRecorder(it, since) }
         say("the greeting's take was stopped as its screen was left, and not kept")
@@ -433,12 +446,14 @@ class AnswerController(
             } ?: return@launch
             val track = previewOf(pcm) ?: return@launch
             // Stopped while its player was made - which only a scope off the
-            // main thread allows, as the tests' is: not started.
-            if (!isActive) {
+            // main thread allows, as the tests' is - or a take begun
+            // meanwhile, in any window: not started.
+            if (!isActive || Greeting.takeListening) {
                 runCatching { track.stop(); track.release() }
                 return@launch
             }
             preview = track
+            Greeting.previewing(stopThis)
             _state.update { it.copy(playing = true) }
             delay((pcm.size / 2.0 / Greeting.RATE * 1000).toLong() + 300)
             if (preview === track) stopPreview()
@@ -463,7 +478,7 @@ class AnswerController(
         // Its hold on the whole process (Greeting.takeListening) is let go by
         // the stop's answer, or the recorder's own limit.
         if (_state.value.takeListening) {
-            takeToken?.let { stopOnTheRecorder(it, if (_state.value.recordingTake) _state.value.takeStartedAt else 0L) }
+            takeToken?.let { stopOnTheRecorder(it, if (_state.value.recordingTake) takeBegan else null) }
         }
     }
 
@@ -475,6 +490,7 @@ class AnswerController(
         previewing = null
         preview?.let { runCatching { it.stop(); it.release() } }
         preview = null
+        Greeting.previewEnded(stopThis)
         _state.update { it.copy(playing = false) }
     }
 

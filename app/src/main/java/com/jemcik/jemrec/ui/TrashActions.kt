@@ -58,14 +58,22 @@ internal class TrashActions(
         state.update { it.copy(confirmingEmptyTrash = false) }
         // What the question counted, read as it is answered: read after the
         // wait for busy, a recording trashed meanwhile went for good unasked.
-        val all = state.value.trashed
+        // Less what a yes still waiting its turn has: said yes to again
+        // while busy, the second found its files gone, "could not" (Claims).
+        val all = claims.take(state.value.trashed)
         if (all.isEmpty()) return
         actions.run(Action.DELETE_FOR_GOOD) {
-            val result = withContext(Dispatchers.IO) { Trash.deleteForGood(app, all) }
-            report(all.size, result, done = { "deleted for good $it" }, leaving = true)
-            reading.now()
+            try {
+                val result = withContext(Dispatchers.IO) { Trash.deleteForGood(app, all) }
+                report(all.size, result, done = { "deleted for good $it" }, leaving = true)
+                reading.now()
+            } finally {
+                claims.letGo(all)
+            }
         }
     }
+
+    private val claims = Claims()
 
     /** How a bulk restore or delete went - Recently deleted's and the list's
      *  own Delete - in the log, a failure in a snackbar too, and Android's

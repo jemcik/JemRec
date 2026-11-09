@@ -393,6 +393,28 @@ class BehaviourTest : ScreenTest() {
         compose.onNodeWithText("Delete").assertIsEnabled()
     }
 
+    /** Another window's take holding the microphone holds this one's
+     *  greeting too: Record, Delete and the preview did nothing then, with
+     *  no sign. */
+    @Test fun anotherWindowsTakeHoldsTheGreetingToo() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state, AnswerUi(greetingSeconds = 6.0))
+        val elsewhere = Any()
+        com.jemcik.jemrec.answering.Greeting.hold(elsewhere)
+        try {
+            show { AppScaffold(state, vm) }
+            compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("Delete").assertIsNotEnabled()
+            compose.onNodeWithText("Waiting for the recorder...").assertHasNoClickAction()
+            com.jemcik.jemrec.answering.Greeting.letGo(elsewhere)
+            compose.waitForIdle()
+            compose.onNodeWithText("Record again").performScrollTo().assertIsEnabled()
+            compose.onNodeWithText("Delete").assertIsEnabled()
+        } finally {
+            com.jemcik.jemrec.answering.Greeting.letGo(elsewhere)
+        }
+    }
+
     /** Back from the answering machine with a take recording: the screen,
      *  opened, watches for being left, and the take is stopped on the
      *  recorder - it went on unseen, and saved whatever played as the
