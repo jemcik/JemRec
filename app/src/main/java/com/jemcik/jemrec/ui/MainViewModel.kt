@@ -41,8 +41,6 @@ import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.SelfTest
 import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.recorder.Trigger
-import com.jemcik.jemrec.recordings.BulkDeleteResult
-import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.RecordingMarks
@@ -137,6 +135,9 @@ class MainViewModel @JvmOverloads constructor(
 
     /** The screen's reading of everything it shows from outside itself. */
     private val reading = Reading(app, viewModelScope, _state, answer, playback, fill)
+
+    /** Recently deleted's buttons, and Android's question before a move. */
+    private val trash = TrashActions(app, _state, log, actions, reading)
 
     /** Failures of something the user just did, for a snackbar where they are. */
     val notices: SharedFlow<String> = log.notices
@@ -972,58 +973,6 @@ class MainViewModel @JvmOverloads constructor(
         keepInFiles(picked.filter { it.kept != kept })
     }
 
-    /** Back out of the trash, as it was. */
-    fun restore(recording: Recording) = actions.run(Action.RESTORE) {
-        when (val result = withContext(Dispatchers.IO) { Trash.restore(getApplication(), recording) }) {
-            is DeleteResult.Deleted -> say("restored ${recording.name}")
-            is DeleteResult.NeedsConsent -> askAndroid(result.request)
-            is DeleteResult.Failed -> say("could not restore ${recording.name}: ${result.error.message}")
-        }
-        refreshNow()
-    }
-
-    /** Recently deleted's Restore all: every recording in it back in the list. */
-    fun restoreAll() = actions.run(Action.RESTORE_ALL) {
-        val all = _state.value.trashed
-        if (all.isEmpty()) return@run
-        val result = withContext(Dispatchers.IO) { Trash.restoreAll(getApplication(), all) }
-        report(all.size, result, "restored")
-        refreshNow()
-    }
-
-    fun askEmptyTrash() = _state.update { it.copy(confirmingEmptyTrash = true) }
-
-    fun cancelEmptyTrash() = _state.update { it.copy(confirmingEmptyTrash = false) }
-
-    /** Delete all for good, once asked: what is in Recently deleted is gone,
-     *  and cannot be restored. When free, as the dialog's yes is not a tap
-     *  to drop. */
-    fun confirmEmptyTrash() {
-        _state.update { it.copy(confirmingEmptyTrash = false) }
-        // What the question counted, read as it is answered: read after the
-        // wait for busy, a recording trashed meanwhile went for good unasked.
-        val all = _state.value.trashed
-        if (all.isEmpty()) return
-        actions.run(Action.DELETE_FOR_GOOD) {
-            val result = withContext(Dispatchers.IO) { Trash.deleteForGood(getApplication(), all) }
-            report(all.size, result, "deleted for good", leaving = true)
-            refreshNow()
-        }
-    }
-
-    /** How a bulk restore or delete went, and Android's question next for
-     *  what it wants confirmed - counted as asked, not as failed. */
-    private fun report(of: Int, result: BulkDeleteResult, did: String, leaving: Boolean = false) {
-        val asked = of - result.deleted - result.failed
-        val summary = listOfNotNull(
-            "$did ${result.deleted}".takeIf { result.deleted > 0 },
-            "asking Android about $asked".takeIf { result.needsConsent != null && asked > 0 },
-            "could not do ${result.failed}".takeIf { result.failed > 0 },
-        ).joinToString(", ")
-        if (result.failed > 0) tell(summary) else if (summary.isNotEmpty()) say(summary)
-        result.needsConsent?.let { askAndroid(it, if (leaving) result.disputed else emptyList()) }
-    }
-
     /** One of auto-delete's two rules changed: saved, and applied at once. */
     fun setAutoDelete(afterDays: Int? = null, shorterThan: Int? = null) = actions.run(Action.AUTO_DELETE) {
         val app = getApplication<Application>()
@@ -1202,6 +1151,23 @@ class MainViewModel @JvmOverloads constructor(
 
     fun cancelConversion() = sharing.cancelConversion()
 
+    /** Back out of the trash, as it was (TrashActions). */
+    fun restore(recording: Recording) = trash.restore(recording)
+
+    fun restoreAll() = trash.restoreAll()
+
+    fun askEmptyTrash() = trash.askEmptyTrash()
+
+    fun cancelEmptyTrash() = trash.cancelEmptyTrash()
+
+    fun confirmEmptyTrash() = trash.confirmEmptyTrash()
+
+    fun onDeleteConsentShown() = trash.onDeleteConsentShown()
+
+    fun onDeleteConsentResult(granted: Boolean) = trash.onDeleteConsentResult(granted)
+
+    private fun askAndroid(request: IntentSender, leaving: List<String> = emptyList()) = trash.askAndroid(request, leaving)
+
     /** The screen is gone for good; a recording playing goes on playing,
      *  under the system's controls, until they stop it. */
     override fun onCleared() {
@@ -1214,29 +1180,6 @@ class MainViewModel @JvmOverloads constructor(
      * Show the next batch of older recordings.
      */
     fun showMore() = _state.update { it.copy(visibleCount = it.visibleCount + PAGE) }
-
-    /** Android's dialog is up: the request is spent. Left set, a new screen -
-     *  rotated, re-themed behind the dialog - launched it a second time. */
-    fun onDeleteConsentShown() = _state.update { it.copy(deleteConsent = null) }
-
-    /** The system delete dialog has closed, one way or the other. */
-    fun onDeleteConsentResult(granted: Boolean) {
-        _state.update { it.copy(deleteConsent = null) }
-        if (!granted) say("deletion cancelled")
-        refresh()
-        val left = leavingOnYes
-        leavingOnYes = emptyList()
-        if (granted) left.forEach { AfterCall.gone(getApplication(), it) }
-    }
-
-    /** What Android's question is moving or deleting: the answer says only yes
-     *  or no, and a yes takes their notifications with them. Not a restore. */
-    private var leavingOnYes: List<String> = emptyList()
-
-    private fun askAndroid(request: IntentSender, leaving: List<String> = emptyList()) {
-        leavingOnYes = leaving
-        _state.update { it.copy(deleteConsent = request) }
-    }
 
     /**
      * Enter selection mode from the header, with nothing chosen yet.
