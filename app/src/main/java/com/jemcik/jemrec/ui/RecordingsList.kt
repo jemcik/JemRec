@@ -187,8 +187,8 @@ internal class RecordingsList(
                 // Those still listed once its turn comes: one gone meanwhile -
                 // from its notification, or auto-delete - said "could not
                 // move 1" after a delete that worked.
-                val listed = state.value.recordings.associateBy { it.name }
-                val still = doomed.mapNotNull { listed[it.name] }
+                val listed = state.value.recordings.associateBy { it.uri }
+                val still = doomed.mapNotNull { listed[it.uri] }
                 if (still.any { it.name == state.value.playingName }) playback.stopPlayback()
 
                 val result = withContext(Dispatchers.IO) {

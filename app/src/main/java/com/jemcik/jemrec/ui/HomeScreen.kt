@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -169,15 +170,29 @@ fun HomeScreen(
         try {
             // Drawn - its window was widened with the link - and laid out as
             // drawn, for the header's height and where the row is now.
-            val (place, items) = withTimeoutOrNull(2_000) {
+            val at = withTimeoutOrNull(2_000) {
                 snapshotFlow { placeOf(name) }.filterNotNull().first()
             } ?: return@LaunchedEffect
-            withTimeoutOrNull(2_000) { snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it == items } }
+            withTimeoutOrNull(2_000) { snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it == at.items } }
             val laid = listState.layoutInfo
-            val pinned = laid.visibleItemsInfo.firstOrNull { it.index == (if (offer) 1 else 0) }?.size ?: 0
+            val pinned = laid.visibleItemsInfo.firstOrNull { it.index == at.header }?.size ?: 0
             val row = laid.visibleItemsInfo.firstOrNull { it.key == name }
             if (row == null || row.offset < pinned || row.offset + row.size > laid.viewportEndOffset) {
-                listState.scrollToItem(place, -pinned)
+                listState.scrollToItem(at.target, -pinned)
+            }
+            // Its player opens once the session knows the recording's length,
+            // after this: a row at the screen's foot grew past the edge, its
+            // controls below it. Followed as it opens, for a few seconds, and
+            // left to the user the moment they scroll.
+            withTimeoutOrNull(FOLLOW_MS) {
+                snapshotFlow { listState.isScrollInProgress to listState.layoutInfo }.first { (scrolling, info) ->
+                    if (scrolling) return@first true
+                    val grown = info.visibleItemsInfo.firstOrNull { it.key == name } ?: return@first false
+                    val over = grown.offset + grown.size - info.viewportEndOffset
+                    val room = grown.offset - pinned
+                    if (over > 0 && room > 0) listState.scrollBy(minOf(over, room).toFloat())
+                    false
+                }
             }
         } finally {
             vm.onRevealed(name)
@@ -471,19 +486,27 @@ private fun SelectTip(onDismiss: () -> Unit) {
     )
 }
 
+/** How long a link's row is followed as its player opens (HomeScreen). */
+private const val FOLLOW_MS = 3_000L
+
+/** A row's place in HomeScreen's list: the item to scroll to, how many
+ *  items the list has, and where its header is. */
+private class Place(val target: Int, val items: Int, val header: Int)
+
 /**
  * Where [name]'s row is in HomeScreen's list - or, the first of its day, its
- * day's heading, so both show - and how many items the list has, counted as
- * the LazyColumn adds them: the call-log [offer], the header, the [tip], then
- * each day's heading and rows. Null if the row is not drawn.
+ * day's heading, so both show - counted as the LazyColumn adds its items:
+ * the call-log [offer], the header, the [tip], then each day's heading and
+ * rows. Null if the row is not drawn.
  */
-private fun placeInList(name: String, offer: Boolean, tip: Boolean, days: List<Pair<Day, List<Recording>>>): Pair<Int, Int>? {
-    var at = (if (offer) 1 else 0) + 1 + (if (tip) 1 else 0)
+private fun placeInList(name: String, offer: Boolean, tip: Boolean, days: List<Pair<Day, List<Recording>>>): Place? {
+    val header = if (offer) 1 else 0
+    var at = header + 1 + (if (tip) 1 else 0)
     var place: Int? = null
     for ((_, rows) in days) {
         val row = rows.indexOfFirst { it.name == name }
         if (row >= 0 && place == null) place = if (row == 0) at else at + 1 + row
         at += 1 + rows.size
     }
-    return place?.let { it to at }
+    return place?.let { Place(it, at, header) }
 }

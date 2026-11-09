@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.unit.IntSize
@@ -250,11 +251,18 @@ class ListScreensTest : ScreenTest() {
         awaitMain("playing $at") { vm.state.value.playingName == many[at].name }
         val until = System.currentTimeMillis() + 10_000
         while (vm.state.value.reveal != null) {
+            // The list's clock too: the row is followed for a few seconds
+            // as its player opens.
+            compose.mainClock.advanceTimeBy(250)
             compose.waitForIdle()
             check(System.currentTimeMillis() < until) { "row $at never let go" }
         }
         compose.waitForIdle()
     }
+
+    /** Where a node ends, whatever is cut off: its bounds in the root are
+     *  clipped to what shows, and a node past the list's edge ended there. */
+    private fun androidx.compose.ui.semantics.SemanticsNode.unclippedBottom() = positionInRoot.y + size.height
 
     private fun listScrolled() = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode()
         .config[SemanticsProperties.VerticalScrollAxisRange].value()
@@ -327,8 +335,8 @@ class ListScreensTest : ScreenTest() {
             compose.waitForIdle()
             playFromItsNotification(vm, many, 0)
             val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
-            val row = compose.onAllNodesWithText("Caller 0")[0].assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-            assertTrue("row 0 from ${row.top} to ${row.bottom}, the list to ${list.bottom}", row.bottom <= list.bottom + 0.5f)
+            val row = compose.onAllNodesWithText("Caller 0")[0].assertIsDisplayed().fetchSemanticsNode().unclippedBottom()
+            assertTrue("row 0 to $row, the list to ${list.bottom}", row <= list.bottom + 0.5f)
         } finally {
             com.jemcik.jemrec.recordings.Waveforms.override = null
         }
@@ -348,6 +356,88 @@ class ListScreensTest : ScreenTest() {
             check(System.currentTimeMillis() < until) { "never let go" }
         }
         assertEquals(0f, listScrolled())
+    }
+
+    /** A row at the screen's foot, played from its notification: as its
+     *  player opens - once the session knows the recording's length - the
+     *  row is kept in view. Measured before, it grew past the edge, its
+     *  controls below it. */
+    @Test fun aRowWhosePlayerOpensAtTheFootIsKeptInView() {
+        val many = twoDays()
+        Recordings.override = { many }
+        com.jemcik.jemrec.recordings.Waveforms.override = { name -> Fixtures.waveform(name.hashCode().toLong()) }
+        com.jemcik.jemrec.calls.CallLogLookup.dismissBanner(app)
+        // A session that plays what it is given, a minute long.
+        val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
+        val given = java.util.concurrent.atomic.AtomicReference<androidx.media3.common.MediaItem?>()
+        org.mockito.Mockito.doAnswer { given.set(it.getArgument(0)); null }
+            .`when`(session).setMediaItem(org.mockito.Mockito.any())
+        org.mockito.Mockito.`when`(session.currentMediaItem).thenAnswer { given.get() }
+        org.mockito.Mockito.`when`(session.duration).thenReturn(60_000L)
+        org.mockito.Mockito.`when`(session.isPlaying).thenReturn(true)
+        // Reached once the row has been measured, as a session is, a moment on.
+        val connecting = com.google.common.util.concurrent.SettableFuture.create<androidx.media3.session.MediaController>()
+        try {
+            val vm = viewModel(
+                Fixtures.ready().copy(recordings = many, offerCallLog = false, selectHintSeen = true),
+                connectSession = { connecting },
+            )
+            showApp(vm)
+            val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
+            // The last row reaching into view - cut at the edge, or whole.
+            val last = (0 until 20).last { i ->
+                compose.onAllNodesWithText("Caller $i").fetchSemanticsNodes().firstOrNull()
+                    ?.boundsInRoot?.let { it.bottom <= list.bottom } == true
+            }
+            // The one above it: whole, and in view as it plays, but not
+            // with its player.
+            val foot = last - 1
+            vm.open(com.jemcik.jemrec.DeepLink.Link(com.jemcik.jemrec.DeepLink.Kind.PLAY, many[foot].name))
+            awaitMain("playing") { vm.state.value.playingName == many[foot].name }
+            compose.waitForIdle()
+            assertEquals("in view, not moved", 0f, listScrolled())
+            connecting.set(session)
+            val until = System.currentTimeMillis() + 10_000
+            while (vm.state.value.reveal != null) {
+                compose.mainClock.advanceTimeBy(250)
+                compose.waitForIdle()
+                check(System.currentTimeMillis() < until) { "never let go" }
+            }
+            compose.waitForIdle()
+            assertTrue("its player open", vm.state.value.durationMs > 0)
+            // The player's foot: its position in the recording, under the row.
+            val seeker = compose.onAllNodesWithContentDescription("Position in the recording")[0].fetchSemanticsNode().unclippedBottom()
+            assertTrue("its player to $seeker, the list to ${list.bottom}", seeker <= list.bottom + 0.5f)
+        } finally {
+            com.jemcik.jemrec.recordings.Waveforms.override = null
+        }
+    }
+
+    /** On the Calls tab too, the search takes the focus as it opens. */
+    @Test fun theCallsSearchIsFocusedAsItOpens() {
+        val vm = viewModel(Fixtures.ready().copy(homeTab = HomeTab.CALLS, calls = Fixtures.calls()))
+        showApp(vm)
+        compose.onNodeWithContentDescription("Search calls").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).assertIsFocused()
+    }
+
+    /** Android's call-log question closed under the user - a link opening
+     *  JemRec's window finishes what is above it - is no answer: the offer
+     *  stays. Taken for one, it went for good, the user never asked. */
+    @Test fun aCallLogQuestionClosedUnderTheUserIsNoAnswer() {
+        Recordings.override = { emptyList() }
+        val state = Fixtures.ready().copy(offerCallLog = true)
+        val vm = viewModel(state)
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Allow").performClick()
+        compose.waitForIdle()
+        val asked = shadowOf(compose.activity).lastRequestedPermission
+        // Interrupted: nothing back, as Android hands it.
+        compose.activity.onRequestPermissionsResult(asked.requestCode, emptyArray(), IntArray(0))
+        compose.waitForIdle()
+        assertTrue(vm.state.value.offerCallLog)
+        assertFalse(com.jemcik.jemrec.calls.CallLogLookup.bannerDismissed(app))
     }
 
     /** Search open, its keyboard put away, and the call-log offer answered:

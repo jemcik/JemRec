@@ -232,6 +232,11 @@
           excludeFromRecents and noHistory because it is a question, not a
           place: it should never be something the user swipes back to later and
           answers about a call that ended an hour ago.
+
+          A task of its own: started with NEW_TASK and CLEAR_TASK (RecordPrompt),
+          it cleared JemRec's own task, whose affinity it had - the window
+          there, with its place, its question and a greeting's take, went
+          with it (read from the code).
         -->
         <activity
             android:name=".RecordPromptActivity"
@@ -239,6 +244,7 @@
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:launchMode="singleTop"
+            android:taskAffinity="${applicationId}.prompt"
             android:showOnLockScreen="true" />
 
         <!--

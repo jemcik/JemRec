@@ -72,9 +72,10 @@ internal class TrashActions(
         actions.run(Action.DELETE_FOR_GOOD) {
             try {
                 // Those still in Recently deleted once its turn comes: one
-                // gone meanwhile was "could not" after it had gone.
-                val listed = state.value.trashed.associateBy { it.name }
-                val still = all.mapNotNull { listed[it.name] }
+                // gone meanwhile was "could not" after it had gone. By where
+                // each is: a name is listed once for each place it is in.
+                val listed = state.value.trashed.associateBy { it.uri }
+                val still = all.mapNotNull { listed[it.uri] }
                 val result = withContext(Dispatchers.IO) { Trash.deleteForGood(app, still) }
                 report(still.size, result, done = { "deleted for good $it" }, leaving = true)
                 reading.now()

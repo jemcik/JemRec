@@ -66,6 +66,9 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
     // would overwrite the file being read, and the saving undo a Delete.
     val making by Greeting.making.collectAsState()
     val processing = a.processingTake || making != null
+    // A take made a greeting of past its screen - closed meanwhile - is
+    // shown once saved: the screen opened since said "No greeting yet".
+    LaunchedEffect(making) { if (making == null) vm.answer.reload() }
     val haptics = LocalHapticFeedback.current
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
 

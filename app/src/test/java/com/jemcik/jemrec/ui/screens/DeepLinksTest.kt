@@ -104,6 +104,8 @@ class DeepLinksTest : ScreenTest() {
         assertEquals(emptySet<String>(), s.selected)
         assertEquals(olivia.name, s.playingName)
         assertEquals(Fixtures.waveform(olivia.name.hashCode().toLong()), s.waveform)
+        // Its row asked into view, which the list lets go once done.
+        assertEquals(olivia.name, s.reveal)
     }
 
     /** One already playing is left playing: Play is not a pause. Reaching
@@ -138,6 +140,8 @@ class DeepLinksTest : ScreenTest() {
         assertFalse(s.selecting)
         assertSame(olivia, s.shareChoice)
         assertNull(s.playingName)
+        // Its row asked into view, as Play's is.
+        assertEquals(olivia.name, s.reveal)
     }
 
     /** The self-test: Diagnostics at once; the test once the screen is

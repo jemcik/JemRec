@@ -9,6 +9,7 @@ import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.contract.Repo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -130,6 +131,16 @@ class OneWindowTest {
         remade.create(android.os.Bundle())
         assertFalse(remade.get().isFinishing)
         remade.destroy()
+    }
+
+    /** The record prompt has a task of its own: started with NEW_TASK and
+     *  CLEAR_TASK, it cleared JemRec's own task, whose affinity it had, and
+     *  the window there went with it. */
+    @Test fun theRecordPromptHasATaskOfItsOwn() {
+        val pm = app.packageManager
+        val prompt = pm.getActivityInfo(ComponentName(app, com.jemcik.jemrec.RecordPromptActivity::class.java), 0)
+        val main = pm.getActivityInfo(ComponentName(app, MainActivity::class.java), 0)
+        assertNotEquals(main.taskAffinity, prompt.taskAffinity)
     }
 
     /** Nothing else in the app starts the screen: a way in made without

@@ -37,7 +37,10 @@ internal fun awaitJob(job: Job, what: String = "the job") = awaitMain(what) { jo
  *  the ones queued behind busy, the waveform fill-in. Anything queued
  *  is one of these, so once none is left nothing more runs by itself. */
 internal fun settle(vm: MainViewModel) =
-    awaitMain("the view model's work") { vm.viewModelScope.coroutineContext.job.children.all { it.isCompleted } }
+    awaitMain("the view model's work") {
+        vm.viewModelScope.coroutineContext.job.children.all { it.isCompleted } &&
+            com.jemcik.jemrec.ui.OUTLIVING.coroutineContext.job.children.all { it.isCompleted }
+    }
 
 /**
  * The screen busy until [release]: Settings' auto-delete, its closing

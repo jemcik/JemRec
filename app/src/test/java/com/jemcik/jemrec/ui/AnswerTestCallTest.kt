@@ -865,6 +865,22 @@ class AnswerTestCallTest {
         assertEquals("let go", AudioTrack.STATE_UNINITIALIZED, track.state)
     }
 
+    /** The preview's scope ended mid-preview, with no stop asked: its
+     *  player is let go all the same, and it is not shown playing. Ended
+     *  so, or stopped between its start's check and its player being kept,
+     *  the track played on to its end, never released. */
+    @Test fun aPreviewCutShortLetsItsPlayerGo() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 10))
+        val made = java.util.concurrent.atomic.AtomicReference<AudioTrack?>()
+        val screenScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val screen = AnswerController(context, screenScope, { said += it }, previewOf = { pcm -> Greeting.preview(pcm).also { made.set(it) } })
+        screen.togglePreview()
+        eventually("playing") { screen.state.value.playing }
+        screenScope.cancel()
+        eventually("let go") { made.get()!!.state == AudioTrack.STATE_UNINITIALIZED }
+        assertFalse(screen.state.value.playing)
+    }
+
     /** A take begun in one window stops the greeting's preview playing in
      *  another: it played on under the take, into the new greeting. */
     @Test fun aTakeStopsAPreviewInAnotherWindow() {

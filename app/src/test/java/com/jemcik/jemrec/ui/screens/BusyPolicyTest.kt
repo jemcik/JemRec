@@ -26,6 +26,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import androidx.lifecycle.viewModelScope
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -155,6 +157,69 @@ class BusyPolicyTest : ScreenTest() {
         assertFalse("deleted once free", inTrash.exists())
         assertTrue("trashed after the question, kept", laterFile.exists())
         assertTrue(log(vm), log(vm).contains("deleted for good 1"))
+    }
+
+    /** Every copy of a name in Recently deleted - one for each place it is
+     *  trashed in - goes for good: by name, one copy was taken and the other
+     *  left, "deleted for good 1" said of two. */
+    @Test fun deleteForGoodTakesEveryCopyOfAName() {
+        val name = "20261021_160200_in.ogg"
+        val oneFile = file(".trashed-1795000000-$name")
+        val otherFile = file(".trashed-1795000099-$name")
+        val one = inTrash(oneFile, name)
+        val other = inTrash(otherFile, name)
+        val vm = viewModel(UiState(screen = Screen.TRASH, trashed = listOf(one, other), confirmingEmptyTrash = true))
+        vm.confirmEmptyTrash()
+        settle(vm)
+        assertFalse(oneFile.exists())
+        assertFalse(otherFile.exists())
+        assertTrue(log(vm), log(vm).contains("deleted for good 2"))
+    }
+
+    /**
+     * An answer already given outlives the screen: said yes to while busy -
+     * a delete, Delete all for good, the debugging notification's switch -
+     * and JemRec closed from Recents during the wait, each runs all the
+     * same. Each waited in the screen's own scope, and went with it, without
+     * a word.
+     */
+    @Test fun anAnswerGivenOutlivesTheScreen() {
+        val olivia = recording(file("20261021_160200_in.ogg"))
+        val trashedFile = file(".trashed-1795000000-20261021_152400_out.ogg")
+        val trashed = inTrash(trashedFile, "20261021_152400_out.ogg")
+        val vm = viewModel(
+            UiState(recordings = listOf(olivia), trashed = listOf(trashed), selecting = true, selected = setOf(olivia.name)),
+        )
+        val busy = HeldBusy(listOf(olivia, trashed))
+        busy.hold(vm)
+
+        vm.askDeleteSelected()
+        vm.confirmDeleteSelected()
+        vm.askEmptyTrash()
+        vm.confirmEmptyTrash()
+        vm.setHideDebugNotification(true)
+        // Closed from Recents: the screen's own work ends.
+        vm.viewModelScope.cancel()
+        busy.release()
+        settle(vm)
+
+        assertFalse("moved", File(olivia.filePath!!).exists())
+        assertFalse("deleted for good", trashedFile.exists())
+        assertTrue("the switch's answer kept", com.jemcik.jemrec.capture.DebugNotificationCleaner.asked(app))
+    }
+
+    /** Start fresh, said yes to while busy, and JemRec closed from Recents
+     *  during the wait: it runs all the same. */
+    @Test fun startFreshOutlivesTheScreen() {
+        Setup.markPaired(app)
+        val vm = viewModel(UiState(step = SetupStep.READY))
+        val busy = HeldBusy(emptyList())
+        busy.hold(vm)
+        vm.confirmReset()
+        vm.viewModelScope.cancel()
+        busy.release()
+        settle(vm)
+        assertFalse("started fresh", Setup.hasPaired(app))
     }
 
     /** A recording gone from Recently deleted while Delete all for good
@@ -360,10 +425,12 @@ class BusyPolicyTest : ScreenTest() {
      */
     @Test fun whileBusyEveryGreyedActionIsDropped() {
         val inTrash = file(".trashed-1795000000-20261021_160200_in.ogg")
-        val trashed = recording(inTrash, "20261021_160200_in.ogg")
+        val trashed = inTrash(inTrash, "20261021_160200_in.ogg")
         VoipCallNotes.setEnabled(app, true)
         val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS, trashed = listOf(trashed)))
-        val busy = HeldBusy(emptyList())
+        // The reading that holds busy still finds it in Recently deleted: a
+        // Restore all run once free would restore it.
+        val busy = HeldBusy(listOf(trashed))
         busy.hold(vm)
 
         vm.refreshSetup()

@@ -436,6 +436,27 @@ class BehaviourTest : ScreenTest() {
         }
     }
 
+    /** A take made a greeting of past its screen - closed meanwhile - shows
+     *  on the screen opened since once it is saved: it said "No greeting
+     *  yet" until something else read the greeting again. */
+    @Test fun aGreetingMadeElsewhereShowsOnceSaved() {
+        val app = RuntimeEnvironment.getApplication()
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state)
+        val elsewhere = Any()
+        com.jemcik.jemrec.answering.Greeting.make(elsewhere)
+        try {
+            show { AppScaffold(state, vm) }
+            compose.onNodeWithText("No greeting yet").performScrollTo().assertExists()
+            com.jemcik.jemrec.answering.Greeting.save(app, ByteArray(com.jemcik.jemrec.answering.Greeting.RATE * 2 * 3))
+            com.jemcik.jemrec.answering.Greeting.made(elsewhere)
+            compose.waitForIdle()
+            compose.onNodeWithText("Your greeting").performScrollTo().assertExists()
+        } finally {
+            com.jemcik.jemrec.answering.Greeting.made(elsewhere)
+        }
+    }
+
     /** "Waiting for the recorder..." is not in the error's red, over an
      *  earlier take's problem: it showed red, as if waiting were the fault. */
     @Test fun waitingForTheRecorderIsNotAProblem() {

@@ -4,6 +4,8 @@ import android.util.Log
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.recordings.Recording
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -39,7 +41,7 @@ internal enum class WhenBusy {
  * table themselves (Actions.free): a deep link's self-test and its Allow
  * this Wi-Fi, and pairing again's setup check.
  */
-internal enum class Action(val label: String, val whenBusy: WhenBusy) {
+internal enum class Action(val label: String, val whenBusy: WhenBusy, val outlivesTheScreen: Boolean = false) {
     /** Diagnostics' Self-test, greyed while busy. */
     SELF_TEST("self test", WhenBusy.DROPPED),
 
@@ -76,7 +78,7 @@ internal enum class Action(val label: String, val whenBusy: WhenBusy) {
     DEFAULT_FOLDER("use default folder", WhenBusy.DROPPED),
 
     /** Start fresh, said yes to in its dialog. */
-    START_FRESH("start fresh", WhenBusy.QUEUED),
+    START_FRESH("start fresh", WhenBusy.QUEUED, outlivesTheScreen = true),
 
     /** Setup's Open settings and Try again on the connection card: Open
      *  settings is never greyed, and goes to Settings at once, so a connect
@@ -91,13 +93,13 @@ internal enum class Action(val label: String, val whenBusy: WhenBusy) {
     /** Hiding Android's debugging notification: setup's answer, and
      *  Settings' switch, which is not greyed - a flip dropped while busy did
      *  nothing (0.15's review). */
-    DEBUG_NOTIFICATION("debugging notification", WhenBusy.QUEUED),
+    DEBUG_NOTIFICATION("debugging notification", WhenBusy.QUEUED, outlivesTheScreen = true),
 
     /** Delete all for good, said yes to in its dialog. */
-    DELETE_FOR_GOOD("delete for good", WhenBusy.QUEUED),
+    DELETE_FOR_GOOD("delete for good", WhenBusy.QUEUED, outlivesTheScreen = true),
 
     /** The selection's Delete, said yes to in its dialog. */
-    DELETE_SELECTED("delete recordings", WhenBusy.QUEUED),
+    DELETE_SELECTED("delete recordings", WhenBusy.QUEUED, outlivesTheScreen = true),
 
     /** A picker's answer - a contact for the rules, a folder - arrives as
      *  the screen resumes, while the resume's check holds busy: dropped,
@@ -132,6 +134,7 @@ internal class Actions(
     private val state: MutableStateFlow<UiState>,
     private val scope: CoroutineScope,
     private val log: ActionLog,
+    private val outliving: CoroutineScope = OUTLIVING,
 ) {
     fun run(action: Action, block: suspend () -> Unit) {
         when (action.whenBusy) {
@@ -142,7 +145,11 @@ internal class Actions(
             // A resume's setup check holds the busy flag for seconds (longer
             // with the recorder down), and a delete confirmed meanwhile closed
             // its dialog and did nothing, without a word.
-            WhenBusy.QUEUED -> scope.launch {
+            // An answer already given - a dialog's yes, a switch flipped -
+            // waits its turn past the screen: closed from Recents during
+            // the wait, a delete said yes to never ran, without a word, as
+            // the record control's turn once did (RecorderSwitch.turnLater).
+            WhenBusy.QUEUED -> (if (action.outlivesTheScreen) outliving else scope).launch {
                 free()
                 holdingBusy(action.label, block)
             }
@@ -184,15 +191,23 @@ internal class Actions(
  * one has; one done lets its rows go.
  */
 internal class Claims {
-    private val names = mutableSetOf<String>()
+    // By where each is, not its name: Recently deleted lists a name once
+    // for each place it is trashed in, and by name, Delete all for good
+    // took one copy and left the other.
+    private val places = mutableSetOf<String>()
 
     /** Of [rows], those no earlier yes has: now this one's. */
     @Synchronized
-    fun take(rows: List<Recording>): List<Recording> = rows.filter { names.add(it.name) }
+    fun take(rows: List<Recording>): List<Recording> = rows.filter { places.add(it.uri.toString()) }
 
     /** [rows] done with: a later question may count them again. */
     @Synchronized
     fun letGo(rows: List<Recording>) {
-        rows.forEach { names.remove(it.name) }
+        rows.forEach { places.remove(it.uri.toString()) }
     }
 }
+
+/** Where an answer already given waits its turn and runs once the screen
+ *  has gone (Action.outlivesTheScreen): the process's, on the main thread
+ *  as the screen's own is. */
+internal val OUTLIVING = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

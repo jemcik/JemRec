@@ -127,9 +127,9 @@ class AnswerController(
     val state: StateFlow<AnswerUi> = _state.asStateFlow()
 
     private var take: Job? = null
-    private var preview: AudioTrack? = null
+    @Volatile private var preview: AudioTrack? = null
     private var testWatch: Job? = null
-    private var previewing: Job? = null
+    @Volatile private var previewing: Job? = null
     /** The take under way, its own token: a hold on the microphone is let
      *  go by its own take only (Greeting.hold). */
     @Volatile private var takeToken: Any? = null
@@ -459,8 +459,20 @@ class AnswerController(
             preview = track
             Greeting.previewing(stopThis)
             _state.update { it.copy(playing = true) }
-            delay((pcm.size / 2.0 / Greeting.RATE * 1000).toLong() + 300)
-            if (preview === track) stopPreview()
+            try {
+                delay((pcm.size / 2.0 / Greeting.RATE * 1000).toLong() + 300)
+            } finally {
+                // At its end, or stopped - from another thread, a take's
+                // processing: a stop between the check above and `preview`
+                // set found nothing to let go, and the track played on to
+                // its end, never released.
+                if (preview === track) {
+                    preview = null
+                    Greeting.previewEnded(stopThis)
+                    _state.update { it.copy(playing = false) }
+                }
+                runCatching { track.stop(); track.release() }
+            }
         }
     }
 
