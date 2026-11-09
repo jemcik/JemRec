@@ -43,7 +43,7 @@ internal class TrashActions(
         val all = state.value.trashed
         if (all.isEmpty()) return@run
         val result = withContext(Dispatchers.IO) { Trash.restoreAll(app, all) }
-        report(all.size, result, "restored")
+        report(all.size, result, done = { "restored $it" })
         reading.now()
     }
 
@@ -62,19 +62,28 @@ internal class TrashActions(
         if (all.isEmpty()) return
         actions.run(Action.DELETE_FOR_GOOD) {
             val result = withContext(Dispatchers.IO) { Trash.deleteForGood(app, all) }
-            report(all.size, result, "deleted for good", leaving = true)
+            report(all.size, result, done = { "deleted for good $it" }, leaving = true)
             reading.now()
         }
     }
 
-    /** How a bulk restore or delete went, and Android's question next for
-     *  what it wants confirmed - counted as asked, not as failed. */
-    private fun report(of: Int, result: BulkDeleteResult, did: String, leaving: Boolean = false) {
+    /** How a bulk restore or delete went - Recently deleted's and the list's
+     *  own Delete - in the log, a failure in a snackbar too, and Android's
+     *  question next for what it wants confirmed: counted as asked, not as
+     *  failed. [done] and [couldNot] word each count; [leaving], the question
+     *  takes their notifications with a yes. */
+    fun report(
+        of: Int,
+        result: BulkDeleteResult,
+        done: (Int) -> String,
+        couldNot: (Int) -> String = { "could not do $it" },
+        leaving: Boolean = false,
+    ) {
         val asked = of - result.deleted - result.failed
         val summary = listOfNotNull(
-            "$did ${result.deleted}".takeIf { result.deleted > 0 },
+            done(result.deleted).takeIf { result.deleted > 0 },
             "asking Android about $asked".takeIf { result.needsConsent != null && asked > 0 },
-            "could not do ${result.failed}".takeIf { result.failed > 0 },
+            couldNot(result.failed).takeIf { result.failed > 0 },
         ).joinToString(", ")
         if (result.failed > 0) log.tell(summary) else if (summary.isNotEmpty()) log.say(summary)
         result.needsConsent?.let { askAndroid(it, if (leaving) result.disputed else emptyList()) }

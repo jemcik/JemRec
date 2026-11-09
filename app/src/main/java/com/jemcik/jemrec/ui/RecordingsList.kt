@@ -185,14 +185,13 @@ internal class RecordingsList(
             }
             // Whatever Android wants confirmed is not moved yet - its own
             // dialog comes next - so it is counted as asked, not as failed.
-            val asked = doomed.size - result.deleted - result.failed
-            val summary = listOfNotNull(
-                "moved ${result.deleted} to Recently deleted".takeIf { result.deleted > 0 },
-                "asking Android about $asked".takeIf { result.needsConsent != null && asked > 0 },
-                "could not move ${result.failed}".takeIf { result.failed > 0 },
-            ).joinToString(", ")
-            if (result.failed > 0) log.tell(summary) else log.say(summary)
-            result.needsConsent?.let { trash.askAndroid(it, result.disputed) }
+            trash.report(
+                doomed.size,
+                result,
+                done = { "moved $it to Recently deleted" },
+                couldNot = { "could not move $it" },
+                leaving = true,
+            )
             state.update { it.copy(selecting = false, selected = emptySet()) }
             reading.refresh()
         }

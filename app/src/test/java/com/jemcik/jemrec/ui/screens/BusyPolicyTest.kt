@@ -24,6 +24,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import kotlinx.coroutines.launch
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -337,5 +338,30 @@ class BusyPolicyTest : ScreenTest() {
         assertTrue(log(vm), log(vm).contains("auto-delete failed: IllegalStateException: boom"))
         assertFalse(vm.state.value.busy)
         assertFalse("no ADB session here", vm.state.value.connected)
+    }
+
+    /** The selection's Delete says how it went as Recently deleted's buttons
+     *  do, through one report: a recording that could not be moved is said in
+     *  the log and in a snackbar, its first letter a capital. */
+    @Test fun aDeleteThatCannotMoveSaysSoTwice() {
+        val olivia = recording(file("20261021_160200_in.ogg"))
+        Recordings.override = { listOf(olivia) }
+        val vm = viewModel(UiState(recordings = listOf(olivia), selecting = true, selected = setOf(olivia.name)))
+        val heard = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val listening = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+            .launch { vm.notices.collect { heard += it } }
+        // A folder that cannot be written: the move is refused.
+        dir.setWritable(false)
+        try {
+            vm.confirmDeleteSelected()
+            settle(vm)
+        } finally {
+            dir.setWritable(true)
+            listening.cancel()
+        }
+        assertTrue(File(olivia.filePath!!).exists())
+        assertTrue(log(vm), log(vm).contains("] could not move 1\n"))
+        assertEquals(listOf("Could not move 1"), heard)
+        assertFalse(vm.state.value.selecting)
     }
 }
