@@ -257,11 +257,13 @@ class AnswerController(
      * wait that stops it went with the screen - and was never released;
      * mid-take, the recorder went on recording the microphone for up to
      * thirty seconds, and refused a new take until then. The take is told to
-     * stop in a scope of its own, as this screen's is ending, and is not kept.
+     * stop in a scope of its own, as this screen's has ended by now, and is
+     * not kept. A Record tapped a moment before - the recorder's yes not back
+     * yet - is not caught: the stop could reach the recorder before the start.
      */
     fun close() {
         stopPreview()
-        if (_state.value.recordingTake || take?.isActive == true) {
+        if (_state.value.recordingTake) {
             outliving.launch { runCatching { CaptureDaemon.stopTake(app) } }
         }
     }

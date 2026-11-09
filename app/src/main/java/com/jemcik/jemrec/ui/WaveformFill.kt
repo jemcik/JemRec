@@ -30,9 +30,9 @@ private const val RETRY_UNDECODABLE_MS = 30 * 60_000L
  * each opening makes one - goes on from there. It ran on when the app was
  * left, with up to four decoders a call, during the next call too. Whether
  * a recording has its levels is a file's size, not a read of them; one that
- * cannot be decoded is tried again only after half an hour
- * (RETRY_UNDECODABLE_MS); and the levels of recordings no longer kept go
- * (Waveforms.prune). Asked again while it
+ * cannot be decoded is tried again after half an hour
+ * (RETRY_UNDECODABLE_MS), or by the next screen's fill-in; and the levels
+ * of recordings no longer kept go (Waveforms.prune). Asked again while it
  * runs, it goes over the list once more at the end, for the recordings the
  * list gained meanwhile.
  */
