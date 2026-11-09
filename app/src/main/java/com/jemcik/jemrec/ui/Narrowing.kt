@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -281,6 +283,98 @@ internal fun NarrowingLine(by: List<String>, shown: Int, of: Int, onShowAll: () 
 }
 
 /**
+ * One list's narrowing, as the header over it and the side panel beside it
+ * draw it: the chips that would narrow it (chipsFor), the ones lit, the
+ * search, and what a tap or a keystroke does. The Recordings tab's and the
+ * Calls tab's, from [narrowingOf].
+ */
+internal class ListNarrowing(
+    /** The Calls tab's, worded for it. */
+    val calls: Boolean,
+    val chips: List<ListChip>,
+    val on: Set<ListChip>,
+    val searchOpen: Boolean,
+    val query: String,
+    val tap: (ListChip) -> Unit,
+    val search: (String) -> Unit,
+)
+
+/** [state]'s narrowing of the Calls tab, or with [calls] false, of the
+ *  Recordings tab. The chips are worked out again only as the list or the
+ *  lit chips change. */
+@Composable
+internal fun narrowingOf(state: UiState, vm: MainViewModel, calls: Boolean): ListNarrowing {
+    val on = if (calls) state.callsNarrowing.chipsOn() else state.recordingsNarrowing.chipsOn()
+    val chips = remember(if (calls) state.calls else state.recordings, on) {
+        if (calls) chipsFor(state.calls.map { it.chipFacts() }, on) else chipsFor(state.recordings.map { it.chipFacts() }, on)
+    }
+    return ListNarrowing(
+        calls = calls,
+        chips = chips,
+        on = on,
+        searchOpen = if (calls) state.callsNarrowing.searchOpen else state.recordingsNarrowing.searchOpen,
+        query = if (calls) state.callsNarrowing.query else state.recordingsNarrowing.query,
+        tap = if (calls) vm::tapCallsChip else vm::tapRecordingsChip,
+        search = if (calls) vm::setCallsQuery else vm::setQuery,
+    )
+}
+
+/**
+ * A list's pinned header, both tabs': [toolbar] on top (the Recordings
+ * tab's selection), the chips, the search under them, the line that says
+ * the list is narrowed, and the rule once rows pass under it. On a phone on
+ * its side the chips and search are in the side panel instead
+ * (NarrowingPanel), and only the line is here. Over a list with nothing in
+ * it ([listed] false), only the line; while selecting ([chipsShown] false),
+ * no chips - the toolbar is in their place - but the search stays.
+ *
+ * The search takes the focus as it opens, so the keyboard is up and ready -
+ * opening search only to have to tap the field as well would undo the point
+ * of hiding it behind one tap.
+ */
+@Composable
+internal fun NarrowingHeader(
+    narrowing: ListNarrowing,
+    shown: Int,
+    of: Int,
+    onShowAll: () -> Unit,
+    aside: Boolean,
+    listed: Boolean,
+    chipsShown: Boolean,
+    scrolled: Boolean,
+    toolbar: @Composable () -> Unit = {},
+) {
+    val haptics = LocalHapticFeedback.current
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(narrowing.searchOpen, aside) {
+        if (narrowing.searchOpen && !aside) runCatching { focus.requestFocus() }
+    }
+    Column(Modifier.keepsItsPlace().background(MaterialTheme.colorScheme.surface)) {
+        toolbar()
+        if (listed && !aside) {
+            if (chipsShown) {
+                ListChipRow(narrowing.chips, narrowing.on, narrowing.calls) { chip -> haptics.tap(); narrowing.tap(chip) }
+            }
+            // Below the header row, and only when asked for. Expands and
+            // fades in together so it reads as unfolding from the chip, not
+            // jumping into place.
+            AnimatedVisibility(
+                visible = narrowing.searchOpen,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                ListSearchField(narrowing.query, narrowing.search, focus, "Search by name or number")
+            }
+        }
+        NarrowingLine(narrowedBy(narrowing.on, narrowing.query), shown = shown, of = of, onShowAll = onShowAll)
+        // The rule caps the header once rows are passing under it -
+        // Material's app bars separate from content on scroll the same way.
+        // At the top there is nothing to separate it from.
+        if (listed && scrolled) HorizontalDivider()
+    }
+}
+
+/**
  * The list's chips and search beside the list, on a phone on its side - the
  * side panel's middle (option B, the user's pick, 2026-10-23). The same chips
  * by the same rule as the row (chipsFor) and the same composable (ListChip),
@@ -288,38 +382,37 @@ internal fun NarrowingLine(by: List<String>, shown: Int, of: Int, onShowAll: () 
  * search field under them. As in the row, the Recordings chips give way while
  * selecting, and the field stays.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun NarrowingPanel(state: UiState, vm: MainViewModel) {
-    val haptics = LocalHapticFeedback.current
-    val focus = remember { FocusRequester() }
     val calls = state.homeTab == HomeTab.CALLS
     if (if (calls) state.calls.isEmpty() else state.recordings.isEmpty()) return
-    val open = if (calls) state.callsNarrowing.searchOpen else state.recordingsNarrowing.searchOpen
-    val query = if (calls) state.callsNarrowing.query else state.recordingsNarrowing.query
-    val on = if (calls) state.callsNarrowing.chipsOn() else state.recordingsNarrowing.chipsOn()
-    val chips = remember(if (calls) state.calls else state.recordings, on) {
-        if (calls) chipsFor(state.calls.map { it.chipFacts() }, on) else chipsFor(state.recordings.map { it.chipFacts() }, on)
-    }
-    LaunchedEffect(open) {
-        if (open) runCatching { focus.requestFocus() }
+    NarrowingPanel(narrowingOf(state, vm, calls), chipsShown = calls || !state.selecting)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NarrowingPanel(narrowing: ListNarrowing, chipsShown: Boolean) {
+    val haptics = LocalHapticFeedback.current
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(narrowing.searchOpen) {
+        if (narrowing.searchOpen) runCatching { focus.requestFocus() }
     }
     Column(Modifier.padding(top = 6.dp)) {
-        if (calls || !state.selecting) {
+        if (chipsShown) {
             FlowRow(
                 Modifier.padding(end = 10.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                for (chip in chips) {
-                    ListChip(chip, chip in on, calls, words = true) { tapped ->
+                for (chip in narrowing.chips) {
+                    ListChip(chip, chip in narrowing.on, narrowing.calls, words = true) { tapped ->
                         haptics.tap()
-                        if (calls) vm.tapCallsChip(tapped) else vm.tapRecordingsChip(tapped)
+                        narrowing.tap(tapped)
                     }
                 }
             }
         }
-        AnimatedVisibility(visible = open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            ListSearchField(query, if (calls) vm::setCallsQuery else vm::setQuery, focus, "Search by name or number")
+        AnimatedVisibility(visible = narrowing.searchOpen, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            ListSearchField(narrowing.query, narrowing.search, focus, "Search by name or number")
         }
     }
 }

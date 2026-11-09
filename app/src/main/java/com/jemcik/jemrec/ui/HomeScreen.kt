@@ -1,10 +1,5 @@
 package com.jemcik.jemrec.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -26,12 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,7 +39,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -70,15 +62,9 @@ import com.jemcik.jemrec.ui.theme.JemRecColors
 @Composable
 fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier, narrowingAside: Boolean = false) {
     val haptics = LocalHapticFeedback.current
-    // Focus jumps to the search field the moment it opens, so the keyboard is
-    // up and ready - opening search only to have to tap the field as well would
-    // undo the point of hiding it behind one tap.
-    val searchFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val narrowing = state.recordingsNarrowing
-    LaunchedEffect(narrowing.searchOpen, narrowingAside) {
-        if (narrowing.searchOpen && !narrowingAside) runCatching { searchFocus.requestFocus() }
-    }
+    val narrowed = narrowingOf(state, vm, calls = false)
     // Entering selection blurs the field and drops the keyboard. The field
     // stays on screen as context - the query you searched by - but you are
     // picking rows now, not typing, so the keyboard should not be eating the
@@ -212,7 +198,26 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier,
         // are part of the list they filter. Opaque, so rows scroll UNDER it
         // without showing through.
         stickyHeader {
-            Column(Modifier.keepsItsPlace().background(MaterialTheme.colorScheme.surface)) {
+            // Presets, and a search that stays folded away until asked for.
+            // A full-width search bar sat here permanently for something used
+            // once in a while; now the chips are all that is pinned, and the
+            // last chip unfolds the field below them on demand. Hidden while
+            // selecting, where the header is a selection toolbar instead. The
+            // search field is deliberately NOT gated on selecting: it stays
+            // open through selection, so the query you searched by is still on
+            // screen while you tick rows and delete - and the list does not
+            // jump as it vanishes. Beside the list instead, on a phone on its
+            // side (NarrowingPanel), chips and search both.
+            NarrowingHeader(
+                narrowed,
+                shown = filtered.size,
+                of = state.recordings.size,
+                onShowAll = vm::showAllRecordings,
+                aside = narrowingAside,
+                listed = state.recordings.isNotEmpty(),
+                chipsShown = !state.selecting,
+                scrolled = scrolled,
+            ) {
                 // NO "Recordings" TITLE, NO "Select" BUTTON. The screen is the
                 // recordings, so a heading only restated the obvious and cost a
                 // whole pinned row. Selection is entered by tapping a row's photo
@@ -299,47 +304,6 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier,
                         }
                     }
                 }
-                // Presets, and a search that stays folded away until asked for.
-                // A full-width search bar sat here permanently for something used
-                // once in a while; now the chips are all that is pinned, and the
-                // last chip unfolds the field below them on demand. Hidden while
-                // selecting, where the header is a selection toolbar instead.
-                // Beside the list instead, on a phone on its side
-                // (NarrowingPanel), chips and search both.
-                if (!state.selecting && state.recordings.isNotEmpty() && !narrowingAside) {
-                    val on = narrowing.chipsOn()
-                    val chips = remember(state.recordings, on) {
-                        chipsFor(state.recordings.map { it.chipFacts() }, on)
-                    }
-                    ListChipRow(chips, on, calls = false) { chip -> haptics.tap(); vm.tapRecordingsChip(chip) }
-                }
-                // The search field is deliberately NOT gated on !selecting: it
-                // stays open through selection, so the query you searched by is
-                // still on screen while you tick rows and delete - and the list
-                // does not jump as it vanishes. Only the chip row above becomes
-                // the selection toolbar; the field holds its place under both.
-                if (state.recordings.isNotEmpty() && !narrowingAside) {
-                    // Below the header row, and only when asked for. Expands and
-                    // fades in together so it reads as unfolding from the chip,
-                    // not jumping into place.
-                    AnimatedVisibility(
-                        visible = narrowing.searchOpen,
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut(),
-                    ) {
-                        ListSearchField(narrowing.query, vm::setQuery, searchFocus, "Search by name or number")
-                    }
-                }
-                NarrowingLine(
-                    narrowedBy(narrowing.chipsOn(), narrowing.query),
-                    shown = filtered.size,
-                    of = state.recordings.size,
-                    onShowAll = vm::showAllRecordings,
-                )
-                // The rule caps the header once rows are passing under it -
-                // Material's app bars separate from content on scroll the same
-                // way. At the top there is nothing to separate it from.
-                if (state.recordings.isNotEmpty() && scrolled) HorizontalDivider()
             }
         }
 
