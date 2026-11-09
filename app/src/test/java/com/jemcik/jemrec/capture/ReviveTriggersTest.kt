@@ -30,7 +30,7 @@ import org.robolectric.annotation.ConscryptMode
  * Wi-Fi watch. The subsets differ by trigger, and on purpose or not they are
  * what the phones do today. The keep-alive's and the USB watch's own runs
  * are in their tests, RecorderSwitch.turn's in RecorderSwitchTest; the home
- * screen's check (MainViewModel.recheckSetup) is not here.
+ * screen's check (RecorderAndSetup.recheckSetup) is not here.
  */
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)

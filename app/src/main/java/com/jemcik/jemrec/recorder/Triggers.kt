@@ -17,7 +17,7 @@ internal enum class Trigger {
     APP_OPEN,
 
     /** The home screen's look at where setup stands, at every resume
-     *  (MainViewModel.recheckSetup). */
+     *  (RecorderAndSetup.recheckSetup). */
     SETUP_CHECK,
 
     /** JemRec turned on, from the app or the tile (RecorderSwitch.turn). */

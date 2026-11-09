@@ -326,7 +326,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     "port" -> {
                         val sw = com.jemcik.jemrec.recorder.StartWithoutWifi
                         // What one read costs the screen's refresh, which
-                        // makes it each time (MainViewModel's snapshot).
+                        // makes it each time (ui.Reading).
                         val readStart = System.nanoTime()
                         val configured = sw.configuredPort()
                         val readMs = (System.nanoTime() - readStart) / 1_000_000.0

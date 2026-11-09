@@ -195,7 +195,7 @@ private const val NOT_DRAGGING = -1
 
 /**
  * Where to draw the playhead while it plays, frame by frame, from the
- * player's readings (every 300 ms - MainViewModel's ticker). Drawn only at
+ * player's readings (every 300 ms - Playback's ticker). Drawn only at
  * the readings it stepped three times a second; moved on at the player's
  * pace from the last one, it stepped back a little just after playing began
  * and after a tap (both seen by the user on the Honor, 2026-10-23). The
@@ -301,7 +301,7 @@ internal class PlayheadGlide(start: Int) {
         const val SETTLE_MS = 700
         const val STALE_READINGS = 3
 
-        /** Two of MainViewModel's 300 ms readings. */
+        /** Two of Playback's 300 ms readings. */
         const val AHEAD_MS = 600L
         private const val NONE = Long.MIN_VALUE
     }
