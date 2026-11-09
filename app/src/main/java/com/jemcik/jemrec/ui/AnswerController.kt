@@ -137,7 +137,8 @@ class AnswerController(
                 watchTest(pending.until - System.currentTimeMillis())
             }
             is AnswerDiagnostics.PendingTest.Asking -> _state.update { it.copy(askHeard = pending.callType) }
-            null -> Unit
+            // Answered, or put aside, on another screen meanwhile.
+            null -> _state.update { it.copy(askHeard = null) }
         }
         scope.launch {
             CaptureDaemon.sims(app)?.let { sims ->
@@ -365,9 +366,11 @@ class AnswerController(
         testWatch = scope.launch {
             val until = System.currentTimeMillis() + window + 120_000L
             var ending = "no test call came"
+            var answered = false
             do {
                 delay(2_000)
                 val result = CaptureDaemon.testResult(app) ?: continue
+                answered = true
                 when (result["state"]) {
                     "running" -> _state.update { it.copy(test = "running") }
                     "done" -> {
@@ -385,7 +388,14 @@ class AnswerController(
                 // three seconds on, and is "running" once its audio is up.
                 if (result["state"] == "armed" && System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) break
             } while (System.currentTimeMillis() < until)
-            if (AnswerDiagnostics.takeArmedTest(app, asking = null)) say(ending)
+            if (!answered) {
+                // The recorder not to be asked, all the while - down, or
+                // being brought back: it may still hold the result, so the
+                // test stays for the next opening of this screen.
+                say("the recorder could not be asked how the test call went; it is asked again when this screen next opens")
+            } else if (AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking = null)) {
+                say(ending)
+            }
             _state.update { it.copy(test = null) }
         }
     }
@@ -397,9 +407,10 @@ class AnswerController(
         // machine; its verdict is the measurements'.
         val asking = if (_state.value.testIncoming && verdict != AnswerDiagnostics.Verdict.FAILS) type else null
         // Read by another screen as well, open on the same test: that one
-        // acts on it, this one only shows it.
-        if (!AnswerDiagnostics.takeArmedTest(app, asking)) {
-            _state.update { it.copy(test = null, results = AnswerDiagnostics.results(app)) }
+        // acts on it, this one only shows it - and its question, if it asks.
+        if (!AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking)) {
+            val pending = AnswerDiagnostics.pendingTest(app) as? AnswerDiagnostics.PendingTest.Asking
+            _state.update { it.copy(test = null, results = AnswerDiagnostics.results(app), askHeard = pending?.callType) }
             return
         }
         Log.i(TAG, "answer: test on $type -> $verdict ($result)")

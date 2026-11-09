@@ -165,17 +165,20 @@ object AnswerDiagnostics {
     }
 
     /**
-     * The armed test, taken by the screen that read how it went - or found
-     * that no call came - and now asking the caller about [callType], or
-     * done with it on null. True for the first screen to take it only: a
-     * second screen open on the same test (a second JemRec, stacked by a
-     * notification) reads the same result, and acted on it again - the
-     * route moved twice, "Did they hear it?" asked twice.
+     * The test armed until [until] - the one a screen watched - taken by the
+     * screen that read how it went, or found that no call came, and now
+     * asking the caller [asking] about, or done with on null. True for the
+     * first screen to take it only: a second screen open on the same test (a
+     * second JemRec, stacked by a notification) reads the same result, and
+     * acted on it again - the route moved twice, "Did they hear it?" asked
+     * twice. Nor is a newer test taken, armed since by another screen.
+     * Written with apply: the lock makes the take once, and preferences are
+     * read from memory.
      */
     @Synchronized
-    fun takeArmedTest(context: Context, asking: String?): Boolean {
-        if (pendingTest(context) !is PendingTest.Armed) return false
-        Prefs.of(context).edit(commit = true) {
+    fun takeArmedTest(context: Context, until: Long, asking: String?): Boolean {
+        if ((pendingTest(context) as? PendingTest.Armed)?.until != until) return false
+        Prefs.of(context).edit {
             if (asking == null) remove(KEY_TEST) else putString(KEY_TEST, "asking $asking")
         }
         return true
@@ -186,7 +189,7 @@ object AnswerDiagnostics {
     @Synchronized
     fun takeQuestion(context: Context, callType: String): Boolean {
         if (pendingTest(context) != PendingTest.Asking(callType)) return false
-        Prefs.of(context).edit(commit = true) { remove(KEY_TEST) }
+        Prefs.of(context).edit { remove(KEY_TEST) }
         return true
     }
 

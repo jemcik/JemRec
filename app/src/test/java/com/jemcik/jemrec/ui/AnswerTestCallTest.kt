@@ -10,6 +10,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -168,7 +169,84 @@ class AnswerTestCallTest {
         AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 3 * 60_000L)
         recorder.replies["XR"] = "RESULT 1 state=none"
         val screen = opened(scope)
-        eventually("the test called off") { said.any { "the recorder restarted" in it } }
-        assertNull(screen.state.value.test)
+        eventually("the test called off") { said.any { "the recorder restarted" in it } && screen.state.value.test == null }
+    }
+
+    /** Read late, and the recorder not to be asked just then: the test is
+     *  kept for the next opening, not called a test nobody rang. */
+    @Test fun aLateReadTheRecorderDidNotAnswerKeepsTheTest() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
+        recorder.replies.remove("XR")
+        val screen = opened(scope)
+        eventually("the read given up") { said.any { "could not be asked" in it } && screen.state.value.test == null }
+        assertFalse(said.toString(), said.any { "no test call came" in it })
+        assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
+    }
+
+    /** Only the test it watched is taken: a newer one, armed meanwhile, is
+     *  the newer watch's. */
+    @Test fun aWatchTakesOnlyItsOwnTest() {
+        AnswerDiagnostics.noteTestArmed(context, true, 1_000L)
+        assertFalse(AnswerDiagnostics.takeArmedTest(context, until = 2_000L, asking = null))
+        assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
+        assertTrue(AnswerDiagnostics.takeArmedTest(context, until = 1_000L, asking = null))
+        assertNull(AnswerDiagnostics.pendingTest(context))
+    }
+
+    /** "Did they hear it?" on two screens: answered on one, the other's
+     *  answer changes nothing, and opened again it no longer asks. */
+    @Test fun theQuestionIsAnsweredOnce() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = passed
+        val one = opened(scope)
+        eventually("asked") { one.state.value.askHeard == "2G" }
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val two = opened(other)
+            eventually("asked there too") { two.state.value.askHeard == "2G" }
+            one.heard("2G", heard = false)
+            assertEquals(AnswerDiagnostics.Verdict.FAILS, AnswerDiagnostics.results(context)["2G"])
+            // Answered there: the other screen's answer changes nothing ...
+            two.heard("2G", heard = true)
+            assertEquals(AnswerDiagnostics.Verdict.FAILS, AnswerDiagnostics.results(context)["2G"])
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** ...and a screen still asking, opened again after the answer came on
+     *  another, asks no more. */
+    @Test fun aQuestionAnsweredElsewhereLeavesTheScreen() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = passed
+        val one = opened(scope)
+        eventually("asked") { one.state.value.askHeard == "2G" }
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val two = opened(other)
+            eventually("asked there too") { two.state.value.askHeard == "2G" }
+            one.heard("2G", heard = true)
+            two.opened()
+            assertNull(two.state.value.askHeard)
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** Put aside, the question is not asked again on the next opening. */
+    @Test fun theQuestionPutAsideIsNotAskedAgain() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = passed
+        val one = opened(scope)
+        eventually("asked") { one.state.value.askHeard == "2G" }
+        one.dismissHeard()
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val next = opened(other)
+            Thread.sleep(300)
+            assertNull(next.state.value.askHeard)
+        } finally {
+            other.cancel()
+        }
     }
 }
