@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,7 +45,8 @@ data class AnswerUi(
     val stageOne: AnswerDiagnostics.StageOne? = null,
     val checking: Boolean = false,
     val results: Map<String, AnswerDiagnostics.Verdict> = emptyMap(),
-    /** A test call: "armed", "running" or null; and until when it is armed. */
+    /** A test call: "arming" (the recorder asked), "armed", "running" or
+     *  null; and until when it is armed. */
     val test: String? = null,
     val testIncoming: Boolean = true,
     val testUntil: Long = 0L,
@@ -126,11 +128,27 @@ class AnswerController(
         if (seeded) return
         reload()
         if (_state.value.stageOne == null) runChecks()
-        // A test from a screen that has gone since - JemRec closed from
-        // Recents - is this one's now: the recorder answers the call all the
-        // same, and only a screen reads how it went (the verdict, the other
-        // route on a failure, "Did they hear it?"). Each went with the screen
-        // that armed it.
+        readPendingTest()
+        scope.launch {
+            CaptureDaemon.sims(app)?.let { sims ->
+                AnswerConditions.remember(app, sims)
+                _state.update { it.copy(sims = sims.all, defaultSim = sims.defaultId) }
+            }
+        }
+    }
+
+    /**
+     * Where a test call kept past its screen stands, read as the screen opens
+     * and each time it comes back to the front. A test from a screen that has
+     * gone since - JemRec closed from Recents - is this one's now: the
+     * recorder answers the call all the same, and only a screen reads how it
+     * went (the verdict, the other route on a failure, "Did they hear it?").
+     * Each went with the screen that armed it. Read again at the front, as a
+     * second JemRec stacked over this one goes: its test, or its answer to
+     * the question, is this screen's to show.
+     */
+    fun readPendingTest() {
+        if (seeded) return
         when (val pending = AnswerDiagnostics.pendingTest(app)) {
             is AnswerDiagnostics.PendingTest.Armed -> if (testWatch?.isActive != true) {
                 _state.update { it.copy(test = "armed", testIncoming = pending.incoming, testUntil = pending.until, askHeard = null) }
@@ -139,12 +157,6 @@ class AnswerController(
             is AnswerDiagnostics.PendingTest.Asking -> _state.update { it.copy(askHeard = pending.callType) }
             // Answered, or put aside, on another screen meanwhile.
             null -> _state.update { it.copy(askHeard = null) }
-        }
-        scope.launch {
-            CaptureDaemon.sims(app)?.let { sims ->
-                AnswerConditions.remember(app, sims)
-                _state.update { it.copy(sims = sims.all, defaultSim = sims.defaultId) }
-            }
         }
     }
 
@@ -317,6 +329,9 @@ class AnswerController(
      * the greeting, and measures.
      */
     fun startTest(incoming: Boolean, number: String = "") {
+        // One at a time: the row takes no tap while a test is on, and a tap
+        // that came as one began arms nothing more.
+        if (_state.value.test != null) return
         // A test answers whoever calls in its three minutes: never in the day
         // after an emergency call, when that may be them calling back. Nor is
         // an emergency number ever called for one (the screen says so too).
@@ -328,13 +343,31 @@ class AnswerController(
             say("an emergency number is never called for a test")
             return
         }
-        scope.launch {
+        // Shown at once: arming takes the recorder a moment - an outgoing
+        // test's call goes out before it answers - and the greeting deleted
+        // meanwhile left the test nothing to play.
+        _state.update { it.copy(test = "arming", testIncoming = incoming) }
+        // Armed, and noted, in the background, not in the screen's scope:
+        // with the screen closed meanwhile (from Recents) the recorder arms
+        // all the same and answers the caller, and the next screen reads the
+        // test only if it was noted.
+        val arming = outliving.async {
             // The test plays the greeting the recorder has, on the route the
             // recorder has: both brought up to date first.
             CaptureDaemon.syncGreeting(app)
             CaptureDaemon.setAnswering(app)
             val reply = CaptureDaemon.armTest(app, incoming, number)
+            // The recorder's own windows: three minutes for a caller, and
+            // fifteen seconds for the call it dials to go out.
+            val window = if (incoming) 180_000L else 15_000L
+            val until = System.currentTimeMillis() + window
+            if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
+            Triple(reply, window, until)
+        }
+        scope.launch {
+            val (reply, window, until) = arming.await()
             if (reply != TestArming.ARMED) {
+                _state.update { it.copy(test = null) }
                 say(
                     when (reply) {
                         TestArming.BAD_NUMBER -> "that number cannot be dialled"
@@ -346,11 +379,6 @@ class AnswerController(
                 )
                 return@launch
             }
-            // The recorder's own windows: three minutes for a caller, and
-            // fifteen seconds for the call it dials to go out.
-            val window = if (incoming) 180_000L else 15_000L
-            val until = System.currentTimeMillis() + window
-            AnswerDiagnostics.noteTestArmed(app, incoming, until)
             _state.update {
                 it.copy(test = "armed", testIncoming = incoming, testUntil = until, askHeard = null)
             }
@@ -358,23 +386,29 @@ class AnswerController(
         }
     }
 
-    /** The recorder asked how the test goes, every two seconds - at least
-     *  once, however late: a screen opened after the window, the call long
-     *  over, still finds the result the recorder keeps until the next test. */
+    /**
+     * The recorder asked how the test goes, at once and then every two
+     * seconds - at least once, however late: a screen opened after the
+     * window, the call long over, still finds the result the recorder keeps
+     * until the next test. The test is done with on the recorder's word
+     * only: its result, a recorder started since, or the window out with
+     * no call. Anything else as the watch ends - the recorder not to be
+     * asked, or the call still under way - keeps it for the next opening.
+     */
     private fun watchTest(window: Long) {
         testWatch?.cancel()
         testWatch = scope.launch {
             val until = System.currentTimeMillis() + window + 120_000L
-            var ending = "no test call came"
-            var answered = false
-            do {
-                delay(2_000)
-                val result = CaptureDaemon.testResult(app) ?: continue
-                answered = true
-                when (result["state"]) {
+            var ending: String? = null
+            // The state the last ask was answered with; null, not answered.
+            var last: String? = null
+            while (true) {
+                val result = CaptureDaemon.testResult(app)
+                last = result?.get("state")
+                when (last) {
                     "running" -> _state.update { it.copy(test = "running") }
                     "done" -> {
-                        finishTest(result)
+                        finishTest(result!!)
                         return@launch
                     }
                     // A recorder started since keeps no test: nothing will
@@ -383,18 +417,24 @@ class AnswerController(
                         ending = "the recorder restarted, so no test call is armed now"
                         break
                     }
+                    // A call that rang in the window's last moment is
+                    // answered three seconds on, and is "running" once its
+                    // audio is up.
+                    "armed" -> if (System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) {
+                        ending = "no test call came"
+                        break
+                    }
                 }
-                // A call that rang in the window's last moment is answered
-                // three seconds on, and is "running" once its audio is up.
-                if (result["state"] == "armed" && System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) break
-            } while (System.currentTimeMillis() < until)
-            if (!answered) {
-                // The recorder not to be asked, all the while - down, or
-                // being brought back: it may still hold the result, so the
-                // test stays for the next opening of this screen.
-                say("the recorder could not be asked how the test call went; it is asked again when this screen next opens")
-            } else if (AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking = null)) {
-                say(ending)
+                if (System.currentTimeMillis() >= until) break
+                delay(2_000)
+            }
+            when {
+                ending != null -> if (AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking = null)) say(ending)
+                // Still under way: its result comes when it ends.
+                last == "running" -> say("the test call is still going on; how it went is read when this screen next opens")
+                // The recorder not to be asked - down, say: the same one,
+                // up again, still holds the result.
+                else -> say("the recorder could not be asked how the test call went; it is asked again when this screen next opens")
             }
             _state.update { it.copy(test = null) }
         }

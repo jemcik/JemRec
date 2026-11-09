@@ -159,7 +159,10 @@ object AnswerDiagnostics {
         }
     }
 
-    /** A test call is armed, [incoming] or not, its window open until [until]. */
+    /** A test call is armed, [incoming] or not, its window open until [until].
+     *  Under the takes' lock: written between a take's look and its write,
+     *  it would be lost. */
+    @Synchronized
     fun noteTestArmed(context: Context, incoming: Boolean, until: Long) {
         Prefs.of(context).edit { putString(KEY_TEST, "armed ${if (incoming) 1 else 0} $until") }
     }

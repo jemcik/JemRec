@@ -33,6 +33,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.answering.EmergencyPause
@@ -58,6 +60,10 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
 
     LaunchedEffect(Unit) { vm.answer.opened() }
+    // Back at the front, a second JemRec stacked over this one gone: where
+    // the test it may have armed, or answered, stands.
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.answer.readPendingTest() }
+    val now = LocalNow.current
 
     when (dialog) {
         AnswerDialog.DELAY -> ChoiceDialog(
@@ -296,10 +302,11 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                     onClick = { haptics.tap(); vm.answer.stopTake() },
                     modifier = modifier,
                 ) { ButtonLabel("Stop") }
-                // Not while a test call is armed or under way: the test plays
-                // this greeting, and with it deleted the recorder did not
-                // answer an incoming test's caller - the screen waited on, and
-                // said no call came.
+                // Not while a test call is being armed, armed or under way: the
+                // test plays this greeting. With it deleted the recorder did
+                // not answer an incoming test's caller - the screen waited on,
+                // and said no call came - and an outgoing test measured
+                // nothing played, and was put down as not working.
                 "Delete" -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.deleteGreeting() },
                     enabled = a.test == null,
@@ -339,10 +346,13 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                 SettingsRow(
                     title = "Test call",
                     summary = when (a.test) {
-                        "armed" -> if (a.testIncoming) {
-                            "Waiting for someone to call, until ${timeOfDay(a.testUntil)}"
-                        } else {
-                            "Calling..."
+                        "arming" -> if (a.testIncoming) "Getting the recorder ready..." else "Calling..."
+                        "armed" -> when {
+                            // Read late, its window over: not "until" a time
+                            // gone by.
+                            a.testUntil < now() -> "Asking the recorder how it went..."
+                            a.testIncoming -> "Waiting for someone to call, until ${timeOfDay(a.testUntil)}"
+                            else -> "Calling..."
                         }
                         "running" -> "Testing - your greeting is playing to the call"
                         else -> AnswerDiagnostics.summary(a.results) ?: "Not tested on this phone yet"

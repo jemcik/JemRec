@@ -20,6 +20,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -224,7 +225,8 @@ class BusyPolicyTest : ScreenTest() {
     }
 
     /** ...and the same actions, the screen free, each run: the checks
-     *  above look at what each would have changed. */
+     *  above look at what each would have changed. The self-test and a
+     *  restore run free in whileBusySelfTestAndRestoreAreDropped. */
     @Test fun freeEveryGreyedActionRuns() {
         val inTrash = file(".trashed-1795000000-20261021_160200_in.ogg")
         val trashed = recording(inTrash, "20261021_160200_in.ogg")
@@ -239,6 +241,15 @@ class BusyPolicyTest : ScreenTest() {
         ran { vm.restoreAll() }
         assertFalse(inTrash.exists())
         assertTrue(log(vm), log(vm).contains("restored 1"))
+        // The setup check: this machine is not set up, so the step moves.
+        ran { vm.refreshSetup() }
+        assertNotEquals(log(vm), SetupStep.READY, vm.state.value.step)
+        // Finishing, and starting the recorder, with no phone to reach.
+        ran { vm.retryFinish() }
+        assertNotNull(vm.state.value.finishFailed)
+        assertTrue(log(vm), log(vm).contains("could not finish setup"))
+        ran { vm.bootstrapDaemon() }
+        assertTrue(log(vm), log(vm).contains("could not start the recorder"))
         ran { vm.confirmDeveloperOptions() }
         assertTrue(Prefs.of(app).getBoolean("setup_dev_options_confirmed", false))
         assertNotEquals(log(vm), SetupStep.READY, vm.state.value.step)

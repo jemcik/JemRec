@@ -64,9 +64,15 @@ import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.ui.AnswerUi
+import com.jemcik.jemrec.ui.AnsweringMachineScreen
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.CallsNarrowing
 import com.jemcik.jemrec.ui.ChoiceDialog
@@ -352,14 +358,47 @@ class BehaviourTest : ScreenTest() {
     @Test fun theGreetingStaysWhileATestCallIsOn() {
         val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
         fun machine(test: String?) = viewModel(state, AnswerUi(greetingSeconds = 6.0, test = test, testUntil = Fixtures.NOW + 60_000))
-        val shown = mutableStateOf(machine("armed"))
+        val shown = mutableStateOf(machine("arming"))
         show { AppScaffold(state, shown.value) }
+        compose.onNodeWithText("Delete").performScrollTo().assertIsNotEnabled()
+        shown.value = machine("armed")
         compose.onNodeWithText("Delete").performScrollTo().assertIsNotEnabled()
         shown.value = machine("running")
         compose.onNodeWithText("Delete").performScrollTo().assertIsNotEnabled()
         // No test on: Delete as before.
         shown.value = machine(null)
         compose.onNodeWithText("Delete").performScrollTo().assertIsEnabled()
+    }
+
+    /** A test armed before and read late - its window over as the screen
+     *  opens - is not shown waiting until a time already past. */
+    @Test fun aTestReadLateSaysTheRecorderIsAsked() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state, AnswerUi(greetingSeconds = 6.0, test = "armed", testUntil = Fixtures.NOW - 60_000))
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Asking the recorder how it went...").performScrollTo().assertIsDisplayed()
+    }
+
+    /** Back at the front - a second JemRec, stacked over this one, gone - the
+     *  screen reads again where the test call stands: a question answered
+     *  on the other is asked here no more. */
+    @Test fun backAtTheFrontTheScreenReadsTheTestAgain() {
+        val app = RuntimeEnvironment.getApplication()
+        AnswerDiagnostics.noteTestArmed(app, true, 1_000L)
+        AnswerDiagnostics.takeArmedTest(app, 1_000L, asking = "2G")
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state)
+        val owner = object : LifecycleOwner {
+            val registry = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.RESUMED }
+            override val lifecycle: Lifecycle get() = registry
+        }
+        show { CompositionLocalProvider(LocalLifecycleOwner provides owner) { AnsweringMachineScreen(state, vm) } }
+        compose.waitUntil(5_000) { vm.answer.state.value.askHeard == "2G" }
+        AnswerDiagnostics.takeQuestion(app, "2G")
+        compose.runOnUiThread { owner.registry.currentState = Lifecycle.State.CREATED }
+        compose.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
+        compose.waitForIdle()
+        assertNull(vm.answer.state.value.askHeard)
     }
 
     @Test fun noLimitOnAMessageIsAskedAboutFirst() {

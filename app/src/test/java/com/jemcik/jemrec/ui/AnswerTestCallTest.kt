@@ -19,6 +19,8 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * The answering machine's test call (AnswerController.startTest) against
@@ -55,7 +57,7 @@ class AnswerTestCallTest {
         if (reply != null) recorder.replies["XA"] = reply
         controller.startTest(incoming = false, number = "+380441234567")
         eventually("the arming to be asked") { recorder.heard.any { it.key == "XA" } }
-        eventually("an answer to show") { said.isNotEmpty() || controller.state.value.test != null }
+        eventually("an answer to show") { said.isNotEmpty() || controller.state.value.test == "armed" }
         return said.singleOrNull()
     }
 
@@ -84,6 +86,45 @@ class AnswerTestCallTest {
         assertEquals("armed", controller.state.value.test)
         // The greeting and the settings first, then the arming.
         assertEquals(listOf("GQ", "N", "XA"), recorder.heard.map { it.key }.take(3))
+    }
+
+    /** Arming takes the recorder a moment: the screen shows it at once - Delete
+     *  greyed, the row taking no tap - and a second start meanwhile arms
+     *  nothing more. */
+    @Test fun armingShowsAtOnceAndArmsOnce() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST armed"
+        controller.startTest(incoming = true)
+        assertEquals("arming", controller.state.value.test)
+        controller.startTest(incoming = true)
+        gate.countDown()
+        eventually("armed") { controller.state.value.test == "armed" }
+        assertEquals(1, recorder.heard.count { it.key == "XA" })
+    }
+
+    /** The screen gone - JemRec closed from Recents - while the recorder was
+     *  arming the test: it is kept all the same, for the next screen to
+     *  read; the recorder answers its caller either way. */
+    @Test fun aTestArmedAsTheScreenClosesIsKept() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST armed"
+        controller.startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        scope.cancel()
+        gate.countDown()
+        eventually("the test kept") { AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed }
+    }
+
+    /** An outgoing test: the recorder starts the call before it answers, and
+     *  Android's `am` has been seen taking ten seconds (the recorder's
+     *  wakes). The answer is waited for, rather than "could not arm" said
+     *  while the call goes out and the test runs unread. */
+    @Test fun aSlowArmingOfAnOutgoingTestIsWaitedFor() {
+        recorder.stall = { if (it == "XA") Thread.sleep(6_000) }
+        assertNull(armedWith("TEST armed"))
+        assertEquals("armed", controller.state.value.test)
     }
 
     /**
@@ -181,6 +222,53 @@ class AnswerTestCallTest {
         eventually("the read given up") { said.any { "could not be asked" in it } && screen.state.value.test == null }
         assertFalse(said.toString(), said.any { "no test call came" in it })
         assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
+    }
+
+    /** Answered once - the call under way - and the watch over before it
+     *  ended: how it went is not known yet, so the test is kept for the next
+     *  opening, not called a test nobody rang. */
+    @Test fun aTestStillRunningAsTheWatchEndsIsKept() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
+        recorder.replies["XR"] = "RESULT 1 state=running"
+        val screen = opened(scope)
+        eventually("the watch over") { said.any { "still going on" in it } && screen.state.value.test == null }
+        assertFalse(said.toString(), said.any { "no test call came" in it })
+        assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
+    }
+
+    /** A screen watching a test while a newer one is armed elsewhere: its
+     *  watch ends without taking the newer test, which stays armed. */
+    @Test fun aWatchLeavesANewerTestArmedElsewhere() {
+        val older = System.currentTimeMillis() - 10 * 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, older)
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XR"] = "RESULT 1 state=armed"
+        val screen = opened(scope)
+        eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
+        val newer = System.currentTimeMillis() + 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, newer)
+        gate.countDown()
+        eventually("the watch over") { screen.state.value.test == null }
+        assertEquals(AnswerDiagnostics.PendingTest.Armed(true, newer), AnswerDiagnostics.pendingTest(context))
+        assertFalse(said.toString(), said.any { "no test call came" in it })
+    }
+
+    /** Two screens watching one test as its result comes: the one that does
+     *  not act on it shows the question the other asks. */
+    @Test fun bothScreensWatchingShowTheQuestion() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = "RESULT 1 state=armed"
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val one = opened(scope)
+            val two = opened(other)
+            eventually("both watching") { recorder.heard.count { it.key == "XR" } >= 2 }
+            recorder.replies["XR"] = passed
+            eventually("both asking") { one.state.value.askHeard == "2G" && two.state.value.askHeard == "2G" }
+        } finally {
+            other.cancel()
+        }
     }
 
     /** Only the test it watched is taken: a newer one, armed meanwhile, is

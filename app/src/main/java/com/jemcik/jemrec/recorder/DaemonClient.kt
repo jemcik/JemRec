@@ -429,7 +429,11 @@ object DaemonClient {
             ask(
                 context, COMMAND_DIAGNOSE,
                 byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number),
-                readMs = 5_000,
+                // An outgoing test's call is started (`am start`) before the
+                // recorder answers, and `am` has been seen taking ten seconds
+                // (the recorder's wakes): a shorter wait said "could not arm"
+                // while the call went out and the test ran unread.
+                readMs = if (incoming) 5_000 else 15_000,
             ),
         )
 
@@ -533,7 +537,11 @@ object DaemonClient {
      * would be wrong the moment the app process was recreated while the daemon
      * was not, which is the normal case. It reaches the daemon only through
      * its environment at spawn (see ensureRunning) and never crosses a socket.
+     * Made under a lock, as DeepLink's is: asked for by two at once before
+     * there was one, each made its own, and a command proved with the one
+     * not kept was refused.
      */
+    @Synchronized
     fun token(context: Context): String {
         val prefs = Prefs.of(context)
         prefs.getString(KEY_TOKEN, null)?.let { return it }
