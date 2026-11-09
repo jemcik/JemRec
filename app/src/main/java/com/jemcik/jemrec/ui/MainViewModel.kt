@@ -3,7 +3,6 @@ package com.jemcik.jemrec.ui
 import android.app.Application
 import android.app.StatusBarManager
 import android.content.ComponentName
-import android.content.Intent
 import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
@@ -20,7 +19,6 @@ import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.answering.AnsweringMachine
-import com.jemcik.jemrec.audio.Transcoder
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.calls.CallLogLookup
@@ -45,7 +43,6 @@ import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.SelfTest
 import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.recorder.Trigger
-import com.jemcik.jemrec.recordings.AppRecordings
 import com.jemcik.jemrec.recordings.BulkDeleteResult
 import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
@@ -80,7 +77,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 /** How long a recording the waveform fill-in could not decode waits before
@@ -142,6 +138,9 @@ class MainViewModel @JvmOverloads constructor(
 
     /** The recording loaded, and the player in PlaybackService that plays it. */
     private val playback = Playback(app, viewModelScope, _state, log, connectSession)
+
+    /** Share's question, and what it hands to Android's share sheet. */
+    private val sharing = Sharing(app, viewModelScope, _state, log)
 
     /** The answering machine's settings, greeting and diagnostics. */
     val answer = AnswerController(app, viewModelScope, log::say, initialAnswer, quiet = playback::pause)
@@ -1449,9 +1448,6 @@ class MainViewModel @JvmOverloads constructor(
     private var refreshesStarted = 0L
     private var refreshApplied = 0L
 
-    /** The in-flight .m4a conversion, so its spinner's Cancel can stop it. */
-    private var conversionJob: Job? = null
-
     /** The screen came forward: the pairing watched from now on, and the
      *  player shows what the session plays (Playback.shown). */
     fun screenShown() {
@@ -1494,89 +1490,23 @@ class MainViewModel @JvmOverloads constructor(
 
     private fun stopPlayback() = playback.stopPlayback()
 
+    /** Share's question first (Sharing). */
+    fun share(recording: Recording) = sharing.share(recording)
+
+    fun dismissShareChoice() = sharing.dismissShareChoice()
+
+    fun shareOriginal(recording: Recording) = sharing.shareOriginal(recording)
+
+    fun shareUniversal(recording: Recording) = sharing.shareUniversal(recording)
+
+    fun cancelConversion() = sharing.cancelConversion()
+
     /** The screen is gone for good; a recording playing goes on playing,
      *  under the system's controls, until they stop it. */
     override fun onCleared() {
         stopWatchingSwitch()
         stopWatchingDebugSwitches()
         playback.close()
-    }
-
-    /**
-     * Tapping share picks a format first, converting nothing yet.
-     *
-     * A recording is Opus in an Ogg on disk - fine for Android and desktop, but
-     * Apple's stock apps will not open it. Only the .m4a route needs the
-     * transcode, so the choice comes BEFORE any work: sharing the original is
-     * instant, and the (slower, blocking) convert happens only when it is what
-     * the user picked.
-     */
-    fun share(recording: Recording) = _state.update { it.copy(shareChoice = recording) }
-
-    fun dismissShareChoice() = _state.update { it.copy(shareChoice = null) }
-
-    /** Share the Opus original as-is: no conversion, so it is instant. */
-    fun shareOriginal(recording: Recording) {
-        _state.update { it.copy(shareChoice = null) }
-        openShareSheet(recording.uri, "audio/ogg")
-    }
-
-    /** Convert to AAC in an .m4a first - so it plays on any device - showing a
-     *  spinner while it works, then hand the result to the share sheet. */
-    fun shareUniversal(recording: Recording) {
-        _state.update { it.copy(shareChoice = null, converting = true) }
-        conversionJob = viewModelScope.launch {
-            val app = getApplication<Application>()
-            val m4a = withContext(Dispatchers.Default) {
-                val dir = File(app.getExternalFilesDir(null), "shares").apply { mkdirs() }
-                sweepStaleShares(dir)
-                val out = File(dir, recording.name.substringBeforeLast('.') + ".m4a")
-                // isActive goes false the instant the job is cancelled, which is
-                // how Cancel reaches the transcode loop.
-                if (Transcoder.toM4a(app, recording.uri, out) { !isActive }) out else null
-            }
-            _state.update { it.copy(converting = false) }
-            if (m4a == null) {
-                tell("could not prepare that recording to share")
-                return@launch
-            }
-            val uri = AppRecordings.uriOf(app, m4a)
-            openShareSheet(uri, "audio/mp4")
-        }
-    }
-
-    /**
-     * Abort a running .m4a conversion - the spinner's Cancel, or a back/scrim
-     * tap on it.
-     *
-     * Cancelling the job flips isActive false, so the transcode breaks out and
-     * sweeps its half-written file; the coroutine then unwinds without reaching
-     * the share sheet or the failure message. The spinner is taken down here
-     * because that unwinding will not run the line that normally does it.
-     */
-    fun cancelConversion() {
-        conversionJob?.cancel()
-        conversionJob = null
-        _state.update { it.copy(converting = false) }
-    }
-
-    private fun openShareSheet(uri: Uri, mime: String) {
-        val app = getApplication<Application>()
-        val intent = Intent(Intent.ACTION_SEND)
-            .setType(mime)
-            .putExtra(Intent.EXTRA_STREAM, uri)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        val chooser = Intent.createChooser(intent, "Share recording")
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { app.startActivity(chooser) }
-            .onFailure { tell("could not share that recording") }
-    }
-
-    /** Delete share copies older than a few hours. A share in flight is minutes
-     *  old at most, so the cutoff never sweeps one still being read. */
-    private fun sweepStaleShares(dir: File) {
-        val cutoff = System.currentTimeMillis() - 6 * 60 * 60 * 1000L
-        dir.listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
     }
 
     /**
