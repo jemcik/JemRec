@@ -88,16 +88,19 @@ class ListScreensTest : ScreenTest() {
     @Test fun whoseCallsAsksForTheCallLog() =
         allowAsksForTheCallLog(Fixtures.ready().copy(screen = Screen.WHOSE_CALLS, canReadCallLog = false), scrollTo = true)
 
-    /** With no recordings at all, a narrowing still on says so, with Show
-     *  all... */
-    @Test fun overNoRecordingsANarrowingStillSaysSo() {
+    /** With no recordings at all, a chip still on is not said: "No
+     *  recordings yet" says it all, as the Calls tab's empty log does. It
+     *  said "Kept · 0 of 0", with Show all, until the author's word
+     *  (2026-11-08). */
+    @Test fun overNoRecordingsNoNarrowingIsSaid() {
         val recordings = Fixtures.ready().copy(recordings = emptyList(), recordingsNarrowing = RecordingsNarrowing(kept = true))
         show { AppScaffold(recordings, viewModel(recordings)) }
-        compose.onNodeWithText("Kept · 0 of 0").assertExists()
-        compose.onNodeWithText("Show all").assertExists()
+        compose.onNodeWithText("No recordings yet").assertExists()
+        compose.onNodeWithText("Kept · 0 of 0").assertDoesNotExist()
+        compose.onNodeWithText("Show all").assertDoesNotExist()
     }
 
-    /** ...where the Calls tab, its log empty, has no narrowing line. */
+    /** The Calls tab, its log empty, has no narrowing line either. */
     @Test fun overAnEmptyCallLogNoNarrowingIsSaid() {
         val calls = Fixtures.ready().copy(homeTab = HomeTab.CALLS, canReadCallLog = true, calls = emptyList(), callsNarrowing = CallsNarrowing(kept = true))
         show { AppScaffold(calls, viewModel(calls)) }

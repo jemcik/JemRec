@@ -325,8 +325,10 @@ internal fun narrowingOf(state: UiState, vm: MainViewModel, calls: Boolean): Lis
  * the list is narrowed, and the rule once rows pass under it. On a phone on
  * its side the chips and search are in the side panel instead
  * (NarrowingPanel), and only the line is here. Over a list with nothing in
- * it ([listed] false), only the line; while selecting ([chipsShown] false),
- * no chips - the toolbar is in their place - but the search stays.
+ * it at all ([listed] false), none of it: the list's own words - "No
+ * recordings yet" - say it all, on both tabs; a list narrowed to nothing
+ * keeps its line. While selecting ([chipsShown] false), no chips - the
+ * toolbar is in their place - but the search stays.
  *
  * The search takes the focus as it opens, so the keyboard is up and ready -
  * opening search only to have to tap the field as well would undo the point
@@ -366,7 +368,7 @@ internal fun NarrowingHeader(
                 ListSearchField(narrowing.query, narrowing.search, focus, "Search by name or number")
             }
         }
-        NarrowingLine(narrowedBy(narrowing.on, narrowing.query), shown = shown, of = of, onShowAll = onShowAll)
+        if (listed) NarrowingLine(narrowedBy(narrowing.on, narrowing.query), shown = shown, of = of, onShowAll = onShowAll)
         // The rule caps the header once rows are passing under it -
         // Material's app bars separate from content on scroll the same way.
         // At the top there is nothing to separate it from.
