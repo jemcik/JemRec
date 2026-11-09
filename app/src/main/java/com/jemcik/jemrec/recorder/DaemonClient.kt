@@ -403,8 +403,10 @@ object DaemonClient {
         val there = greetingBytes(context) ?: return
         val here = Greeting.file(context)
         when {
+            // Read where it may be gone: deleted between the look and the
+            // read, it threw, and nothing caught it.
             Greeting.present(context) && there != here.length() ->
-                uploadGreeting(context, here.readBytes())
+                runCatching { here.readBytes() }.getOrNull()?.let { uploadGreeting(context, it) }
             !Greeting.present(context) && there > 0 ->
                 ask(context, COMMAND_GREETING, byteArrayOf('D'.code.toByte()))
         }
@@ -424,29 +426,41 @@ object DaemonClient {
     /** Arm a test call: the next incoming call within three minutes, or -
      *  [number] given - one the daemon dials now. The recorder's answer;
      *  null for any other, or none. */
+    /**
+     * Arm a test call: the recorder's answer; [TestArming.UNANSWERED] if it
+     * was sent and no answer came; null if it was never sent. The recorder
+     * answers each refusal at once, and arms before anything that can hold
+     * it up - its main thread, then `am start` for an outgoing test's call -
+     * so an arming sent and not answered most likely took.
+     */
     suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): TestArming? =
-        parseTestArming(
-            ask(
-                context, COMMAND_DIAGNOSE,
-                byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number),
-                // An outgoing test's call is started (`am start`) before the
-                // recorder answers, and `am` has been seen taking ten seconds
-                // (the recorder's wakes): a shorter wait said "could not arm"
-                // while the call went out and the test ran unread.
-                readMs = if (incoming) 5_000 else 15_000,
-            ),
-        )
+        withContext(Dispatchers.IO) {
+            val payload = byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number)
+            // An outgoing test's call is started before the recorder answers,
+            // with `am`, which the recorder runs there with no time limit (its
+            // wakes allow `am` ten seconds a try): a longer wait for those.
+            val socket = runCatching {
+                open(context, COMMAND_DIAGNOSE, payload, readMs = if (incoming) 5_000 else 15_000)
+            }.getOrNull() ?: return@withContext null
+            socket.use {
+                val line = runCatching { it.getInputStream().bufferedReader().readLine()?.trim() }.getOrNull()
+                if (line == null) TestArming.UNANSWERED else parseTestArming(line)
+            }
+        }
 
-    /** The recorder's answers to arming a test call, as it writes them. */
-    enum class TestArming(val line: String) {
+    /** The recorder's answers to arming a test call, as it writes them; and
+     *  [UNANSWERED], none written. */
+    enum class TestArming(val line: String?) {
         ARMED("TEST armed"),
         BAD_NUMBER("TEST bad-number"),
         EMERGENCY("TEST emergency"),
         NO_GREETING("TEST no-greeting"),
         BUSY("TEST busy"),
+        UNANSWERED(null),
     }
 
-    internal fun parseTestArming(line: String?): TestArming? = TestArming.entries.firstOrNull { it.line == line }
+    internal fun parseTestArming(line: String?): TestArming? =
+        line?.let { said -> TestArming.entries.firstOrNull { it.line == said } }
 
     /** What the last test call measured; null if the daemon cannot say. */
     suspend fun testResult(context: Context): Map<String, String>? =
@@ -539,7 +553,9 @@ object DaemonClient {
      * its environment at spawn (see ensureRunning) and never crosses a socket.
      * Made under a lock, as DeepLink's is: asked for by two at once before
      * there was one, each made its own, and a command proved with the one
-     * not kept was refused.
+     * not kept was refused (seen in the app's tests, 2026-11-08: the
+     * answering machine screen's checks and its test call's watch, asking
+     * at once against a fake recorder).
      */
     @Synchronized
     fun token(context: Context): String {

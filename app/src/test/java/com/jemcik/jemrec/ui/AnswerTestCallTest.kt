@@ -1,6 +1,8 @@
 package com.jemcik.jemrec.ui
 
 import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.answering.Greeting
+import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.FakeRecorder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +23,7 @@ import org.robolectric.annotation.ConscryptMode
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
 
 /**
  * The answering machine's test call (AnswerController.startTest) against
@@ -77,8 +80,41 @@ class AnswerTestCallTest {
         assertEquals("the recorder could not arm a test call", armedWith("TEST none"))
     }
 
-    @Test fun aRecorderThatHangsUpCouldNotEither() {
-        assertEquals("the recorder could not arm a test call", armedWith(null))
+    /** Sent, and no word back - the recorder hung up, or was still at it when
+     *  the wait ran out. It arms before anything that can hold it up, and
+     *  answers a refusal at once: the test is taken as armed and watched,
+     *  and the screen says the recorder did not answer. */
+    @Test fun anArmingSentAndNotAnsweredIsWatched() {
+        recorder.replies.remove("XA")
+        controller.startTest(incoming = true)
+        eventually("watched") { controller.state.value.test == "armed" }
+        assertTrue(said.toString(), said.any { "did not answer" in it })
+        assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
+    }
+
+    /** No recorder to send it to: nothing armed, and the screen says so. */
+    @Test fun withNoRecorderNothingIsArmed() {
+        recorder.close()
+        controller.startTest(incoming = true)
+        eventually("an answer") { said.isNotEmpty() }
+        assertEquals(listOf("the recorder could not arm a test call"), said.toList())
+        assertNull(controller.state.value.test)
+        assertNull(AnswerDiagnostics.pendingTest(context))
+    }
+
+    /** The greeting, unreadable as it is sent to the recorder - deleted on a
+     *  second JemRec as the test was armed, say: not sent, and nothing
+     *  thrown. Thrown, it ended the app. */
+    @Test fun aGreetingThatCannotBeReadIsNotSent() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2))
+        val file = Greeting.file(context)
+        assertTrue(file.setReadable(false))
+        try {
+            runBlocking { CaptureDaemon.syncGreeting(context) }
+            assertFalse(recorder.heard.any { it.key == "GP" })
+        } finally {
+            file.setReadable(true)
+        }
     }
 
     @Test fun armedSaysNothingAndShowsArmed() {
@@ -98,8 +134,12 @@ class AnswerTestCallTest {
         controller.startTest(incoming = true)
         assertEquals("arming", controller.state.value.test)
         controller.startTest(incoming = true)
+        // The second start sent nothing: one greeting check, then one arming.
+        Thread.sleep(500)
+        assertEquals(1, recorder.heard.count { it.key == "GQ" })
         gate.countDown()
         eventually("armed") { controller.state.value.test == "armed" }
+        Thread.sleep(300)
         assertEquals(1, recorder.heard.count { it.key == "XA" })
     }
 
@@ -236,9 +276,31 @@ class AnswerTestCallTest {
         assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
     }
 
-    /** A screen watching a test while a newer one is armed elsewhere: its
-     *  watch ends without taking the newer test, which stays armed. */
-    @Test fun aWatchLeavesANewerTestArmedElsewhere() {
+    /** Read again at the front while the recorder arms a new test - the
+     *  dialer's call screen over JemRec, say - an older test still kept is
+     *  not taken up: the arming stands, and the older test is not said to
+     *  have had no call. */
+    @Test fun aReadWhileArmingLeavesTheArmingAlone() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
+        recorder.replies["XR"] = "RESULT 1 state=armed"
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST armed"
+        controller.startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        controller.readPendingTest()
+        assertEquals("arming", controller.state.value.test)
+        gate.countDown()
+        eventually("armed") { controller.state.value.test == "armed" }
+        Thread.sleep(500)
+        assertFalse(said.toString(), said.any { "no test call came" in it })
+        assertTrue(controller.state.value.testUntil > System.currentTimeMillis())
+    }
+
+    /** A screen watching a test while a newer one is armed elsewhere - a
+     *  second JemRec stacked over it, gone since: its watch ends without
+     *  taking the newer test, and watches that one on. */
+    @Test fun aWatchWhoseTestWasReplacedWatchesTheNewOne() {
         val older = System.currentTimeMillis() - 10 * 60_000L
         AnswerDiagnostics.noteTestArmed(context, true, older)
         val gate = CountDownLatch(1)
@@ -249,9 +311,31 @@ class AnswerTestCallTest {
         val newer = System.currentTimeMillis() + 60_000L
         AnswerDiagnostics.noteTestArmed(context, true, newer)
         gate.countDown()
-        eventually("the watch over") { screen.state.value.test == null }
+        eventually("the newer test watched") { screen.state.value.test == "armed" && screen.state.value.testUntil == newer }
         assertEquals(AnswerDiagnostics.PendingTest.Armed(true, newer), AnswerDiagnostics.pendingTest(context))
         assertFalse(said.toString(), said.any { "no test call came" in it })
+    }
+
+    /** ...and a result read as another screen had already taken it and
+     *  armed a newer test: that one is watched on here too. */
+    @Test fun aResultTakenElsewhereWithANewerTestArmedWatchesThatOne() {
+        val older = System.currentTimeMillis() + 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, older)
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XR"] = passed
+        // The recorder armed for the newer test after it gave the result.
+        recorder.after = { key -> if (key == "XR") recorder.replies["XR"] = "RESULT 1 state=armed" }
+        val screen = opened(scope)
+        eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
+        // The other screen: it read the result, and armed again.
+        assertTrue(AnswerDiagnostics.takeArmedTest(context, older, asking = null))
+        val newer = System.currentTimeMillis() + 3 * 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, newer)
+        gate.countDown()
+        eventually("the newer test watched") { screen.state.value.test == "armed" && screen.state.value.testUntil == newer }
+        assertEquals(AnswerDiagnostics.PendingTest.Armed(true, newer), AnswerDiagnostics.pendingTest(context))
+        assertNull(AnswerDiagnostics.results(context)["2G"])
     }
 
     /** Two screens watching one test as its result comes: the one that does

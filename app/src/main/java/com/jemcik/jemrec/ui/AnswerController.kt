@@ -148,7 +148,10 @@ class AnswerController(
      * the question, is this screen's to show.
      */
     fun readPendingTest() {
-        if (seeded) return
+        // While this screen arms a test, the arming's answer says what it is:
+        // an older test still kept would be taken up as this one's, and its
+        // watch would end the new arming's state.
+        if (seeded || _state.value.test == "arming") return
         when (val pending = AnswerDiagnostics.pendingTest(app)) {
             is AnswerDiagnostics.PendingTest.Armed -> if (testWatch?.isActive != true) {
                 _state.update { it.copy(test = "armed", testIncoming = pending.incoming, testUntil = pending.until, askHeard = null) }
@@ -361,12 +364,18 @@ class AnswerController(
             // fifteen seconds for the call it dials to go out.
             val window = if (incoming) 180_000L else 15_000L
             val until = System.currentTimeMillis() + window
-            if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
+            if (reply == TestArming.ARMED || reply == TestArming.UNANSWERED) {
+                AnswerDiagnostics.noteTestArmed(app, incoming, until)
+            }
             Triple(reply, window, until)
         }
         scope.launch {
             val (reply, window, until) = arming.await()
-            if (reply != TestArming.ARMED) {
+            // Sent, and no word back: most likely armed (DaemonClient.armTest),
+            // so watched as armed, and the watch settles it.
+            if (reply == TestArming.UNANSWERED) {
+                say("the recorder did not answer; if it armed the test call, this screen reads how it went")
+            } else if (reply != TestArming.ARMED) {
                 _state.update { it.copy(test = null) }
                 say(
                     when (reply) {
@@ -429,7 +438,11 @@ class AnswerController(
                 delay(2_000)
             }
             when {
-                ending != null -> if (AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking = null)) say(ending)
+                ending != null -> if (AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking = null)) {
+                    say(ending)
+                } else if (watchNewer()) {
+                    return@launch
+                }
                 // Still under way: its result comes when it ends.
                 last == "running" -> say("the test call is still going on; how it went is read when this screen next opens")
                 // The recorder not to be asked - down, say: the same one,
@@ -449,6 +462,7 @@ class AnswerController(
         // Read by another screen as well, open on the same test: that one
         // acts on it, this one only shows it - and its question, if it asks.
         if (!AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking)) {
+            if (watchNewer()) return
             val pending = AnswerDiagnostics.pendingTest(app) as? AnswerDiagnostics.PendingTest.Asking
             _state.update { it.copy(test = null, results = AnswerDiagnostics.results(app), askHeard = pending?.callType) }
             return
@@ -465,6 +479,20 @@ class AnswerController(
             }
         }
         _state.update { it.copy(test = null, results = AnswerDiagnostics.results(app), askHeard = asking) }
+    }
+
+    /**
+     * The test this screen watched taken by another screen, which has armed a
+     * newer one since - a second JemRec stacked over this one: that one is
+     * watched on here, as an opening would. False with no newer test. Called
+     * from the watch, which the new watch replaces.
+     */
+    private fun watchNewer(): Boolean {
+        val pending = AnswerDiagnostics.pendingTest(app) as? AnswerDiagnostics.PendingTest.Armed ?: return false
+        if (pending.until == _state.value.testUntil) return false
+        _state.update { it.copy(test = "armed", testIncoming = pending.incoming, testUntil = pending.until, askHeard = null) }
+        watchTest(pending.until - System.currentTimeMillis())
+        return true
     }
 
     /** Stage three: what the caller heard. */

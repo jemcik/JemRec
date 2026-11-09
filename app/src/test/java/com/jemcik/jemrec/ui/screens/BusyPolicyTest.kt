@@ -241,8 +241,8 @@ class BusyPolicyTest : ScreenTest() {
         ran { vm.restoreAll() }
         assertFalse(inTrash.exists())
         assertTrue(log(vm), log(vm).contains("restored 1"))
-        // The setup check: this machine is not set up, so the step moves.
-        ran { vm.refreshSetup() }
+        ran { vm.confirmDeveloperOptions() }
+        assertTrue(Prefs.of(app).getBoolean("setup_dev_options_confirmed", false))
         assertNotEquals(log(vm), SetupStep.READY, vm.state.value.step)
         // Finishing, and starting the recorder, with no phone to reach.
         ran { vm.retryFinish() }
@@ -250,9 +250,6 @@ class BusyPolicyTest : ScreenTest() {
         assertTrue(log(vm), log(vm).contains("could not finish setup"))
         ran { vm.bootstrapDaemon() }
         assertTrue(log(vm), log(vm).contains("could not start the recorder"))
-        ran { vm.confirmDeveloperOptions() }
-        assertTrue(Prefs.of(app).getBoolean("setup_dev_options_confirmed", false))
-        assertNotEquals(log(vm), SetupStep.READY, vm.state.value.step)
         ran { vm.confirmBackgroundChoice() }
         assertTrue(Setup.backgroundChoiceMade(app))
         ran { vm.startPairingNotification() }
@@ -264,6 +261,12 @@ class BusyPolicyTest : ScreenTest() {
         assertFalse(VoipCallNotes.enabled(app))
         ran { vm.useDefaultFolder() }
         assertTrue(log(vm), log(vm).contains("recordings will go to the standard Recordings folder"))
+        // The setup check, on a screen of its own that still shows Ready:
+        // this machine is not set up, so the step moves.
+        val fresh = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS))
+        fresh.refreshSetup()
+        settle(fresh)
+        assertNotEquals(log(fresh), SetupStep.READY, fresh.state.value.step)
     }
 
     /**
