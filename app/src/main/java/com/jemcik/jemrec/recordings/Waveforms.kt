@@ -15,7 +15,7 @@ import java.io.File
  * Worked out from the file itself, decoded by Android's own decoder
  * (PcmDecoder): no library, no native code, nothing new for the reproducible
  * build to match. As a call is saved (AfterCall), in the background for the
- * list's rows while the app is on screen (MainViewModel.fillInWaveforms),
+ * list's rows while the app is on screen (ui.WaveformFill),
  * or when one is played that has none yet; then kept in the app's cache - a
  * byte a level, under a hash of the file's name, which can hold a caller's -
  * until the recording is deleted (prune) or Android clears the cache.

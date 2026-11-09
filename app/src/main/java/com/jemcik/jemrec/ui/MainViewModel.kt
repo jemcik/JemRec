@@ -6,7 +6,6 @@ import android.content.ComponentName
 import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
-import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.content.edit
@@ -54,7 +53,6 @@ import com.jemcik.jemrec.recordings.RecordingTags
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.recordings.Trash
-import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.setup.PairingNotification
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
@@ -74,17 +72,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
-/** How long a recording the waveform fill-in could not decode waits before
- *  it is tried again: long enough that a file that will not decode does not
- *  log its warning at every refresh, short enough that one that failed for
- *  the moment gets its waveform the same day. */
-private const val RETRY_UNDECODABLE_MS = 30 * 60_000L
-
 /** How long the header says "Starting..." for a recorder started from the
  *  tile before it takes a fresh reading anyway: the Honor's took 6 s, and
  *  one that needs Wi-Fi there is none of will not come at all. */
@@ -141,6 +132,9 @@ class MainViewModel @JvmOverloads constructor(
 
     /** Share's question, and what it hands to Android's share sheet. */
     private val sharing = Sharing(app, viewModelScope, _state, log)
+
+    /** Waveforms worked out for the list's rows while the screen is up. */
+    private val fill = WaveformFill(app, viewModelScope, _state)
 
     /** The answering machine's settings, greeting and diagnostics. */
     val answer = AnswerController(app, viewModelScope, log::say, initialAnswer, quiet = playback::pause)
@@ -1319,75 +1313,11 @@ class MainViewModel @JvmOverloads constructor(
         }
         answer.reload()
         playback.listRead(snapshot.recordings)
-        fillInWaveforms()
+        fill.start()
     }
 
-    /**
-     * Rows of the list draw each recording's waveform, from its cache (see
-     * rememberRowLevels). A call saved since the waveform player has one
-     * (AfterCall); one recorded before has none until it is played - so they
-     * are worked out here, newest first, one at a time, while the app is on
-     * screen. Measured on the Honor (2026-10-23): 0.14 s a minute-long call,
-     * 2.5 s a half-hour one - once each, then read from the cache.
-     *
-     * Only on screen: it stops with the screen (stopFillingIn) and the next
-     * refresh - each opening makes one - goes on from there. It ran on when
-     * the app was left, with up to four decoders a call, during the next call
-     * too. Whether a recording has its levels is a file's size, not a read of
-     * them; one that cannot be decoded is not tried again this run of the
-     * app; and the levels of recordings no longer kept go (Waveforms.prune).
-     * Asked again while it runs, it goes over the list once more at the end,
-     * for the recordings the list gained meanwhile.
-     */
-    private fun fillInWaveforms() {
-        if (fillingIn?.isActive == true) {
-            fillAgain = true
-            return
-        }
-        val app = getApplication<Application>()
-        fillingIn = viewModelScope.launch(Dispatchers.IO) {
-            do {
-                fillAgain = false
-                val now = _state.value
-                // Not over a list that is not the phone's: the debug build's
-                // invented calls, or none for want of the audio permission -
-                // every waveform would go, to be worked out again.
-                if (Recordings.override == null && now.canReadAudio) {
-                    Waveforms.prune(app, (now.recordings + now.trashed).map { it.name })
-                }
-                for (recording in now.recordings) {
-                    if (!isActive) break
-                    val name = recording.name
-                    val failedAt = undecodable[name]
-                    if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < RETRY_UNDECODABLE_MS) continue
-                    if (Waveforms.isBeingWritten(name) || Waveforms.has(app, name)) continue
-                    val levels = Waveforms.levels(app, name, recording.uri, keepGoing = { isActive })
-                    if (levels == null && isActive && !Waveforms.isBeingWritten(name)) {
-                        undecodable[name] = SystemClock.elapsedRealtime()
-                    } else {
-                        undecodable.remove(name)
-                    }
-                }
-            } while (fillAgain && isActive)
-        }
-    }
-
-    /** The list's fill-in stops with the screen. See fillInWaveforms. */
-    fun stopFillingIn() {
-        fillingIn?.cancel()
-    }
-
-    private var fillingIn: Job? = null
-
-    @Volatile
-    private var fillAgain = false
-
-    /** Recordings the fill-in could not decode, and when: tried on every
-     *  refresh, each logged its warning again and again; never again for
-     *  the life of the process, one that failed only for the moment - its
-     *  codec not to be had while AfterCall decoded another - kept no
-     *  waveform for days. Tried again after RETRY_UNDECODABLE_MS. */
-    private val undecodable = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    /** The list's waveform fill-in stops with the screen (WaveformFill). */
+    fun stopFillingIn() = fill.stop()
 
     /** Everything refresh() reads off disk, gathered in one background pass. */
     private data class Snapshot(

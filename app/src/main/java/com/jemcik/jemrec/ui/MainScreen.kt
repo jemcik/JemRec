@@ -94,8 +94,8 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     // Out of sight, the scrubber is not driven and the fill-in stops; a
     // recording plays on, under the system's media controls. Back in sight,
-    // the screen shows what played on meanwhile. See MainViewModel.screenHidden
-    // and fillInWaveforms.
+    // the screen shows what played on meanwhile. See Playback.hidden and
+    // WaveformFill.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         vm.screenHidden()
         vm.stopFillingIn()
