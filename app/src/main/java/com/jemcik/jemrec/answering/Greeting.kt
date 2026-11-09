@@ -31,13 +31,29 @@ object Greeting {
     const val MAX_SECONDS = 30
 
     /**
-     * A take may have the microphone (AnswerController's takeListening), for
-     * the whole process: nothing JemRec plays starts meanwhile - not from its
-     * screens, not from the media notification - as over the loudspeaker it
-     * would go into the greeting. Left in the background, a take records
-     * on, and a recording played from the notification then would have.
+     * The take that may have the microphone, for the whole process: nothing
+     * JemRec plays starts meanwhile - not from any of its screens, not from
+     * the media notification - as over the loudspeaker it would go into the
+     * greeting. Left in the background, a take records on, and a recording
+     * played from the notification then would have. Held by one take and let
+     * go by that one only: a hold left from a screen closed since, or from a
+     * second window, let go of another's.
      */
-    @Volatile var takeListening = false
+    private val takeHolder = java.util.concurrent.atomic.AtomicReference<Any?>(null)
+
+    /** A take may have the microphone ([hold]). */
+    val takeListening: Boolean get() = takeHolder.get() != null
+
+    /** [take] may have the microphone; false if another holds it. */
+    fun hold(take: Any): Boolean = takeHolder.compareAndSet(null, take) || takeHolder.get() === take
+
+    /** [take] no longer may: let go, if it is the one that holds it. */
+    fun letGo(take: Any) {
+        takeHolder.compareAndSet(take, null)
+    }
+
+    /** Between tests, whatever a test left holding. */
+    internal fun letGoOfAnyTake() = takeHolder.set(null)
 
     fun file(context: Context): File = File(context.filesDir, FILE)
 

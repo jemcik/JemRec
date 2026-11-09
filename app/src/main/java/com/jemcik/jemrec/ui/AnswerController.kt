@@ -127,9 +127,9 @@ class AnswerController(
     private var preview: AudioTrack? = null
     private var testWatch: Job? = null
     private var previewing: Job? = null
-    /** Counts the takes, so a hold on the microphone is let go by its own
-     *  take only. */
-    private var takeNumber = 0
+    /** The take under way, its own token: a hold on the microphone is let
+     *  go by its own take only (Greeting.hold). */
+    @Volatile private var takeToken: Any? = null
     /** Left while the recorder was asked to start: stopped, and not kept,
      *  once it has started - a stop sent first was lost to the start. */
     private var dropWhenStarted = false
@@ -209,11 +209,12 @@ class AnswerController(
         }
     }
 
-    /** Whether a take may have the microphone, on the screen and for the
-     *  whole process (Greeting.takeListening: nothing plays meanwhile). */
-    private fun listening(on: Boolean) {
-        Greeting.takeListening = on
-        _state.update { it.copy(takeListening = on) }
+    /** [take] no longer may have the microphone: let go for the whole
+     *  process (Greeting.letGo: playing allowed again), and on this screen
+     *  if it is still this screen's take. */
+    private fun letGo(take: Any) {
+        Greeting.letGo(take)
+        if (takeToken === take) _state.update { it.copy(takeListening = false) }
     }
 
     /** Answer again before the day after an emergency call is out - the
@@ -255,20 +256,24 @@ class AnswerController(
      *  microphone; this app holds no permission to. */
     fun startTake() {
         if (take?.isActive == true || _state.value.processingTake || _state.value.takeListening) return
+        // Another screen's take holding the microphone - a second window:
+        // the recorder would answer "busy", and the hold is that take's.
+        val mine = Any()
+        if (!Greeting.hold(mine)) return
         stopPreview()
         quiet()
-        takeNumber++
+        takeToken = mine
         dropWhenStarted = false
-        listening(true)
+        _state.update { it.copy(takeListening = true) }
         take = scope.launch {
             if (!CaptureDaemon.startTake(app)) {
-                listening(false)
+                letGo(mine)
                 _state.update { it.copy(greetingProblem = "The recorder could not start recording. Is it running?") }
                 return@launch
             }
             if (dropWhenStarted) {
                 // Left meanwhile: stopped now that it has started, not kept.
-                stopOnTheRecorder()
+                stopOnTheRecorder(mine, since = System.currentTimeMillis())
                 say("the greeting's take was stopped as its screen was left, and not kept")
                 return@launch
             }
@@ -289,9 +294,11 @@ class AnswerController(
         // Record and Delete are greyed meanwhile: a Delete then was undone
         // when the new greeting was saved, the machine left off.
         _state.update { it.copy(processingTake = true) }
+        val mine = takeToken ?: Any()
+        val since = _state.value.takeStartedAt
         take = scope.launch {
             try {
-                processTake()
+                processTake(mine, since)
             } finally {
                 _state.update { it.copy(processingTake = false) }
             }
@@ -300,14 +307,14 @@ class AnswerController(
 
     /** The stopped take fetched from the recorder, made a greeting of, saved
      *  and sent back. */
-    private suspend fun processTake() {
+    private suspend fun processTake(mine: Any, since: Long) {
         // Answered, the microphone is shut, and a preview cannot reach the
         // take; not answered, the recorder may record on to its own limit.
         val length = CaptureDaemon.stopTake(app)
         if (length != null) {
-            listening(false)
+            letGo(mine)
         } else {
-            holdUntilTheRecorderStopsByItself(_state.value.takeStartedAt)
+            holdUntilTheRecorderStopsByItself(mine, since)
         }
         // Answered with nothing: the stop came before the recorder's first
         // read, or its microphone would not open - not a take unsent.
@@ -351,29 +358,27 @@ class AnswerController(
         }
     }
 
-    /** A take's microphone held, when Stop went unanswered, until the
-     *  recorder's own limit from [since] (its start, or now) - and let go by
-     *  this take only: a later one keeps its own. */
-    private fun holdUntilTheRecorderStopsByItself(since: Long) {
-        val mine = takeNumber
+    /** The microphone held for [mine], when its Stop went unanswered,
+     *  until the recorder's own limit from [since] - the take's start, or
+     *  now if it has none - and let go by this take only: a later one, or
+     *  another screen's, keeps its own. */
+    private fun holdUntilTheRecorderStopsByItself(mine: Any, since: Long) {
         val limit = (if (since > 0) since else System.currentTimeMillis()) + takeLimitMs
         outliving.launch {
             delay((limit - System.currentTimeMillis()).coerceAtLeast(0))
-            if (takeNumber == mine) listening(false)
+            letGo(mine)
         }
     }
 
-    /** The take stopped on the recorder from outside this screen's scope -
-     *  the screen gone, or left - and the microphone held until it answers,
-     *  or its own limit. */
-    private fun stopOnTheRecorder() {
-        val mine = takeNumber
-        val since = if (_state.value.recordingTake) _state.value.takeStartedAt else 0L
+    /** The take [mine], started at [since], stopped on the recorder from
+     *  outside this screen's scope - the screen gone, or left - and the
+     *  microphone held until it answers, or its own limit. */
+    private fun stopOnTheRecorder(mine: Any, since: Long) {
         outliving.launch {
             if (runCatching { CaptureDaemon.stopTake(app) }.getOrNull() != null) {
-                if (takeNumber == mine) listening(false)
+                letGo(mine)
             } else {
-                holdUntilTheRecorderStopsByItself(since)
+                holdUntilTheRecorderStopsByItself(mine, since)
             }
         }
     }
@@ -395,8 +400,12 @@ class AnswerController(
             return
         }
         take?.cancel()
+        // Timed from the take's start, read before recordingTake goes: from
+        // now, every playing in the app was refused up to half a minute too
+        // long.
+        val since = _state.value.takeStartedAt
         _state.update { it.copy(recordingTake = false) }
-        stopOnTheRecorder()
+        takeToken?.let { stopOnTheRecorder(it, since) }
         say("the greeting's take was stopped as its screen was left, and not kept")
     }
 
@@ -412,7 +421,9 @@ class AnswerController(
         // over the loudspeaker the greeting would go into the new one. Once
         // it has answered Stop, a preview plays the greeting there is while
         // the take is made a greeting of.
-        if (previewing?.isActive == true || _state.value.takeListening) return
+        // And not while any screen's take does: a second window's preview
+        // went into the first one's take.
+        if (previewing?.isActive == true || _state.value.takeListening || Greeting.takeListening) return
         quiet()
         previewing = scope.launch {
             // Read where it may be gone: deleted just then, it threw (the
@@ -451,7 +462,9 @@ class AnswerController(
         stopPreview()
         // Its hold on the whole process (Greeting.takeListening) is let go by
         // the stop's answer, or the recorder's own limit.
-        if (_state.value.takeListening) stopOnTheRecorder()
+        if (_state.value.takeListening) {
+            takeToken?.let { stopOnTheRecorder(it, if (_state.value.recordingTake) _state.value.takeStartedAt else 0L) }
+        }
     }
 
     private fun stopPreview() {
@@ -466,7 +479,7 @@ class AnswerController(
     }
 
     fun deleteGreeting() {
-        if (_state.value.processingTake || _state.value.takeListening) return
+        if (_state.value.processingTake || _state.value.takeListening || Greeting.takeListening) return
         stopPreview()
         Greeting.delete(app)
         AnsweringMachine.setEnabled(app, false)

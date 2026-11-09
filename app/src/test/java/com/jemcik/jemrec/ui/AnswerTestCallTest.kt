@@ -49,7 +49,7 @@ class AnswerTestCallTest {
         // The one-arming flag is the process's: an arming a failed test left
         // in flight would refuse the next test's. So is a take's mark.
         eventually("no arming in flight") { !testArming.get() }
-        Greeting.takeListening = false
+        Greeting.letGoOfAnyTake()
     }
 
     private fun eventually(what: String, done: () -> Boolean) {
@@ -682,6 +682,76 @@ class AnswerTestCallTest {
         eventually("recording") { screen.state.value.recordingTake }
         screen.stopTake()
         eventually("let go") { !Greeting.takeListening }
+    }
+
+    /** Another screen's take - a second window - holds the microphone: this
+     *  one neither starts a take (the recorder would answer "busy" and the
+     *  hold was let go mid-take), nor previews the greeting into it, nor
+     *  deletes it. */
+    @Test fun anotherScreensTakeIsLeftAlone() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val made = java.util.concurrent.atomic.AtomicInteger()
+        val one = AnswerController(context, scope, { said += it })
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val two = AnswerController(context, other, { said += it }, previewOf = { pcm -> made.incrementAndGet(); Greeting.preview(pcm) })
+            one.startTake()
+            eventually("recording") { one.state.value.recordingTake }
+            two.togglePreview()
+            two.startTake()
+            two.deleteGreeting()
+            Thread.sleep(500)
+            assertEquals(0, made.get())
+            assertEquals(1, recorder.heard.count { it.key == "GR" })
+            assertTrue(Greeting.present(context))
+            assertTrue(Greeting.takeListening)
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** A hold left from a screen closed since - its stops unanswered - is
+     *  not let go of a later screen's take: playing would be let into it. */
+    @Test fun aClosedScreensHoldLeavesALaterScreensTake() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies.remove("GS")
+        val one = AnswerController(context, scope, { said += it }, takeLimitMs = 1_500)
+        one.startTake()
+        eventually("recording") { one.state.value.recordingTake }
+        one.stopTake()
+        eventually("the stop asked") { recorder.heard.any { it.key == "GS" } }
+        // Closed: a second stop, unanswered too, its hold timed from now.
+        one.close()
+        eventually("the first hold let go") { !Greeting.takeListening }
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val two = AnswerController(context, other, { said += it })
+            two.startTake()
+            eventually("the later take recording") { two.state.value.recordingTake }
+            Thread.sleep(2_000)
+            assertTrue(Greeting.takeListening)
+            assertTrue(two.state.value.takeListening)
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** Left mid-take with the stop unanswered: the hold is timed from the
+     *  take's start, not from the leaving - every playing in the app was
+     *  refused up to half a minute too long. */
+    @Test fun aTakeLeftIsHeldFromItsStart() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies.remove("GS")
+        val screen = AnswerController(context, scope, { said += it }, takeLimitMs = 2_000)
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        Thread.sleep(1_500)
+        screen.left()
+        eventually("the stop asked") { recorder.heard.any { it.key == "GS" } }
+        Thread.sleep(1_200)
+        assertFalse("let go at the start's limit", Greeting.takeListening)
     }
 
     /** Stop never answered: the hold is let go at the recorder's own limit,

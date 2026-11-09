@@ -48,7 +48,9 @@ internal class SessionPlayer(
     looper: Looper,
     private val engine: PlaybackEngine,
     private val focus: FocusHolder,
-    /** False while a greeting's take may have the microphone (Greeting.takeListening). */
+    /** False while a greeting's take may have the microphone (Greeting.takeListening).
+     *  The session's Play then does nothing - the notification has no word to
+     *  give; the app's own Play says why (Playback.play). */
     private val mayPlay: () -> Boolean = { !Greeting.takeListening },
 ) : SimpleBasePlayer(looper) {
 

@@ -95,13 +95,14 @@ class PlaybackAndShareTest : ScreenTest() {
     @Test fun aRecordingDoesNotPlayWhileTheGreetingIsRecorded() {
         val vm = viewModel(UiState(recordings = listOf(olivia)))
         listen(vm)
-        Greeting.takeListening = true
+        val take = Any()
+        Greeting.hold(take)
         try {
             vm.play(olivia)
             assertNull(vm.state.value.playingName)
             assertEquals(listOf("A recording does not play while your greeting is recorded"), heard)
         } finally {
-            Greeting.takeListening = false
+            Greeting.letGo(take)
         }
     }
 
