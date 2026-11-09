@@ -6,6 +6,8 @@ import com.jemcik.jemrec.calls.CallLogLookup.LoggedCall
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
+import java.util.Locale
 
 /** Which logged calls the missed-call check reports, and which it must not. */
 class MissedCallsTest {
@@ -25,6 +27,24 @@ class MissedCallsTest {
         now: Long = this.now,
         skipped: List<Recorded> = emptyList(),
     ) = MissedCalls.unrecorded(calls, Ledger(recordings, reported, skipped), pending, covered, now)
+
+    /** Its times in Latin digits and English months in any language, as the
+     *  rest of JemRec's: until 0.30 a month in the phone's language among
+     *  English words ("3 Okt." in German), and in Arabic or Persian digits. */
+    @Test fun itsTimesAreWrittenAsTheAppsOthersInAnyLanguage() {
+        val locale = Locale.getDefault()
+        val today = Calendar.getInstance().apply { set(2026, Calendar.OCTOBER, 21, 14, 5) }.timeInMillis
+        val before = Calendar.getInstance().apply { set(2026, Calendar.OCTOBER, 3, 14, 5) }.timeInMillis
+        try {
+            for (language in listOf("de", "uk", "ar", "fa")) {
+                Locale.setDefault(Locale.forLanguageTag(language))
+                assertEquals(language, "14:05", MissedCalls.at(today, now = today + 60_000))
+                assertEquals(language, "3 Oct 14:05", MissedCalls.at(before, now = today))
+            }
+        } finally {
+            Locale.setDefault(locale)
+        }
+    }
 
     @Test fun aCallWithNoRecordingIsMissed() {
         assertEquals(listOf(logged()), missed(listOf(logged())))
