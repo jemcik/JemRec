@@ -2,15 +2,25 @@ package com.jemcik.jemrec.ui.screens
 
 import android.net.Uri
 import android.os.Looper
+import androidx.core.content.edit
+import com.jemcik.jemrec.Prefs
+import com.jemcik.jemrec.calls.CallRules
+import com.jemcik.jemrec.calls.VoipCallNotes
+import com.jemcik.jemrec.capture.HeldWork
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Recordings
+import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.recordings.Waveforms
+import com.jemcik.jemrec.setup.Setup
+import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.UiState
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -22,8 +32,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * What an action does when the app is busy - each opening's setup check
@@ -59,6 +67,15 @@ class BusyPolicyTest : ScreenTest() {
         Waveforms.override = null
     }
 
+    // A setup check arms the recorder's work.
+    private lateinit var work: HeldWork
+
+    @Before fun aWorkManager() {
+        work = HeldWork(app)
+    }
+
+    @After fun noWorkManager() = work.close()
+
     private fun file(name: String) = File(dir, name).apply { writeBytes(ByteArray(64)) }
 
     private fun recording(file: File, name: String = file.name) = Recording(
@@ -70,29 +87,6 @@ class BusyPolicyTest : ScreenTest() {
         sizeLabel = "1 KB",
         filePath = file.path,
     )
-
-    /** Busy until [release]: auto-delete's refresh held reading the list,
-     *  which then reads as [list]. */
-    private inner class HeldBusy(list: List<Recording>) {
-        private val reading = CountDownLatch(1)
-        private val gate = CountDownLatch(1)
-
-        init {
-            Recordings.override = {
-                reading.countDown()
-                gate.await(30, TimeUnit.SECONDS)
-                list
-            }
-        }
-
-        fun hold(vm: MainViewModel) {
-            vm.setAutoDelete()
-            awaitMain("auto-delete's refresh to be reading") { reading.count == 0L }
-            assertTrue("busy while auto-delete runs", vm.state.value.busy)
-        }
-
-        fun release() = gate.countDown()
-    }
 
     private fun log(vm: MainViewModel) = vm.state.value.log
 
@@ -191,5 +185,162 @@ class BusyPolicyTest : ScreenTest() {
         assertTrue(log(vm), log(vm).contains("moved 2 to Recently deleted"))
         assertFalse(vm.state.value.selecting)
         assertEquals(emptySet<String>(), vm.state.value.selected)
+    }
+
+    /**
+     * The rest of what a busy screen drops: each action whose control is
+     * greyed while busy, tapped while auto-delete runs. None runs when the
+     * screen is free again - and once free, each does (the test after).
+     */
+    @Test fun whileBusyEveryGreyedActionIsDropped() {
+        val inTrash = file(".trashed-1795000000-20261021_160200_in.ogg")
+        val trashed = recording(inTrash, "20261021_160200_in.ogg")
+        VoipCallNotes.setEnabled(app, true)
+        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS, trashed = listOf(trashed)))
+        val busy = HeldBusy(emptyList())
+        busy.hold(vm)
+
+        vm.refreshSetup()
+        vm.confirmDeveloperOptions()
+        vm.confirmBackgroundChoice()
+        vm.startPairingNotification()
+        vm.retryFinish()
+        vm.bootstrapDaemon()
+        vm.restoreAll()
+        vm.setAutoDelete(afterDays = 30)
+        vm.setVoipNames(false)
+        vm.useDefaultFolder()
+        busy.release()
+        settle(vm)
+
+        val s = vm.state.value
+        assertEquals("no setup check", SetupStep.READY, s.step)
+        assertNull("no finish", s.finishFailed)
+        assertFalse(Prefs.of(app).getBoolean("setup_dev_options_confirmed", false))
+        assertFalse(Setup.backgroundChoiceMade(app))
+        assertTrue("still in the trash", inTrash.exists())
+        assertEquals(0, Retention.maxAgeDays(app))
+        assertTrue(VoipCallNotes.enabled(app))
+        for (line in listOf("check your notifications", "finish setup", "recorder running", "could not start the recorder", "restored", "standard Recordings folder")) {
+            assertFalse(line, log(vm).contains(line))
+        }
+        assertFalse(s.busy)
+    }
+
+    /** ...and the same actions, the screen free, each run: the checks
+     *  above look at what each would have changed. */
+    @Test fun freeEveryGreyedActionRuns() {
+        val inTrash = file(".trashed-1795000000-20261021_160200_in.ogg")
+        val trashed = recording(inTrash, "20261021_160200_in.ogg")
+        Recordings.override = { emptyList() }
+        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS, trashed = listOf(trashed)))
+        fun ran(action: () -> Unit) {
+            action()
+            settle(vm)
+        }
+
+        // First: the next reading has no trash (the stand-in list has none).
+        ran { vm.restoreAll() }
+        assertFalse(inTrash.exists())
+        assertTrue(log(vm), log(vm).contains("restored 1"))
+        ran { vm.confirmDeveloperOptions() }
+        assertTrue(Prefs.of(app).getBoolean("setup_dev_options_confirmed", false))
+        assertNotEquals(log(vm), SetupStep.READY, vm.state.value.step)
+        ran { vm.confirmBackgroundChoice() }
+        assertTrue(Setup.backgroundChoiceMade(app))
+        ran { vm.startPairingNotification() }
+        assertTrue(log(vm), log(vm).contains("check your notifications - you can type the code there"))
+        ran { vm.setAutoDelete(afterDays = 30) }
+        assertEquals(30, Retention.maxAgeDays(app))
+        VoipCallNotes.setEnabled(app, true)
+        ran { vm.setVoipNames(false) }
+        assertFalse(VoipCallNotes.enabled(app))
+        ran { vm.useDefaultFolder() }
+        assertTrue(log(vm), log(vm).contains("recordings will go to the standard Recordings folder"))
+    }
+
+    /**
+     * Answers already given wait their turn, as Delete all for good's does:
+     * Start fresh's yes, and the debugging question's. Neither runs while
+     * busy; both run once free.
+     */
+    @Test fun whileBusyAnAnswerAlreadyGivenWaitsItsTurn() {
+        val vm = viewModel(UiState(step = SetupStep.NEEDS_DEBUGGING_CHOICE, confirmingReset = true))
+        val busy = HeldBusy(emptyList())
+        busy.hold(vm)
+
+        vm.setHideDebugNotification(true)
+        vm.confirmReset()
+        assertFalse("the dialog closes at once", vm.state.value.confirmingReset)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(vm.state.value.debugNotificationHidden)
+        assertFalse(vm.state.value.resetDone)
+
+        busy.release()
+        settle(vm)
+        assertTrue(vm.state.value.debugNotificationHidden)
+        assertTrue(vm.state.value.resetDone)
+    }
+
+    /**
+     * What a picker brings back, and what the recorder is told, does not
+     * wait for busy: coming back from the picker resumes the screen, whose
+     * check holds busy then (measured on an emulator: a contact picked and
+     * nothing added). Each is done while auto-delete still runs.
+     */
+    @Test fun whileBusyAPickersAnswerIsTakenAtOnce() {
+        CallRules.setContacts(app, CallRules.Contacts.ONLY)
+        Prefs.of(app).edit { putStringSet("rules_chosen", setOf("lookup-a", "lookup-b")) }
+        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS))
+        val busy = HeldBusy(emptyList())
+        busy.hold(vm)
+
+        vm.addRuleContact(Uri.parse("content://com.android.contacts/contacts/404"))
+        vm.removeRuleContact("lookup-a")
+        vm.onFolderChosen(Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ACalls"))
+        awaitMain("the three to be done") {
+            log(vm).contains("could not add that contact") &&
+                log(vm).contains("recordings will be saved to the folder you chose") &&
+                Prefs.of(app).getStringSet("rules_chosen", null) == setOf("lookup-b")
+        }
+        assertTrue("still busy", vm.state.value.busy)
+        busy.release()
+        settle(vm)
+    }
+
+    /**
+     * A tap that waits for the screen to be free, then goes on without
+     * holding busy: setup's pairing again (a deep link's, or the header's).
+     * Home with the pairing step's flag at once; the setup check once free.
+     */
+    @Test fun pairingAgainWaitsForTheScreenThenChecksSetup() {
+        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS))
+        val busy = HeldBusy(emptyList())
+        busy.hold(vm)
+
+        vm.pairAgain()
+        assertEquals(Screen.HOME, vm.state.value.screen)
+        assertTrue(vm.state.value.pairingLost)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("no setup check while busy", SetupStep.READY, vm.state.value.step)
+
+        busy.release()
+        settle(vm)
+        assertNotEquals(log(vm), SetupStep.READY, vm.state.value.step)
+    }
+
+    /**
+     * An action that fails says which and how, in the log, and leaves the
+     * screen free; the connection's flag is read again after every action,
+     * failed or not.
+     */
+    @Test fun aFailedActionSaysWhatFailedAndTheConnectionIsReadAgain() {
+        Recordings.override = { throw IllegalStateException("boom") }
+        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS, connected = true))
+        vm.setAutoDelete(afterDays = 30)
+        settle(vm)
+        assertTrue(log(vm), log(vm).contains("auto-delete failed: IllegalStateException: boom"))
+        assertFalse(vm.state.value.busy)
+        assertFalse("no ADB session here", vm.state.value.connected)
     }
 }

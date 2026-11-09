@@ -450,13 +450,6 @@ class BehaviourTest : ScreenTest() {
         compose.onAllNodesWithText("OFF").assertCountEquals(0)
     }
 
-    /**
-     * And it is the header's mark as drawn, not a likeness: drawn apart,
-     * Memo's sat in circles the header never had and Multitrack's stood its
-     * LED over a smaller label (the user found it, 2026-10-23), while the
-     * test below held only that they said the same. Held here by size: each
-     * mark the header shows is the same size in Settings, in every look.
-     */
     /** "Allow this Wi-Fi" takes a tap while the app is busy, as the record
      *  control does: it shows while the recorder is down, when each
      *  opening's check is busiest, and a tap then did nothing at all. */
@@ -533,6 +526,13 @@ class BehaviourTest : ScreenTest() {
         compose.onAllNodesWithText("Marcus Chen").assertCountEquals(1)
     }
 
+    /**
+     * And it is the header's mark as drawn, not a likeness: drawn apart,
+     * Memo's sat in circles the header never had and Multitrack's stood its
+     * LED over a smaller label (the user found it, 2026-10-23), while the
+     * test below held only that they said the same. Held here by size: each
+     * mark the header shows is the same size in Settings, in every look.
+     */
     @Test fun settingsDrawsMemosMarksAsItsHeaderDoes() = marksDrawnAlike(Look.MEMO)
 
     @Test fun settingsDrawsDecksMarksAsItsHeaderDoes() = marksDrawnAlike(Look.DECK)

@@ -6,6 +6,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.CallHistory
+import com.jemcik.jemrec.calls.CallRules
+import com.jemcik.jemrec.capture.TestPhone
+import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Waveforms
@@ -31,6 +34,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -274,4 +278,83 @@ class ReadingTest : ScreenTest() {
         assertFalse(vm.state.value.callTracking)
         assertFalse(AnsweringMachine.enabled(app))
     }
+
+    /** After the list arrives, the waveform fill-in goes over it: each
+     *  recording is asked whether it has its levels. */
+    @Test fun aRefreshStartsTheFillInOverTheList() {
+        val asked = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        Waveforms.override = { name -> asked += name; Fixtures.waveform(name.hashCode().toLong()) }
+        Recordings.override = { listOf(olivia, marcus) }
+        val vm = viewModel(UiState())
+        refreshed(vm)
+        assertEquals(setOf(olivia.name, marcus.name), asked.toSet())
+    }
+
+    /**
+     * What asks for a fresh reading of everything, and what does not. Each
+     * of these reads the list once: the Calls tab coming up, Multitrack
+     * chosen, the rule of whose calls, a keep mark, keeping the selected,
+     * the call log's and the recordings' permission answers, Android's
+     * answer about a delete, a rule's contact added or taken off, a folder
+     * chosen. Another look, the other numbers' rule, the file names, the
+     * note after each call and the recording mode read nothing.
+     */
+    @Test fun whatAsksForAFreshReadingAndWhatDoesNot() {
+        val reads = AtomicInteger()
+        Recordings.override = { reads.incrementAndGet(); listOf(olivia, marcus) }
+        CallHistory.override = { emptyList() }
+        val vm = viewModel(UiState(recordings = listOf(olivia, marcus), selecting = true, selected = setOf(marcus.name)))
+        try {
+            vm.setLook(Look.DECK)
+            vm.setRuleOtherNumbers(false)
+            vm.setFileNames(FileNames.Format.DATE_AND_NUMBER)
+            vm.setAfterCallNotice(false)
+            vm.setAutomatic(false)
+            settle(vm)
+            assertEquals("nothing read", 0, reads.get())
+
+            // Before the tab switch, which ends the selection.
+            vm.keepSelected()
+            vm.showTab(HomeTab.CALLS)
+            vm.setLook(Look.MULTITRACK)
+            vm.setRuleContacts(CallRules.Contacts.ALL_BUT)
+            vm.toggleKept(olivia)
+            vm.onCallLogResult()
+            vm.onAudioAccessResult()
+            vm.onDeleteConsentResult(false)
+            vm.addRuleContact(Uri.parse("content://com.android.contacts/contacts/404"))
+            vm.removeRuleContact("nobody")
+            vm.onFolderChosen(Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ACalls"))
+            settle(vm)
+            assertEquals(11, reads.get())
+        } finally {
+            Looks.set(app, LookChoice())
+        }
+    }
+
+    /** Each action that changes what is listed, or what the recorder is,
+     *  reads everything again once it is done. */
+    @Test fun anActionThatChangesWhatIsListedReadsItAgain() {
+        TestPhone.offWifi(app)
+        val calls = File(app.filesDir, "calls").apply { mkdirs() }
+        val inTrash = File(calls, ".trashed-1795000000-${olivia.name}").apply { writeBytes(ByteArray(64)) }
+        val trashed = olivia.copy(uri = Uri.fromFile(inTrash), filePath = inTrash.path)
+        val reads = AtomicInteger()
+        Recordings.override = { reads.incrementAndGet(); emptyList() }
+        val vm = viewModel(UiState(screen = Screen.SETTINGS, trashed = listOf(trashed)))
+        for ((what, action) in listOf<Pair<String, () -> Unit>>(
+            "restore all" to { vm.restoreAll() },
+            "auto-delete" to { vm.setAutoDelete(afterDays = 30) },
+            "the standard folder" to { vm.useDefaultFolder() },
+            "start recorder" to { vm.bootstrapDaemon() },
+            "allow this Wi-Fi" to { vm.allowThisWifi() },
+            "start without Wi-Fi" to { vm.setStartWithoutWifi(true) },
+        )) {
+            val before = reads.get()
+            action()
+            settle(vm)
+            assertEquals(what, before + 1, reads.get())
+        }
+    }
+
 }
