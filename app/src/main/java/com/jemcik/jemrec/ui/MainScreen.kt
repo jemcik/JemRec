@@ -202,6 +202,14 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
         )
     }
     val ready = state.step == SetupStep.READY
+    // A link's row asked into view while setup shows instead of the list -
+    // the pairing lost, say - is let go: kept, the list jumped to it
+    // whenever it next showed. Not while the opening's check still works out
+    // which to show.
+    LaunchedEffect(state.reveal, state.step) {
+        val name = state.reveal ?: return@LaunchedEffect
+        if (!ready && state.step != SetupStep.CHECKING) vm.onRevealed(name)
+    }
     val offHome = ready && state.screen != Screen.HOME
     val inTrash = ready && state.screen == Screen.TRASH
     val inDiagnostics = ready && state.screen == Screen.DIAGNOSTICS

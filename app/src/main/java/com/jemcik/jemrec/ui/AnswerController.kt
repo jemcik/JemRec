@@ -144,6 +144,8 @@ class AnswerController(
     @Volatile private var takeBegan: Long? = null
     /** This screen's preview stopped, from any window (Greeting.previewing). */
     private val stopThis: () -> Unit = { stopPreview() }
+    /** Waiting for another screen's arming to note its answer (readPendingTest). */
+    private var awaitingArming: Job? = null
     /** Tests seed the state; nothing is then read from disk over it. */
     private val seeded = initial != null
 
@@ -165,6 +167,8 @@ class AnswerController(
                 results = AnswerDiagnostics.results(app),
             )
         }
+        // How a take made past its screen ended, when not as a greeting.
+        Greeting.takeEnding()?.let { words -> _state.update { it.copy(greetingProblem = words) } }
     }
 
     /** The screen opened: the checks, if never run, and the SIMs - and a
@@ -197,6 +201,18 @@ class AnswerController(
         // an older test still kept would be taken up as this one's, and its
         // watch would end the new arming's state.
         if (seeded || _state.value.test == "arming") return
+        // Another screen's arming under way - one closed, its arming past it -
+        // read once it has noted its answer. Read now, nothing was there yet,
+        // and this screen showed no test until it next came to the front.
+        if (testArming.get()) {
+            if (awaitingArming?.isActive != true) {
+                awaitingArming = scope.launch {
+                    while (testArming.get()) delay(250)
+                    readPendingTest()
+                }
+            }
+            return
+        }
         when (val pending = AnswerDiagnostics.pendingTest(app)) {
             is AnswerDiagnostics.PendingTest.Armed -> if (testWatch?.isActive != true) {
                 _state.update { it.copy(test = "armed", testIncoming = pending.incoming, testUntil = pending.until, askHeard = null) }
@@ -336,7 +352,7 @@ class AnswerController(
         // Answered with nothing: the stop came before the recorder's first
         // read, or its microphone would not open - not a take unsent.
         if (length == 0L) {
-            _state.update { it.copy(greetingProblem = "Nothing was recorded. Try again.") }
+            ended("Nothing was recorded. Try again.")
             return
         }
         val pcm = CaptureDaemon.fetchTake(app)
@@ -348,31 +364,36 @@ class AnswerController(
                 val saved = withContext(Dispatchers.IO) { runCatching { Greeting.save(app, processed.pcm) } }
                 if (saved.isFailure) {
                     Log.w(TAG, "answer: the greeting could not be saved", saved.exceptionOrNull())
-                    _state.update { it.copy(greetingProblem = "The greeting could not be saved. Is the phone's storage full?") }
+                    ended("The greeting could not be saved. Is the phone's storage full?")
                     return
                 }
                 // A preview of the greeting this replaces, played while it
                 // was made, ends with it: the row now tells of the new one.
                 stopPreview()
                 val sent = CaptureDaemon.uploadGreeting(app, processed.pcm)
-                if (!sent) tell("the recorder will get the new greeting when it next restarts")
                 _state.update { it.copy(greetingSeconds = processed.seconds, greetingProblem = null) }
+                if (!sent) {
+                    tell("the recorder will get the new greeting when it next restarts")
+                    if (!scope.isActive) Greeting.ended("The recorder will get this greeting when it next restarts.")
+                }
                 // Told once: a recorder that missed the greeting misses the
                 // settings too. Past the screen, as the take is.
                 push(asked = sent, on = outliving)
             }
             // Not sent - the recorder restarted, a socket cut, the wait out:
             // no word of the voice, which "Nothing was heard" blamed.
-            null -> _state.update {
-                it.copy(greetingProblem = "The recorder did not send the take. Try again.")
-            }
-            Greeting.Take.Silent -> _state.update {
-                it.copy(greetingProblem = "Nothing was heard. Hold the phone as for a call, and speak.")
-            }
-            Greeting.Take.TooShort -> _state.update {
-                it.copy(greetingProblem = "That was too short for a greeting. Try again.")
-            }
+            null -> ended("The recorder did not send the take. Try again.")
+            Greeting.Take.Silent -> ended("Nothing was heard. Hold the phone as for a call, and speak.")
+            Greeting.Take.TooShort -> ended("That was too short for a greeting. Try again.")
         }
+    }
+
+    /** A take that is not a greeting, and why, on its row - and, its screen
+     *  gone meanwhile, kept for the next one (Greeting.ended), which showed
+     *  the old greeting with no word of the take. */
+    private fun ended(words: String) {
+        _state.update { it.copy(greetingProblem = words) }
+        if (!scope.isActive) Greeting.ended(words)
     }
 
     /** The microphone held for [mine], when its Stop went unanswered,
@@ -484,10 +505,11 @@ class AnswerController(
      * mid-take, the recorder went on recording the microphone for up to
      * thirty seconds, and refused a new take until then. The take is told to
      * stop in a scope of its own, as this screen's has ended by now, and is
-     * not kept: recording, asked to start, or Stop tapped and not yet
-     * answered - a stop not yet sent went with the screen. One sent before
-     * the recorder's yes to Record can reach it before the start, and the
-     * take then runs to its own limit.
+     * not kept: recording, or asked to start. A take whose Stop was tapped
+     * is made a greeting of past the screen (stopTake), and stopped again
+     * here, which its hold shrugs off. A stop sent before the recorder's yes
+     * to Record can reach it before the start, and the take then runs to its
+     * own limit.
      */
     fun close() {
         stopPreview()
@@ -523,9 +545,10 @@ class AnswerController(
         scope.launch {
             val dropped = CaptureDaemon.syncGreeting(app)
             val off = CaptureDaemon.setAnswering(app)
-            // Missed, the recorder answered calls with the deleted greeting,
-            // without a word, until it next took JemRec's settings - at its
-            // next start (Revive's pushMode).
+            // Missed, the recorder keeps the deleted greeting until it next
+            // takes JemRec's settings - at its next start (Revive's
+            // pushMode). It answers no call meanwhile: the app gives it no
+            // go-ahead without a greeting (AnsweringMachine.decide).
             if (!dropped || !off) tell("the recorder will drop the greeting when it next restarts")
         }
     }
@@ -583,6 +606,8 @@ class AnswerController(
         // other.
         if (!testArming.compareAndSet(false, true)) {
             tell("a test call is being armed already")
+            // Shown here once it is.
+            readPendingTest()
             return
         }
         // A test from before still to be read is read first. Armed by the

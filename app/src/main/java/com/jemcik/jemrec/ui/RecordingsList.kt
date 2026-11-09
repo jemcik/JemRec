@@ -6,6 +6,7 @@ import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.RecordingMarks
 import com.jemcik.jemrec.recordings.RecordingTags
+import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.recordings.Trash
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -194,6 +195,10 @@ internal class RecordingsList(
                 val result = withContext(Dispatchers.IO) {
                     Trash.trashAll(app, still)
                 }
+                // Any list open reads it again, as for a call saved: run past
+                // its screen, a delete left a screen opened meanwhile listing
+                // what had moved.
+                if (result.deleted > 0) RecordingLibrary.announce("trash")
                 // Whatever Android wants confirmed is not moved yet - its own
                 // dialog comes next - so it is counted as asked, not as failed.
                 trash.report(

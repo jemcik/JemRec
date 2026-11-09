@@ -6,6 +6,7 @@ import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.recordings.BulkDeleteResult
 import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.recordings.Trash
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,17 +30,24 @@ internal class TrashActions(
      *  notifications with them. Empty for a restore. */
     private var asking: List<String>? = null
 
+    /** What a no to the question out is said as: a restore's was "deletion
+     *  cancelled". */
+    private var refusedAs = DELETION_CANCELLED
+
     /** Questions waiting for the one out to be answered, each with what it
-     *  moves: two deletes, each with its own, held one between them - the
-     *  first was never asked, or its yes took the other's notifications. */
-    private val questions = ArrayDeque<Pair<IntentSender, List<String>>>()
+     *  moves and how a no is said: two deletes, each with its own, held one
+     *  between them - the first was never asked, or its yes took the other's
+     *  notifications. */
+    private val questions = ArrayDeque<Triple<IntentSender, List<String>, String>>()
 
     /** Back out of the trash, as it was. */
     fun restore(recording: Recording) = actions.run(Action.RESTORE) {
         when (val result = withContext(Dispatchers.IO) { Trash.restore(app, recording) }) {
             is DeleteResult.Deleted -> log.say("restored ${recording.name}")
-            is DeleteResult.NeedsConsent -> askAndroid(result.request)
-            is DeleteResult.Failed -> log.say("could not restore ${recording.name}: ${result.error.message}")
+            is DeleteResult.NeedsConsent -> askAndroid(result.request, refused = RESTORE_CANCELLED)
+            // A snackbar too, as Restore all's: the row stayed, and only
+            // Diagnostics said why.
+            is DeleteResult.Failed -> log.tell("could not restore ${recording.name}: ${result.error.message}")
         }
         reading.now()
     }
@@ -49,7 +57,7 @@ internal class TrashActions(
         val all = state.value.trashed
         if (all.isEmpty()) return@run
         val result = withContext(Dispatchers.IO) { Trash.restoreAll(app, all) }
-        report(all.size, result, done = { "restored $it" })
+        report(all.size, result, done = { "restored $it" }, refused = RESTORE_CANCELLED)
         reading.now()
     }
 
@@ -77,6 +85,8 @@ internal class TrashActions(
                 val listed = state.value.trashed.associateBy { it.uri }
                 val still = all.mapNotNull { listed[it.uri] }
                 val result = withContext(Dispatchers.IO) { Trash.deleteForGood(app, still) }
+                // Any list open reads it again (RecordingsList's delete).
+                if (result.deleted > 0) RecordingLibrary.announce("deleted for good")
                 report(still.size, result, done = { "deleted for good $it" }, leaving = true)
                 reading.now()
             } finally {
@@ -98,6 +108,7 @@ internal class TrashActions(
         done: (Int) -> String,
         couldNot: (Int) -> String = { "could not do $it" },
         leaving: Boolean = false,
+        refused: String = DELETION_CANCELLED,
     ) {
         val asked = of - result.deleted - result.failed
         val summary = listOfNotNull(
@@ -106,17 +117,18 @@ internal class TrashActions(
             couldNot(result.failed).takeIf { result.failed > 0 },
         ).joinToString(", ")
         if (result.failed > 0) log.tell(summary) else if (summary.isNotEmpty()) log.say(summary)
-        result.needsConsent?.let { askAndroid(it, if (leaving) result.disputed else emptyList()) }
+        result.needsConsent?.let { askAndroid(it, if (leaving) result.disputed else emptyList(), refused) }
     }
 
     /** Android's question for [request], over whichever screen is up
      *  (MainScreen launches it); a yes takes [leaving]'s notifications. */
-    fun askAndroid(request: IntentSender, leaving: List<String> = emptyList()) {
+    fun askAndroid(request: IntentSender, leaving: List<String> = emptyList(), refused: String = DELETION_CANCELLED) {
         if (asking != null) {
-            questions.addLast(request to leaving)
+            questions.addLast(Triple(request, leaving, refused))
             return
         }
         asking = leaving
+        refusedAs = refused
         state.update { it.copy(deleteConsent = request) }
     }
 
@@ -127,11 +139,16 @@ internal class TrashActions(
     /** The system delete dialog has closed, one way or the other. */
     fun onDeleteConsentResult(granted: Boolean) {
         state.update { it.copy(deleteConsent = null) }
-        if (!granted) log.say("deletion cancelled")
+        if (!granted) log.say(refusedAs)
         reading.refresh()
         val left = asking.orEmpty()
         asking = null
         if (granted) left.forEach { AfterCall.gone(app, it) }
-        questions.removeFirstOrNull()?.let { (request, leaving) -> askAndroid(request, leaving) }
+        questions.removeFirstOrNull()?.let { (request, leaving, refused) -> askAndroid(request, leaving, refused) }
+    }
+
+    private companion object {
+        const val DELETION_CANCELLED = "deletion cancelled"
+        const val RESTORE_CANCELLED = "restore cancelled"
     }
 }

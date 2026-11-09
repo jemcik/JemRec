@@ -31,6 +31,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.hasScrollToIndexAction
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.recordings.Recording
@@ -408,6 +410,73 @@ class ListScreensTest : ScreenTest() {
             // The player's foot: its position in the recording, under the row.
             val seeker = compose.onAllNodesWithContentDescription("Position in the recording")[0].fetchSemanticsNode().unclippedBottom()
             assertTrue("its player to $seeker, the list to ${list.bottom}", seeker <= list.bottom + 0.5f)
+        } finally {
+            com.jemcik.jemrec.recordings.Waveforms.override = null
+        }
+    }
+
+    /** A link's row asked into view while setup shows instead of the list
+     *  is let go: kept, the list jumped to it whenever it next showed. */
+    @Test fun aLinksRowIsLetGoWhileSetupShows() {
+        Recordings.override = { emptyList() }
+        val vm = viewModel(Fixtures.ready().copy(step = com.jemcik.jemrec.setup.SetupStep.NEEDS_PAIRING, reveal = "20261021_160200_in.ogg"))
+        showApp(vm)
+        compose.waitForIdle()
+        assertEquals(null, vm.state.value.reveal)
+    }
+
+    /** The user's own scroll ends a link's follow: from then the row is
+     *  theirs to place. Followed on, the list scrolled back against them as
+     *  the player opened. */
+    @Test fun aScrollEndsTheFollow() {
+        val many = twoDays()
+        Recordings.override = { many }
+        com.jemcik.jemrec.recordings.Waveforms.override = { name -> Fixtures.waveform(name.hashCode().toLong()) }
+        com.jemcik.jemrec.calls.CallLogLookup.dismissBanner(app)
+        val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
+        val given = java.util.concurrent.atomic.AtomicReference<androidx.media3.common.MediaItem?>()
+        org.mockito.Mockito.doAnswer { given.set(it.getArgument(0)); null }
+            .`when`(session).setMediaItem(org.mockito.Mockito.any())
+        org.mockito.Mockito.`when`(session.currentMediaItem).thenAnswer { given.get() }
+        org.mockito.Mockito.`when`(session.duration).thenReturn(60_000L)
+        org.mockito.Mockito.`when`(session.isPlaying).thenReturn(true)
+        val connecting = com.google.common.util.concurrent.SettableFuture.create<androidx.media3.session.MediaController>()
+        try {
+            val vm = viewModel(
+                Fixtures.ready().copy(recordings = many, offerCallLog = false, selectHintSeen = true),
+                connectSession = { connecting },
+            )
+            showApp(vm)
+            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(3)
+            compose.waitForIdle()
+            val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
+            val last = (0 until 30).last { i ->
+                compose.onAllNodesWithText("Caller $i").fetchSemanticsNodes().firstOrNull()
+                    ?.boundsInRoot?.let { it.bottom <= list.bottom } == true
+            }
+            val foot = last - 1
+            vm.open(com.jemcik.jemrec.DeepLink.Link(com.jemcik.jemrec.DeepLink.Kind.PLAY, many[foot].name))
+            awaitMain("playing") { vm.state.value.playingName == many[foot].name }
+            compose.waitForIdle()
+            val before = listScrolled()
+            // The user drags the list a little toward its start: the row lower.
+            compose.onNode(hasScrollToIndexAction()).performTouchInput {
+                swipeDown(startY = centerY - 30f, endY = centerY + 30f, durationMillis = 1_000)
+            }
+            compose.waitForIdle()
+            val theirs = listScrolled()
+            assertTrue("dragged from $before to $theirs", theirs < before)
+            connecting.set(session)
+            val until = System.currentTimeMillis() + 10_000
+            while (vm.state.value.reveal != null || System.currentTimeMillis() < until - 8_000) {
+                compose.mainClock.advanceTimeBy(250)
+                compose.waitForIdle()
+                check(System.currentTimeMillis() < until) { "never let go" }
+            }
+            compose.mainClock.advanceTimeBy(3_000)
+            compose.waitForIdle()
+            assertTrue("its player open", vm.state.value.durationMs > 0)
+            assertEquals("left where the user put it", theirs, listScrolled())
         } finally {
             com.jemcik.jemrec.recordings.Waveforms.override = null
         }

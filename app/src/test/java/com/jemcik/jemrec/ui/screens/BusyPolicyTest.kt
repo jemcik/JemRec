@@ -591,6 +591,96 @@ class BusyPolicyTest : ScreenTest() {
         assertFalse("no ADB session here", vm.state.value.connected)
     }
 
+    /** A delete that could not move its row can be asked again: the row's
+     *  claim goes with the first delete's end, or the second yes closed its
+     *  dialog and did nothing, without a word. */
+    @Test fun aDeleteThatFailedCanBeAskedAgain() {
+        val olivia = recording(file("20261021_160200_in.ogg"))
+        Recordings.override = { listOf(olivia) }
+        val vm = viewModel(UiState(recordings = listOf(olivia), selecting = true, selected = setOf(olivia.name)))
+        dir.setWritable(false)
+        try {
+            vm.confirmDeleteSelected()
+            settle(vm)
+        } finally {
+            dir.setWritable(true)
+        }
+        assertTrue(File(olivia.filePath!!).exists())
+        vm.startSelecting()
+        vm.toggleSelected(olivia)
+        vm.confirmDeleteSelected()
+        settle(vm)
+        assertFalse("moved the second time", File(olivia.filePath!!).exists())
+    }
+
+    /** The same for Delete all for good: one that could not delete can be
+     *  asked again. */
+    @Test fun deleteForGoodThatFailedCanBeAskedAgain() {
+        val name = "20261021_160200_in.ogg"
+        val inTrashFile = file(".trashed-1795000000-$name")
+        val trashed = inTrash(inTrashFile, name)
+        Recordings.override = { listOf(trashed) }
+        val vm = viewModel(UiState(screen = Screen.TRASH, trashed = listOf(trashed)))
+        dir.setWritable(false)
+        try {
+            vm.confirmEmptyTrash()
+            settle(vm)
+        } finally {
+            dir.setWritable(true)
+        }
+        assertTrue(inTrashFile.exists())
+        vm.askEmptyTrash()
+        vm.confirmEmptyTrash()
+        settle(vm)
+        assertFalse("deleted the second time", inTrashFile.exists())
+    }
+
+    /** A delete, or Delete all for good, tells any open list to read again:
+     *  run past its screen, it left a screen opened meanwhile listing what
+     *  had moved. */
+    @Test fun aDeleteTellsAnOpenListToReadAgain() {
+        val olivia = recording(file("20261021_160200_in.ogg"))
+        val trashedFile = file(".trashed-1795000000-20261021_152400_out.ogg")
+        val trashed = inTrash(trashedFile, "20261021_152400_out.ogg")
+        Recordings.override = { listOf(olivia, trashed) }
+        val told = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val listening = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+            .launch { com.jemcik.jemrec.recordings.RecordingLibrary.changed.collect { told += it } }
+        try {
+            val vm = viewModel(UiState(recordings = listOf(olivia), trashed = listOf(trashed), selecting = true, selected = setOf(olivia.name)))
+            vm.confirmDeleteSelected()
+            settle(vm)
+            assertTrue(told.toString(), "trash" in told)
+            vm.confirmEmptyTrash()
+            settle(vm)
+            assertTrue(told.toString(), "deleted for good" in told)
+        } finally {
+            listening.cancel()
+        }
+    }
+
+    /** A Restore that fails says so in a snackbar, as Restore all's does:
+     *  the row stayed, and only Diagnostics said why. */
+    @Test fun aRestoreThatFailsSaysSo() {
+        val name = "20261021_160200_in.ogg"
+        val inTrashFile = file(".trashed-1795000000-$name")
+        val trashed = inTrash(inTrashFile, name)
+        val vm = viewModel(UiState(screen = Screen.TRASH, trashed = listOf(trashed)))
+        val heard = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val listening = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+            .launch { vm.notices.collect { heard += it } }
+        dir.setWritable(false)
+        try {
+            vm.restore(trashed)
+            settle(vm)
+        } finally {
+            dir.setWritable(true)
+            listening.cancel()
+        }
+        assertTrue(inTrashFile.exists())
+        assertTrue(heard.toString(), heard.any { it.startsWith("Could not restore") })
+    }
+
     /** The selection's Delete says how it went as Recently deleted's buttons
      *  do, through one report: a recording that could not be moved is said in
      *  the log and in a snackbar, its first letter a capital. */

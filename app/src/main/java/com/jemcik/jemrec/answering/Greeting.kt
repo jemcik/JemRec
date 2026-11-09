@@ -61,6 +61,7 @@ object Greeting {
         if (maker.value.let { it != null && it !== take }) return false
         if (!takeHolder.compareAndSet(null, take) && takeHolder.value !== take) return false
         stopPreview()
+        ending.set(null)
         return true
     }
 
@@ -96,7 +97,18 @@ object Greeting {
         takeHolder.value = null
         maker.value = null
         previewStop.set(null)
+        ending.set(null)
     }
+
+    /** How the last take made past its screen ended, when not as a
+     *  greeting: for the screen opened since, which showed the old greeting
+     *  with no word of it. Shown once; a new take makes it moot. */
+    private val ending = AtomicReference<String?>(null)
+
+    fun ended(words: String) = ending.set(words)
+
+    /** The ending kept, once; null if none. */
+    fun takeEnding(): String? = ending.getAndSet(null)
 
     /**
      * How to stop the greeting's preview now playing, in whichever window:

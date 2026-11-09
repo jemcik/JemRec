@@ -801,6 +801,51 @@ class AnswerTestCallTest {
         eventually("the new greeting saved") { Greeting.file(context).length() < Greeting.RATE * 2 * 10L }
     }
 
+    /** A take made past its screen that is no greeting - nothing heard -
+     *  says so on the screen opened since, once: it showed the old greeting
+     *  with no word of the take. */
+    @Test fun aTakesEndingPastItsScreenShowsOnTheNext() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GT") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 1"
+        recorder.take = ByteArray(Greeting.RATE * 2 * 3)
+        val screenScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val screen = AnswerController(context, screenScope, { said += it })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("the take being fetched") { recorder.heard.any { it.key == "GT" } }
+        screenScope.cancel()
+        gate.countDown()
+        eventually("made") { Greeting.making.value == null }
+        val next = AnswerController(context, scope, { said += it })
+        next.reload()
+        assertEquals("Nothing was heard. Hold the phone as for a call, and speak.", next.state.value.greetingProblem)
+        next.reload()
+        assertEquals("said once", Greeting.takeEnding(), null)
+    }
+
+    /** A screen opened while another's arming is under way - JemRec closed
+     *  and opened again as the recorder armed - shows the test once it is
+     *  noted. It read nothing, and showed no test until it next came to the
+     *  front. */
+    @Test fun aScreenOpenedDuringAnotherScreensArmingShowsTheTest() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST armed"
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val first = AnswerController(context, closed, { said += it })
+        first.startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        closed.cancel()
+        val next = AnswerController(context, scope, { said += it })
+        next.readPendingTest()
+        assertEquals(null, next.state.value.test)
+        gate.countDown()
+        eventually("shown") { next.state.value.test == "armed" }
+    }
+
     /** While one window's take is made a greeting of, another's Record and
      *  Delete wait: a take would overwrite the file being read, and the
      *  saving undo the delete. */
@@ -1083,7 +1128,7 @@ class AnswerTestCallTest {
     }
 
     /** The screen gone with Stop not yet answered: told to stop again from a
-     *  scope that outlives it - the first stop may never have been sent. */
+     *  scope that outlives it, which the take's own hold shrugs off. */
     @Test fun aTakeBeingStoppedIsStoppedWithTheScreen() {
         val gate = CountDownLatch(1)
         recorder.stall = { if (it == "GS") gate.await(10, TimeUnit.SECONDS) }

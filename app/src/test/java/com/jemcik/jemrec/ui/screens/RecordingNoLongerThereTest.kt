@@ -12,7 +12,9 @@ import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.UiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -113,6 +115,26 @@ class RecordingNoLongerThereTest : ScreenTest() {
         } finally {
             Recordings.override = null
         }
+    }
+
+    /** Android's no to a restore is said as a restore's: it was "deletion
+     *  cancelled". */
+    @Test fun aRestoreRefusedIsSaidAsOne() {
+        val app = RuntimeEnvironment.getApplication()
+        FakeMediaStore.install(File(app.cacheDir, "media"))
+        val name = "20261020_101010_in.ogg"
+        FakeMediaStore.rows += FakeMediaStore.Row(5, name, notOurs = true, trashed = true)
+        val row = Recordings.describe(name, FakeMediaStore.uriOf(5), 1000, 1000)
+        val vm = viewModel(UiState(screen = com.jemcik.jemrec.ui.Screen.TRASH, trashed = listOf(row)))
+        vm.restore(row)
+        settle(vm)
+        assertNotNull("Android asked", vm.state.value.deleteConsent)
+        vm.onDeleteConsentShown()
+        vm.onDeleteConsentResult(false)
+        settle(vm)
+        val log = vm.state.value.log
+        assertTrue(log, log.contains("restore cancelled"))
+        assertFalse(log, log.contains("deletion cancelled"))
     }
 
     @Test fun androidsYesTakesTheNotificationOfWhatItMoved() {
