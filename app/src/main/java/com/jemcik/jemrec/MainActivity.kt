@@ -33,8 +33,10 @@ class MainActivity : ComponentActivity() {
         // Gone at once, it leaves the task as it was - the picker on top - as
         // the launcher does for a task it began. Only over JemRec's own
         // window: started into another app's task, it opens there as ever.
-        if (!isTaskRoot && intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER) &&
-            overJemRec()
+        // On a fresh start only: a window remade - the phone turned - is not
+        // a new one over the task.
+        if (savedInstanceState == null && !isTaskRoot && intent?.action == Intent.ACTION_MAIN &&
+            intent.hasCategory(Intent.CATEGORY_LAUNCHER) && overJemRec()
         ) {
             finish()
             return

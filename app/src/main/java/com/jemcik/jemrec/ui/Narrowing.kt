@@ -320,6 +320,22 @@ internal fun narrowingOf(state: UiState, vm: MainViewModel, calls: Boolean): Lis
 }
 
 /**
+ * The search field's focus, asked for as the search opens, so the keyboard
+ * is up and ready - kept by the screen, as until 0.30, not by the list's
+ * header: an item of the list, the header is made anew when an item before
+ * it comes or goes (the call-log offer, answered), and asked again, it
+ * brought back a keyboard put away.
+ */
+@Composable
+internal fun rememberSearchFocus(open: Boolean, aside: Boolean): FocusRequester {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(open, aside) {
+        if (open && !aside) runCatching { focus.requestFocus() }
+    }
+    return focus
+}
+
+/**
  * A list's pinned header, both tabs': [toolbar] on top (the Recordings
  * tab's selection), the chips, the search under them, the line that says
  * the list is narrowed, and the rule once rows pass under it. On a phone on
@@ -344,13 +360,10 @@ internal fun NarrowingHeader(
     listed: Boolean,
     chipsShown: Boolean,
     scrolled: Boolean,
+    focus: FocusRequester,
     toolbar: @Composable () -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(narrowing.searchOpen, aside) {
-        if (narrowing.searchOpen && !aside) runCatching { focus.requestFocus() }
-    }
     Column(Modifier.keepsItsPlace().background(MaterialTheme.colorScheme.surface)) {
         toolbar()
         if (listed && !aside) {

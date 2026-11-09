@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.ui.LocalNow
 import com.jemcik.jemrec.ui.theme.JemRecTheme
 import com.jemcik.jemrec.ui.theme.LookChoice
@@ -30,10 +32,12 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.hasScrollToIndexAction
 import com.jemcik.jemrec.calls.CallLogLookup
+import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.ui.AppScaffold
 import com.jemcik.jemrec.ui.CallsNarrowing
 import com.jemcik.jemrec.ui.HomeTab
+import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.RecordingsNarrowing
 import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.UiState
@@ -229,52 +233,144 @@ class ListScreensTest : ScreenTest() {
         assertTrue("still scrolled upright", scrolled() > 0f)
     }
 
+    /** Seventy recordings a minute apart from 17:59, forty on the day the
+     *  screens show and thirty the day before, each with a caller of its own. */
+    private fun twoDays(): List<Recording> = List(70) { i ->
+        val day = if (i < 40) "20261021" else "20261020"
+        val at = 17 * 3600 + 59 * 60 - (i % 40) * 60
+        val stamp = "%02d%02d%02d".format(at / 3600, at / 60 % 60, at % 60)
+        Fixtures.recordings()[1].copy(name = "${day}_${stamp}_out.ogg", caller = "Caller $i")
+    }
+
+    /** [many]'s row [at] played from its notification, and the list's
+     *  frames turned - the main looper alone does not draw them - until the
+     *  link is let go. */
+    private fun playFromItsNotification(vm: MainViewModel, many: List<Recording>, at: Int) {
+        vm.open(com.jemcik.jemrec.DeepLink.Link(com.jemcik.jemrec.DeepLink.Kind.PLAY, many[at].name))
+        awaitMain("playing $at") { vm.state.value.playingName == many[at].name }
+        val until = System.currentTimeMillis() + 10_000
+        while (vm.state.value.reveal != null) {
+            compose.waitForIdle()
+            check(System.currentTimeMillis() < until) { "row $at never let go" }
+        }
+        compose.waitForIdle()
+    }
+
+    private fun listScrolled() = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode()
+        .config[SemanticsProperties.VerticalScrollAxisRange].value()
+
     /**
      * A notification's Play, with the list left scrolled down: its row is
      * brought into view, below the pinned header - the recording played with
-     * its player off the screen. One past the list's window too, which had
-     * no row drawn at all.
+     * its player off the screen - with its day's heading when it is the
+     * first of its day; one past the list's window too, which had no row
+     * drawn at all. A row already in view is left where it is.
      */
     @Test fun aNotificationsPlayBringsItsRowIntoView() {
-        // A minute apart, back from 17:59 on the day the screens show.
-        val many = List(70) { i ->
-            val at = 17 * 3600 + 59 * 60 - i * 60
-            val stamp = "%02d%02d%02d".format(at / 3600, at / 60 % 60, at % 60)
-            Fixtures.recordings()[1].copy(name = "20261021_${stamp}_out.ogg", caller = "Caller $i")
-        }
+        val many = twoDays()
         Recordings.override = { many }
         com.jemcik.jemrec.recordings.Waveforms.override = { name -> Fixtures.waveform(name.hashCode().toLong()) }
+        // No call-log offer over the list, which a reading would bring.
+        com.jemcik.jemrec.calls.CallLogLookup.dismissBanner(app)
         try {
-            val vm = viewModel(Fixtures.ready().copy(recordings = many))
+            val vm = viewModel(Fixtures.ready().copy(recordings = many, offerCallLog = false, selectHintSeen = true))
             showApp(vm)
+            // The header's bottom: where the first day's heading starts, at
+            // the top - its node starts inside Memo's 16 dp above it.
+            val todayTop = compose.onAllNodesWithText("Today")[0].fetchSemanticsNode().boundsInRoot.top
+            val headerBottom = todayTop - with(compose.density) { 16.dp.toPx() }
+            // In view already: no scroll.
+            playFromItsNotification(vm, many, 1)
+            assertEquals(0f, listScrolled())
+
+            fun shows(at: Int) {
+                val row = compose.onAllNodesWithText("Caller $at")[0].assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+                assertTrue("row $at at ${row.top}, under the header to $headerBottom", row.top >= headerBottom - 0.5f)
+            }
             compose.onNode(hasScrollToIndexAction()).performScrollToIndex(15)
             compose.waitForIdle()
             assertTrue(compose.onAllNodesWithText("Caller 0").fetchSemanticsNodes().isEmpty())
-
-            fun plays(at: Int) {
-                vm.open(com.jemcik.jemrec.DeepLink.Link(com.jemcik.jemrec.DeepLink.Kind.PLAY, many[at].name))
-                awaitMain("playing $at") { vm.state.value.playingName == many[at].name }
-                // The list's frames, which the main looper alone does not draw.
-                val until = System.currentTimeMillis() + 10_000
-                while (vm.state.value.reveal != null) {
-                    compose.waitForIdle()
-                    check(System.currentTimeMillis() < until) { "row $at never brought into view" }
-                }
-                compose.waitForIdle()
-                val row = compose.onAllNodesWithText("Caller $at")[0].assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-                val chips = compose.onNodeWithContentDescription("Search recordings").fetchSemanticsNode().boundsInRoot
-                assertTrue("row $at at ${row.top}, under the header to ${chips.bottom}", row.top >= chips.bottom)
-            }
-            plays(0)
+            playFromItsNotification(vm, many, 0)
+            shows(0)
             compose.onNode(hasScrollToIndexAction()).performScrollToIndex(15)
             compose.waitForIdle()
-            plays(12)
-            // Past the rows drawn: forty, once the list was scrolled.
+            playFromItsNotification(vm, many, 12)
+            shows(12)
+            // The first of the day before, under its heading - past the rows
+            // drawn, forty once the list was scrolled.
             assertTrue(vm.state.value.visibleCount <= 40)
-            plays(60)
+            playFromItsNotification(vm, many, 40)
+            shows(40)
+            val heading = compose.onAllNodesWithText("Yesterday")[0].fetchSemanticsNode().boundsInRoot
+            assertTrue("its heading shown, at ${heading.top}, below the header as Today's at the top", heading.top >= todayTop - 0.5f)
+            playFromItsNotification(vm, many, 65)
+            shows(65)
         } finally {
             com.jemcik.jemrec.recordings.Waveforms.override = null
         }
+    }
+
+    /** On a phone on its side, the call-log offer and the tip above it: the
+     *  newest recording's Play brings its row into view. Taken to the list's
+     *  top, the row was under the offer, the tip and its heading, below the
+     *  screen's edge. */
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-hdpi")
+    fun theNewestsPlayBringsItsRowIntoViewUnderTheOfferAndTheTip() {
+        val many = twoDays()
+        Recordings.override = { many }
+        com.jemcik.jemrec.recordings.Waveforms.override = { name -> Fixtures.waveform(name.hashCode().toLong()) }
+        try {
+            val vm = viewModel(Fixtures.ready().copy(recordings = many, offerCallLog = true, selectHintSeen = false))
+            showApp(vm)
+            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(15)
+            compose.waitForIdle()
+            playFromItsNotification(vm, many, 0)
+            val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
+            val row = compose.onAllNodesWithText("Caller 0")[0].assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("row 0 from ${row.top} to ${row.bottom}, the list to ${list.bottom}", row.bottom <= list.bottom + 0.5f)
+        } finally {
+            com.jemcik.jemrec.recordings.Waveforms.override = null
+        }
+    }
+
+    /** A link to a row that is not drawn - gone before the list drew it - is
+     *  let go: kept, any later change to the list jumped to it. */
+    @Test fun aLinkToARowNotDrawnIsLetGo() {
+        val many = twoDays()
+        Recordings.override = { many }
+        val vm = viewModel(Fixtures.ready().copy(recordings = many, reveal = "20261019_101010_in.ogg"))
+        showApp(vm)
+        val until = System.currentTimeMillis() + 10_000
+        while (vm.state.value.reveal != null) {
+            compose.mainClock.advanceTimeBy(500)
+            compose.waitForIdle()
+            check(System.currentTimeMillis() < until) { "never let go" }
+        }
+        assertEquals(0f, listScrolled())
+    }
+
+    /** Search open, its keyboard put away, and the call-log offer answered:
+     *  the field is not focused again. Known by its place, the header was
+     *  made anew as the offer went, and the keyboard came back. */
+    @Test fun answeringTheOfferLeavesTheSearchAlone() {
+        Recordings.override = { Fixtures.recordings() }
+        val vm = viewModel(Fixtures.ready().copy(offerCallLog = true))
+        lateinit var focus: androidx.compose.ui.focus.FocusManager
+        show {
+            focus = androidx.compose.ui.platform.LocalFocusManager.current
+            val state by vm.state.collectAsState()
+            AppScaffold(state, vm)
+        }
+        compose.onNodeWithContentDescription("Search recordings").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).assertIsFocused()
+        compose.runOnIdle { focus.clearFocus() }
+        compose.onNode(hasSetTextAction()).assertIsNotFocused()
+        compose.onNodeWithText("Not now").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertFalse(vm.state.value.offerCallLog)
+        compose.onNode(hasSetTextAction()).assertIsNotFocused()
     }
 
     /** ...while another tab, and back, starts the list at its top, as it did. */

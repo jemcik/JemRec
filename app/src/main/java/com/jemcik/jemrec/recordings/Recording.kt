@@ -146,7 +146,7 @@ internal object Recordings {
 
     /** Every recording, newest first: RecordingLibrary's, or the stand-in. */
     fun list(context: Context, withCallers: Boolean = true): List<Recording> {
-        override?.let { return it(context) }
+        override?.let { stand -> return stand(context).filter { it.expiresAtMillis == null } }
         return RecordingLibrary.list(context, withCallers = withCallers)
     }
 

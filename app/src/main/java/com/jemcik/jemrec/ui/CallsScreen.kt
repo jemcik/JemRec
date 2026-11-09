@@ -94,6 +94,7 @@ fun CallsScreen(
         buildMap { for ((_, rows) in days) for ((key, call) in rows) call.recording?.let { putIfAbsent(it.name, key) } }
     }
     val narrowed = narrowingOf(state, vm, calls = true)
+    val searchFocus = rememberSearchFocus(narrowed.searchOpen, narrowingAside)
     val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
 
     // No selection here: a recorded call's row is its Recordings row in
@@ -116,6 +117,7 @@ fun CallsScreen(
                         of = state.calls.size,
                         onShowAll = vm::showAllCalls,
                         aside = narrowingAside,
+                        focus = searchFocus,
                         listed = true,
                         chipsShown = true,
                         scrolled = scrolled,

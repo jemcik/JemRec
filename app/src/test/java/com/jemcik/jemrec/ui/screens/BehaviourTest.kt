@@ -415,6 +415,45 @@ class BehaviourTest : ScreenTest() {
         }
     }
 
+    /** A take being made a greeting of in another window: Record and
+     *  Delete wait here too - a take would overwrite the file being read,
+     *  and the saving undo the delete. */
+    @Test fun anotherWindowsTakeBeingMadeHoldsRecordAndDelete() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state, AnswerUi(greetingSeconds = 6.0))
+        val elsewhere = Any()
+        com.jemcik.jemrec.answering.Greeting.make(elsewhere)
+        try {
+            show { AppScaffold(state, vm) }
+            compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("Delete").assertIsNotEnabled()
+            com.jemcik.jemrec.answering.Greeting.made(elsewhere)
+            compose.waitForIdle()
+            compose.onNodeWithText("Record again").performScrollTo().assertIsEnabled()
+            compose.onNodeWithText("Delete").assertIsEnabled()
+        } finally {
+            com.jemcik.jemrec.answering.Greeting.made(elsewhere)
+        }
+    }
+
+    /** "Waiting for the recorder..." is not in the error's red, over an
+     *  earlier take's problem: it showed red, as if waiting were the fault. */
+    @Test fun waitingForTheRecorderIsNotAProblem() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(
+            state,
+            AnswerUi(greetingSeconds = 6.0, takeListening = true, greetingProblem = "Nothing was heard. Hold the phone as for a call, and speak."),
+        )
+        show { AppScaffold(state, vm) }
+        fun colourOf(text: String): androidx.compose.ui.graphics.Color {
+            val laid = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            compose.onNodeWithText(text, useUnmergedTree = true).performScrollTo().fetchSemanticsNode()
+                .config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(laid)
+            return laid.first().layoutInput.style.color
+        }
+        assertEquals(colourOf("Not run yet - tap to run"), colourOf("Waiting for the recorder..."))
+    }
+
     /** Back from the answering machine with a take recording: the screen,
      *  opened, watches for being left, and the take is stopped on the
      *  recorder - it went on unseen, and saved whatever played as the

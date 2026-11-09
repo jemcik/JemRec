@@ -184,15 +184,20 @@ internal class RecordingsList(
         if (doomed.isEmpty()) return
         actions.run(Action.DELETE_SELECTED) {
             try {
-                if (doomed.any { it.name == state.value.playingName }) playback.stopPlayback()
+                // Those still listed once its turn comes: one gone meanwhile -
+                // from its notification, or auto-delete - said "could not
+                // move 1" after a delete that worked.
+                val listed = state.value.recordings.associateBy { it.name }
+                val still = doomed.mapNotNull { listed[it.name] }
+                if (still.any { it.name == state.value.playingName }) playback.stopPlayback()
 
                 val result = withContext(Dispatchers.IO) {
-                    Trash.trashAll(app, doomed)
+                    Trash.trashAll(app, still)
                 }
                 // Whatever Android wants confirmed is not moved yet - its own
                 // dialog comes next - so it is counted as asked, not as failed.
                 trash.report(
-                    doomed.size,
+                    still.size,
                     result,
                     done = { "moved $it to Recently deleted" },
                     couldNot = { "could not move $it" },

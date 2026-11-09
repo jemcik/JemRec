@@ -768,6 +768,70 @@ class AnswerTestCallTest {
         eventually("let go") { !screen.state.value.takeListening && !Greeting.takeListening }
     }
 
+    /** Half a second of room, two of speech, half a second of room: a take
+     *  that makes a greeting. */
+    private fun speech(): ByteArray {
+        val rate = Greeting.RATE
+        val samples = ShortArray(rate * 3) { i ->
+            if (i in rate / 2 until rate * 5 / 2) (5000 * kotlin.math.sin(2 * Math.PI * 220 * i / rate)).toInt().toShort() else 0
+        }
+        return java.nio.ByteBuffer.allocate(samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            .apply { samples.forEach { putShort(it) } }.array()
+    }
+
+    /** Stop, then the screen closed from Recents while the take is fetched:
+     *  the greeting is made and saved all the same. It went with the screen,
+     *  and the take the user had stopped was never saved. */
+    @Test fun aStoppedTakeIsKeptWhenItsScreenCloses() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 20))
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GT") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 1"
+        recorder.take = speech()
+        val screenScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val screen = AnswerController(context, screenScope, { said += it })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("the take being fetched") { recorder.heard.any { it.key == "GT" } }
+        screenScope.cancel()
+        screen.close()
+        gate.countDown()
+        eventually("the new greeting saved") { Greeting.file(context).length() < Greeting.RATE * 2 * 10L }
+    }
+
+    /** While one window's take is made a greeting of, another's Record and
+     *  Delete wait: a take would overwrite the file being read, and the
+     *  saving undo the delete. */
+    @Test fun anotherWindowWaitsWhileATakeIsMadeAGreeting() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GT") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 1"
+        recorder.take = speech()
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val one = AnswerController(context, scope, { said += it })
+            one.startTake()
+            eventually("recording") { one.state.value.recordingTake }
+            one.stopTake()
+            eventually("the take being fetched") { recorder.heard.any { it.key == "GT" } }
+            val two = AnswerController(context, other, { said += it })
+            two.startTake()
+            two.deleteGreeting()
+            Thread.sleep(300)
+            assertEquals(1, recorder.heard.count { it.key == "GR" })
+            assertTrue(Greeting.present(context))
+            gate.countDown()
+            eventually("made") { Greeting.making.value == null && !one.state.value.processingTake }
+        } finally {
+            gate.countDown()
+            other.cancel()
+        }
+    }
+
     /** The hold after an unanswered Stop is timed on a clock that only goes
      *  forward: on the wall clock, set back mid-take, it lasted that much
      *  longer, and every playing in the app was refused meanwhile. */

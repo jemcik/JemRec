@@ -191,6 +191,33 @@ class DeepLinksTest : ScreenTest() {
         assertEquals(emptySet<String>(), s.selected)
     }
 
+    /**
+     * A notification's Play during a greeting's take: the take is stopped
+     * and not kept, and the recording plays. It was refused, "while your
+     * greeting is recorded", with nothing being recorded any more.
+     */
+    @Test fun playDuringATakeStopsItAndPlays() {
+        val recorder = com.jemcik.jemrec.capture.FakeRecorder(RuntimeEnvironment.getApplication())
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        // The stop answered half a second on, as from a recorder at work.
+        recorder.stall = { if (it == "GS") Thread.sleep(500) }
+        try {
+            Recordings.override = { listOf(olivia, marcus) }
+            val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.ANSWERING_MACHINE, recordings = listOf(olivia, marcus)))
+            vm.answeringMachineOpened()
+            vm.answer.startTake()
+            awaitMain("recording") { vm.answer.state.value.recordingTake }
+            vm.open(DeepLink.Link(DeepLink.Kind.PLAY, olivia.name))
+            awaitMain("playing", 10_000) { vm.state.value.playingName == olivia.name }
+            assertTrue(recorder.heard.any { it.key == "GS" })
+            assertFalse(com.jemcik.jemrec.answering.Greeting.takeListening)
+        } finally {
+            recorder.close()
+            com.jemcik.jemrec.answering.Greeting.letGoOfAnyTake()
+        }
+    }
+
     /** A link lets a question left open go: one that changed the screen left
      *  "Start fresh?" or "Delete all for good?" to come back unasked on the
      *  next visit - one reflex tap deleting for good. */

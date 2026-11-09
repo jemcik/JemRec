@@ -33,7 +33,11 @@ internal object RecordingLibrary {
     /** The recordings and Recently deleted, from one [Scan]. Only the debug
      *  build's invented list has no trash. */
     fun read(context: Context): Library {
-        Recordings.override?.let { return Library(it(context), emptyList()) }
+        // A stand-in with an expiry is in Recently deleted, as a real one is.
+        Recordings.override?.let { stand ->
+            val all = stand(context)
+            return Library(all.filter { it.expiresAtMillis == null }, all.filter { it.expiresAtMillis != null })
+        }
         val scan = scan(context)
         return Library(list(context, scan), trashed(context, scan))
     }

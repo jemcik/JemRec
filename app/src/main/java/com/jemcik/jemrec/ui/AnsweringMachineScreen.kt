@@ -58,10 +58,14 @@ private enum class AnswerDialog { DELAY, DND, LONGEST, NO_LIMIT, SIM, TEST, CARR
 fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
     val a by vm.answer.state.collectAsState()
     // A take holding the microphone, this screen's or another window's: the
-    // greeting takes no tap. Another window's left Record, Delete and the
-    // preview as ever, each doing nothing with no sign.
+    // greeting takes no tap - a preview would go into the take - and Record
+    // and Delete wait, as for this screen's own take.
     val holder by Greeting.holder.collectAsState()
     val listening = a.takeListening || holder != null
+    // A take being made a greeting of, here or in another window: Record
+    // would overwrite the file being read, and the saving undo a Delete.
+    val making by Greeting.making.collectAsState()
+    val processing = a.processingTake || making != null
     val haptics = LocalHapticFeedback.current
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
 
@@ -289,7 +293,9 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                                 if (a.playing) "Playing - tap to stop" else "Tap to play it"
                         else -> "Record what callers hear before the beep"
                     },
-                    summaryColor = if (a.greetingProblem != null && !a.recordingTake) {
+                    // Red only for the problem itself: "Waiting for the
+                    // recorder..." over an earlier take's problem showed red.
+                    summaryColor = if (a.greetingProblem != null && !a.recordingTake && !listening) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -320,14 +326,14 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                 // nothing played, and was put down as not working.
                 "Delete" -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.deleteGreeting() },
-                    enabled = a.test == null && !a.processingTake && !listening,
+                    enabled = a.test == null && !processing && !listening,
                     modifier = modifier,
                 ) { ButtonLabel("Delete") }
                 else -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.startTake() },
                     // Not while the last take is made a greeting of: tapped
                     // then, it did nothing, with no sign.
-                    enabled = state.daemonRunning && !a.processingTake && !listening,
+                    enabled = state.daemonRunning && !processing && !listening,
                     modifier = modifier,
                 ) { ButtonLabel(record) }
             }

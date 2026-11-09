@@ -138,8 +138,8 @@ class AnswerController(
     private var dropWhenStarted = false
     /** When the take began recording, on [clock], which the user cannot set: the
      *  hold after an unanswered Stop is timed from it. On the wall clock, a
-     *  clock set back mid-take stretched the hold, and every playing in the
-     *  app was refused that much longer. ([AnswerUi.takeStartedAt], the
+     *  clock set back mid-take would stretch the hold, and refuse every
+     *  playing in the app that much longer. ([AnswerUi.takeStartedAt], the
      *  wall clock's, is for the screen's counter.) */
     @Volatile private var takeBegan: Long? = null
     /** This screen's preview stopped, from any window (Greeting.previewing). */
@@ -211,8 +211,8 @@ class AnswerController(
     /** The machine's settings sent to the recorder: told if they did not
      *  reach it, when [asked] by a tap here; only logged otherwise (the
      *  checks run on opening, a take whose upload was told already). */
-    private fun push(asked: Boolean = true) {
-        scope.launch {
+    private fun push(asked: Boolean = true, on: CoroutineScope = scope) {
+        on.launch {
             if (!CaptureDaemon.setAnswering(app)) {
                 val words = "the recorder will pick up the answering machine when it next restarts"
                 if (asked) told(words) else say(words)
@@ -309,10 +309,14 @@ class AnswerController(
         _state.update { it.copy(processingTake = true) }
         val mine = takeToken ?: Any()
         val since = takeBegan
-        take = scope.launch {
+        // Past the screen: closed from Recents while the take was fetched,
+        // the greeting the user had stopped was never saved.
+        Greeting.make(mine)
+        take = outliving.launch {
             try {
                 processTake(mine, since)
             } finally {
+                Greeting.made(mine)
                 _state.update { it.copy(processingTake = false) }
             }
         }
@@ -354,8 +358,8 @@ class AnswerController(
                 if (!sent) tell("the recorder will get the new greeting when it next restarts")
                 _state.update { it.copy(greetingSeconds = processed.seconds, greetingProblem = null) }
                 // Told once: a recorder that missed the greeting misses the
-                // settings too.
-                push(asked = sent)
+                // settings too. Past the screen, as the take is.
+                push(asked = sent, on = outliving)
             }
             // Not sent - the recorder restarted, a socket cut, the wait out:
             // no word of the voice, which "Nothing was heard" blamed.
@@ -495,7 +499,11 @@ class AnswerController(
     }
 
     fun deleteGreeting() {
-        if (_state.value.processingTake || _state.value.takeListening || Greeting.takeListening) return
+        if (_state.value.processingTake || _state.value.takeListening || Greeting.takeListening ||
+            Greeting.making.value != null
+        ) {
+            return
+        }
         stopPreview()
         Greeting.delete(app)
         AnsweringMachine.setEnabled(app, false)

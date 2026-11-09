@@ -111,6 +111,27 @@ class OneWindowTest {
         elsewhere.destroy()
     }
 
+    /** A window with the launcher's intent, remade - the phone turned -
+     *  stays: the guard is for a fresh start, not for a window remade. */
+    @Test fun aWindowRemadeWithTheLaunchersIntentStays() {
+        androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(app)
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            .setComponent(ComponentName(app, MainActivity::class.java))
+        val remade = Robolectric.buildActivity(MainActivity::class.java, launcher)
+        shadowOf(remade.get()).setIsTaskRoot(false)
+        val jemRecs = ShadowAppTask.newInstance()
+        Shadow.extract<ShadowAppTask>(jemRecs).setTaskInfo(
+            ActivityManager.RecentTaskInfo().apply {
+                taskId = remade.get().taskId
+                baseActivity = ComponentName(app, MainActivity::class.java)
+            },
+        )
+        shadowOf(app.getSystemService(ActivityManager::class.java)).setAppTasks(listOf(jemRecs))
+        remade.create(android.os.Bundle())
+        assertFalse(remade.get().isFinishing)
+        remade.destroy()
+    }
+
     /** Nothing else in the app starts the screen: a way in made without
      *  MainActivity.open would bring the second window back. */
     @Test fun onlyMainActivityOpenMakesTheIntent() {

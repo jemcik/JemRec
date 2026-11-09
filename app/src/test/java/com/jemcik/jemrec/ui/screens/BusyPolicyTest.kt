@@ -126,18 +126,23 @@ class BusyPolicyTest : ScreenTest() {
         assertTrue(log(vm), log(vm).contains("restored $name"))
     }
 
+    /** [file] in Recently deleted, as the stand-in list carries it: with
+     *  an expiry. */
+    private fun inTrash(file: File, name: String) = recording(file, name).copy(expiresAtMillis = 1_795_000_000_000L)
+
     /**
      * Delete all for good, said yes to while busy: the dialog closes at
      * once, and the deleting waits until the app is free - then deletes what
-     * the question counted, read as it was answered. The refresh that held
-     * busy emptied Recently deleted meanwhile (the stand-in list has no
-     * trash), and the recording counted still went.
+     * the question counted, read as it was answered: a recording trashed
+     * meanwhile, which the reading that held busy found, stays.
      */
     @Test fun emptyTrashSaidYesToWhileBusyRunsOnceFreeWithWhatItCounted() {
         val inTrash = file(".trashed-1795000000-20261021_160200_in.ogg")
-        val trashed = recording(inTrash, "20261021_160200_in.ogg")
+        val trashed = inTrash(inTrash, "20261021_160200_in.ogg")
+        val laterFile = file(".trashed-1795000000-20261021_152400_out.ogg")
+        val later = inTrash(laterFile, "20261021_152400_out.ogg")
         val vm = viewModel(UiState(screen = Screen.TRASH, trashed = listOf(trashed), confirmingEmptyTrash = true))
-        val busy = HeldBusy(emptyList())
+        val busy = HeldBusy(listOf(trashed, later))
         busy.hold(vm)
 
         vm.confirmEmptyTrash()
@@ -148,8 +153,51 @@ class BusyPolicyTest : ScreenTest() {
         busy.release()
         settle(vm)
         assertFalse("deleted once free", inTrash.exists())
+        assertTrue("trashed after the question, kept", laterFile.exists())
         assertTrue(log(vm), log(vm).contains("deleted for good 1"))
-        assertEquals(emptyList<Recording>(), vm.state.value.trashed)
+    }
+
+    /** A recording gone from Recently deleted while Delete all for good
+     *  waited its turn is left out: deleted again, it was "could not" after
+     *  it had gone. */
+    @Test fun aRecordingGoneWhileDeleteForGoodWaitsIsLeftOut() {
+        val oneFile = file(".trashed-1795000000-20261021_160200_in.ogg")
+        val one = inTrash(oneFile, "20261021_160200_in.ogg")
+        val goneFile = file(".trashed-1795000000-20261021_152400_out.ogg")
+        val gone = inTrash(goneFile, "20261021_152400_out.ogg")
+        val vm = viewModel(UiState(screen = Screen.TRASH, trashed = listOf(one, gone), confirmingEmptyTrash = true))
+        // The reading that holds busy no longer finds the second.
+        val busy = HeldBusy(listOf(one))
+        busy.hold(vm)
+
+        vm.confirmEmptyTrash()
+        busy.release()
+        settle(vm)
+        assertFalse(oneFile.exists())
+        assertTrue("not listed, not touched", goneFile.exists())
+        assertTrue(log(vm), log(vm).contains("deleted for good 1"))
+        assertFalse(log(vm), log(vm).contains("could not"))
+    }
+
+    /** A row gone while Delete waited its turn - from its notification, or
+     *  auto-delete - is left out: moved again, it was "could not move 1"
+     *  after a delete that worked. */
+    @Test fun aRowGoneWhileADeleteWaitsIsLeftOut() {
+        val olivia = recording(file("20261021_160200_in.ogg"))
+        val marcus = recording(file("20261021_152400_out.ogg"))
+        val vm = viewModel(UiState(recordings = listOf(olivia, marcus), selecting = true, selected = setOf(olivia.name, marcus.name)))
+        // The reading that holds busy no longer finds Olivia's.
+        val busy = HeldBusy(listOf(marcus))
+        busy.hold(vm)
+
+        vm.askDeleteSelected()
+        vm.confirmDeleteSelected()
+        busy.release()
+        settle(vm)
+        assertTrue("not listed, not touched", File(olivia.filePath!!).exists())
+        assertFalse(File(marcus.filePath!!).exists())
+        assertTrue(log(vm), log(vm).contains("moved 1 to Recently deleted"))
+        assertFalse(log(vm), log(vm).contains("could not"))
     }
 
     /**
@@ -217,9 +265,9 @@ class BusyPolicyTest : ScreenTest() {
      *  with no "could not" for the files the first had deleted. */
     @Test fun deleteForGoodSaidYesToTwiceWhileBusyDeletesOnce() {
         val inTrash = file(".trashed-1795000000-20261021_160200_in.ogg")
-        val trashed = recording(inTrash, "20261021_160200_in.ogg")
+        val trashed = inTrash(inTrash, "20261021_160200_in.ogg")
         val vm = viewModel(UiState(screen = Screen.TRASH, trashed = listOf(trashed), confirmingEmptyTrash = true))
-        val busy = HeldBusy(emptyList())
+        val busy = HeldBusy(listOf(trashed))
         busy.hold(vm)
 
         vm.confirmEmptyTrash()
@@ -241,14 +289,22 @@ class BusyPolicyTest : ScreenTest() {
         val vm = viewModel(UiState(step = SetupStep.READY, enabled = false))
         val busy = HeldBusy(emptyList())
         busy.hold(vm)
-
-        vm.setEnabled(true)
-        assertTrue(vm.state.value.starting)
-        busy.release()
-        settle(vm)
+        val seen = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
+        val watch = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+            .launch { vm.state.collect { seen += it.busy } }
+        try {
+            vm.setEnabled(true)
+            assertTrue(vm.state.value.starting)
+            busy.release()
+            settle(vm)
+        } finally {
+            watch.cancel()
+        }
 
         assertTrue(vm.state.value.enabled)
         assertFalse("Starting ends", vm.state.value.starting)
+        // Busy for auto-delete, then for its own turn: queued, not run at once.
+        assertEquals(listOf(true, false, true, false), seen.fold(listOf<Boolean>()) { acc, b -> if (acc.lastOrNull() == b) acc else acc + b })
     }
 
     /**
@@ -268,6 +324,14 @@ class BusyPolicyTest : ScreenTest() {
             vm.allowThisWifi()
             vm.allowThisWifi()
             assertTrue(vm.state.value.starting)
+            // Not asked while busy.
+            val until = System.currentTimeMillis() + 1_000
+            while (System.currentTimeMillis() < until) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(10)
+            }
+            assertTrue(vm.state.value.busy)
+            assertFalse(log(vm), log(vm).contains("could not switch Wireless debugging"))
             busy.release()
             settle(vm)
         } finally {

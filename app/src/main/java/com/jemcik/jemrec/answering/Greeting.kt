@@ -46,8 +46,9 @@ object Greeting {
     private val takeHolder = MutableStateFlow<Any?>(null)
 
     /** The take holding the microphone, null if none, for a screen to show:
-     *  another window's take greys this one's Record, Delete and preview,
-     *  which did nothing with no sign. */
+     *  another window's take greys this one's Record, Delete and preview, as
+     *  its own does - a preview would go into the take, and a delete take the
+     *  greeting it may replace. */
     val holder: StateFlow<Any?> = takeHolder.asStateFlow()
 
     /** A take may have the microphone ([hold]). */
@@ -57,9 +58,32 @@ object Greeting {
      *  that takes it stops the greeting's preview, in whichever window it
      *  plays: over the loudspeaker it would go into the take. */
     fun hold(take: Any): Boolean {
+        if (maker.value.let { it != null && it !== take }) return false
         if (!takeHolder.compareAndSet(null, take) && takeHolder.value !== take) return false
         stopPreview()
         return true
+    }
+
+    /**
+     * The take stopped and being made a greeting of - fetched from the
+     * recorder, evened, saved and sent back - in whichever window it began,
+     * which may close meanwhile: no take starts then, as it would overwrite
+     * the file being read, and the greeting is not deleted, which the saving
+     * would undo. A preview may play: the microphone is shut.
+     */
+    private val maker = MutableStateFlow<Any?>(null)
+
+    /** The take being made a greeting of ([make]), null if none. */
+    val making: StateFlow<Any?> = maker.asStateFlow()
+
+    /** [take], stopped, is being made a greeting of. */
+    fun make(take: Any) {
+        maker.value = take
+    }
+
+    /** [take] is a greeting now, or will not be. */
+    fun made(take: Any) {
+        maker.compareAndSet(take, null)
     }
 
     /** [take] no longer may: let go, if it is the one that holds it. */
@@ -70,6 +94,7 @@ object Greeting {
     /** Between tests, whatever a test left holding. */
     internal fun letGoOfAnyTake() {
         takeHolder.value = null
+        maker.value = null
         previewStop.set(null)
     }
 

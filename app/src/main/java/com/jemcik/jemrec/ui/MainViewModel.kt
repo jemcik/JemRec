@@ -12,6 +12,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.MissedCalls
@@ -36,8 +37,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The app's one view model, for every screen: the state they draw (UiState),
@@ -250,6 +253,14 @@ class MainViewModel @JvmOverloads constructor(
                     if (link.kind == DeepLink.Kind.SHARE) {
                         share(recording)
                     } else if (_state.value.playingName != recording.name || !_state.value.playing) {
+                        // A greeting's take this link left - stopped, not
+                        // kept - holds the microphone until the recorder
+                        // answers its stop: the play waits for that. It was
+                        // refused, "while your greeting is recorded", with
+                        // no greeting being recorded any more.
+                        if (Greeting.takeListening) {
+                            withTimeoutOrNull(TAKE_STOP_WAIT_MS) { Greeting.holder.first { it == null } }
+                        }
                         play(recording)
                     }
                 }
@@ -471,3 +482,7 @@ class MainViewModel @JvmOverloads constructor(
 
     private fun say(text: String) = log.say(text)
 }
+
+/** How long a Play link waits for a greeting's take it left to be stopped:
+ *  the recorder answers a stop at once when it is up. */
+private const val TAKE_STOP_WAIT_MS = 5_000L

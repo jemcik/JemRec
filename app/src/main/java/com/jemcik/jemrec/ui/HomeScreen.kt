@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,9 +48,12 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.capture.AudioAccess
+import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.ui.theme.JemRecColors
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The recordings, and nothing else.
@@ -74,6 +78,7 @@ fun HomeScreen(
     val focusManager = LocalFocusManager.current
     val narrowing = state.recordingsNarrowing
     val narrowed = narrowingOf(state, vm, calls = false)
+    val searchFocus = rememberSearchFocus(narrowed.searchOpen, narrowingAside)
     // Entering selection blurs the field and drops the keyboard. The field
     // stays on screen as context - the query you searched by - but you are
     // picking rows now, not typing, so the keyboard should not be eating the
@@ -151,32 +156,31 @@ fun HomeScreen(
 
     // A notification's Play or Share: its row brought into view, below the
     // pinned header - from a list left scrolled down, the recording played
-    // with its player off the screen. Its place counted as the LazyColumn
-    // below adds its items: the call-log offer, the header, the tip, then
-    // each day's heading and rows.
+    // with its player off the screen - unless it is in view already. Keyed on
+    // the link alone, and let go however it ends - a touch taking the scroll
+    // over, the row not drawn - or it waited, and a later change to the list
+    // jumped to it while the user was elsewhere.
+    val offer = state.offerCallLog && state.recordings.isNotEmpty()
+    val tip = !state.selectHintSeen && !state.selecting
+    val placeOf by rememberUpdatedState { name: String -> placeInList(name, offer, tip, days) }
     val reveal = state.reveal
-    LaunchedEffect(reveal, days) {
+    LaunchedEffect(reveal) {
         val name = reveal ?: return@LaunchedEffect
-        val header = if (state.offerCallLog && state.recordings.isNotEmpty()) 1 else 0
-        var at = header + 1 + if (!state.selectHintSeen && !state.selecting) 1 else 0
-        for ((run, day) in days.withIndex()) {
-            val row = day.second.indexOfFirst { it.name == name }
-            if (row < 0) {
-                at += 1 + day.second.size
-                continue
+        try {
+            // Drawn - its window was widened with the link - and laid out as
+            // drawn, for the header's height and where the row is now.
+            val (place, items) = withTimeoutOrNull(2_000) {
+                snapshotFlow { placeOf(name) }.filterNotNull().first()
+            } ?: return@LaunchedEffect
+            withTimeoutOrNull(2_000) { snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it == items } }
+            val laid = listState.layoutInfo
+            val pinned = laid.visibleItemsInfo.firstOrNull { it.index == (if (offer) 1 else 0) }?.size ?: 0
+            val row = laid.visibleItemsInfo.firstOrNull { it.key == name }
+            if (row == null || row.offset < pinned || row.offset + row.size > laid.viewportEndOffset) {
+                listState.scrollToItem(place, -pinned)
             }
-            // Laid out first, for the header's height.
-            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
-            if (run == 0 && row == 0) {
-                listState.scrollToItem(0)
-            } else {
-                // The first of its day under its heading.
-                val target = if (row == 0) at else at + 1 + row
-                val pinned = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == header }?.size ?: 0
-                listState.scrollToItem(target, -pinned)
-            }
+        } finally {
             vm.onRevealed(name)
-            return@LaunchedEffect
         }
     }
 
@@ -197,7 +201,7 @@ fun HomeScreen(
     ) {
         // Offered once, above the thing it would improve. It scrolls away (not
         // pinned): it is a one-time suggestion, not part of the list's chrome.
-        if (state.offerCallLog && state.recordings.isNotEmpty()) {
+        if (offer) {
             item {
                 Card(Modifier.padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 16.dp)) {
                     Column(
@@ -255,6 +259,7 @@ fun HomeScreen(
                 of = state.recordings.size,
                 onShowAll = vm::showAllRecordings,
                 aside = narrowingAside,
+                focus = searchFocus,
                 listed = state.recordings.isNotEmpty(),
                 chipsShown = !state.selecting,
                 scrolled = scrolled,
@@ -464,4 +469,21 @@ private fun SelectTip(onDismiss: () -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp),
         onDismiss = onDismiss,
     )
+}
+
+/**
+ * Where [name]'s row is in HomeScreen's list - or, the first of its day, its
+ * day's heading, so both show - and how many items the list has, counted as
+ * the LazyColumn adds them: the call-log [offer], the header, the [tip], then
+ * each day's heading and rows. Null if the row is not drawn.
+ */
+private fun placeInList(name: String, offer: Boolean, tip: Boolean, days: List<Pair<Day, List<Recording>>>): Pair<Int, Int>? {
+    var at = (if (offer) 1 else 0) + 1 + (if (tip) 1 else 0)
+    var place: Int? = null
+    for ((_, rows) in days) {
+        val row = rows.indexOfFirst { it.name == name }
+        if (row >= 0 && place == null) place = if (row == 0) at else at + 1 + row
+        at += 1 + rows.size
+    }
+    return place?.let { it to at }
 }

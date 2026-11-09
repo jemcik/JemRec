@@ -24,9 +24,15 @@ internal class TrashActions(
     private val actions: Actions,
     private val reading: Reading,
 ) {
-    /** What Android's question is moving or deleting: the answer says only yes
-     *  or no, and a yes takes their notifications with them. Not a restore. */
-    private var leavingOnYes: List<String> = emptyList()
+    /** What the question Android is asking is moving or deleting, null when
+     *  none is out: the answer says only yes or no, and a yes takes their
+     *  notifications with them. Empty for a restore. */
+    private var asking: List<String>? = null
+
+    /** Questions waiting for the one out to be answered, each with what it
+     *  moves: two deletes, each with its own, held one between them - the
+     *  first was never asked, or its yes took the other's notifications. */
+    private val questions = ArrayDeque<Pair<IntentSender, List<String>>>()
 
     /** Back out of the trash, as it was. */
     fun restore(recording: Recording) = actions.run(Action.RESTORE) {
@@ -59,13 +65,18 @@ internal class TrashActions(
         // What the question counted, read as it is answered: read after the
         // wait for busy, a recording trashed meanwhile went for good unasked.
         // Less what a yes still waiting its turn has: said yes to again
-        // while busy, the second found its files gone, "could not" (Claims).
+        // while busy, the second deleted the files again - "could not" for
+        // those gone, or a second "deleted for good" (Claims).
         val all = claims.take(state.value.trashed)
         if (all.isEmpty()) return
         actions.run(Action.DELETE_FOR_GOOD) {
             try {
-                val result = withContext(Dispatchers.IO) { Trash.deleteForGood(app, all) }
-                report(all.size, result, done = { "deleted for good $it" }, leaving = true)
+                // Those still in Recently deleted once its turn comes: one
+                // gone meanwhile was "could not" after it had gone.
+                val listed = state.value.trashed.associateBy { it.name }
+                val still = all.mapNotNull { listed[it.name] }
+                val result = withContext(Dispatchers.IO) { Trash.deleteForGood(app, still) }
+                report(still.size, result, done = { "deleted for good $it" }, leaving = true)
                 reading.now()
             } finally {
                 claims.letGo(all)
@@ -100,7 +111,11 @@ internal class TrashActions(
     /** Android's question for [request], over whichever screen is up
      *  (MainScreen launches it); a yes takes [leaving]'s notifications. */
     fun askAndroid(request: IntentSender, leaving: List<String> = emptyList()) {
-        leavingOnYes = leaving
+        if (asking != null) {
+            questions.addLast(request to leaving)
+            return
+        }
+        asking = leaving
         state.update { it.copy(deleteConsent = request) }
     }
 
@@ -113,8 +128,9 @@ internal class TrashActions(
         state.update { it.copy(deleteConsent = null) }
         if (!granted) log.say("deletion cancelled")
         reading.refresh()
-        val left = leavingOnYes
-        leavingOnYes = emptyList()
+        val left = asking.orEmpty()
+        asking = null
         if (granted) left.forEach { AfterCall.gone(app, it) }
+        questions.removeFirstOrNull()?.let { (request, leaving) -> askAndroid(request, leaving) }
     }
 }

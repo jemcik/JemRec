@@ -165,6 +165,10 @@ class MainViewModelRecorderTest {
         until("busy") { state.busy }
         // Setup's Open settings, meanwhile: its connect in the background.
         vm.reconnect()
+        // No look while the start holds busy: it waits its turn.
+        turnFor(500)
+        assertTrue(state.busy)
+        assertEquals(0, looks.get())
         // It waits its turn, then looks, six times, and ends with the setup
         // check, which arms the watches. It was dropped: no look, nothing armed.
         until("the connect's six looks and its setup check") { looks.get() == 6 && armed().isNotEmpty() }
