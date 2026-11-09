@@ -92,7 +92,10 @@ class MainViewModel @JvmOverloads constructor(
     private val fill = WaveformFill(app, viewModelScope, _state)
 
     /** The answering machine's settings, greeting and diagnostics. */
-    val answer = AnswerController(app, viewModelScope, log::say, initialAnswer, quiet = playback::pause)
+    // Told, not only logged: on the answering machine's own screen, "no test
+    // call came", "could not arm" and "may have armed" were in Diagnostics'
+    // log alone (until 0.30).
+    val answer = AnswerController(app, viewModelScope, log::tell, initialAnswer, quiet = playback::pause)
 
     /** The screen's reading of everything it shows from outside itself. */
     private val reading = Reading(app, viewModelScope, _state, answer, playback, fill)

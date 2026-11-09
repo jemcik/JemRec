@@ -21,8 +21,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** A test call being armed, by any screen - one whose arming outlived it
+ *  included: one at a time. */
+internal val testArming = java.util.concurrent.atomic.AtomicBoolean(false)
 
 /** What the answering machine's screen shows. */
 data class AnswerUi(
@@ -102,6 +107,8 @@ class AnswerController(
     private var preview: AudioTrack? = null
     private var testWatch: Job? = null
     private var previewing: Job? = null
+    /** A take asked of the recorder and not yet recording. */
+    private var takeStarting = false
     /** Tests seed the state; nothing is then read from disk over it. */
     private val seeded = initial != null
 
@@ -146,9 +153,9 @@ class AnswerController(
      * gone since - JemRec closed from Recents - is this one's now: the
      * recorder answers the call all the same, and only a screen reads how it
      * went (the verdict, the other route on a failure, "Did they hear it?").
-     * Each went with the screen that armed it. Read again at the front, as a
-     * second JemRec stacked over this one goes: its test, or its answer to
-     * the question, is this screen's to show.
+     * Each went with the screen that armed it. Read again at the front: a
+     * test kept when its watch ended unanswered, or still under way, is
+     * asked about again.
      */
     fun readPendingTest() {
         // While this screen arms a test, the arming's answer says what it is:
@@ -215,8 +222,14 @@ class AnswerController(
         if (take?.isActive == true) return
         stopPreview()
         quiet()
+        takeStarting = true
         take = scope.launch {
-            if (!CaptureDaemon.startTake(app)) {
+            val started = try {
+                CaptureDaemon.startTake(app)
+            } finally {
+                takeStarting = false
+            }
+            if (!started) {
                 _state.update { it.copy(greetingProblem = "The recorder could not start recording. Is it running?") }
                 return@launch
             }
@@ -262,18 +275,25 @@ class AnswerController(
             return
         }
         // One being started - its file still being read - is the one: a
-        // second made then played on under it, and was never let go. Nor
-        // while a take starts: played over the loudspeaker, the greeting
-        // went into the new one.
-        if (previewing?.isActive == true || take?.isActive == true) return
+        // second was made (the app's tests) and would play on under it,
+        // never let go. Nor while a take starts, the recorder asked and not
+        // yet recording: over the loudspeaker the greeting would go into the
+        // new one. A take stopped and being processed takes one: the
+        // greeting there is plays, and the tap is not lost.
+        if (previewing?.isActive == true || takeStarting) return
         quiet()
         previewing = scope.launch {
-            // Read where it may be gone: deleted just then (on a second
-            // JemRec), it threw, and nothing caught it.
+            // Read where it may be gone: deleted just then, it threw (the
+            // app's tests), and nothing caught it.
             val pcm = withContext(Dispatchers.IO) {
                 runCatching { Greeting.file(app).takeIf { it.isFile }?.readBytes() }.getOrNull()
             } ?: return@launch
             val track = previewOf(pcm) ?: return@launch
+            // Stopped while its player was made - Record tapped: not started.
+            if (!isActive) {
+                runCatching { track.stop(); track.release() }
+                return@launch
+            }
             preview = track
             _state.update { it.copy(playing = true) }
             delay((pcm.size / 2.0 / Greeting.RATE * 1000).toLong() + 300)
@@ -366,8 +386,9 @@ class AnswerController(
         // One arming at a time, whichever screen makes it - JemRec swiped
         // away and opened again while the recorder armed, say: the entry
         // keeps whichever answer came last, and the recorder whichever
-        // arming reached it last, so two at once were filed under each other.
-        if (!arming.compareAndSet(false, true)) {
+        // arming reached it last, so two at once would be filed under each
+        // other.
+        if (!testArming.compareAndSet(false, true)) {
             say("a test call is being armed already")
             return
         }
@@ -376,14 +397,14 @@ class AnswerController(
         // to be read with its result (the recorder's result names no
         // arming).
         if (AnswerDiagnostics.pendingTest(app) is AnswerDiagnostics.PendingTest.Armed) {
-            arming.set(false)
+            testArming.set(false)
             say("the last test call is read first; start the next one when it is")
             readPendingTest()
             return
         }
         // Shown at once: arming takes the recorder a moment - an outgoing
         // test's call goes out before it answers - and the greeting deleted
-        // meanwhile left the test nothing to play.
+        // meanwhile would leave the test nothing to play.
         _state.update { it.copy(test = "arming", testIncoming = incoming) }
         // Armed, and noted, in the background, not in the screen's scope:
         // with the screen closed meanwhile (from Recents) the recorder arms
@@ -403,7 +424,7 @@ class AnswerController(
                 if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
                 Triple(reply, window, until)
             } finally {
-                arming.set(false)
+                testArming.set(false)
             }
         }
         scope.launch {
@@ -478,9 +499,8 @@ class AnswerController(
                 if (System.currentTimeMillis() >= until) break
                 delay(2_000)
             }
-            // Taken meanwhile by another screen - a second JemRec stacked over
-            // this one: what that one left is this screen's to show, not this
-            // watch's ending.
+            // Taken meanwhile elsewhere: what was left is this screen's to
+            // show, not this watch's ending (followOther).
             val ours = (AnswerDiagnostics.pendingTest(app) as? AnswerDiagnostics.PendingTest.Armed)?.until ==
                 _state.value.testUntil
             when {
@@ -506,8 +526,8 @@ class AnswerController(
         // Only someone who called can say. An outgoing test reached a
         // machine; its verdict is the measurements'.
         val asking = if (_state.value.testIncoming && verdict != AnswerDiagnostics.Verdict.FAILS) type else null
-        // Read by another screen as well, open on the same test: that one
-        // acts on it, this one only shows it - and its question, if it asks.
+        // Taken elsewhere first: shown here, not acted on twice
+        // (followOther).
         if (!AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking)) {
             followOther()
             return
@@ -527,11 +547,14 @@ class AnswerController(
     }
 
     /**
-     * The test this screen watched, taken by another screen - a second JemRec
-     * stacked over this one: what that one left is shown here, as an opening
-     * would show it - the results it put down, its question if it asks one,
-     * and a newer test it armed, watched on. True for a newer test: called
-     * from the watch, which the new watch replaces, so the caller returns.
+     * The test this screen watched, taken elsewhere: what was left is shown
+     * here, as an opening would show it - the results put down, the question
+     * if one is asked, and a newer test armed, watched on. True for a newer
+     * test: called from the watch, which the new watch replaces, so the
+     * caller returns. Since 0.30 JemRec is one window, so no second screen is
+     * open to take it (until then the Quick Settings tile and the media
+     * notification could open one over this); this holds for whatever else
+     * reads the same entry.
      */
     private fun followOther(): Boolean {
         val pending = AnswerDiagnostics.pendingTest(app)
@@ -611,9 +634,6 @@ class AnswerController(
     private companion object {
         /** For what has to reach the recorder after the screen is gone. */
         val outliving = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-        /** A test call being armed, by any screen: one at a time. */
-        val arming = java.util.concurrent.atomic.AtomicBoolean(false)
 
         const val TAG = "JemRec"
         /** The recorder's three seconds to answer a test, its wait of up to

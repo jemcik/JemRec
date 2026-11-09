@@ -46,6 +46,9 @@ class AnswerTestCallTest {
     @After fun closeAll() {
         scope.cancel()
         recorder.close()
+        // The one-arming flag is the process's: an arming a failed test left
+        // in flight would refuse the next test's.
+        eventually("no arming in flight") { !testArming.get() }
     }
 
     private fun eventually(what: String, done: () -> Boolean) {
@@ -115,6 +118,10 @@ class AnswerTestCallTest {
         // Long enough for an arming after the read to have reached it.
         Thread.sleep(500)
         assertFalse(recorder.heard.any { it.key == "XA" })
+        // Read, the next one arms: the read let the one-arming flag go.
+        eventually("the read over") { controller.state.value.test == null }
+        controller.startTest(incoming = true)
+        eventually("armed") { recorder.heard.any { it.key == "XA" } }
     }
 
     /** No recorder to send it to: nothing armed, and the screen says so. */
@@ -127,9 +134,9 @@ class AnswerTestCallTest {
         assertNull(AnswerDiagnostics.pendingTest(context))
     }
 
-    /** The greeting, unreadable as it is sent to the recorder - deleted on a
-     *  second JemRec as the test was armed, say: not sent, and nothing
-     *  thrown. Thrown, it ended the app. */
+    /** The greeting, unreadable as it is sent to the recorder - gone between
+     *  the look and the read, say: not sent, and nothing thrown. Thrown, it
+     *  would end the app. */
     @Test fun aGreetingThatCannotBeReadIsNotSent() {
         Greeting.save(context, ByteArray(Greeting.RATE * 2))
         val file = Greeting.file(context)
@@ -182,6 +189,18 @@ class AnswerTestCallTest {
         scope.cancel()
         gate.countDown()
         eventually("the test kept") { AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed }
+        // And the arming let the one-arming flag go with the screen gone - it
+        // notes the test first, then lets go: the next screen is told to read
+        // the kept test, not that one is arming.
+        eventually("the arming done") { !testArming.get() }
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            AnswerController(context, other, { said += it }).startTest(incoming = true)
+            eventually("told") { said.any { "read first" in it } }
+            assertFalse(said.toString(), said.any { "being armed" in it })
+        } finally {
+            other.cancel()
+        }
     }
 
     /** An outgoing test: the recorder starts the call before it answers, with
@@ -237,8 +256,9 @@ class AnswerTestCallTest {
         assertFalse(said.toString(), said.any { "no test call came" in it })
     }
 
-    /** Two screens open on one armed test - a second JemRec stacked by a
-     *  notification - and one result: it is acted on once. */
+    /** Two screens open on one armed test - a second JemRec window, which one
+     *  window (0.30) no longer opens; this holds for whatever else reads the
+     *  entry - and one result: it is acted on once. */
     @Test fun twoScreensActOnOneResultOnce() {
         AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
         recorder.replies["XR"] = "RESULT 1 state=done route=1 realms=4000 audioms=4000 tone=0 tonechunks=0 mute=0 voice=16 played=1"
@@ -325,9 +345,8 @@ class AnswerTestCallTest {
         assertTrue(controller.state.value.testUntil > System.currentTimeMillis())
     }
 
-    /** A screen watching a test while a newer one is armed elsewhere - a
-     *  second JemRec stacked over it, gone since: its watch ends without
-     *  taking the newer test, and watches that one on. */
+    /** A screen watching a test while a newer one is armed elsewhere: its
+     *  watch ends without taking the newer test, and watches that one on. */
     @Test fun aWatchWhoseTestWasReplacedWatchesTheNewOne() {
         val older = System.currentTimeMillis() - 10 * 60_000L
         AnswerDiagnostics.noteTestArmed(context, true, older)
@@ -480,6 +499,47 @@ class AnswerTestCallTest {
         screen.togglePreview()
     }
 
+    /** A preview still being started when Record is tapped - its player not
+     *  yet made - is not started: it would play over the loudspeaker into the
+     *  take. */
+    @Test fun aPreviewBeingStartedIsNotStartedUnderATake() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        val making = CountDownLatch(1)
+        val made = CountDownLatch(1)
+        val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm ->
+            making.countDown()
+            made.await(10, TimeUnit.SECONDS)
+            Greeting.preview(pcm)
+        })
+        screen.togglePreview()
+        assertTrue(making.await(10, TimeUnit.SECONDS))
+        screen.startTake()
+        made.countDown()
+        Thread.sleep(500)
+        assertFalse(screen.state.value.playing)
+    }
+
+    /** A take stopped and still being processed takes a preview of the
+     *  greeting there is: refused, the tap did nothing for up to half a
+     *  minute, with no sign. */
+    @Test fun aPreviewPlaysWhileATakeIsProcessed() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GS") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val made = java.util.concurrent.atomic.AtomicInteger()
+        val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm -> made.incrementAndGet(); Greeting.preview(pcm) })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("the take asked to stop") { recorder.heard.any { it.key == "GS" } }
+        screen.togglePreview()
+        eventually("playing") { screen.state.value.playing }
+        assertEquals(1, made.get())
+        gate.countDown()
+    }
+
     /** A take starting - the recorder asked, not yet recording - takes no
      *  preview: the greeting played over the loudspeaker into the new take. */
     @Test fun noPreviewWhileATakeStarts() {
@@ -512,8 +572,8 @@ class AnswerTestCallTest {
         assertEquals(1, made.get())
     }
 
-    /** The greeting, unreadable as its preview starts - deleted on a second
-     *  JemRec just then, say: no preview, and nothing thrown. */
+    /** The greeting, unreadable as its preview starts - gone between the look
+     *  and the read, say: no preview, and nothing thrown. */
     @Test fun aGreetingThatCannotBeReadIsNotPreviewed() {
         Greeting.save(context, ByteArray(Greeting.RATE * 2))
         val file = Greeting.file(context)

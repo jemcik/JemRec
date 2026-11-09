@@ -60,8 +60,8 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
 
     LaunchedEffect(Unit) { vm.answer.opened() }
-    // Back at the front, a second JemRec stacked over this one gone: where
-    // the test it may have armed, or answered, stands.
+    // Back at the front: where a test kept when its watch ended unanswered,
+    // or still under way, stands.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.answer.readPendingTest() }
     val now = LocalNow.current
 

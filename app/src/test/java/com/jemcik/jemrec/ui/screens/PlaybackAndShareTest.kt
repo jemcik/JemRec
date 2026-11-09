@@ -207,6 +207,20 @@ class PlaybackAndShareTest : ScreenTest() {
 
     /** A failure of something done just now goes in a snackbar too, its
      *  first letter a capital; the log keeps it as said. */
+    /** The answering machine's words are on the screen too, not only in
+     *  Diagnostics' log: "could not arm", "no test call came" and "a call
+     *  in the next three minutes may be answered with your greeting" were
+     *  in the log alone. */
+    @Test fun anAnsweringMachineMessageIsASnackbarToo() {
+        Recordings.override = { emptyList() }
+        val vm = viewModel()
+        listen(vm)
+        vm.answer.startTest(incoming = true)
+        awaitMain("a word") { heard.isNotEmpty() }
+        assertEquals(listOf("The recorder could not arm a test call"), heard.toList())
+        assertTrue(vm.state.value.log, vm.state.value.log.contains("] the recorder could not arm a test call"))
+    }
+
     @Test fun aFailureJustNowIsASnackbarToo() {
         Recordings.override = { emptyList() }
         val vm = viewModel()

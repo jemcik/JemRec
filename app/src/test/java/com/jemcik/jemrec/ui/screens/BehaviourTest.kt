@@ -379,9 +379,9 @@ class BehaviourTest : ScreenTest() {
         compose.onNodeWithText("Asking the recorder how it went...").performScrollTo().assertIsDisplayed()
     }
 
-    /** Back at the front - a second JemRec, stacked over this one, gone - the
-     *  screen reads again where the test call stands: a question answered
-     *  on the other is asked here no more. */
+    /** Back at the front, the screen reads again where the test call stands,
+     *  as kept: what changed meanwhile shows - here, a question no longer
+     *  waiting is asked no more. */
     @Test fun backAtTheFrontTheScreenReadsTheTestAgain() {
         val app = RuntimeEnvironment.getApplication()
         AnswerDiagnostics.noteTestArmed(app, true, 1_000L)
