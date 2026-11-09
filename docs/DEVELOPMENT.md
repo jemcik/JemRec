@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1510 JVM tests, no device needed - 1314 for the app and 196 for the daemon:
+1686 JVM tests, no device needed - 1490 for the app and 196 for the daemon:
 
     ./gradlew test
 
@@ -156,6 +156,21 @@ answer, Android's own yes included (`TrashPlacesTest`); and marks through the
 providers, and a place that cannot be asked (`PlacesTest`). These hold what
 JemRec asks for. What Android makes of it is the emulator checks' to show.
 
+**The screens' view model** (from 0.30): its parts are tested through it, as
+the screens call them. Its busy table, action by action: each action whose
+control is greyed while the app is busy is let go when tapped then, and runs
+when tapped once the app is free; each answer already given waits its turn,
+a picker's answer is taken at once
+(`BusyPolicyTest`); what asks for a fresh reading and what does not
+(`ReadingTest`); a notification's buttons (`DeepLinksTest`); the player before
+its session answers, Share, and the log (`PlaybackAndShareTest`); the four
+Allow buttons for the call log, the narrowing line, the search's focus and
+the list's next page and its place when the phone is turned
+(`ListScreensTest`). Two moments no reading reaches: a waveform fill-in's
+run ending, stood in for by a seam (`WaveformFillTest`), and the view
+model's own end, through a `ViewModelStore` as an activity ends it
+(`GreetingPreviewClosedTest`).
+
 **Names and words something else depends on** (`app/src/test/.../contract`):
 the component and worker class names the phone and the tools remember,
 the recorder's own class name, and the actions and extras of its wakes
@@ -212,7 +227,12 @@ recorded, as a Meet call taken with the phone call on hold, keeping that phone
 call on the call capture. Then a call's waveform, kept as it is
 saved; a recording played from its row going on with the screen off, named
 only "Call recording" while locked and by its caller again once unlocked,
-held back by a ringing call and playing on after it; a deleted recording
+held back by a ringing call and playing on after it; JemRec as one window -
+begun by its own way in, as from a notification, the same way in again and
+the tile's long press leave one window, and a folder picker opened over it
+stays when the launcher's intent comes, with the flags of an icon's tap, and
+is finished by JemRec's own way in; a
+deleted recording
 brought back by Restore all in Recently deleted, its notification gone with it
 as it went there, then deleted again and gone
 for good by Delete all for good, from Android's own trash and the disk; the

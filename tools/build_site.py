@@ -1893,8 +1893,11 @@ SETUP = [
     ("p", "**Your greeting.** Tap **Record**, say it, and tap **Stop** — 30 "
           "seconds at most. JemRec trims the silence at both ends and evens the "
           "level, because the caller hears it at full volume. Tap the row to "
-          "hear it; **Record again** replaces it. Callers hear what you said and "
-          "then a beep, nothing else."),
+          "hear it; **Record again** replaces it. While you record, JemRec "
+          "plays nothing. Leave the screen with Back before **Stop** and the "
+          "take is not kept; switch to another app and it records on to its 30 "
+          "seconds, and is kept. Callers hear what you said and then a beep, "
+          "nothing else."),
     ("p", "**When it answers**"),
     ("ul", [
         "**Answer after** — 5 to 30 seconds of ringing. Your carrier's own "
@@ -3829,9 +3832,13 @@ PRIVACY_DATA = [
      "Diagnostics puts it on the clipboard, only when you tap it."),
     ("Answering machine tests", "the app&rsquo;s private storage", "the latest of each kind", "only if you run them",
      "What its checks found about the phone, and the result of each test call by "
-     "call type (2G, VoLTE, Wi-Fi Calling). No numbers, no names. In the "
-     "app&rsquo;s private storage; uninstalling deletes it. <em>Copy a "
-     "report</em> puts them on the clipboard, only when you tap it."),
+     "call type (2G, VoLTE, Wi-Fi Calling); <em>Copy a report</em> puts these "
+     "on the clipboard, only when you tap it. A test call still to be read is "
+     "kept too: whether it was incoming or outgoing and when its wait ends, or, "
+     "once answered, its call type until you say whether the caller heard your "
+     "greeting or put the question aside; the next test replaces it. No "
+     "numbers, no names. In the app&rsquo;s private storage; uninstalling "
+     "deletes it."),
     ("Contact names and photos", "read where they are", "not copied, unless you choose", "only if you allow it",
      "Read from the phone&rsquo;s own call log and contacts, only if you allow "
      "it, to label a recording, to show the Calls tab, to keep or leave out a "

@@ -326,7 +326,10 @@ checks under *Test on this phone*.
 **Your greeting.** Tap **Record**, say it, and tap **Stop** — 30 seconds at
 most. JemRec trims the silence at both ends and evens the level, because the
 caller hears it at full volume. Tap the row to hear it; **Record again**
-replaces it. Callers hear what you said and then a beep, nothing else.
+replaces it. While you record, JemRec plays nothing. Leave the screen with Back
+before **Stop** and the take is not kept; switch to another app and it records
+on to its 30 seconds, and is kept. Callers hear what you said and then a beep,
+nothing else.
 
 **When it answers**
 
