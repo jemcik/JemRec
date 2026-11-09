@@ -39,10 +39,22 @@ internal class WaveformFill(
     private val app: Application,
     private val scope: CoroutineScope,
     private val state: StateFlow<UiState>,
+    /** Called as a run ends, on its thread: the tests' way to stand in the
+     *  moment between a run's last look for a request and its end. */
+    private val afterRun: () -> Unit = {},
 ) {
     private var fillingIn: Job? = null
 
-    @Volatile
+    /**
+     * The run that will still look for a request before it ends, if one
+     * will, and the request ([fillAgain]); under [lock]. A run decides to end
+     * and lets go of [looping] in one step, so a request either reaches the
+     * run or starts a new one. It was a flag the run looked at last: one
+     * set after that look, the run not yet ended, was taken as noted - and
+     * nothing went over the list until the next reading.
+     */
+    private val lock = Any()
+    private var looping: Any? = null
     private var fillAgain = false
 
     /** Recordings the fill-in could not decode, and when: tried on every
@@ -54,34 +66,59 @@ internal class WaveformFill(
 
     /** Over the list as it is now; asked while it runs, once more at its end. */
     fun start() {
-        if (fillingIn?.isActive == true) {
-            fillAgain = true
-            return
+        val run = Any()
+        synchronized(lock) {
+            if (looping != null && fillingIn?.isActive == true) {
+                fillAgain = true
+                return
+            }
+            looping = run
+            fillAgain = false
         }
         fillingIn = scope.launch(Dispatchers.IO) {
-            do {
-                fillAgain = false
-                val now = state.value
-                // Not over a list that is not the phone's: the debug build's
-                // invented calls, or none for want of the audio permission -
-                // every waveform would go, to be worked out again.
-                if (Recordings.override == null && now.canReadAudio) {
-                    Waveforms.prune(app, (now.recordings + now.trashed).map { it.name })
-                }
-                for (recording in now.recordings) {
-                    if (!isActive) break
-                    val name = recording.name
-                    val failedAt = undecodable[name]
-                    if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < RETRY_UNDECODABLE_MS) continue
-                    if (Waveforms.isBeingWritten(name) || Waveforms.has(app, name)) continue
-                    val levels = Waveforms.levels(app, name, recording.uri, keepGoing = { isActive })
-                    if (levels == null && isActive && !Waveforms.isBeingWritten(name)) {
-                        undecodable[name] = SystemClock.elapsedRealtime()
-                    } else {
-                        undecodable.remove(name)
-                    }
-                }
-            } while (fillAgain && isActive)
+            try {
+                do {
+                    pass { isActive }
+                } while (again(run, isActive))
+            } finally {
+                synchronized(lock) { if (looping === run) looping = null }
+            }
+            afterRun()
+        }
+    }
+
+    /** Whether [run] goes over the list once more: asked meanwhile, and not
+     *  stopped. If not, it looks no more - in the same step. */
+    private fun again(run: Any, active: Boolean): Boolean = synchronized(lock) {
+        if (fillAgain && active) {
+            fillAgain = false
+            return true
+        }
+        if (looping === run) looping = null
+        return false
+    }
+
+    /** Once over the list as it is now, while [keepGoing]. */
+    private fun pass(keepGoing: () -> Boolean) {
+        val now = state.value
+        // Not over a list that is not the phone's: the debug build's
+        // invented calls, or none for want of the audio permission -
+        // every waveform would go, to be worked out again.
+        if (Recordings.override == null && now.canReadAudio) {
+            Waveforms.prune(app, (now.recordings + now.trashed).map { it.name })
+        }
+        for (recording in now.recordings) {
+            if (!keepGoing()) break
+            val name = recording.name
+            val failedAt = undecodable[name]
+            if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < RETRY_UNDECODABLE_MS) continue
+            if (Waveforms.isBeingWritten(name) || Waveforms.has(app, name)) continue
+            val levels = Waveforms.levels(app, name, recording.uri, keepGoing = keepGoing)
+            if (levels == null && keepGoing() && !Waveforms.isBeingWritten(name)) {
+                undecodable[name] = SystemClock.elapsedRealtime()
+            } else {
+                undecodable.remove(name)
+            }
         }
     }
 
