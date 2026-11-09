@@ -25,7 +25,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.calls.CallHistory
-import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.recordings.Recording
 
 /**
@@ -44,9 +43,14 @@ import com.jemcik.jemrec.recordings.Recording
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier, narrowingAside: Boolean = false) {
+fun CallsScreen(
+    state: UiState,
+    vm: MainViewModel,
+    askForCallLog: () -> Unit,
+    modifier: Modifier = Modifier,
+    narrowingAside: Boolean = false,
+) {
     val haptics = LocalHapticFeedback.current
-    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
     // The tab is the call log; without it there is nothing to show but the
     // reason, and the way to change it.
@@ -67,7 +71,7 @@ fun CallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     FilledTonalButton(
-                        onClick = { haptics.tap(); callLogPermission.launch(CallLogLookup.PERMISSIONS) },
+                        onClick = { haptics.tap(); askForCallLog() },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Allow") }
                 }

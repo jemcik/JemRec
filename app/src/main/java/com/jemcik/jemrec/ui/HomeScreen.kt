@@ -45,7 +45,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.ui.theme.JemRecColors
@@ -60,7 +59,13 @@ import com.jemcik.jemrec.ui.theme.JemRecColors
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier, narrowingAside: Boolean = false) {
+fun HomeScreen(
+    state: UiState,
+    vm: MainViewModel,
+    askForCallLog: () -> Unit,
+    modifier: Modifier = Modifier,
+    narrowingAside: Boolean = false,
+) {
     val haptics = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
     val narrowing = state.recordingsNarrowing
@@ -105,8 +110,6 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier,
     }
 
     val audioPermission = rememberPermissionRequest { vm.onAudioAccessResult() }
-
-    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
     // Filtered, cut and grouped once per change of what they depend on - the
     // grouping also per day, which the headings read - not on every
@@ -179,7 +182,7 @@ fun HomeScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier,
                             FilledTonalButton(
                                 onClick = {
                                     haptics.tap()
-                                    callLogPermission.launch(CallLogLookup.PERMISSIONS)
+                                    askForCallLog()
                                 },
                             ) { Text("Allow") }
                             TextButton(

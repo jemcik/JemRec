@@ -53,7 +53,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.R
-import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Retention
@@ -86,7 +85,7 @@ private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT, TRACKING_OFF
  * to take something back - not part of the list you use every day.
  */
 @Composable
-fun SettingsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
+fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit, modifier: Modifier = Modifier) {
 
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -98,8 +97,6 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modif
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri -> if (uri != null) vm.onFolderChosen(uri) }
-
-    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
 
     if (state.confirmingReset) {
         AlertDialog(
@@ -130,7 +127,7 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modif
         )
         SettingsDialog.FILE_NAMES -> FileNamesDialog(
             state, vm,
-            allow = { callLogPermission.launch(CallLogLookup.PERMISSIONS) },
+            allow = askForCallLog,
             chooseHonorFolder = { folderPicker.launch(FileNames.honorFolderUri) },
             dismiss = { dialog = null },
         )
@@ -202,7 +199,7 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modif
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     FilledTonalButton(
-                        onClick = { haptics.tap(); callLogPermission.launch(CallLogLookup.PERMISSIONS) },
+                        onClick = { haptics.tap(); askForCallLog() },
                         enabled = !state.busy,
                         modifier = Modifier.align(Alignment.End),
                     ) { Text("Allow") }
@@ -783,9 +780,8 @@ private fun FileNamesDialog(
  * and offers the permission, rather than showing switches that cannot work.
  */
 @Composable
-fun WhoseCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
+fun WhoseCallsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
-    val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
     val contactPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickContact()
     ) { uri -> if (uri != null) vm.addRuleContact(uri) }
@@ -800,7 +796,7 @@ fun WhoseCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Mod
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
             FilledTonalButton(
-                onClick = { haptics.tap(); callLogPermission.launch(CallLogLookup.PERMISSIONS) },
+                onClick = { haptics.tap(); askForCallLog() },
                 enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) { Text("Allow") }
