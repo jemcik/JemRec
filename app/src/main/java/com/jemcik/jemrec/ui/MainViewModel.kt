@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.ui
 
 import android.app.Application
-import android.app.StatusBarManager
 import android.content.ComponentName
 import android.content.IntentSender
 import android.net.Uri
@@ -15,20 +14,14 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.adb.AdbTransport
-import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.AfterCall
-import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallRules
-import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.MissedCalls
 import com.jemcik.jemrec.calls.VoipApps
-import com.jemcik.jemrec.calls.VoipCallNotes
-import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.LastCallReport
 import com.jemcik.jemrec.capture.PlaybackService
-import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.recorder.BackgroundKill
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.NetworkRevive
@@ -41,16 +34,12 @@ import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.recorder.Trigger
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
-import com.jemcik.jemrec.recordings.RecordingStore
-import com.jemcik.jemrec.recordings.Recordings
-import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.setup.PairingNotification
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
-import com.jemcik.jemrec.ui.theme.Looks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -136,6 +125,9 @@ class MainViewModel @JvmOverloads constructor(
 
     /** The lists: chips and search, paging, keep marks, selection. */
     private val list = RecordingsList(app, viewModelScope, _state, log, actions, reading, playback, trash)
+
+    /** What Settings changes, and the permission answers. */
+    private val settings = SettingsActions(app, _state, log, actions, reading, answer, trash)
 
     /** Failures of something the user just did, for a snackbar where they are. */
     val notices: SharedFlow<String> = log.notices
@@ -599,44 +591,6 @@ class MainViewModel @JvmOverloads constructor(
         refresh()
     }
 
-    /** Never offered again once waved away. An optional feature that keeps
-     *  asking is not optional. */
-    fun dismissCallLogOffer() {
-        CallLogLookup.dismissBanner(getApplication())
-        _state.update { it.copy(offerCallLog = false) }
-    }
-
-    /**
-     * The user has answered the audio-access request, either way.
-     *
-     * Granted, the recordings from before the reinstall appear on the next
-     * refresh. Refused, the app carries on recording and seeing everything it
-     * makes from now on - which is why nothing here treats "no" as a problem.
-     */
-    fun onAudioAccessResult() {
-        _state.update { it.copy(canReadAudio = AudioAccess.granted(getApplication())) }
-        refresh()
-    }
-
-    /**
-     * The permission dialog has closed, whichever way and whichever of the two
-     * were granted.
-     *
-     * The verdict is read back from the system rather than taken from the
-     * callback: the user can grant one and refuse the other, and the system is
-     * the only thing that knows which.
-     */
-    fun onCallLogResult() {
-        val app = getApplication<Application>()
-        // Anything refused counts as an answer. Asking again next time the app
-        // opens would be nagging, which is what the offer exists to avoid.
-        if (CallLogLookup.anythingLeftToOffer(app)) CallLogLookup.dismissBanner(app)
-        _state.update {
-            it.copy(canReadCallLog = CallLogLookup.granted(app), offerCallLog = false)
-        }
-        refresh()
-    }
-
     /**
      * The record control. Turning off asks first in the one case it costs
      * more than it says: all debugging off, and no Wi-Fi to come back on
@@ -791,24 +745,6 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    /**
-     * Switch between recording every call and being asked each time.
-     *
-     * Written straight through rather than deferred, because the very next call
-     * could arrive seconds from now and it must use the setting the user just
-     * chose, not the one this screen last read.
-     */
-    fun setAutomatic(automatic: Boolean) {
-        RecordingMode.set(
-            getApplication(),
-            if (automatic) RecordingMode.AUTOMATIC else RecordingMode.ON_DEMAND,
-        )
-        _state.update { it.copy(automatic = automatic) }
-        // The daemon decides at off-hook whether to record or to ask first, so
-        // it has to be told which the moment this changes.
-        actions.run(Action.TELL_RECORDER) { pushDaemonMode() }
-    }
-
     private suspend fun pushDaemonMode() = CaptureDaemon.pushMode(getApplication())
 
     /**
@@ -833,27 +769,6 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(debugNotificationHidden = hide, debugNotificationProblem = false) }
         // From the setup step, move on to the next one.
         if (_state.value.step != SetupStep.READY) recheckSetup()
-    }
-
-    /** The Settings switch for the notification that follows each call.
-     *  Problems are still reported with it off - see AfterCall. */
-    fun setAfterCallNotice(on: Boolean) {
-        AfterCall.setEnabled(getApplication(), on)
-        _state.update { it.copy(afterCallNotice = on) }
-    }
-
-    /** The app repaints at once: both activities draw from Looks, and
-     *  Settings reads the choice from the theme (LocalLookChoice). */
-    fun setLook(look: Look) {
-        val app = getApplication<Application>()
-        Looks.set(app, Looks.choice(app).copy(look = look))
-        // Multitrack's caller colours are given only while it is the look.
-        if (look == Look.MULTITRACK) refresh()
-    }
-
-    fun setLightDark(lightDark: LightDark) {
-        val app = getApplication<Application>()
-        Looks.set(app, Looks.choice(app).copy(lightDark = lightDark))
     }
 
     /**
@@ -912,122 +827,6 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    /** One of auto-delete's two rules changed: saved, and applied at once. */
-    fun setAutoDelete(afterDays: Int? = null, shorterThan: Int? = null) = actions.run(Action.AUTO_DELETE) {
-        val app = getApplication<Application>()
-        afterDays?.let { Retention.setMaxAgeDays(app, it) }
-        shorterThan?.let { Retention.setMinSeconds(app, it) }
-        val result = withContext(Dispatchers.IO) { Retention.run(app) }
-        if (result.deleted > 0) say("auto-delete moved ${result.deleted} recording(s) to Recently deleted")
-        // Recordings Android wants confirmed are asked about now, while the
-        // user is here; the daily pass cannot ask.
-        result.needsConsent?.let { askAndroid(it, result.disputed) }
-        refreshNow()
-    }
-
-    /** Whose calls to keep. Applied to calls from now on; see CallRules. */
-    fun setRuleContacts(contacts: CallRules.Contacts) {
-        CallRules.setContacts(getApplication(), contacts)
-        _state.update { it.copy(ruleContacts = contacts) }
-        // The chosen contacts are read only for the choices that list them.
-        refresh()
-    }
-
-    fun setRuleOtherNumbers(on: Boolean) {
-        CallRules.setOtherNumbers(getApplication(), on)
-        _state.update { it.copy(ruleOtherNumbers = on) }
-    }
-
-    /**
-     * The contact the picker returned, added to the rules' list - while
-     * busy too (Action.RULE_CONTACT_ADDED): coming back from the picker
-     * resumes the screen, and the resume's own setup check holds busy.
-     */
-    fun addRuleContact(contact: Uri) {
-        actions.run(Action.RULE_CONTACT_ADDED) {
-            val added = withContext(Dispatchers.IO) { CallRules.add(getApplication(), contact) }
-            if (!added) tell("could not add that contact")
-            refreshNow()
-        }
-    }
-
-    fun removeRuleContact(key: String) {
-        actions.run(Action.RULE_CONTACT_REMOVED) {
-            withContext(Dispatchers.IO) { CallRules.remove(getApplication(), key) }
-            refreshNow()
-        }
-    }
-
-    /** Exact call tracking on or off; the daemon allows or withdraws it at once. */
-    fun setCallTracking(on: Boolean) {
-        val app = getApplication<Application>()
-        CallTracking.setEnabled(app, on)
-        _state.update { it.copy(callTracking = on) }
-        // The answering machine answers on tracking's word alone: left on
-        // without it, it would say it answers and never would. Settings asks
-        // before this (SettingsDialog.TRACKING_OFF).
-        if (!on && (answer.state.value.enabled || AnsweringMachine.enabled(app))) {
-            answer.setEnabled(false)
-            say("the answering machine is off too: it needs exact call tracking")
-        }
-        answer.reload()
-        actions.run(Action.TELL_RECORDER) {
-            if (!CaptureDaemon.setTracking(app)) {
-                say("the recorder will pick up exact call tracking when it next restarts")
-            }
-        }
-    }
-
-    /** Record [pkg]'s calls, or stop; the daemon is told at once. */
-    fun setVoipApp(pkg: String, on: Boolean) {
-        val app = getApplication<Application>()
-        VoipApps.setEnabled(app, pkg, on)
-        _state.update { it.copy(voipEnabled = VoipApps.enabled(app)) }
-        // The last one off stops the caller-name listener; the first one on
-        // starts it again, if names were asked for.
-        DebugNotificationCleaner.apply(app)
-        actions.run(Action.TELL_RECORDER) {
-            if (!CaptureDaemon.setVoipApps(app)) {
-                say("the recorder will pick up the messenger apps when it next restarts")
-            }
-        }
-    }
-
-    /** Caller names for messenger calls, from their call notifications. Needs
-     *  notification access, granted over ADB like the debugging one. */
-    fun setVoipNames(on: Boolean) = actions.run(Action.MESSENGER_NAMES) {
-        val app = getApplication<Application>()
-        if (on && !DebugNotificationCleaner.accessGranted(app) && !Setup.grantNotificationAccess(app)) {
-            _state.update { it.copy(voipNamesProblem = true) }
-            return@run
-        }
-        VoipCallNotes.setEnabled(app, on)
-        DebugNotificationCleaner.apply(app)
-        _state.update { it.copy(voipNames = on, voipNamesProblem = false) }
-    }
-
-    /** How new recordings are named. Ones already saved keep their names. */
-    fun setFileNames(format: FileNames.Format) {
-        FileNames.setFormat(getApplication(), format)
-        _state.update { it.copy(fileNames = format) }
-    }
-
-    fun useDefaultFolder() = actions.run(Action.DEFAULT_FOLDER) {
-        RecordingStore.clearTree(getApplication())
-        say("recordings will go to the standard Recordings folder")
-        refresh()
-    }
-
-    /** While busy too, as addRuleContact: the picker's answer arrives as the
-     *  screen resumes, while its check runs (Action.FOLDER_CHOSEN). */
-    fun onFolderChosen(uri: Uri) {
-        actions.run(Action.FOLDER_CHOSEN) {
-            withContext(Dispatchers.IO) { RecordingStore.setTree(getApplication(), uri) }
-            say("recordings will be saved to the folder you chose")
-            refreshNow()
-        }
-    }
-
     /** The list's waveform fill-in stops with the screen (WaveformFill). */
     fun stopFillingIn() = fill.stop()
 
@@ -1047,27 +846,6 @@ class MainViewModel @JvmOverloads constructor(
     /** Out of sight: the scrubber is no longer driven, and the recording
      *  plays on (Playback.hidden). */
     fun screenHidden() = playback.hidden()
-
-    /**
-     * Android's answer to "add the tile": added, already there, or declined.
-     * The answer is what Android knows, so it settles what the Settings row
-     * says - and "already there" is said back, so a tap is never met with
-     * nothing, which is what an added tile's row did before.
-     */
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    fun onTileAddAnswer(result: Int) {
-        val added = when (result) {
-            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED,
-            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> true
-            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> false
-            else -> return
-        }
-        RecorderTile.setAdded(getApplication(), added)
-        _state.update { it.copy(tileAdded = added) }
-        if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) {
-            tell("it is in your Quick Settings panel already")
-        }
-    }
 
     /** Play or pause a recording (Playback). */
     fun play(recording: Recording) = playback.play(recording)
@@ -1145,6 +923,46 @@ class MainViewModel @JvmOverloads constructor(
     fun cancelDeleteSelected() = list.cancelDeleteSelected()
 
     fun confirmDeleteSelected() = list.confirmDeleteSelected()
+
+    /** What Settings changes, and the permission answers (SettingsActions). */
+    fun dismissCallLogOffer() = settings.dismissCallLogOffer()
+
+    fun onAudioAccessResult() = settings.onAudioAccessResult()
+
+    fun onCallLogResult() = settings.onCallLogResult()
+
+    fun setAutomatic(automatic: Boolean) = settings.setAutomatic(automatic)
+
+    fun setAfterCallNotice(on: Boolean) = settings.setAfterCallNotice(on)
+
+    fun setLook(look: Look) = settings.setLook(look)
+
+    fun setLightDark(lightDark: LightDark) = settings.setLightDark(lightDark)
+
+    fun setAutoDelete(afterDays: Int? = null, shorterThan: Int? = null) = settings.setAutoDelete(afterDays, shorterThan)
+
+    fun setRuleContacts(contacts: CallRules.Contacts) = settings.setRuleContacts(contacts)
+
+    fun setRuleOtherNumbers(on: Boolean) = settings.setRuleOtherNumbers(on)
+
+    fun addRuleContact(contact: Uri) = settings.addRuleContact(contact)
+
+    fun removeRuleContact(key: String) = settings.removeRuleContact(key)
+
+    fun setCallTracking(on: Boolean) = settings.setCallTracking(on)
+
+    fun setVoipApp(pkg: String, on: Boolean) = settings.setVoipApp(pkg, on)
+
+    fun setVoipNames(on: Boolean) = settings.setVoipNames(on)
+
+    fun setFileNames(format: FileNames.Format) = settings.setFileNames(format)
+
+    fun useDefaultFolder() = settings.useDefaultFolder()
+
+    fun onFolderChosen(uri: Uri) = settings.onFolderChosen(uri)
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    fun onTileAddAnswer(result: Int) = settings.onTileAddAnswer(result)
 
     /** The screen is gone for good; a recording playing goes on playing,
      *  under the system's controls, until they stop it. */
