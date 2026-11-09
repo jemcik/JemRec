@@ -77,6 +77,7 @@ import com.jemcik.jemrec.ui.HomeTab
 import com.jemcik.jemrec.ui.LOOK_PREVIEW
 import com.jemcik.jemrec.ui.MEMO_MARK_IN_SETTINGS
 import com.jemcik.jemrec.ui.MainViewModel
+import com.jemcik.jemrec.ui.headerSpeech
 import com.jemcik.jemrec.ui.RecorderStatus
 import com.jemcik.jemrec.ui.RecordingsNarrowing
 import com.jemcik.jemrec.ui.SETTINGS_BAR
@@ -1153,6 +1154,16 @@ class BehaviourTest : ScreenTest() {
     @Test fun decksRecKeyPressesRound() = pressStaysRound(Look.DECK)
 
     @Test fun multitracksButtonPressesRound() = pressStaysRound(Look.MULTITRACK)
+
+    /** Memo's state and marks are heard as the sentence the other two looks
+     *  say (headerSpeech), and only it: merged, its drawn words and the
+     *  marks' own names were read, "Every call" and "Answering machine on". */
+    @Test fun memosHeaderIsOneSentenceToAScreenReader() {
+        val vm = homeIn(Look.MEMO)
+        val said = compose.onNodeWithContentDescription("Ready to record. Records every call.", substring = true)
+            .fetchSemanticsNode().config[SemanticsProperties.ContentDescription]
+        assertEquals(listOf(headerSpeech(vm.state.value, marks(vm.state.value, answering = false))), said)
+    }
 
     @Test fun decksLcdIsOneSentenceToAScreenReader() {
         // "AUTO ANS MSG DEL 90D" means nothing read out; the LCD is heard as

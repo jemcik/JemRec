@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -89,9 +90,12 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
                 }
                 MemoButton(state, vm, c)
             }
-            // Heard as one: the state, then what is on.
+            // Heard as one sentence, the one Deck's and Multitrack's headers
+            // say (headerSpeech): the state, then what is on. The marks' own
+            // words are left out of it, as the sentence says them; the
+            // instruction's tap stays a control of its own.
             Column(
-                Modifier.weight(1f).semantics(mergeDescendants = true) { },
+                Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = headerSpeech(state, marks) },
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 // Each line as tall as the tallest thing it shows: at larger
@@ -105,7 +109,7 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
                     },
                 ) {
                     if (instruction == null) {
-                        MemoMarks(c, marks)
+                        MemoMarks(c, marks, Modifier.clearAndSetSemantics { })
                     } else if (instruction.tap != null) {
                         MemoSmall(
                             memoWords(instruction),
@@ -164,8 +168,9 @@ private fun MemoSmall(text: String, color: Color, modifier: Modifier = Modifier)
  *  than clips at twice the text size. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MemoMarks(c: MemoColors, marks: Marks) {
+private fun MemoMarks(c: MemoColors, marks: Marks, modifier: Modifier = Modifier) {
     FlowRow(
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
         itemVerticalAlignment = Alignment.CenterVertically,
