@@ -14,7 +14,8 @@ import kotlin.coroutines.cancellation.CancellationException
  *  has to say which. */
 internal enum class WhenBusy {
     /** Not run, and its control greyed meanwhile: the screen says it cannot
-     *  be done now. Once free, it runs holding busy. */
+     *  be done now. A tap while busy is let go, not kept for later; a tap
+     *  once the screen is free runs, holding busy. */
     DROPPED,
 
     /** Waits its turn, then runs holding busy: an answer already given, in a
@@ -33,9 +34,9 @@ internal enum class WhenBusy {
 /**
  * The busy policy, one row an action: what it is called when it fails
  * ("<label> failed: ..." in the log), what it does while busy, and why.
- * Three more wait for the screen to be free and then tap a dropped action
- * themselves (Actions.free): a deep link's self-test and its Allow this
- * Wi-Fi, and pairing again's setup check.
+ * Three more wait for the screen to be free and then run an action of the
+ * table themselves (Actions.free): a deep link's self-test and its Allow
+ * this Wi-Fi, and pairing again's setup check.
  */
 internal enum class Action(val label: String, val whenBusy: WhenBusy) {
     /** Diagnostics' Self-test, greyed while busy. */
