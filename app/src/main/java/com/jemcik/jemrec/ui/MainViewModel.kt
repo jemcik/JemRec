@@ -68,7 +68,7 @@ class MainViewModel @JvmOverloads constructor(
     /** How long after a flip of Start without Wi-Fi a close still due is
      *  tried again (setStartWithoutWifi). The tests' is short. */
     portCloseAgainMs: Long = 10_000,
-) : AndroidViewModel(app) {
+) : AndroidViewModel(app), RowEvents {
 
     // Whether messenger calls can work here is known at once (a cached
     // permission check): the Settings card must not show their switches'
@@ -244,15 +244,15 @@ class MainViewModel @JvmOverloads constructor(
     fun screenHidden() = playback.hidden()
 
     /** Play or pause a recording (Playback). */
-    fun play(recording: Recording) = playback.play(recording)
+    override fun play(recording: Recording) = playback.play(recording)
 
-    fun seekTo(ms: Int) = playback.seekTo(ms)
+    override fun seekTo(ms: Int) = playback.seekTo(ms)
 
     /** The chevron on the scrubber: stop, and fold the row back. */
-    fun stopPlaying() = playback.stopPlayback()
+    override fun stopPlaying() = playback.stopPlayback()
 
     /** Share's question first (Sharing). */
-    fun share(recording: Recording) = sharing.share(recording)
+    override fun share(recording: Recording) = sharing.share(recording)
 
     fun dismissShareChoice() = sharing.dismissShareChoice()
 
@@ -290,7 +290,7 @@ class MainViewModel @JvmOverloads constructor(
 
     fun setCallsQuery(query: String) = list.setCallsQuery(query)
 
-    fun toggleKept(recording: Recording) = list.toggleKept(recording)
+    override fun toggleKept(recording: Recording) = list.toggleKept(recording)
 
     fun keepSelected() = list.keepSelected()
 
@@ -298,11 +298,11 @@ class MainViewModel @JvmOverloads constructor(
 
     fun startSelecting() = list.startSelecting()
 
-    fun startSelecting(recording: Recording) = list.startSelecting(recording)
+    override fun startSelecting(recording: Recording) = list.startSelecting(recording)
 
     fun dismissSelectHint() = list.dismissSelectHint()
 
-    fun toggleSelected(recording: Recording) = list.toggleSelected(recording)
+    override fun toggleSelected(recording: Recording) = list.toggleSelected(recording)
 
     fun selectAllVisible() = list.selectAllVisible()
 
