@@ -152,11 +152,11 @@ class BusyPolicyTest : ScreenTest() {
 
     /**
      * Delete, said yes to in the selection's dialog while busy: it waits
-     * until the app is free, as empty-trash does - but reads the selection
-     * when it runs, not as it was answered. A row picked during the wait
-     * goes to Recently deleted too, though the dialog counted one.
+     * until the app is free, as empty-trash does, and deletes what the
+     * dialog counted, read as it was answered. A row picked during the wait
+     * stays where it was; the selection ends with the delete.
      */
-    @Test fun deleteSelectedSaidYesToWhileBusyTakesWhatIsSelectedWhenItRuns() {
+    @Test fun deleteSelectedSaidYesToWhileBusyTakesWhatTheDialogCounted() {
         val olivia = recording(file("20261021_160200_in.ogg"))
         val marcus = recording(file("20261021_152400_out.ogg"))
         val vm = viewModel(UiState(recordings = listOf(olivia, marcus), selecting = true, selected = setOf(olivia.name)))
@@ -174,15 +174,10 @@ class BusyPolicyTest : ScreenTest() {
 
         busy.release()
         settle(vm)
-        // Pins today's behaviour, which looks like a bug: confirmDeleteSelected
-        // reads the selection inside launchActionWhenFree, after the wait for
-        // busy, where confirmEmptyTrash reads what its question counted before
-        // it, so the row picked after the dialog went too (to be fixed in its
-        // own commit)
         assertFalse(File(olivia.filePath!!).exists())
-        assertFalse(File(marcus.filePath!!).exists())
-        assertEquals(2, dir.list()!!.count { it.startsWith(".trashed-") })
-        assertTrue(log(vm), log(vm).contains("moved 2 to Recently deleted"))
+        assertTrue("picked after the question, not deleted", File(marcus.filePath!!).exists())
+        assertEquals(1, dir.list()!!.count { it.startsWith(".trashed-") })
+        assertTrue(log(vm), log(vm).contains("moved 1 to Recently deleted"))
         assertFalse(vm.state.value.selecting)
         assertEquals(emptySet<String>(), vm.state.value.selected)
     }

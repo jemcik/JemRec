@@ -171,11 +171,14 @@ internal class RecordingsList(
      */
     fun confirmDeleteSelected() {
         state.update { it.copy(confirmingDeleteSelected = false) }
+        // What the question counted, read as it is answered, as Delete all
+        // for good does: read after the wait for busy, a row picked meanwhile
+        // went to Recently deleted unasked.
+        val current = state.value
+        val doomed = current.recordings.filter { it.name in current.selected }
+        if (doomed.isEmpty()) return
         actions.run(Action.DELETE_SELECTED) {
-            val current = state.value
-            val doomed = current.recordings.filter { it.name in current.selected }
-            if (doomed.isEmpty()) return@run
-            if (current.playingName in current.selected) playback.stopPlayback()
+            if (doomed.any { it.name == state.value.playingName }) playback.stopPlayback()
 
             val result = withContext(Dispatchers.IO) {
                 Trash.trashAll(app, doomed)
