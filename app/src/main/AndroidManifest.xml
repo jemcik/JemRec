@@ -258,23 +258,22 @@
             android:theme="@style/Theme.JemRec.Question" />
 
         <!--
-          One window: singleTask. Every way in - the launcher, the Quick
-          Settings tile and its long press, the media notification, a
-          notification's link - brings the one there is forward, its intent
-          through onNewIntent, and finishes what is on top of it in its task
-          (a picker opened from JemRec), as notification links did already
-          (CLEAR_TOP). Android's "Tasks and the back stack", read 2026-11-08:
-          "Meanwhile all of the other activities on top of it are destroyed";
-          and only for an activity with the launcher's filter, as this is.
-          Until 0.30 the tile and the media notification opened a second
-          window over it when it was not on top, and two answering machine
-          screens could arm a test, or play the greeting into a take, unseen
-          by each other.
+          One window. JemRec's own ways in - the Quick Settings tile, the
+          media notification, every notification - start it with
+          MainActivity.open's flags, as deep links did already: the one window
+          there is comes forward, its intent through onNewIntent, and what is
+          on top of it in its task (a picker opened from JemRec) is finished.
+          singleTop catches the tile's long press, which Android starts, when
+          JemRec is on top. The launcher only brings the task forward, as it
+          always did: a picker left open is still there. Not singleTask: that
+          finished the picker, a permission's question or Android's "delete
+          this recording?" on a tap of the launcher too (the author's choice,
+          2026-11-08).
         -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

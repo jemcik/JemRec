@@ -1,5 +1,7 @@
 package com.jemcik.jemrec
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,6 +26,36 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        cameIn()
+
+        // A notification's button - play this call, run the self-test. Only
+        // on a fresh start: a recreated activity carries the same intent, and
+        // rotating the phone must not play the call again.
+        if (savedInstanceState == null) DeepLink.offer(this, intent)
+
+        setContent {
+            // Watched, not read once: a theme picked in Settings repaints
+            // the app there and then.
+            val look by Looks.changes(this).collectAsState()
+            JemRecTheme(look) {
+                MainScreen()
+            }
+        }
+    }
+
+    /** The app was already open when a notification's button was tapped -
+     *  or the tile, or the media notification: the window there is, come
+     *  forward. What a new window did on opening holds for it too: until
+     *  0.30 those opened a second window, which did it. */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        cameIn()
+        DeepLink.offer(this, intent)
+    }
+
+    /** What each way in does, a new window or the one there is. */
+    private fun cameIn() {
         // Opening the app no longer starts a permanent service. It arms the
         // keep-alive job, which revives the daemon if it is down and keeps it
         // that way. Idempotent, and a no-op while switched off.
@@ -44,26 +76,18 @@ class MainActivity : ComponentActivity() {
         // for them.
         val app = applicationContext
         Thread({ BackgroundKill.checkOwnRecords(app, "on open") }, "jemrec-killcheck").start()
-
-        // A notification's button - play this call, run the self-test. Only
-        // on a fresh start: a recreated activity carries the same intent, and
-        // rotating the phone must not play the call again.
-        if (savedInstanceState == null) DeepLink.offer(this, intent)
-
-        setContent {
-            // Watched, not read once: a theme picked in Settings repaints
-            // the app there and then.
-            val look by Looks.changes(this).collectAsState()
-            JemRecTheme(look) {
-                MainScreen()
-            }
-        }
     }
 
-    /** The app was already open when a notification's button was tapped. */
-    override fun onNewIntent(intent: android.content.Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        DeepLink.offer(this, intent)
+    companion object {
+        /**
+         * The intent that opens JemRec - the one way in that JemRec itself
+         * makes (OneWindowTest holds that no other is): the window there is
+         * comes forward, and what is on top of it in its task is finished,
+         * rather than a second window stacked on it.
+         */
+        fun open(context: Context): Intent =
+            Intent(context, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
     }
 }

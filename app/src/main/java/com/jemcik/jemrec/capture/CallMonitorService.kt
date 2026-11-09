@@ -580,7 +580,7 @@ class CallMonitorService : Service() {
 
     private fun startForegroundCompat() {
         val tap = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, MainActivity.open(this),
             PendingIntent.FLAG_IMMUTABLE,
         )
         // Each field read once: the save's coroutine writes some of them too.

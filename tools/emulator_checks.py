@@ -1190,6 +1190,43 @@ def background_playback():
     return f"{after - before} ms played in 5 s with the screen off, as \"{title}\"; held back by a call, then on"
 
 
+def windows():
+    """How many of JemRec's main screens Android holds, in any task."""
+    return len(re.findall(r"Hist\s+#\d+: ActivityRecord\{[^}]*" + re.escape(PKG) + r"/\S*MainActivity",
+                          sh("dumpsys activity activities")))
+
+
+# MainActivity.open's flags: NEW_TASK, CLEAR_TOP and SINGLE_TOP, as the tile,
+# the media notification and every notification start JemRec.
+OPEN_FLAGS = "0x34000000"
+
+
+def one_window():
+    """JemRec is one window by its own ways in: the tile's, the media
+    notification's and every notification's intent (MainActivity.open), and
+    the tile's long press, which Android starts, with JemRec on top, leave
+    one main screen; a folder picker left open over it is still there when
+    the launcher brings JemRec back, and finished by JemRec's own way in."""
+    try:
+        sh(f"am start -W -n {PKG}/.MainActivity")
+        wait_for(lambda: windows() == 1, 15, "JemRec open")
+        sh(f"am start -W -n {PKG}/.MainActivity -f {OPEN_FLAGS}")
+        sh(f"am start -W -a android.service.quicksettings.action.QS_TILE_PREFERENCES -n {PKG}/.MainActivity")
+        time.sleep(2)
+        assert windows() == 1, f"{windows()} windows after the tile's way in and its long press"
+        open_settings_row("Saving to", "Change", "the folder question")
+        tap_until("Change", lambda: on_screen_any_case("Use this folder"), 15, "Android's folder picker")
+        sh(f"am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n {PKG}/.MainActivity")
+        time.sleep(2)
+        assert on_screen_any_case("Use this folder"), "the launcher closed the picker"
+        sh(f"am start -W -n {PKG}/.MainActivity -f {OPEN_FLAGS}")
+        wait_for(lambda: not on_screen_any_case("Use this folder"), 10, "JemRec's own way in to close the picker")
+        assert windows() == 1, f"{windows()} windows after the picker"
+    finally:
+        sh(f"am force-stop {PKG}")
+    return "one window by the tile's way in and its long press; the launcher kept a picker, JemRec's way in closed it"
+
+
 def tap_node(found):
     """Tap the middle of the first node on screen that [found] picks."""
     for node in re.findall(r"<node [^>]*>", ui()):
@@ -2393,7 +2430,7 @@ def self_test():
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, number_names, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, app_call, mode_switch, app_call_in_front, waveform,
-          background_playback,
+          background_playback, one_window,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
           debugging_off, off_just_left, background, allow_this_wifi, refused_grant,

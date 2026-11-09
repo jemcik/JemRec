@@ -309,12 +309,14 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                 // nothing played, and was put down as not working.
                 "Delete" -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.deleteGreeting() },
-                    enabled = a.test == null,
+                    enabled = a.test == null && !a.processingTake,
                     modifier = modifier,
                 ) { ButtonLabel("Delete") }
                 else -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.startTake() },
-                    enabled = state.daemonRunning,
+                    // Not while the last take is made a greeting of: tapped
+                    // then, it did nothing, with no sign.
+                    enabled = state.daemonRunning && !a.processingTake,
                     modifier = modifier,
                 ) { ButtonLabel(record) }
             }

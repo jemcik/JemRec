@@ -92,10 +92,13 @@ class MainViewModel @JvmOverloads constructor(
     private val fill = WaveformFill(app, viewModelScope, _state)
 
     /** The answering machine's settings, greeting and diagnostics. */
-    // Told, not only logged: on the answering machine's own screen, "no test
-    // call came", "could not arm" and "may have armed" were in Diagnostics'
-    // log alone (until 0.30).
-    val answer = AnswerController(app, viewModelScope, log::tell, initialAnswer, quiet = playback::pause)
+    // What answers a tap there is a snackbar as well (AnswerController.tell):
+    // until 0.30 "could not arm", "no test call came" and the rest were in
+    // Diagnostics' log alone.
+    val answer = AnswerController(
+        app, viewModelScope, log::say, initialAnswer, quiet = playback::pause,
+        tell = log::tell, shown = { _state.value.screen == Screen.ANSWERING_MACHINE },
+    )
 
     /** The screen's reading of everything it shows from outside itself. */
     private val reading = Reading(app, viewModelScope, _state, answer, playback, fill)
@@ -112,7 +115,7 @@ class MainViewModel @JvmOverloads constructor(
     /** Setup's steps and the recorder's state, from the screen. */
     private val recorder = RecorderAndSetup(app, viewModelScope, _state, log, actions, reading, lookForAdb, portCloseAgainMs)
 
-    /** Failures of something the user just did, for a snackbar where they are. */
+    /** The answer to something the user just did, for a snackbar where they are. */
     val notices: SharedFlow<String> = log.notices
 
     /** A reading of everything, for callers that only want the screen to

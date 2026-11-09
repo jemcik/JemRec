@@ -42,6 +42,8 @@ data class AnswerUi(
     /** Seconds of greeting, or null with none recorded. */
     val greetingSeconds: Double? = null,
     val recordingTake: Boolean = false,
+    /** A take stopped, and being fetched, made a greeting of and saved. */
+    val processingTake: Boolean = false,
     val takeStartedAt: Long = 0L,
     val playing: Boolean = false,
     val greetingProblem: String? = null,
@@ -99,6 +101,14 @@ class AnswerController(
     private val quiet: () -> Unit = {},
     /** The greeting's player, made for each preview: a test counts them. */
     private val previewOf: (ByteArray) -> AudioTrack? = Greeting::preview,
+    /** A snackbar as well as [say]'s line in Diagnostics' log: for what
+     *  answers a tap on this screen. Everything else - the checks run on
+     *  opening, a kept test read again on return - is the log's alone, as
+     *  every word here was until 0.30. */
+    private val tell: (String) -> Unit = say,
+    /** This screen is the one shown: a test call's ending is told then,
+     *  and only logged over another. */
+    private val shown: () -> Boolean = { true },
 ) {
     private val _state = MutableStateFlow(initial ?: AnswerUi())
     val state: StateFlow<AnswerUi> = _state.asStateFlow()
@@ -137,7 +147,7 @@ class AnswerController(
     fun opened() {
         if (seeded) return
         reload()
-        if (_state.value.stageOne == null) runChecks()
+        if (_state.value.stageOne == null) runChecks(asked = false)
         readPendingTest()
         scope.launch {
             CaptureDaemon.sims(app)?.let { sims ->
@@ -219,7 +229,7 @@ class AnswerController(
     /** Start recording a greeting - on the recorder, which may use the
      *  microphone; this app holds no permission to. */
     fun startTake() {
-        if (take?.isActive == true) return
+        if (take?.isActive == true || _state.value.processingTake) return
         stopPreview()
         quiet()
         takeStarting = true
@@ -247,24 +257,40 @@ class AnswerController(
         // be refused until then. Record stays refused while this fetches:
         // a new take would overwrite the file being read.
         take?.cancel()
+        // Record and Delete are greyed meanwhile: a Delete then was undone
+        // when the new greeting was saved, the machine left off.
+        _state.update { it.copy(processingTake = true) }
         take = scope.launch {
-            CaptureDaemon.stopTake(app)
-            val pcm = CaptureDaemon.fetchTake(app)
-            val processed = withContext(Dispatchers.Default) { pcm?.let(Greeting::process) }
-            when (processed) {
-                is Greeting.Take.Usable -> {
-                    withContext(Dispatchers.IO) { Greeting.save(app, processed.pcm) }
-                    val sent = CaptureDaemon.uploadGreeting(app, processed.pcm)
-                    if (!sent) say("the recorder will get the new greeting when it next restarts")
-                    _state.update { it.copy(greetingSeconds = processed.seconds, greetingProblem = null) }
-                    push()
-                }
-                Greeting.Take.Silent, null -> _state.update {
-                    it.copy(greetingProblem = "Nothing was heard. Hold the phone as for a call, and speak.")
-                }
-                Greeting.Take.TooShort -> _state.update {
-                    it.copy(greetingProblem = "That was too short for a greeting. Try again.")
-                }
+            try {
+                processTake()
+            } finally {
+                _state.update { it.copy(processingTake = false) }
+            }
+        }
+    }
+
+    /** The stopped take fetched from the recorder, made a greeting of, saved
+     *  and sent back. */
+    private suspend fun processTake() {
+        CaptureDaemon.stopTake(app)
+        val pcm = CaptureDaemon.fetchTake(app)
+        val processed = withContext(Dispatchers.Default) { pcm?.let(Greeting::process) }
+        when (processed) {
+            is Greeting.Take.Usable -> {
+                withContext(Dispatchers.IO) { Greeting.save(app, processed.pcm) }
+                // A preview of the greeting this replaces, played while it
+                // was made, ends with it: the row now tells of the new one.
+                stopPreview()
+                val sent = CaptureDaemon.uploadGreeting(app, processed.pcm)
+                if (!sent) tell("the recorder will get the new greeting when it next restarts")
+                _state.update { it.copy(greetingSeconds = processed.seconds, greetingProblem = null) }
+                push()
+            }
+            Greeting.Take.Silent, null -> _state.update {
+                it.copy(greetingProblem = "Nothing was heard. Hold the phone as for a call, and speak.")
+            }
+            Greeting.Take.TooShort -> _state.update {
+                it.copy(greetingProblem = "That was too short for a greeting. Try again.")
             }
         }
     }
@@ -280,7 +306,7 @@ class AnswerController(
         // yet recording: over the loudspeaker the greeting would go into the
         // new one. A take stopped and being processed takes one: the
         // greeting there is plays, and the tap is not lost.
-        if (previewing?.isActive == true || takeStarting) return
+        if (previewing?.isActive == true || takeStarting || _state.value.recordingTake) return
         quiet()
         previewing = scope.launch {
             // Read where it may be gone: deleted just then, it threw (the
@@ -289,7 +315,8 @@ class AnswerController(
                 runCatching { Greeting.file(app).takeIf { it.isFile }?.readBytes() }.getOrNull()
             } ?: return@launch
             val track = previewOf(pcm) ?: return@launch
-            // Stopped while its player was made - Record tapped: not started.
+            // Stopped while its player was made - which only a scope off the
+            // main thread allows, as the tests' is: not started.
             if (!isActive) {
                 runCatching { track.stop(); track.release() }
                 return@launch
@@ -331,6 +358,7 @@ class AnswerController(
     }
 
     fun deleteGreeting() {
+        if (_state.value.processingTake) return
         stopPreview()
         Greeting.delete(app)
         AnsweringMachine.setEnabled(app, false)
@@ -341,14 +369,18 @@ class AnswerController(
         }
     }
 
-    /** Stage one: the no-call checks, on the recorder. */
-    fun runChecks() {
+    /** Stage one: the no-call checks, on the recorder - [asked] by a tap on
+     *  their row, or run as the screen opens with none run yet. */
+    fun runChecks(asked: Boolean = true) {
         if (_state.value.checking) return
         _state.update { it.copy(checking = true) }
         scope.launch {
             val fields = CaptureDaemon.stageOne(app)
             if (fields == null) {
-                say("the answering machine's checks need the recorder running")
+                // Told only when asked: run on each opening (and each turn of
+                // the phone, which opens the screen again), it was a snackbar
+                // every time while the recorder was down.
+                (if (asked) tell else say)("the answering machine's checks need the recorder running")
             } else {
                 AnswerDiagnostics.rememberStageOne(app, fields)
                 val stage = AnswerDiagnostics.stageOne(fields)
@@ -376,11 +408,11 @@ class AnswerController(
         // after an emergency call, when that may be them calling back. Nor is
         // an emergency number ever called for one (the screen says so too).
         if (incoming && EmergencyPause.pausedUntil(app) != null) {
-            say("no test call for a day after an emergency call - unless you answer again now")
+            tell("no test call for a day after an emergency call - unless you answer again now")
             return
         }
         if (!incoming && EmergencyPause.isEmergencyNumber(app, number)) {
-            say("an emergency number is never called for a test")
+            tell("an emergency number is never called for a test")
             return
         }
         // One arming at a time, whichever screen makes it - JemRec swiped
@@ -389,7 +421,7 @@ class AnswerController(
         // arming reached it last, so two at once would be filed under each
         // other.
         if (!testArming.compareAndSet(false, true)) {
-            say("a test call is being armed already")
+            tell("a test call is being armed already")
             return
         }
         // A test from before still to be read is read first. Armed by the
@@ -398,7 +430,7 @@ class AnswerController(
         // arming).
         if (AnswerDiagnostics.pendingTest(app) is AnswerDiagnostics.PendingTest.Armed) {
             testArming.set(false)
-            say("the last test call is read first; start the next one when it is")
+            tell("the last test call is read first; start the next one when it is")
             readPendingTest()
             return
         }
@@ -431,7 +463,7 @@ class AnswerController(
             val (reply, window, until) = armed.await()
             if (reply != TestArming.ARMED) {
                 _state.update { it.copy(test = null) }
-                say(
+                tell(
                     when (reply) {
                         TestArming.BAD_NUMBER -> "that number cannot be dialled"
                         TestArming.EMERGENCY -> "an emergency number is never called for a test"
@@ -506,7 +538,7 @@ class AnswerController(
             when {
                 !ours -> if (followOther()) return@launch
                 ending != null -> if (AnswerDiagnostics.takeArmedTest(app, _state.value.testUntil, asking = null)) {
-                    say(ending)
+                    told(ending)
                 } else if (followOther()) {
                     return@launch
                 }
@@ -538,9 +570,9 @@ class AnswerController(
             // A microphone that would not mute is this phone's, whichever way
             // the greeting goes: no reason to try the other.
             if (result["mute"] == "0") {
-                say("the microphone did not stay muted, so the caller would hear the room")
+                told("the microphone did not stay muted, so the caller would hear the room")
             } else {
-                tryTheOtherRoute(type)
+                tryTheOtherRoute(type, ::told)
             }
         }
         _state.update { it.copy(test = null, results = AnswerDiagnostics.results(app), askHeard = asking) }
@@ -551,10 +583,10 @@ class AnswerController(
      * here, as an opening would show it - the results put down, the question
      * if one is asked, and a newer test armed, watched on. True for a newer
      * test: called from the watch, which the new watch replaces, so the
-     * caller returns. Since 0.30 JemRec is one window, so no second screen is
-     * open to take it (until then the Quick Settings tile and the media
-     * notification could open one over this); this holds for whatever else
-     * reads the same entry.
+     * caller returns. Since 0.30 JemRec's own ways in bring its one window
+     * forward, so a second screen is open only if the tile's long press
+     * started one over a picker; until then the tile, the media notification
+     * and a notification's tap each could.
      */
     private fun followOther(): Boolean {
         val pending = AnswerDiagnostics.pendingTest(app)
@@ -572,26 +604,30 @@ class AnswerController(
         return false
     }
 
+    /** A test call's ending: told on this screen, only logged over another
+     *  (a watch runs on while the user is elsewhere in JemRec). */
+    private fun told(text: String) = if (shown()) tell(text) else say(text)
+
     /** Stage three: what the caller heard. */
     fun heard(type: String, heard: Boolean) {
         // Answered on another screen already: that answer stands.
         if (AnswerDiagnostics.takeQuestion(app, type)) {
             AnswerDiagnostics.record(app, type, if (heard) AnswerDiagnostics.Verdict.WORKS else AnswerDiagnostics.Verdict.FAILS)
             // Unheard is as failed as measured wrong.
-            if (!heard) tryTheOtherRoute(type)
+            if (!heard) tryTheOtherRoute(type, tell)
         }
         _state.update { it.copy(askHeard = null, results = AnswerDiagnostics.results(app)) }
     }
 
     /** The route just failed on a [type] of call: the other one next time,
      *  where AnswerDiagnostics.routeAfterFailure says so. */
-    private fun tryTheOtherRoute(type: String) {
+    private fun tryTheOtherRoute(type: String, speak: (String) -> Unit) {
         val other = AnswerDiagnostics.routeAfterFailure(
             AnsweringMachine.route(app), _state.value.stageOne, AnswerDiagnostics.results(app), type,
         ) ?: return
         AnsweringMachine.setRoute(app, other)
         push()
-        say("the greeting did not reach the call; the next test tries the other way")
+        speak("the greeting did not reach the call; the next test tries the other way")
     }
 
     /** The question put aside: not asked again. */
@@ -619,8 +655,20 @@ class AnswerController(
             _state.update {
                 it.copy(checkingCarrier = false, carrier = answer?.removePrefix("set ")?.removePrefix("unchanged ") ?: "error")
             }
-            if (answer?.startsWith("set ") != true) say("the carrier did not take the change: $answer")
+            carrierRefusal(answer)?.let(tell)
         }
+    }
+
+    /** The carrier's answer to Wait 30 seconds, in words; null when it took.
+     *  Until 0.30 the recorder's own words went to the log: "null", "error
+     *  3", "unchanged off 0". */
+    internal fun carrierRefusal(answer: String?): String? = when {
+        answer == null -> "the recorder could not ask your carrier"
+        answer.startsWith("set ") -> null
+        answer.startsWith("unchanged off") -> "your carrier's voicemail is off, so there was nothing to change"
+        answer.startsWith("unchanged") -> "your carrier did not say when its voicemail answers, so nothing was changed"
+        answer == "error timeout" -> "your carrier did not answer in time"
+        else -> "your carrier refused the change"
     }
 
     fun copyReport() {

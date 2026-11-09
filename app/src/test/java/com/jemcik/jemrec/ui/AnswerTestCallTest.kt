@@ -540,6 +540,111 @@ class AnswerTestCallTest {
         gate.countDown()
     }
 
+    /** A take recording takes no preview either: the row's tap is gone then,
+     *  but one landing as the recorder said yes still reached the greeting. */
+    @Test fun noPreviewWhileATakeRecords() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        recorder.replies["GR"] = "TAKE recording"
+        val made = java.util.concurrent.atomic.AtomicInteger()
+        val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm -> made.incrementAndGet(); Greeting.preview(pcm) })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.togglePreview()
+        Thread.sleep(500)
+        assertEquals(0, made.get())
+    }
+
+    /** A take stopped and being made a greeting of: Delete then was undone
+     *  when the new greeting was saved, the machine left off. It is refused
+     *  meanwhile (and greyed), as Record is. */
+    @Test fun noDeleteWhileATakeIsProcessed() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        com.jemcik.jemrec.answering.AnsweringMachine.setEnabled(context, true)
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GS") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val screen = AnswerController(context, scope, { said += it })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        assertTrue(screen.state.value.processingTake)
+        screen.deleteGreeting()
+        assertTrue(Greeting.present(context))
+        assertTrue(com.jemcik.jemrec.answering.AnsweringMachine.enabled(context))
+        gate.countDown()
+        eventually("processed") { !screen.state.value.processingTake }
+    }
+
+    /** The old greeting's preview, played while the new take was made one,
+     *  ends as the new greeting is saved: the row tells of the new one, and
+     *  said "Playing" over the old. */
+    @Test fun aPreviewOfTheOldGreetingEndsWhenTheNewIsSaved() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 20))
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GS") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 1"
+        // Half a second of room, two of speech, half a second of room.
+        val rate = Greeting.RATE
+        recorder.take = ShortArray(rate * 3) { i ->
+            if (i in rate / 2 until rate * 5 / 2) (5000 * kotlin.math.sin(2 * Math.PI * 220 * i / rate)).toInt().toShort() else 0
+        }.let { samples ->
+            java.nio.ByteBuffer.allocate(samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply { samples.forEach { putShort(it) } }.array()
+        }
+        val screen = AnswerController(context, scope, { said += it })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("the take asked to stop") { recorder.heard.any { it.key == "GS" } }
+        screen.togglePreview()
+        eventually("the old one playing") { screen.state.value.playing }
+        gate.countDown()
+        eventually("the new one saved") { (screen.state.value.greetingSeconds ?: 20.0) < 10.0 }
+        assertFalse(screen.state.value.playing)
+    }
+
+    /** What answers a tap is told - a snackbar as well as the log's line;
+     *  the checks run on opening are only logged: told, they were a snackbar
+     *  on every opening and every turn of the phone while the recorder was
+     *  down. */
+    @Test fun theChecksAreToldWhenTappedAndOnlyLoggedOnOpening() {
+        val told = CopyOnWriteArrayList<String>()
+        val screen = AnswerController(context, scope, { said += it }, tell = { told += it })
+        screen.opened()
+        eventually("the checks run") { said.any { "checks need the recorder" in it } }
+        assertFalse(told.toString(), told.any { "checks need the recorder" in it })
+        eventually("the checks done") { !screen.state.value.checking }
+        screen.runChecks()
+        eventually("told") { told.any { "checks need the recorder" in it } }
+    }
+
+    /** A test call's ending is told on its screen, and only logged over
+     *  another: a watch runs on while the user is elsewhere in JemRec. */
+    @Test fun aTestEndingIsToldOnlyOnItsScreen() {
+        recorder.replies["XR"] = "RESULT 1 state=armed"
+        for (onIt in listOf(false, true)) {
+            said.clear()
+            val told = CopyOnWriteArrayList<String>()
+            AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
+            val screen = AnswerController(context, scope, { said += it }, tell = { told += it }, shown = { onIt })
+            screen.opened()
+            eventually("ended") { said.any { "no test call came" in it } || told.any { "no test call came" in it } }
+            assertEquals(onIt, told.any { "no test call came" in it })
+        }
+    }
+
+    /** The carrier's answer to Wait 30 seconds, in words: until 0.30 its own
+     *  words were said - "null", "error 3", "unchanged off 0". */
+    @Test fun theCarriersAnswerIsSaidInWords() {
+        assertNull(controller.carrierRefusal("set on 30 *8250"))
+        assertEquals("the recorder could not ask your carrier", controller.carrierRefusal(null))
+        assertEquals("your carrier's voicemail is off, so there was nothing to change", controller.carrierRefusal("unchanged off 0"))
+        assertEquals("your carrier did not say when its voicemail answers, so nothing was changed", controller.carrierRefusal("unchanged none"))
+        assertEquals("your carrier did not answer in time", controller.carrierRefusal("error timeout"))
+        assertEquals("your carrier refused the change", controller.carrierRefusal("error 3"))
+    }
+
     /** A take starting - the recorder asked, not yet recording - takes no
      *  preview: the greeting played over the loudspeaker into the new take. */
     @Test fun noPreviewWhileATakeStarts() {

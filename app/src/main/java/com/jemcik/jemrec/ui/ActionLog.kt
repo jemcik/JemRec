@@ -20,13 +20,14 @@ private const val LOG_LIMIT = 8_000
  */
 internal class ActionLog(private val state: MutableStateFlow<UiState>) {
 
-    /** Failures of something the user just did, for a snackbar where they are:
-     *  the log in Diagnostics is no place to learn that a share or a delete
-     *  did not work. */
+    /** The answer to something the user just did - a share or a delete that
+     *  did not work, a test call that could not be armed or must wait - for a
+     *  snackbar where they are: the log in Diagnostics is no place to learn
+     *  it. */
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
-    /** As say, and in a snackbar too: for a failure of something the user
+    /** As say, and in a snackbar too: for the answer to something the user
      *  did just now. */
     fun tell(text: String) {
         say(text)

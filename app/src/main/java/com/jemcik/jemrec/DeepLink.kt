@@ -43,17 +43,13 @@ object DeepLink {
     val pending: StateFlow<Link?> = _pending.asStateFlow()
 
     fun intent(context: Context, kind: Kind, name: String? = null): Intent =
-        Intent(context, MainActivity::class.java)
+        // Into the activity that is already up, if there is one, rather than
+        // a second copy stacked on it.
+        MainActivity.open(context)
             .setAction(ACTION)
             .putExtra(EXTRA_KIND, kind.name)
             .putExtra(EXTRA_NAME, name)
             .putExtra(EXTRA_TOKEN, token(context))
-            // Into the activity that is already up, if there is one, rather
-            // than a second copy stacked on it.
-            .addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
-            )
 
     /** Called by the activity with every intent it is started or re-entered with. */
     fun offer(context: Context, intent: Intent?) {

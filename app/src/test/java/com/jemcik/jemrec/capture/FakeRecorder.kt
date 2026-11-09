@@ -2,6 +2,7 @@ package com.jemcik.jemrec.capture
 
 import android.content.Context
 import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.EOFException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -54,6 +55,10 @@ internal class FakeRecorder(
             "Q" to "BYE",
         ),
     )
+
+    /** The take "GT" sends back - its length, then its bytes - or, null,
+     *  the line [replies] gives it. */
+    @Volatile var take: ByteArray? = null
 
     /** Called before a reply is written, with its key: a recorder that takes
      *  its time. */
@@ -118,7 +123,10 @@ internal class FakeRecorder(
         heard += Heard(name, payload)
         val line = if (command == 'P') pong() else replies[name]
         stall(name)
-        if (line != null) {
+        val fetched = take
+        if (name == "GT" && fetched != null) {
+            DataOutputStream(out).apply { writeInt(fetched.size); write(fetched); flush() }
+        } else if (line != null) {
             out.write("$line\n".toByteArray())
             out.flush()
         }

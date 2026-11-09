@@ -172,10 +172,11 @@ object AnswerDiagnostics {
      * screen that read how it went, or found that no call came, and now
      * asking the caller [asking] about, or done with on null. True for the
      * first screen to take it only: a second screen open on the same test -
-     * a second JemRec window, which until 0.30 the Quick Settings tile and
-     * the media notification could open - read the same result, and acted on
-     * it again: the route moved twice, "Did they hear it?" asked twice. Nor
-     * is a newer test taken, armed since elsewhere.
+     * a second JemRec window, which until 0.30 the tile, the media
+     * notification or a notification's tap could open over the first - read
+     * the same result, and acted on it again: the route moved twice, "Did
+     * they hear it?" asked twice. Nor is a newer test taken, armed since
+     * elsewhere.
      * Written with apply: the lock makes the take once, and preferences are
      * read from memory.
      */

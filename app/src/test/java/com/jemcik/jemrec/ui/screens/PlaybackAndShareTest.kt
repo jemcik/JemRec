@@ -5,10 +5,13 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Looper
 import com.google.common.util.concurrent.Futures
+import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.capture.FakeRecorder
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.ui.MainViewModel
+import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.UiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -205,12 +208,10 @@ class PlaybackAndShareTest : ScreenTest() {
         assertTrue(vm.state.value.log.startsWith("["))
     }
 
-    /** A failure of something done just now goes in a snackbar too, its
-     *  first letter a capital; the log keeps it as said. */
-    /** The answering machine's words are on the screen too, not only in
-     *  Diagnostics' log: "could not arm", "no test call came" and "a call
-     *  in the next three minutes may be answered with your greeting" were
-     *  in the log alone. */
+    /** What answers a tap on the answering machine is on the screen too, not
+     *  only in Diagnostics' log: "could not arm", "no test call came" and "a
+     *  call in the next three minutes may be answered with your greeting"
+     *  were in the log alone. */
     @Test fun anAnsweringMachineMessageIsASnackbarToo() {
         Recordings.override = { emptyList() }
         val vm = viewModel()
@@ -221,6 +222,29 @@ class PlaybackAndShareTest : ScreenTest() {
         assertTrue(vm.state.value.log, vm.state.value.log.contains("] the recorder could not arm a test call"))
     }
 
+    /** ...and its test call's ending, on its screen only: a watch runs on
+     *  while the user is elsewhere in JemRec, where it is logged alone. */
+    @Test fun aTestEndingIsASnackbarOnItsScreenOnly() {
+        Recordings.override = { emptyList() }
+        val recorder = FakeRecorder(RuntimeEnvironment.getApplication())
+        recorder.replies["XR"] = "RESULT 1 state=armed"
+        try {
+            for (screen in listOf(Screen.HOME, Screen.ANSWERING_MACHINE)) {
+                heard.clear()
+                AnswerDiagnostics.noteTestArmed(RuntimeEnvironment.getApplication(), true, System.currentTimeMillis() - 10 * 60_000L)
+                val vm = viewModel(UiState(screen = screen))
+                listen(vm)
+                vm.answer.opened()
+                awaitMain("the ending") { vm.state.value.log.contains("no test call came") }
+                assertEquals(screen.name, screen == Screen.ANSWERING_MACHINE, heard.any { "No test call came" in it })
+            }
+        } finally {
+            recorder.close()
+        }
+    }
+
+    /** A failure of something done just now goes in a snackbar too, its
+     *  first letter a capital; the log keeps it as said. */
     @Test fun aFailureJustNowIsASnackbarToo() {
         Recordings.override = { emptyList() }
         val vm = viewModel()

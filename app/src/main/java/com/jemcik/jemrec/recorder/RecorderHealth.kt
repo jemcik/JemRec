@@ -233,7 +233,7 @@ internal object RecorderHealth {
         }
         val open = PendingIntent.getActivity(
             context, 3401,
-            button?.second ?: Intent(context, MainActivity::class.java),
+            button?.second ?: MainActivity.open(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = AfterCall.problem(context, "JemRec is not recording calls", text, open, button?.first)
