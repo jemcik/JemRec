@@ -78,23 +78,17 @@ import com.jemcik.jemrec.ui.theme.Looks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 /** How long a recording the waveform fill-in could not decode waits before
@@ -107,10 +101,6 @@ private const val RETRY_UNDECODABLE_MS = 30 * 60_000L
  *  tile before it takes a fresh reading anyway: the Honor's took 6 s, and
  *  one that needs Wi-Fi there is none of will not come at all. */
 private const val RECORDER_ELSEWHERE_MS = 30_000L
-
-/** How much diagnostics log to keep. Roughly a screen or two of history,
- *  which is as far back as anyone reads. */
-private const val LOG_LIMIT = 8_000
 
 /** Why Start recorder did not start it, by the cause its revive left; null
  *  is no cause kept - JemRec off, or setup unfinished. */
@@ -152,14 +142,17 @@ class MainViewModel @JvmOverloads constructor(
     private val _state = MutableStateFlow(initial.copy(voipSupported = VoipApps.supported(app)))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    /** The answering machine's settings, greeting and diagnostics. */
-    val answer = AnswerController(app, viewModelScope, ::say, initialAnswer, quiet = { controller?.pause() })
+    /** What the screen says about what it did: Diagnostics' log, snackbars. */
+    private val log = ActionLog(_state)
 
-    /** Failures of something the user just did, for a snackbar where they are:
-     *  the log in Diagnostics is no place to learn that a share or a delete
-     *  did not work. */
-    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val notices: SharedFlow<String> = _notices.asSharedFlow()
+    /** Each action as the busy policy's table says (Action). */
+    private val actions = Actions(_state, viewModelScope, log)
+
+    /** The answering machine's settings, greeting and diagnostics. */
+    val answer = AnswerController(app, viewModelScope, log::say, initialAnswer, quiet = { controller?.pause() })
+
+    /** Failures of something the user just did, for a snackbar where they are. */
+    val notices: SharedFlow<String> = log.notices
 
     /** The switch can be flipped from the Quick Settings tile while this
      *  screen is up, without the screen ever pausing. See RecorderSwitch.observe. */
@@ -210,7 +203,7 @@ class MainViewModel @JvmOverloads constructor(
      * report to external storage, which made sense while there was an
      * acceptance check to sign off and is litter now.
      */
-    fun selfTest() = launchAction("self test") {
+    fun selfTest() = actions.run(Action.SELF_TEST) {
         val result = SelfTest.run(getApplication())
         // Replace, don't stack: the log should be THIS self-test, not a pile of
         // every one before it. Cleared here, once the new result is ready,
@@ -226,7 +219,7 @@ class MainViewModel @JvmOverloads constructor(
      *  recorder's account of the last call (LastCallReport). */
     fun copyCallReport() {
         val app = getApplication<Application>()
-        viewModelScope.launch {
+        actions.run(Action.COPY_REPORT) {
             val text = LastCallReport.text(app, appVersion(app), CaptureDaemon.callReport(app))
             reportToClipboard(app, "JemRec call report", text)
         }
@@ -272,7 +265,7 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun confirmReset() {
         _state.update { it.copy(confirmingReset = false) }
-        launchActionWhenFree("start fresh") {
+        actions.run(Action.START_FRESH) {
             Setup.reset(getApplication())
                 .onSuccess { _state.update { s -> s.copy(resetDone = true) } }
                 .onFailure { say("could not reset: ${it.message}") }
@@ -280,7 +273,7 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /** Work out which setup step we are on, and refresh everything else too. */
-    fun refreshSetup() = launchAction("check setup") { recheckSetup() }
+    fun refreshSetup() = actions.run(Action.CHECK_SETUP) { recheckSetup() }
 
     /**
      * The header's Allow this Wi-Fi, and the alert's: Android asks again, its
@@ -297,9 +290,8 @@ class MainViewModel @JvmOverloads constructor(
     fun allowThisWifi() {
         if (!askingForWifi.compareAndSet(false, true)) return
         starts.begin()
-        viewModelScope.launch {
+        actions.run(Action.ALLOW_THIS_WIFI) {
             try {
-                _state.first { !it.busy }
                 if (!CaptureDaemon.askToAllowNetwork(getApplication())) {
                     say("could not switch Wireless debugging - open it in Developer options and allow this network")
                 }
@@ -320,7 +312,7 @@ class MainViewModel @JvmOverloads constructor(
 
     /** "They are on already", from the Developer options card on a phone that
      *  hides them. See Setup.developerOptions. */
-    fun confirmDeveloperOptions() = launchAction("check setup") {
+    fun confirmDeveloperOptions() = actions.run(Action.DEVELOPER_OPTIONS_ON) {
         Setup.confirmDeveloperOptions(getApplication())
         recheckSetup()
     }
@@ -331,7 +323,7 @@ class MainViewModel @JvmOverloads constructor(
      * recorded is that it was offered (see [openBackgroundSettings] for the
      * other button).
      */
-    fun confirmBackgroundChoice() = launchAction("check setup") {
+    fun confirmBackgroundChoice() = actions.run(Action.BACKGROUND_NOT_NOW) {
         Setup.markBackgroundChoice(getApplication())
         recheckSetup()
     }
@@ -481,7 +473,7 @@ class MainViewModel @JvmOverloads constructor(
         // back here.
         _state.update { it.copy(screen = Screen.HOME, pairingLost = true, pairingRefused = false) }
         viewModelScope.launch {
-            _state.first { !it.busy }
+            actions.free()
             refreshSetup()
         }
     }
@@ -489,10 +481,10 @@ class MainViewModel @JvmOverloads constructor(
     /**
      * Bring the recorder back without holding the screen still while it happens.
      *
-     * Deliberately off launchAction: reviving re-arms Wireless debugging, waits
-     * for adbd, opens an ADB session and starts the daemon, which is seconds -
-     * and launchAction would hold `busy` for all of them, greying out every
-     * control on a screen that is working perfectly well. `starting` is the
+     * Deliberately not an action (Actions): reviving re-arms Wireless
+     * debugging, waits for adbd, opens an ADB session and starts the daemon,
+     * which is seconds - and an action would hold `busy` for all of them,
+     * greying out every control on a screen that is working perfectly well. `starting` is the
      * flag that already exists for exactly this, and the header reads it rather
      * than announcing a failure that is being repaired as it is read.
      */
@@ -535,7 +527,7 @@ class MainViewModel @JvmOverloads constructor(
      * Settings. The shade is a system surface, so it does not disturb the
      * dialog at all - measured.
      */
-    fun startPairingNotification() = launchAction("pair from the shade") {
+    fun startPairingNotification() = actions.run(Action.PAIR_FROM_SHADE) {
         PairingNotification.show(getApplication())
         say("check your notifications - you can type the code there")
     }
@@ -559,13 +551,13 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun reconnect() {
         if (!reconnecting.compareAndSet(false, true)) return
-        launchActionWhenFree("connect") {
+        actions.run(Action.CONNECT) {
             try {
                 val app = getApplication<Application>()
                 repeat(6) {
                     if (lookForAdb(app)) {
                         recheckSetup()
-                        return@launchActionWhenFree
+                        return@run
                     }
                 }
                 recheckSetup()
@@ -592,7 +584,7 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /** The last step of setup, again, after it failed. */
-    fun retryFinish() = launchAction("finish setup") { finishSetupInternal() }
+    fun retryFinish() = actions.run(Action.FINISH_SETUP) { finishSetupInternal() }
 
     /**
      * Start the recorder: Diagnostics' Start recorder.
@@ -605,7 +597,7 @@ class MainViewModel @JvmOverloads constructor(
      * once the recorder is up - so it failed unless a session happened to be
      * open. Why not, when not: the cause the revive left (RecorderHealth).
      */
-    fun bootstrapDaemon() = launchAction("start recorder") {
+    fun bootstrapDaemon() = actions.run(Action.START_RECORDER) {
         val app = getApplication<Application>()
         if (CaptureDaemon.revive(app, request = CaptureDaemon.Request.USER)) {
             say("recorder running on 127.0.0.1:${CaptureDaemon.PORT}")
@@ -790,13 +782,13 @@ class MainViewModel @JvmOverloads constructor(
         // dropped: the record control takes a tap while the app is busy -
         // each opening's check holds busy for seconds - and the tap was
         // dropped without a sign, the control looking as ever.
-        launchActionWhenFree(if (on) "turn on" else "turn off") {
+        actions.run(if (on) Action.TURN_ON else Action.TURN_OFF) {
             try {
                 turned.join()
-                if (RecorderSwitch.isOn(getApplication()) != on) return@launchActionWhenFree
+                if (RecorderSwitch.isOn(getApplication()) != on) return@run
                 // Ask what the world looks like rather than assuming. Called
-                // directly, not via refreshSetup(), because that is a launchAction
-                // and one will not start while this one is running.
+                // directly, not via refreshSetup(), because that is a dropped
+                // action and one will not start while this one is running.
                 recheckSetup()
             } finally {
                 // Whatever happened: "Starting..." outranks "Ready" in the
@@ -822,7 +814,7 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(automatic = automatic) }
         // The daemon decides at off-hook whether to record or to ask first, so
         // it has to be told which the moment this changes.
-        viewModelScope.launch { pushDaemonMode() }
+        actions.run(Action.TELL_RECORDER) { pushDaemonMode() }
     }
 
     private suspend fun pushDaemonMode() = CaptureDaemon.pushMode(getApplication())
@@ -837,13 +829,13 @@ class MainViewModel @JvmOverloads constructor(
      * the switch stays off and says why rather than claiming a yes it cannot
      * act on.
      */
-    fun setHideDebugNotification(hide: Boolean) = launchActionWhenFree("debugging notification") {
+    fun setHideDebugNotification(hide: Boolean) = actions.run(Action.DEBUG_NOTIFICATION) {
         val app = getApplication<Application>()
         if (hide && Setup.isComplete(app) && !DebugNotificationCleaner.accessGranted(app) &&
             !Setup.grantNotificationAccess(app)
         ) {
             _state.update { it.copy(debugNotificationProblem = true) }
-            return@launchActionWhenFree
+            return@run
         }
         DebugNotificationCleaner.choose(app, hide)
         _state.update { it.copy(debugNotificationHidden = hide, debugNotificationProblem = false) }
@@ -907,12 +899,12 @@ class MainViewModel @JvmOverloads constructor(
                 DeepLink.Kind.SELF_TEST -> {
                     MissedCalls.dismiss(app)
                     showScreen(Screen.DIAGNOSTICS)
-                    _state.first { !it.busy }
+                    actions.free()
                     selfTest()
                 }
                 DeepLink.Kind.ALLOW_WIFI -> {
                     _state.update { it.copy(screen = Screen.HOME) }
-                    _state.first { !it.busy }
+                    actions.free()
                     allowThisWifi()
                 }
                 DeepLink.Kind.PAIR_AGAIN -> pairAgain()
@@ -988,7 +980,7 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /** Back out of the trash, as it was. */
-    fun restore(recording: Recording) = launchAction("restore") {
+    fun restore(recording: Recording) = actions.run(Action.RESTORE) {
         when (val result = withContext(Dispatchers.IO) { Trash.restore(getApplication(), recording) }) {
             is DeleteResult.Deleted -> say("restored ${recording.name}")
             is DeleteResult.NeedsConsent -> askAndroid(result.request)
@@ -998,9 +990,9 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /** Recently deleted's Restore all: every recording in it back in the list. */
-    fun restoreAll() = launchAction("restore all") {
+    fun restoreAll() = actions.run(Action.RESTORE_ALL) {
         val all = _state.value.trashed
-        if (all.isEmpty()) return@launchAction
+        if (all.isEmpty()) return@run
         val result = withContext(Dispatchers.IO) { Trash.restoreAll(getApplication(), all) }
         report(all.size, result, "restored")
         refreshNow()
@@ -1019,7 +1011,7 @@ class MainViewModel @JvmOverloads constructor(
         // wait for busy, a recording trashed meanwhile went for good unasked.
         val all = _state.value.trashed
         if (all.isEmpty()) return
-        launchActionWhenFree("delete for good") {
+        actions.run(Action.DELETE_FOR_GOOD) {
             val result = withContext(Dispatchers.IO) { Trash.deleteForGood(getApplication(), all) }
             report(all.size, result, "deleted for good", leaving = true)
             refreshNow()
@@ -1040,7 +1032,7 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /** One of auto-delete's two rules changed: saved, and applied at once. */
-    fun setAutoDelete(afterDays: Int? = null, shorterThan: Int? = null) = launchAction("auto-delete") {
+    fun setAutoDelete(afterDays: Int? = null, shorterThan: Int? = null) = actions.run(Action.AUTO_DELETE) {
         val app = getApplication<Application>()
         afterDays?.let { Retention.setMaxAgeDays(app, it) }
         shorterThan?.let { Retention.setMinSeconds(app, it) }
@@ -1067,15 +1059,12 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /**
-     * The contact the picker returned, added to the rules' list.
-     *
-     * NOT through launchAction. Coming back from the picker resumes the
-     * screen, and the resume's own setup check holds the busy flag - which
-     * launchAction answers by dropping the call. Measured on an emulator:
-     * the contact was picked, and nothing was added.
+     * The contact the picker returned, added to the rules' list - while
+     * busy too (Action.RULE_CONTACT_ADDED): coming back from the picker
+     * resumes the screen, and the resume's own setup check holds busy.
      */
     fun addRuleContact(contact: Uri) {
-        viewModelScope.launch {
+        actions.run(Action.RULE_CONTACT_ADDED) {
             val added = withContext(Dispatchers.IO) { CallRules.add(getApplication(), contact) }
             if (!added) tell("could not add that contact")
             refreshNow()
@@ -1083,7 +1072,7 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     fun removeRuleContact(key: String) {
-        viewModelScope.launch {
+        actions.run(Action.RULE_CONTACT_REMOVED) {
             withContext(Dispatchers.IO) { CallRules.remove(getApplication(), key) }
             refreshNow()
         }
@@ -1102,7 +1091,7 @@ class MainViewModel @JvmOverloads constructor(
             say("the answering machine is off too: it needs exact call tracking")
         }
         answer.reload()
-        viewModelScope.launch {
+        actions.run(Action.TELL_RECORDER) {
             if (!CaptureDaemon.setTracking(app)) {
                 say("the recorder will pick up exact call tracking when it next restarts")
             }
@@ -1117,7 +1106,7 @@ class MainViewModel @JvmOverloads constructor(
         // The last one off stops the caller-name listener; the first one on
         // starts it again, if names were asked for.
         DebugNotificationCleaner.apply(app)
-        viewModelScope.launch {
+        actions.run(Action.TELL_RECORDER) {
             if (!CaptureDaemon.setVoipApps(app)) {
                 say("the recorder will pick up the messenger apps when it next restarts")
             }
@@ -1126,11 +1115,11 @@ class MainViewModel @JvmOverloads constructor(
 
     /** Caller names for messenger calls, from their call notifications. Needs
      *  notification access, granted over ADB like the debugging one. */
-    fun setVoipNames(on: Boolean) = launchAction("messenger caller names") {
+    fun setVoipNames(on: Boolean) = actions.run(Action.MESSENGER_NAMES) {
         val app = getApplication<Application>()
         if (on && !DebugNotificationCleaner.accessGranted(app) && !Setup.grantNotificationAccess(app)) {
             _state.update { it.copy(voipNamesProblem = true) }
-            return@launchAction
+            return@run
         }
         VoipCallNotes.setEnabled(app, on)
         DebugNotificationCleaner.apply(app)
@@ -1143,16 +1132,16 @@ class MainViewModel @JvmOverloads constructor(
         _state.update { it.copy(fileNames = format) }
     }
 
-    fun useDefaultFolder() = launchAction("use default folder") {
+    fun useDefaultFolder() = actions.run(Action.DEFAULT_FOLDER) {
         RecordingStore.clearTree(getApplication())
         say("recordings will go to the standard Recordings folder")
         refresh()
     }
 
-    /** Not through launchAction, for the same reason as addRuleContact: the
-     *  picker's answer arrives as the screen resumes, while its check runs. */
+    /** While busy too, as addRuleContact: the picker's answer arrives as the
+     *  screen resumes, while its check runs (Action.FOLDER_CHOSEN). */
     fun onFolderChosen(uri: Uri) {
-        viewModelScope.launch {
+        actions.run(Action.FOLDER_CHOSEN) {
             withContext(Dispatchers.IO) { RecordingStore.setTree(getApplication(), uri) }
             say("recordings will be saved to the folder you chose")
             refreshNow()
@@ -1470,42 +1459,6 @@ class MainViewModel @JvmOverloads constructor(
         val selectHintSeen: Boolean,
         val tileAdded: Boolean,
     )
-
-    /**
-     * One action at a time. Every entry point funnels through here so that the
-     * busy flag, the connected flag and error reporting cannot drift apart.
-     */
-    private fun launchAction(label: String, block: suspend () -> Unit) {
-        if (_state.value.busy) return
-        viewModelScope.launch { runAction(label, block) }
-    }
-
-    /**
-     * As launchAction, but waits its turn instead of being dropped - for an
-     * action the user has already confirmed. A resume's setup check holds the
-     * busy flag for seconds (longer with the recorder down), and a delete
-     * confirmed meanwhile closed its dialog and did nothing, without a word.
-     */
-    private fun launchActionWhenFree(label: String, block: suspend () -> Unit) {
-        viewModelScope.launch {
-            _state.first { !it.busy }
-            runAction(label, block)
-        }
-    }
-
-    private suspend fun runAction(label: String, block: suspend () -> Unit) {
-        _state.update { it.copy(busy = true) }
-        try {
-            block()
-        } catch (e: CancellationException) {
-            throw e // the screen gone: not a failure to report
-        } catch (t: Throwable) {
-            Log.w("JemRec", "$label failed", t)
-            say("$label failed: ${t.javaClass.simpleName}: ${t.message}")
-        } finally {
-            _state.update { it.copy(busy = false, connected = AdbTransport.lastKnownConnected) }
-        }
-    }
 
     /** Guards against two bring-ups racing when the screen is reopened. */
     private val reviving = AtomicBoolean(false)
@@ -1961,10 +1914,10 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun confirmDeleteSelected() {
         _state.update { it.copy(confirmingDeleteSelected = false) }
-        launchActionWhenFree("delete recordings") {
+        actions.run(Action.DELETE_SELECTED) {
             val current = _state.value
             val doomed = current.recordings.filter { it.name in current.selected }
-            if (doomed.isEmpty()) return@launchActionWhenFree
+            if (doomed.isEmpty()) return@run
             if (current.playingName in current.selected) stopPlayback()
 
             val result = withContext(Dispatchers.IO) {
@@ -1985,29 +1938,7 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    /** As say, and in a snackbar too: for a failure of something the user
-     *  did just now. */
-    private fun tell(text: String) {
-        say(text)
-        _notices.tryEmit(text.replaceFirstChar { it.uppercase() })
-    }
+    private fun tell(text: String) = log.tell(text)
 
-    /** Named `say` rather than `append` on purpose: inside a buildString block
-     *  an `append` member would be shadowed by StringBuilder.append. */
-    private fun say(text: String) {
-        val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-        // NEWEST FIRST. Appending put the answer at the bottom of a log that
-        // grows, so pressing a button and reading the result meant scrolling
-        // past everything that had happened before it - and pressing "Start
-        // recorder" looked like it did nothing at all, because the one line it
-        // wrote was below the fold. A log nobody scrolls to is not feedback.
-        _state.update { current ->
-            // Trimmed rather than cleared by hand. There was a Clear button and
-            // it is gone: with the newest entry at the top there is nothing to
-            // clear PAST, so the button only ever deleted history someone might
-            // have wanted. A cap does the one useful thing it did - stop the
-            // log growing without bound - without asking anyone to press it.
-            current.copy(log = ("[$stamp] $text\n\n" + current.log).take(LOG_LIMIT))
-        }
-    }
+    private fun say(text: String) = log.say(text)
 }
