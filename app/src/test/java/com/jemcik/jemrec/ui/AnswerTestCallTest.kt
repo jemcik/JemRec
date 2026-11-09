@@ -112,6 +112,8 @@ class AnswerTestCallTest {
         controller.startTest(incoming = true)
         eventually("the older one read") { AnswerDiagnostics.results(context)["2G"] != null }
         assertTrue(said.toString(), said.any { "read first" in it })
+        // Long enough for an arming after the read to have reached it.
+        Thread.sleep(500)
         assertFalse(recorder.heard.any { it.key == "XA" })
     }
 
@@ -184,8 +186,8 @@ class AnswerTestCallTest {
 
     /** An outgoing test: the recorder starts the call before it answers, with
      *  Android's `am`, which it runs there with no time limit (its own wakes
-     *  allow `am` ten seconds a try). The answer is waited for, rather than
-     *  "could not arm" said while the call goes out and the test runs
+     *  allow `am` ten seconds a try). The answer is waited for, and the test
+     *  watched, rather than left unanswered as the call goes out and run
      *  unread. */
     @Test fun aSlowArmingOfAnOutgoingTestIsWaitedFor() {
         recorder.stall = { if (it == "XA") Thread.sleep(6_000) }
@@ -434,6 +436,66 @@ class AnswerTestCallTest {
         Thread.sleep(300)
         assertFalse(said.toString(), said.any { "could not be asked" in it })
         assertNull(screen.state.value.askHeard)
+    }
+
+    /** One test armed at a time, whichever screen arms it - JemRec swiped
+     *  away and opened again while the recorder was still arming, say: the
+     *  entry kept is whichever answer came last, and the recorder's state
+     *  whichever arming reached it last, so two at once could be filed under
+     *  each other. */
+    @Test fun oneArmingAtATimeAcrossScreens() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST armed"
+        controller.startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val second = AnswerController(context, other, { said += it })
+            second.startTest(incoming = true)
+            assertTrue(said.toString(), said.any { "being armed" in it })
+            assertNull(second.state.value.test)
+            gate.countDown()
+            eventually("armed") { controller.state.value.test == "armed" }
+            Thread.sleep(300)
+            assertEquals(1, recorder.heard.count { it.key == "XA" })
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** Stopped, a preview can be played again at once: the stopped one held
+     *  every tap off until its length was out. */
+    @Test fun aStoppedPreviewPlaysAgain() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 10))
+        val made = java.util.concurrent.atomic.AtomicInteger()
+        val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm -> made.incrementAndGet(); Greeting.preview(pcm) })
+        screen.togglePreview()
+        eventually("playing") { screen.state.value.playing }
+        screen.togglePreview()
+        assertFalse(screen.state.value.playing)
+        screen.togglePreview()
+        eventually("playing again") { screen.state.value.playing }
+        assertEquals(2, made.get())
+        screen.togglePreview()
+    }
+
+    /** A take starting - the recorder asked, not yet recording - takes no
+     *  preview: the greeting played over the loudspeaker into the new take. */
+    @Test fun noPreviewWhileATakeStarts() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        val made = java.util.concurrent.atomic.AtomicInteger()
+        val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm -> made.incrementAndGet(); Greeting.preview(pcm) })
+        screen.startTake()
+        eventually("the take asked") { recorder.heard.any { it.key == "GR" } }
+        screen.togglePreview()
+        Thread.sleep(500)
+        assertEquals(0, made.get())
+        assertFalse(screen.state.value.playing)
+        gate.countDown()
     }
 
     /** Two taps on the greeting quicker than its file is read: one preview.

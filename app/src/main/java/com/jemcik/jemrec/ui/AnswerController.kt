@@ -262,8 +262,10 @@ class AnswerController(
             return
         }
         // One being started - its file still being read - is the one: a
-        // second made then played on under it, and was never let go.
-        if (previewing?.isActive == true) return
+        // second made then played on under it, and was never let go. Nor
+        // while a take starts: played over the loudspeaker, the greeting
+        // went into the new one.
+        if (previewing?.isActive == true || take?.isActive == true) return
         quiet()
         previewing = scope.launch {
             // Read where it may be gone: deleted just then (on a second
@@ -298,6 +300,11 @@ class AnswerController(
     }
 
     private fun stopPreview() {
+        // The preview's wait as well, and one still being started: left, it
+        // held every tap off until its length was out, and a take could
+        // start under it.
+        previewing?.cancel()
+        previewing = null
         preview?.let { runCatching { it.stop(); it.release() } }
         preview = null
         _state.update { it.copy(playing = false) }
@@ -356,11 +363,20 @@ class AnswerController(
             say("an emergency number is never called for a test")
             return
         }
+        // One arming at a time, whichever screen makes it - JemRec swiped
+        // away and opened again while the recorder armed, say: the entry
+        // keeps whichever answer came last, and the recorder whichever
+        // arming reached it last, so two at once were filed under each other.
+        if (!arming.compareAndSet(false, true)) {
+            say("a test call is being armed already")
+            return
+        }
         // A test from before still to be read is read first. Armed by the
         // recorder and not answered, the new one would leave the old entry
         // to be read with its result (the recorder's result names no
         // arming).
         if (AnswerDiagnostics.pendingTest(app) is AnswerDiagnostics.PendingTest.Armed) {
+            arming.set(false)
             say("the last test call is read first; start the next one when it is")
             readPendingTest()
             return
@@ -373,21 +389,25 @@ class AnswerController(
         // with the screen closed meanwhile (from Recents) the recorder arms
         // all the same and answers the caller, and the next screen reads the
         // test only if it was noted.
-        val arming = outliving.async {
-            // The test plays the greeting the recorder has, on the route the
-            // recorder has: both brought up to date first.
-            CaptureDaemon.syncGreeting(app)
-            CaptureDaemon.setAnswering(app)
-            val reply = CaptureDaemon.armTest(app, incoming, number)
-            // The recorder's own windows: three minutes for a caller, and
-            // fifteen seconds for the call it dials to go out.
-            val window = if (incoming) 180_000L else 15_000L
-            val until = System.currentTimeMillis() + window
-            if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
-            Triple(reply, window, until)
+        val armed = outliving.async {
+            try {
+                // The test plays the greeting the recorder has, on the route
+                // the recorder has: both brought up to date first.
+                CaptureDaemon.syncGreeting(app)
+                CaptureDaemon.setAnswering(app)
+                val reply = CaptureDaemon.armTest(app, incoming, number)
+                // The recorder's own windows: three minutes for a caller, and
+                // fifteen seconds for the call it dials to go out.
+                val window = if (incoming) 180_000L else 15_000L
+                val until = System.currentTimeMillis() + window
+                if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
+                Triple(reply, window, until)
+            } finally {
+                arming.set(false)
+            }
         }
         scope.launch {
-            val (reply, window, until) = arming.await()
+            val (reply, window, until) = armed.await()
             if (reply != TestArming.ARMED) {
                 _state.update { it.copy(test = null) }
                 say(
@@ -591,6 +611,9 @@ class AnswerController(
     private companion object {
         /** For what has to reach the recorder after the screen is gone. */
         val outliving = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /** A test call being armed, by any screen: one at a time. */
+        val arming = java.util.concurrent.atomic.AtomicBoolean(false)
 
         const val TAG = "JemRec"
         /** The recorder's three seconds to answer a test, its wait of up to
