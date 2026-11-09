@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -63,6 +63,7 @@ fun HomeScreen(
     state: UiState,
     vm: MainViewModel,
     askForCallLog: () -> Unit,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
     narrowingAside: Boolean = false,
 ) {
@@ -130,7 +131,6 @@ fun HomeScreen(
     // it was friction in front of data that was right there. As the last rows
     // come into view the window quietly widens; with nothing to fetch there is
     // no spinner, and it stops on its own once the whole filtered list is shown.
-    val listState = rememberLazyListState()
     // Not before the list is measured: with nothing laid out yet, "the last
     // row in view" read as row 0 of 0 - near the end - so every time the tab
     // was shown anew a page came, and select-all then took rows nobody had

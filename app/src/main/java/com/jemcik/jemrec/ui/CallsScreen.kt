@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +47,7 @@ fun CallsScreen(
     state: UiState,
     vm: MainViewModel,
     askForCallLog: () -> Unit,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
     narrowingAside: Boolean = false,
 ) {
@@ -93,7 +94,6 @@ fun CallsScreen(
         buildMap { for ((_, rows) in days) for ((key, call) in rows) call.recording?.let { putIfAbsent(it.name, key) } }
     }
     val narrowed = narrowingOf(state, vm, calls = true)
-    val listState = rememberLazyListState()
     val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
 
     // No selection here: a recorded call's row is its Recordings row in

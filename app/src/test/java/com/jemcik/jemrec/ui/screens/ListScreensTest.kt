@@ -1,6 +1,24 @@
 package com.jemcik.jemrec.ui.screens
 
 import android.content.pm.PackageManager
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.WindowInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.unit.IntSize
+import com.jemcik.jemrec.ui.LocalNow
+import com.jemcik.jemrec.ui.theme.JemRecTheme
+import com.jemcik.jemrec.ui.theme.LookChoice
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasSetTextAction
@@ -158,5 +176,75 @@ class ListScreensTest : ScreenTest() {
         settle(vm)
         compose.waitForIdle()
         assertEquals(40, vm.state.value.visibleCount)
+    }
+
+    /**
+     * Turned so the header goes beside the list, or back, the list stays
+     * where it was scrolled to - turning the phone remakes the screen, its
+     * places restored from what it saved. The list was drawn from two
+     * branches, upright and on its side, and each kept a place of its own:
+     * turned, it came back at its top.
+     */
+    @Test fun turningThePhoneKeepsTheListWhereItWas() {
+        val many = List(40) { i -> Fixtures.recordings()[0].copy(name = "20261021_${"%06d".format(100000 + i)}_in.ogg") }
+        val state = Fixtures.ready().copy(recordings = many, visibleCount = 40)
+        val vm = viewModel(state)
+        // The phone's window, upright: 360 x 800 dp at 1.5x.
+        var window by mutableStateOf(IntSize(540, 1200))
+        val restoring = StateRestorationTester(compose)
+        restoring.setContent {
+            val real = LocalWindowInfo.current
+            val turned = remember {
+                object : WindowInfo {
+                    override val isWindowFocused get() = real.isWindowFocused
+                    override val containerSize get() = window
+                }
+            }
+            CompositionLocalProvider(LocalNow provides { Fixtures.NOW }, LocalWindowInfo provides turned) {
+                JemRecTheme(LookChoice()) {
+                    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+                        AppScaffold(state, vm)
+                    }
+                }
+            }
+        }
+        fun scrolled() = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange].value()
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(20)
+        compose.waitForIdle()
+        assertTrue("scrolled", scrolled() > 0f)
+
+        // On its side: the screen remade, the header beside the list.
+        window = IntSize(1200, 540)
+        restoring.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+        assertTrue("the panel is there", compose.onAllNodesWithText("Search").fetchSemanticsNodes().isNotEmpty())
+        assertTrue("still scrolled on its side", scrolled() > 0f)
+
+        // And upright again.
+        window = IntSize(540, 1200)
+        restoring.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+        assertTrue("still scrolled upright", scrolled() > 0f)
+    }
+
+    /** ...while another tab, and back, starts the list at its top, as it did. */
+    @Test fun anotherTabAndBackStartsTheListAtItsTop() {
+        val many = List(40) { i -> Fixtures.recordings()[0].copy(name = "20261021_${"%06d".format(100000 + i)}_in.ogg") }
+        Recordings.override = { many }
+        val vm = viewModel(Fixtures.ready().copy(recordings = many, visibleCount = 40))
+        showApp(vm)
+        fun scrolled() = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange].value()
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(20)
+        compose.waitForIdle()
+        assertTrue(scrolled() > 0f)
+        vm.showTab(HomeTab.CALLS)
+        settle(vm)
+        compose.waitForIdle()
+        vm.showTab(HomeTab.RECORDINGS)
+        settle(vm)
+        compose.waitForIdle()
+        assertEquals(0f, scrolled())
     }
 }

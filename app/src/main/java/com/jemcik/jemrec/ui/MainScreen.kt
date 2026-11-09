@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
@@ -279,11 +280,20 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
             // takes the padding and fills the area itself. Setup and Settings are
             // short, static content, so they keep the plain page scroll.
             if (ready && !offHome) {
+                // Each tab's place in its list, held here, above the two ways
+                // the list is drawn below - upright, and beside the header on
+                // a phone on its side - so turning the phone, which remakes
+                // the screen and restores what it saved, finds the list where
+                // it was. Held in each of them, it was a place of each
+                // branch's, and a turn brought the list back to its top. A
+                // place per tab, as before: another tab, or Settings and back,
+                // starts at the top.
+                val listState = key(state.homeTab) { rememberLazyListState() }
                 val list = @Composable { modifier: Modifier, narrowingAside: Boolean ->
                     if (state.homeTab == HomeTab.CALLS) {
-                        CallsScreen(state, vm, askForCallLog, modifier = modifier, narrowingAside = narrowingAside)
+                        CallsScreen(state, vm, askForCallLog, listState, modifier = modifier, narrowingAside = narrowingAside)
                     } else {
-                        HomeScreen(state, vm, askForCallLog, modifier = modifier, narrowingAside = narrowingAside)
+                        HomeScreen(state, vm, askForCallLog, listState, modifier = modifier, narrowingAside = narrowingAside)
                     }
                 }
                 if (aside) {
