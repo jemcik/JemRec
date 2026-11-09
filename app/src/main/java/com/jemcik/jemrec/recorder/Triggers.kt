@@ -14,7 +14,8 @@ internal enum class Trigger {
     WIFI_BACK,
 
     /** The app's activity is created, or brought forward by an opening - a
-     *  plain notification, the tile, the launcher (MainActivity.cameIn). */
+     *  plain notification, the tile, the launcher with JemRec on top
+     *  (MainActivity.cameIn). */
     APP_OPEN,
 
     /** The home screen's look at where setup stands, at every resume

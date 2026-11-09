@@ -397,18 +397,20 @@ object DaemonClient {
      * it lacks it or has another, and loses its own when the app has none.
      * The daemon's copy survives a restart of the daemon, but not every way
      * a daemon can be replaced, and a greeting that silently went missing
-     * would turn the answering machine off without a word.
+     * would turn the answering machine off without a word. True when the
+     * recorder has the app's greeting, or none as the app has none.
      */
-    suspend fun syncGreeting(context: Context) {
-        val there = greetingBytes(context) ?: return
+    suspend fun syncGreeting(context: Context): Boolean {
+        val there = greetingBytes(context) ?: return false
         val here = Greeting.file(context)
-        when {
+        return when {
             // Read where it may be gone: deleted between the look and the
             // read, it threw, and nothing caught it.
             Greeting.present(context) && there != here.length() ->
-                runCatching { here.readBytes() }.getOrNull()?.let { uploadGreeting(context, it) }
+                runCatching { here.readBytes() }.getOrNull()?.let { uploadGreeting(context, it) } ?: false
             !Greeting.present(context) && there > 0 ->
-                ask(context, COMMAND_GREETING, byteArrayOf('D'.code.toByte()))
+                ask(context, COMMAND_GREETING, byteArrayOf('D'.code.toByte())) != null
+            else -> true
         }
     }
 

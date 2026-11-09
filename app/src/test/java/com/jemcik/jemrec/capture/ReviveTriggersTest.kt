@@ -140,6 +140,8 @@ class ReviveTriggersTest {
         activity.newIntent(DeepLink.home(context))
         assertEquals(1, work.unique(NOW).size)
         activity.destroy()
+        // Not left for a later test's screen to take.
+        DeepLink.consumed()
     }
 
     @Test fun openingTheAppWithJemRecOffArmsNothing() {

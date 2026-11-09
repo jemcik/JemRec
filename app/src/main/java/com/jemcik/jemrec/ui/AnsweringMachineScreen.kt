@@ -59,7 +59,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
     val haptics = LocalHapticFeedback.current
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
 
-    LaunchedEffect(Unit) { vm.answer.opened() }
+    LaunchedEffect(Unit) { vm.answeringMachineOpened() }
     // Back at the front: where a test kept when its watch ended unanswered,
     // or still under way, stands.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.answer.readPendingTest() }
@@ -274,6 +274,9 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                     },
                     summary = when {
                         a.recordingTake -> "Speak now. Tap Stop when you are done (${com.jemcik.jemrec.answering.Greeting.MAX_SECONDS} seconds at most)."
+                        // Asked to start, or to stop, and not yet answered:
+                        // no "Tap to play it" on a row that takes no tap.
+                        a.takeListening -> "Waiting for the recorder..."
                         a.greetingProblem != null -> a.greetingProblem
                         a.greetingSeconds != null ->
                             "${seconds((a.greetingSeconds ?: 0.0).toInt().coerceAtLeast(1))}. " +

@@ -105,12 +105,13 @@ class AnswerController(
     /** The greeting's player, made for each preview: a test counts them. */
     private val previewOf: (ByteArray) -> AudioTrack? = Greeting::preview,
     /** A snackbar as well as [say]'s line in Diagnostics' log: for what
-     *  answers a tap on this screen, and for a test call's settled ending -
-     *  no call came, the recorder restarted, the verdict's words - while this
-     *  screen is shown ([shown]). The rest - the checks run on opening, a
-     *  test kept for the next opening ("still going on", "could not be
-     *  asked"), a word to the recorder that did not reach it - is the log's
-     *  alone, as every word here was until 0.30. */
+     *  answers a tap on this screen, and - while this screen is shown
+     *  ([shown]) - for a test call's settled ending (no call came, the
+     *  recorder restarted, the verdict's words) and a setting that did not
+     *  reach the recorder. The rest - the checks run on opening, a test kept
+     *  for the next opening ("still going on", "could not be asked"), a take
+     *  let go as the screen was left - is the log's alone, as every word
+     *  here was until 0.30. */
     private val tell: (String) -> Unit = say,
     /** This screen is the one shown: a test call's ending is told then,
      *  and only logged over another. */
@@ -190,7 +191,7 @@ class AnswerController(
     private fun push() {
         scope.launch {
             if (!CaptureDaemon.setAnswering(app)) {
-                say("the recorder will pick up the answering machine when it next restarts")
+                told("the recorder will pick up the answering machine when it next restarts")
             }
         }
     }
@@ -233,7 +234,7 @@ class AnswerController(
     /** Start recording a greeting - on the recorder, which may use the
      *  microphone; this app holds no permission to. */
     fun startTake() {
-        if (take?.isActive == true || _state.value.processingTake || _state.value.takeListening) return
+        if (take?.isActive == true || _state.value.processingTake) return
         stopPreview()
         quiet()
         _state.update { it.copy(takeListening = true) }
@@ -265,7 +266,7 @@ class AnswerController(
             try {
                 processTake()
             } finally {
-                _state.update { it.copy(processingTake = false, takeListening = false) }
+                _state.update { it.copy(processingTake = false) }
             }
         }
     }
@@ -273,9 +274,13 @@ class AnswerController(
     /** The stopped take fetched from the recorder, made a greeting of, saved
      *  and sent back. */
     private suspend fun processTake() {
-        CaptureDaemon.stopTake(app)
-        // Stopped: the microphone is shut, and a preview cannot reach the take.
-        _state.update { it.copy(takeListening = false) }
+        // Answered, the microphone is shut, and a preview cannot reach the
+        // take; not answered, the recorder may record on to its own limit.
+        if (CaptureDaemon.stopTake(app) != null) {
+            _state.update { it.copy(takeListening = false) }
+        } else {
+            scope.launch { untilTheRecorderStopsByItself() }
+        }
         val pcm = CaptureDaemon.fetchTake(app)
         val processed = withContext(Dispatchers.Default) { pcm?.let(Greeting::process) }
         when (processed) {
@@ -296,13 +301,55 @@ class AnswerController(
                 _state.update { it.copy(greetingSeconds = processed.seconds, greetingProblem = null) }
                 push()
             }
-            Greeting.Take.Silent, null -> _state.update {
+            // Not sent at all - the recorder restarted, a socket cut: no
+            // word of the voice, which "Nothing was heard" blamed.
+            null -> _state.update {
+                it.copy(greetingProblem = "The recorder did not send the take. Try again.")
+            }
+            Greeting.Take.Silent -> _state.update {
                 it.copy(greetingProblem = "Nothing was heard. Hold the phone as for a call, and speak.")
             }
             Greeting.Take.TooShort -> _state.update {
                 it.copy(greetingProblem = "That was too short for a greeting. Try again.")
             }
         }
+    }
+
+    /** A take's microphone held until the recorder's own limit - thirty
+     *  seconds from its start - when Stop went unanswered. */
+    private suspend fun untilTheRecorderStopsByItself() {
+        val limit = _state.value.takeStartedAt + Greeting.MAX_SECONDS * 1000L + 1_000L
+        delay((limit - System.currentTimeMillis()).coerceAtLeast(0))
+        _state.update { it.copy(takeListening = false) }
+    }
+
+    /** The take stopped on the recorder from outside this screen's scope -
+     *  the screen gone, or left - and the microphone held until it answers,
+     *  or its own limit. */
+    private fun stopOnTheRecorder() {
+        outliving.launch {
+            if (runCatching { CaptureDaemon.stopTake(app) }.getOrNull() != null) {
+                _state.update { it.copy(takeListening = false) }
+            } else {
+                untilTheRecorderStopsByItself()
+            }
+        }
+    }
+
+    /**
+     * The screen left - Back, a link to another: the greeting's preview
+     * stops, and a take still being started or recorded is stopped on the
+     * recorder and not kept. It went on unseen, and over a call played on
+     * the loudspeaker meanwhile, saved that call as the greeting every caller
+     * hears. A take stopped and being made a greeting of finishes.
+     */
+    fun left() {
+        stopPreview()
+        if (!_state.value.takeListening || _state.value.processingTake) return
+        take?.cancel()
+        _state.update { it.copy(recordingTake = false) }
+        stopOnTheRecorder()
+        say("the greeting's take was stopped as its screen was left, and not kept")
     }
 
     fun togglePreview() {
@@ -347,16 +394,14 @@ class AnswerController(
      * mid-take, the recorder went on recording the microphone for up to
      * thirty seconds, and refused a new take until then. The take is told to
      * stop in a scope of its own, as this screen's has ended by now, and is
-     * not kept. A Record tapped a moment before - the recorder's yes not back
-     * yet - is not caught: the stop could reach the recorder before the start.
+     * not kept: recording, asked to start, or Stop tapped and not yet
+     * answered - a stop not yet sent went with the screen. One sent before
+     * the recorder's yes to Record can reach it before the start, and the
+     * take then runs to its own limit.
      */
     fun close() {
         stopPreview()
-        // Recording, or Stop tapped and not yet answered: a stop not yet sent
-        // went with the screen, and the microphone stayed open.
-        if (_state.value.takeListening) {
-            outliving.launch { runCatching { CaptureDaemon.stopTake(app) } }
-        }
+        if (_state.value.takeListening) stopOnTheRecorder()
     }
 
     private fun stopPreview() {
@@ -377,8 +422,12 @@ class AnswerController(
         AnsweringMachine.setEnabled(app, false)
         _state.update { it.copy(greetingSeconds = null, enabled = false) }
         scope.launch {
-            CaptureDaemon.syncGreeting(app)
-            CaptureDaemon.setAnswering(app)
+            val dropped = CaptureDaemon.syncGreeting(app)
+            val off = CaptureDaemon.setAnswering(app)
+            // Missed, the recorder answered calls with the deleted greeting,
+            // without a word, until it next took JemRec's settings - at its
+            // next start (Revive's pushMode).
+            if (!dropped || !off) tell("the recorder will drop the greeting when it next restarts")
         }
     }
 
@@ -678,10 +727,12 @@ class AnswerController(
     internal fun carrierRefusal(answer: String?): String? {
         val code = answer?.removePrefix("error ")?.toIntOrNull()
         return when {
-            answer == null -> "the recorder could not be asked"
+            // The app's own wait ran out, or no recorder: the change may have
+            // gone through all the same.
+            answer == null -> "no answer came from the recorder; ask your carrier again to see if it took"
             answer.startsWith("set ") -> null
             answer.startsWith("unchanged off") -> "your carrier's voicemail is off, so there was nothing to change"
-            answer.startsWith("unchanged error") -> "the recorder could not read the phone's forwarding, so nothing was changed"
+            answer.startsWith("unchanged error") -> "the phone's forwarding could not be read, so nothing was changed"
             answer.startsWith("unchanged") -> "your carrier did not say when its voicemail answers, so nothing was changed"
             answer == "error timeout" -> "no answer came in time"
             // TelephonyManager.CallForwardingInfoCallback's results, read from
@@ -690,8 +741,9 @@ class AnswerController(
             code == 2 -> "the phone's fixed dialing numbers did not allow the change"
             code == 3 -> "this phone or carrier does not take this change"
             code != null -> "the change did not go through, and no reason was given"
-            // Not the carrier's: the phone would not let the recorder ask.
-            else -> "the phone did not let the recorder make the change"
+            // Not a result of the call's at all: it could not be made - an
+            // exception through the recorder's reflection, no telephony.
+            else -> "the recorder could not make the change on this phone"
         }
     }
 

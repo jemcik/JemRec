@@ -243,6 +243,26 @@ class PlaybackAndShareTest : ScreenTest() {
         }
     }
 
+    /** The answering machine's screen left while a take records - here by a
+     *  plain tap's link - stops the take on the recorder. */
+    @Test fun leavingTheAnsweringMachineStopsATake() {
+        Recordings.override = { emptyList() }
+        val recorder = FakeRecorder(RuntimeEnvironment.getApplication())
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        try {
+            val vm = viewModel(UiState(screen = Screen.ANSWERING_MACHINE))
+            vm.answeringMachineOpened()
+            vm.answer.startTake()
+            awaitMain("recording") { vm.answer.state.value.recordingTake }
+            vm.open(com.jemcik.jemrec.DeepLink.Link(com.jemcik.jemrec.DeepLink.Kind.HOME, null))
+            awaitMain("stopped") { recorder.heard.any { it.key == "GS" } }
+            assertFalse(vm.answer.state.value.recordingTake)
+        } finally {
+            recorder.close()
+        }
+    }
+
     /** A failure of something done just now goes in a snackbar too, its
      *  first letter a capital; the log keeps it as said. */
     @Test fun aFailureJustNowIsASnackbarToo() {

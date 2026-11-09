@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui
 
+import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -17,6 +18,8 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowAppTask
 
 /**
  * One window, by JemRec's own ways in: the Quick Settings tile, the media
@@ -65,22 +68,39 @@ class OneWindowTest {
     }
 
     /** The launcher over JemRec's task begun another way - a notification,
-     *  the tile - with a picker on top makes a new window: it goes at once,
-     *  and the task is left as it was. As the task's first, it stays. */
+     *  the tile - with a picker on top makes a new window (measured on the
+     *  Android 12 and 17 AVDs): it goes at once, and the task is left as it
+     *  was. As the task's first, or started into another app's task, it
+     *  opens as any window. */
     @Test fun theLauncherMakesNoSecondWindow() {
         val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(ComponentName(app, MainActivity::class.java))
         val over = Robolectric.buildActivity(MainActivity::class.java, launcher)
         shadowOf(over.get()).setIsTaskRoot(false)
+        val jemRecs = ShadowAppTask.newInstance()
+        Shadow.extract<ShadowAppTask>(jemRecs).setTaskInfo(
+            ActivityManager.RecentTaskInfo().apply {
+                taskId = over.get().taskId
+                baseActivity = ComponentName(app, MainActivity::class.java)
+            },
+        )
+        shadowOf(app.getSystemService(ActivityManager::class.java)).setAppTasks(listOf(jemRecs))
         over.create()
         assertTrue(over.get().isFinishing)
-        // The task's first opens as any window: it arms the keep-alive.
+        // Opening as any window arms what an opening arms: WorkManager's.
         androidx.work.testing.WorkManagerTestInitHelper.initializeTestWorkManager(app)
         val first = Robolectric.buildActivity(MainActivity::class.java, launcher)
         shadowOf(first.get()).setIsTaskRoot(true)
         first.create()
         assertFalse(first.get().isFinishing)
         first.destroy()
+        // In another app's task: no task of JemRec's under it.
+        shadowOf(app.getSystemService(ActivityManager::class.java)).setAppTasks(emptyList())
+        val elsewhere = Robolectric.buildActivity(MainActivity::class.java, launcher)
+        shadowOf(elsewhere.get()).setIsTaskRoot(false)
+        elsewhere.create()
+        assertFalse(elsewhere.get().isFinishing)
+        elsewhere.destroy()
     }
 
     /** Nothing else in the app starts the screen: a way in made without

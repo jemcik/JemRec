@@ -1206,8 +1206,8 @@ def one_window():
     from a notification, so the task's first intent is not the launcher's -
     the same way in again and the tile's long press, which Android starts,
     leave one main screen; a folder picker opened over it stays when the
-    launcher is tapped (the window the launcher makes then goes at once), and
-    JemRec's own way in finishes it."""
+    launcher's intent comes (`am start`, as a launcher sends it; the window it
+    makes then goes at once), and JemRec's own way in finishes it."""
     launcher = f"am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n {PKG}/.MainActivity"
     try:
         sh("input keyevent KEYCODE_WAKEUP")

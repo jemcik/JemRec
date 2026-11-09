@@ -70,6 +70,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.capture.FakeRecorder
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.ui.AnswerUi
@@ -384,10 +385,33 @@ class BehaviourTest : ScreenTest() {
         shown.value = viewModel(state, AnswerUi(greetingSeconds = 6.0, takeListening = true))
         compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Delete").assertIsNotEnabled()
-        compose.onNodeWithText("Tap to play it", substring = true).assertHasNoClickAction()
+        // No "Tap to play it" on a row that takes no tap.
+        compose.onNodeWithText("Waiting for the recorder...").assertHasNoClickAction()
+        compose.onAllNodesWithText("Tap to play it", substring = true).assertCountEquals(0)
         shown.value = viewModel(state, AnswerUi(greetingSeconds = 6.0))
         compose.onNodeWithText("Record again").performScrollTo().assertIsEnabled()
         compose.onNodeWithText("Delete").assertIsEnabled()
+    }
+
+    /** Back from the answering machine with a take recording: the screen,
+     *  opened, watches for being left, and the take is stopped on the
+     *  recorder - it went on unseen, and saved whatever played as the
+     *  greeting. */
+    @Test fun backFromTheAnsweringMachineStopsATake() {
+        val recorder = FakeRecorder(RuntimeEnvironment.getApplication())
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        try {
+            val vm = viewModel(Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE))
+            showApp(vm)
+            vm.answer.startTake()
+            awaitMain("recording") { vm.answer.state.value.recordingTake }
+            vm.back()
+            compose.waitForIdle()
+            awaitMain("the take stopped") { recorder.heard.any { it.key == "GS" } }
+        } finally {
+            recorder.close()
+        }
     }
 
     /** A test armed before and read late - its window over as the screen

@@ -52,9 +52,10 @@ object DeepLink {
             .putExtra(EXTRA_TOKEN, token(context))
 
     /**
-     * A plain tap - a notification without a button, the tile: the recordings
-     * list, as a fresh window showed it until 0.30, when each of these opened
-     * one. Its own identity, so its PendingIntent is never one of another
+     * A plain tap - a notification without a button, the tile, the media
+     * notification: the recordings list, nothing narrowing it and nothing
+     * selected; until 0.30 each of these opened a window of its own on that
+     * list. Its own identity, so its PendingIntent is never one of another
      * link's.
      */
     fun home(context: Context): Intent = intent(context, Kind.HOME).setIdentifier("home")

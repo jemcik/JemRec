@@ -1,5 +1,7 @@
 package com.jemcik.jemrec
 
+import android.app.ActivityManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -27,9 +29,13 @@ class MainActivity : ComponentActivity() {
         // The launcher, over JemRec's task begun another way (a notification,
         // the tile) with a picker on top, makes a new window rather than
         // bringing the task forward: the task's first intent is not the
-        // launcher's. Gone at once, it leaves the task as it was - the picker
-        // on top - as the launcher does for a task it began.
-        if (!isTaskRoot && intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+        // launcher's (measured on the Android 12 and 17 AVDs, 2026-11-08).
+        // Gone at once, it leaves the task as it was - the picker on top - as
+        // the launcher does for a task it began. Only over JemRec's own
+        // window: started into another app's task, it opens there as ever.
+        if (!isTaskRoot && intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER) &&
+            overJemRec()
+        ) {
             finish()
             return
         }
@@ -64,6 +70,14 @@ class MainActivity : ComponentActivity() {
         if (!DeepLink.leadsElsewhere(intent)) cameIn()
         DeepLink.offer(this, intent)
     }
+
+    /** This window's task is one JemRec's own screen began. */
+    private fun overJemRec(): Boolean = runCatching {
+        val home = ComponentName(this, MainActivity::class.java)
+        getSystemService(ActivityManager::class.java).appTasks.any { task ->
+            task.taskInfo?.let { it.taskId == taskId && it.baseActivity == home } == true
+        }
+    }.getOrDefault(false)
 
     /** What each way in does, a new window or the one there is. */
     private fun cameIn() {

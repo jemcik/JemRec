@@ -264,8 +264,9 @@
           there is comes forward, its intent through onNewIntent, and what is
           on top of it in its task (a picker opened from JemRec) is finished.
           singleTop catches the tile's long press, which Android starts, when
-          JemRec is on top. The launcher only brings the task forward, as it
-          always did: a picker left open is still there. Not singleTask: that
+          JemRec is on top. The launcher brings the task forward with a picker
+          left open still there; over a task begun another way the window it
+          makes goes at once (MainActivity.onCreate). Not singleTask: that
           finished the picker, a permission's question or Android's "delete
           this recording?" on a tap of the launcher too (the author's choice,
           2026-11-08).

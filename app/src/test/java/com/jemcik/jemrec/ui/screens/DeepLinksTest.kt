@@ -174,10 +174,32 @@ class DeepLinksTest : ScreenTest() {
      *  forward on Theme, with no header to say why. */
     @Test fun aPlainTapOpensTheRecordingsList() {
         Recordings.override = { emptyList() }
-        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.THEME, homeTab = HomeTab.CALLS))
+        val vm = viewModel(
+            UiState(
+                step = SetupStep.READY, screen = Screen.THEME, homeTab = HomeTab.CALLS,
+                recordingsNarrowing = RecordingsNarrowing(kept = true), selecting = true, selected = setOf("a.ogg"),
+            ),
+        )
         vm.open(DeepLink.Link(DeepLink.Kind.HOME, null))
         awaitMain("the list") { vm.state.value.screen == Screen.HOME }
-        assertEquals(HomeTab.RECORDINGS, vm.state.value.homeTab)
+        val s = vm.state.value
+        assertEquals(HomeTab.RECORDINGS, s.homeTab)
+        // Nothing narrowing it, nothing selected: the media notification's
+        // row is on it.
+        assertEquals(RecordingsNarrowing(), s.recordingsNarrowing)
+        assertFalse(s.selecting)
+    }
+
+    /** A link lets a question left open go: one that changed the screen left
+     *  "Start fresh?" or "Delete all for good?" to come back unasked on the
+     *  next visit - one reflex tap deleting for good. */
+    @Test fun aLinkLetsAQuestionLeftOpenGo() {
+        Recordings.override = { emptyList() }
+        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS, confirmingReset = true, confirmingEmptyTrash = true))
+        vm.open(DeepLink.Link(DeepLink.Kind.HOME, null))
+        awaitMain("the list") { vm.state.value.screen == Screen.HOME }
+        assertFalse(vm.state.value.confirmingReset)
+        assertFalse(vm.state.value.confirmingEmptyTrash)
     }
 
     /** Pair again: home, on the pairing step's way back. */

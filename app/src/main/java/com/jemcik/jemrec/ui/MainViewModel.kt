@@ -27,6 +27,11 @@ import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -99,6 +104,33 @@ class MainViewModel @JvmOverloads constructor(
         app, viewModelScope, log::say, initialAnswer, quiet = playback::pause,
         tell = log::tell, shown = { _state.value.screen == Screen.ANSWERING_MACHINE },
     )
+
+    /** Which screen is shown, watched for the answering machine's to learn
+     *  it was left. A scope of its own, ended with the view model: a watch
+     *  never ends, and the view model's own work is waited for. */
+    private val watching = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var leaving: Job? = null
+
+    /**
+     * The answering machine's screen opened: its own opening, and a watch for
+     * it being left - Back, a link - which stops its preview and a take still
+     * recording (AnswerController.left): a take went on unseen, and saved
+     * whatever was playing as the greeting. Started here rather than with the
+     * view model, which tests make with no main thread.
+     */
+    fun answeringMachineOpened() {
+        answer.opened()
+        if (leaving?.isActive == true) return
+        leaving = watching.launch {
+            var shown = _state.value.screen
+            _state.collect { now ->
+                if (now.screen != shown) {
+                    if (shown == Screen.ANSWERING_MACHINE) answer.left()
+                    shown = now.screen
+                }
+            }
+        }
+    }
 
     /** The screen's reading of everything it shows from outside itself. */
     private val reading = Reading(app, viewModelScope, _state, answer, playback, fill)
@@ -190,6 +222,12 @@ class MainViewModel @JvmOverloads constructor(
      */
     fun open(link: DeepLink.Link) {
         DeepLink.consumed()
+        // A question left open is let go: a link that changed the screen
+        // left "Start fresh?" or "Delete all for good?" to come back unasked
+        // on the next visit, its count taken then.
+        _state.update {
+            it.copy(confirmingReset = false, confirmingEmptyTrash = false, confirmingDeleteSelected = false, askingToTurnOff = false)
+        }
         viewModelScope.launch {
             val app = getApplication<Application>()
             when (link.kind) {
@@ -223,9 +261,11 @@ class MainViewModel @JvmOverloads constructor(
                     allowThisWifi()
                 }
                 DeepLink.Kind.PAIR_AGAIN -> pairAgain()
-                // A plain tap: the recordings list and its header, as a fresh
-                // window showed them when each of these opened one (until 0.30).
-                DeepLink.Kind.HOME -> _state.update { it.copy(screen = Screen.HOME, homeTab = HomeTab.RECORDINGS) }
+                // A plain tap: the recordings list and its header, nothing
+                // narrowing it and nothing selected - the media notification's
+                // row among them - where until 0.30 each of these opened a
+                // window of its own on that list.
+                DeepLink.Kind.HOME -> _state.update { it.revealed() }
                 // From the "stopped in the background" warning: open the vendor
                 // auto-start screen. JemRec cannot change the setting itself,
                 // so the button only takes the user there. BackgroundKill.cancel
@@ -415,6 +455,7 @@ class MainViewModel @JvmOverloads constructor(
     /** The screen is gone for good; a recording playing goes on playing,
      *  under the system's controls, until they stop it. */
     override fun onCleared() {
+        watching.cancel()
         recorder.close()
         playback.close()
         answer.close()
