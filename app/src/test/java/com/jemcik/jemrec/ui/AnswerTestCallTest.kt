@@ -47,8 +47,9 @@ class AnswerTestCallTest {
         scope.cancel()
         recorder.close()
         // The one-arming flag is the process's: an arming a failed test left
-        // in flight would refuse the next test's.
+        // in flight would refuse the next test's. So is a take's mark.
         eventually("no arming in flight") { !testArming.get() }
+        Greeting.takeListening = false
     }
 
     private fun eventually(what: String, done: () -> Boolean) {
@@ -527,7 +528,7 @@ class AnswerTestCallTest {
         val gate = CountDownLatch(1)
         recorder.stall = { if (it == "GT") gate.await(10, TimeUnit.SECONDS) }
         recorder.replies["GR"] = "TAKE recording"
-        recorder.replies["GS"] = "TAKE 0"
+        recorder.replies["GS"] = "TAKE 96000"
         val made = java.util.concurrent.atomic.AtomicInteger()
         val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm -> made.incrementAndGet(); Greeting.preview(pcm) })
         screen.startTake()
@@ -647,13 +648,146 @@ class AnswerTestCallTest {
      *  heard" blamed the voice for a recorder restarted, or a socket cut. */
     @Test fun aTakeNotSentIsNotCalledSilence() {
         recorder.replies["GR"] = "TAKE recording"
-        recorder.replies["GS"] = "TAKE 0"
+        recorder.replies["GS"] = "TAKE 96000"
         val screen = AnswerController(context, scope, { said += it })
         screen.startTake()
         eventually("recording") { screen.state.value.recordingTake }
         screen.stopTake()
         eventually("said") { screen.state.value.greetingProblem != null }
         assertEquals("The recorder did not send the take. Try again.", screen.state.value.greetingProblem)
+    }
+
+    /** Stop answered with nothing - before the recorder's first read, or its
+     *  microphone not opened: "Nothing was recorded", not a take unsent. */
+    @Test fun anEmptyTakeIsNothingRecorded() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val screen = AnswerController(context, scope, { said += it })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("said") { screen.state.value.greetingProblem != null }
+        assertEquals("Nothing was recorded. Try again.", screen.state.value.greetingProblem)
+        assertFalse("nothing fetched", recorder.heard.any { it.key == "GT" })
+    }
+
+    /** A take marks the whole process while it may have the microphone -
+     *  nothing JemRec plays starts then - and the stop's answer lets go. */
+    @Test fun aTakeMarksTheProcessUntilStopped() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val screen = AnswerController(context, scope, { said += it })
+        screen.startTake()
+        assertTrue(Greeting.takeListening)
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("let go") { !Greeting.takeListening }
+    }
+
+    /** Stop never answered: the hold is let go at the recorder's own limit,
+     *  not kept for good. */
+    @Test fun anUnansweredStopIsLetGoAtTheRecordersLimit() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies.remove("GS")
+        val screen = AnswerController(context, scope, { said += it }, takeLimitMs = 1_500)
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("the stop asked") { recorder.heard.any { it.key == "GS" } }
+        eventually("let go") { !screen.state.value.takeListening && !Greeting.takeListening }
+    }
+
+    /** A hold left from an earlier take - its stop unanswered, a later stop
+     *  answered - is not let go in the middle of a later take: the greeting
+     *  would be previewed into it. */
+    @Test fun anEarlierTakesHoldLeavesALaterOne() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies.remove("GS")
+        // The second stop is answered: the recorder back.
+        recorder.after = { key -> if (key == "GS") recorder.replies["GS"] = "TAKE 0" }
+        val screen = AnswerController(context, scope, { said += it }, takeLimitMs = 2_000)
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("processed") { !screen.state.value.processingTake }
+        screen.close()
+        eventually("the second stop answered") { !screen.state.value.takeListening }
+        screen.startTake()
+        eventually("the next take recording") { screen.state.value.recordingTake }
+        Thread.sleep(3_000)
+        assertTrue(screen.state.value.takeListening)
+    }
+
+    /** Left while the recorder was asked to start: stopped once it has
+     *  started, as a stop sent first was lost to the start. */
+    @Test fun leftWhileStartingItIsStoppedOnceStarted() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val screen = AnswerController(context, scope, { said += it })
+        screen.startTake()
+        eventually("asked") { recorder.heard.any { it.key == "GR" } }
+        screen.left()
+        Thread.sleep(300)
+        assertFalse("no stop before the start", recorder.heard.any { it.key == "GS" })
+        gate.countDown()
+        eventually("stopped once started") { recorder.heard.any { it.key == "GS" } }
+        assertFalse(screen.state.value.recordingTake)
+        assertTrue(said.toString(), said.any { "not kept" in it })
+    }
+
+    /** Left after the take was made the greeting - its stop unanswered, the
+     *  microphone held: nothing is said of a take "not kept". */
+    @Test fun leftAfterTheTakeWasKeptSaysNoneWasLost() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies.remove("GS")
+        val rate = Greeting.RATE
+        recorder.take = ShortArray(rate * 3) { i ->
+            if (i in rate / 2 until rate * 5 / 2) (5000 * kotlin.math.sin(2 * Math.PI * 220 * i / rate)).toInt().toShort() else 0
+        }.let { samples ->
+            java.nio.ByteBuffer.allocate(samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply { samples.forEach { putShort(it) } }.array()
+        }
+        val screen = AnswerController(context, scope, { said += it })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("kept") { screen.state.value.greetingSeconds != null && !screen.state.value.processingTake }
+        assertTrue(screen.state.value.takeListening)
+        screen.left()
+        Thread.sleep(300)
+        assertFalse(said.toString(), said.any { "not kept" in it })
+    }
+
+    /** Leaving the screen stops the greeting's preview. */
+    @Test fun leavingTheScreenStopsThePreview() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 10))
+        val screen = AnswerController(context, scope, { said += it })
+        screen.togglePreview()
+        eventually("playing") { screen.state.value.playing }
+        screen.left()
+        assertFalse(screen.state.value.playing)
+    }
+
+    /** A take whose upload failed is told once: the settings sent after it
+     *  fail too, and are only logged. */
+    @Test fun aTakeNotUploadedIsToldOnce() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 1"
+        recorder.replies.remove("N")
+        val rate = Greeting.RATE
+        recorder.take = ShortArray(rate * 3) { i ->
+            if (i in rate / 2 until rate * 5 / 2) (5000 * kotlin.math.sin(2 * Math.PI * 220 * i / rate)).toInt().toShort() else 0
+        }.let { samples ->
+            java.nio.ByteBuffer.allocate(samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply { samples.forEach { putShort(it) } }.array()
+        }
+        val told = CopyOnWriteArrayList<String>()
+        val screen = AnswerController(context, scope, { said += it }, tell = { told += it })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("logged") { said.any { "pick up the answering machine" in it } }
+        assertEquals(listOf("the recorder will get the new greeting when it next restarts"), told.toList())
     }
 
     /** A delete the recorder missed is said: it answered calls with the

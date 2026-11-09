@@ -94,9 +94,17 @@ class OneWindowTest {
         first.create()
         assertFalse(first.get().isFinishing)
         first.destroy()
-        // In another app's task: no task of JemRec's under it.
-        shadowOf(app.getSystemService(ActivityManager::class.java)).setAppTasks(emptyList())
+        // In another app's task, JemRec's own task elsewhere in Recents: not
+        // this window's task.
         val elsewhere = Robolectric.buildActivity(MainActivity::class.java, launcher)
+        val own = ShadowAppTask.newInstance()
+        Shadow.extract<ShadowAppTask>(own).setTaskInfo(
+            ActivityManager.RecentTaskInfo().apply {
+                taskId = elsewhere.get().taskId + 1
+                baseActivity = ComponentName(app, MainActivity::class.java)
+            },
+        )
+        shadowOf(app.getSystemService(ActivityManager::class.java)).setAppTasks(listOf(own))
         shadowOf(elsewhere.get()).setIsTaskRoot(false)
         elsewhere.create()
         assertFalse(elsewhere.get().isFinishing)

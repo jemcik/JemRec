@@ -146,6 +146,22 @@ class SessionPlayerTest {
         assertFalse(engine.sounding)
     }
 
+    /** A greeting's take may have the microphone: nothing plays - the media
+     *  notification's Play included - as over the loudspeaker it would go into
+     *  the greeting; and the audio is not even asked for. */
+    @Test fun whileAGreetingIsRecordedItDoesNotPlay() {
+        val taking = SessionPlayer(Looper.getMainLooper(), engine, focus, mayPlay = { false })
+        taking.setMediaItem(
+            MediaItem.Builder().setMediaId("a.ogg").setUri("file:///recordings/a.ogg").build(),
+        )
+        taking.prepare()
+        taking.play()
+        idle()
+        assertFalse(taking.playWhenReady)
+        assertFalse(engine.sounding)
+        taking.release()
+    }
+
     @Test fun theEndRewindsToTheStartPausedAndGivesTheAudioBack() {
         play()
         engine.finish()

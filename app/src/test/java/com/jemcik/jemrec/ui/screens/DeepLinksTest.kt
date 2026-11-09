@@ -195,11 +195,21 @@ class DeepLinksTest : ScreenTest() {
      *  next visit - one reflex tap deleting for good. */
     @Test fun aLinkLetsAQuestionLeftOpenGo() {
         Recordings.override = { emptyList() }
-        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS, confirmingReset = true, confirmingEmptyTrash = true))
+        val olivia = recording("20261021_140500", "Olivia Bennett")
+        val vm = viewModel(
+            UiState(
+                step = SetupStep.READY, screen = Screen.SETTINGS, confirmingReset = true, confirmingEmptyTrash = true,
+                confirmingDeleteSelected = true, askingToTurnOff = true, shareChoice = olivia,
+            ),
+        )
         vm.open(DeepLink.Link(DeepLink.Kind.HOME, null))
         awaitMain("the list") { vm.state.value.screen == Screen.HOME }
-        assertFalse(vm.state.value.confirmingReset)
-        assertFalse(vm.state.value.confirmingEmptyTrash)
+        val s = vm.state.value
+        assertFalse(s.confirmingReset)
+        assertFalse(s.confirmingEmptyTrash)
+        assertFalse(s.confirmingDeleteSelected)
+        assertFalse(s.askingToTurnOff)
+        assertNull(s.shareChoice)
     }
 
     /** Pair again: home, on the pairing step's way back. */

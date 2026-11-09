@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Looper
 import com.google.common.util.concurrent.Futures
 import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.capture.FakeRecorder
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Recordings
@@ -87,6 +88,21 @@ class PlaybackAndShareTest : ScreenTest() {
         assertNull(vm.state.value.playingName)
         assertEquals(listOf("A recording does not play during a call"), heard)
         assertTrue(vm.state.value.log.contains("] a recording does not play during a call"))
+    }
+
+    /** Nor while a greeting's take may have the microphone: over the
+     *  loudspeaker it would go into the greeting. */
+    @Test fun aRecordingDoesNotPlayWhileTheGreetingIsRecorded() {
+        val vm = viewModel(UiState(recordings = listOf(olivia)))
+        listen(vm)
+        Greeting.takeListening = true
+        try {
+            vm.play(olivia)
+            assertNull(vm.state.value.playingName)
+            assertEquals(listOf("A recording does not play while your greeting is recorded"), heard)
+        } finally {
+            Greeting.takeListening = false
+        }
     }
 
     /** A pause is never refused: a voice app can hold the call's audio

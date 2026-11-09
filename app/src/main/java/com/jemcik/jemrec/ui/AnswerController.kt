@@ -116,6 +116,9 @@ class AnswerController(
     /** This screen is the one shown: a test call's ending is told then,
      *  and only logged over another. */
     private val shown: () -> Boolean = { true },
+    /** How long a take may record on, unstopped: the recorder's own limit,
+     *  and a second. A test shortens it. */
+    private val takeLimitMs: Long = Greeting.MAX_SECONDS * 1000L + 1_000L,
 ) {
     private val _state = MutableStateFlow(initial ?: AnswerUi())
     val state: StateFlow<AnswerUi> = _state.asStateFlow()
@@ -124,6 +127,12 @@ class AnswerController(
     private var preview: AudioTrack? = null
     private var testWatch: Job? = null
     private var previewing: Job? = null
+    /** Counts the takes, so a hold on the microphone is let go by its own
+     *  take only. */
+    private var takeNumber = 0
+    /** Left while the recorder was asked to start: stopped, and not kept,
+     *  once it has started - a stop sent first was lost to the start. */
+    private var dropWhenStarted = false
     /** Tests seed the state; nothing is then read from disk over it. */
     private val seeded = initial != null
 
@@ -188,12 +197,23 @@ class AnswerController(
         }
     }
 
-    private fun push() {
+    /** The machine's settings sent to the recorder: told if they did not
+     *  reach it, when [asked] by a tap here; only logged otherwise (the
+     *  checks run on opening, a take whose upload was told already). */
+    private fun push(asked: Boolean = true) {
         scope.launch {
             if (!CaptureDaemon.setAnswering(app)) {
-                told("the recorder will pick up the answering machine when it next restarts")
+                val words = "the recorder will pick up the answering machine when it next restarts"
+                if (asked) told(words) else say(words)
             }
         }
+    }
+
+    /** Whether a take may have the microphone, on the screen and for the
+     *  whole process (Greeting.takeListening: nothing plays meanwhile). */
+    private fun listening(on: Boolean) {
+        Greeting.takeListening = on
+        _state.update { it.copy(takeListening = on) }
     }
 
     /** Answer again before the day after an emergency call is out - the
@@ -234,15 +254,22 @@ class AnswerController(
     /** Start recording a greeting - on the recorder, which may use the
      *  microphone; this app holds no permission to. */
     fun startTake() {
-        if (take?.isActive == true || _state.value.processingTake) return
+        if (take?.isActive == true || _state.value.processingTake || _state.value.takeListening) return
         stopPreview()
         quiet()
-        _state.update { it.copy(takeListening = true) }
+        takeNumber++
+        dropWhenStarted = false
+        listening(true)
         take = scope.launch {
             if (!CaptureDaemon.startTake(app)) {
-                _state.update {
-                    it.copy(takeListening = false, greetingProblem = "The recorder could not start recording. Is it running?")
-                }
+                listening(false)
+                _state.update { it.copy(greetingProblem = "The recorder could not start recording. Is it running?") }
+                return@launch
+            }
+            if (dropWhenStarted) {
+                // Left meanwhile: stopped now that it has started, not kept.
+                stopOnTheRecorder()
+                say("the greeting's take was stopped as its screen was left, and not kept")
                 return@launch
             }
             _state.update { it.copy(recordingTake = true, takeStartedAt = System.currentTimeMillis(), greetingProblem = null) }
@@ -276,10 +303,17 @@ class AnswerController(
     private suspend fun processTake() {
         // Answered, the microphone is shut, and a preview cannot reach the
         // take; not answered, the recorder may record on to its own limit.
-        if (CaptureDaemon.stopTake(app) != null) {
-            _state.update { it.copy(takeListening = false) }
+        val length = CaptureDaemon.stopTake(app)
+        if (length != null) {
+            listening(false)
         } else {
-            scope.launch { untilTheRecorderStopsByItself() }
+            holdUntilTheRecorderStopsByItself(_state.value.takeStartedAt)
+        }
+        // Answered with nothing: the stop came before the recorder's first
+        // read, or its microphone would not open - not a take unsent.
+        if (length == 0L) {
+            _state.update { it.copy(greetingProblem = "Nothing was recorded. Try again.") }
+            return
         }
         val pcm = CaptureDaemon.fetchTake(app)
         val processed = withContext(Dispatchers.Default) { pcm?.let(Greeting::process) }
@@ -299,10 +333,12 @@ class AnswerController(
                 val sent = CaptureDaemon.uploadGreeting(app, processed.pcm)
                 if (!sent) tell("the recorder will get the new greeting when it next restarts")
                 _state.update { it.copy(greetingSeconds = processed.seconds, greetingProblem = null) }
-                push()
+                // Told once: a recorder that missed the greeting misses the
+                // settings too.
+                push(asked = sent)
             }
-            // Not sent at all - the recorder restarted, a socket cut: no
-            // word of the voice, which "Nothing was heard" blamed.
+            // Not sent - the recorder restarted, a socket cut, the wait out:
+            // no word of the voice, which "Nothing was heard" blamed.
             null -> _state.update {
                 it.copy(greetingProblem = "The recorder did not send the take. Try again.")
             }
@@ -315,23 +351,29 @@ class AnswerController(
         }
     }
 
-    /** A take's microphone held until the recorder's own limit - thirty
-     *  seconds from its start - when Stop went unanswered. */
-    private suspend fun untilTheRecorderStopsByItself() {
-        val limit = _state.value.takeStartedAt + Greeting.MAX_SECONDS * 1000L + 1_000L
-        delay((limit - System.currentTimeMillis()).coerceAtLeast(0))
-        _state.update { it.copy(takeListening = false) }
+    /** A take's microphone held, when Stop went unanswered, until the
+     *  recorder's own limit from [since] (its start, or now) - and let go by
+     *  this take only: a later one keeps its own. */
+    private fun holdUntilTheRecorderStopsByItself(since: Long) {
+        val mine = takeNumber
+        val limit = (if (since > 0) since else System.currentTimeMillis()) + takeLimitMs
+        outliving.launch {
+            delay((limit - System.currentTimeMillis()).coerceAtLeast(0))
+            if (takeNumber == mine) listening(false)
+        }
     }
 
     /** The take stopped on the recorder from outside this screen's scope -
      *  the screen gone, or left - and the microphone held until it answers,
      *  or its own limit. */
     private fun stopOnTheRecorder() {
+        val mine = takeNumber
+        val since = if (_state.value.recordingTake) _state.value.takeStartedAt else 0L
         outliving.launch {
             if (runCatching { CaptureDaemon.stopTake(app) }.getOrNull() != null) {
-                _state.update { it.copy(takeListening = false) }
+                if (takeNumber == mine) listening(false)
             } else {
-                untilTheRecorderStopsByItself()
+                holdUntilTheRecorderStopsByItself(since)
             }
         }
     }
@@ -339,13 +381,19 @@ class AnswerController(
     /**
      * The screen left - Back, a link to another: the greeting's preview
      * stops, and a take still being started or recorded is stopped on the
-     * recorder and not kept. It went on unseen, and over a call played on
-     * the loudspeaker meanwhile, saved that call as the greeting every caller
-     * hears. A take stopped and being made a greeting of finishes.
+     * recorder and not kept - one asked to start, once the recorder has
+     * started it, as a stop sent first is lost to the start. Left recording,
+     * it went on unseen, and anything played over the loudspeaker meanwhile
+     * would have become the greeting (read from the code). A take stopped
+     * and being made a greeting of finishes.
      */
     fun left() {
         stopPreview()
-        if (!_state.value.takeListening || _state.value.processingTake) return
+        if (take?.isActive != true || _state.value.processingTake) return
+        if (!_state.value.recordingTake) {
+            dropWhenStarted = true
+            return
+        }
         take?.cancel()
         _state.update { it.copy(recordingTake = false) }
         stopOnTheRecorder()
@@ -401,6 +449,8 @@ class AnswerController(
      */
     fun close() {
         stopPreview()
+        // Its hold on the whole process (Greeting.takeListening) is let go by
+        // the stop's answer, or the recorder's own limit.
         if (_state.value.takeListening) stopOnTheRecorder()
     }
 
@@ -448,7 +498,7 @@ class AnswerController(
                 val stage = AnswerDiagnostics.stageOne(fields)
                 AnswerDiagnostics.routeAfterChecks(stage, AnsweringMachine.route(app))?.let {
                     AnsweringMachine.setRoute(app, it)
-                    push()
+                    push(asked)
                 }
                 _state.update { it.copy(stageOne = stage) }
             }
@@ -646,9 +696,10 @@ class AnswerController(
      * if one is asked, and a newer test armed, watched on. True for a newer
      * test: called from the watch, which the new watch replaces, so the
      * caller returns. Since 0.30 JemRec's own ways in bring its one window
-     * forward, so a second screen is open only if the tile's long press
-     * started one over a picker; until then the tile, the media notification
-     * and a notification's tap each could.
+     * forward; a second screen is open only if the tile's long press started
+     * one over a picker, or the launcher's intent came into another app's
+     * task. Until then the tile, the media notification and a notification's
+     * tap each could open one.
      */
     private fun followOther(): Boolean {
         val pending = AnswerDiagnostics.pendingTest(app)

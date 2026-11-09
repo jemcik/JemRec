@@ -11,6 +11,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.google.common.util.concurrent.ListenableFuture
+import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.capture.PlaybackService
 import com.jemcik.jemrec.playback.PlaybackRules
 import com.jemcik.jemrec.recordings.Recording
@@ -79,6 +80,13 @@ internal class Playback(
         val pausing = state.value.playingName == recording.name && state.value.playing
         if (!pausing && inCall()) {
             log.tell("a recording does not play during a call")
+            return
+        }
+        // Nor while a greeting's take may have the microphone: over the
+        // loudspeaker it would go into the greeting (SessionPlayer refuses
+        // the media notification's Play then too).
+        if (!pausing && Greeting.takeListening) {
+            log.tell("a recording does not play while your greeting is recorded")
             return
         }
         if (state.value.playingName != recording.name) {

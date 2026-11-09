@@ -226,7 +226,10 @@ class MainViewModel @JvmOverloads constructor(
         // left "Start fresh?" or "Delete all for good?" to come back unasked
         // on the next visit, its count taken then.
         _state.update {
-            it.copy(confirmingReset = false, confirmingEmptyTrash = false, confirmingDeleteSelected = false, askingToTurnOff = false)
+            it.copy(
+                confirmingReset = false, confirmingEmptyTrash = false, confirmingDeleteSelected = false,
+                askingToTurnOff = false, shareChoice = null,
+            )
         }
         viewModelScope.launch {
             val app = getApplication<Application>()

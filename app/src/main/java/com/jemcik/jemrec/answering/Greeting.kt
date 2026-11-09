@@ -30,6 +30,15 @@ object Greeting {
     /** Thirty seconds at most, as the recorder records it. */
     const val MAX_SECONDS = 30
 
+    /**
+     * A take may have the microphone (AnswerController's takeListening), for
+     * the whole process: nothing JemRec plays starts meanwhile - not from its
+     * screens, not from the media notification - as over the loudspeaker it
+     * would go into the greeting. Left in the background, a take records
+     * on, and a recording played from the notification then would have.
+     */
+    @Volatile var takeListening = false
+
     fun file(context: Context): File = File(context.filesDir, FILE)
 
     fun present(context: Context): Boolean = file(context).let { it.isFile && it.length() > 0 }
