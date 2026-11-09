@@ -131,17 +131,29 @@ class ListScreensTest : ScreenTest() {
     }
 
     /**
-     * Near the end of what is drawn, twenty more come. The first frame,
-     * before the list is measured, reads as near its end: one page more at
-     * once, then one more each time the end comes near.
+     * Near the end of what is drawn, twenty more come - and only there. The
+     * first frame, before the list is measured, read as near its end: every
+     * time the tab was shown anew another page came, and select-all then
+     * picked rows nobody had scrolled to.
      */
-    @Test fun theListGrowsByAPageNearItsEnd() {
+    @Test fun theListGrowsByAPageNearItsEndOnly() {
         val many = List(65) { i -> Fixtures.recordings()[0].copy(name = "20261021_${"%06d".format(100000 + i)}_in.ogg") }
+        Recordings.override = { many }
         val vm = viewModel(Fixtures.ready().copy(recordings = many))
         showApp(vm)
-        assertEquals(40, vm.state.value.visibleCount)
-        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(41)
+        assertEquals("the first page only", 20, vm.state.value.visibleCount)
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(21)
         compose.waitForIdle()
-        assertEquals(60, vm.state.value.visibleCount)
+        assertEquals(40, vm.state.value.visibleCount)
+
+        // Away to the Calls tab and back: the list starts at its top again,
+        // and adds nothing.
+        vm.showTab(HomeTab.CALLS)
+        settle(vm)
+        compose.waitForIdle()
+        vm.showTab(HomeTab.RECORDINGS)
+        settle(vm)
+        compose.waitForIdle()
+        assertEquals(40, vm.state.value.visibleCount)
     }
 }

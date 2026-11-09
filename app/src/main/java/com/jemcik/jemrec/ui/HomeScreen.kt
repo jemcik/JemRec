@@ -131,9 +131,13 @@ fun HomeScreen(
     // come into view the window quietly widens; with nothing to fetch there is
     // no spinner, and it stops on its own once the whole filtered list is shown.
     val listState = rememberLazyListState()
+    // Not before the list is measured: with nothing laid out yet, "the last
+    // row in view" read as row 0 of 0 - near the end - so every time the tab
+    // was shown anew a page came, and select-all then took rows nobody had
+    // scrolled to.
     val nearEnd by remember {
         derivedStateOf {
-            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf false
             last >= listState.layoutInfo.totalItemsCount - 3
         }
     }
