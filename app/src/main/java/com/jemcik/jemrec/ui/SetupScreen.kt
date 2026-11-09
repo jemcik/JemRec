@@ -56,13 +56,13 @@ import com.jemcik.jemrec.system.ShellGrant
  */
 @Composable
 fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier) {
-    val haptics = LocalHapticFeedback.current
-    // The Settings screens are opened from HERE, the foreground Activity, not
-    // through the ViewModel's Application context. A brand-new install has no
-    // adb yet - that is the very thing this screen sets up - and MagicOS blocks
-    // an app that starts an activity from a non-Activity context until it does,
-    // so "Open settings" silently did nothing until a cable was plugged in. A
-    // launch from the resumed Activity is a foreground launch, always allowed.
+    // The Settings screens are opened from HERE - each step's card, with the
+    // foreground Activity (LocalContext) - not through the ViewModel's
+    // Application context. A brand-new install has no adb yet - that is the
+    // very thing this screen sets up - and MagicOS blocks an app that starts
+    // an activity from a non-Activity context until it does, so "Open
+    // settings" silently did nothing until a cable was plugged in. A launch
+    // from the resumed Activity is a foreground launch, always allowed.
     val context = LocalContext.current
     // Whatever the user chooses, re-derive the step from what is actually
     // granted rather than from the result callback - "denied" and "denied
@@ -94,234 +94,25 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
             // Full width like every other card here. Wrapping its content left
             // a small box hugging the left edge, which read as a stray label
             // rather than as this step's card.
-            SetupStep.CHECKING -> Card(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier.padding(16.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CircularProgressIndicator()
-                    Text("Checking...", style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+            SetupStep.CHECKING -> CheckingCard()
 
-            SetupStep.NEEDS_PERMISSIONS -> Card {
-                Column(
-                    Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Allow permissions",
-                        style = MaterialTheme.typography.titleMedium)
-                    // The first screen of setup, so the first impression of how
-                    // much work this is going to be. It was four paragraphs to
-                    // say "tap Allow three times" - a paragraph per permission,
-                    // each explaining itself to someone who has not agreed to
-                    // anything yet and only wants to know what happens next.
-                    //
-                    // The action goes in the body. Why, and the one fact worth
-                    // volunteering about a call recorder, go in the small print
-                    // underneath - same shape as every other card here.
-                    // No count. It was "both questions", which stopped being
-                    // true the moment audio access joined them, and is a
-                    // different number again on an older Android.
-                    Text(
-                        "Tap Allow below, then Allow to each question Android asks.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "They let JemRec show you when a call is being recorded, " +
-                            "and find recordings it made before. " +
-                            "It never uses your microphone.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(
-                        onClick = { haptics.tap(); permissionLauncher.launch(Setup.ASK_PERMISSIONS) },
-                        enabled = !state.busy,
-                    ) { Text("Allow") }
-
-                }
-            }
+            SetupStep.NEEDS_PERMISSIONS -> PermissionsCard(state, permissionLauncher)
 
             // What setup leaves switched on, said BEFORE anything is switched
             // on, and the one part of it that is the user's to decide. Neither
             // answer is preselected or styled as the expected one: hiding
             // Android's reminder that debugging is on is a real trade, and the
             // app used to make it for everyone. See NEEDS_DEBUGGING_CHOICE.
-            SetupStep.NEEDS_DEBUGGING_CHOICE -> Card(Modifier.fillMaxWidth()) {
-                Column(
-                    Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Debugging stays on",
-                        style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "JemRec records through Android's debugging tools, so USB " +
-                            "debugging and Wireless debugging stay on for as long as " +
-                            "it is installed. If either is turned off, JemRec turns " +
-                            "it back on.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "While they are on, a computer paired with this phone can " +
-                            "connect to it on the same Wi-Fi, and one you have allowed " +
-                            "before can connect over a cable. To switch debugging off " +
-                            "for good, uninstall JemRec first.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    HorizontalDivider()
-                    Text(
-                        "Android shows a notification for as long as debugging is " +
-                            "on. Should JemRec hide it?",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "Hidden, nothing on screen reminds you that debugging is on. " +
-                            "You can change this later in Settings.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    ButtonPair(listOf("Keep it", "Hide it")) { i, modifier ->
-                        FilledTonalButton(
-                            onClick = { haptics.tap(); vm.setHideDebugNotification(i == 1) },
-                            enabled = !state.busy,
-                            modifier = modifier,
-                        ) { ButtonLabel(if (i == 0) "Keep it" else "Hide it") }
-                    }
-                }
-            }
+            SetupStep.NEEDS_DEBUGGING_CHOICE -> DebuggingChoiceCard(state, vm)
 
             // Only reached on a phone with a vendor auto-start screen (the gate
             // folds in AutoStart.available), whose name and instruction the
             // setup check found off the main thread (UiState). The fallback is
             // for a screen gone between the step's look and that one. See
             // SetupStep.NEEDS_BACKGROUND_CHOICE.
-            SetupStep.NEEDS_BACKGROUND_CHOICE -> Card(Modifier.fillMaxWidth()) {
-                val generic = AutoStart.screenFor(null, null)
-                val launch = state.backgroundLabel ?: generic.label
-                val instruction = state.backgroundInstruction ?: generic.instruction
-                Column(
-                    Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Let JemRec keep running",
-                        style = MaterialTheme.typography.titleMedium)
-                    // What it is, before where to tap: the worry is "will this
-                    // drain my battery or do something odd", and the answer is
-                    // that it only lets JemRec come back after the phone puts it
-                    // to sleep, which is what a call recorder has to do.
-                    Text(
-                        "This phone can stop apps in the background to save power. " +
-                            "If it stops JemRec, a call can go unrecorded until you " +
-                            "open the app again.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    // The middle step is this phone's own: what to do on the
-                    // screen the button opens, in its words (AutoStart).
-                    Steps(
-                        "Tap $launch below.",
-                        instruction,
-                        "Come back to JemRec - it moves on by itself.",
-                    )
-                    Text(
-                        "JemRec cannot check this setting, so it only asks once. " +
-                            "You can change it later from Settings.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    // ONE ROW, TWO EQUAL BUTTONS, as the debugging card just
-                    // before this one - the user found a lone button over a
-                    // full-width pair unbalanced (2026-10-25). The destination
-                    // is the label, as on the Developer options card. There is
-                    // no "Done": opening the screen IS the answer (JemRec cannot
-                    // read the setting either way), so coming back moves setup
-                    // on, the way Developer options does. "Not now" skips; the
-                    // warning built for a background kill brings the ask back.
-                    val labels = listOf("Not now", launch)
-                    ButtonPair(labels) { i, modifier ->
-                        FilledTonalButton(
-                            onClick = {
-                                haptics.tap()
-                                if (i == 1) vm.openBackgroundSettings() else vm.confirmBackgroundChoice()
-                            },
-                            enabled = !state.busy,
-                            modifier = modifier,
-                        ) { ButtonLabel(labels[i]) }
-                    }
-                }
-            }
+            SetupStep.NEEDS_BACKGROUND_CHOICE -> BackgroundCard(state, vm)
 
-            SetupStep.NEEDS_DEVELOPER_OPTIONS -> Card(Modifier.fillMaxWidth()) {
-                Column(
-                    Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Turn on Developer options",
-                        style = MaterialTheme.typography.titleMedium)
-                    // "Developer options" is the most alarming phrase in this
-                    // whole flow to someone who is not one. The reassurance goes
-                    // FIRST, before the instructions, because a person who is
-                    // worried about breaking their phone does not read step 1.
-                    // The reassurance earns its line; the explanation of what
-                    // Developer options are does not. She is not deciding whether
-                    // to want them, she is deciding whether this is safe.
-                    Text(
-                        "This sounds technical. It is not, and nothing about your " +
-                            "phone changes.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Steps(
-                        "Tap About phone below.",
-                        // Where Build number lives is the one instruction here
-                        // that is certainly wrong on another make of phone: it is
-                        // loose in About phone on this one, tucked inside Software
-                        // information on a Samsung, inside Version on a OnePlus -
-                        // and on a Xiaomi there is no "Build number" row at all,
-                        // you tap "OS version". Naming the likely places, and the
-                        // one alternate label, beats naming a single path.
-                        "Find Build number and tap it seven times. On some phones " +
-                            "it sits inside Software information or Version, or the " +
-                            "row itself is called OS version.",
-                        "Type your PIN if asked.",
-                        // No button to tap here any more. The app re-derives the
-                        // step every time it returns to the foreground, so coming
-                        // back from Settings is itself what advances this - the old
-                        // "I have done it" only re-ran that same check, and sat
-                        // greyed while it ran.
-                        "Come back to JemRec - it notices on its own.",
-                    )
-                    Text(
-                        "A message saying you are now a developer means it worked.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    // One button, because there is nothing to confirm - see the
-                    // last step. The destination is the label; "Open" was doing
-                    // nothing the button shape does not.
-                    Button(onClick = { haptics.tap(); Setup.openAboutPhone(context) }) {
-                        Text("About phone")
-                    }
-                    // Android 17 on some phones will not tell apps whether
-                    // Developer options are on, so "it notices on its own"
-                    // cannot happen until Wireless debugging is on as well.
-                    // The user knows; let them say so. If they are wrong, the
-                    // next card's first step is opening Developer options,
-                    // and that is where they find out.
-                    if (state.developerOptionsHidden) {
-                        Text(
-                            "This phone does not tell JemRec whether Developer " +
-                                "options are on. If they are, carry on.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        TextButton(
-                            onClick = { haptics.tap(); vm.confirmDeveloperOptions() },
-                            enabled = !state.busy,
-                        ) { Text("They are on already") }
-                    }
-                }
-            }
+            SetupStep.NEEDS_DEVELOPER_OPTIONS -> DeveloperOptionsCard(state, vm)
 
             // Both debugging switches AND pairing, on one screen and one trip to
             // Settings - all of it happens in Developer options, so there was
@@ -338,234 +129,16 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
             // says which one is off, and connects the moment both are on. So
             // the card says "both, any order" and leaves the sequencing to the
             // service. See Setup.usbDebuggingOn.
-            SetupStep.NEEDS_PAIRING -> Card {
-                Column(
-                    Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    val bothOn = state.usbDebugging != GlobalSettings.Reading.OFF &&
-                        state.wirelessDebuggingOn
-                    Text(
-                        if (bothOn) "Pair with this phone" else "Turn on debugging and pair",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    // Back here without asking: say why, and that nothing
-                    // else went with the pairing.
-                    if (state.pairingLost) {
-                        Text(
-                            "Wireless debugging no longer lets JemRec in, as happens once its " +
-                                "pairing is deleted. Pair again to record calls; your recordings " +
-                                "and settings stay as they are.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    // Why the code goes into a notification and not back here,
-                    // said once and plainly: a person told to type a code
-                    // somewhere other than where it appeared will otherwise
-                    // assume they have misread the instruction.
-                    Text(
-                        "Android shows the pairing code in a small window that " +
-                            "closes if you leave Settings, so you type it into the " +
-                            "JemRec notification instead.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    if (!state.wirelessDebuggingOn) {
-                        Text(
-                            "Be on Wi-Fi first: Wireless debugging only stays on with Wi-Fi.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    // Named here, where the user is about to be in Developer
-                    // options anyway, not once the grant has failed: issues
-                    // #61 and #64, a OnePlus each (ShellGrant).
-                    if (state.systemOptimizationSwitch) {
-                        Text(
-                            "This phone will not let JemRec finish setting up until one more " +
-                                "switch is on, in Developer options too: ${ShellGrant.SWITCH}. " +
-                                "Leave it that way afterwards.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-
-                    // The one notification state that actually strands the user:
-                    // with notifications off there is nowhere for the code to
-                    // land, so say so and offer the fix before the steps that
-                    // assume a notification can appear. Whether it also POPS as a
-                    // heads-up is neither knowable nor needed here - the steps
-                    // say "swipe down".
-                    if (state.pairingNotificationsBlocked) {
-                        Text(
-                            "JemRec's notifications are turned off, so the code box " +
-                                "cannot appear. Turn them on first.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        FilledTonalButton(
-                            onClick = {
-                                haptics.tap()
-                                PairingNotification.openNotificationSettings(context)
-                            },
-                        ) { Text("Turn on notifications") }
-                    }
-
-                    val skin = DeviceSkin.current()
-                    Steps(
-                        *buildList {
-                            if (bothOn) {
-                                add(
-                                    "Tap Open settings below, open Wireless debugging " +
-                                        "(search Settings for it if needed) and tap Pair " +
-                                        "device with pairing code. Leave the code window open."
-                                )
-                            } else {
-                                add(developerOptionsStep(skin, mayBeOff = state.developerOptionsHidden))
-                                add(debuggingSwitchesStep(state.usbDebugging, state.wirelessDebuggingOn))
-                                add(
-                                    "Open Wireless debugging and tap Pair device with " +
-                                        "pairing code. Leave the code window open."
-                                )
-                            }
-                            add(
-                                "Swipe down from the top of the screen, tap Enter code " +
-                                    "on the JemRec notification, type the six digits and send."
-                            )
-                            add(
-                                "The notification says what happens next. If a switch " +
-                                    "went off, turn it back on - it connects by itself, " +
-                                    "no new code needed. When it says done, come back here."
-                            )
-                        }.toTypedArray()
-                    )
-                    Text(
-                        "The JemRec notification is already waiting for you - if it " +
-                            "slides away, swipe down again. You only do this once; " +
-                            "the phone remembers it after restarts.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                haptics.tap()
-                                // Post the code field first, then open Settings -
-                                // from the Activity, so it opens without adb.
-                                vm.showPairingNotification()
-                                Setup.openSettings(context)
-                            },
-                            enabled = !state.busy,
-                        ) { Text("Open settings") }
-                        TextButton(
-                            onClick = { haptics.tap(); vm.startPairingNotification() },
-                            enabled = !state.busy,
-                        ) { Text("Show the code field again") }
-                    }
-                }
-            }
-
+            SetupStep.NEEDS_PAIRING -> PairingCard(state, vm)
 
             // Paired already - adbd trusts our key - so this is NOT the pairing
             // flow again, only the session that went missing: one or both
             // switches dropped (this phone turns them off by itself), and the
             // app connects on its own once both are back. Shorter than the
             // pairing card, because there is much less left to do.
-            SetupStep.NEEDS_CONNECTION -> Card {
-                Column(
-                    Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Finish connecting",
-                        style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Already paired - JemRec only needs to reach this phone " +
-                            "once. You will not pair again.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    if (state.usbDebugging == GlobalSettings.Reading.OFF || !state.wirelessDebuggingOn) {
-                        val skin = DeviceSkin.current()
-                        Steps(
-                            developerOptionsStep(skin, mayBeOff = state.developerOptionsHidden),
-                            debuggingSwitchesStep(
-                                state.usbDebugging, state.wirelessDebuggingOn,
-                                mayLookOn = true,
-                            ),
-                            "Stay on that screen a few seconds so JemRec connects, " +
-                                "then come back here.",
-                        )
-                        // Start connecting in the BACKGROUND, then open Settings -
-                        // so the connect lands while the user is still on the
-                        // Developer options screen (where the switches hold), not
-                        // after they return here (which can drop them).
-                        Button(
-                            onClick = {
-                                haptics.tap()
-                                vm.reconnect()
-                                Setup.openSettings(context)
-                            },
-                        ) { Text("Open settings") }
-                    } else {
-                        // Both switches on but the session did not open - rarer.
-                        // Keep trying in the background for a while rather than
-                        // taking a single shot.
-                        Text(
-                            if (state.usbDebugging == GlobalSettings.Reading.UNKNOWN) {
-                                "Wireless debugging is on, but JemRec could not reach " +
-                                    "this phone just now. Check that USB debugging is on " +
-                                    "too, then tap Try again."
-                            } else {
-                                "Both switches are on, but JemRec could not reach this " +
-                                    "phone just now. Tap Try again."
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        FilledTonalButton(
-                            onClick = { haptics.tap(); vm.reconnect() },
-                            enabled = !state.busy,
-                        ) { Text("Try again") }
-                    }
-                }
-            }
+            SetupStep.NEEDS_CONNECTION -> ConnectionCard(state, vm)
 
-            SetupStep.FINISHING -> Card {
-                Column(
-                    Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    val failed = state.finishFailed
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Only while it is working: failed, nothing is until
-                        // Try again, and a spinner then said otherwise.
-                        if (failed == null || state.busy) CircularProgressIndicator()
-                        Text("Almost done", style = MaterialTheme.typography.titleMedium)
-                    }
-                    if (failed == null) {
-                        Text(
-                            "Paired. JemRec is starting the recorder now. This takes a " +
-                                "few seconds, and there is nothing left for you to do.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    } else {
-                        Text(
-                            "Paired, but starting the recorder did not work: $failed",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        // Most failures are a switch to turn on first (ShellGrant).
-                        // A FlowRow: at twice the text size the pair does not fit
-                        // one line, and Open settings went to two inside its button.
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Button(onClick = vm::retryFinish, enabled = !state.busy) { Text("Try again") }
-                            TextButton(
-                                onClick = { haptics.tap(); Setup.openSettings(context) },
-                            ) { Text("Open settings") }
-                        }
-                    }
-                }
-            }
+            SetupStep.FINISHING -> FinishingCard(state, vm)
 
             SetupStep.READY -> Unit // HomeScreen takes over.
         }
@@ -587,6 +160,483 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
     }
 }
 
+@Composable
+private fun CheckingCard() {
+    Card(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator()
+            Text("Checking...", style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun PermissionsCard(state: UiState, permissionLauncher: PermissionRequest) {
+    val haptics = LocalHapticFeedback.current
+    Card {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Allow permissions",
+                style = MaterialTheme.typography.titleMedium)
+            // The first screen of setup, so the first impression of how
+            // much work this is going to be. It was four paragraphs to
+            // say "tap Allow three times" - a paragraph per permission,
+            // each explaining itself to someone who has not agreed to
+            // anything yet and only wants to know what happens next.
+            //
+            // The action goes in the body. Why, and the one fact worth
+            // volunteering about a call recorder, go in the small print
+            // underneath - same shape as every other card here.
+            // No count. It was "both questions", which stopped being
+            // true the moment audio access joined them, and is a
+            // different number again on an older Android.
+            Text(
+                "Tap Allow below, then Allow to each question Android asks.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "They let JemRec show you when a call is being recorded, " +
+                    "and find recordings it made before. " +
+                    "It never uses your microphone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = { haptics.tap(); permissionLauncher.launch(Setup.ASK_PERMISSIONS) },
+                enabled = !state.busy,
+            ) { Text("Allow") }
+
+        }
+    }
+}
+
+@Composable
+private fun DebuggingChoiceCard(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Debugging stays on",
+                style = MaterialTheme.typography.titleMedium)
+            Text(
+                "JemRec records through Android's debugging tools, so USB " +
+                    "debugging and Wireless debugging stay on for as long as " +
+                    "it is installed. If either is turned off, JemRec turns " +
+                    "it back on.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "While they are on, a computer paired with this phone can " +
+                    "connect to it on the same Wi-Fi, and one you have allowed " +
+                    "before can connect over a cable. To switch debugging off " +
+                    "for good, uninstall JemRec first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
+            Text(
+                "Android shows a notification for as long as debugging is " +
+                    "on. Should JemRec hide it?",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "Hidden, nothing on screen reminds you that debugging is on. " +
+                    "You can change this later in Settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ButtonPair(listOf("Keep it", "Hide it")) { i, modifier ->
+                FilledTonalButton(
+                    onClick = { haptics.tap(); vm.setHideDebugNotification(i == 1) },
+                    enabled = !state.busy,
+                    modifier = modifier,
+                ) { ButtonLabel(if (i == 0) "Keep it" else "Hide it") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackgroundCard(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    Card(Modifier.fillMaxWidth()) {
+        val generic = AutoStart.screenFor(null, null)
+        val launch = state.backgroundLabel ?: generic.label
+        val instruction = state.backgroundInstruction ?: generic.instruction
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Let JemRec keep running",
+                style = MaterialTheme.typography.titleMedium)
+            // What it is, before where to tap: the worry is "will this
+            // drain my battery or do something odd", and the answer is
+            // that it only lets JemRec come back after the phone puts it
+            // to sleep, which is what a call recorder has to do.
+            Text(
+                "This phone can stop apps in the background to save power. " +
+                    "If it stops JemRec, a call can go unrecorded until you " +
+                    "open the app again.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            // The middle step is this phone's own: what to do on the
+            // screen the button opens, in its words (AutoStart).
+            Steps(
+                "Tap $launch below.",
+                instruction,
+                "Come back to JemRec - it moves on by itself.",
+            )
+            Text(
+                "JemRec cannot check this setting, so it only asks once. " +
+                    "You can change it later from Settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // ONE ROW, TWO EQUAL BUTTONS, as the debugging card just
+            // before this one - the user found a lone button over a
+            // full-width pair unbalanced (2026-10-25). The destination
+            // is the label, as on the Developer options card. There is
+            // no "Done": opening the screen IS the answer (JemRec cannot
+            // read the setting either way), so coming back moves setup
+            // on, the way Developer options does. "Not now" skips; the
+            // warning built for a background kill brings the ask back.
+            val labels = listOf("Not now", launch)
+            ButtonPair(labels) { i, modifier ->
+                FilledTonalButton(
+                    onClick = {
+                        haptics.tap()
+                        if (i == 1) vm.openBackgroundSettings() else vm.confirmBackgroundChoice()
+                    },
+                    enabled = !state.busy,
+                    modifier = modifier,
+                ) { ButtonLabel(labels[i]) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeveloperOptionsCard(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Turn on Developer options",
+                style = MaterialTheme.typography.titleMedium)
+            // "Developer options" is the most alarming phrase in this
+            // whole flow to someone who is not one. The reassurance goes
+            // FIRST, before the instructions, because a person who is
+            // worried about breaking their phone does not read step 1.
+            // The reassurance earns its line; the explanation of what
+            // Developer options are does not. She is not deciding whether
+            // to want them, she is deciding whether this is safe.
+            Text(
+                "This sounds technical. It is not, and nothing about your " +
+                    "phone changes.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Steps(
+                "Tap About phone below.",
+                // Where Build number lives is the one instruction here
+                // that is certainly wrong on another make of phone: it is
+                // loose in About phone on this one, tucked inside Software
+                // information on a Samsung, inside Version on a OnePlus -
+                // and on a Xiaomi there is no "Build number" row at all,
+                // you tap "OS version". Naming the likely places, and the
+                // one alternate label, beats naming a single path.
+                "Find Build number and tap it seven times. On some phones " +
+                    "it sits inside Software information or Version, or the " +
+                    "row itself is called OS version.",
+                "Type your PIN if asked.",
+                // No button to tap here any more. The app re-derives the
+                // step every time it returns to the foreground, so coming
+                // back from Settings is itself what advances this - the old
+                // "I have done it" only re-ran that same check, and sat
+                // greyed while it ran.
+                "Come back to JemRec - it notices on its own.",
+            )
+            Text(
+                "A message saying you are now a developer means it worked.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // One button, because there is nothing to confirm - see the
+            // last step. The destination is the label; "Open" was doing
+            // nothing the button shape does not.
+            Button(onClick = { haptics.tap(); Setup.openAboutPhone(context) }) {
+                Text("About phone")
+            }
+            // Android 17 on some phones will not tell apps whether
+            // Developer options are on, so "it notices on its own"
+            // cannot happen until Wireless debugging is on as well.
+            // The user knows; let them say so. If they are wrong, the
+            // next card's first step is opening Developer options,
+            // and that is where they find out.
+            if (state.developerOptionsHidden) {
+                Text(
+                    "This phone does not tell JemRec whether Developer " +
+                        "options are on. If they are, carry on.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(
+                    onClick = { haptics.tap(); vm.confirmDeveloperOptions() },
+                    enabled = !state.busy,
+                ) { Text("They are on already") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PairingCard(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    Card {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            val bothOn = state.usbDebugging != GlobalSettings.Reading.OFF &&
+                state.wirelessDebuggingOn
+            Text(
+                if (bothOn) "Pair with this phone" else "Turn on debugging and pair",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            // Back here without asking: say why, and that nothing
+            // else went with the pairing.
+            if (state.pairingLost) {
+                Text(
+                    "Wireless debugging no longer lets JemRec in, as happens once its " +
+                        "pairing is deleted. Pair again to record calls; your recordings " +
+                        "and settings stay as they are.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            // Why the code goes into a notification and not back here,
+            // said once and plainly: a person told to type a code
+            // somewhere other than where it appeared will otherwise
+            // assume they have misread the instruction.
+            Text(
+                "Android shows the pairing code in a small window that " +
+                    "closes if you leave Settings, so you type it into the " +
+                    "JemRec notification instead.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (!state.wirelessDebuggingOn) {
+                Text(
+                    "Be on Wi-Fi first: Wireless debugging only stays on with Wi-Fi.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            // Named here, where the user is about to be in Developer
+            // options anyway, not once the grant has failed: issues
+            // #61 and #64, a OnePlus each (ShellGrant).
+            if (state.systemOptimizationSwitch) {
+                Text(
+                    "This phone will not let JemRec finish setting up until one more " +
+                        "switch is on, in Developer options too: ${ShellGrant.SWITCH}. " +
+                        "Leave it that way afterwards.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            // The one notification state that actually strands the user:
+            // with notifications off there is nowhere for the code to
+            // land, so say so and offer the fix before the steps that
+            // assume a notification can appear. Whether it also POPS as a
+            // heads-up is neither knowable nor needed here - the steps
+            // say "swipe down".
+            if (state.pairingNotificationsBlocked) {
+                Text(
+                    "JemRec's notifications are turned off, so the code box " +
+                        "cannot appear. Turn them on first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                FilledTonalButton(
+                    onClick = {
+                        haptics.tap()
+                        PairingNotification.openNotificationSettings(context)
+                    },
+                ) { Text("Turn on notifications") }
+            }
+
+            val skin = DeviceSkin.current()
+            Steps(
+                *buildList {
+                    if (bothOn) {
+                        add(
+                            "Tap Open settings below, open Wireless debugging " +
+                                "(search Settings for it if needed) and tap Pair " +
+                                "device with pairing code. Leave the code window open."
+                        )
+                    } else {
+                        add(developerOptionsStep(skin, mayBeOff = state.developerOptionsHidden))
+                        add(debuggingSwitchesStep(state.usbDebugging, state.wirelessDebuggingOn))
+                        add(
+                            "Open Wireless debugging and tap Pair device with " +
+                                "pairing code. Leave the code window open."
+                        )
+                    }
+                    add(
+                        "Swipe down from the top of the screen, tap Enter code " +
+                            "on the JemRec notification, type the six digits and send."
+                    )
+                    add(
+                        "The notification says what happens next. If a switch " +
+                            "went off, turn it back on - it connects by itself, " +
+                            "no new code needed. When it says done, come back here."
+                    )
+                }.toTypedArray()
+            )
+            Text(
+                "The JemRec notification is already waiting for you - if it " +
+                    "slides away, swipe down again. You only do this once; " +
+                    "the phone remembers it after restarts.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        haptics.tap()
+                        // Post the code field first, then open Settings -
+                        // from the Activity, so it opens without adb.
+                        vm.showPairingNotification()
+                        Setup.openSettings(context)
+                    },
+                    enabled = !state.busy,
+                ) { Text("Open settings") }
+                TextButton(
+                    onClick = { haptics.tap(); vm.startPairingNotification() },
+                    enabled = !state.busy,
+                ) { Text("Show the code field again") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionCard(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    Card {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Finish connecting",
+                style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Already paired - JemRec only needs to reach this phone " +
+                    "once. You will not pair again.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (state.usbDebugging == GlobalSettings.Reading.OFF || !state.wirelessDebuggingOn) {
+                val skin = DeviceSkin.current()
+                Steps(
+                    developerOptionsStep(skin, mayBeOff = state.developerOptionsHidden),
+                    debuggingSwitchesStep(
+                        state.usbDebugging, state.wirelessDebuggingOn,
+                        mayLookOn = true,
+                    ),
+                    "Stay on that screen a few seconds so JemRec connects, " +
+                        "then come back here.",
+                )
+                // Start connecting in the BACKGROUND, then open Settings -
+                // so the connect lands while the user is still on the
+                // Developer options screen (where the switches hold), not
+                // after they return here (which can drop them).
+                Button(
+                    onClick = {
+                        haptics.tap()
+                        vm.reconnect()
+                        Setup.openSettings(context)
+                    },
+                ) { Text("Open settings") }
+            } else {
+                // Both switches on but the session did not open - rarer.
+                // Keep trying in the background for a while rather than
+                // taking a single shot.
+                Text(
+                    if (state.usbDebugging == GlobalSettings.Reading.UNKNOWN) {
+                        "Wireless debugging is on, but JemRec could not reach " +
+                            "this phone just now. Check that USB debugging is on " +
+                            "too, then tap Try again."
+                    } else {
+                        "Both switches are on, but JemRec could not reach this " +
+                            "phone just now. Tap Try again."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                FilledTonalButton(
+                    onClick = { haptics.tap(); vm.reconnect() },
+                    enabled = !state.busy,
+                ) { Text("Try again") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinishingCard(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    Card {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            val failed = state.finishFailed
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Only while it is working: failed, nothing is until
+                // Try again, and a spinner then said otherwise.
+                if (failed == null || state.busy) CircularProgressIndicator()
+                Text("Almost done", style = MaterialTheme.typography.titleMedium)
+            }
+            if (failed == null) {
+                Text(
+                    "Paired. JemRec is starting the recorder now. This takes a " +
+                        "few seconds, and there is nothing left for you to do.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                Text(
+                    "Paired, but starting the recorder did not work: $failed",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                // Most failures are a switch to turn on first (ShellGrant).
+                // A FlowRow: at twice the text size the pair does not fit
+                // one line, and Open settings went to two inside its button.
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Button(onClick = vm::retryFinish, enabled = !state.busy) { Text("Try again") }
+                    TextButton(
+                        onClick = { haptics.tap(); Setup.openSettings(context) },
+                    ) { Text("Open settings") }
+                }
+            }
+        }
+    }
+}
+
 /**
  * One trip to Developer options.
  *
@@ -598,8 +648,7 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
  * OxygenOS's "Additional settings". "Usually" is the honest word for it, and
  * DeviceSkin now recognises a custom ROM, but the wording should survive the
  * next phone that fools it.
- */
-/**
+ *
  * mayBeOff: the phone hides whether Developer options are on (see
  * Setup.developerOptions), so the user may have said "they are on already"
  * when they are not. Then this step is where they find out, and it says what
