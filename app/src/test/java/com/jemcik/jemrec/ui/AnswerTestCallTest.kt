@@ -8,6 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
@@ -106,5 +107,68 @@ class AnswerTestCallTest {
         } finally {
             nextScope.cancel()
         }
+    }
+
+    /** A screen of the answering machine over [scope], opened. */
+    private fun opened(scope: CoroutineScope): AnswerController =
+        AnswerController(context, scope, { said += it }).also { it.opened() }
+
+    private val passed = "RESULT 1 state=done route=1 realms=4000 audioms=4000 tone=0 tonechunks=0 mute=1 voice=16 played=1"
+
+    /** Read long after its window - the screen opened again minutes after the
+     *  call - the result the recorder still holds is read: it was given up
+     *  unread, "no test call came". */
+    @Test fun aTestReadAfterItsWindowIsStillRead() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
+        recorder.replies["XR"] = passed
+        val screen = opened(scope)
+        eventually("the result read") { AnswerDiagnostics.results(context)["2G"] != null }
+        eventually("the caller asked") { screen.state.value.askHeard == "2G" }
+        assertFalse(said.toString(), said.any { "no test call came" in it })
+    }
+
+    /** Two screens open on one armed test - a second JemRec stacked by a
+     *  notification - and one result: it is acted on once. */
+    @Test fun twoScreensActOnOneResultOnce() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = "RESULT 1 state=done route=1 realms=4000 audioms=4000 tone=0 tonechunks=0 mute=0 voice=16 played=1"
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val one = opened(scope)
+            val two = opened(other)
+            eventually("both done") { one.state.value.test == null && two.state.value.test == null }
+            Thread.sleep(500)
+            assertEquals(said.toString(), 1, said.count { "did not stay muted" in it })
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** Read in the background and the screen gone before "Did they hear
+     *  it?" was answered: the next screen asks it. */
+    @Test fun theQuestionWaitsForTheNextScreen() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = passed
+        val first = opened(scope)
+        eventually("asked") { first.state.value.askHeard == "2G" }
+        scope.cancel()
+        val other = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val next = opened(other)
+            eventually("asked again") { next.state.value.askHeard == "2G" }
+        } finally {
+            other.cancel()
+        }
+    }
+
+    /** A recorder that restarted forgot the armed test ("none"): the screen
+     *  says so at once, rather than waiting out the window and then saying
+     *  that no call came. */
+    @Test fun aRecorderThatForgotTheTestEndsItAtOnce() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 3 * 60_000L)
+        recorder.replies["XR"] = "RESULT 1 state=none"
+        val screen = opened(scope)
+        eventually("the test called off") { said.any { "the recorder restarted" in it } }
+        assertNull(screen.state.value.test)
     }
 }

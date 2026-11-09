@@ -32,7 +32,7 @@ object AnswerDiagnostics {
 
     private const val KEY_STAGE_ONE = "answer_stage_one"
     private const val KEY_RESULT = "answer_result_"
-    private const val KEY_TEST_ARMED = "answer_test_armed"
+    private const val KEY_TEST = "answer_test"
 
     enum class Verdict {
         /** Proven: the caller said so, or the phone's own recording carried the check tone. */
@@ -138,23 +138,56 @@ object AnswerDiagnostics {
         Prefs.of(context).edit { putString(KEY_RESULT + callType, verdict.name) }
     }
 
-    /** A test call is armed, [incoming] or not, its window open until
-     *  [until] - kept past the screen that armed it, as the recorder answers
-     *  the call whether a screen is watching or not. */
-    fun noteTestArmed(context: Context, incoming: Boolean, until: Long) {
-        Prefs.of(context).edit { putString(KEY_TEST_ARMED, "${if (incoming) 1 else 0} $until") }
+    /**
+     * A test call not yet done with, kept past the screen that armed it: the
+     * recorder answers the call whether a screen is watching or not, and only
+     * a screen reads how it went. [Armed]: the call may still come, its
+     * window open until [Armed.until]. [Asking]: it came, and the caller is
+     * to be asked whether they heard the greeting.
+     */
+    sealed interface PendingTest {
+        data class Armed(val incoming: Boolean, val until: Long) : PendingTest
+        data class Asking(val callType: String) : PendingTest
     }
 
-    /** The test call armed and not yet over: whether incoming, and until
-     *  when; null with none. */
-    fun testArmed(context: Context): Pair<Boolean, Long>? =
-        Prefs.of(context).getString(KEY_TEST_ARMED, null)?.split(' ')?.takeIf { it.size == 2 }?.let { (incoming, until) ->
-            until.toLongOrNull()?.let { (incoming == "1") to it }
+    fun pendingTest(context: Context): PendingTest? {
+        val words = Prefs.of(context).getString(KEY_TEST, null)?.split(' ') ?: return null
+        return when (words.firstOrNull()) {
+            "armed" -> words.getOrNull(2)?.toLongOrNull()?.let { PendingTest.Armed(words[1] == "1", it) }
+            "asking" -> words.drop(1).joinToString(" ").takeIf { it.isNotEmpty() }?.let { PendingTest.Asking(it) }
+            else -> null
         }
+    }
 
-    /** The test call is over: read, or no call came. */
-    fun testOver(context: Context) {
-        Prefs.of(context).edit { remove(KEY_TEST_ARMED) }
+    /** A test call is armed, [incoming] or not, its window open until [until]. */
+    fun noteTestArmed(context: Context, incoming: Boolean, until: Long) {
+        Prefs.of(context).edit { putString(KEY_TEST, "armed ${if (incoming) 1 else 0} $until") }
+    }
+
+    /**
+     * The armed test, taken by the screen that read how it went - or found
+     * that no call came - and now asking the caller about [callType], or
+     * done with it on null. True for the first screen to take it only: a
+     * second screen open on the same test (a second JemRec, stacked by a
+     * notification) reads the same result, and acted on it again - the
+     * route moved twice, "Did they hear it?" asked twice.
+     */
+    @Synchronized
+    fun takeArmedTest(context: Context, asking: String?): Boolean {
+        if (pendingTest(context) !is PendingTest.Armed) return false
+        Prefs.of(context).edit(commit = true) {
+            if (asking == null) remove(KEY_TEST) else putString(KEY_TEST, "asking $asking")
+        }
+        return true
+    }
+
+    /** The question about [callType] answered, or put aside: true for the
+     *  first screen to take it only. */
+    @Synchronized
+    fun takeQuestion(context: Context, callType: String): Boolean {
+        if (pendingTest(context) != PendingTest.Asking(callType)) return false
+        Prefs.of(context).edit(commit = true) { remove(KEY_TEST) }
+        return true
     }
 
     /** Each call type tested, and how it came out. */

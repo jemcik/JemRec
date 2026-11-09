@@ -126,15 +126,18 @@ class AnswerController(
         if (seeded) return
         reload()
         if (_state.value.stageOne == null) runChecks()
-        // Armed by a screen that has gone since - JemRec closed from Recents
-        // - the recorder answers the call all the same, and only a screen
-        // reads how it went: the verdict, the other route on a failure, "Did
-        // they hear it?". Each went with the screen that armed it.
-        AnswerDiagnostics.testArmed(app)?.let { (incoming, until) ->
-            if (testWatch?.isActive != true) {
-                _state.update { it.copy(test = "armed", testIncoming = incoming, testUntil = until, askHeard = null) }
-                watchTest(until - System.currentTimeMillis())
+        // A test from a screen that has gone since - JemRec closed from
+        // Recents - is this one's now: the recorder answers the call all the
+        // same, and only a screen reads how it went (the verdict, the other
+        // route on a failure, "Did they hear it?"). Each went with the screen
+        // that armed it.
+        when (val pending = AnswerDiagnostics.pendingTest(app)) {
+            is AnswerDiagnostics.PendingTest.Armed -> if (testWatch?.isActive != true) {
+                _state.update { it.copy(test = "armed", testIncoming = pending.incoming, testUntil = pending.until, askHeard = null) }
+                watchTest(pending.until - System.currentTimeMillis())
             }
+            is AnswerDiagnostics.PendingTest.Asking -> _state.update { it.copy(askHeard = pending.callType) }
+            null -> Unit
         }
         scope.launch {
             CaptureDaemon.sims(app)?.let { sims ->
@@ -354,11 +357,15 @@ class AnswerController(
         }
     }
 
+    /** The recorder asked how the test goes, every two seconds - at least
+     *  once, however late: a screen opened after the window, the call long
+     *  over, still finds the result the recorder keeps until the next test. */
     private fun watchTest(window: Long) {
         testWatch?.cancel()
         testWatch = scope.launch {
             val until = System.currentTimeMillis() + window + 120_000L
-            while (System.currentTimeMillis() < until) {
+            var ending = "no test call came"
+            do {
                 delay(2_000)
                 val result = CaptureDaemon.testResult(app) ?: continue
                 when (result["state"]) {
@@ -367,23 +374,36 @@ class AnswerController(
                         finishTest(result)
                         return@launch
                     }
+                    // A recorder started since keeps no test: nothing will
+                    // come, and it is said now, not when the window is out.
+                    "none" -> {
+                        ending = "the recorder restarted, so no test call is armed now"
+                        break
+                    }
                 }
                 // A call that rang in the window's last moment is answered
                 // three seconds on, and is "running" once its audio is up.
                 if (result["state"] == "armed" && System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) break
-            }
-            AnswerDiagnostics.testOver(app)
+            } while (System.currentTimeMillis() < until)
+            if (AnswerDiagnostics.takeArmedTest(app, asking = null)) say(ending)
             _state.update { it.copy(test = null) }
-            say("no test call came")
         }
     }
 
     private fun finishTest(result: Map<String, String>) {
         val type = AnswerDiagnostics.callType(result["voice"]?.toIntOrNull() ?: -1)
         val verdict = AnswerDiagnostics.verdict(result)
+        // Only someone who called can say. An outgoing test reached a
+        // machine; its verdict is the measurements'.
+        val asking = if (_state.value.testIncoming && verdict != AnswerDiagnostics.Verdict.FAILS) type else null
+        // Read by another screen as well, open on the same test: that one
+        // acts on it, this one only shows it.
+        if (!AnswerDiagnostics.takeArmedTest(app, asking)) {
+            _state.update { it.copy(test = null, results = AnswerDiagnostics.results(app)) }
+            return
+        }
         Log.i(TAG, "answer: test on $type -> $verdict ($result)")
         AnswerDiagnostics.record(app, type, verdict)
-        AnswerDiagnostics.testOver(app)
         if (verdict == AnswerDiagnostics.Verdict.FAILS) {
             // A microphone that would not mute is this phone's, whichever way
             // the greeting goes: no reason to try the other.
@@ -393,22 +413,17 @@ class AnswerController(
                 tryTheOtherRoute(type)
             }
         }
-        _state.update {
-            it.copy(
-                test = null,
-                results = AnswerDiagnostics.results(app),
-                // Only someone who called can say. An outgoing test reached a
-                // machine; its verdict is the measurements'.
-                askHeard = if (it.testIncoming && verdict != AnswerDiagnostics.Verdict.FAILS) type else null,
-            )
-        }
+        _state.update { it.copy(test = null, results = AnswerDiagnostics.results(app), askHeard = asking) }
     }
 
     /** Stage three: what the caller heard. */
     fun heard(type: String, heard: Boolean) {
-        AnswerDiagnostics.record(app, type, if (heard) AnswerDiagnostics.Verdict.WORKS else AnswerDiagnostics.Verdict.FAILS)
-        // Unheard is as failed as measured wrong.
-        if (!heard) tryTheOtherRoute(type)
+        // Answered on another screen already: that answer stands.
+        if (AnswerDiagnostics.takeQuestion(app, type)) {
+            AnswerDiagnostics.record(app, type, if (heard) AnswerDiagnostics.Verdict.WORKS else AnswerDiagnostics.Verdict.FAILS)
+            // Unheard is as failed as measured wrong.
+            if (!heard) tryTheOtherRoute(type)
+        }
         _state.update { it.copy(askHeard = null, results = AnswerDiagnostics.results(app)) }
     }
 
@@ -423,7 +438,11 @@ class AnswerController(
         say("the greeting did not reach the call; the next test tries the other way")
     }
 
-    fun dismissHeard() = _state.update { it.copy(askHeard = null) }
+    /** The question put aside: not asked again. */
+    fun dismissHeard() {
+        _state.value.askHeard?.let { AnswerDiagnostics.takeQuestion(app, it) }
+        _state.update { it.copy(askHeard = null) }
+    }
 
     /** The carrier's own voicemail timer - slow: the network is asked. */
     fun checkCarrier() {
