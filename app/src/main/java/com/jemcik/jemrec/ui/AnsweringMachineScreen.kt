@@ -296,8 +296,13 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                     onClick = { haptics.tap(); vm.answer.stopTake() },
                     modifier = modifier,
                 ) { ButtonLabel("Stop") }
+                // Not while a test call is armed or under way: the test plays
+                // this greeting, and with it deleted the recorder did not
+                // answer an incoming test's caller - the screen waited on, and
+                // said no call came.
                 "Delete" -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.deleteGreeting() },
+                    enabled = a.test == null,
                     modifier = modifier,
                 ) { ButtonLabel("Delete") }
                 else -> FilledTonalButton(

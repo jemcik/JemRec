@@ -346,6 +346,22 @@ class BehaviourTest : ScreenTest() {
         }
     }
 
+    /** While a test call is armed or under way, the greeting it plays cannot
+     *  be deleted: deleted, the recorder did not answer an incoming test's
+     *  caller, and the screen waited on and said no call came. */
+    @Test fun theGreetingStaysWhileATestCallIsOn() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        fun machine(test: String?) = viewModel(state, AnswerUi(greetingSeconds = 6.0, test = test, testUntil = Fixtures.NOW + 60_000))
+        val shown = mutableStateOf(machine("armed"))
+        show { AppScaffold(state, shown.value) }
+        compose.onNodeWithText("Delete").performScrollTo().assertIsNotEnabled()
+        shown.value = machine("running")
+        compose.onNodeWithText("Delete").performScrollTo().assertIsNotEnabled()
+        // No test on: Delete as before.
+        shown.value = machine(null)
+        compose.onNodeWithText("Delete").performScrollTo().assertIsEnabled()
+    }
+
     @Test fun noLimitOnAMessageIsAskedAboutFirst() {
         val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
         val vm = viewModel(state, AnswerUi(enabled = true, greetingSeconds = 6.0, longest = 60))
