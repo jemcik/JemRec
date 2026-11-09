@@ -408,6 +408,7 @@ class MainViewModel @JvmOverloads constructor(
     override fun onCleared() {
         recorder.close()
         playback.close()
+        answer.close()
     }
 
     private fun tell(text: String) = log.tell(text)

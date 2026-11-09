@@ -238,6 +238,12 @@ class AnswerController(
         }
     }
 
+    /** The screen is gone for good: the greeting's preview stops and its
+     *  player is let go. Closed from Recents mid-preview, it played on to its
+     *  end - the wait that stops it went with the screen - and was never
+     *  released. */
+    fun close() = stopPreview()
+
     private fun stopPreview() {
         preview?.let { runCatching { it.stop(); it.release() } }
         preview = null
