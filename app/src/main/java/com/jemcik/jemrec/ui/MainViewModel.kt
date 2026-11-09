@@ -19,7 +19,6 @@ import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.AfterCall
-import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.CallTracking
@@ -46,7 +45,6 @@ import com.jemcik.jemrec.recordings.BulkDeleteResult
 import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
-import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.recordings.RecordingMarks
 import com.jemcik.jemrec.recordings.RecordingStore
 import com.jemcik.jemrec.recordings.RecordingTags
@@ -57,8 +55,6 @@ import com.jemcik.jemrec.setup.PairingNotification
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.system.AutoStart
-import com.jemcik.jemrec.system.GlobalSettings
-import com.jemcik.jemrec.system.ShellGrant
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.Looks
@@ -139,8 +135,17 @@ class MainViewModel @JvmOverloads constructor(
     /** The answering machine's settings, greeting and diagnostics. */
     val answer = AnswerController(app, viewModelScope, log::say, initialAnswer, quiet = playback::pause)
 
+    /** The screen's reading of everything it shows from outside itself. */
+    private val reading = Reading(app, viewModelScope, _state, answer, playback, fill)
+
     /** Failures of something the user just did, for a snackbar where they are. */
     val notices: SharedFlow<String> = log.notices
+
+    /** A reading of everything, for callers that only want the screen to
+     *  catch up (Reading.refresh). */
+    fun refresh() = reading.refresh()
+
+    private suspend fun refreshNow() = reading.now()
 
     /** The switch can be flipped from the Quick Settings tile while this
      *  screen is up, without the screen ever pausing. See RecorderSwitch.observe. */
@@ -1135,248 +1140,14 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    /**
-     * Fire and forget, for callers that only want the screen to catch up.
-     *
-     * Anything that needs the READING before it carries on must await
-     * refreshNow instead. This one returns the instant it is called, which is
-     * how a caller could finish, drop its busy flag and let the screen render a
-     * verdict from before the work it had just done.
-     */
-    fun refresh() = viewModelScope.launch { refreshNow() }
-
-    private suspend fun refreshNow() {
-        val app = getApplication<Application>()
-        // Refreshes overlap - a resume, a save announced, a keep toggled - and
-        // each reads the list, then waits on the recorder for seconds. One
-        // started earlier and finishing later must not put back a list from
-        // before the other: a recording just saved vanished until the next
-        // resume.
-        val generation = ++refreshesStarted
-
-        // ALL of this is file I/O and it must not run on the main thread.
-        // viewModelScope dispatches on Main, and listing recordings queries
-        // MediaStore and opens every file with MediaMetadataRetriever to read
-        // its duration. On the UI thread that freezes the app - and because the
-        // activity had been brought to the front over the dialer, it froze the
-        // dialer's touches with it. An unresponsive phone right after a call is
-        // about the worst thing this app could do.
-        val snapshot = withContext(Dispatchers.IO) {
-            val (recordings, trashed) = RecordingLibrary.read(app)
-            // Only while the tab is up: it is the call log and a contacts
-            // lookup per number, and nobody is looking at it otherwise. Null
-            // when not read, so this refresh leaves alone a list a later one
-            // has read already.
-            val calls = if (_state.value.homeTab == HomeTab.CALLS) CallHistory.load(app, recordings, trashed) else null
-            // Before the lists reach the screen, so no row shows a colour and
-            // then changes it; and given only in Multitrack, the one look that
-            // has them - a look never chosen keeps nothing. Once given, they
-            // stay through a change of look, so a caller's colour is theirs.
-            val colours = if (Looks.choice(app).look == Look.MULTITRACK) {
-                CallerColours.update(
-                    app,
-                    recordings.map { it.caller to (it.startedAtMillis ?: 0L) } + (calls ?: _state.value.calls).map { it.label to it.at },
-                )
-            } else {
-                emptyMap()
-            }
-            Snapshot(
-                // CONFIRMED, because this reading decides whether to revive.
-                //
-                // A single ping is a health check; here it was a death
-                // certificate. One missed reply - and on battery, with the CPU
-                // throttled and the app just resumed, they are missed - meant
-                // "the recorder is down", which fired a revive, which re-armed
-                // Wireless debugging, which made Android post its notification.
-                // Every trip to the home screen and back. Plugged into USB the
-                // phone stays awake, the ping never misses, and none of it
-                // happens; that is what made it look like a mystery rather than
-                // a timeout.
-                daemonRunning = CaptureDaemon.isRunningConfirmed(app),
-                // Read alongside the daemon check: if the recorder is down, the
-                // header needs to know whether the ADB channel is even open
-                // before it tells the user to wait for Wi-Fi.
-                wirelessDebuggingOn = Setup.wirelessDebuggingOn(app),
-                usbDebugging = Setup.usbDebugging(app),
-                developerOptionsHidden = Setup.developerOptionsHidden(app),
-                networkNotAllowed = RecorderHealth.cause(app) == RecorderHealth.Problem.NETWORK_NOT_ALLOWED,
-                pairingRefused = RecorderHealth.cause(app) == RecorderHealth.Problem.CANNOT_CONNECT,
-                onWifi = NetworkRevive.onWifi(app),
-                pairingNotificationsBlocked = PairingNotification.blocked(app),
-                // Only until setup is done: a getprop, on the phones that may
-                // have the switch.
-                systemOptimizationSwitch = !Setup.isComplete(app) && ShellGrant.switchMayBeOff(),
-                folder = RecordingStore.describe(app),
-                usingDefaultFolder = RecordingStore.treeUri(app) == null,
-                automatic = RecordingMode.of(app) == RecordingMode.AUTOMATIC,
-                debugNotificationHidden = DebugNotificationCleaner.hiding(app),
-                afterCallNotice = AfterCall.enabled(app),
-                enabled = RecorderSwitch.isOn(app),
-                offMode = DebugSwitchesOff.mode(app),
-                debuggingOff = DebugSwitchesOff.recorderGone(app),
-                startWithoutWifi = StartWithoutWifi.enabled(app),
-                portSet = StartWithoutWifi.readyForUser(app),
-                portOurs = StartWithoutWifi.openedThisBoot(app),
-                portFailed = StartWithoutWifi.failedThisBoot(app),
-                portCloseFailed = StartWithoutWifi.closeFailedThisBoot(app),
-                canReadCallLog = CallLogLookup.granted(app),
-                canReadAudio = AudioAccess.granted(app),
-                offerCallLog = CallLogLookup.anythingLeftToOffer(app) &&
-                    !CallLogLookup.bannerDismissed(app),
-                recordings = recordings,
-                trashed = trashed,
-                calls = calls,
-                callerColours = colours,
-                autoDeleteAfterDays = Retention.maxAgeDays(app),
-                autoDeleteShorterThan = Retention.minSeconds(app),
-                ruleContacts = CallRules.contacts(app),
-                ruleOtherNumbers = CallRules.otherNumbers(app),
-                // A contacts query or two each, so only when Settings shows them.
-                ruleChosen = if (
-                    CallLogLookup.photosGranted(app) &&
-                    CallRules.contacts(app).let { it == CallRules.Contacts.ALL_BUT || it == CallRules.Contacts.ONLY }
-                ) {
-                    CallRules.chosen(app)
-                } else {
-                    emptyList()
-                },
-                canReadContacts = CallLogLookup.photosGranted(app),
-                callTracking = CallTracking.enabled(app),
-                voipInstalled = VoipApps.installed(app),
-                voipSupported = VoipApps.supported(app),
-                voipEnabled = VoipApps.enabled(app),
-                voipNames = VoipCallNotes.enabled(app),
-                fileNames = FileNames.format(app),
-                honorDialer = FileNames.honorDialer(app),
-                inHonorFolder = FileNames.inHonorFolder(app),
-                selectHintSeen = Prefs.of(app).getBoolean("select_hint_seen", false),
-                tileAdded = RecorderTile.isAdded(app),
-            )
-        }
-
-        if (generation < refreshApplied) return
-        refreshApplied = generation
-        _state.update {
-            it.copy(
-                daemonRunning = snapshot.daemonRunning,
-                wirelessDebuggingOn = snapshot.wirelessDebuggingOn,
-                usbDebugging = snapshot.usbDebugging,
-                developerOptionsHidden = snapshot.developerOptionsHidden,
-                networkNotAllowed = snapshot.networkNotAllowed,
-                pairingRefused = snapshot.pairingRefused,
-                onWifi = snapshot.onWifi,
-                pairingNotificationsBlocked = snapshot.pairingNotificationsBlocked,
-                systemOptimizationSwitch = snapshot.systemOptimizationSwitch,
-                folder = snapshot.folder,
-                usingDefaultFolder = snapshot.usingDefaultFolder,
-                automatic = snapshot.automatic,
-                debugNotificationHidden = snapshot.debugNotificationHidden,
-                afterCallNotice = snapshot.afterCallNotice,
-                enabled = snapshot.enabled,
-                offMode = snapshot.offMode,
-                debuggingOff = snapshot.debuggingOff,
-                startWithoutWifi = snapshot.startWithoutWifi,
-                portSet = snapshot.portSet,
-                portOurs = snapshot.portOurs,
-                portFailed = snapshot.portFailed,
-                portCloseFailed = snapshot.portCloseFailed,
-                canReadCallLog = snapshot.canReadCallLog,
-                canReadAudio = snapshot.canReadAudio,
-                offerCallLog = snapshot.offerCallLog,
-                recordings = snapshot.recordings,
-                trashed = snapshot.trashed,
-                calls = snapshot.calls ?: it.calls,
-                callerColours = snapshot.callerColours,
-                autoDeleteAfterDays = snapshot.autoDeleteAfterDays,
-                autoDeleteShorterThan = snapshot.autoDeleteShorterThan,
-                ruleContacts = snapshot.ruleContacts,
-                ruleOtherNumbers = snapshot.ruleOtherNumbers,
-                ruleChosen = snapshot.ruleChosen,
-                canReadContacts = snapshot.canReadContacts,
-                callTracking = snapshot.callTracking,
-                voipInstalled = snapshot.voipInstalled,
-                voipSupported = snapshot.voipSupported,
-                voipEnabled = snapshot.voipEnabled,
-                voipNames = snapshot.voipNames,
-                fileNames = snapshot.fileNames,
-                honorDialer = snapshot.honorDialer,
-                inHonorFolder = snapshot.inHonorFolder,
-                selectHintSeen = snapshot.selectHintSeen,
-                tileAdded = snapshot.tileAdded,
-                connected = AdbTransport.lastKnownConnected,
-            ).let { next ->
-                // A name that is no longer shown cannot stay selected. It would
-                // still be counted by the toolbar - the count the user reads
-                // before confirming a deletion - and deleted with the rest.
-                next.copy(selected = stillShown(next))
-            }
-        }
-        answer.reload()
-        playback.listRead(snapshot.recordings)
-        fill.start()
-    }
-
     /** The list's waveform fill-in stops with the screen (WaveformFill). */
     fun stopFillingIn() = fill.stop()
-
-    /** Everything refresh() reads off disk, gathered in one background pass. */
-    private data class Snapshot(
-        val daemonRunning: Boolean,
-        val wirelessDebuggingOn: Boolean,
-        val usbDebugging: GlobalSettings.Reading,
-        val developerOptionsHidden: Boolean,
-        val networkNotAllowed: Boolean,
-        val pairingRefused: Boolean,
-        val onWifi: Boolean,
-        val pairingNotificationsBlocked: Boolean,
-        val systemOptimizationSwitch: Boolean,
-        val folder: String,
-        val usingDefaultFolder: Boolean,
-        val automatic: Boolean,
-        val debugNotificationHidden: Boolean,
-        val afterCallNotice: Boolean,
-        val enabled: Boolean,
-        val offMode: OffMode,
-        val debuggingOff: Boolean,
-        val startWithoutWifi: Boolean,
-        val portSet: Boolean,
-        val portOurs: Boolean,
-        val portFailed: Boolean,
-        val portCloseFailed: Boolean,
-        val canReadCallLog: Boolean,
-        val canReadAudio: Boolean,
-        val offerCallLog: Boolean,
-        val recordings: List<Recording>,
-        val trashed: List<Recording>,
-        val calls: List<CallHistory.Call>?,
-        val callerColours: Map<String, Int>,
-        val autoDeleteAfterDays: Int,
-        val autoDeleteShorterThan: Int,
-        val ruleContacts: CallRules.Contacts,
-        val ruleOtherNumbers: Boolean,
-        val ruleChosen: List<CallRules.Chosen>,
-        val canReadContacts: Boolean,
-        val callTracking: Boolean,
-        val voipInstalled: List<VoipApps.App>,
-        val voipSupported: Boolean,
-        val voipEnabled: Set<String>,
-        val voipNames: Boolean,
-        val fileNames: FileNames.Format,
-        val honorDialer: Boolean,
-        val inHonorFolder: Boolean,
-        val selectHintSeen: Boolean,
-        val tileAdded: Boolean,
-    )
 
     /** Guards against two bring-ups racing when the screen is reopened. */
     private val reviving = AtomicBoolean(false)
 
     /** Every start the screen shows as Starting (StartsUnderWay). */
     private val starts = StartsUnderWay(_state)
-
-    /** Refreshes begun, and the latest whose list is on screen. Main thread. */
-    private var refreshesStarted = 0L
-    private var refreshApplied = 0L
 
     /** The screen came forward: the pairing watched from now on, and the
      *  player shows what the session plays (Playback.shown). */
