@@ -8,14 +8,12 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
-import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
-import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.AfterCall
@@ -43,12 +41,9 @@ import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.recorder.Trigger
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
-import com.jemcik.jemrec.recordings.RecordingMarks
 import com.jemcik.jemrec.recordings.RecordingStore
-import com.jemcik.jemrec.recordings.RecordingTags
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Retention
-import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.setup.PairingNotification
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
@@ -138,6 +133,9 @@ class MainViewModel @JvmOverloads constructor(
 
     /** Recently deleted's buttons, and Android's question before a move. */
     private val trash = TrashActions(app, _state, log, actions, reading)
+
+    /** The lists: chips and search, paging, keep marks, selection. */
+    private val list = RecordingsList(app, viewModelScope, _state, log, actions, reading, playback, trash)
 
     /** Failures of something the user just did, for a snackbar where they are. */
     val notices: SharedFlow<String> = log.notices
@@ -914,65 +912,6 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    fun setQuery(query: String) = _state.update { current ->
-        // Searching stays live during selection now, so a query can narrow the
-        // list out from under picked rows. Any selection that no longer matches
-        // has left the visible list, and must leave the selection with it - a
-        // later delete acts on names, and would otherwise take a row the user
-        // can no longer see. Widening the query keeps everything, as it should.
-        val next = current.copy(recordingsNarrowing = current.recordingsNarrowing.copy(query = query))
-        next.copy(selected = stillShown(next))
-    }
-
-    /** A chip of the Recordings tab tapped. Leaves a selection to the rows
-     *  still shown, as a search does: the chips are hidden while selecting,
-     *  but whichever way the list narrows, a delete must not take a row it
-     *  has stopped showing - only the sources' chip made sure of that. */
-    internal fun tapRecordingsChip(chip: ListChip) = _state.update { current ->
-        val next = current.copy(recordingsNarrowing = current.recordingsNarrowing.tapped(chip))
-        next.copy(selected = stillShown(next))
-    }
-
-    /** The narrowing line's Show all: every chip off, the search folded away
-     *  with what was typed. Widening, so the selection stays as it is. */
-    fun showAllRecordings() = _state.update { it.copy(recordingsNarrowing = RecordingsNarrowing()) }
-
-    fun showAllCalls() = _state.update { it.copy(callsNarrowing = CallsNarrowing()) }
-
-    /** A chip of the Calls tab tapped. */
-    internal fun tapCallsChip(chip: ListChip) = _state.update { it.copy(callsNarrowing = it.callsNarrowing.tapped(chip)) }
-
-    fun setCallsQuery(query: String) = _state.update { it.copy(callsNarrowing = it.callsNarrowing.copy(query = query)) }
-
-    /** Mark one recording to keep, or take the mark off. Kept recordings are
-     *  never auto-deleted. */
-    fun toggleKept(recording: Recording) {
-        RecordingMarks.Keep.set(getApplication(), listOf(recording.name), !recording.kept)
-        refresh()
-        keepInFiles(listOf(recording))
-    }
-
-    /** The mark into the files too, so a reinstall finds it (RecordingTags):
-     *  as the preferences have it when the write runs, which is after the
-     *  list has it - the preferences say it at once, the files take a write
-     *  each. */
-    private fun keepInFiles(recordings: List<Recording>) {
-        viewModelScope.launch(Dispatchers.IO) { RecordingTags.writeKept(getApplication(), recordings) }
-    }
-
-    /** The selection toolbar's keep: marks every picked recording, or - when
-     *  all of them are kept already - takes the mark off them all. */
-    fun keepSelected() {
-        val current = _state.value
-        val picked = current.recordings.filter { it.name in current.selected }
-        if (picked.isEmpty()) return
-        val kept = !picked.all { it.kept }
-        RecordingMarks.Keep.set(getApplication(), picked.map { it.name }, kept = kept)
-        _state.update { it.copy(selecting = false, selected = emptySet()) }
-        refresh()
-        keepInFiles(picked.filter { it.kept != kept })
-    }
-
     /** One of auto-delete's two rules changed: saved, and applied at once. */
     fun setAutoDelete(afterDays: Int? = null, shorterThan: Int? = null) = actions.run(Action.AUTO_DELETE) {
         val app = getApplication<Application>()
@@ -1168,123 +1107,51 @@ class MainViewModel @JvmOverloads constructor(
 
     private fun askAndroid(request: IntentSender, leaving: List<String> = emptyList()) = trash.askAndroid(request, leaving)
 
+    /** The lists' chips, search and selection (RecordingsList). */
+    fun setQuery(query: String) = list.setQuery(query)
+
+    internal fun tapRecordingsChip(chip: ListChip) = list.tapRecordingsChip(chip)
+
+    fun showAllRecordings() = list.showAllRecordings()
+
+    fun showAllCalls() = list.showAllCalls()
+
+    internal fun tapCallsChip(chip: ListChip) = list.tapCallsChip(chip)
+
+    fun setCallsQuery(query: String) = list.setCallsQuery(query)
+
+    fun toggleKept(recording: Recording) = list.toggleKept(recording)
+
+    fun keepSelected() = list.keepSelected()
+
+    fun showMore() = list.showMore()
+
+    fun startSelecting() = list.startSelecting()
+
+    fun startSelecting(recording: Recording) = list.startSelecting(recording)
+
+    fun dismissSelectHint() = list.dismissSelectHint()
+
+    fun toggleSelected(recording: Recording) = list.toggleSelected(recording)
+
+    fun selectAllVisible() = list.selectAllVisible()
+
+    fun clearSelection() = list.clearSelection()
+
+    fun deselectAll() = list.deselectAll()
+
+    fun askDeleteSelected() = list.askDeleteSelected()
+
+    fun cancelDeleteSelected() = list.cancelDeleteSelected()
+
+    fun confirmDeleteSelected() = list.confirmDeleteSelected()
+
     /** The screen is gone for good; a recording playing goes on playing,
      *  under the system's controls, until they stop it. */
     override fun onCleared() {
         stopWatchingSwitch()
         stopWatchingDebugSwitches()
         playback.close()
-    }
-
-    /**
-     * Show the next batch of older recordings.
-     */
-    fun showMore() = _state.update { it.copy(visibleCount = it.visibleCount + PAGE) }
-
-    /**
-     * Enter selection mode from the header, with nothing chosen yet.
-     *
-     * Long-press is the documented way into selection on Android and it is
-     * supported below, but it is an invisible affordance: nothing on screen
-     * says it is there. This is the visible way in, for the majority who will
-     * never think to try holding a row down.
-     */
-    fun startSelecting() {
-        // Selecting stops playback. The scrubber is hidden while selecting,
-        // so a recording left playing under it was playing invisibly, with no
-        // control on screen that could stop it.
-        stopPlayback()
-        _state.update {
-            rememberSelectHintSeen()
-            it.copy(selecting = true, selected = emptySet(), selectHintSeen = true)
-        }
-    }
-
-    /** Long-press, or a tap on a row's photo: enter selection with this one chosen. */
-    fun startSelecting(recording: Recording) {
-        stopPlayback()
-        _state.update {
-            rememberSelectHintSeen()
-            it.copy(selecting = true, selected = setOf(recording.name), selectHintSeen = true)
-        }
-    }
-
-    /** The tip's x: it is not shown again. */
-    fun dismissSelectHint() {
-        rememberSelectHintSeen()
-        _state.update { it.copy(selectHintSeen = true) }
-    }
-
-    /** The tap-a-photo hint has done its job once selection has been used. */
-    private fun rememberSelectHintSeen() {
-        Prefs.of(getApplication()).edit { putBoolean("select_hint_seen", true) }
-    }
-
-    fun toggleSelected(recording: Recording) = _state.update { current ->
-        val next = if (recording.name in current.selected) {
-            current.selected - recording.name
-        } else {
-            current.selected + recording.name
-        }
-        // Unpicking the last one leaves selection mode, as Gmail does: an empty
-        // selection toolbar is a mode hanging around with nothing to act on, and
-        // the photo that dropped you in is the natural way back out.
-        if (next.isEmpty()) current.copy(selecting = false, selected = emptySet())
-        else current.copy(selected = next)
-    }
-
-    /** Everything currently listed, which is not necessarily everything there
-     *  is - the list pages, and selecting rows the user cannot see would be a
-     *  quiet way to delete more than they meant to. */
-    fun selectAllVisible() = _state.update { current ->
-        // "All visible" means all that pass the search and preset - the same
-        // rows the list is showing - not every recording on disk.
-        val visible = filterRecordings(current.recordings, current.recordingsNarrowing).take(current.visibleCount)
-        current.copy(selected = visible.map { it.name }.toSet())
-    }
-
-    fun clearSelection() = _state.update { it.copy(selecting = false, selected = emptySet()) }
-
-    /** Unpick everything but stay in selection mode: the user is still
-     *  choosing, they have just changed their mind about all of it. */
-    fun deselectAll() = _state.update { it.copy(selected = emptySet()) }
-
-    fun askDeleteSelected() = _state.update { it.copy(confirmingDeleteSelected = true) }
-
-    fun cancelDeleteSelected() = _state.update { it.copy(confirmingDeleteSelected = false) }
-
-    /**
-     * Delete what is selected - to Recently deleted, where it can be restored
-     * for 30 days (see Trash).
-     *
-     * Selection mode ends whether or not every deletion succeeded. Leaving the
-     * user in a toolbar showing a count that no longer means anything is worse
-     * than making them tap Select again.
-     */
-    fun confirmDeleteSelected() {
-        _state.update { it.copy(confirmingDeleteSelected = false) }
-        actions.run(Action.DELETE_SELECTED) {
-            val current = _state.value
-            val doomed = current.recordings.filter { it.name in current.selected }
-            if (doomed.isEmpty()) return@run
-            if (current.playingName in current.selected) stopPlayback()
-
-            val result = withContext(Dispatchers.IO) {
-                Trash.trashAll(getApplication(), doomed)
-            }
-            // Whatever Android wants confirmed is not moved yet - its own
-            // dialog comes next - so it is counted as asked, not as failed.
-            val asked = doomed.size - result.deleted - result.failed
-            val summary = listOfNotNull(
-                "moved ${result.deleted} to Recently deleted".takeIf { result.deleted > 0 },
-                "asking Android about $asked".takeIf { result.needsConsent != null && asked > 0 },
-                "could not move ${result.failed}".takeIf { result.failed > 0 },
-            ).joinToString(", ")
-            if (result.failed > 0) tell(summary) else say(summary)
-            result.needsConsent?.let { askAndroid(it, result.disputed) }
-            _state.update { it.copy(selecting = false, selected = emptySet()) }
-            refresh()
-        }
     }
 
     private fun tell(text: String) = log.tell(text)
