@@ -8,7 +8,7 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import androidx.core.content.edit
-import com.jemcik.jemrec.MainActivity
+import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.TurnOffQuestionActivity
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
@@ -149,7 +149,7 @@ class RecorderTile : TileService() {
     // not exist yet. Lint sees the call, not the version check around it.
     @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun openApp() {
-        val intent = MainActivity.open(this)
+        val intent = DeepLink.home(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startActivityAndCollapse(PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE))
         } else {

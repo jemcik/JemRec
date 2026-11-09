@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
+import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.MainActivity
 import com.jemcik.jemrec.capture.HeldWork.Companion.NOW
 import com.jemcik.jemrec.capture.HeldWork.Companion.PERIODIC
@@ -119,17 +120,24 @@ class ReviveTriggersTest {
         activity.destroy()
     }
 
-    /** The window there is, brought forward by the tile or a notification
-     *  (MainActivity.open), does what opening it did: until 0.30 those opened
-     *  a second window, whose creation armed the kick. */
+    /** The window there is, brought forward by a plain tap - a
+     *  notification, the tile (DeepLink.home) - does what opening it did:
+     *  until 0.30 those opened a second window, whose creation armed the
+     *  kick. A button's link to somewhere of its own never opened one, and
+     *  does not. */
     @Test fun theWindowBroughtForwardArmsAsAnOpeningDoes() {
         TestPhone.setUp(context)
         val activity = Robolectric.buildActivity(MainActivity::class.java).create()
         val manager = androidx.work.WorkManager.getInstance(context)
-        manager.cancelUniqueWork(NOW).result.get()
-        manager.pruneWork().result.get()
+        fun forget() {
+            manager.cancelUniqueWork(NOW).result.get()
+            manager.pruneWork().result.get()
+            assertEquals(emptyList<androidx.work.WorkInfo>(), work.unique(NOW))
+        }
+        forget()
+        activity.newIntent(DeepLink.intent(context, DeepLink.Kind.PLAY, "a.ogg"))
         assertEquals(emptyList<androidx.work.WorkInfo>(), work.unique(NOW))
-        activity.newIntent(MainActivity.open(context))
+        activity.newIntent(DeepLink.home(context))
         assertEquals(1, work.unique(NOW).size)
         activity.destroy()
     }

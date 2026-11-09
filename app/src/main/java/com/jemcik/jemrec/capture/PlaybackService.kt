@@ -21,7 +21,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import com.jemcik.jemrec.MainActivity
+import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.R
 import com.jemcik.jemrec.playback.FocusHolder
 import com.jemcik.jemrec.playback.PlaybackRules
@@ -107,7 +107,7 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(
                 PendingIntent.getActivity(
                     this, 0,
-                    MainActivity.open(this),
+                    DeepLink.home(this),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 ),
             )

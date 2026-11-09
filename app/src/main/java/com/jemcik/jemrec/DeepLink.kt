@@ -28,7 +28,7 @@ import java.security.SecureRandom
  */
 object DeepLink {
 
-    enum class Kind { PLAY, SHARE, SELF_TEST, PAIR_AGAIN, ALLOW_WIFI, BACKGROUND_SETTINGS }
+    enum class Kind { PLAY, SHARE, SELF_TEST, PAIR_AGAIN, ALLOW_WIFI, BACKGROUND_SETTINGS, HOME }
 
     data class Link(val kind: Kind, val name: String?)
 
@@ -50,6 +50,20 @@ object DeepLink {
             .putExtra(EXTRA_KIND, kind.name)
             .putExtra(EXTRA_NAME, name)
             .putExtra(EXTRA_TOKEN, token(context))
+
+    /**
+     * A plain tap - a notification without a button, the tile: the recordings
+     * list, as a fresh window showed it until 0.30, when each of these opened
+     * one. Its own identity, so its PendingIntent is never one of another
+     * link's.
+     */
+    fun home(context: Context): Intent = intent(context, Kind.HOME).setIdentifier("home")
+
+    /** A link to somewhere of its own - not [home], not a plain open - which
+     *  never opened a new window (DeepLink's flags): the activity does not
+     *  do what an opening does for it. */
+    fun leadsElsewhere(intent: Intent?): Boolean =
+        intent?.action == ACTION && intent.getStringExtra(EXTRA_KIND) != Kind.HOME.name
 
     /** Called by the activity with every intent it is started or re-entered with. */
     fun offer(context: Context, intent: Intent?) {

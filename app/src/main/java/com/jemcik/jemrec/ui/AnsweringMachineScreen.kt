@@ -286,7 +286,9 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     icon = if (a.recordingTake) SettingsIcons.Mic else Icons.Filled.PlayArrow,
-                    onClick = if (a.greetingSeconds != null && !a.recordingTake) vm.answer::togglePreview else null,
+                    // Not while the recorder's microphone may be open for a
+                    // take: the greeting would go into it.
+                    onClick = if (a.greetingSeconds != null && !a.takeListening) vm.answer::togglePreview else null,
                 )
             }
         }
@@ -309,14 +311,14 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                 // nothing played, and was put down as not working.
                 "Delete" -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.deleteGreeting() },
-                    enabled = a.test == null && !a.processingTake,
+                    enabled = a.test == null && !a.processingTake && !a.takeListening,
                     modifier = modifier,
                 ) { ButtonLabel("Delete") }
                 else -> FilledTonalButton(
                     onClick = { haptics.tap(); vm.answer.startTake() },
                     // Not while the last take is made a greeting of: tapped
                     // then, it did nothing, with no sign.
-                    enabled = state.daemonRunning && !a.processingTake,
+                    enabled = state.daemonRunning && !a.processingTake && !a.takeListening,
                     modifier = modifier,
                 ) { ButtonLabel(record) }
             }

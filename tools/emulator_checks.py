@@ -1202,29 +1202,38 @@ OPEN_FLAGS = "0x34000000"
 
 
 def one_window():
-    """JemRec is one window by its own ways in: the tile's, the media
-    notification's and every notification's intent (MainActivity.open), and
-    the tile's long press, which Android starts, with JemRec on top, leave
-    one main screen; a folder picker left open over it is still there when
-    the launcher brings JemRec back, and finished by JemRec's own way in."""
+    """JemRec is one window by its own ways in. Begun by one of them - as
+    from a notification, so the task's first intent is not the launcher's -
+    the same way in again and the tile's long press, which Android starts,
+    leave one main screen; a folder picker opened over it stays when the
+    launcher is tapped (the window the launcher makes then goes at once), and
+    JemRec's own way in finishes it."""
+    launcher = f"am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n {PKG}/.MainActivity"
     try:
-        sh(f"am start -W -n {PKG}/.MainActivity")
+        sh("input keyevent KEYCODE_WAKEUP")
+        sh("wm dismiss-keyguard")
+        sh(f"am force-stop {PKG}")
+        sh(f"am start -W -n {PKG}/.MainActivity -f {OPEN_FLAGS}")
         wait_for(lambda: windows() == 1, 15, "JemRec open")
         sh(f"am start -W -n {PKG}/.MainActivity -f {OPEN_FLAGS}")
         sh(f"am start -W -a android.service.quicksettings.action.QS_TILE_PREFERENCES -n {PKG}/.MainActivity")
         time.sleep(2)
-        assert windows() == 1, f"{windows()} windows after the tile's way in and its long press"
-        open_settings_row("Saving to", "Change", "the folder question")
+        assert windows() == 1, f"{windows()} windows after JemRec's way in and the tile's long press"
+        tap_until("Settings", "Back", 30, "the Settings gear")
+        scroll_to("Saving to")
+        tap_until("Saving to", "Change", 15, "the folder question")
         tap_until("Change", lambda: on_screen_any_case("Use this folder"), 15, "Android's folder picker")
-        sh(f"am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n {PKG}/.MainActivity")
+        sh("input keyevent KEYCODE_HOME")
+        sh(launcher)
         time.sleep(2)
-        assert on_screen_any_case("Use this folder"), "the launcher closed the picker"
+        assert on_screen_any_case("Use this folder"), "the launcher did not bring the picker back"
+        assert windows() == 1, f"{windows()} windows after the launcher over the picker"
         sh(f"am start -W -n {PKG}/.MainActivity -f {OPEN_FLAGS}")
-        wait_for(lambda: not on_screen_any_case("Use this folder"), 10, "JemRec's own way in to close the picker")
-        assert windows() == 1, f"{windows()} windows after the picker"
+        wait_for(lambda: not on_screen_any_case("Use this folder"), 10, "JemRec's own way in to finish the picker")
+        assert windows() == 1, f"{windows()} windows after JemRec's way in over the picker"
     finally:
         sh(f"am force-stop {PKG}")
-    return "one window by the tile's way in and its long press; the launcher kept a picker, JemRec's way in closed it"
+    return "one window: its own way in, the tile's long press, the launcher over a picker (kept), its way in (picker gone)"
 
 
 def tap_node(found):

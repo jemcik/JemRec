@@ -13,7 +13,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.VisibleForTesting
-import com.jemcik.jemrec.MainActivity
+import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.RecordPrompt
@@ -580,7 +580,7 @@ class CallMonitorService : Service() {
 
     private fun startForegroundCompat() {
         val tap = PendingIntent.getActivity(
-            this, 0, MainActivity.open(this),
+            this, 0, DeepLink.home(this),
             PendingIntent.FLAG_IMMUTABLE,
         )
         // Each field read once: the save's coroutine writes some of them too.

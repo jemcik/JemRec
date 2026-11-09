@@ -24,6 +24,15 @@ import com.jemcik.jemrec.ui.theme.Looks
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The launcher, over JemRec's task begun another way (a notification,
+        // the tile) with a picker on top, makes a new window rather than
+        // bringing the task forward: the task's first intent is not the
+        // launcher's. Gone at once, it leaves the task as it was - the picker
+        // on top - as the launcher does for a task it began.
+        if (!isTaskRoot && intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+            finish()
+            return
+        }
         enableEdgeToEdge()
 
         cameIn()
@@ -44,13 +53,15 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The app was already open when a notification's button was tapped -
-     *  or the tile, or the media notification: the window there is, come
-     *  forward. What a new window did on opening holds for it too: until
-     *  0.30 those opened a second window, which did it. */
+     *  or a plain notification, the tile, the media notification, the
+     *  launcher over a task begun another way: the window there is, come
+     *  forward. For an opening, what a new window did holds for it too -
+     *  until 0.30 those opened a second window, which did it; a button's
+     *  link to somewhere of its own never did. */
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        cameIn()
+        if (!DeepLink.leadsElsewhere(intent)) cameIn()
         DeepLink.offer(this, intent)
     }
 

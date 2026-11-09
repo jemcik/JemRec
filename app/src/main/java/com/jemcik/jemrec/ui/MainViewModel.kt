@@ -223,6 +223,9 @@ class MainViewModel @JvmOverloads constructor(
                     allowThisWifi()
                 }
                 DeepLink.Kind.PAIR_AGAIN -> pairAgain()
+                // A plain tap: the recordings list and its header, as a fresh
+                // window showed them when each of these opened one (until 0.30).
+                DeepLink.Kind.HOME -> _state.update { it.copy(screen = Screen.HOME, homeTab = HomeTab.RECORDINGS) }
                 // From the "stopped in the background" warning: open the vendor
                 // auto-start screen. JemRec cannot change the setting itself,
                 // so the button only takes the user there. BackgroundKill.cancel

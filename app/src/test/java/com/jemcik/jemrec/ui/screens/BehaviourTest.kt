@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
@@ -368,6 +369,25 @@ class BehaviourTest : ScreenTest() {
         // No test on: Delete as before.
         shown.value = machine(null)
         compose.onNodeWithText("Delete").performScrollTo().assertIsEnabled()
+    }
+
+    /** While a take is made a greeting of, or the recorder's microphone may
+     *  be open for one, Record and Delete are greyed and the greeting takes
+     *  no tap: tapped then, Record did nothing with no sign, Delete was undone
+     *  when the new greeting was saved, and a preview went into the take. */
+    @Test fun theGreetingWaitsForATake() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val shown = mutableStateOf(viewModel(state, AnswerUi(greetingSeconds = 6.0, processingTake = true)))
+        show { AppScaffold(state, shown.value) }
+        compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Delete").assertIsNotEnabled()
+        shown.value = viewModel(state, AnswerUi(greetingSeconds = 6.0, takeListening = true))
+        compose.onNodeWithText("Record again").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Delete").assertIsNotEnabled()
+        compose.onNodeWithText("Tap to play it", substring = true).assertHasNoClickAction()
+        shown.value = viewModel(state, AnswerUi(greetingSeconds = 6.0))
+        compose.onNodeWithText("Record again").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("Delete").assertIsEnabled()
     }
 
     /** A test armed before and read late - its window over as the screen

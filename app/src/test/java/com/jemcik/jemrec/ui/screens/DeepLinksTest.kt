@@ -168,6 +168,18 @@ class DeepLinksTest : ScreenTest() {
         assertTrue(vm.state.value.log, vm.state.value.log.contains("could not switch Wireless debugging"))
     }
 
+    /** A plain tap - a notification without a button, the tile - opens the
+     *  recordings list, wherever JemRec was left: until 0.30 each opened a
+     *  fresh window, on that list, and since there is one window it came
+     *  forward on Theme, with no header to say why. */
+    @Test fun aPlainTapOpensTheRecordingsList() {
+        Recordings.override = { emptyList() }
+        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.THEME, homeTab = HomeTab.CALLS))
+        vm.open(DeepLink.Link(DeepLink.Kind.HOME, null))
+        awaitMain("the list") { vm.state.value.screen == Screen.HOME }
+        assertEquals(HomeTab.RECORDINGS, vm.state.value.homeTab)
+    }
+
     /** Pair again: home, on the pairing step's way back. */
     @Test fun pairAgainGoesHomeAsLost() {
         Recordings.override = { emptyList() }

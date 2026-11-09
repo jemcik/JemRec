@@ -525,6 +525,26 @@ class AnswerTestCallTest {
     @Test fun aPreviewPlaysWhileATakeIsProcessed() {
         Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
         val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GT") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 0"
+        val made = java.util.concurrent.atomic.AtomicInteger()
+        val screen = AnswerController(context, scope, { said += it }, previewOf = { pcm -> made.incrementAndGet(); Greeting.preview(pcm) })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("the take being fetched") { recorder.heard.any { it.key == "GT" } }
+        screen.togglePreview()
+        eventually("playing") { screen.state.value.playing }
+        assertEquals(1, made.get())
+        gate.countDown()
+    }
+
+    /** Stop tapped and not yet answered: the microphone may still be open,
+     *  and a preview over the loudspeaker would end the new take. */
+    @Test fun noPreviewBeforeTheRecorderAnswersStop() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2 * 3))
+        val gate = CountDownLatch(1)
         recorder.stall = { if (it == "GS") gate.await(10, TimeUnit.SECONDS) }
         recorder.replies["GR"] = "TAKE recording"
         recorder.replies["GS"] = "TAKE 0"
@@ -535,9 +555,54 @@ class AnswerTestCallTest {
         screen.stopTake()
         eventually("the take asked to stop") { recorder.heard.any { it.key == "GS" } }
         screen.togglePreview()
-        eventually("playing") { screen.state.value.playing }
-        assertEquals(1, made.get())
+        Thread.sleep(500)
+        assertEquals(0, made.get())
         gate.countDown()
+        eventually("answered") { !screen.state.value.takeListening }
+    }
+
+    /** A greeting that cannot be saved - a full disk - is said on its row:
+     *  thrown, it ended the app. */
+    @Test fun aGreetingThatCannotBeSavedIsSaidOnItsRow() {
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 1"
+        val rate = Greeting.RATE
+        recorder.take = ShortArray(rate * 3) { i ->
+            if (i in rate / 2 until rate * 5 / 2) (5000 * kotlin.math.sin(2 * Math.PI * 220 * i / rate)).toInt().toShort() else 0
+        }.let { samples ->
+            java.nio.ByteBuffer.allocate(samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply { samples.forEach { putShort(it) } }.array()
+        }
+        val thrown = CopyOnWriteArrayList<Throwable>()
+        val watched = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, t -> thrown += t })
+        val dir = Greeting.file(context).parentFile!!
+        try {
+            val screen = AnswerController(context, watched, { said += it })
+            screen.startTake()
+            eventually("recording") { screen.state.value.recordingTake }
+            assertTrue(dir.setWritable(false))
+            screen.stopTake()
+            eventually("said") { screen.state.value.greetingProblem != null }
+            assertEquals("The greeting could not be saved. Is the phone's storage full?", screen.state.value.greetingProblem)
+            assertEquals(emptyList<Throwable>(), thrown.toList())
+        } finally {
+            dir.setWritable(true)
+            watched.cancel()
+        }
+    }
+
+    /** The verdict's own words - a microphone that would not mute - are told
+     *  on the test's screen, and only logged over another. */
+    @Test fun aVerdictsWordsAreToldOnlyOnItsScreen() {
+        recorder.replies["XR"] = "RESULT 1 state=done route=1 realms=4000 audioms=4000 tone=0 tonechunks=0 mute=0 voice=16 played=1"
+        for (onIt in listOf(false, true)) {
+            said.clear()
+            val told = CopyOnWriteArrayList<String>()
+            AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+            val screen = AnswerController(context, scope, { said += it }, tell = { told += it }, shown = { onIt })
+            screen.opened()
+            eventually("read") { (said + told).any { "did not stay muted" in it } }
+            assertEquals(onIt, told.any { "did not stay muted" in it })
+        }
     }
 
     /** A take recording takes no preview either: the row's tap is gone then,
@@ -582,7 +647,7 @@ class AnswerTestCallTest {
     @Test fun aPreviewOfTheOldGreetingEndsWhenTheNewIsSaved() {
         Greeting.save(context, ByteArray(Greeting.RATE * 2 * 20))
         val gate = CountDownLatch(1)
-        recorder.stall = { if (it == "GS") gate.await(10, TimeUnit.SECONDS) }
+        recorder.stall = { if (it == "GT") gate.await(10, TimeUnit.SECONDS) }
         recorder.replies["GR"] = "TAKE recording"
         recorder.replies["GS"] = "TAKE 1"
         // Half a second of room, two of speech, half a second of room.
@@ -596,7 +661,7 @@ class AnswerTestCallTest {
         screen.startTake()
         eventually("recording") { screen.state.value.recordingTake }
         screen.stopTake()
-        eventually("the take asked to stop") { recorder.heard.any { it.key == "GS" } }
+        eventually("the take being fetched") { recorder.heard.any { it.key == "GT" } }
         screen.togglePreview()
         eventually("the old one playing") { screen.state.value.playing }
         gate.countDown()
@@ -638,11 +703,20 @@ class AnswerTestCallTest {
      *  words were said - "null", "error 3", "unchanged off 0". */
     @Test fun theCarriersAnswerIsSaidInWords() {
         assertNull(controller.carrierRefusal("set on 30 *8250"))
-        assertEquals("the recorder could not ask your carrier", controller.carrierRefusal(null))
+        assertEquals("the recorder could not be asked", controller.carrierRefusal(null))
         assertEquals("your carrier's voicemail is off, so there was nothing to change", controller.carrierRefusal("unchanged off 0"))
         assertEquals("your carrier did not say when its voicemail answers, so nothing was changed", controller.carrierRefusal("unchanged none"))
-        assertEquals("your carrier did not answer in time", controller.carrierRefusal("error timeout"))
-        assertEquals("your carrier refused the change", controller.carrierRefusal("error 3"))
+        assertEquals(
+            "the recorder could not read the phone's forwarding, so nothing was changed",
+            controller.carrierRefusal("unchanged error InvocationTargetException"),
+        )
+        assertEquals("no answer came in time", controller.carrierRefusal("error timeout"))
+        // Not the carrier's doing: the phone's own setting, or the phone not
+        // letting the recorder ask.
+        assertEquals("the phone's fixed dialing numbers did not allow the change", controller.carrierRefusal("error 2"))
+        assertEquals("the phone did not let the recorder make the change", controller.carrierRefusal("error SecurityException"))
+        assertEquals("this phone or carrier does not take this change", controller.carrierRefusal("error 3"))
+        assertEquals("the change did not go through, and no reason was given", controller.carrierRefusal("error 1"))
     }
 
     /** A take starting - the recorder asked, not yet recording - takes no
