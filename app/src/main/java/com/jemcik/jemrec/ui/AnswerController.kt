@@ -14,6 +14,7 @@ import com.jemcik.jemrec.recorder.DaemonClient.TestArming
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -238,11 +239,21 @@ class AnswerController(
         }
     }
 
-    /** The screen is gone for good: the greeting's preview stops and its
-     *  player is let go. Closed from Recents mid-preview, it played on to its
-     *  end - the wait that stops it went with the screen - and was never
-     *  released. */
-    fun close() = stopPreview()
+    /**
+     * The screen is gone for good: the greeting's preview stops and its
+     * player is let go, and a take under way is stopped on the recorder.
+     * Closed from Recents mid-preview, the preview played on to its end - the
+     * wait that stops it went with the screen - and was never released;
+     * mid-take, the recorder went on recording the microphone for up to
+     * thirty seconds, and refused a new take until then. The take is told to
+     * stop in a scope of its own, as this screen's is ending, and is not kept.
+     */
+    fun close() {
+        stopPreview()
+        if (_state.value.recordingTake || take?.isActive == true) {
+            outliving.launch { runCatching { CaptureDaemon.stopTake(app) } }
+        }
+    }
 
     private fun stopPreview() {
         preview?.let { runCatching { it.stop(); it.release() } }
@@ -429,6 +440,9 @@ class AnswerController(
     }
 
     private companion object {
+        /** For what has to reach the recorder after the screen is gone. */
+        val outliving = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
         const val TAG = "JemRec"
         /** The recorder's three seconds to answer a test, its wait of up to
          *  eight for the call's audio, and a poll. */
