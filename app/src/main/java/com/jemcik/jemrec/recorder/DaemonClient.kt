@@ -423,44 +423,37 @@ object DaemonClient {
     suspend fun stageOne(context: Context): Map<String, String>? =
         fields(ask(context, COMMAND_DIAGNOSE, byteArrayOf('C'.code.toByte()), readMs = 15_000), "DIAG 1")
 
-    /** Arm a test call: the next incoming call within three minutes, or -
-     *  [number] given - one the daemon dials now. The recorder's answer;
-     *  null for any other, or none. */
     /**
-     * Arm a test call: the recorder's answer; [TestArming.UNANSWERED] if it
-     * was sent and no answer came; null if it was never sent. The recorder
-     * answers each refusal at once, and arms before anything that can hold
-     * it up - its main thread, then `am start` for an outgoing test's call -
-     * so an arming sent and not answered most likely took.
+     * Arm a test call: the next incoming call within three minutes, or -
+     * [number] given - one the daemon dials now. The recorder's answer; null
+     * for any other, or none. None may still have armed: the recorder arms
+     * after its emergency-number check, with no time limit, and before `am`
+     * starts an outgoing test's call, and answers after both - and nothing
+     * it says later tells which arming a result is. So a test it was not
+     * heard to arm is not watched, rather than read with another's result.
      */
     suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): TestArming? =
-        withContext(Dispatchers.IO) {
-            val payload = byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number)
-            // An outgoing test's call is started before the recorder answers,
-            // with `am`, which the recorder runs there with no time limit (its
-            // wakes allow `am` ten seconds a try): a longer wait for those.
-            val socket = runCatching {
-                open(context, COMMAND_DIAGNOSE, payload, readMs = if (incoming) 5_000 else 15_000)
-            }.getOrNull() ?: return@withContext null
-            socket.use {
-                val line = runCatching { it.getInputStream().bufferedReader().readLine()?.trim() }.getOrNull()
-                if (line == null) TestArming.UNANSWERED else parseTestArming(line)
-            }
-        }
+        parseTestArming(
+            ask(
+                context, COMMAND_DIAGNOSE,
+                byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number),
+                // An outgoing test's call is started before the recorder
+                // answers, with `am`, which it runs there with no time limit
+                // (its wakes allow `am` ten seconds a try): a longer wait.
+                readMs = if (incoming) 5_000 else 15_000,
+            ),
+        )
 
-    /** The recorder's answers to arming a test call, as it writes them; and
-     *  [UNANSWERED], none written. */
-    enum class TestArming(val line: String?) {
+    /** The recorder's answers to arming a test call, as it writes them. */
+    enum class TestArming(val line: String) {
         ARMED("TEST armed"),
         BAD_NUMBER("TEST bad-number"),
         EMERGENCY("TEST emergency"),
         NO_GREETING("TEST no-greeting"),
         BUSY("TEST busy"),
-        UNANSWERED(null),
     }
 
-    internal fun parseTestArming(line: String?): TestArming? =
-        line?.let { said -> TestArming.entries.firstOrNull { it.line == said } }
+    internal fun parseTestArming(line: String?): TestArming? = TestArming.entries.firstOrNull { it.line == line }
 
     /** What the last test call measured; null if the daemon cannot say. */
     suspend fun testResult(context: Context): Map<String, String>? =

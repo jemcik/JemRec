@@ -23,6 +23,7 @@ import org.robolectric.annotation.ConscryptMode
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -80,16 +81,13 @@ class AnswerTestCallTest {
         assertEquals("the recorder could not arm a test call", armedWith("TEST none"))
     }
 
-    /** Sent, and no word back - the recorder hung up, or was still at it when
-     *  the wait ran out. It arms before anything that can hold it up, and
-     *  answers a refusal at once: the test is taken as armed and watched,
-     *  and the screen says the recorder did not answer. */
-    @Test fun anArmingSentAndNotAnsweredIsWatched() {
-        recorder.replies.remove("XA")
-        controller.startTest(incoming = true)
-        eventually("watched") { controller.state.value.test == "armed" }
-        assertTrue(said.toString(), said.any { "did not answer" in it })
-        assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
+    /** Sent, and no word back: it may have armed all the same, but nothing
+     *  the recorder says later tells which arming a result is, so no test is
+     *  watched - rather than one read with another test's result. */
+    @Test fun aRecorderThatHangsUpCouldNotEither() {
+        assertEquals("the recorder could not arm a test call", armedWith(null))
+        assertNull(controller.state.value.test)
+        assertNull(AnswerDiagnostics.pendingTest(context))
     }
 
     /** No recorder to send it to: nothing armed, and the screen says so. */
@@ -134,8 +132,10 @@ class AnswerTestCallTest {
         controller.startTest(incoming = true)
         assertEquals("arming", controller.state.value.test)
         controller.startTest(incoming = true)
-        // The second start sent nothing: one greeting check, then one arming.
-        Thread.sleep(500)
+        // The second start sent nothing: by the first's arming, one greeting
+        // check, where a second start would have sent its own.
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        Thread.sleep(300)
         assertEquals(1, recorder.heard.count { it.key == "GQ" })
         gate.countDown()
         eventually("armed") { controller.state.value.test == "armed" }
@@ -157,10 +157,11 @@ class AnswerTestCallTest {
         eventually("the test kept") { AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed }
     }
 
-    /** An outgoing test: the recorder starts the call before it answers, and
-     *  Android's `am` has been seen taking ten seconds (the recorder's
-     *  wakes). The answer is waited for, rather than "could not arm" said
-     *  while the call goes out and the test runs unread. */
+    /** An outgoing test: the recorder starts the call before it answers, with
+     *  Android's `am`, which it runs there with no time limit (its own wakes
+     *  allow `am` ten seconds a try). The answer is waited for, rather than
+     *  "could not arm" said while the call goes out and the test runs
+     *  unread. */
     @Test fun aSlowArmingOfAnOutgoingTestIsWaitedFor() {
         recorder.stall = { if (it == "XA") Thread.sleep(6_000) }
         assertNull(armedWith("TEST armed"))
@@ -328,14 +329,55 @@ class AnswerTestCallTest {
         recorder.after = { key -> if (key == "XR") recorder.replies["XR"] = "RESULT 1 state=armed" }
         val screen = opened(scope)
         eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
-        // The other screen: it read the result, and armed again.
+        // The other screen: it read the result, put it down, and armed again.
         assertTrue(AnswerDiagnostics.takeArmedTest(context, older, asking = null))
+        AnswerDiagnostics.record(context, "2G", AnswerDiagnostics.Verdict.FAILS)
         val newer = System.currentTimeMillis() + 3 * 60_000L
         AnswerDiagnostics.noteTestArmed(context, true, newer)
         gate.countDown()
         eventually("the newer test watched") { screen.state.value.test == "armed" && screen.state.value.testUntil == newer }
         assertEquals(AnswerDiagnostics.PendingTest.Armed(true, newer), AnswerDiagnostics.pendingTest(context))
-        assertNull(AnswerDiagnostics.results(context)["2G"])
+        // Not put down again here, and shown as the other screen put it.
+        assertEquals(AnswerDiagnostics.Verdict.FAILS, AnswerDiagnostics.results(context)["2G"])
+        assertEquals(AnswerDiagnostics.Verdict.FAILS, screen.state.value.results["2G"])
+    }
+
+    /** A watch ending on a call still under way, its test taken meanwhile by
+     *  another screen that armed a newer one: the newer one is watched on,
+     *  not "still going on" said of a test no longer this screen's. */
+    @Test fun aWatchEndingOnACallUnderWayFollowsANewerTest() {
+        val older = System.currentTimeMillis() - 10 * 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, older)
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XR"] = "RESULT 1 state=running"
+        val screen = opened(scope)
+        eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
+        val newer = System.currentTimeMillis() + 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, newer)
+        gate.countDown()
+        eventually("the newer test watched") { screen.state.value.testUntil == newer && screen.state.value.test != null }
+        assertFalse(said.toString(), said.any { "still going on" in it })
+    }
+
+    /** The greeting, unreadable as its preview starts - deleted on a second
+     *  JemRec just then, say: no preview, and nothing thrown. */
+    @Test fun aGreetingThatCannotBeReadIsNotPreviewed() {
+        Greeting.save(context, ByteArray(Greeting.RATE * 2))
+        val file = Greeting.file(context)
+        assertTrue(file.setReadable(false))
+        val thrown = CopyOnWriteArrayList<Throwable>()
+        val watched = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, t -> thrown += t })
+        try {
+            val screen = AnswerController(context, watched, { said += it })
+            screen.togglePreview()
+            Thread.sleep(500)
+            assertEquals(emptyList<Throwable>(), thrown.toList())
+            assertFalse(screen.state.value.playing)
+        } finally {
+            watched.cancel()
+            file.setReadable(true)
+        }
     }
 
     /** Two screens watching one test as its result comes: the one that does
