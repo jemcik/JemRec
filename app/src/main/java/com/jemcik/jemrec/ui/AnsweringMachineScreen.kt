@@ -335,7 +335,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                     title = "Test call",
                     summary = when (a.test) {
                         "armed" -> if (a.testIncoming) {
-                            "Waiting for someone to call, until ${clock(a.testUntil)}"
+                            "Waiting for someone to call, until ${timeOfDay(a.testUntil)}"
                         } else {
                             "Calling..."
                         }
@@ -511,12 +511,17 @@ private fun seconds(s: Int): String = when {
 
 private fun longestLabel(s: Int): String = if (s == AnsweringMachine.NO_LIMIT) "No limit" else seconds(s)
 
-private fun clock(millis: Long): String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(millis))
+/** A time of day, as the screen writes it: in Latin digits in any
+ *  language, as the rest of the app's times are (clock) - the phone's own
+ *  made Arabic-Indic digits in Arabic or Persian, which the looks' fonts do
+ *  not have. */
+internal fun timeOfDay(millis: Long): String = SimpleDateFormat("HH:mm", Locale.US).format(Date(millis))
 
 /** When a pause ends, with its day: a pause is a day long, so "14:30" alone
- *  would read as today. */
+ *  would read as today. The month in English, as the words around it are,
+ *  and Latin digits (timeOfDay). */
 internal fun pauseEnd(millis: Long): String =
-    SimpleDateFormat("d MMM 'at' HH:mm", Locale.getDefault()).format(Date(millis))
+    SimpleDateFormat("d MMM 'at' HH:mm", Locale.US).format(Date(millis))
 
 /** The answering machine in a few words, for its row in Settings. Tested in
  *  AnswerSummaryTest. */
