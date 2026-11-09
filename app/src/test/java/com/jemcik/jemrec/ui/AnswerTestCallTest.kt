@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.ui
 
+import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.capture.FakeRecorder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -81,5 +82,29 @@ class AnswerTestCallTest {
         assertEquals("armed", controller.state.value.test)
         // The greeting and the settings first, then the arming.
         assertEquals(listOf("GQ", "N", "XA"), recorder.heard.map { it.key }.take(3))
+    }
+
+    /**
+     * Armed, then the screen gone - JemRec closed from Recents - and the call
+     * taken meanwhile: the recorder answers it either way, and the next
+     * screen reads how it went. Only the screen that armed it was watching,
+     * and the verdict, the other route on a failure and "Did they hear it?"
+     * went with it.
+     */
+    @Test fun aTestArmedAsTheScreenWentIsReadByTheNext() {
+        recorder.replies["XR"] = "RESULT 1 state=armed"
+        assertNull(armedWith("TEST armed"))
+        scope.cancel()
+        recorder.replies["XR"] = "RESULT 1 state=done route=1 realms=4000 audioms=4000 tone=1 tonechunks=40 mute=1 voice=16 played=1"
+        val nextScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val next = AnswerController(context, nextScope, { said += it })
+            next.opened()
+            eventually("the result read") { AnswerDiagnostics.results(context)["2G"] != null }
+            assertEquals(AnswerDiagnostics.Verdict.WORKS, AnswerDiagnostics.results(context)["2G"])
+            eventually("the test over") { next.state.value.test == null }
+        } finally {
+            nextScope.cancel()
+        }
     }
 }

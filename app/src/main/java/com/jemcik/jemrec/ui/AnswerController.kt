@@ -120,11 +120,22 @@ class AnswerController(
         }
     }
 
-    /** The screen opened: the checks, if never run, and the SIMs. */
+    /** The screen opened: the checks, if never run, and the SIMs - and a
+     *  test call armed before, watched on to its end. */
     fun opened() {
         if (seeded) return
         reload()
         if (_state.value.stageOne == null) runChecks()
+        // Armed by a screen that has gone since - JemRec closed from Recents
+        // - the recorder answers the call all the same, and only a screen
+        // reads how it went: the verdict, the other route on a failure, "Did
+        // they hear it?". Each went with the screen that armed it.
+        AnswerDiagnostics.testArmed(app)?.let { (incoming, until) ->
+            if (testWatch?.isActive != true) {
+                _state.update { it.copy(test = "armed", testIncoming = incoming, testUntil = until, askHeard = null) }
+                watchTest(until - System.currentTimeMillis())
+            }
+        }
         scope.launch {
             CaptureDaemon.sims(app)?.let { sims ->
                 AnswerConditions.remember(app, sims)
@@ -332,8 +343,10 @@ class AnswerController(
             // The recorder's own windows: three minutes for a caller, and
             // fifteen seconds for the call it dials to go out.
             val window = if (incoming) 180_000L else 15_000L
+            val until = System.currentTimeMillis() + window
+            AnswerDiagnostics.noteTestArmed(app, incoming, until)
             _state.update {
-                it.copy(test = "armed", testIncoming = incoming, testUntil = System.currentTimeMillis() + window, askHeard = null)
+                it.copy(test = "armed", testIncoming = incoming, testUntil = until, askHeard = null)
             }
             watchTest(window)
         }
@@ -357,6 +370,7 @@ class AnswerController(
                 // three seconds on, and is "running" once its audio is up.
                 if (result["state"] == "armed" && System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) break
             }
+            AnswerDiagnostics.testOver(app)
             _state.update { it.copy(test = null) }
             say("no test call came")
         }
@@ -367,6 +381,7 @@ class AnswerController(
         val verdict = AnswerDiagnostics.verdict(result)
         Log.i(TAG, "answer: test on $type -> $verdict ($result)")
         AnswerDiagnostics.record(app, type, verdict)
+        AnswerDiagnostics.testOver(app)
         if (verdict == AnswerDiagnostics.Verdict.FAILS) {
             // A microphone that would not mute is this phone's, whichever way
             // the greeting goes: no reason to try the other.
