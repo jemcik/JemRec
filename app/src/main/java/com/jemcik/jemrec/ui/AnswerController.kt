@@ -29,11 +29,14 @@ import kotlinx.coroutines.withContext
  *  included: one at a time. */
 internal val testArming = java.util.concurrent.atomic.AtomicBoolean(false)
 
-/** Armings ended, and the last that armed nothing with the words its screen
- *  was told: a screen that waited for it says them too (they went to that
- *  screen, which may be gone). */
-internal val armingsEnded = java.util.concurrent.atomic.AtomicLong()
-internal val lastRefusal = java.util.concurrent.atomic.AtomicReference<Pair<Long, String>?>(null)
+/** Each arming's number, counted as it begins: the one under way is the
+ *  last counted. */
+internal val armingsBegun = java.util.concurrent.atomic.AtomicLong()
+
+/** Why an arming armed nothing, by its number - the words its own screen was
+ *  told - for a screen that waited for it: they went to that screen, which
+ *  may be gone. The last few only. */
+internal val refusals = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
 /** What the answering machine's screen shows. */
 data class AnswerUi(
@@ -225,10 +228,15 @@ class AnswerController(
         // armed it, gone if JemRec was closed and opened again meanwhile.
         if (testArming.get()) {
             if (awaitingArming?.isActive != true) {
-                val since = armingsEnded.get()
+                // That arming's words, and no other's: this screen may arm
+                // its own as soon as that one is over, and says its own.
+                val awaited = armingsBegun.get()
                 awaitingArming = scope.launch {
-                    while (testArming.get()) delay(250)
-                    lastRefusal.get()?.takeIf { it.first > since }?.let { (_, words) -> tell(words) }
+                    while (testArming.get() && armingsBegun.get() == awaited) delay(250)
+                    refusals[awaited]?.let(::told)
+                    // Read now, and waited for again if another screen's
+                    // arming has begun since: this wait is over.
+                    awaitingArming = null
                     readPendingTest()
                 }
             }
@@ -632,6 +640,7 @@ class AnswerController(
             readPendingTest()
             return
         }
+        val armingSeq = armingsBegun.incrementAndGet()
         // A test from before still to be read is read first. Armed by the
         // recorder and not answered, the new one would leave the old entry
         // to be read with its result (a recorder before 0.31 names no
@@ -667,10 +676,12 @@ class AnswerController(
                 }
                 if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
                 val words = if (reply == TestArming.ARMED) null else refusal(reply, incoming)
-                // Kept for a screen told this one was under way, before the
-                // flag goes: its words go to this screen, which may be gone.
-                val ended = armingsEnded.incrementAndGet()
-                if (words != null) lastRefusal.set(ended to words)
+                // Kept, before the flag goes, for a screen that waited for
+                // this arming: its words go to this screen, which may be gone.
+                if (words != null) {
+                    refusals[armingSeq] = words
+                    refusals.keys.removeIf { it <= armingSeq - 8 }
+                }
                 Triple(window, until, words)
             } finally {
                 testArming.set(false)

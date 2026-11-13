@@ -962,6 +962,83 @@ class AnswerTestCallTest {
         )
     }
 
+    /** A screen that waited for another's arming, and armed its own the
+     *  moment that one was over: each arming's words said once - the
+     *  awaited one's by the wait, its own by itself - where the wait ran on
+     *  into the new arming and said its words a second time, and the
+     *  awaited one's never. */
+    @Test fun aWaitSaysTheAwaitedArmingsWordsNotTheNextOnes() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST no-greeting"
+        recorder.after = { key -> if (key == "XA") recorder.replies["XA"] = "TEST busy" }
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        AnswerController(context, closed, { }).startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        closed.cancel()
+        controller.readPendingTest()
+        gate.countDown()
+        eventually("that arming over") { !testArming.get() }
+        controller.startTest(incoming = true)
+        eventually("both said") { said.size >= 2 }
+        Thread.sleep(600)
+        assertEquals(
+            listOf("the last test call is still going on", "the recorder does not have your greeting yet - try again in a moment"),
+            said.toList().sorted(),
+        )
+    }
+
+    /** Why another screen's arming armed nothing is a snackbar only while
+     *  the waiting screen is shown, as a test's ending is; over the list or
+     *  Settings it is Diagnostics' log's alone. It came up over whatever was
+     *  shown. */
+    @Test fun anotherArmingsWordsAreToldOnlyOnTheWaitingScreen() {
+        for (onIt in listOf(false, true)) {
+            said.clear()
+            recorder.heard.clear()
+            val told = CopyOnWriteArrayList<String>()
+            val gate = CountDownLatch(1)
+            recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+            recorder.replies["XA"] = "TEST busy"
+            val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            AnswerController(context, closed, { }).startTest(incoming = true)
+            eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+            closed.cancel()
+            val waiting = AnswerController(context, scope, { said += it }, tell = { told += it }, shown = { onIt })
+            waiting.readPendingTest()
+            gate.countDown()
+            eventually("said") { (said + told).any { "still going on" in it } }
+            assertEquals(onIt, told.any { "still going on" in it })
+            eventually("that arming over") { !testArming.get() }
+        }
+    }
+
+    /** A waiting screen says nothing for an arming that armed: it shows the
+     *  test. */
+    @Test fun aWaitSaysNothingForAnArmingThatArmed() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST busy"
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        AnswerController(context, closed, { }).startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        closed.cancel()
+        gate.countDown()
+        eventually("that arming over") { !testArming.get() }
+        // Refused, and over: now another screen's arming that arms.
+        recorder.replies["XA"] = "TEST armed"
+        val gate2 = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate2.await(10, TimeUnit.SECONDS) }
+        val closed2 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        AnswerController(context, closed2, { }).startTest(incoming = true)
+        eventually("the second arming asked") { recorder.heard.count { it.key == "XA" } == 2 }
+        closed2.cancel()
+        controller.readPendingTest()
+        gate2.countDown()
+        eventually("shown") { controller.state.value.test == "armed" }
+        assertTrue(said.toString(), said.isEmpty())
+    }
+
     /** ...whatever else is kept: a question still waiting from an older
      *  test does not hide why this arming armed nothing. */
     @Test fun whyAnArmingArmedNothingIsSaidOverAQuestionStillWaiting() {
