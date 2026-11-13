@@ -436,20 +436,22 @@ object DaemonClient {
 
     /**
      * Arm a test call: the next incoming call within three minutes, or -
-     * [number] given - one the daemon dials now. The recorder's answer;
-     * [TestArming.UNANSWERED] if the arming reached it and no answer came;
-     * null if it never did, or for an answer not known. Unanswered, it may
-     * have armed all the same: the recorder arms after its emergency-number
-     * check, which has no time limit, and before `am` starts an outgoing
-     * test's call, and answers after both - and nothing it says later tells
-     * which arming a result is. So it is told, not watched.
+     * [number] given - one the daemon dials now. [arming] is this test's id:
+     * a recorder from 0.31 on names it in each result ("arming=", see
+     * testResult), so an arming it did not answer can be told from one that
+     * took, and a result from another test's; an older recorder reads past
+     * it. The recorder's answer; [TestArming.UNANSWERED] if the arming
+     * reached it and no answer came; null if it never did, or for an answer
+     * not known.
      */
-    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): TestArming? =
+    suspend fun armTest(context: Context, incoming: Boolean, number: String = "", arming: Long = 0): TestArming? =
         withContext(Dispatchers.IO) {
-            val payload = byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number)
-            // An outgoing test's call is started before the recorder answers,
-            // with `am`, which it runs there with no time limit (its wakes
-            // allow `am` ten seconds a try): a longer wait for those.
+            val payload = byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number) +
+                java.nio.ByteBuffer.allocate(8).putLong(arming).array()
+            // A recorder before 0.31 starts an outgoing test's call before
+            // it answers, with `am`, which it runs there with no time limit
+            // (its wakes allow `am` ten seconds a try): a longer wait for
+            // those. From 0.31 it answers first.
             val socket = runCatching {
                 open(context, COMMAND_DIAGNOSE, payload, readMs = if (incoming) 5_000 else 15_000)
             }.getOrNull() ?: return@withContext null

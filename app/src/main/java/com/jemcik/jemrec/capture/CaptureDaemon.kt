@@ -121,8 +121,8 @@ object CaptureDaemon {
     suspend fun uploadGreeting(context: Context, pcm: ByteArray): Boolean = DaemonClient.uploadGreeting(context, pcm)
     suspend fun syncGreeting(context: Context): Boolean = DaemonClient.syncGreeting(context)
     suspend fun stageOne(context: Context): Map<String, String>? = DaemonClient.stageOne(context)
-    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): DaemonClient.TestArming? =
-        DaemonClient.armTest(context, incoming, number)
+    suspend fun armTest(context: Context, incoming: Boolean, number: String = "", arming: Long = 0): DaemonClient.TestArming? =
+        DaemonClient.armTest(context, incoming, number, arming)
     suspend fun testResult(context: Context): Map<String, String>? = DaemonClient.testResult(context)
     suspend fun forwarding(context: Context): String? = DaemonClient.forwarding(context)
     suspend fun setForwarding(context: Context, seconds: Int): String? = DaemonClient.setForwarding(context, seconds)

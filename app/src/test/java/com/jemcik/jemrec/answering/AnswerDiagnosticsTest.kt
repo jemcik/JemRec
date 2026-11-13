@@ -17,6 +17,18 @@ class AnswerDiagnosticsTest {
         "DIAG 1",
     )!!
 
+    /** The arming a result is for, as a recorder from 0.31 names it; none
+     *  from an older one, or one that is not a number. */
+    @Test fun aResultNamesItsArming() {
+        val result = CaptureDaemon.fields(
+            "RESULT 1 state=done route=1 realms=9416 audioms=9539 tone=0 tonechunks=0 mute=1 voice=16 played=1 arming=1762000180000",
+            "RESULT 1",
+        )!!
+        assertEquals(1762000180000L, AnswerDiagnostics.arming(result))
+        assertNull(AnswerDiagnostics.arming(result - "arming"))
+        assertNull(AnswerDiagnostics.arming(result + ("arming" to "x")))
+    }
+
     @Test fun theHonorPassesTheNoCallChecks() {
         val stage = AnswerDiagnostics.stageOne(honor)
         assertTrue(stage.possible)

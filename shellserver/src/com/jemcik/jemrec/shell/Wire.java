@@ -267,9 +267,10 @@ final class Wire {
         return "TEST " + outcome;
     }
 
-    /** DIAGNOSE 'R': the last test call's signals. */
+    /** DIAGNOSE 'R': the last test call's signals, and the arming they are
+     *  for (the app's id for it). */
     static String result(String state, int route, long realMs, long audioMs, int tone, int toneChunks, int mute,
-            int voice, int played) {
+            int voice, int played, long arming) {
         return "RESULT 1 state=" + state
                 + " route=" + route
                 + " realms=" + realMs
@@ -278,7 +279,8 @@ final class Wire {
                 + " tonechunks=" + toneChunks
                 + " mute=" + mute
                 + " voice=" + voice
-                + " played=" + played;
+                + " played=" + played
+                + " arming=" + arming;
     }
 
     /** DIAGNOSE 'F' and 'S': the carrier's no-reply forwarding. */

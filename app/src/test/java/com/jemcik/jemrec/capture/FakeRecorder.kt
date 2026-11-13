@@ -150,7 +150,8 @@ internal class FakeRecorder(
             }
         }
         'X' -> when (val op = input.readUnsignedByte()) {
-            'A'.code -> byteArrayOf(op.toByte(), input.readByte()) + frame(input)
+            // The arming's id after the number (since 0.31): eight bytes.
+            'A'.code -> byteArrayOf(op.toByte(), input.readByte()) + frame(input) + ByteArray(8).also(input::readFully)
             'S'.code -> byteArrayOf(op.toByte(), input.readByte())
             else -> byteArrayOf(op.toByte())
         }

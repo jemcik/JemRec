@@ -109,6 +109,10 @@ object AnswerDiagnostics {
         return if (result["tone"] == "1") Verdict.WORKS else Verdict.LIKELY
     }
 
+    /** The arming a recorder's result is for (the id the app sent with it),
+     *  or null from a recorder before 0.31, which names none. Pure. */
+    fun arming(result: Map<String, String>): Long? = result["arming"]?.toLongOrNull()
+
     /** The call's type from telephony's voice network type: the audio path
      *  differs between them. */
     fun callType(voice: Int): String = when (voice) {

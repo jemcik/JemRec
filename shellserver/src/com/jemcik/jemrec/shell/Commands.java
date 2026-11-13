@@ -401,8 +401,9 @@ final class Commands {
      * 'X': the answering machine's diagnostics - see the app's diagnostics
      * screen for what each answer means to the user.
      *   'C' stage one, no call: one line of key=value.
-     *   'A' arm a test call: a byte (1 incoming, 0 outgoing) and a name frame,
-     *       the number to dial for an outgoing one.
+     *   'A' arm a test call: a byte (1 incoming, 0 outgoing), a name frame,
+     *       the number to dial for an outgoing one, and eight bytes, the app's
+     *       id for this arming, which 'R' names its results with.
      *   'R' the last test's signals.
      *   'F' the carrier's no-reply forwarding, as the network has it - slow.
      *   'S' a byte of seconds: lengthen it, keeping its number.
@@ -417,6 +418,7 @@ final class Commands {
             case 'A': {
                 boolean incoming = in.read() == 1;
                 String number = Wire.readName(client.getInputStream());
+                long arming = in.readLong();
                 AnswerMachine machine = Answering.answerMachine;
                 if (machine == null) {
                     reply(client, Wire.test("none"));
@@ -456,6 +458,7 @@ final class Commands {
                 // the last test's results as they were - not "armed" for a
                 // test that never was.
                 Answering.onMain(() -> {
+                    AnswerTest.testArming = arming;
                     AnswerTest.testState = "armed";
                     AnswerTest.testRoute = -1;
                     AnswerTest.testRealMs = 0;
@@ -483,7 +486,7 @@ final class Commands {
                 reply(client, Wire.result(AnswerTest.testState, AnswerTest.testRoute, AnswerTest.testRealMs,
                         AnswerTest.testAudioMs, AnswerTest.testToneBest >= AnswerTest.TONE_CHUNKS ? 1 : 0,
                         AnswerTest.testToneBest, AnswerTest.testMuteHeld, AnswerTest.testVoice,
-                        AnswerTest.testPlayed));
+                        AnswerTest.testPlayed, AnswerTest.testArming));
                 break;
             case 'F': {
                 client.setSoTimeout(60_000);

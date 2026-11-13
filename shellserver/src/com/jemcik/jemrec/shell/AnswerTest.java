@@ -14,6 +14,12 @@ final class AnswerTest {
     private AnswerTest() {
     }
 
+    /** The app's id for the arming the results below are for, 0 before any:
+     *  sent with 'X' 'A' and answered with them, so the app tells a result
+     *  that is its test's from one that is not - an arming it got no answer
+     *  to, or an older test's. */
+    static volatile long testArming;
+
     /** The last diagnostics test call, for 'X' 'R'. */
     static volatile String testState = "none";
     static volatile int testRoute = -1;

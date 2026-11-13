@@ -21,6 +21,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import java.nio.ByteBuffer
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -158,6 +159,59 @@ class AnswerTestCallTest {
         assertEquals(listOf("GQ", "N", "XA"), recorder.heard.map { it.key }.take(3))
     }
 
+    /** The arming carries the test's id - its window's end, which the test is
+     *  kept by - for the recorder to name its results with. */
+    @Test fun theArmingCarriesTheTestsId() {
+        assertNull(armedWith("TEST armed"))
+        val armed = AnswerDiagnostics.pendingTest(context) as AnswerDiagnostics.PendingTest.Armed
+        val payload = recorder.heard.last { it.key == "XA" }.payload
+        assertEquals(armed.until, ByteBuffer.wrap(payload, payload.size - 8, 8).long)
+    }
+
+    /** The id the recorder was sent with the arming [key] heard last. */
+    private fun sentArming(): Long {
+        val payload = recorder.heard.last { it.key == "XA" }.payload
+        return ByteBuffer.wrap(payload, payload.size - 8, 8).long
+    }
+
+    /** Sent, and no word back, from a recorder that names its results with
+     *  the arming: the results say this arming took, and it is watched as
+     *  armed - where 0.30 could only say it may have. */
+    @Test fun anArmingNotAnsweredThatTookIsWatched() {
+        recorder.replies.remove("XA")
+        recorder.after = { key -> if (key == "XA") recorder.replies["XR"] = "RESULT 1 state=armed arming=${sentArming()}" }
+        controller.startTest(incoming = true)
+        eventually("armed") { controller.state.value.test == "armed" }
+        assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
+        assertTrue(said.toString(), said.isEmpty())
+    }
+
+    /** ...and that did not take: the results are another arming's (or none),
+     *  so nothing is armed, and the screen says it could not. */
+    @Test fun anArmingNotAnsweredThatDidNotTakeCouldNot() {
+        recorder.replies.remove("XA")
+        recorder.replies["XR"] = "RESULT 1 state=done route=1 realms=4000 audioms=4000 tone=1 tonechunks=40 mute=1 voice=16 played=1 arming=7"
+        controller.startTest(incoming = true)
+        eventually("told") { said.isNotEmpty() }
+        assertEquals(listOf("the recorder could not arm a test call"), said.toList())
+        assertNull(controller.state.value.test)
+        assertNull(AnswerDiagnostics.pendingTest(context))
+        // The older test's result is not read as this one's.
+        assertTrue(AnswerDiagnostics.results(context).isEmpty())
+    }
+
+    /** Results that name another arming are not this test's: the watch does
+     *  not take them for its verdict, and ends saying so. */
+    @Test fun anotherArmingsResultIsNotThisTests() {
+        recorder.replies["XR"] = "RESULT 1 state=done route=1 realms=4000 audioms=4000 tone=1 tonechunks=40 mute=1 voice=16 played=1 arming=7"
+        recorder.replies["XA"] = "TEST armed"
+        controller.startTest(incoming = true)
+        eventually("the watch over") { said.isNotEmpty() }
+        assertEquals(listOf("the recorder no longer has this test call"), said.toList())
+        assertTrue(AnswerDiagnostics.results(context).isEmpty())
+        assertNull(AnswerDiagnostics.pendingTest(context))
+    }
+
     /** Arming takes the recorder a moment: the screen shows it at once - Delete
      *  greyed, the row taking no tap - and a second start meanwhile arms
      *  nothing more. */
@@ -205,11 +259,11 @@ class AnswerTestCallTest {
         }
     }
 
-    /** An outgoing test: the recorder starts the call before it answers, with
-     *  Android's `am`, which it runs there with no time limit (its own wakes
-     *  allow `am` ten seconds a try). The answer is waited for, and the test
-     *  watched, rather than left unanswered as the call goes out and run
-     *  unread. */
+    /** An outgoing test: a recorder before 0.31 starts the call before it
+     *  answers, with Android's `am`, which it runs there with no time limit
+     *  (its own wakes allow `am` ten seconds a try). The answer is waited
+     *  for, and the test watched, rather than left unanswered as the call
+     *  goes out and run unread. */
     @Test fun aSlowArmingOfAnOutgoingTestIsWaitedFor() {
         recorder.stall = { if (it == "XA") Thread.sleep(6_000) }
         assertNull(armedWith("TEST armed"))

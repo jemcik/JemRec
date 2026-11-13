@@ -612,17 +612,17 @@ class AnswerController(
         }
         // A test from before still to be read is read first. Armed by the
         // recorder and not answered, the new one would leave the old entry
-        // to be read with its result (the recorder's result names no
-        // arming).
+        // to be read with its result (a recorder before 0.31 names no
+        // arming in its results).
         if (AnswerDiagnostics.pendingTest(app) is AnswerDiagnostics.PendingTest.Armed) {
             testArming.set(false)
             tell("the last test call is read first; start the next one when it is")
             readPendingTest()
             return
         }
-        // Shown at once: arming takes the recorder a moment - an outgoing
-        // test's call goes out before it answers - and the greeting deleted
-        // meanwhile would leave the test nothing to play.
+        // Shown at once: arming takes the recorder a moment - one before
+        // 0.31 places an outgoing test's call before it answers - and the
+        // greeting deleted meanwhile would leave the test nothing to play.
         _state.update { it.copy(test = "arming", testIncoming = incoming) }
         // Armed, and noted, in the background, not in the screen's scope:
         // with the screen closed meanwhile (from Recents) the recorder arms
@@ -634,11 +634,15 @@ class AnswerController(
                 // the recorder has: both brought up to date first.
                 CaptureDaemon.syncGreeting(app)
                 CaptureDaemon.setAnswering(app)
-                val reply = CaptureDaemon.armTest(app, incoming, number)
                 // The recorder's own windows: three minutes for a caller, and
-                // fifteen seconds for the call it dials to go out.
+                // fifteen seconds for the call it dials to go out. Their end
+                // is the test's id too, sent with the arming: the recorder
+                // names its results with it.
                 val window = if (incoming) 180_000L else 15_000L
                 val until = System.currentTimeMillis() + window
+                val reply = CaptureDaemon.armTest(app, incoming, number, arming = until).let {
+                    if (it == TestArming.UNANSWERED) afterNoAnswer(until) else it
+                }
                 if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
                 Triple(reply, window, until)
             } finally {
@@ -655,8 +659,9 @@ class AnswerController(
                         TestArming.EMERGENCY -> "an emergency number is never called for a test"
                         TestArming.NO_GREETING -> "the recorder does not have your greeting yet - try again in a moment"
                         TestArming.BUSY -> "the last test call is still going on"
-                        // It may have armed all the same: told, not watched
-                        // (DaemonClient.armTest).
+                        // It may have armed all the same, and the recorder
+                        // cannot say whose its results are - one before
+                        // 0.31 - or cannot be asked: told, not watched.
                         TestArming.UNANSWERED -> if (incoming) {
                             "the recorder did not answer, and may have armed the test all the same: " +
                                 "a call in the next three minutes may be answered with your greeting, unread"
@@ -673,6 +678,18 @@ class AnswerController(
             }
             watchTest(window)
         }
+    }
+
+    /**
+     * An arming the recorder did not answer, told by its last test's
+     * results: [TestArming.ARMED] when they name this arming ([until], the
+     * id sent with it), null - not armed - when they name another; still
+     * [TestArming.UNANSWERED] when it cannot be asked, or names none (a
+     * recorder before 0.31).
+     */
+    private suspend fun afterNoAnswer(until: Long): TestArming? {
+        val named = CaptureDaemon.testResult(app)?.let(AnswerDiagnostics::arming) ?: return TestArming.UNANSWERED
+        return if (named == until) TestArming.ARMED else null
     }
 
     /**
@@ -694,22 +711,29 @@ class AnswerController(
             while (true) {
                 val result = CaptureDaemon.testResult(app)
                 last = result?.get("state")
-                when (last) {
-                    "running" -> _state.update { it.copy(test = "running") }
-                    "done" -> {
-                        finishTest(result!!)
-                        return@launch
-                    }
+                // Results that name another arming are not this test's: a
+                // recorder from 0.31 on says whose they are.
+                val another = result?.let(AnswerDiagnostics::arming)?.let { it != _state.value.testUntil } == true
+                when {
                     // A recorder started since keeps no test: nothing will
                     // come, and it is said now, not when the window is out.
-                    "none" -> {
+                    last == "none" -> {
                         ending = "the recorder restarted, so no test call is armed now"
                         break
+                    }
+                    another -> {
+                        ending = "the recorder no longer has this test call"
+                        break
+                    }
+                    last == "running" -> _state.update { it.copy(test = "running") }
+                    last == "done" -> {
+                        finishTest(result!!)
+                        return@launch
                     }
                     // A call that rang in the window's last moment is
                     // answered three seconds on, and is "running" once its
                     // audio is up.
-                    "armed" -> if (System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) {
+                    last == "armed" -> if (System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) {
                         ending = "no test call came"
                         break
                     }
