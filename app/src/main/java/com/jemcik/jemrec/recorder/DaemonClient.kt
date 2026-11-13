@@ -721,7 +721,7 @@ object DaemonClient {
     }
 
     /**
-     * What the daemon says its call watch has heard - see Commands.COMMAND_WATCH
+     * What the daemon says its call watch has heard - see Wire.COMMAND_WATCH
      * for why the self-test needs it. Times are wall-clock millis on this
      * phone, 0 for never.
      */

@@ -38,142 +38,16 @@ final class Commands {
     private Commands() {
     }
 
-    static final int COMMAND_PING = 'P';
-    private static final int COMMAND_RECORD = 'R';
-
-    /**
-     * THE DAEMON RECORDS TO A FILE; THE APP COLLECTS IT AFTERWARDS.
-     *
-     * The app used to read the live audio over this socket and mux it as the
-     * call ran. That put a backgrounded, throttleable app process on the
-     * real-time path: on this phone Honor's iAware freezes JemRec while another
-     * app (the dialer) is in front, its socket reader stalls, and the tail of
-     * the call is lost when the socket closes. Measured - a 57s call arrived as
-     * 35s, ~620 packets discarded.
-     *
-     * So the daemon - shell uid, outside app management, never frozen - now
-     * writes the whole call to /data/local/tmp itself, driven by its own call
-     * watch, with no app in the loop. Afterwards the app FETCHes the finished
-     * file over this socket at whatever pace the OS allows: a freeze there only
-     * delays the copy, it cannot lose audio, because the audio is already on
-     * disk complete.
-     */
-    private static final int COMMAND_FETCH = 'F';
-    private static final int COMMAND_DELETE = 'D';
-    private static final int COMMAND_SET_ENABLED = 'E';
-    private static final int COMMAND_LIST = 'L';
-    /** On-demand: the app tells the daemon to start recording the call in
-     *  progress, once the user has said yes to the start-of-call prompt. */
-    private static final int COMMAND_START = 'S';
-
-    /**
-     * Report on the call watch, for the app's self-test.
-     *
-     * The self-test proved that this daemon answers and that the HAL hands over
-     * voice-call audio, and on that alone it said "a call would be recorded" -
-     * while the daemon was deaf to every call, its watch garbage-collected (see
-     * callWatch). Measured: PASS straight after a call it had missed. Neither
-     * check touches the watch, so the app now asks after it directly: when this
-     * process started, whether the watch registered, whether the main looper
-     * that delivers its events still runs, the mode, whether a call is up, how
-     * many events and off-hooks there have been and when the last of each came,
-     * and since when the current recording has run. The app holds that against
-     * the phone's call log. One line, "WATCH 1 key=value ..."; a daemon older
-     * than this hangs up on the command, which the app reads as too old to say.
-     */
-    private static final int COMMAND_WATCH = 'W';
-    private static final int WATCH_FORMAT = 1;
     /** How long the main looper gets to run a posted no-op before it counts as stuck. */
     private static final long LOOPER_CHECK_MS = 1000L;
 
-    /** Four bytes where the codec id goes: the file the app asked for is not here. */
-    private static final String GONE = "gone";
-
-    /**
-     * Exit.
-     *
-     * The app used to stop this process with `pkill` over ADB, which works
-     * right up until the moment it is most needed. Starting fresh closes the
-     * ADB session as part of what it does, so by the time it wanted the daemon
-     * gone it had already thrown away the only way it had of asking - and the
-     * daemon carried on running as an orphan until the phone was rebooted.
-     *
-     * Over loopback there is no such dependency. The socket is the one channel
-     * that is always there, which is the entire premise of this daemon.
-     */
-    private static final int COMMAND_QUIT = 'Q';
-
-    /**
-     * Switch Wireless and USB debugging off, and go: "Turn all debugging off"
-     * in the app's When JemRec is off, for apps that will not open while
-     * debugging is on (issue #37). One byte follows: 1 to go, 0 to call off a
-     * go still waiting. It waits, as QUIT does, while a call or a fetch is in
-     * progress - so this process, never frozen, is the one that waits, rather
-     * than an app that may be. USB debugging going off stops adbd, and adbd
-     * takes this process with it (see keepShieldUp): starting it again is the
-     * app's, on its On, over Wi-Fi. Replies OFF NOW, OFF AFTER CALL, OFF
-     * CANCELLED, or OFF TOO LATE for a 0 that came once the switches were
-     * being written: the app's On then waits for this process to be gone
-     * before it puts them back, or these writes would land on its.
-     */
-    private static final int COMMAND_DEBUGGING_OFF = 'O';
-
-    /**
-     * The messenger apps whose calls to record - see Voip. In the environment
-     * at spawn (VOIP_ENV) and sent again whenever the user changes them, the
-     * same way the recording mode is. Empty, the default, records none and
-     * watches nothing.
-     */
-    private static final int COMMAND_SET_VOIP = 'V';
-
-    /**
-     * EXACT CALL TRACKING. Telecom binds the app's in-call service
-     * (CallTracker) for every phone call once MANAGE_ONGOING_CALLS is allowed
-     * for the app's UID - allowing it for the package alone was not enough on
-     * an Honor (measured: Telecom checked the op and bound nothing). Only
-     * shell can allow it, so this process does: at start, when the app says
-     * (COMMAND_SET_TRACKING), and again at each heartbeat in case the system
-     * took it back - some ROMs revert it. Off withdraws it, and nothing is
-     * bound.
-     */
-    private static final int COMMAND_SET_TRACKING = 'T';
-
-    /**
-     * The rules on whose calls to keep said no to a phone call while it was
-     * still ringing or being dialled (the app's CallTracker knows the number
-     * by then): do not record it. A recording that started a moment ago for
-     * it - dialling takes the phone off-hook at once - is stopped and deleted.
-     */
-    private static final int COMMAND_SKIP = 'K';
-
-    /**
-     * THE ANSWERING MACHINE - see AnswerMachine. Its settings ("on,seconds,
-     * route") arrive in the environment at spawn and over 'N' when the user
-     * changes them, the way the mode does, and default to off. The app's
-     * go-ahead for a ringing call is 'Y' (four bytes: the delay in ms, or -1
-     * to take it back); 'H' is Talk to them ('T') or Hang up ('H') during a
-     * message; 'G' handles the greeting and 'X' the diagnostics.
-     */
-    private static final int COMMAND_ANSWER_SETTINGS = 'N';
-    private static final int COMMAND_GO_AHEAD = 'Y';
-    private static final int COMMAND_HANDOVER = 'H';
-    private static final int COMMAND_GREETING = 'G';
-    private static final int COMMAND_DIAGNOSE = 'X';
-
-    /**
-     * The last call's report, for Copy a report in the app's Diagnostics: see
-     * CallReport. Kept in a file as well, from the moment its recording
-     * stops, so a recorder started again since - an update, a revive -
-     * still has it.
-     */
-    private static final int COMMAND_REPORT = 'C';
     static void run(Socket client) throws Exception {
         int command = client.getInputStream().read();
-        if (command == COMMAND_PING) {
+        if (command == Wire.COMMAND_PING) {
             pong(client);
             return;
         }
-        if (command == COMMAND_QUIT) {
+        if (command == Wire.COMMAND_QUIT) {
             boolean busy;
             synchronized (Main.LOCK) {
                 // The app asks this to replace an older build, and will ask
@@ -181,19 +55,17 @@ final class Commands {
                 busy = Main.busyLocked();
             }
             if (busy) {
-                client.getOutputStream().write("BUSY\n".getBytes(StandardCharsets.UTF_8));
-                client.getOutputStream().flush();
+                Wire.reply(client.getOutputStream(), Wire.BUSY);
                 Ln.w("session: quit requested during a call or a fetch, refused");
                 return;
             }
-            client.getOutputStream().write("BYE\n".getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+            Wire.reply(client.getOutputStream(), Wire.BYE);
             Ln.i("session: quit requested, exiting");
             // Flushed and acknowledged first, so the app learns it worked
             // rather than seeing a dropped connection and having to guess.
             System.exit(0);
         }
-        if (command == COMMAND_DEBUGGING_OFF) {
+        if (command == Wire.COMMAND_DEBUGGING_OFF) {
             int go = client.getInputStream().read();
             if (go != 0 && go != 1) {
                 // Only an explicit 1 switches debugging off: a byte that
@@ -204,24 +76,23 @@ final class Commands {
             String reply;
             synchronized (Main.LOCK) {
                 if (go == 0 && DebuggingOff.switchingOff) {
-                    reply = "OFF TOO LATE";
+                    reply = Wire.OFF_TOO_LATE;
                 } else if (go == 0) {
                     DebuggingOff.goingOff = false;
-                    reply = "OFF CANCELLED";
+                    reply = Wire.OFF_CANCELLED;
                 } else {
                     DebuggingOff.goingOff = true;
-                    reply = Main.busyLocked() ? "OFF AFTER CALL" : "OFF NOW";
+                    reply = Main.busyLocked() ? Wire.OFF_AFTER_CALL : Wire.OFF_NOW;
                 }
             }
-            client.getOutputStream().write((reply + "\n").getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+            Wire.reply(client.getOutputStream(), reply);
             Ln.i("session: debugging off - " + reply);
             if (go == 1) {
                 DebuggingOff.goOffWhenFree();
             }
             return;
         }
-        if (command == COMMAND_RECORD) {
+        if (command == Wire.COMMAND_RECORD) {
             // Live capture straight to the socket. Calls no longer use this - the
             // daemon writes them to a file (see startRecording) - but the app's
             // self-test still records a short clip this way to prove the HAL will
@@ -246,7 +117,7 @@ final class Commands {
             }
             return;
         }
-        if (command == COMMAND_LIST) {
+        if (command == Wire.COMMAND_LIST) {
             // Every recording still on disk, newest-relevant or not, one name per
             // line. The app fetches these on startup to collect anything a crash
             // or a reboot left behind before it could be saved.
@@ -276,7 +147,7 @@ final class Commands {
             Ln.i("session: listed " + count + " pending recording(s)");
             return;
         }
-        if (command == COMMAND_SET_ENABLED) {
+        if (command == Wire.COMMAND_SET_ENABLED) {
             int value = client.getInputStream().read();
             if (value >= Main.MODE_OFF && value <= Main.MODE_ON_DEMAND) {
                 Main.recordingMode = value;
@@ -286,11 +157,10 @@ final class Commands {
                 // never guess AUTOMATIC, which is what this used to do.
                 Ln.w("session: ignoring unusable recording mode " + value + ", still " + Main.recordingMode);
             }
-            client.getOutputStream().write((Main.recordingMode + "\n").getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+            Wire.reply(client.getOutputStream(), Wire.mode(Main.recordingMode));
             return;
         }
-        if (command == COMMAND_START) {
+        if (command == Wire.COMMAND_START) {
             // The user said yes to the on-demand start-of-call prompt. Begin
             // recording the call in progress, from now.
             String name = null;
@@ -309,16 +179,14 @@ final class Commands {
             client.getOutputStream().flush();
             return;
         }
-        if (command == COMMAND_SET_TRACKING) {
+        if (command == Wire.COMMAND_SET_TRACKING) {
             int value = client.getInputStream().read();
             Tracking.trackingOn = value == 1;
             Tracking.applyTracking();
-            client.getOutputStream().write(("TRACK " + (Tracking.trackingOn ? "on" : "off") + "\n")
-                    .getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+            Wire.reply(client.getOutputStream(), Wire.track(Tracking.trackingOn));
             return;
         }
-        if (command == COMMAND_SKIP) {
+        if (command == Wire.COMMAND_SKIP) {
             int value = client.getInputStream().read();
             String what;
             synchronized (Main.LOCK) {
@@ -341,38 +209,33 @@ final class Commands {
                     what = "next";
                 }
             }
-            client.getOutputStream().write(("SKIP " + what + "\n").getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+            Wire.reply(client.getOutputStream(), Wire.skip(what));
             return;
         }
-        if (command == COMMAND_SET_VOIP) {
+        if (command == Wire.COMMAND_SET_VOIP) {
             // The messenger apps whose calls to record, comma-separated.
-            Set<String> apps = Voip.parse(readName(client));
+            Set<String> apps = Voip.parse(Wire.readName(client.getInputStream()));
             CallWatch.configureVoip(apps);
-            client.getOutputStream().write(("VOIP " + Voip.apps().size() + " "
-                    + (Voip.armed() ? "armed" : "off") + "\n").getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+            Wire.reply(client.getOutputStream(), Wire.voip(Voip.apps().size(), Voip.armed()));
             return;
         }
-        if (command == COMMAND_WATCH) {
-            client.getOutputStream().write((watchReport() + "\n").getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+        if (command == Wire.COMMAND_WATCH) {
+            Wire.reply(client.getOutputStream(), watchReport());
             return;
         }
-        if (command == COMMAND_REPORT) {
-            client.getOutputStream().write((Reports.reportText() + "\n").getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+        if (command == Wire.COMMAND_REPORT) {
+            Wire.reply(client.getOutputStream(), Reports.reportText());
             return;
         }
-        if (command == COMMAND_FETCH) {
-            String name = readName(client);
+        if (command == Wire.COMMAND_FETCH) {
+            String name = Wire.readName(client.getInputStream());
             File file = Paths.recFileFor(name);
             if (name.equals(Main.activeName())) {
                 // Still being written: not to be collected - nor, by a
                 // collector that then finds it empty, deleted. Its hang-up
                 // brings it.
                 Ln.w("session: fetch of the recording in progress, answering gone");
-                client.getOutputStream().write(GONE.getBytes(StandardCharsets.US_ASCII));
+                client.getOutputStream().write(Wire.GONE.getBytes(StandardCharsets.US_ASCII));
                 client.getOutputStream().flush();
                 return;
             }
@@ -381,7 +244,7 @@ final class Commands {
                 // "collected by another path already" from "the file was
                 // empty" by it, and only the second is news for the user.
                 Ln.w("session: fetch of unknown file '" + name + "', answering gone");
-                client.getOutputStream().write(GONE.getBytes(StandardCharsets.US_ASCII));
+                client.getOutputStream().write(Wire.GONE.getBytes(StandardCharsets.US_ASCII));
                 client.getOutputStream().flush();
                 return;
             }
@@ -400,17 +263,16 @@ final class Commands {
             }
             return;
         }
-        if (command == COMMAND_DELETE) {
-            String name = readName(client);
+        if (command == Wire.COMMAND_DELETE) {
+            String name = Wire.readName(client.getInputStream());
             File file = Paths.recFileFor(name);
             boolean ok = !name.equals(Main.activeName()) && file != null && file.delete();
             Ln.i("session: delete " + name + " -> " + ok);
-            client.getOutputStream().write((ok ? "OK\n" : "NO\n").getBytes(StandardCharsets.UTF_8));
-            client.getOutputStream().flush();
+            Wire.reply(client.getOutputStream(), Wire.deleted(ok));
             return;
         }
-        if (command == COMMAND_ANSWER_SETTINGS) {
-            AnswerSettings settings = AnswerSettings.parse(readName(client));
+        if (command == Wire.COMMAND_ANSWER_SETTINGS) {
+            AnswerSettings settings = AnswerSettings.parse(Wire.readName(client.getInputStream()));
             Answering.answerSettings = settings;
             AnswerMachine machine = Answering.answerMachine;
             if (machine != null) {
@@ -420,10 +282,10 @@ final class Commands {
                 });
             }
             Ln.i("session: answering machine " + settings.wire());
-            reply(client, "ANSWER " + settings.wire());
+            reply(client, Wire.answer(settings.wire()));
             return;
         }
-        if (command == COMMAND_GO_AHEAD) {
+        if (command == Wire.COMMAND_GO_AHEAD) {
             DataInputStream in = new DataInputStream(client.getInputStream());
             int delay = in.readInt();
             // When the app saw the ring - eight more bytes, from 0.17 on.
@@ -439,7 +301,7 @@ final class Commands {
             final long rang = rangAt;
             AnswerMachine machine = Answering.answerMachine;
             if (machine == null) {
-                reply(client, "GO none");
+                reply(client, Wire.go(null));
                 return;
             }
             String state = Answering.onMain(() -> {
@@ -450,14 +312,14 @@ final class Commands {
                 }
                 return machine.state().name();
             });
-            reply(client, "GO " + state);
+            reply(client, Wire.go(state));
             return;
         }
-        if (command == COMMAND_HANDOVER) {
+        if (command == Wire.COMMAND_HANDOVER) {
             int what = client.getInputStream().read();
             AnswerMachine machine = Answering.answerMachine;
             if (machine == null) {
-                reply(client, "HAND none");
+                reply(client, Wire.hand(null));
                 return;
             }
             String state = Answering.onMain(() -> {
@@ -471,14 +333,14 @@ final class Commands {
                 return machine.state().name();
             });
             Ln.i("answer: hand-over '" + (char) what + "' -> " + state);
-            reply(client, "HAND " + state);
+            reply(client, Wire.hand(state));
             return;
         }
-        if (command == COMMAND_GREETING) {
+        if (command == Wire.COMMAND_GREETING) {
             greeting(client);
             return;
         }
-        if (command == COMMAND_DIAGNOSE) {
+        if (command == Wire.COMMAND_DIAGNOSE) {
             diagnose(client);
             return;
         }
@@ -486,8 +348,7 @@ final class Commands {
     }
 
     private static void reply(Socket client, String line) throws IOException {
-        client.getOutputStream().write((line + "\n").getBytes(StandardCharsets.UTF_8));
-        client.getOutputStream().flush();
+        Wire.reply(client.getOutputStream(), line);
     }
 
     /**
@@ -500,13 +361,13 @@ final class Commands {
         int what = in.read();
         switch (what) {
             case 'Q':
-                reply(client, "GREETING " + (Greeting.present() ? Greeting.FILE.length() : 0));
+                reply(client, Wire.greeting(Greeting.present() ? Greeting.FILE.length() : 0));
                 break;
             case 'R':
-                reply(client, Greeting.startTake() ? "TAKE recording" : "TAKE busy");
+                reply(client, Wire.take(Greeting.startTake()));
                 break;
             case 'S':
-                reply(client, "TAKE " + Greeting.stopTake());
+                reply(client, Wire.taken(Greeting.stopTake()));
                 break;
             case 'T':
             case 'F':
@@ -516,11 +377,11 @@ final class Commands {
                 // A whole greeting over loopback takes a moment at most.
                 client.setSoTimeout(30_000);
                 Greeting.put(in, in.readInt());
-                reply(client, "GREETING " + Greeting.FILE.length());
+                reply(client, Wire.greeting(Greeting.FILE.length()));
                 break;
             case 'D':
                 Greeting.delete();
-                reply(client, "GREETING 0");
+                reply(client, Wire.greeting(0));
                 break;
             default:
                 Ln.w("session: unknown greeting command " + what);
@@ -564,10 +425,10 @@ final class Commands {
                 break;
             case 'A': {
                 boolean incoming = in.read() == 1;
-                String number = readName(client);
+                String number = Wire.readName(client.getInputStream());
                 AnswerMachine machine = Answering.answerMachine;
                 if (machine == null) {
-                    reply(client, "TEST none");
+                    reply(client, Wire.test("none"));
                     break;
                 }
                 // Before arming: an armed outgoing test takes the next call
@@ -575,7 +436,7 @@ final class Commands {
                 // that to be the user's own. Ending in '#' - *100# - or of two
                 // digits, it is sent as a USSD code: no call, no off-hook.
                 if (!incoming && (!number.matches("[0-9+*#]{3,32}") || number.endsWith("#"))) {
-                    reply(client, "TEST bad-number");
+                    reply(client, Wire.test("bad-number"));
                     break;
                 }
                 // Never an emergency number - the app asks too. Telecom does
@@ -584,19 +445,19 @@ final class Commands {
                 // and a Call there would be taken for the test's: the check
                 // tone and the greeting, into an emergency call.
                 if (!incoming && AnswerTest.mayBeEmergencyNumber(number)) {
-                    reply(client, "TEST emergency");
+                    reply(client, Wire.test("emergency"));
                     break;
                 }
                 // The test plays the greeting this process has: without one,
                 // a caller is answered and hung up on, and the route blamed.
                 if (!Greeting.present()) {
-                    reply(client, "TEST no-greeting");
+                    reply(client, Wire.test("no-greeting"));
                     break;
                 }
                 // A test call still up would write its results over the new
                 // test's, and end it.
                 if (machine.testing()) {
-                    reply(client, "TEST busy");
+                    reply(client, Wire.test("busy"));
                     break;
                 }
                 AnswerTest.testState = "armed";
@@ -616,24 +477,19 @@ final class Commands {
                     Shell.runQuietly("am", "start", "-a", "android.intent.action.CALL",
                             "-d", "tel:" + number.replace("#", "%23"));
                 }
-                reply(client, "TEST armed");
+                reply(client, Wire.test("armed"));
                 break;
             }
             case 'R':
-                reply(client, "RESULT 1 state=" + AnswerTest.testState
-                        + " route=" + AnswerTest.testRoute
-                        + " realms=" + AnswerTest.testRealMs
-                        + " audioms=" + AnswerTest.testAudioMs
-                        + " tone=" + (AnswerTest.testToneBest >= AnswerTest.TONE_CHUNKS ? 1 : 0)
-                        + " tonechunks=" + AnswerTest.testToneBest
-                        + " mute=" + AnswerTest.testMuteHeld
-                        + " voice=" + AnswerTest.testVoice
-                        + " played=" + AnswerTest.testPlayed);
+                reply(client, Wire.result(AnswerTest.testState, AnswerTest.testRoute, AnswerTest.testRealMs,
+                        AnswerTest.testAudioMs, AnswerTest.testToneBest >= AnswerTest.TONE_CHUNKS ? 1 : 0,
+                        AnswerTest.testToneBest, AnswerTest.testMuteHeld, AnswerTest.testVoice,
+                        AnswerTest.testPlayed));
                 break;
             case 'F': {
                 client.setSoTimeout(60_000);
                 TelephonyManager telephony = Platform.phone;
-                reply(client, "FWD " + (telephony == null
+                reply(client, Wire.fwd(telephony == null
                         ? "error no-telephony" : Forwarding.readNoReply(telephony)));
                 break;
             }
@@ -643,12 +499,12 @@ final class Commands {
             case 'S': {
                 int seconds = in.read();
                 if (seconds < 5 || seconds > 30) {
-                    reply(client, "FWD error bad-seconds");
+                    reply(client, Wire.fwd("error bad-seconds"));
                     break;
                 }
                 client.setSoTimeout(90_000);
                 TelephonyManager telephony = Platform.phone;
-                reply(client, "FWD " + (telephony == null
+                reply(client, Wire.fwd(telephony == null
                         ? "error no-telephony" : Forwarding.setNoReply(telephony, seconds)));
                 break;
             }
@@ -659,7 +515,6 @@ final class Commands {
 
     /** The no-call checks, as one line. */
     private static String stageOne() {
-        StringBuilder line = new StringBuilder("DIAG 1");
         java.util.List<String> missing = new java.util.ArrayList<>();
         try {
             android.content.pm.PackageManager pm = FakeContext.get().getPackageManager();
@@ -692,18 +547,16 @@ final class Commands {
         } catch (Throwable t) {
             missing.add("calls");
         }
-        line.append(" perms=").append(missing.isEmpty() ? "ok" : String.join(",", missing));
-        line.append(" incallmusic=").append(Checks.inCallMusic(Shell.dump("media.audio_policy")));
+        String perms = missing.isEmpty() ? "ok" : String.join(",", missing);
+        int inCallMusic = Checks.inCallMusic(Shell.dump("media.audio_policy"));
         boolean interceptable = false;
         try {
             interceptable = (boolean) AudioManager.class.getMethod("isPstnCallAudioInterceptable").invoke(Platform.callAudio);
         } catch (Throwable ignored) {
             // Not there before Android 13, or not allowed.
         }
-        line.append(" screening=").append(interceptable ? 1 : 0);
-        line.append(" greeting=").append(Greeting.present() ? Greeting.FILE.length() : 0);
-        line.append(" route=").append(Answering.answerSettings.route);
-        line.append(" sdk=").append(Build.VERSION.SDK_INT);
+        long greeting = Greeting.present() ? Greeting.FILE.length() : 0;
+        String route = Answering.answerSettings.route;
         int voice = -1;
         TelephonyManager phoneNow = Platform.phone;
         try {
@@ -713,11 +566,8 @@ final class Commands {
         } catch (Throwable ignored) {
             // unknown
         }
-        line.append(" voice=").append(voice);
-        line.append(" soc=").append(word(Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : Build.HARDWARE));
-        line.append(" maker=").append(word(Build.MANUFACTURER));
-        line.append(" model=").append(word(Build.MODEL));
-        return line.toString();
+        return Wire.diag(perms, inCallMusic, interceptable ? 1 : 0, greeting, route, Build.VERSION.SDK_INT, voice,
+                Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : Build.HARDWARE, Build.MANUFACTURER, Build.MODEL);
     }
 
     /**
@@ -726,7 +576,7 @@ final class Commands {
      * which the app does not hold and should not ask for to fill one row.
      */
     private static String sims() {
-        StringBuilder line = new StringBuilder("SIMS");
+        StringBuilder line = new StringBuilder(Wire.SIMS);
         TelecomManager telecom = Platform.telecom;
         if (telecom == null) {
             Ln.w("answer: could not list the SIMs: no telecom");
@@ -734,12 +584,11 @@ final class Commands {
         }
         try {
             android.telecom.PhoneAccountHandle preferred = telecom.getDefaultOutgoingPhoneAccount("tel");
-            line.append(" default=").append(preferred == null ? "" : word(preferred.getId()));
+            line.append(Wire.simsDefault(preferred == null ? "" : Wire.word(preferred.getId())));
             for (android.telecom.PhoneAccountHandle handle : telecom.getCallCapablePhoneAccounts()) {
                 android.telecom.PhoneAccount account = telecom.getPhoneAccount(handle);
                 CharSequence label = account == null ? null : account.getLabel();
-                line.append(' ').append(word(handle.getId())).append('|')
-                        .append(word(label == null ? "SIM" : label.toString()));
+                line.append(Wire.sim(handle.getId(), label == null ? null : label.toString()));
             }
         } catch (Throwable t) {
             Ln.w("answer: could not list the SIMs: " + t);
@@ -747,37 +596,18 @@ final class Commands {
         return line.toString();
     }
 
-    /** A value for a key=value line: no spaces, no '='. */
-    private static String word(String value) {
-        return value == null || value.isEmpty() ? "unknown" : value.replaceAll("[\\s=]+", "_");
-    }
-
     static void pong(Socket client) throws IOException {
         LoopbackServer.pings.incrementAndGet();
-        client.getOutputStream().write(
-                ("PONG " + LoopbackServer.PROTOCOL_VERSION + " " + Main.BUILD + "\n").getBytes(StandardCharsets.UTF_8));
-        client.getOutputStream().flush();
+        Wire.reply(client.getOutputStream(), Wire.pong(Main.BUILD));
     }
 
-    /** The answer to COMMAND_WATCH. Times are wall-clock millis, 0 for never. */
+    /** The answer to Wire.COMMAND_WATCH. Times are wall-clock millis, 0 for never. */
     private static String watchReport() {
         RecordingSession rec = Main.activeRecording;
-        return "WATCH " + WATCH_FORMAT
-                + " since=" + Main.STARTED_AT
-                + " watching=" + (CallWatch.watching ? 1 : 0)
-                + " looper=" + (looperResponds() ? "ok" : "stuck")
-                + " mode=" + Main.recordingMode
-                + " call=" + (Main.callActive ? 1 : 0)
-                + " events=" + CallWatch.callEvents.get()
-                + " lastevent=" + CallWatch.lastCallEventAt
-                + " offhooks=" + CallWatch.offHooks.get()
-                + " lastoffhook=" + CallWatch.lastOffHookAt
-                + " recording=" + (rec == null ? 0 : rec.startedAt)
-                + " voip=" + Voip.apps().size()
-                + " voiparmed=" + (Voip.armed() ? 1 : 0)
-                + " tracking=" + (Tracking.trackingOn ? 1 : 0)
-                + " answer=" + (Answering.answerSettings.on ? 1 : 0)
-                + " greeting=" + (Greeting.present() ? 1 : 0);
+        return Wire.watch(Main.STARTED_AT, CallWatch.watching, looperResponds(), Main.recordingMode,
+                Main.callActive, CallWatch.callEvents.get(), CallWatch.lastCallEventAt, CallWatch.offHooks.get(),
+                CallWatch.lastOffHookAt, rec == null ? 0 : rec.startedAt, Voip.apps().size(), Voip.armed(),
+                Tracking.trackingOn, Answering.answerSettings.on, Greeting.present());
     }
 
     /**
@@ -797,15 +627,4 @@ final class Commands {
         }
     }
 
-    /** A length-prefixed UTF-8 name: two big-endian bytes, then that many bytes. */
-    private static String readName(Socket client) throws IOException {
-        DataInputStream in = new DataInputStream(client.getInputStream());
-        int len = in.readUnsignedShort();
-        if (len > 512) {
-            throw new IOException("implausible name length " + len);
-        }
-        byte[] b = new byte[len];
-        in.readFully(b);
-        return new String(b, StandardCharsets.UTF_8);
-    }
 }

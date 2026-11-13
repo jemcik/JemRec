@@ -68,8 +68,6 @@ final class LoopbackServer {
      * to ask was to connect, which started a capture session and tore an
      * AudioRecord up and down on every health check.
      */
-    static final int PROTOCOL_VERSION = 2;
-    private static final int COMMAND_HELLO = 'A';
     private static final int NONCE_BYTES = 16;
     private static final int MAC_BYTES = 32;
     private static final String MAC_ALGORITHM = "HmacSHA256";
@@ -191,11 +189,11 @@ final class LoopbackServer {
         client.setSoTimeout(COMMAND_TIMEOUT_MS);
         int first = client.getInputStream().read();
 
-        if (first == Commands.COMMAND_PING) {
+        if (first == Wire.COMMAND_PING) {
             Commands.pong(client);
             return;
         }
-        if (first != COMMAND_HELLO) {
+        if (first != Wire.COMMAND_HELLO) {
             refuse(client, "no handshake (first byte " + first + ")");
             return;
         }

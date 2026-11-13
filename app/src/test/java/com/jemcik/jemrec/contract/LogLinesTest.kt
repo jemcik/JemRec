@@ -245,7 +245,7 @@ class LogLinesTest {
                     listOf("\"started stopped \${if (fromDaemon) \"not read (the recorder judged)\" else leftStopped}; \""),
                 "newest exit reason 10" to listOf("\"newest exit \${newest?.let { \"reason \${it.reason} importance "),
                 "debugging off: the recorder says OFF NOW" to
-                    listOf("\"debugging off: the recorder says \${reply ?: \"nothing\"}\"", "\"OFF AFTER CALL\" : \"OFF NOW\""),
+                    listOf("\"debugging off: the recorder says \${reply ?: \"nothing\"}\"", "OFF_NOW = \"OFF NOW\""),
                 "debugging back on: USB_DEBUGGING" to listOf(
                     "\"debugging back on: \${off.inOrderBackOn().joinToString { it.name }}\"",
                     "DebugSwitch.USB_DEBUGGING",

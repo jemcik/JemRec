@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** What the app reads out of the daemon's report on its call watch (Commands.COMMAND_WATCH). */
+/** What the app reads out of the daemon's report on its call watch (Wire.COMMAND_WATCH). */
 class WatchTest {
 
     private val line = "WATCH 1 since=1791544738000 watching=1 looper=ok mode=1 call=0 " +
