@@ -27,6 +27,8 @@ change behaviour.
 | `com/jemcik/jemrec/shell/Wakes.java` | Ours. Waking the app's service with `am`, in order. |
 | `com/jemcik/jemrec/shell/Reports.java` | Ours. The last call's report, kept for Copy a report. |
 | `com/jemcik/jemrec/shell/Platform.java` | Ours. Every hidden API the core reaches by reflection, and the services rebound to the shell's context. |
+| `com/jemcik/jemrec/shell/Hop.java` | Ours. A task handed to the main looper and waited for, and a call given a time limit. Plain Java, tested in `../tests`. |
+| `com/jemcik/jemrec/shell/PolicyUse.java` | Ours. The messenger copy's audio policy and the captures reading through it. Plain Java, tested in `../tests`. |
 | `com/jemcik/jemrec/shell/Answering.java` | Ours. The answering machine's place in the recorder: its settings, its player, the hop to the main looper. |
 | `com/jemcik/jemrec/shell/AnswerEffects.java` | Ours. What the answering machine does to the phone. |
 | `com/jemcik/jemrec/shell/AnswerTest.java` | Ours. The answering machine's test call. |
@@ -35,12 +37,13 @@ change behaviour.
 | `com/jemcik/jemrec/shell/CableWatch.java` | Ours. A USB cable going in or out, passed on to the app. |
 | `com/jemcik/jemrec/shell/KillWatch.java` | Ours. The app killed in the background, told to it. |
 | `com/jemcik/jemrec/shell/Tracking.java` | Ours. Exact call tracking's permission. |
+| `com/jemcik/jemrec/shell/Listener.java` | Ours. Notification access for the app's listener, granted as the shell and read back. |
 | `com/jemcik/jemrec/shell/DebuggingOff.java` | Ours. "Turn all debugging off": the wait, then both switches. |
 | `com/jemcik/jemrec/shell/Shell.java` | Ours. Android's own tools run as children, and small helpers. |
 | `com/jemcik/jemrec/shell/Paths.java` | Ours. The recorder's files in `/data/local/tmp`. |
 | `com/jemcik/jemrec/shell/Voip.java` | Ours. Messenger calls: the audio policy that copies voice-call playback, spotting a call, and the microphone guard. |
 | `com/jemcik/jemrec/shell/CallStates.java` | Ours. Telephony's call events made into calls - which way each went and when it ended. Plain Java, tested in `../tests`. |
-| `com/jemcik/jemrec/shell/Checks.java` | Ours. The daemon's small decisions - the app-op output read back, who may connect - in plain Java, tested in `../tests`. |
+| `com/jemcik/jemrec/shell/Checks.java` | Ours. The daemon's small decisions - the app-op output and the notification listeners read back, who may connect - in plain Java, tested in `../tests`. |
 | `com/jemcik/jemrec/shell/PhoneCapture.java` | Ours. A phone call's capture: the modem's voice path, and the messenger capture instead while the call plays through the mixer. |
 | `com/jemcik/jemrec/shell/LevelTap.java` | Ours. A call's capture passed on unchanged, with a look at each chunk: when the caller first made a sound, and whether the check tone came through. |
 | `com/jemcik/jemrec/shell/CallReport.java` | Ours. What Copy a report says about the last call recorded. Plain Java, tested in `../tests`. |

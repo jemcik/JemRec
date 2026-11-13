@@ -12,6 +12,7 @@ this one is - or to check that it does what it says.
   [bootstrap, not transport](#adb-is-a-bootstrap-not-a-transport) ·
   [the daemon records](#the-daemon-records-the-app-collects) ·
   [the authenticated socket](#the-socket-is-authenticated-in-both-directions) ·
+  [inside the recorder](#inside-the-recorder) ·
   [staying alive without Wi-Fi](#staying-alive-without-wi-fi) ·
   [starting without Wi-Fi](#starting-without-wi-fi) ·
   [unplugged from a computer](#unplugged-from-a-computer) ·
@@ -129,6 +130,72 @@ over. The token never crosses the socket, and both nonces are fresh, so nothing
 can be replayed. A bare ping needs no handshake and answers with the protocol
 version and the daemon's build hash — which is how the app spots a daemon left
 behind by an older install, and replaces it.
+
+## Inside the recorder
+
+The recorder is the package `com.jemcik.jemrec.shell`, beside the part of
+scrcpy it keeps (`shellserver/PATCHES.md` lists both). Until 0.31 most of it
+was one file of 3,559 lines; each part has a class of its own now:
+
+- **The start** (`Main`): the main looper prepared before anything else
+  touches Android, the environment read, the threads started in their order.
+- **The port** (`LoopbackServer`, `Handshake`): bound to `127.0.0.1`, each
+  connection on a thread of its own, who connects checked, then the proof
+  above. **The commands** (`Commands`, `Wire`): what each does, and its bytes.
+- **The call** (`CallWatch`, `Calls`, `CallDecisions`, `RecordingSession`,
+  `Wakes`): the phone's call state as the recorder hears it; the call's state
+  and what is done as it starts and ends; the rules for when a call is
+  recorded, asked about or left out; one call's recording; the wakes to the
+  app, in order.
+- **The answering machine** (`AnswerMachine`, `Answering`, `AnswerEffects`,
+  `AnswerTest`), and **the background jobs**: the uninstall watch
+  (`Custodian`), the off-Wi-Fi shield (`Shield`), the cable (`CableWatch`),
+  a background kill (`KillWatch`), exact call tracking (`Tracking`),
+  debugging off (`DebuggingOff`); and the app's notification listener
+  allowed, as only the shell can (`Listener`).
+- **What is reached by reflection** (`Platform`): the telephony, audio and
+  telecom services rebound to the shell's context, the USB service, system
+  properties - each a place one phone can differ from another.
+
+**What is tested without a phone.** The decisions are plain Java, compiled by
+`shellserver/tests` without Android: the call's rules (`CallDecisions`, as
+tables of every combination), the call states, the answering machine, the
+protocol's lines and frames (`Wire`), the handshake (`Handshake`), the hop
+to the main looper (`Hop`), and the messenger copy's policy (`PolicyUse`).
+The protocol is written twice, in the app and here: every reply line is in
+`shellserver/tests/fixtures/protocol.txt`, which the app's parsers read and
+`Wire` builds, and one handshake worked by hand,
+`shellserver/tests/fixtures/handshake.txt`, holds both sides' proofs.
+
+**One lock, for the call.** A call's start and end, a recording begun and
+stopped, a message split off, the Record yes, a skip, the list of
+recordings, a quit's and debugging off's look at whether a call is up: one
+lock (`Calls.LOCK`). The refusals' log, which held it too, across a read of
+`/proc/net/tcp`, has its own since 0.31.
+
+**The main looper is waited for one second.** The answering machine lives on
+the recorder's main looper, where telephony delivers its events; a command
+from the app - the go-ahead for a ringing call, Talk to them, Hang up, the
+settings, a test call's arming - is handed to it and waited for. The app
+waits a second and a half for the first three; the recorder waited two
+seconds, and what it gave up on still ran when the looper came to it, after
+the app had said it was not taken. Since 0.31 it waits one second, and what
+has not started by then never runs (`Hop`) - with what it guards: the
+settings are taken with the machine's own, a test call's "already one under
+way" is asked with its arming. Settings that come before the machine is
+made, as the recorder starts, are kept for it; a machine made meanwhile is
+configured again from what is kept when its looper comes to that, which is
+not waited for, so it ends with the last settings kept. The custodian's
+hang-up of a message after an uninstall, which no app waits on, is still
+left to run when the looper comes to it.
+
+**Every change to the recorder replaces it.** The app compares the recorder's
+build - the first eight hex digits of its jar's SHA-256 - with the jar it
+carries, and replaces a recorder that differs at its next revive with an ADB
+session: a quit, waited out during a call. An app talks to an older recorder
+until then, for days off Wi-Fi, so a reply changes only on both sides at once,
+and an addition goes where an older one reads past it (the ring's time after a
+go-ahead since 0.17, a test call's id since 0.31).
 
 ## Staying alive without Wi-Fi
 
@@ -858,7 +925,10 @@ while Telecom moves the phone into a call, Android answers it only once the
 move is done - 0.87 seconds later for an incoming call on the Android 13
 emulator, which a recording that waited lost from its start. The copy is armed
 for that call alone, whether or not any messenger is switched on, and disarmed
-when it ends. You are on the left channel and the other person on the right,
+when it ends - once no capture reads through it: each claims it as it starts
+(since 0.31; a call flipping to the mixer, back and to it again could find it
+disarmed under its new capture, and record that stretch silent on Wi-Fi
+Calling - read from the code). You are on the left channel and the other person on the right,
 as the call capture has them; on speakerphone the other person is on your side
 too, as with messenger calls. The answering machine works on such calls as
 well (above, in its own section).
@@ -1035,7 +1105,9 @@ Android lets a call's uplink be written only by a holder of
 `MODIFY_PHONE_STATE`, which the shell holds and no app can be granted. The
 recorder plays the greeting as a plain media track aimed at the call's uplink
 device, which Android's audio policy marks as *in-call music* - the output
-Qualcomm mixes into what the caller hears.
+Qualcomm mixes into what the caller hears. A call that goes through the mixer
+instead, as Wi-Fi Calling does on a Galaxy S23, has no such output to mix into:
+it gets Android's call-screening route (below).
 
 Measured on an Honor (Snapdragon, MagicOS 11, Android 17), 2026-10-22, with a
 caller on another phone:
@@ -1066,8 +1138,94 @@ a call that plays through the mixer (below):
   seconds, her microphone muted, the greeting heard, and the message saved
   with the caller's voice from its first second.
 - The machine's test filed that call under VoLTE: Android's voice network type
-  says LTE for a Wi-Fi call there. Telling them apart needs the IMS
-  registration's transport; not done yet.
+  says LTE for a Wi-Fi call there. Since 0.31 the recorder reads Telecom's own
+  mark instead - the call's `wifi` property, the one the call log's Wi-Fi flag
+  is taken from - in `dumpsys telecom`'s list of the calls there are now, three
+  seconds into each greeting a test plays, together with the route and the
+  voice type, so a result is named by the path its route was checked on. On the
+  same S23, then on Android 17 (2026-11-12), every Wi-Fi call carried the mark;
+  the one test made with it read - cut off by the move below, read as the
+  machine hung up on it - was filed as Wi-Fi Calling.
+
+Measured on that S23 on Android 17, 2026-11-12: a call answered on LTE can be
+handed over to Wi-Fi while the greeting plays. Two of the five calls of that
+session began on LTE. One, a test call on the call-screening route, was cut off
+2.2 s after the greeting's track began: Android releases a call-screening track
+the moment the audio mode it applies leaves the family the track was made in
+(`CallInjectionModeChangedListener`, in AOSP's `AudioManager`) - in call, call
+screening and call redirect for a phone call's, communication and its redirect
+for one through the mixer - so the track died with the move, as it does at
+every call's end, and the machine, taking it for a greeting that could not
+play, hung up on the caller. The other, on the in-call music route, played on
+through its move. Since 0.31 a greeting whose track is released under it is
+played again from the start once the call's audio is back - at most twice a
+call - the microphone kept muted, put back if the move dropped it, and held so
+through the 1.5 s the greeting begins with. Back is the mode Telecom asked for,
+once Android has applied it too (below) - where Android does not say, the mode
+asked for alone, as AOSP's `AudioService.getMode()` gives it, which Android
+applied 0.37 s after the cut there. While telephony says the call is over, the
+cut is the end's: nothing plays, and it hangs up only if the mute will not go
+back on. Seen on that S23 the next day, on a build that played again on the
+mode asked for: a test call answered on LTE, its Wi-Fi turned on as it was
+answered, was handed over 12.7 s into its greeting; the greeting played again
+from its start 0.05 s after the cut, on Wi-Fi, to the beep, and the caller
+heard it, the microphone muted throughout. Android applied communication 0.55 s
+after that cut, which a greeting played again now waits for.
+
+Measured on that S23, 2026-11-13, over VoLTE, its Wi-Fi off: the call-screening
+route's greeting played in full - its 11.6 s in 13.0 s - with no error, and the
+caller heard nothing, as on the Honor; the in-call music route's was heard,
+from its start to the beep. Over Wi-Fi Calling it is the other way round:
+the call-screening route was heard (above), and in-call music was not, on a
+call that moved to Wi-Fi 1.5 s into its greeting (2026-11-12). Until 0.31 one route served every call on a phone, so the S23 could
+greet callers on one of the two; and after a VoLTE test the caller did not
+hear, the app kept the call-screening route, as it had passed over Wi-Fi
+Calling. Since 0.31 the route follows the call: one through the mixer gets the
+call-screening route, the one that reached it on the S23, and one on its voice
+path the route the phone's tests found - on the S23, in-call music. A test
+through the mixer stands for neither route the app chooses between: its pass
+keeps nothing, its failure moves nothing. On the update to 0.31, a phone a
+failed test had moved to the call-screening route, though its checks found
+in-call music, is put back on in-call music once, its test results cleared -
+they could not tell a call through the mixer from one on its voice path - so
+its settings say it is not tested. A call that moves while its greeting plays
+has the greeting stopped by the recorder as Android applies the new mode, and
+played again from the start on the route for its new path, counted with the
+cuts above: in-call music's track is not released by a move - on that S23 one
+played on after its call went to Wi-Fi, all 11.6 s of it in 12.3 s, its output
+left with no device (Android's log: it refused the speaker). Every greeting,
+the first too, waits for Android to apply the mode Telecom asked for, which
+came 0.3 to 1.7 s later on the S23 as a call moved: a call-screening
+track made before a mode in between is applied goes with that mode (AOSP's
+AudioManager), and an in-call music track made before in call is applied may
+get no in-call music output, which is chosen as the track is made and only
+while in call is applied (AOSP's AudioPolicyManager). Past 2 s without
+Android's word, the mode asked for goes, as before 0.31, and a greeting on the
+call's voice path plays again once Android says it applied it; one through the
+mixer, whose injected track takes no output from the mode applied, has its mute
+put back and held instead. Communication mode is a move only while no other app
+is in a call of its own and Telecom holds the phone call, or cannot say - the
+recording's questions, though where Telecom cannot be asked whether an app is
+in a call of its own, that counts as no app's call here, and as one for the
+recording. A mode that leaves the call's way and comes back to it - in call,
+normal, in call - is not taken for a move: not seen on a phone, and a greeting
+played again for each would count towards the hang-up.
+
+Measured on that S23 on Android 17 with 0.31's recorder, 2026-11-13, four test
+calls, each greeting begun only after Android's word. Over VoLTE, Android
+applied in call 0.55 s after Telecom asked for it, and the greeting began on
+in-call music 0.14 s later; over Wi-Fi Calling it applied communication 0.44 s
+after, and the greeting went on call-screening. Both were heard. A call
+answered on LTE, its Wi-Fi turned on 1.6 s into the greeting, went in call,
+normal for 0.28 s, then communication: its in-call
+music greeting played on through normal, was stopped as communication was
+applied, 10.8 s in, and played again on call-screening 0.26 s after Android
+applied it - the greeting heard twice, the beep only after the second, the
+microphone muted throughout the move. A call answered on Wi-Fi, its Wi-Fi turned off 1.7 s into the
+greeting, went to normal 1.65 s later, which released the call-screening track
+before the greeting's words began; in call was applied 0.84 s after that cut,
+and the greeting played again on in-call music 0.12 s later and was heard once,
+in full. Its test was filed under VoLTE, the path its greeting was heard on.
 
 **A message's length** is the user's: 30 seconds to 2 minutes, then the
 recorder hangs up - or no limit, which ends the call after 30 seconds without a
@@ -1080,22 +1238,27 @@ up*. Unmuting on the call screen does the same as *Talk to them*, and so does
 answering a second call - a waiting one, or one the user places - which the
 call tracker sees become active: left to the machine, the greeting would play
 into it, the microphone stay muted, and the message's limit hang it up. A call
-taken over is the user's own: an ordinary recording, not a message, from just before
-they took it - or the caller's first words, if those came first; kept from the
-answer, it began with the user hearing their own greeting in silence. In Ask
-first the takeover ends the message there instead: what the caller said is
-saved as the message, and the user is asked, as at the start of any call,
+taken over is the user's own: an ordinary recording, not a message, from just
+before they took it - or the caller's first words, if those came first; kept
+from the answer, it began with the user hearing their own greeting in silence.
+In Ask first the takeover ends the message there instead: what the caller said
+is saved as the message, and the user is asked, as at the start of any call,
 whether to record the rest - the caller agreed to leave a message, not to a
 recorded conversation, and answering machines have always stopped recording
-when picked up (Gigaset, BT, VTech manuals; Pixel's Take a Message).
-The recorder
-leaves a marker while it holds the mute, and a recorder started after a crash
-gives the microphone back - at once between calls, or as the call in progress
-ends: muted, the room stays out of a message whose caller is still on. The mute comes as soon as the call's audio is up -
-on the Honor that is before the network connects the call (2026-10-22: 14 ms
-after the answer, connected at 235 ms) - and the greeting, and the app's
-*Taking a message*, wait for the off-hook: a caller gone in that moment left
-no call, and nothing to undo but the mute.
+when picked up (Gigaset, BT, VTech manuals; Pixel's Take a Message). Another
+app's call taken instead - a messenger or meeting call - is not seen as a
+takeover: the microphone stays muted, unmuted only by Telecom for a call
+answered through it or by a tap, and the message's limit hangs up the call in
+front, which may be the app's, as before 0.31; the recorder cannot yet tell
+such a call ringing from one under way (AOSP's isInSelfManagedCall counts
+both). The recorder leaves a marker while it holds the mute, and a recorder
+started after a crash gives the microphone back - at once between calls, or as
+the call in progress ends: muted, the room stays out of a message whose caller
+is still on. The mute comes as soon as the call's audio is up - on the Honor
+that is before the network connects the call (2026-10-22: 14 ms after the
+answer, connected at 235 ms) - and the greeting, and the app's *Taking a
+message*, wait for the off-hook: a caller gone in that moment left no call, and
+nothing to undo but the mute.
 
 **The message** is saved from half a second before the caller's first words,
 never later than the beep - the silence of their listening to the greeting is
@@ -1164,13 +1327,18 @@ said yes on the Honor for a route that failed, so the app checks three ways:
    recorder that cannot be asked, or a call still under way, leaves the test
    for the next opening, and it is read before another is armed. One test is
    armed at a time, an arming that outlived its screen included, and a
-   screen opened while it is under way shows the test once it is noted. An arming
-   the recorder does not answer is not watched: it may have armed all the
-   same - for an outgoing test the recorder checks the number first, with no
-   time limit, and starts the call before it answers - and nothing it says
-   later tells one test's result from another's, so the screen says it may
-   have. Each result is acted on once, and the question below is asked until
-   it is answered, put aside, or a new test is armed. What answers a tap on
+   screen opened while it is under way shows the test once it is noted, or,
+   if it armed nothing, why. Each arming carries an id, the test's window's
+   end, and the recorder names its results with it (since 0.31): an arming it
+   did not answer is read back - armed, and watched, or not - and a result
+   that is another test's is never read as this one's. The recorder answers
+   an arming before an outgoing test's call goes out, and gives the check that
+   the number is no emergency one two seconds, counting one not answered by
+   then as one. Until 0.31 it checked with no time limit and placed the call
+   first, and said nothing of whose its results were, so an arming it did not
+   answer was told as "may have armed", and not watched; a recorder before
+   0.31 still is. Each result is acted on once, and the question below is
+   asked until it is answered, put aside, or a new test is armed. What answers a tap on
    the answering machine - an arming, the carrier's answer, a take's upload,
    a delete the recorder missed - and, while its screen is shown, a test
    call's ending and a setting that did not reach the recorder, is a
@@ -1185,9 +1353,13 @@ said yes on the Honor for a route that failed, so the app checks three ways:
 3. After a test someone made, one question: did they hear it?
 
 Results are kept per call type - 2G, VoLTE and Wi-Fi Calling take different
-paths - and *Copy a report* puts the phone and the results on the clipboard for
-a report, with nothing about any call. On the Honor, VoLTE could not be tried:
-its carrier would not register it for VoLTE.
+paths; a call Telecom marks as on Wi-Fi is Wi-Fi Calling (above), any other is
+named by the voice network type, as before - each with whether its test went
+through the mixer, where the route is the call-screening one whatever the
+phone's (since 0.31), and *Copy a report* puts the phone and the results on the
+clipboard for a report, with nothing about any call. On
+the Honor, VoLTE could not be tried: its carrier would not register it for
+VoLTE.
 
 **Your carrier's voicemail** takes unanswered calls after its own timer, so the
 answering machine has to answer first. The recorder can ask the carrier for that
@@ -1848,11 +2020,26 @@ separate choice: *Show who called* for messenger calls (see Messenger calls),
 which notes the caller's name from the switched-on messengers' call
 notifications and reads nothing else.
 
+Setup grants that access over its own ADB session. From Settings, since 0.31,
+the recorder grants it: it is the shell, as a session is, and allows only
+the app's own listener, which it names itself, then reads Android's list
+back for up to two seconds - Android writes the list a quarter of a second
+after the grant (read in AOSP) - and the app's own read of the access has
+the last word. Settings opened a session for it before, which needs
+Wireless debugging on - and LineageOS switches that off by itself a second
+after a revive's session has started the recorder, so on the OnePlus, on
+Wi-Fi, Show who called said "it needs Wi-Fi" and could not be turned on
+(2026-11-12; Hide the debugging notification goes the same way, read from
+the code). A session is still the way where no recorder answers.
+
 To switch debugging off for good, uninstall JemRec first. If the recorder is
 running, it notices the uninstall within a few minutes, turns both switches off
 and exits - on an OPPO, OnePlus or realme phone only while its *Disable system
 optimization* switch is set as setup asked ([when the phone refuses the grant](#when-the-phone-refuses-the-grant));
-either way, once JemRec is gone nothing turns them back on.
+either way, once JemRec is gone nothing turns them back on. Its off-Wi-Fi
+shield stands down first, as for debugging off: until 0.31 its ten-second
+check could put USB debugging back on in the moment before the recorder
+exited (read from the code).
 
 
 ## Off, and debugging with it

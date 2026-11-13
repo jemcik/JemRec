@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1686 JVM tests, no device needed - 1490 for the app and 196 for the daemon:
+1861 JVM tests, no device needed - 1548 for the app and 313 for the daemon:
 
     ./gradlew test
 
@@ -171,6 +171,17 @@ run ending, stood in for by a seam (`WaveformFillTest`), and the view
 model's own end, through a `ViewModelStore` as an activity ends it
 (`GreetingPreviewClosedTest`).
 
+**The recorder's decisions and its protocol** (from 0.31, in
+`shellserver/tests`): when a call is recorded, asked about or left out, the
+skip window, a wake for a call already over, a message taken over and a
+recording's four endings, as tables checked against every combination
+(`CallDecisionsTest`); every reply line in `protocol.txt` built by the
+recorder's own `Wire`, and the handshake against the same worked one as the
+app's (`WireTest`, `HandshakeTest`); the hop to the main looper given up on
+before the app's wait and never run late, but for the custodian's, which no
+app waits on (`HopTest`); and the messenger
+copy's policy held by the captures reading through it (`PolicyUseTest`).
+
 **Names and words something else depends on** (`app/src/test/.../contract`):
 the component and worker class names the phone and the tools remember,
 the recorder's own class name, and the actions and extras of its wakes
@@ -182,7 +193,10 @@ built of (`LogLinesTest`); and every reply of the loopback protocol, listed in
 recorder writes it (`ProtocolTest`). A rename in any of these compiles and
 passes every other test. They search the code whole and without its
 comments, so a file moved between packages changes nothing for them, and a
-comment that quotes a line does not stand in for the line.
+comment that quotes a line does not stand in for the line. Beside them,
+`HandshakeTest` runs the app's side of the handshake against the one worked
+by hand in `shellserver/tests/fixtures/handshake.txt`, which the recorder's
+tests hold their side to too.
 
 Before a release, the same calls go through the real app and daemon on an
 emulator, for each Android version it claims (12, 13, 16 and 17 for 0.29 -
@@ -212,8 +226,15 @@ up during the greeting, a caller the rules leave out left to ring, a phone
 call ringing over a messenger call left to ring (a stand-in call from
 `shellserver/probe`, built by the script if need be), a caller left to ring
 in the day after an emergency call (the pause set as the call tracker sets it;
-no emergency number is dialled), and, in Ask first, a call taken over: the
-message kept and the rest asked about. Then another app's call through
+no emergency number is dialled), in Ask first a call taken over: the
+message kept and the rest asked about, and a test call, with the machine
+itself off, answered with its greeting on the call's voice path - not the
+mixer's, whose route is the call-screening one - and its call read in
+Telecom's list as not on Wi-Fi (the mark that names a test over Wi-Fi
+Calling), and a test call's greeting moved under it - the stand-in call
+taking communication mode over it, on Android 14 and later - stopped and
+played again on the call-screening route, and again on the call's voice path
+once the mode is back. Then another app's call through
 Telecom, as Google Meet's are (a stand-in call of the debug build's own): left
 alone, a contact's phone call rung in over it recorded on its own and ended
 where it was hung up, and the stand-in's row in the call log not counted as a
@@ -272,7 +293,10 @@ or realme does until *Disable system optimization* is on (issues #61, #64;
 the debug build answers with #64's refusal, as an emulator grants): told that
 switch, and not set up; with the ADB session dropped, told so rather than
 sent to a switch; Try again, without the fake, grants for real, read back
-from the package's own record.
+from the package's own record. Then notification access for the app's
+listener, taken away, and granted again by the recorder with the app's ADB
+session closed, as Settings' Show who called and Hide the debugging
+notification ask for it (the debug op grantlistener), and in Android's list.
 Then Wi-Fi coming back: with a kick of the keep-alive failed twice off Wi-Fi
 and a minute or more from its next try, and no screen up, Wi-Fi's own run has
 the recorder back within 45 s, before that try - 10 s on the Android 17 AVD,
@@ -351,8 +375,10 @@ time.
   kill watch, the acceptor): a nullable field another thread writes is read
   into a local first, or under the lock its writers hold. The four fields
   read twice in a row were each found safe (2026-10-26): `activeRecording` is
-  written only under `Main.class`, which its reader holds; `Voip.policy` only
-  under `Voip.class`; a capture's pumps are set once and never cleared.
+  written only under the call lock, which its reader holds (`Main.class` then,
+  `Calls.LOCK` since 0.31); `Voip.policy` only under `Voip.class` (since 0.31
+  `PolicyUse` holds it, read and written under its own lock); a capture's
+  pumps are set once and never cleared.
 - **Android API levels in the daemon.** The daemon runs from Android 12 but
   compiles against 16's `android.jar`, so a call from a newer Android builds
   fine and then crashes an older phone. `shellserver/lint` is an Android module
@@ -389,18 +415,20 @@ Reports, not gates - run them when wanted:
   2026-11-01: 80% of `ui`, 99% of the themes, 58% of `capture` (55%, 73%
   and 36% at 0.21).
 - **Daemon coverage:** `./gradlew :daemon-tests:test -Pcoverage`, then
-  `shellserver/tests/build/reports/jacoco/test/html`. 99% of instructions,
-  93% of branches (2026-10-26).
+  `shellserver/tests/build/reports/jacoco/test/html`. 97% of instructions,
+  89% of branches (2026-11-13).
 - **Mutation testing:** `./gradlew :daemon-tests:pitest`, then
   `shellserver/tests/build/reports/pitest`. [PIT](https://pitest.org) changes
   the daemon's decision classes one small way at a time and runs the tests on
-  each. 470 of its 524 changes now fail a test (90%, up from 79% when it
-  went in). Of the 54 left, 41 change only what is logged, and 13 change
-  nothing a call can meet or a listener hear: a bound the chime's loop never
-  reaches, an equality that cannot occur, a go-ahead counted from 0 (which
-  needs a ring in the first three seconds after boot), the whole chime's
-  sign or its octave's phase - each one read in the report (2026-10-26). Some tests read records the Honor itself
-  printed (`shellserver/tests/fixtures`, `app/src/test/resources/honor`).
+  each. 975 of the 1042 changes its tests reach fail one (94%, 2026-11-13):
+  all 177 in the classes 0.31 added, 798 of 865 in the five before. At 470
+  of 524 (2026-10-26) each change left was read: 41 change only what is
+  logged, and 13 change nothing a call can meet or a listener hear: a bound
+  the chime's loop never reaches, an equality that cannot occur, a go-ahead
+  counted from 0 (which needs a ring in the first three seconds after boot),
+  the whole chime's sign or its octave's phase. Some tests read records the
+  Honor itself printed (`shellserver/tests/fixtures`,
+  `app/src/test/resources/honor`).
 - **The app's mutation testing:** `./gradlew :pure-tests:pitest`, then
   `app/pure-tests/build/reports/pitest`: PIT over the pure module's files
   (the gate above). 271 of the 276 changes its tests reach fail one
