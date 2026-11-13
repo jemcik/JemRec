@@ -149,7 +149,7 @@ final class Commands {
         }
         if (command == Wire.COMMAND_SET_ENABLED) {
             int value = client.getInputStream().read();
-            if (value >= Main.MODE_OFF && value <= Main.MODE_ON_DEMAND) {
+            if (CallDecisions.isMode(value)) {
                 Main.recordingMode = value;
                 Ln.i("session: recording mode = " + Main.recordingMode);
             } else {
@@ -166,7 +166,7 @@ final class Commands {
             String name = null;
             // Locked against onCallEnd - see there.
             synchronized (Main.LOCK) {
-                if (Main.callActive && Main.recordingMode != Main.MODE_OFF) {
+                if (CallDecisions.startOnDemand(Main.callActive, Main.recordingMode)) {
                     name = Main.beginRecording(Main.callIncoming, Main.callVoipApp, Main.callAppIncoming);
                 }
             }
@@ -191,11 +191,12 @@ final class Commands {
             String what;
             synchronized (Main.LOCK) {
                 RecordingSession rec = Main.activeRecording;
-                if (value != 1) {
+                CallDecisions.Skip skip = CallDecisions.skip(value, rec != null && rec.app == null,
+                        rec == null ? 0 : System.currentTimeMillis() - rec.startedAt);
+                if (skip == CallDecisions.Skip.CANCELLED) {
                     Main.skipUntil = 0;
                     what = "cancelled";
-                } else if (rec != null && rec.app == null
-                        && System.currentTimeMillis() - rec.startedAt < Main.SKIP_CURRENT_MS) {
+                } else if (skip == CallDecisions.Skip.CURRENT && rec != null) {
                     // Dialling went off-hook before the app could say: stop
                     // it now, and leave nothing behind.
                     rec.stop();
@@ -205,7 +206,7 @@ final class Commands {
                     Wakes.wake(Wakes.ACTION_CALL_ENDED, rec.incoming, "", null);
                     what = "current";
                 } else {
-                    Main.skipUntil = System.currentTimeMillis() + Main.SKIP_VALID_MS;
+                    Main.skipUntil = System.currentTimeMillis() + CallDecisions.SKIP_VALID_MS;
                     what = "next";
                 }
             }

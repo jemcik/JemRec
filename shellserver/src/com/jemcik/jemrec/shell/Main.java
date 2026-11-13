@@ -235,9 +235,8 @@ public final class Main {
      */
     static boolean busyLocked() {
         AnswerMachine machine = Answering.answerMachine;
-        return activeRecording != null || callActive || fetches.get() > 0
-                || (machine != null && machine.state() != AnswerMachine.State.IDLE
-                    && machine.state() != AnswerMachine.State.RINGING);
+        return CallDecisions.busy(activeRecording != null, callActive, fetches.get(),
+                machine == null ? null : machine.state());
     }
 
     static final String APP_PACKAGE = "com.jemcik.jemrec";
@@ -256,30 +255,10 @@ public final class Main {
      */
     static final String BUILD = jarBuild();
 
-    /**
-     * How calls are recorded: from the environment at spawn, then pushed by
-     * the app whenever the user changes it.
-     *   OFF       - captures nothing (the recorder switch is off).
-     *   AUTOMATIC - records from off-hook, every call.
-     *   ON_DEMAND - records NOTHING until the user answers a start-of-call
-     *               prompt with yes, which arrives as COMMAND_START. So a
-     *               declined call is never written to disk at all.
-     *
-     * OFF UNTIL TOLD OTHERWISE. This defaulted to AUTOMATIC, with the app
-     * pushing the real mode over the socket a moment after the spawn - and
-     * that push is best-effort. A call in the gap, or after a push that did
-     * not land, was recorded whatever the user had chosen, including "ask me
-     * first" and "off". A recorder that fails must fail towards not
-     * recording: a missed call gets noticed and fixed, a call recorded
-     * against the user's setting is neither. So the mode now arrives in the
-     * environment with the token, and a daemon that has not been told
-     * anything captures nothing.
-     */
-    static final int MODE_OFF = 0;
-    private static final int MODE_AUTOMATIC = 1;
-    static final int MODE_ON_DEMAND = 2;
     private static final String MODE_ENV = "JEMREC_MODE";
-    static volatile int recordingMode = MODE_OFF;
+    /** The mode in force: one of CallDecisions.MODE_*, OFF until told
+     *  otherwise (see there). */
+    static volatile int recordingMode = CallDecisions.MODE_OFF;
 
     /** The call being recorded right now, or null between calls. */
     static volatile @Nullable RecordingSession activeRecording;
@@ -307,9 +286,6 @@ public final class Main {
 
     private static final String TRACK_ENV = "JEMREC_TRACK";
 
-    /** A skip is for the call starting now, not for one an hour later. */
-    static final long SKIP_VALID_MS = 60_000L;
-    static final long SKIP_CURRENT_MS = 8_000L;
     static volatile long skipUntil;
 
     private static final String ANSWER_ENV = "JEMREC_ANSWER";
@@ -344,7 +320,7 @@ public final class Main {
         if (value != null) {
             try {
                 int mode = Integer.parseInt(value.trim());
-                if (mode >= MODE_OFF && mode <= MODE_ON_DEMAND) {
+                if (CallDecisions.isMode(mode)) {
                     Ln.i("recording: mode " + mode + " from the environment");
                     return mode;
                 }
@@ -354,7 +330,7 @@ public final class Main {
         }
         Ln.w("recording: no usable mode in the environment ('" + value
                 + "'), capturing nothing until the app says otherwise");
-        return MODE_OFF;
+        return CallDecisions.MODE_OFF;
     }
 
     /** Off-hook handling, by mode: automatic records at once; on-demand asks
@@ -372,7 +348,11 @@ public final class Main {
      */
     static void onCallStart(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming) {
         synchronized (Main.class) {
-            if (callActive && (app != null || callVoipApp != null)) {
+            AnswerMachine machine = Answering.answerMachine;
+            CallDecisions.Start start = CallDecisions.start(callActive, app != null, callVoipApp != null,
+                    machine != null && machine.takingMessage(),
+                    CallDecisions.skipOpen(skipUntil, System.currentTimeMillis()));
+            if (start == CallDecisions.Start.IGNORED) {
                 Ln.w("recording: a " + (app != null ? "messenger" : "phone") + " call started during "
                         + (callVoipApp != null ? "a messenger call" : "a phone call") + "; not recording it");
                 return;
@@ -384,8 +364,7 @@ public final class Main {
             callIncoming = incoming;
             callVoipApp = app;
             callAppIncoming = app != null ? appIncoming : null;
-            AnswerMachine machine = Answering.answerMachine;
-            if (app == null && machine != null && machine.takingMessage()) {
+            if (start == CallDecisions.Start.MESSAGE) {
                 // A call this process answered: the recording IS the message,
                 // whatever the mode - switching the answering machine on is
                 // the consent to record one. No start-of-call wake: the
@@ -395,29 +374,31 @@ public final class Main {
                 beginRecording(incoming, null, null);
                 return;
             }
-            if (app == null && skipUntil > System.currentTimeMillis()) {
+            if (start == CallDecisions.Start.SKIPPED) {
                 skipUntil = 0;
                 Ln.i("recording: the rules leave this call out; not recording it");
                 return;
             }
         }
-        switch (recordingMode) {
-            case MODE_AUTOMATIC:
+        RecordingSession running = activeRecording;
+        switch (CallDecisions.byMode(recordingMode, running != null)) {
+            case RECORD:
                 String name = beginRecording(incoming, app, appIncoming);
                 if (name != null) {
                     // The app shows a "recording" notification; no audio needed.
                     Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, name, app);
                 }
                 break;
-            case MODE_ON_DEMAND:
-                RecordingSession running = activeRecording;
+            case RECORDING_ALREADY:
+                // Already said yes to, and recording: a second off-hook
+                // in the same call (call waiting) is not a new question -
+                // asked again, "Not now" would stop nothing. (It runs: the
+                // decision is this only while one does.)
                 if (running != null) {
-                    // Already said yes to, and recording: a second off-hook
-                    // in the same call (call waiting) is not a new question -
-                    // asked again, "Not now" would stop nothing.
                     Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, running.name, app);
-                    break;
                 }
+                break;
+            case ASK:
                 // Nothing is captured yet. Ask; an empty rec-file says "prompt".
                 Ln.i("recording: on-demand, asking before recording");
                 Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, "", app);
@@ -438,18 +419,20 @@ public final class Main {
      */
     static void splitOffMessage(AnswerMachine.Outcome part) {
         synchronized (Main.class) {
-            if (!callActive) {
+            RecordingSession rec = activeRecording;
+            CallDecisions.Split split = CallDecisions.split(callActive, rec != null, part.speechAt != 0);
+            if (split == CallDecisions.Split.NOTHING) {
                 // The call ended as it was taken: its end has named it.
                 Ln.i("answer: the call was taken as it ended; nothing to split");
                 return;
             }
-            RecordingSession rec = activeRecording;
             if (rec == null) {
+                // NO_RECORDING
                 Ln.w("answer: the call was taken; there was no recording of it to split");
             } else {
                 rec.stop();
                 File file = new File(Paths.REC_DIR, rec.name);
-                if (part.speechAt == 0) {
+                if (split == CallDecisions.Split.DROP) {
                     Ln.i("answer: the call was taken before a word was left; " + rec.name + " dropped -> "
                             + file.delete());
                 } else {
@@ -476,7 +459,9 @@ public final class Main {
         }
         rec.stop();
         String name = rec.name;
-        if (outcome != null && outcome.test) {
+        CallDecisions.Ending ending = CallDecisions.ending(outcome != null, outcome != null && outcome.test,
+                outcome != null && outcome.isMessage());
+        if (ending == CallDecisions.Ending.TEST) {
             // A diagnostics test: what it showed is kept for 'X' 'R'; the
             // recording is not the user's, and goes. The app is told when the
             // call began, to account for it in the call log.
@@ -494,7 +479,7 @@ public final class Main {
             // over: theirs, an ordinary recording, from when they took it -
             // or the caller's first words, if earlier; in Ask first, all of
             // what they said Record to (see splitOffMessage).
-            boolean taken = !outcome.isMessage();
+            boolean taken = ending == CallDecisions.Ending.TAKEN;
             String renamed = taken
                     ? Checks.takenRecfile(name, outcome.takenStart(), captureStartedAt)
                     : Checks.messageRecfile(name, outcome.messageStart(), captureStartedAt, outcome.nothingLeft(),
@@ -592,7 +577,7 @@ public final class Main {
             // Recorded or not: its results are complete.
             AnswerTest.testState = "done";
         }
-        if (!wasRecording && recordingMode != MODE_OFF) {
+        if (CallDecisions.endWakes(wasRecording, recordingMode)) {
             Wakes.wake(Wakes.ACTION_CALL_ENDED, callIncoming, "", app);
         }
     }

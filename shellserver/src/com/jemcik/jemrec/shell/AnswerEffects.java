@@ -241,7 +241,7 @@ final class AnswerEffects implements AnswerMachine.Effects {
     @Override
     public void callTaken() {
         AnswerMachine machine = Answering.answerMachine;
-        if (Main.recordingMode == Main.MODE_ON_DEMAND && machine != null && !machine.testing()) {
+        if (machine != null && CallDecisions.splitsOffMessage(Main.recordingMode, machine.testing())) {
             // Ask first: the message ends where the user took the call,
             // and the call is theirs to record or not - asked, as at the
             // start of any call. Answering machines have always stopped

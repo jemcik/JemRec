@@ -85,7 +85,7 @@ final class Wakes {
         // It is ordered against nothing a call's wakes are.
         (ACTION_CABLE.equals(action) ? CABLE_WAKES : WAKES).execute(() -> {
             for (int attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
-                if (start && Main.endedSeq >= seq) {
+                if (CallDecisions.staleStart(start, Main.endedSeq, seq)) {
                     // That call is over, and its CALL_ENDED is queued behind
                     // this: a start landing now would put up a prompt, a
                     // "Recording" or a "Taking a message" for a call that has
