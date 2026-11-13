@@ -6,6 +6,7 @@ import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -61,12 +62,11 @@ public class HopTest {
         }
     }
 
-    // Pins today's behaviour, which looks like a bug: given up on - the app
-    // told nothing, as it waits less long than this - the task still runs
-    // when the thread comes to it. A go-ahead, a hand-over or a test call's
-    // arming the app took for not done, done after all.
     @Test
-    public void aTaskGivenUpOnStillRunsWhenItsThreadComesToIt() throws Exception {
+    public void aTaskGivenUpOnNeverRuns() throws Exception {
+        // Given up on, the app told nothing - and it has said "not taken" by
+        // then: a go-ahead, a hand-over or a test call's arming run later
+        // would make that false.
         Late thread = new Late();
         AtomicInteger ran = new AtomicInteger();
         try {
@@ -76,13 +76,34 @@ public class HopTest {
             // Given up on.
         }
         thread.runAll();
-        assertEquals(1, ran.get());
+        assertEquals(0, ran.get());
     }
 
     @Test
-    public void theWaitIsLongerThanTheAppsForAGoAheadOrAHandOver() {
+    public void aTaskStartedAsItIsGivenUpOnIsWaitedFor() throws Exception {
+        // Running by then, it cannot be called off: its answer is the reply.
+        CountDownLatch started = new CountDownLatch(1);
+        Executor thread = task -> {
+            new Thread(task).start();
+            try {
+                started.await();
+            } catch (InterruptedException e) {
+                throw new AssertionError(e);
+            }
+        };
+        String answer = Hop.call(thread, () -> {
+            started.countDown();
+            Thread.sleep(300);
+            return "TALKING";
+        }, 50);
+        assertEquals("TALKING", answer);
+    }
+
+    @Test
+    public void theWaitIsShorterThanTheAppsForAGoAheadOrAHandOver() {
         // The app reads 'Y' and 'H' for 1.5 s (DaemonClient.goAhead,
-        // handOver): past that it has said "not taken" whatever happens here.
-        assertTrue(Hop.WAIT_MS > 1_500);
+        // handOver): given up on here a half second before, the session
+        // ends while the app still listens.
+        assertTrue(Hop.WAIT_MS <= 1_000);
     }
 }
