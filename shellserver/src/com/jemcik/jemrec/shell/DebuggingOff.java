@@ -57,7 +57,7 @@ final class DebuggingOff {
             Shell.sleep(1_000L);
         }
         // A mute a message left behind is given back before anything goes.
-        Main.giveBackStaleMute();
+        Answering.giveBackStaleMute();
         // And asked once more, last thing: an On whose cancel came after the
         // wait above ended would otherwise find debugging switched off under
         // it, the switches it had just put back gone again.

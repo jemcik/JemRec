@@ -51,7 +51,7 @@ final class KillWatch {
             if (Checks.newStop(told, stamp)) {
                 Ln.w("killwatch: the system killed JemRec in the background (exit " + stamp
                         + ") - waking the app to warn");
-                Main.wake(Main.ACTION_BACKGROUND_KILLED, false, null, null);
+                Wakes.wake(Wakes.ACTION_BACKGROUND_KILLED, false, null, null);
             }
         }
     }

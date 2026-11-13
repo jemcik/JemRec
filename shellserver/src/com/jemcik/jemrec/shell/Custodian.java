@@ -61,14 +61,14 @@ final class Custodian {
             if (appIsInstalled()) {
                 continue;
             }
-            AnswerMachine machine = Main.answerMachine;
+            AnswerMachine machine = Answering.answerMachine;
             if (machine != null && machine.takingMessage()) {
                 // A message under way: its caller hung up on first, and the
                 // microphone given back as the call ends - then the rest. A
                 // call the user took over is theirs, left to go on.
                 Ln.i("custodian: JemRec is no longer installed; ending the message first");
                 try {
-                    Main.onMain(() -> {
+                    Answering.onMain(() -> {
                         machine.hangUpNow();
                         return null;
                     });
@@ -77,7 +77,7 @@ final class Custodian {
                 }
                 continue;
             }
-            if (!Main.giveBackStaleMute()) {
+            if (!Answering.giveBackStaleMute()) {
                 // A mute a predecessor left mid-message, and a call up: given
                 // back once it is over. Cleaning up now would take its marker
                 // with the rest, and nothing would look again.

@@ -84,7 +84,7 @@ public class CallStatesTest {
         states.endCheck();
     }
 
-    /** A ring, as Main.CallWatch hands it on: not if it is another app's. */
+    /** A ring, as CallWatch hands it on: not if it is another app's. */
     private void ring() {
         if (!states.appsRinging()) {
             states.ringing();

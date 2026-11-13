@@ -428,7 +428,7 @@ final class Checks {
      * mono, on the right - for every call, so the sides never swap with its
      * kind: where the call capture has them on a phone that splits the sides
      * (the Honor: its left all zeros while muted, 2026-10-22), and where the
-     * answering machine reads its own side (Main.onChunk). Up to 0.24 a
+     * answering machine reads its own side (Answering.onChunk). Up to 0.24 a
      * messenger call had them the other way round. In the
      * platform's byte order, as AudioRecord writes it; a ByteBuffer starts out
      * big-endian, which would be noise.

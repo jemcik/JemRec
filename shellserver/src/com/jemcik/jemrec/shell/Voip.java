@@ -514,7 +514,7 @@ final class Voip {
     /**
      * Whether anyone is in a call - playing voice-call audio and capturing at
      * once, this process too - for the answering machine, which must never
-     * answer a phone call ringing over one (Main's otherAppCallUp). The rule
+     * answer a phone call ringing over one (AnswerEffects.otherAppCallUp). The rule
      * is Checks.someoneInCall; this reads the phone into it, -1 for an owner
      * Android does not name.
      */

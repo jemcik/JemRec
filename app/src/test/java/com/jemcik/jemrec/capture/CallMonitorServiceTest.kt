@@ -80,7 +80,7 @@ class CallMonitorServiceTest {
     // ---- driving it --------------------------------------------------------
 
     /**
-     * A wake as the recorder sends it (Main.wake): the service by name, the
+     * A wake as the recorder sends it (Wakes.wake): the service by name, the
      * action, the token, recfile ("" for none) and incoming, then the
      * action's own extras. The names are written out, not taken from the
      * service's constants: the recorder has its own copy of each.

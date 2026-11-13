@@ -205,7 +205,7 @@ object DaemonLauncher {
 
     /**
      * Whether a call may be up, judged by the audio mode: the signal the
-     * daemon itself trusts to end a recording (Main.CallWatch.audioInCall), and
+     * daemon itself trusts to end a recording (CallWatch.audioInCall), and
      * one this app can read without READ_PHONE_STATE, which it does not hold.
      * Anything but MODE_NORMAL counts - ringing, a call, a VoIP call,
      * screening - because getting this wrong in that direction only ever
@@ -227,7 +227,7 @@ object DaemonLauncher {
      * A daemon refuses to quit while it records a call, and that is right: a
      * call is worth more than an update being prompt. But it judges "recording"
      * by its own state, and that state can be stuck. Every build before the
-     * call watch was held in a field (see Main.callWatch) could lose its watch
+     * call watch was held in a field (see CallWatch.callWatch) could lose its watch
      * to garbage collection - and one that lost it MID-CALL never hears that
      * call end, so its recording never stops and it answers BUSY to every quit
      * for the rest of its life. The update that fixes the bug could then never

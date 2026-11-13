@@ -60,7 +60,7 @@ class CableWakeTest {
         work.close()
     }
 
-    /** As the recorder wakes the service (Main.wake), the token with it. */
+    /** As the recorder wakes the service (Wakes.wake), the token with it. */
     private fun unplugged() {
         val intent = Intent("com.jemcik.jemrec.CABLE")
             .setClassName(context, "com.jemcik.jemrec.capture.CallMonitorService")

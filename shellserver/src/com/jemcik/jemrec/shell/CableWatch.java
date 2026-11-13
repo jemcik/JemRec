@@ -114,7 +114,7 @@ final class CableWatch {
                     Ln.i("cable: " + change + " at " + new java.util.Date() + " (port mode " + reading
                             + ", USB debugging " + (Checks.usbAdb(config) ? "on the cable" : "not on it")
                             + ") - waking the app to watch the recorder");
-                    Main.wake(Main.ACTION_CABLE, false, "", null, "--es", "cable", change);
+                    Wakes.wake(Wakes.ACTION_CABLE, false, "", null, "--es", "cable", change);
                 }
                 before = in;
             }
