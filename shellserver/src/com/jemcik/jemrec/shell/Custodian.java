@@ -164,10 +164,14 @@ final class Custodian {
             }
         }
         // Both debugging switches. Wireless was turned on for setup; USB is the
-        // off-Wi-Fi shield this daemon keeps up (see keepShieldUp) - and with the
-        // app gone, nothing else will ever turn either of them back off.
-        // Refused where an OPPO, OnePlus or realme phone's switch is off
+        // off-Wi-Fi shield this daemon keeps up (see Shield.keepShieldUp) - and
+        // with the app gone, nothing else will ever turn either of them back
+        // off. Refused where an OPPO, OnePlus or realme phone's switch is off
         // (Shield.putGlobal), and then nothing is left to do it: the app is gone.
+        // The shield stands down first, as for debugging off: its ten-second
+        // check, landing between USB debugging written off and this process
+        // gone, would write it back on, for good (read from the code).
+        DebuggingOff.switchingOff = true;
         for (String setting : new String[]{"adb_wifi_enabled", "adb_enabled"}) {
             if (Shield.putGlobal(setting, "0")) {
                 Ln.i("custodian: turned " + setting + " off");

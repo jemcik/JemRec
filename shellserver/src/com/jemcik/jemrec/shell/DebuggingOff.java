@@ -15,9 +15,10 @@ final class DebuggingOff {
      *  nothing is in progress. */
     static volatile boolean goingOff;
 
-    /** Set once that moment has come and the switches are being written: only
-     *  then does the shield stand down. Not for the call waited out before -
-     *  USB debugging is what keeps adbd, and that call's recording, alive. */
+    /** Set once that moment has come and the switches are being written - or
+     *  the custodian writes them, the app uninstalled: only then does the
+     *  shield stand down. Not for the call waited out before - USB debugging
+     *  is what keeps adbd, and that call's recording, alive. */
     static volatile boolean switchingOff;
 
     /** The thread waiting for that moment, while there is one. */
