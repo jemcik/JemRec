@@ -74,7 +74,13 @@ final class RecordingSession {
     }
     final String name;
     final boolean incoming;
+    /** When it started on the wall clock: the file's name, and the app's. */
     final long startedAt;
+    /** When it started on SystemClock.elapsedRealtime, for its age: a wall
+     *  clock set back or forward in a call (NITZ, NTP, by hand) would make
+     *  a minutes-old recording look new, or a new one old. Read with
+     *  startedAt. */
+    final long startedElapsed;
     /** The messenger whose call this is, or null for a phone call. */
     final @Nullable String app;
     private final File file;
@@ -83,12 +89,13 @@ final class RecordingSession {
     /** What Copy a report says about this call (CallReport). */
     final CallReport report;
 
-    private RecordingSession(String name, boolean incoming, long startedAt, @Nullable String app, File file,
-                             FileOutputStream out, AsyncProcessor recorder, CallReport report) {
+    private RecordingSession(String name, boolean incoming, long startedAt, long startedElapsed, @Nullable String app,
+                             File file, FileOutputStream out, AsyncProcessor recorder, CallReport report) {
         this.name = name;
         this.incoming = incoming;
         this.app = app;
         this.startedAt = startedAt;
+        this.startedElapsed = startedElapsed;
         this.file = file;
         this.out = out;
         this.recorder = recorder;
@@ -102,6 +109,7 @@ final class RecordingSession {
         // knows which it was. A messenger call carries its app, and which
         // way it went only where Telecom said (Checks.recfileTag).
         long startedAt = System.currentTimeMillis();
+        long startedElapsed = SystemClock.elapsedRealtime();
         String name = Paths.REC_PREFIX + startedAt + Checks.recfileTag(incoming, app, appIncoming) + Paths.REC_SUFFIX;
         // Every call through the level tap, for its report's levels; a
         // phone call this process answered for the answering machine and
@@ -141,7 +149,7 @@ final class RecordingSession {
         Reports.lastReport = report;
         // The first look at what plays: by then a call's players are up.
         Reports.lookSoon(report);
-        return new RecordingSession(name, incoming, startedAt, app, file, out, recorder, report);
+        return new RecordingSession(name, incoming, startedAt, startedElapsed, app, file, out, recorder, report);
     }
 
     void stop() {

@@ -14,6 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
+import android.os.SystemClock;
 import android.telecom.TelecomManager;
 import android.telephony.TelephonyManager;
 
@@ -189,7 +190,7 @@ final class Commands {
             synchronized (Calls.LOCK) {
                 RecordingSession rec = Calls.activeRecording;
                 CallDecisions.Skip skip = CallDecisions.skip(value, rec != null && rec.app == null,
-                        rec == null ? 0 : System.currentTimeMillis() - rec.startedAt);
+                        rec == null ? 0 : SystemClock.elapsedRealtime() - rec.startedElapsed);
                 if (skip == CallDecisions.Skip.CANCELLED) {
                     Calls.skipUntil = 0;
                     what = "cancelled";
@@ -203,7 +204,7 @@ final class Commands {
                     Wakes.wake(Wakes.ACTION_CALL_ENDED, rec.incoming, "", null);
                     what = "current";
                 } else {
-                    Calls.skipUntil = System.currentTimeMillis() + CallDecisions.SKIP_VALID_MS;
+                    Calls.skipUntil = SystemClock.elapsedRealtime() + CallDecisions.SKIP_VALID_MS;
                     what = "next";
                 }
             }

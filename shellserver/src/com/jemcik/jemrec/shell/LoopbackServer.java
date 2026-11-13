@@ -5,6 +5,7 @@ import com.genymobile.scrcpy.audio.AudioCaptureException;
 import com.genymobile.scrcpy.util.Ln;
 
 import android.os.Looper;
+import android.os.SystemClock;
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
@@ -42,7 +43,9 @@ final class LoopbackServer {
     /** A refusal is logged at most this often, with a running count, so a
      *  process hammering the port cannot fill the log with itself. */
     private static final long REFUSAL_LOG_GAP_MS = 10 * 1000L;
-    private static long lastRefusalLog;
+    /** On SystemClock.elapsedRealtime, which starts at the boot: a gap
+     *  back, so the first refusal is logged even within ten seconds of it. */
+    private static long lastRefusalLog = -REFUSAL_LOG_GAP_MS;
     private static int refusals;
     /** The count's and the throttle's own lock. It was the call lock, held
      *  across the read of /proc/net/tcp that names the caller: a refused
@@ -183,7 +186,8 @@ final class LoopbackServer {
     static void refuse(Socket client, String why) {
         synchronized (REFUSALS_LOCK) {
             refusals++;
-            long now = System.currentTimeMillis();
+            // Monotonic: a wall clock set back would mute the log for as long.
+            long now = SystemClock.elapsedRealtime();
             if (now - lastRefusalLog < REFUSAL_LOG_GAP_MS) {
                 return;
             }

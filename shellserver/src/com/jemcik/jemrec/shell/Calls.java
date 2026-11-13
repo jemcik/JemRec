@@ -1,5 +1,7 @@
 package com.jemcik.jemrec.shell;
 
+import android.os.SystemClock;
+
 import com.genymobile.scrcpy.util.Ln;
 
 import java.io.File;
@@ -58,6 +60,9 @@ final class Calls {
      *  null where it did not, or for a phone call. */
     static volatile @Nullable Boolean callAppIncoming;
 
+    /** Until when a skip the app asked for holds, on
+     *  SystemClock.elapsedRealtime: on the wall clock, one set back would
+     *  hold it open for a call that never came, and leave out a later one. */
     static volatile long skipUntil;
 
     /** When the recording in progress captured its first sample, on the
@@ -104,7 +109,7 @@ final class Calls {
             AnswerMachine machine = Answering.answerMachine;
             CallDecisions.Start start = CallDecisions.start(callActive, app != null, callVoipApp != null,
                     machine != null && machine.takingMessage(),
-                    CallDecisions.skipOpen(skipUntil, System.currentTimeMillis()));
+                    CallDecisions.skipOpen(skipUntil, SystemClock.elapsedRealtime()));
             if (start == CallDecisions.Start.IGNORED) {
                 Ln.w("recording: a " + (app != null ? "messenger" : "phone") + " call started during "
                         + (callVoipApp != null ? "a messenger call" : "a phone call") + "; not recording it");
