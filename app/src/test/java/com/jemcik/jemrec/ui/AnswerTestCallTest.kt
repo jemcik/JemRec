@@ -1013,6 +1013,40 @@ class AnswerTestCallTest {
         }
     }
 
+    /** Waiting for another screen's arming, which armed nothing, and a third
+     *  screen's begun before the wait looked again: the awaited one's words
+     *  are said as the third begins, not when it ends, and the third is
+     *  waited for in turn - its words said here too. */
+    @Test fun aWaitEndsAtTheNextArmingAndWaitsForThatOneToo() {
+        val first = CountDownLatch(1)
+        val second = CountDownLatch(1)
+        val armings = java.util.concurrent.atomic.AtomicInteger()
+        recorder.stall = { if (it == "XA") (if (armings.incrementAndGet() == 1) first else second).await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST no-greeting"
+        recorder.after = { key -> if (key == "XA") recorder.replies["XA"] = "TEST busy" }
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        AnswerController(context, closed, { }).startTest(incoming = true)
+        eventually("the first arming asked") { armings.get() == 1 }
+        closed.cancel()
+        controller.readPendingTest()
+        first.countDown()
+        eventually("the first over") { !testArming.get() }
+        val third = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            AnswerController(context, third, { }).startTest(incoming = true)
+            eventually("the third asked") { armings.get() == 2 }
+            // Held: the first's words come now, not when the third ends.
+            eventually("the first's words") { said.isNotEmpty() }
+            assertEquals(listOf("the recorder does not have your greeting yet - try again in a moment"), said.toList())
+            second.countDown()
+            eventually("the third's words") { said.size == 2 }
+            assertEquals("the last test call is still going on", said[1])
+        } finally {
+            second.countDown()
+            third.cancel()
+        }
+    }
+
     /** A waiting screen says nothing for an arming that armed: it shows the
      *  test. */
     @Test fun aWaitSaysNothingForAnArmingThatArmed() {

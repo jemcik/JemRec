@@ -116,7 +116,8 @@ class AnswerController(
     /** A snackbar as well as [say]'s line in Diagnostics' log: for what
      *  answers a tap on this screen, and - while this screen is shown
      *  ([shown]) - for a test call's settled ending (no call came, the
-     *  recorder restarted, the verdict's words) and a setting that did not
+     *  recorder restarted, the verdict's words), why another screen's
+     *  arming this one waited for armed nothing, and a setting that did not
      *  reach the recorder. The rest - the checks run on opening, a test kept
      *  for the next opening ("still going on", "could not be asked"), a take
      *  let go as the screen was left - is the log's alone, as every word
