@@ -37,8 +37,12 @@ final class AnswerTest {
     static final long TEST_INCOMING_WINDOW_MS = 180_000L;
     static final long TEST_OUTGOING_WINDOW_MS = 15_000L;
 
+    /** How long the emergency check is waited for: a binder call with no
+     *  time limit of its own, and the arming is answered after it. */
+    static final long EMERGENCY_CHECK_MS = 2_000L;
+
     /** Whether [number] is an emergency number here - or might be: one that
-     *  cannot be checked is never dialled for a test either. */
+     *  cannot be checked, or not in time, is never dialled for a test either. */
     static boolean mayBeEmergencyNumber(String number) {
         TelephonyManager telephony = Platform.phone;
         if (telephony == null) {
@@ -46,7 +50,12 @@ final class AnswerTest {
             return true;
         }
         try {
-            return telephony.isEmergencyNumber(number);
+            return Hop.inTime("jemrec-emergency-check", () -> telephony.isEmergencyNumber(number),
+                    EMERGENCY_CHECK_MS);
+        } catch (java.util.concurrent.TimeoutException t) {
+            Ln.w("answer: could not tell whether the test's number is an emergency number: no answer in "
+                    + EMERGENCY_CHECK_MS / 1000 + " s");
+            return true;
         } catch (Throwable t) {
             Ln.w("answer: could not tell whether the test's number is an emergency number: " + t);
             return true;

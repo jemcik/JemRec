@@ -451,24 +451,32 @@ final class Commands {
                     reply(client, Wire.test("busy"));
                     break;
                 }
-                AnswerTest.testState = "armed";
-                AnswerTest.testRoute = -1;
-                AnswerTest.testRealMs = 0;
-                AnswerTest.testAudioMs = 0;
-                AnswerTest.testToneRun = 0;
-                AnswerTest.testToneBest = 0;
-                AnswerTest.testMuteHeld = -1;
-                AnswerTest.testVoice = -1;
-                AnswerTest.testPlayed = -1;
+                // The results reset with the arming, on the machine's own
+                // thread: a hop given up on (Hop) arms nothing, and leaves
+                // the last test's results as they were - not "armed" for a
+                // test that never was.
                 Answering.onMain(() -> {
+                    AnswerTest.testState = "armed";
+                    AnswerTest.testRoute = -1;
+                    AnswerTest.testRealMs = 0;
+                    AnswerTest.testAudioMs = 0;
+                    AnswerTest.testToneRun = 0;
+                    AnswerTest.testToneBest = 0;
+                    AnswerTest.testMuteHeld = -1;
+                    AnswerTest.testVoice = -1;
+                    AnswerTest.testPlayed = -1;
                     machine.armTest(incoming, incoming ? AnswerTest.TEST_INCOMING_WINDOW_MS : AnswerTest.TEST_OUTGOING_WINDOW_MS);
                     return null;
                 });
+                // Answered before an outgoing test's call is placed: `am`
+                // has no time limit here, and the app waited on it for the
+                // answer - and, given up on, could not tell an arming that
+                // took from one that did not.
+                reply(client, Wire.test("armed"));
                 if (!incoming) {
                     Shell.runQuietly("am", "start", "-a", "android.intent.action.CALL",
                             "-d", "tel:" + number.replace("#", "%23"));
                 }
-                reply(client, Wire.test("armed"));
                 break;
             }
             case 'R':

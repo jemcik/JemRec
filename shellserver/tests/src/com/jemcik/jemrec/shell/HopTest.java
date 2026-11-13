@@ -106,4 +106,41 @@ public class HopTest {
         // ends while the app still listens.
         assertTrue(Hop.WAIT_MS <= 1_000);
     }
+
+    @Test
+    public void aCallAnsweredInTimeGivesItsAnswer() throws Exception {
+        assertEquals(Boolean.FALSE, Hop.inTime("check", () -> false, 2_000));
+    }
+
+    @Test
+    public void aCallNotAnsweredInTimeIsGivenUpOnAndLeftToFinish() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger finished = new AtomicInteger();
+        try {
+            Hop.inTime("check", () -> {
+                release.await();
+                return finished.incrementAndGet();
+            }, 50);
+            fail("no timeout");
+        } catch (TimeoutException expected) {
+            // The emergency check counts this as "may be".
+        }
+        release.countDown();
+        for (int i = 0; i < 100 && finished.get() == 0; i++) {
+            Thread.sleep(10);
+        }
+        assertEquals(1, finished.get());
+    }
+
+    @Test
+    public void whatTheCallThrowsComesBackAsItself() throws Exception {
+        try {
+            Hop.inTime("check", () -> {
+                throw new SecurityException("no READ_PRIVILEGED_PHONE_STATE");
+            }, 2_000);
+            fail("nothing thrown");
+        } catch (SecurityException expected) {
+            assertEquals("no READ_PRIVILEGED_PHONE_STATE", expected.getMessage());
+        }
+    }
 }

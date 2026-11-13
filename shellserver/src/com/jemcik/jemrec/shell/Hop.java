@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.shell;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -47,6 +48,28 @@ final class Hop {
                 throw late;
             }
             return future.get();
+        }
+    }
+
+    /**
+     * Run [task] on a thread of its own and wait up to [timeoutMs]: its
+     * answer; a TimeoutException, the thread left to finish on its own; or
+     * what the task threw. For a call with no time limit of its own - a
+     * binder call - that an answer must not wait on for long.
+     */
+    static <T> T inTime(String name, Callable<T> task, long timeoutMs) throws Exception {
+        FutureTask<T> future = new FutureTask<>(task);
+        Thread thread = new Thread(future, name);
+        thread.setDaemon(true);
+        thread.start();
+        try {
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
+            }
+            throw e;
         }
     }
 
