@@ -874,10 +874,68 @@ class AnswerTestCallTest {
         gate.countDown()
         eventually("made") { Greeting.making.value == null }
         val next = AnswerController(context, scope, { said += it })
-        next.reload()
+        next.readTakeEnding()
         assertEquals("Nothing was heard. Hold the phone as for a call, and speak.", next.state.value.greetingProblem)
-        next.reload()
+        next.readTakeEnding()
         assertEquals("said once", Greeting.takeEnding(), null)
+    }
+
+    /** A reload - one a screen closed since runs too, Delete all for good's
+     *  reading outliving it - leaves a take's ending for the screen at the
+     *  front, where it took it away to nowhere. */
+    @Test fun aReloadLeavesATakesEndingForTheScreenInFront() {
+        Greeting.ended("Nothing was heard. Hold the phone as for a call, and speak.")
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val gone = AnswerController(context, closed, { said += it })
+        closed.cancel()
+        gone.reload()
+        val front = AnswerController(context, scope, { said += it })
+        front.readTakeEnding()
+        assertEquals("Nothing was heard. Hold the phone as for a call, and speak.", front.state.value.greetingProblem)
+    }
+
+    /** A greeting saved and not sent to the recorder, its screen closed
+     *  meanwhile: the next screen shows the greeting with no fault of it -
+     *  it was told in red that the recorder "will get this greeting", and
+     *  went on saying so after the recorder had it. */
+    @Test fun aGreetingNotSentIsNoEndingForTheNextScreen() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "GT") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["GR"] = "TAKE recording"
+        recorder.replies["GS"] = "TAKE 1"
+        recorder.replies.remove("GP")
+        recorder.take = speech()
+        val screenScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val screen = AnswerController(context, screenScope, { said += it })
+        screen.startTake()
+        eventually("recording") { screen.state.value.recordingTake }
+        screen.stopTake()
+        eventually("the take being fetched") { recorder.heard.any { it.key == "GT" } }
+        screenScope.cancel()
+        gate.countDown()
+        eventually("sent, or not") { recorder.heard.any { it.key == "GP" } }
+        eventually("made") { Greeting.making.value == null }
+        assertTrue(Greeting.present(context))
+        assertNull(Greeting.takeEnding())
+    }
+
+    /** Told another screen was arming a test, and that arming armed
+     *  nothing - its screen closed meanwhile: why is said here too, where
+     *  its words went with the screen that armed it. */
+    @Test fun aScreenThatWaitedForAnotherArmingSaysWhyItArmedNothing() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST busy"
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val first = AnswerController(context, closed, { })
+        first.startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        controller.startTest(incoming = true)
+        eventually("told") { said.isNotEmpty() }
+        closed.cancel()
+        gate.countDown()
+        eventually("told why") { said.size == 2 }
+        assertEquals(listOf("a test call is being armed already", "the last test call is still going on"), said.toList())
     }
 
     /** A screen opened while another's arming is under way - JemRec closed

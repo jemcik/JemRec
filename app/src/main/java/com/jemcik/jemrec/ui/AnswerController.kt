@@ -29,6 +29,12 @@ import kotlinx.coroutines.withContext
  *  included: one at a time. */
 internal val testArming = java.util.concurrent.atomic.AtomicBoolean(false)
 
+/** Armings ended, and the last that armed nothing with the words its screen
+ *  was told: a screen told another was under way says them too (they went
+ *  to that screen, which may be gone). */
+internal val armingsEnded = java.util.concurrent.atomic.AtomicLong()
+internal val lastRefusal = java.util.concurrent.atomic.AtomicReference<Pair<Long, String>?>(null)
+
 /** What the answering machine's screen shows. */
 data class AnswerUi(
     val enabled: Boolean = false,
@@ -167,7 +173,18 @@ class AnswerController(
                 results = AnswerDiagnostics.results(app),
             )
         }
-        // How a take made past its screen ended, when not as a greeting.
+    }
+
+    /**
+     * How a take made past its screen ended, when not as a greeting, kept
+     * for the screen at the front (Greeting.takeEnding): shown once, here.
+     * Not on any reload: one runs for a screen closed since too - Delete all
+     * for good's reading outlives its screen - and took the ending to
+     * nowhere; nor in a window behind another, which took it from the one
+     * in front (AnsweringMachineScreen calls this at the front only).
+     */
+    fun readTakeEnding() {
+        if (seeded) return
         Greeting.takeEnding()?.let { words -> _state.update { it.copy(greetingProblem = words) } }
     }
 
@@ -196,7 +213,12 @@ class AnswerController(
      * test kept when its watch ended unanswered, or still under way, is
      * asked about again.
      */
-    fun readPendingTest() {
+    fun readPendingTest() = readPendingTest(since = null)
+
+    /** As [readPendingTest]; with [since], the count of armings ended when
+     *  this screen was told another was under way: one that armed nothing
+     *  after it is said here, its words having gone to its own screen. */
+    private fun readPendingTest(since: Long?) {
         // While this screen arms a test, the arming's answer says what it is:
         // an older test still kept would be taken up as this one's, and its
         // watch would end the new arming's state.
@@ -208,10 +230,13 @@ class AnswerController(
             if (awaitingArming?.isActive != true) {
                 awaitingArming = scope.launch {
                     while (testArming.get()) delay(250)
-                    readPendingTest()
+                    readPendingTest(since)
                 }
             }
             return
+        }
+        if (since != null && AnswerDiagnostics.pendingTest(app) == null) {
+            lastRefusal.get()?.takeIf { it.first > since }?.let { (_, words) -> tell(words) }
         }
         when (val pending = AnswerDiagnostics.pendingTest(app)) {
             is AnswerDiagnostics.PendingTest.Armed -> if (testWatch?.isActive != true) {
@@ -372,10 +397,11 @@ class AnswerController(
                 stopPreview()
                 val sent = CaptureDaemon.uploadGreeting(app, processed.pcm)
                 _state.update { it.copy(greetingSeconds = processed.seconds, greetingProblem = null) }
-                if (!sent) {
-                    tell("the recorder will get the new greeting when it next restarts")
-                    if (!scope.isActive) Greeting.ended("The recorder will get this greeting when it next restarts.")
-                }
+                // Not sent: said here, and in the log. Not kept for the next
+                // screen, which showed it in red as a fault of the greeting -
+                // it is saved, and shown - and kept it after the recorder,
+                // restarted, had it.
+                if (!sent) tell("the recorder will get the new greeting when it next restarts")
                 // Told once: a recorder that missed the greeting misses the
                 // settings too. Past the screen, as the take is.
                 push(asked = sent, on = outliving)
@@ -606,8 +632,8 @@ class AnswerController(
         // other.
         if (!testArming.compareAndSet(false, true)) {
             tell("a test call is being armed already")
-            // Shown here once it is.
-            readPendingTest()
+            // Shown here once it is - or why it was not.
+            readPendingTest(since = armingsEnded.get())
             return
         }
         // A test from before still to be read is read first. Armed by the
@@ -644,33 +670,21 @@ class AnswerController(
                     if (it == TestArming.UNANSWERED) afterNoAnswer(until) else it
                 }
                 if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
-                Triple(reply, window, until)
+                val words = if (reply == TestArming.ARMED) null else refusal(reply, incoming)
+                // Kept for a screen told this one was under way, before the
+                // flag goes: its words go to this screen, which may be gone.
+                val ended = armingsEnded.incrementAndGet()
+                if (words != null) lastRefusal.set(ended to words)
+                Triple(window, until, words)
             } finally {
                 testArming.set(false)
             }
         }
         scope.launch {
-            val (reply, window, until) = armed.await()
-            if (reply != TestArming.ARMED) {
+            val (window, until, words) = armed.await()
+            if (words != null) {
                 _state.update { it.copy(test = null) }
-                tell(
-                    when (reply) {
-                        TestArming.BAD_NUMBER -> "that number cannot be dialled"
-                        TestArming.EMERGENCY -> "an emergency number is never called for a test"
-                        TestArming.NO_GREETING -> "the recorder does not have your greeting yet - try again in a moment"
-                        TestArming.BUSY -> "the last test call is still going on"
-                        // It may have armed all the same, and the recorder
-                        // cannot say whose its results are - one before
-                        // 0.31 - or cannot be asked: told, not watched.
-                        TestArming.UNANSWERED -> if (incoming) {
-                            "the recorder did not answer, and may have armed the test all the same: " +
-                                "a call in the next three minutes may be answered with your greeting, unread"
-                        } else {
-                            "the recorder did not answer, and may be placing the call all the same; how it goes is not read"
-                        }
-                        else -> "the recorder could not arm a test call"
-                    },
-                )
+                tell(words)
                 return@launch
             }
             _state.update {
@@ -678,6 +692,24 @@ class AnswerController(
             }
             watchTest(window)
         }
+    }
+
+    /** Why an arming armed nothing, in words, by the recorder's [reply]. */
+    private fun refusal(reply: TestArming?, incoming: Boolean): String = when (reply) {
+        TestArming.BAD_NUMBER -> "that number cannot be dialled"
+        TestArming.EMERGENCY -> "an emergency number is never called for a test"
+        TestArming.NO_GREETING -> "the recorder does not have your greeting yet - try again in a moment"
+        TestArming.BUSY -> "the last test call is still going on"
+        // It may have armed all the same, and the recorder cannot say whose
+        // its results are - one before 0.31 - or cannot be asked: told, not
+        // watched.
+        TestArming.UNANSWERED -> if (incoming) {
+            "the recorder did not answer, and may have armed the test all the same: " +
+                "a call in the next three minutes may be answered with your greeting, unread"
+        } else {
+            "the recorder did not answer, and may be placing the call all the same; how it goes is not read"
+        }
+        else -> "the recorder could not arm a test call"
     }
 
     /**

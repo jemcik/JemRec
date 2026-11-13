@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.answering.EmergencyPause
@@ -68,14 +69,25 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
     val processing = a.processingTake || making != null
     // A take made a greeting of past its screen - closed meanwhile - is
     // shown once saved: the screen opened since said "No greeting yet".
-    LaunchedEffect(making) { if (making == null) vm.answer.reload() }
+    // How a take ended, kept for the screen in front - this one, if it is
+    // (readTakeEnding): a window behind another leaves it for that one.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(making) {
+        if (making == null) {
+            vm.answer.reload()
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) vm.answer.readTakeEnding()
+        }
+    }
     val haptics = LocalHapticFeedback.current
     var dialog by rememberSaveable { mutableStateOf<AnswerDialog?>(null) }
 
     LaunchedEffect(Unit) { vm.answeringMachineOpened() }
     // Back at the front: where a test kept when its watch ended unanswered,
-    // or still under way, stands.
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.answer.readPendingTest() }
+    // or still under way, stands; and how a take made past its screen ended.
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        vm.answer.readPendingTest()
+        vm.answer.readTakeEnding()
+    }
     val now = LocalNow.current
 
     when (dialog) {
