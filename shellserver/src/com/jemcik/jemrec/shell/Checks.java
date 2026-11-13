@@ -18,7 +18,7 @@ final class Checks {
      * "Uid mode: MANAGE_ONGOING_CALLS: allow". The package's line follows it
      * and says "allow" too when only the package is allowed - which is not
      * enough - so "allow" anywhere in the output proves nothing. Lines may
-     * come joined with " | " (Main.slurp) or with newlines.
+     * come joined with " | " (Shell.slurp) or with newlines.
      */
     static boolean uidAllowed(@Nullable String said) {
         if (said == null) {
@@ -530,7 +530,7 @@ final class Checks {
      * timestamp string is the daemon's handle for "have I already reported
      * this one": it changes only when a newer stop lands.
      *
-     * Tolerant of Main.slurp joining lines with " | ": the work is regex within
+     * Tolerant of Shell.slurp joining lines with " | ": the work is regex within
      * each record's text, and the record markers and key=value pairs survive
      * the join.
      */
@@ -604,7 +604,7 @@ final class Checks {
             java.util.regex.Pattern.compile("(?<![A-Za-z])importance=(\\d+)");
     private static final java.util.regex.Pattern EXIT_STAMP =
             java.util.regex.Pattern.compile("timestamp=(\\d{4}-\\d{2}-\\d{2} [\\d:.]+)");
-    /** Within the line: Main.slurp joins lines with " | ". */
+    /** Within the line: Shell.slurp joins lines with " | ". */
     private static final java.util.regex.Pattern USER0_STOPPED =
             java.util.regex.Pattern.compile("User 0:[^|\\n]*?(?<![A-Za-z])stopped=(true|false)");
 

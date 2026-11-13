@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
  *
  * HOW THIS IS WOKEN
  *
- * The daemon watches the cable (Main.watchCable) and wakes CallMonitorService
+ * The daemon watches the cable (its own CableWatch.watchCable) and wakes CallMonitorService
  * with CABLE while it still can: there are three seconds between the cable
  * and the kill, and the app, started by zygote, is in a cgroup of its own and
  * lives through it. This then watches the recorder for [WATCH_MS]. Still up:

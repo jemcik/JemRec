@@ -31,10 +31,8 @@ import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.File;
-import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -223,7 +221,7 @@ public final class Main {
             String token = System.getenv(TOKEN_ENV);
             appToken = token == null ? "" : token;
             recordingMode = modeFromEnvironment(System.getenv(MODE_ENV));
-            trackingOn = "1".equals(System.getenv(TRACK_ENV));
+            Tracking.trackingOn = "1".equals(System.getenv(TRACK_ENV));
             answerSettings = AnswerSettings.parse(System.getenv(ANSWER_ENV));
 
             final int bound = port;
@@ -232,33 +230,33 @@ public final class Main {
             acceptor.setDaemon(true);
             acceptor.start();
 
-            Thread custodian = new Thread(Main::watchForUninstall, "jemrec-custodian");
+            Thread custodian = new Thread(Custodian::watchForUninstall, "jemrec-custodian");
             custodian.setDaemon(true);
             custodian.start();
 
             // The off-Wi-Fi shield, kept up by the process whose life depends
             // on it. See keepShieldUp for why the app doing it was not enough.
-            Thread shield = new Thread(Main::keepShieldUp, "jemrec-shield");
+            Thread shield = new Thread(Shield::keepShieldUp, "jemrec-shield");
             shield.setDaemon(true);
             shield.start();
 
             // The few seconds' warning a USB cable gives before adbd goes,
             // passed on to the app. See watchCable.
-            Thread cable = new Thread(Main::watchCable, "jemrec-cable");
+            Thread cable = new Thread(CableWatch::watchCable, "jemrec-cable");
             cable.setDaemon(true);
             cable.start();
 
             startCallWatcher(token);
             startVoipWatcher(token);
             // Off the main thread: it runs `cmd appops`, which takes a moment.
-            Thread tracking = new Thread(Main::applyTracking, "jemrec-tracking");
+            Thread tracking = new Thread(Tracking::applyTracking, "jemrec-tracking");
             tracking.setDaemon(true);
             tracking.start();
 
             // The daemon survives the app being killed in the background, so it
             // is where the app's own death can be seen and the user told. See
             // watchBackgroundKill.
-            Thread killWatch = new Thread(Main::watchBackgroundKill, "jemrec-killwatch");
+            Thread killWatch = new Thread(KillWatch::watchBackgroundKill, "jemrec-killwatch");
             killWatch.setDaemon(true);
             killWatch.start();
 
@@ -576,76 +574,11 @@ public final class Main {
     }
 
     /**
-     * Exit when the app that started this daemon is uninstalled.
-     *
-     * WHY THE APP CANNOT DO THIS ITSELF
-     *
-     * Android tells a package nothing about its own removal. There is no
-     * broadcast, no callback, no last chance to run: the process is killed and
-     * the package is gone. So an app cannot clean up after being uninstalled,
-     * and anything of its that is not owned by the package simply stays.
-     *
-     * This daemon is exactly that. It runs as shell, in its own session, from a
-     * jar in /data/local/tmp - deliberately, so the system will not reap it
-     * along with the app. Uninstall JemRec from the launcher or from Settings
-     * and this process carries on holding port 28472 until the phone restarts.
-     *
-     * That is not just untidy, and this is the part that decides it. Setup asks
-     * whether a recorder is already running before it asks about pairing,
-     * because a phone that is recording is set up whatever else is true. So a
-     * daemon left behind makes the NEXT install skip Wireless debugging and
-     * pairing and call itself ready - while serving a jar from the version that
-     * was uninstalled. Silently.
-     *
-     * The app has a Remove button that stops the daemon first, but a user is
-     * perfectly entitled to long-press the icon and tap Uninstall instead, and
-     * most will. Correctness cannot depend on them taking the tidy route. So
-     * the daemon watches for its own app going away, and lets itself out.
-     *
-     * `pm path` rather than looking for files: it is unambiguous. It prints a
-     * path for an installed package and nothing at all for one that is gone.
+     * The one lock of the call and recording state: Main.class, the monitor
+     * Main's own static synchronized methods hold. Named so the code moved
+     * out of Main takes the same one.
      */
-    private static void watchForUninstall() {
-        while (true) {
-            sleep(PACKAGE_CHECK_INTERVAL_MS);
-            if (appIsInstalled()) {
-                continue;
-            }
-            // Asked twice. A single failed check is far more likely to be a
-            // busy package manager than an uninstall, and exiting by mistake
-            // means a phone that silently stops recording calls.
-            sleep(CONFIRM_DELAY_MS);
-            if (appIsInstalled()) {
-                continue;
-            }
-            AnswerMachine machine = answerMachine;
-            if (machine != null && machine.takingMessage()) {
-                // A message under way: its caller hung up on first, and the
-                // microphone given back as the call ends - then the rest. A
-                // call the user took over is theirs, left to go on.
-                Ln.i("custodian: JemRec is no longer installed; ending the message first");
-                try {
-                    onMain(() -> {
-                        machine.hangUpNow();
-                        return null;
-                    });
-                } catch (Exception e) {
-                    Ln.w("custodian: could not end the message: " + e);
-                }
-                continue;
-            }
-            if (!giveBackStaleMute()) {
-                // A mute a predecessor left mid-message, and a call up: given
-                // back once it is over. Cleaning up now would take its marker
-                // with the rest, and nothing would look again.
-                Ln.i("custodian: JemRec is no longer installed; cleaning up once the call is over");
-                continue;
-            }
-            Ln.i("custodian: JemRec is no longer installed, cleaning up and exiting");
-            cleanUpAfterApp();
-            System.exit(0);
-        }
-    }
+    static final Object LOCK = Main.class;
 
     /**
      * Mid-call - recording, ringing with an answer on its way, or waiting on
@@ -653,518 +586,11 @@ public final class Main {
      * debugging off, waits out. A fetch cut short by the exit reads as a
      * complete, shorter recording. Call with Main.class held.
      */
-    private static boolean busyLocked() {
+    static boolean busyLocked() {
         AnswerMachine machine = answerMachine;
         return activeRecording != null || callActive || fetches.get() > 0
                 || (machine != null && machine.state() != AnswerMachine.State.IDLE
                     && machine.state() != AnswerMachine.State.RINGING);
-    }
-
-    /** Start the wait for debugging off, unless one is waiting already. */
-    private static void goOffWhenFree() {
-        synchronized (Main.class) {
-            if (offWaiter != null) {
-                return;
-            }
-            Thread waiter = new Thread(Main::waitThenGoOff, "jemrec-off");
-            waiter.setDaemon(true);
-            offWaiter = waiter;
-            waiter.start();
-        }
-    }
-
-    /**
-     * Wait for nothing to be in progress, then switch Wireless debugging off
-     * and USB debugging after it. The second write stops adbd, and adbd's
-     * cgroup goes with it - this process included, so nothing after it is
-     * expected to run unless adbd lived on.
-     */
-    private static void waitThenGoOff() {
-        while (true) {
-            synchronized (Main.class) {
-                if (!goingOff) {
-                    offWaiter = null;
-                    Ln.i("debugging off: called off before it happened");
-                    return;
-                }
-                if (!busyLocked()) {
-                    break;
-                }
-            }
-            sleep(1_000L);
-        }
-        // A mute a message left behind is given back before anything goes.
-        giveBackStaleMute();
-        // And asked once more, last thing: an On whose cancel came after the
-        // wait above ended would otherwise find debugging switched off under
-        // it, the switches it had just put back gone again.
-        synchronized (Main.class) {
-            if (!goingOff) {
-                offWaiter = null;
-                Ln.i("debugging off: called off just before it happened");
-                return;
-            }
-            switchingOff = true;
-        }
-        Ln.i("debugging off: Wireless debugging, then USB debugging - adbd stops, and this process with it");
-        for (String setting : new String[]{"adb_wifi_enabled", "adb_enabled"}) {
-            putGlobal(setting, "0");
-        }
-        // Still here: adbd lived on, or the writes were refused - and then the
-        // app finishes the off (DebugSwitchesOff.switchOff). The app asked
-        // for the recorder gone too.
-        sleep(3_000L);
-        Ln.i("debugging off: still running after both switches, exiting");
-        System.exit(0);
-    }
-
-    private static boolean appIsInstalled() {
-        try {
-            Process process = new ProcessBuilder("pm", "path", APP_PACKAGE)
-                    .redirectErrorStream(true)
-                    .start();
-            String text = slurp(process);
-            int exit = process.waitFor();
-            if (text.contains("package:")) {
-                return true;
-            }
-            if (exit != 0 && text.isEmpty()) {
-                // The one shape "not installed" has, measured on the device:
-                // no path, nothing else said, exit 1.
-                return false;
-            }
-            // Anything else is pm complaining - a busy package manager, a
-            // service not up yet - and used to read as an uninstall, which
-            // turns both debugging switches off and exits. Not on a hiccup.
-            Ln.w("custodian: pm path said '" + text + "' (exit " + exit + "), assuming the app is still there");
-            return true;
-        } catch (Throwable t) {
-            // Cannot tell, so assume it is there. Guessing "uninstalled" would
-            // stop a working recorder over a transient failure, and the cost of
-            // guessing wrong the other way is one extra orphan until reboot.
-            Ln.w("custodian: could not check whether the app is installed");
-            return true;
-        }
-    }
-
-    /** How often to look for the app having been killed in the background. A
-     *  minute: the read is cheap and the warning is advisory, not time-critical
-     *  the way the cable watch is. */
-    private static final long BG_KILL_CHECK_INTERVAL_MS = 60_000L;
-
-    /**
-     * Watch for THIS PHONE killing the app in the background and, when it
-     * happens, wake the app so it can tell the user how to stop it (see
-     * BackgroundKill on the app side).
-     *
-     * Measured on the Honor (2026-10-25): with App launch on "Manage
-     * automatically", the screen going off had the system kill the app
-     * mid-service and then mark it stopped, so nothing brought the recorder
-     * back until the app was next opened. The daemon runs as shell in its own
-     * session and is NOT frozen or killed by that - it is the one part left
-     * running that can notice and raise the alarm at once.
-     *
-     * `dumpsys activity exit-info` lists the app's past exits, newest first;
-     * Checks.backgroundKillStamp picks out the newest system kill that cost
-     * something - one while the app was working, or one that left it stopped -
-     * passing over Android's routine clean-up of an idle app and the user's
-     * own Force stop. This side reads the stopped flag straight away; the app,
-     * running again, has only Android 15's record of its own start, so it
-     * trusts the wake's judgement. The newest stop seen at startup is the baseline - one
-     * from before the daemon began watching is not news - and any newer one is
-     * reported once, keyed by its timestamp (Checks.newStop). The app dedups again its own way,
-     * so a stop the app also notices on next open is not told twice.
-     */
-    private static void watchBackgroundKill() {
-        java.util.Set<String> told = new java.util.HashSet<>();
-        String baseline = backgroundKillStamp();
-        Checks.newStop(told, baseline);
-        Ln.i("killwatch: watching every " + (BG_KILL_CHECK_INTERVAL_MS / 1000)
-                + "s, baseline " + baseline);
-        while (true) {
-            sleep(BG_KILL_CHECK_INTERVAL_MS);
-            String stamp = backgroundKillStamp();
-            if (Checks.newStop(told, stamp)) {
-                Ln.w("killwatch: the system killed JemRec in the background (exit " + stamp
-                        + ") - waking the app to warn");
-                wake(ACTION_BACKGROUND_KILLED, false, null, null);
-            }
-        }
-    }
-
-    /** Checks.backgroundKillStamp on a fresh `dumpsys activity exit-info`, or
-     *  null if the dump could not be read (runQuietly logs why). The package
-     *  dump (36 ms on the Honor) is read only when the newest exit is an idle
-     *  kill, the one case where stopped decides. */
-    private static @Nullable String backgroundKillStamp() {
-        return Checks.backgroundKillStamp(runQuietly("dumpsys", "activity", "exit-info", APP_PACKAGE),
-                () -> Checks.packageStopped(runQuietly("dumpsys", "package", APP_PACKAGE)));
-    }
-
-    /**
-     * Put back what the app changed that outlives it: both debugging
-     * switches, a microphone left muted by a message, and its files in
-     * /data/local/tmp - the jar, the logs, recordings never collected, the
-     * greeting and its take.
-     *
-     * Wireless debugging was turned on for setup and is a secure setting only
-     * something with shell rights can write - which this is, and the app no
-     * longer exists to do it. The jar and the log sit in /data/local/tmp, which
-     * belongs to shell rather than to the package, so an uninstall does not
-     * touch them either.
-     *
-     * Deleting the jar this process is running FROM is safe: the file is
-     * unlinked and the running image stays valid until exit, which is a moment
-     * away.
-     */
-    private static void cleanUpAfterApp() {
-        // The files first: turning the switches off can stop adbd, and this
-        // process with it. The jar, the logs, and any call audio the app
-        // never collected - nobody else ever will.
-        java.util.List<File> leftovers = new java.util.ArrayList<>();
-        leftovers.add(new File(JAR_PATH));
-        leftovers.add(new File(LOG_PATH));
-        leftovers.add(new File(LOG_PATH + ".1"));
-        // The user's greeting, a take, and the marker of a mute left
-        // mid-message - given back already (watchForUninstall).
-        leftovers.add(Greeting.FILE);
-        leftovers.add(Greeting.TAKE);
-        leftovers.add(MUTE_MARKER);
-        // The last call's report (Copy a report).
-        leftovers.add(REPORT_FILE);
-        File[] recordings = new File(REC_DIR).listFiles((d, n) -> n.startsWith(REC_PREFIX) && n.endsWith(REC_SUFFIX));
-        if (recordings != null) {
-            leftovers.addAll(java.util.Arrays.asList(recordings));
-        }
-        for (File file : leftovers) {
-            try {
-                if (file.delete()) {
-                    Ln.i("custodian: removed " + file.getName());
-                }
-            } catch (Throwable t) {
-                Ln.w("custodian: could not remove " + file.getName());
-            }
-        }
-        // Both debugging switches. Wireless was turned on for setup; USB is the
-        // off-Wi-Fi shield this daemon keeps up (see keepShieldUp) - and with the
-        // app gone, nothing else will ever turn either of them back off.
-        // Refused where an OPPO, OnePlus or realme phone's switch is off
-        // (putGlobal), and then nothing is left to do it: the app is gone.
-        for (String setting : new String[]{"adb_wifi_enabled", "adb_enabled"}) {
-            if (putGlobal(setting, "0")) {
-                Ln.i("custodian: turned " + setting + " off");
-            }
-        }
-    }
-
-    /**
-     * Ten seconds. This bounds how long the shield can be down while adbd is
-     * still alive - the case that matters, see keepShieldUp. Cheap: each check
-     * is one tiny native `cmd` binary and a binder call, no wakelock, and a
-     * plain sleep does not wake a sleeping phone, it just runs late. About a
-     * minute of low-clock CPU a day, spread thin.
-     */
-    private static final long SHIELD_CHECK_INTERVAL_MS = 10 * 1000L;
-
-    /** Every twelfth check - once every two minutes - a heartbeat line with
-     *  both switches and the time. This log is the only durable record on this
-     *  phone (logcat's main buffer rolls in about a minute), and the state of
-     *  the two switches right up to whatever kills this process is the one
-     *  thing every investigation so far had been missing. ~720 lines a day. */
-    private static final int HEARTBEAT_EVERY = 12;
-
-    /**
-     * KEEP THE OFF-WI-FI SHIELD UP, FROM THE ONE PROCESS THAT NEEDS IT.
-     *
-     * This daemon dies when adbd restarts (the restart cgroup-kills adbd's
-     * children), and adbd restarts on Wi-Fi loss unless USB debugging - the
-     * global setting adb_enabled, no cable involved - is on to keep a transport
-     * "enabled" in the framework's eyes. The app turns it on at setup and
-     * re-arms it whenever it revives this daemon, and that was believed to be
-     * enough. It is not: on this phone USB debugging switches ITSELF off some
-     * time after being turned on with no cable attached (measured repeatedly),
-     * and the app only looks again on a keep-alive tick or an open. A Wi-Fi
-     * drop landing in that gap restarts adbd and kills this process. Measured:
-     * a call recorded at 14:19, Wi-Fi off, adbd restarted at 14:21:07, every
-     * call after that unrecorded - and adb_enabled read 1 again by the time
-     * anyone looked, because the app had re-armed it afterwards.
-     *
-     * So this process minds its own shield. Shell can write the setting (the
-     * custodian above writes adb_wifi_enabled the same way), this thread is
-     * never frozen, and it checks every ten seconds - so the shield is down
-     * for seconds at most while adbd is alive. It cannot help once adbd has
-     * already restarted (this process is gone by then; the app's revive covers
-     * that); what it does is stop a drop from ever finding the shield down.
-     *
-     * WHY THIS POLLS, WHEN A ContentObserver IS THE OBVIOUS ANSWER
-     *
-     * An observer on the two settings was built and does not work, and the
-     * platform says exactly why. Since Android 12 the ContentService validates
-     * every registration through ActivityManager's checkContentProviderAccess,
-     * which looks the caller up by PID in its process table - and a process
-     * started from a shell with app_process was never started by the
-     * ActivityManager, so it has no record there. registerContentObserver
-     * returns normally and registers nothing: `dumpsys content` showed the
-     * observer tree without it, and logcat had the refusal, verbatim:
-     *
-     *   W/ContentService: Ignoring content changes for
-     *     content://settings/global/adb_enabled from 2000: Failed to find PID 28158
-     *
-     * No permission, property or context changes that; it is a question of
-     * whether the ActivityManager knows the process, and it does not. The app
-     * could observe - it is a real app - but the app is frozen between calls
-     * on this phone, which is the whole reason this daemon exists. So the
-     * process that is always alive polls, and the one that could observe is
-     * not always alive. Ten seconds it is.
-     *
-     * A read that fails is treated as unknown and skipped, not as "off": writing
-     * on a transient hiccup would be harmless but noisy, and a wrong "off" costs
-     * nothing more than one idempotent write ten seconds later.
-     */
-    private static void keepShieldUp() {
-        Ln.i("shield: minding adb_enabled every " + (SHIELD_CHECK_INTERVAL_MS / 1000)
-                + "s, from " + new java.util.Date());
-        int tick = 0;
-        // Check FIRST, then sleep: the state at spawn is itself a data point.
-        while (true) {
-            boolean heartbeat = tick++ % HEARTBEAT_EVERY == 0;
-            checkShield(heartbeat ? "heartbeat" : null);
-            if (heartbeat) {
-                ensureTracking();
-            }
-            sleep(SHIELD_CHECK_INTERVAL_MS);
-        }
-    }
-
-    /** One check: put adb_enabled back to 1 if it is anything else, logging
-     *  the restore with its time. With a non-null why, also a heartbeat line
-     *  with both switches; otherwise a quiet check stays quiet. */
-    private static void checkShield(@Nullable String why) {
-        try {
-            String usb = readGlobal("adb_enabled");
-            if (why != null) {
-                Ln.i("shield: " + why + " adb_enabled=" + usb + " adb_wifi_enabled="
-                        + readGlobal("adb_wifi_enabled") + " pings=" + pings.getAndSet(0)
-                        + " sessions=" + sessions.get() + " at " + new java.util.Date());
-            }
-            // Not while debugging is going off by the user's choice
-            // (COMMAND_DEBUGGING_OFF): putting it back would undo that.
-            if (usb != null && !"1".equals(usb) && !switchingOff) {
-                boolean on = putGlobal("adb_enabled", "1");
-                // Stamped: WHEN the setting flips is the one thing nobody has
-                // been able to see. Each of these is a data point about what
-                // Honor does and when. Refused, the app's own write - it holds
-                // the permission - is what puts it back (UsbDebuggingWatch).
-                Ln.w("shield: adb_enabled was " + usb + " at " + new java.util.Date()
-                        + (on ? " - turned USB debugging back on" : " - could not turn USB debugging back on"));
-            }
-        } catch (Throwable t) {
-            Ln.w("shield: could not check or restore adb_enabled: " + t.getMessage());
-        }
-    }
-
-    /** By its full path, not looked up on PATH (CodeQL, code-scanning alert
-     *  69), as the app's getprop is (SystemProperty): Android's own. */
-    private static final String SETTINGS = "/system/bin/settings";
-
-    /**
-     * `settings put global name value`, read back: true if it now says so. An
-     * OPPO, OnePlus or realme phone with its Developer options switch off
-     * refuses the shell this write (the app's ShellGrant; CallVault measured
-     * `settings put` refused on a OnePlus 9, 2026-09-16), and the write's
-     * exit says nothing - so what the phone said is logged, its first lines.
-     * Writing USB debugging off ends this process with adbd: no read-back.
-     */
-    private static boolean putGlobal(String name, String value) {
-        try {
-            Process put = new ProcessBuilder(SETTINGS, "put", "global", name, value)
-                    .redirectErrorStream(true)
-                    .start();
-            String said = slurp(put);
-            put.waitFor();
-            if (value.equals(readGlobal(name))) {
-                return true;
-            }
-            Ln.w("settings: could not set " + name + " to " + value
-                    + (said.isEmpty() ? "" : " - Android said " + said.substring(0, Math.min(said.length(), 300))));
-        } catch (Throwable t) {
-            Ln.w("settings: could not set " + name + " to " + value + ": " + t.getMessage());
-        }
-        return false;
-    }
-
-    /** `settings get global name`, trimmed; null if it could not be read. */
-    private static @Nullable String readGlobal(String name) {
-        try {
-            Process process = new ProcessBuilder(SETTINGS, "get", "global", name)
-                    .redirectErrorStream(true)
-                    .start();
-            String value = slurp(process);
-            process.waitFor();
-            return value;
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private static void sleep(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    /** One second: the warning is about three (see watchCable), and `am`
-     *  takes a fraction of one. A read is one binder call, about 0.2 ms
-     *  measured, and a sleeping phone runs none of them. */
-    private static final long CABLE_CHECK_INTERVAL_MS = 1000L;
-
-    /** How often to look again for a USB service, or ports, not there yet. */
-    private static final long CABLE_PORTS_RETRY_MS = 60 * 1000L;
-
-    /**
-     * A USB CABLE IS THE ONE WARNING THIS PROCESS GETS THAT ADBD IS ABOUT TO GO.
-     *
-     * Unplugging the phone from a computer stops adbd, and stopping adbd
-     * kills this process with it: init kills adbd's whole cgroup
-     * (/system/uid_0/pid_<adbd>, a cgroup.kill file), this process is in it
-     * whatever its session, and shell cannot leave - every cgroup.procs is
-     * system:system and shell is not in group system. Measured on the Honor
-     * (MagicOS 11, Android 17), 2026-10-24 18:44: the port read "no cable"
-     * at 18:44:18.26 and a probe started the way this process is (a one-off,
-     * not kept) ticked for the last time at 18:44:21.08 - Android's three-second debounce of a
-     * USB disconnect, then the functions reset without "adb", and init
-     * stopped adbd. And adbd STAYED stopped, both debugging switches still
-     * on, until Wireless debugging was switched off and on three minutes
-     * later. At 17:06 the same day nothing did that, and nothing recorded
-     * for 74 minutes.
-     *
-     * So this watches the cable and hands over while it can: it wakes the
-     * app, which outlives adbd (zygote started it, in a cgroup of its own),
-     * and the app waits to see whether this process goes and, if it does,
-     * starts adbd and this daemon again over Wireless debugging. A wall
-     * charger, plugged or pulled, left adbd alone (measured the same
-     * evening), and so does the app's watch: it ends after a few seconds,
-     * before Android would show its notification. Both directions wake it,
-     * because which of them restarts adbd is the phone's business: plugging
-     * into a computer started adbd every time the event log shows, and adbd
-     * is often already running then.
-     *
-     * Polled, not observed: a receiver for the power and USB broadcasts is
-     * refused to a process the ActivityManager did not start, exactly as the
-     * settings observer is (keepShieldUp) - measured on the Android 17
-     * emulator, "registerReceiverWithFeature: no app for null". Shell's
-     * MANAGE_USB lets this read the USB port's status from the USB service
-     * instead, which flips the moment the cable does (the battery status
-     * does not: plugged in at 80 % it stayed "discharging").
-     */
-    private static void watchCable() {
-        Object usb = null;
-        java.lang.reflect.Method status = null;
-        java.lang.reflect.Method mode = null;
-        java.util.List<String> ports = new java.util.ArrayList<>();
-        // Looked for until found: a recorder started just after boot can be
-        // up before the USB service is. Said once, not every minute.
-        boolean said = false;
-        while (ports.isEmpty()) {
-            try {
-                Object binder = Class.forName("android.os.ServiceManager")
-                        .getMethod("getService", String.class).invoke(null, "usb");
-                usb = Class.forName("android.hardware.usb.IUsbManager$Stub")
-                        .getMethod("asInterface", android.os.IBinder.class).invoke(null, binder);
-                java.util.List<?> found = (java.util.List<?>) usb.getClass().getMethod("getPorts").invoke(usb);
-                status = usb.getClass().getMethod("getPortStatus", String.class);
-                mode = Class.forName("android.hardware.usb.UsbPortStatus").getMethod("getCurrentMode");
-                if (found != null) {
-                    for (Object port : found) {
-                        ports.add(portId(port));
-                    }
-                }
-                if (ports.isEmpty() && !said) {
-                    Ln.i("cable: no USB port to watch yet");
-                    said = true;
-                }
-            } catch (Throwable t) {
-                if (!said) {
-                    Ln.w("cable: cannot read the USB ports yet: " + rootCause(t));
-                    said = true;
-                }
-            }
-            if (ports.isEmpty()) {
-                sleep(CABLE_PORTS_RETRY_MS);
-            }
-        }
-        if (usb == null || status == null || mode == null) {
-            // Cannot be: ports fills only once all three were found.
-            Ln.w("cable: the USB service went before its ports could be watched");
-            return;
-        }
-        Ln.i("cable: watching USB port(s) " + ports + " every " + CABLE_CHECK_INTERVAL_MS / 1000 + "s");
-        Boolean before = null;
-        while (true) {
-            int[] modes = new int[ports.size()];
-            for (int i = 0; i < modes.length; i++) {
-                modes[i] = portMode(usb, status, mode, ports.get(i));
-            }
-            int reading = Checks.portsReading(modes);
-            if (reading >= 0) {
-                boolean in = Checks.cableIn(reading);
-                String change = Checks.cableChange(before, in);
-                if (change != null) {
-                    String config = property("sys.usb.config");
-                    Ln.i("cable: " + change + " at " + new java.util.Date() + " (port mode " + reading
-                            + ", USB debugging " + (Checks.usbAdb(config) ? "on the cable" : "not on it")
-                            + ") - waking the app to watch the recorder");
-                    wake(ACTION_CABLE, false, "", null, "--es", "cable", change);
-                }
-                before = in;
-            }
-            sleep(CABLE_CHECK_INTERVAL_MS);
-        }
-    }
-
-    /** A port's id: the method where there is one, the field where Android
-     *  17 has only that, and the Honor's one port's name failing both. */
-    private static String portId(Object parcelable) {
-        try {
-            return (String) parcelable.getClass().getMethod("getId").invoke(parcelable);
-        } catch (Throwable ignored) {
-            // Android 17's ParcelableUsbPort has no getter.
-        }
-        try {
-            Field field = parcelable.getClass().getDeclaredField("mId");
-            field.setAccessible(true);
-            return (String) field.get(parcelable);
-        } catch (Throwable ignored) {
-            return "port0";
-        }
-    }
-
-    /** UsbPortStatus.getCurrentMode for [port], or -1 if it could not be read.
-     *  No status at all is a port the service does not know - unknown, not
-     *  "no cable", which is a status with mode 0. */
-    private static int portMode(Object usb, java.lang.reflect.Method status, java.lang.reflect.Method mode,
-            String port) {
-        try {
-            Object reading = status.invoke(usb, port);
-            return reading == null ? -1 : (Integer) mode.invoke(reading);
-        } catch (Throwable t) {
-            return -1;
-        }
-    }
-
-    private static @Nullable String property(String name) {
-        try {
-            return (String) Class.forName("android.os.SystemProperties")
-                    .getMethod("get", String.class).invoke(null, name);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private static Throwable rootCause(Throwable t) {
-        return t.getCause() != null ? t.getCause() : t;
     }
 
     /**
@@ -1192,7 +618,7 @@ public final class Main {
             } catch (BindException e) {
                 last = e;
                 Ln.w("port " + port + " still held, retrying");
-                sleep(BIND_RETRY_MS);
+                Shell.sleep(BIND_RETRY_MS);
             }
         }
         throw last;
@@ -1217,7 +643,7 @@ public final class Main {
                 // threads for a few seconds each, not the daemon.
                 if (sessions.get() >= MAX_SESSIONS) {
                     Ln.w("session: " + MAX_SESSIONS + " already open, dropping a connection");
-                    closeQuietly(client);
+                    Shell.closeQuietly(client);
                     continue;
                 }
                 sessions.incrementAndGet();
@@ -1246,7 +672,7 @@ public final class Main {
         } catch (Exception e) {
             Ln.e("session ended with an error", e);
         } finally {
-            closeQuietly(client);
+            Shell.closeQuietly(client);
             sessions.decrementAndGet();
         }
     }
@@ -1295,10 +721,10 @@ public final class Main {
     /** Sessions run concurrently, one thread each. Eight is more than the app
      *  has callers; past it a connection is dropped rather than queued. */
     private static final int MAX_SESSIONS = 8;
-    private static final AtomicInteger sessions = new AtomicInteger();
+    static final AtomicInteger sessions = new AtomicInteger();
     /** Pings since the last heartbeat line. Counted there rather than logged
      *  one by one: the keep-alive pings several times a visit, all day. */
-    private static final AtomicInteger pings = new AtomicInteger();
+    static final AtomicInteger pings = new AtomicInteger();
     private static volatile int listenPort = DEFAULT_PORT;
 
     /** A refusal is logged at most this often, with a running count, so a
@@ -1307,16 +733,14 @@ public final class Main {
     private static long lastRefusalLog;
     private static int refusals;
 
-    private static final String APP_PACKAGE = "com.jemcik.jemrec";
+    static final String APP_PACKAGE = "com.jemcik.jemrec";
     private static final String APP_SERVICE = "com.jemcik.jemrec/.capture.CallMonitorService";
     private static final String ACTION_CALL_STARTED = "com.jemcik.jemrec.CALL_STARTED";
     private static final String ACTION_CALL_ENDED = "com.jemcik.jemrec.CALL_ENDED";
     /** A USB cable went in or came out: adbd may be about to go. See watchCable. */
-    private static final String ACTION_CABLE = "com.jemcik.jemrec.CABLE";
-    private static final String ACTION_BACKGROUND_KILLED = "com.jemcik.jemrec.BACKGROUND_KILLED";
+    static final String ACTION_CABLE = "com.jemcik.jemrec.CABLE";
+    static final String ACTION_BACKGROUND_KILLED = "com.jemcik.jemrec.BACKGROUND_KILLED";
     private static final String TOKEN_ENV = "JEMREC_TOKEN";
-    private static final String JAR_PATH = "/data/local/tmp/jemrec-capture.jar";
-    private static final String LOG_PATH = "/data/local/tmp/jemrec-capture.out";
 
     /**
      * The first eight hex digits of the SHA-256 of the jar this process runs
@@ -1330,11 +754,6 @@ public final class Main {
      * churning.
      */
     private static final String BUILD = jarBuild();
-
-    /** Five minutes. Frequent enough that an orphan is short-lived, rare
-     *  enough that it costs nothing to run forever. */
-    private static final long PACKAGE_CHECK_INTERVAL_MS = 5 * 60 * 1000L;
-    private static final long CONFIRM_DELAY_MS = 10 * 1000L;
 
     /** Six seconds of patience for a predecessor to let go of the port. */
     private static final int BIND_ATTEMPTS = 15;
@@ -1388,9 +807,6 @@ public final class Main {
     /** How long the main looper gets to run a posted no-op before it counts as stuck. */
     private static final long LOOPER_CHECK_MS = 1000L;
 
-    private static final String REC_DIR = "/data/local/tmp";
-    private static final String REC_PREFIX = "jemrec_rec_";
-    private static final String REC_SUFFIX = ".dat";
     /** Four bytes where the codec id goes: the file the app asked for is not here. */
     private static final String GONE = "gone";
 
@@ -1464,18 +880,6 @@ public final class Main {
      */
     private static final int COMMAND_DEBUGGING_OFF = 'O';
 
-    /** Set by COMMAND_DEBUGGING_OFF: the switches go off the first moment
-     *  nothing is in progress. */
-    private static volatile boolean goingOff;
-
-    /** Set once that moment has come and the switches are being written: only
-     *  then does the shield stand down. Not for the call waited out before -
-     *  USB debugging is what keeps adbd, and that call's recording, alive. */
-    private static volatile boolean switchingOff;
-
-    /** The thread waiting for that moment, while there is one. */
-    private static @Nullable Thread offWaiter;
-
     /**
      * The messenger apps whose calls to record - see Voip. In the environment
      * at spawn (VOIP_ENV) and sent again whenever the user changes them, the
@@ -1519,7 +923,6 @@ public final class Main {
      */
     private static final int COMMAND_SET_TRACKING = 'T';
     private static final String TRACK_ENV = "JEMREC_TRACK";
-    private static volatile boolean trackingOn;
 
     /**
      * The rules on whose calls to keep said no to a phone call while it was
@@ -1549,15 +952,12 @@ public final class Main {
     private static final String ANSWER_ENV = "JEMREC_ANSWER";
     private static final String ACTION_MESSAGE_STARTED = "com.jemcik.jemrec.MESSAGE_STARTED";
     private static final String ACTION_MESSAGE_TAKEN = "com.jemcik.jemrec.MESSAGE_TAKEN";
-    /** Left while this process holds the microphone muted, so a restart in
-     *  the middle of a message gives the microphone back. */
-    private static final File MUTE_MARKER = new File("/data/local/tmp/jemrec-muted");
 
     private static volatile AnswerSettings answerSettings = AnswerSettings.OFF;
     /** The microphone can be muted from here (the audio context rebound).
      *  Without that, nothing is answered: the caller would hear the room. */
     private static volatile boolean muteReady;
-    private static @Nullable AnswerMachine answerMachine;
+    static @Nullable AnswerMachine answerMachine;
     private static @Nullable Handler mainHandler;
     private static @Nullable AudioManager callAudio;
     private static @Nullable TelecomManager telecom;
@@ -1584,58 +984,6 @@ public final class Main {
     /** The check tone counts above -50 dBFS, and as most of the chunk. */
     private static final double TONE_MIN_RMS = 32768 * Math.pow(10, -50 / 20.0);
     private static final double TONE_MIN_SHARE = 0.5;
-
-    /** One applyTracking at a time - the start-up thread's and the app's 'T'
-     *  can overlap - so the last to run applies what trackingOn says by then,
-     *  not what it said before the other ran. Not Main.class: that is held
-     *  at call start and end, and these take a moment. */
-    private static final Object TRACKING_LOCK = new Object();
-
-    private static void applyTracking() {
-        synchronized (TRACKING_LOCK) {
-            String mode = trackingOn ? "allow" : "default";
-            String said = runQuietly("cmd", "appops", "set", "--uid", APP_PACKAGE, "MANAGE_ONGOING_CALLS", mode);
-            runQuietly("cmd", "appops", "set", APP_PACKAGE, "MANAGE_ONGOING_CALLS", mode);
-            // Silent when it works. An OPPO, OnePlus or realme phone with its
-            // Developer options switch off refuses the shell this (CallVault,
-            // measured on a OnePlus 9, 2026-09-16; the app's ShellGrant): its
-            // first lines, as the stack trace after them runs to twenty.
-            if (said != null && !said.isEmpty()) {
-                Ln.w("tracking: Android said " + said.substring(0, Math.min(said.length(), 300)));
-            }
-            Ln.i("tracking: " + (trackingOn ? "on - Telecom may bind the app's call service" : "off"));
-        }
-    }
-
-    /** At each heartbeat: still allowed, if it should be? */
-    private static void ensureTracking() {
-        if (!trackingOn) {
-            return;
-        }
-        String now = runQuietly("cmd", "appops", "get", "--uid", APP_PACKAGE, "MANAGE_ONGOING_CALLS");
-        if (!uidAllowed(now)) {
-            Ln.w("tracking: the permission had been withdrawn (" + now + "); allowing it again");
-            applyTracking();
-        }
-    }
-
-    /** See Checks.uidAllowed. */
-    static boolean uidAllowed(@Nullable String said) {
-        return Checks.uidAllowed(said);
-    }
-
-    /** Run a command, return what it printed, or null if it could not run. */
-    private static @Nullable String runQuietly(String... command) {
-        try {
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            String said = slurp(process);
-            process.waitFor();
-            return said;
-        } catch (Throwable t) {
-            Ln.w("could not run " + String.join(" ", command) + ": " + t);
-            return null;
-        }
-    }
 
     /** Messenger calls: armed from the environment, if it names any apps. */
     private static void startVoipWatcher(String token) {
@@ -1698,7 +1046,7 @@ public final class Main {
             // knows which it was. A messenger call carries its app, and which
             // way it went only where Telecom said (Checks.recfileTag).
             long startedAt = System.currentTimeMillis();
-            String name = REC_PREFIX + startedAt + Checks.recfileTag(incoming, app, appIncoming) + REC_SUFFIX;
+            String name = Paths.REC_PREFIX + startedAt + Checks.recfileTag(incoming, app, appIncoming) + Paths.REC_SUFFIX;
             // Every call through the level tap, for its report's levels; a
             // phone call this process answered for the answering machine and
             // its diagnostics too. They look at what is recorded, never change
@@ -1721,7 +1069,7 @@ public final class Main {
                     onChunk(pcm, frames, atMs);
                 }
             });
-            File file = new File(REC_DIR, name);
+            File file = new File(Paths.REC_DIR, name);
             FileOutputStream out = new FileOutputStream(file);
             // Fails fast and loudly on a device whose HAL will not give us this
             // source, rather than writing a silent or one-sided file.
@@ -1749,7 +1097,7 @@ public final class Main {
             } catch (Throwable t) {
                 Ln.w("recording: error while stopping the encoder: " + t.getMessage());
             }
-            closeQuietly(out);
+            Shell.closeQuietly(out);
             Ln.i("recording: stopped -> " + name + " (" + file.length() + " bytes)");
             report.ended();
             keepReport(report);
@@ -1856,7 +1204,6 @@ public final class Main {
      * still has it.
      */
     private static final int COMMAND_REPORT = 'C';
-    private static final File REPORT_FILE = new File(REC_DIR, "jemrec-lastcall.txt");
     private static volatile @Nullable CallReport lastReport;
     /** Its own thread for the looks: they ask Android for several lists,
      *  and the main looper has the calls to follow. Posted there, the first
@@ -1886,7 +1233,7 @@ public final class Main {
     }
 
     private static void keepReport(CallReport report) {
-        try (FileOutputStream file = new FileOutputStream(REPORT_FILE)) {
+        try (FileOutputStream file = new FileOutputStream(Paths.REPORT_FILE)) {
             // With the build that recorded it: read back by a recorder
             // updated since, the header's build is not this call's.
             file.write(("Recorded by build " + BUILD + "\n" + report.text()).getBytes(StandardCharsets.UTF_8));
@@ -1907,7 +1254,7 @@ public final class Main {
             return report.text();
         }
         try {
-            String kept = new String(java.nio.file.Files.readAllBytes(REPORT_FILE.toPath()), StandardCharsets.UTF_8);
+            String kept = new String(java.nio.file.Files.readAllBytes(Paths.REPORT_FILE.toPath()), StandardCharsets.UTF_8);
             if (!kept.isEmpty()) {
                 return kept;
             }
@@ -2046,14 +1393,14 @@ public final class Main {
                 Ln.w("answer: the call was taken; there was no recording of it to split");
             } else {
                 rec.stop();
-                File file = new File(REC_DIR, rec.name);
+                File file = new File(Paths.REC_DIR, rec.name);
                 if (part.speechAt == 0) {
                     Ln.i("answer: the call was taken before a word was left; " + rec.name + " dropped -> "
                             + file.delete());
                 } else {
                     String renamed = Checks.messageRecfile(rec.name, part.messageStart(), captureStartedAt, false,
                             false);
-                    if (file.renameTo(new File(REC_DIR, renamed))) {
+                    if (file.renameTo(new File(Paths.REC_DIR, renamed))) {
                         Ln.i("answer: the call was taken; the message so far -> " + renamed);
                     } else {
                         Ln.w("answer: the call was taken; could not name " + rec.name + " as a message");
@@ -2078,7 +1425,7 @@ public final class Main {
             // A diagnostics test: what it showed is kept for 'X' 'R'; the
             // recording is not the user's, and goes. The app is told when the
             // call began, to account for it in the call log.
-            boolean gone = new File(REC_DIR, name).delete();
+            boolean gone = new File(Paths.REC_DIR, name).delete();
             Ln.i("answer: test call over, its recording deleted -> " + gone);
             activeRecording = null;
             wake(ACTION_CALL_ENDED, rec.incoming, "", null,
@@ -2097,7 +1444,7 @@ public final class Main {
                     ? Checks.takenRecfile(name, outcome.takenStart(), captureStartedAt)
                     : Checks.messageRecfile(name, outcome.messageStart(), captureStartedAt, outcome.nothingLeft(),
                             outcome.greetingFailed);
-            if (new File(REC_DIR, name).renameTo(new File(REC_DIR, renamed))) {
+            if (new File(Paths.REC_DIR, name).renameTo(new File(Paths.REC_DIR, renamed))) {
                 name = renamed;
             } else {
                 Ln.w("answer: could not name " + name + (taken ? " with where the call was taken" : " as a message"));
@@ -2233,7 +1580,7 @@ public final class Main {
             });
 
     /** Off the main thread: `am` takes a moment, and the looper must not wait for it. */
-    private static void wake(String action, boolean incoming, @Nullable String recfile, @Nullable String app,
+    static void wake(String action, boolean incoming, @Nullable String recfile, @Nullable String app,
             String... extras) {
         java.util.List<String> command = new java.util.ArrayList<>(java.util.Arrays.asList(
                 "am", "start-foreground-service",
@@ -2283,7 +1630,7 @@ public final class Main {
                         Ln.w("wake: " + action + " (" + recfile + ") -> no answer in "
                                 + WAKE_TIMEOUT_MS / 1000 + " s on attempt " + attempt);
                     } else {
-                        String said = slurp(process);
+                        String said = Shell.slurp(process);
                         int exit = process.exitValue();
                         if (exit == 0) {
                             Ln.i("wake: " + action + " (" + recfile + ") -> exit 0"
@@ -2296,34 +1643,9 @@ public final class Main {
                 } catch (Throwable t) {
                     Ln.e("wake: could not wake the app", t);
                 }
-                sleep(WAKE_RETRY_MS);
+                Shell.sleep(WAKE_RETRY_MS);
             }
         });
-    }
-
-    /** Everything a finished child printed, one line, trimmed. */
-    private static String slurp(Process process) throws IOException {
-        StringBuilder out = new StringBuilder();
-        try (BufferedReader reader =
-                     new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (out.length() > 0) {
-                    out.append(" | ");
-                }
-                out.append(line);
-            }
-        }
-        return out.toString().trim();
-    }
-
-    /** A rec-file name the app sent is only ever one of ours in REC_DIR. */
-    private static @Nullable File recFileFor(String name) {
-        if (name == null || !name.startsWith(REC_PREFIX) || !name.endsWith(REC_SUFFIX)
-                || name.contains("/") || name.contains("..")) {
-            return null;
-        }
-        return new File(REC_DIR, name);
     }
 
     private static void session(Socket client) throws Exception {
@@ -2381,13 +1703,13 @@ public final class Main {
             }
             String reply;
             synchronized (Main.class) {
-                if (go == 0 && switchingOff) {
+                if (go == 0 && DebuggingOff.switchingOff) {
                     reply = "OFF TOO LATE";
                 } else if (go == 0) {
-                    goingOff = false;
+                    DebuggingOff.goingOff = false;
                     reply = "OFF CANCELLED";
                 } else {
-                    goingOff = true;
+                    DebuggingOff.goingOff = true;
                     reply = busyLocked() ? "OFF AFTER CALL" : "OFF NOW";
                 }
             }
@@ -2395,7 +1717,7 @@ public final class Main {
             client.getOutputStream().flush();
             Ln.i("session: debugging off - " + reply);
             if (go == 1) {
-                goOffWhenFree();
+                DebuggingOff.goOffWhenFree();
             }
             return;
         }
@@ -2420,7 +1742,7 @@ public final class Main {
                 recorder.stop();
                 recorder.join();
             } finally {
-                closeQuietly(pfd);
+                Shell.closeQuietly(pfd);
             }
             return;
         }
@@ -2428,12 +1750,12 @@ public final class Main {
             // Every recording still on disk, newest-relevant or not, one name per
             // line. The app fetches these on startup to collect anything a crash
             // or a reboot left behind before it could be saved.
-            File dir = new File(REC_DIR);
+            File dir = new File(Paths.REC_DIR);
             java.util.List<String> names = new java.util.ArrayList<>();
             // Under the lock a recording starts under: its file is created
             // before it is the active one, and in between it looked finished.
             synchronized (Main.class) {
-                File[] files = dir.listFiles((d, n) -> n.startsWith(REC_PREFIX) && n.endsWith(REC_SUFFIX));
+                File[] files = dir.listFiles((d, n) -> n.startsWith(Paths.REC_PREFIX) && n.endsWith(Paths.REC_SUFFIX));
                 if (files != null) {
                     // Skip the one being written right now: it is not finished.
                     String activeName = activeName();
@@ -2489,9 +1811,9 @@ public final class Main {
         }
         if (command == COMMAND_SET_TRACKING) {
             int value = client.getInputStream().read();
-            trackingOn = value == 1;
-            applyTracking();
-            client.getOutputStream().write(("TRACK " + (trackingOn ? "on" : "off") + "\n")
+            Tracking.trackingOn = value == 1;
+            Tracking.applyTracking();
+            client.getOutputStream().write(("TRACK " + (Tracking.trackingOn ? "on" : "off") + "\n")
                     .getBytes(StandardCharsets.UTF_8));
             client.getOutputStream().flush();
             return;
@@ -2510,7 +1832,7 @@ public final class Main {
                     // it now, and leave nothing behind.
                     rec.stop();
                     activeRecording = null;
-                    boolean gone = new File(REC_DIR, rec.name).delete();
+                    boolean gone = new File(Paths.REC_DIR, rec.name).delete();
                     Ln.i("recording: the rules leave this call out; stopped and deleted " + rec.name + " -> " + gone);
                     wake(ACTION_CALL_ENDED, rec.incoming, "", null);
                     what = "current";
@@ -2544,7 +1866,7 @@ public final class Main {
         }
         if (command == COMMAND_FETCH) {
             String name = readName(client);
-            File file = recFileFor(name);
+            File file = Paths.recFileFor(name);
             if (name.equals(activeName())) {
                 // Still being written: not to be collected - nor, by a
                 // collector that then finds it empty, deleted. Its hang-up
@@ -2580,7 +1902,7 @@ public final class Main {
         }
         if (command == COMMAND_DELETE) {
             String name = readName(client);
-            File file = recFileFor(name);
+            File file = Paths.recFileFor(name);
             boolean ok = !name.equals(activeName()) && file != null && file.delete();
             Ln.i("session: delete " + name + " -> " + ok);
             client.getOutputStream().write((ok ? "OK\n" : "NO\n").getBytes(StandardCharsets.UTF_8));
@@ -2791,7 +2113,7 @@ public final class Main {
                     return null;
                 });
                 if (!incoming) {
-                    runQuietly("am", "start", "-a", "android.intent.action.CALL",
+                    Shell.runQuietly("am", "start", "-a", "android.intent.action.CALL",
                             "-d", "tel:" + number.replace("#", "%23"));
                 }
                 reply(client, "TEST armed");
@@ -2893,7 +2215,7 @@ public final class Main {
             missing.add("calls");
         }
         line.append(" perms=").append(missing.isEmpty() ? "ok" : String.join(",", missing));
-        line.append(" incallmusic=").append(Checks.inCallMusic(dump("media.audio_policy")));
+        line.append(" incallmusic=").append(Checks.inCallMusic(Shell.dump("media.audio_policy")));
         boolean interceptable = false;
         try {
             interceptable = (boolean) AudioManager.class.getMethod("isPstnCallAudioInterceptable").invoke(callAudio);
@@ -3084,7 +2406,7 @@ public final class Main {
                 // left does not stop the mute: the caller hearing the room is
                 // worse, and the phone clears the mute as the call ends.
                 try {
-                    new FileOutputStream(MUTE_MARKER).close();
+                    new FileOutputStream(Paths.MUTE_MARKER).close();
                 } catch (Throwable t) {
                     Ln.e("answer: could not leave the mute marker", t);
                 }
@@ -3092,7 +2414,7 @@ public final class Main {
             try {
                 callAudio.setMicrophoneMute(on);
                 if (!on) {
-                    MUTE_MARKER.delete();
+                    Paths.MUTE_MARKER.delete();
                 }
                 AnswerMachine machine = answerMachine;
                 if (on && machine != null && machine.testing()) {
@@ -3212,7 +2534,7 @@ public final class Main {
     /** The test's greeting, mid-way: is it on the output the caller hears? */
     private static void checkTestRoute() {
         new Thread(() -> {
-            String flinger = dump("media.audio_flinger");
+            String flinger = Shell.dump("media.audio_flinger");
             int on = Checks.trackOutput(flinger, android.os.Process.myPid());
             testRoute = AnswerSettings.ROUTE_MUSIC.equals(answerSettings.route) ? on : -1;
             Ln.i("answer: test greeting on the in-call music output: "
@@ -3259,8 +2581,8 @@ public final class Main {
     /** A marker left mid-message - by this process's predecessor, dead: the
      *  microphone may still be muted. Give it back. False while a call is up
      *  and the mute is left for its end; true when nothing is left to do. */
-    private static boolean giveBackStaleMute() {
-        if (!MUTE_MARKER.exists() || callAudio == null) {
+    static boolean giveBackStaleMute() {
+        if (!Paths.MUTE_MARKER.exists() || callAudio == null) {
             return true;
         }
         try {
@@ -3282,34 +2604,13 @@ public final class Main {
         } catch (Throwable t) {
             Ln.e("answer: could not unmute the microphone a previous run muted", t);
         }
-        MUTE_MARKER.delete();
+        Paths.MUTE_MARKER.delete();
         return true;
-    }
-
-    /** The whole of `dumpsys <service>`, newlines kept, for the parsers;
-     *  null if it could not be run - not an answer to read as "none". */
-    private static @Nullable String dump(String service) {
-        try {
-            Process process = new ProcessBuilder("dumpsys", service).redirectErrorStream(true).start();
-            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-            byte[] buf = new byte[64 * 1024];
-            int n;
-            try (java.io.InputStream in = process.getInputStream()) {
-                while ((n = in.read(buf)) > 0) {
-                    out.write(buf, 0, n);
-                }
-            }
-            process.waitFor();
-            return new String(out.toByteArray(), StandardCharsets.UTF_8);
-        } catch (Throwable t) {
-            Ln.w("could not run dumpsys " + service + ": " + t);
-            return null;
-        }
     }
 
     /** Run [task] on the main looper, where the answering machine lives, and
      *  wait for it. */
-    private static @Nullable <T> T onMain(java.util.concurrent.Callable<T> task) throws Exception {
+    static @Nullable <T> T onMain(java.util.concurrent.Callable<T> task) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return task.call();
         }
@@ -3351,7 +2652,7 @@ public final class Main {
                 + " recording=" + (rec == null ? 0 : rec.startedAt)
                 + " voip=" + Voip.apps().size()
                 + " voiparmed=" + (Voip.armed() ? 1 : 0)
-                + " tracking=" + (trackingOn ? 1 : 0)
+                + " tracking=" + (Tracking.trackingOn ? 1 : 0)
                 + " answer=" + (answerSettings.on ? 1 : 0)
                 + " greeting=" + (Greeting.present() ? 1 : 0);
     }
@@ -3378,7 +2679,7 @@ public final class Main {
         // was pointed at it - falling back to where the app stages it.
         String jar = System.getenv("CLASSPATH");
         if (jar == null || jar.isEmpty()) {
-            jar = JAR_PATH;
+            jar = Paths.JAR_PATH;
         }
         try (FileInputStream in = new FileInputStream(jar)) {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -3547,13 +2848,4 @@ public final class Main {
         return new String(b, StandardCharsets.UTF_8);
     }
 
-    private static void closeQuietly(AutoCloseable c) {
-        if (c != null) {
-            try {
-                c.close();
-            } catch (Exception ignored) {
-                // Nothing useful to do, and the caller is already on its way out.
-            }
-        }
-    }
 }

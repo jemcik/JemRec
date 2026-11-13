@@ -113,7 +113,7 @@ public class ChecksTest {
 
     @Test
     public void theUidsOwnLineDecides() {
-        // As Main.slurp joins it, and as the device prints it.
+        // As Shell.slurp joins it, and as the device prints it.
         assertTrue(Checks.uidAllowed("Uid mode: MANAGE_ONGOING_CALLS: allow | MANAGE_ONGOING_CALLS: allow; time=+1m"));
         assertTrue(Checks.uidAllowed("Uid mode: MANAGE_ONGOING_CALLS: allow\nMANAGE_ONGOING_CALLS: default"));
         // The package allowed, the uid not: not enough - measured on an Honor.
@@ -529,7 +529,7 @@ public class ChecksTest {
 
     @Test
     public void stoppedIsReadFromUserZerosLineNotHonorsOwnFlag() {
-        // The Honor's line, 2026-10-25, joined as Main.slurp joins lines.
+        // The Honor's line, 2026-10-25, joined as Shell.slurp joins lines.
         String line = "  Package [com.jemcik.jemrec] (abc): | "
                 + "    User 0: ceDataInode=284428 installed=true hidden=false suspended=false "
                 + "distractionFlags=0 stopped=%s iAwareStopped=%s notLaunched=false enabled=0 | "
