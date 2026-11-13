@@ -68,7 +68,7 @@ final class Custodian {
                 // call the user took over is theirs, left to go on.
                 Ln.i("custodian: JemRec is no longer installed; ending the message first");
                 try {
-                    Answering.onMain(() -> {
+                    Answering.onMainEventually(() -> {
                         machine.hangUpNow();
                         return null;
                     });

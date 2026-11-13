@@ -101,6 +101,17 @@ final class Answering {
         if (handler == null) {
             throw new IllegalStateException("the call watch is not up, so no answering machine");
         }
-        return Hop.call(handler::post, task, Hop.WAIT_MS);
+        return Hop.call(handler::post, task, Hop.WAIT_MS, true);
+    }
+
+    /** As [onMain], for a caller no app waits on - the custodian's hang-up
+     *  of a message after an uninstall: waited for two seconds, and run when
+     *  the looper comes to it if that is later, not called off. */
+    static @Nullable <T> T onMainEventually(java.util.concurrent.Callable<T> task) throws Exception {
+        Handler handler = Platform.mainHandler;
+        if (handler == null) {
+            throw new IllegalStateException("the call watch is not up, so no answering machine");
+        }
+        return Hop.call(handler::post, task, Hop.EVENTUALLY_WAIT_MS, false);
     }
 }

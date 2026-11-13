@@ -271,10 +271,15 @@ final class Commands {
         }
         if (command == Wire.COMMAND_ANSWER_SETTINGS) {
             AnswerSettings settings = AnswerSettings.parse(Wire.readName(client.getInputStream()));
-            Answering.answerSettings = settings;
             AnswerMachine machine = Answering.answerMachine;
-            if (machine != null) {
+            if (machine == null) {
+                Answering.answerSettings = settings;
+            } else {
+                // Taken with the machine's own, on its thread: a hop given
+                // up on (Hop) takes none of it, where the route, and WATCH's
+                // "answer=", changed while the machine stayed as it was.
                 Answering.onMain(() -> {
+                    Answering.answerSettings = settings;
                     machine.configure(settings.on, settings.maxMessageSeconds * 1000L);
                     return null;
                 });
@@ -447,17 +452,17 @@ final class Commands {
                     reply(client, Wire.test("no-greeting"));
                     break;
                 }
-                // A test call still up would write its results over the new
-                // test's, and end it.
-                if (machine.testing()) {
-                    reply(client, Wire.test("busy"));
-                    break;
-                }
-                // The results reset with the arming, on the machine's own
-                // thread: a hop given up on (Hop) arms nothing, and leaves
-                // the last test's results as they were - not "armed" for a
-                // test that never was.
-                Answering.onMain(() -> {
+                // On the machine's own thread, all of it: a test call still
+                // up - its ring armed, or its call answered - would have its
+                // results written over by the new test's, and be ended; asked
+                // there, a ring for it coming in meanwhile is not missed. The
+                // results reset with the arming: a hop given up on (Hop) arms
+                // nothing, and leaves the last test's results as they were -
+                // not "armed" for a test that never was.
+                Boolean armed = Answering.onMain(() -> {
+                    if (machine.testing()) {
+                        return false;
+                    }
                     AnswerTest.testArming = arming;
                     AnswerTest.testState = "armed";
                     AnswerTest.testRoute = -1;
@@ -469,8 +474,12 @@ final class Commands {
                     AnswerTest.testVoice = -1;
                     AnswerTest.testPlayed = -1;
                     machine.armTest(incoming, incoming ? AnswerTest.TEST_INCOMING_WINDOW_MS : AnswerTest.TEST_OUTGOING_WINDOW_MS);
-                    return null;
+                    return true;
                 });
+                if (!Boolean.TRUE.equals(armed)) {
+                    reply(client, Wire.test("busy"));
+                    break;
+                }
                 // Answered before an outgoing test's call is placed: `am`
                 // has no time limit here, and the app waited on it for the
                 // answer - and, given up on, could not tell an arming that

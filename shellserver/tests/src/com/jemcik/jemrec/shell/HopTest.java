@@ -46,7 +46,7 @@ public class HopTest {
         String answer = Hop.call(thread, () -> {
             ranOn[0] = Thread.currentThread();
             return "ARMED";
-        }, 2_000);
+        }, 2_000, true);
         assertEquals("ARMED", answer);
         assertEquals("main-looper", ranOn[0].getName());
     }
@@ -55,7 +55,7 @@ public class HopTest {
     public void aTaskNotRunInTimeIsGivenUpOn() throws Exception {
         Late thread = new Late();
         try {
-            Hop.call(thread, () -> "ARMED", 50);
+            Hop.call(thread, () -> "ARMED", 50, true);
             fail("no timeout");
         } catch (TimeoutException expected) {
             // The session ends without a reply.
@@ -70,13 +70,29 @@ public class HopTest {
         Late thread = new Late();
         AtomicInteger ran = new AtomicInteger();
         try {
-            Hop.call(thread, () -> ran.incrementAndGet(), 50);
+            Hop.call(thread, () -> ran.incrementAndGet(), 50, true);
             fail("no timeout");
         } catch (TimeoutException expected) {
             // Given up on.
         }
         thread.runAll();
         assertEquals(0, ran.get());
+    }
+
+    @Test
+    public void aTaskNoOneWaitsOnIsLeftToRunLate() throws Exception {
+        // The custodian's hang-up after an uninstall: no app has said
+        // anything about it, so a late one still ends the message.
+        Late thread = new Late();
+        AtomicInteger ran = new AtomicInteger();
+        try {
+            Hop.call(thread, () -> ran.incrementAndGet(), 50, false);
+            fail("no timeout");
+        } catch (TimeoutException expected) {
+            // The custodian logs it, and looks again later.
+        }
+        thread.runAll();
+        assertEquals(1, ran.get());
     }
 
     @Test
@@ -95,7 +111,7 @@ public class HopTest {
             started.countDown();
             Thread.sleep(300);
             return "TALKING";
-        }, 50);
+        }, 50, true);
         assertEquals("TALKING", answer);
     }
 
