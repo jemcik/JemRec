@@ -4,7 +4,7 @@ import com.genymobile.scrcpy.util.Ln;
 
 /**
  * Exact call tracking: the permission Telecom checks before it binds the
- * app's call service, which only the shell can allow (COMMAND_SET_TRACKING).
+ * app's call service, which only the shell can allow (Wire.COMMAND_SET_TRACKING).
  */
 final class Tracking {
 

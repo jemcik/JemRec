@@ -16,7 +16,8 @@ import java.lang.reflect.Field;
  * context - what an app process is handed at its start and this one, started
  * from a shell, never is. In one place because each can fail on a phone of
  * its own, and fails here alone: Voip, Forwarding, AudioScene and the
- * greeting's player keep theirs.
+ * greeting's player keep theirs, and Main its one, the main looper set
+ * before anything else may run (prepareMainLooper).
  */
 final class Platform {
 

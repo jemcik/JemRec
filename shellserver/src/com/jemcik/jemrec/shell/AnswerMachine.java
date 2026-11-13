@@ -4,7 +4,7 @@ package com.jemcik.jemrec.shell;
  * THE ANSWERING MACHINE: answer a call nobody took, play the user's greeting
  * to the caller with this phone's microphone muted, and let the recording run
  * as the message. Plain Java, nothing of Android, so it can be tested
- * (shellserver/tests: AnswerMachineTest); Main feeds it the call's events and
+ * (shellserver/tests: AnswerMachineTest); CallWatch feeds it the call's events and
  * does what it says through {@link Effects}.
  *
  * THE APP DECIDES WHO, THIS DECIDES WHEN. The app's call tracker knows the
@@ -154,7 +154,7 @@ final class AnswerMachine {
 
         /** The user took the call over - Talk to them, unmuting on the call
          *  screen, or answering a second call: the app's "Taking a message"
-         *  is over, and in Ask first the message with it (Main). */
+         *  is over, and in Ask first the message with it (Calls). */
         void callTaken();
 
         void log(String message);
@@ -620,7 +620,7 @@ final class AnswerMachine {
     }
 
     /** The message as it stands, as if the call ended here untaken: what a
-     *  call taken over in Ask first keeps of it (Main). */
+     *  call taken over in Ask first keeps of it (Calls). */
     Outcome messageSoFar() {
         return new Outcome(this, false);
     }
@@ -750,7 +750,7 @@ final class AnswerMachine {
     }
 
     /** Whether a message is being taken: answered, and not taken over. What
-     *  the recording of the call is, until then (Main). */
+     *  the recording of the call is, until then (Calls). */
     boolean takingMessage() {
         return state == State.ANSWERING || state == State.GREETING || state == State.MESSAGE;
     }

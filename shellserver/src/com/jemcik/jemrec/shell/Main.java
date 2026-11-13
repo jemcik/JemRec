@@ -207,7 +207,7 @@ public final class Main {
         }
     }
 
-    /** When this process started: the self-test's "since" (COMMAND_WATCH).
+    /** When this process started: the self-test's "since" (Wire.COMMAND_WATCH).
      *  Here, so it is set as Main is loaded, as the process starts. */
     static final long STARTED_AT = System.currentTimeMillis();
 

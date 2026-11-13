@@ -554,7 +554,7 @@ public class AnswerMachineTest {
 
     @Test
     public void theMessageSoFarIsWhatATakeoverKeeps() {
-        // Ask first: the recording up to the takeover is the message (Main).
+        // Ask first: the recording up to the takeover is the message (Calls).
         answeredWithGreeting();
         world.advance(2_000L);
         long spoke = world.now;

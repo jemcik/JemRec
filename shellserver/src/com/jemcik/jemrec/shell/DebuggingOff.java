@@ -4,7 +4,7 @@ import com.genymobile.scrcpy.util.Ln;
 
 /**
  * "Turn all debugging off": the wait for nothing to be in progress, then both
- * switches written off (COMMAND_DEBUGGING_OFF).
+ * switches written off (Wire.COMMAND_DEBUGGING_OFF).
  */
 final class DebuggingOff {
 

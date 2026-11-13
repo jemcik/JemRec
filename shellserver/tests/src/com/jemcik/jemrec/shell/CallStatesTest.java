@@ -162,7 +162,7 @@ public class CallStatesTest {
 
     @Test
     public void whatIsUpCanBeAsked() {
-        // Main asks, when a messenger call gives way to a phone call.
+        // Calls asks, when a messenger call gives way to a phone call.
         assertFalse(states.inCall());
         states.ringing();
         states.offHook();
@@ -326,7 +326,7 @@ public class CallStatesTest {
 
     @Test
     public void aMeetRingIsNotAPhoneCallsRing() {
-        // Main hands a ring on - to this watch and to the answering machine -
+        // CallWatch hands a ring on - to this watch and to the answering machine -
         // only when appsRinging says no: the machine could not play a
         // greeting into an app's call. The watch's side is what shows here.
         world.phoneCallInTelecom = false;

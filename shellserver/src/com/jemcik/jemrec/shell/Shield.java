@@ -103,7 +103,7 @@ final class Shield {
                         + " sessions=" + LoopbackServer.sessions.get() + " at " + new java.util.Date());
             }
             // Not while debugging is going off by the user's choice
-            // (COMMAND_DEBUGGING_OFF): putting it back would undo that.
+            // (Wire.COMMAND_DEBUGGING_OFF): putting it back would undo that.
             if (usb != null && !"1".equals(usb) && !DebuggingOff.switchingOff) {
                 boolean on = putGlobal("adb_enabled", "1");
                 // Stamped: WHEN the setting flips is the one thing nobody has

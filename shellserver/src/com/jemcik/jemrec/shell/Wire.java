@@ -61,7 +61,7 @@ final class Wire {
      * The self-test proved that this daemon answers and that the HAL hands over
      * voice-call audio, and on that alone it said "a call would be recorded" -
      * while the daemon was deaf to every call, its watch garbage-collected (see
-     * callWatch). Measured: PASS straight after a call it had missed. Neither
+     * CallWatch.callWatch). Measured: PASS straight after a call it had missed. Neither
      * check touches the watch, so the app now asks after it directly: when this
      * process started, whether the watch registered, whether the main looper
      * that delivers its events still runs, the mode, whether a call is up, how
@@ -97,7 +97,7 @@ final class Wire {
      * go still waiting. It waits, as QUIT does, while a call or a fetch is in
      * progress - so this process, never frozen, is the one that waits, rather
      * than an app that may be. USB debugging going off stops adbd, and adbd
-     * takes this process with it (see keepShieldUp): starting it again is the
+     * takes this process with it (see Shield.keepShieldUp): starting it again is the
      * app's, on its On, over Wi-Fi. Replies OFF NOW, OFF AFTER CALL, OFF
      * CANCELLED, or OFF TOO LATE for a 0 that came once the switches were
      * being written: the app's On then waits for this process to be gone
@@ -107,7 +107,7 @@ final class Wire {
 
     /**
      * The messenger apps whose calls to record - see Voip. In the environment
-     * at spawn (VOIP_ENV) and sent again whenever the user changes them, the
+     * at spawn (Main.VOIP_ENV) and sent again whenever the user changes them, the
      * same way the recording mode is. Empty, the default, records none and
      * watches nothing.
      */

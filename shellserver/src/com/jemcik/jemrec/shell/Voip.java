@@ -124,7 +124,7 @@ final class Voip {
 
     /** The switched-on app whose call the watch is following, or null. A
      *  call that began while a phone call was recorded is followed but not
-     *  recorded; Main records it when the phone call ends. On the handler's
+     *  recorded; Calls records it when the phone call ends. On the handler's
      *  thread, as the watch is. */
     static @Nullable String followedApp() {
         Watch w = watch;

@@ -47,7 +47,7 @@ final class Calls {
      *  arrives mid-call knows what it is starting. */
     static volatile boolean callActive;
     /** Calls begun, and the latest of them that has ended: a CALL_STARTED
-     *  still being retried for a call already over is dropped (see wake). */
+     *  still being retried for a call already over is dropped (see Wakes.wake). */
     static volatile long callSeq;
     static volatile long endedSeq;
     static volatile boolean callIncoming;

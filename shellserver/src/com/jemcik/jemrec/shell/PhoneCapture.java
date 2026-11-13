@@ -54,7 +54,7 @@ import java.util.concurrent.TimeUnit;
  */
 final class PhoneCapture implements AudioCapture {
 
-    /** What a phone call's capture needs from the daemon (Main). */
+    /** What a phone call's capture needs from the daemon (RecordingSession). */
     interface Call {
         /** A new VOICE_CALL capture, not started. */
         AudioCapture voice();
