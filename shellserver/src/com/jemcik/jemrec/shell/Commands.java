@@ -276,12 +276,17 @@ final class Commands {
                 Answering.answerSettings = settings;
                 // A machine made meanwhile - the call watch starting, which
                 // configures it from the settings it finds - may have found
-                // the ones before these: given these too.
+                // the ones before these. Configured again on its thread from
+                // what is stored when that runs, and not waited for: stored
+                // already, these settings must not be left apart from the
+                // machine by a hop given up on, and whatever order this and
+                // another 'N' take, the last stored is the one it ends with.
                 AnswerMachine made = Answering.answerMachine;
-                if (made != null) {
-                    Answering.onMain(() -> {
-                        made.configure(settings.on, settings.maxMessageSeconds * 1000L);
-                        return null;
+                android.os.Handler main = Platform.mainHandler;
+                if (made != null && main != null) {
+                    main.post(() -> {
+                        AnswerSettings now = Answering.answerSettings;
+                        made.configure(now.on, now.maxMessageSeconds * 1000L);
                     });
                 }
             } else {
