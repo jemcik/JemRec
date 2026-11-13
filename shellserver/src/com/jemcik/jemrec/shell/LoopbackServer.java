@@ -7,24 +7,16 @@ import com.genymobile.scrcpy.util.Ln;
 import android.os.Looper;
 
 import java.io.BufferedReader;
-import java.io.DataInputStream;
-import java.io.EOFException;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.BindException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.concurrent.atomic.AtomicInteger;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * The recorder's port on loopback: bound, each connection on a thread of its
@@ -36,43 +28,6 @@ final class LoopbackServer {
     private LoopbackServer() {
     }
 
-    /**
-     * THE LOOPBACK PROTOCOL, VERSION 2: EVERY COMMAND IS AUTHENTICATED.
-     *
-     * Port 28472 is a plain TCP port on loopback, and loopback is shared by
-     * every process on the phone. Version 1 took a bare command byte, so any
-     * app could fetch a finished recording ('F'), delete one ('D'), open a
-     * live capture of the call in progress ('R'), or stop the daemon ('Q').
-     * For a call recorder that is not a rough edge; it is the whole game.
-     *
-     * Every connection now proves itself first, in both directions, and the
-     * token never crosses the socket:
-     *
-     *   app    -> 'A' + Nc                                  (16 random bytes)
-     *   daemon -> Nd + HMAC(token, "jemrec-daemon" | Nc | Nd)
-     *   app    -> HMAC(token, "jemrec-client" | Nc | Nd) + command [+ payload]
-     *
-     * THE DAEMON PROVES ITSELF FIRST, and that is what protects the app: any
-     * app can bind 28472 while this daemon is down - a reboot, an adbd
-     * restart - and answer connections in its place. A scheme that sent the
-     * token as a password would hand it to whoever answered. Here the app
-     * sends nothing but a nonce until the far end has shown it knows the
-     * token, and nothing sent afterwards can be replayed: both nonces are
-     * fresh per connection and one of them is chosen here.
-     *
-     * 'P' on its own still answers PONG with no handshake. It reveals nothing
-     * an open port does not, and the answer carries the protocol version, so
-     * the app can tell an out-of-date daemon from a current one and replace
-     * it. Why there is a ping at all: the app has to be able to ASK whether
-     * the daemon is alive, and before there was a command byte the only way
-     * to ask was to connect, which started a capture session and tore an
-     * AudioRecord up and down on every health check.
-     */
-    private static final int NONCE_BYTES = 16;
-    private static final int MAC_BYTES = 32;
-    private static final String MAC_ALGORITHM = "HmacSHA256";
-    private static final byte[] DAEMON_LABEL = "jemrec-daemon".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] CLIENT_LABEL = "jemrec-client".getBytes(StandardCharsets.UTF_8);
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /** Sessions run concurrently, one thread each. Eight is more than the app
@@ -205,63 +160,17 @@ final class LoopbackServer {
     }
 
     /**
-     * The handshake described above, from the daemon's side. True once the
+     * The handshake (see Handshake), from the daemon's side. True once the
      * client has proved it knows the token; false - already logged, nothing
      * sent that helps anyone - otherwise.
      */
     private static boolean authenticate(Socket client) throws IOException {
-        DataInputStream in = new DataInputStream(client.getInputStream());
-        byte[] clientNonce = new byte[NONCE_BYTES];
-        try {
-            in.readFully(clientNonce);
-        } catch (EOFException | SocketTimeoutException e) {
-            refuse(client, "hung up before sending a nonce");
-            return false;
-        }
-
-        String token = Main.appToken;
-        if (token.isEmpty()) {
-            // Started by hand with no token: nothing can prove itself to this
-            // daemon, so nothing gets in. Fail closed rather than open.
-            refuse(client, "this daemon has no token to check against");
-            return false;
-        }
-        byte[] key = token.getBytes(StandardCharsets.UTF_8);
-
-        byte[] daemonNonce = new byte[NONCE_BYTES];
-        RANDOM.nextBytes(daemonNonce);
-        OutputStream out = client.getOutputStream();
-        out.write(daemonNonce);
-        out.write(mac(key, DAEMON_LABEL, clientNonce, daemonNonce));
-        out.flush();
-
-        byte[] proof = new byte[MAC_BYTES];
-        try {
-            in.readFully(proof);
-        } catch (EOFException | SocketTimeoutException e) {
-            refuse(client, "hung up during the handshake");
-            return false;
-        }
-        // Constant-time, so the comparison itself leaks nothing about how
-        // much of a guess was right.
-        if (!MessageDigest.isEqual(proof, mac(key, CLIENT_LABEL, clientNonce, daemonNonce))) {
-            refuse(client, "wrong proof");
+        String refused = Handshake.prove(client.getInputStream(), client.getOutputStream(), Main.appToken, RANDOM);
+        if (refused != null) {
+            refuse(client, refused);
             return false;
         }
         return true;
-    }
-
-    private static byte[] mac(byte[] key, byte[] label, byte[] a, byte[] b) {
-        try {
-            Mac mac = Mac.getInstance(MAC_ALGORITHM);
-            mac.init(new SecretKeySpec(key, MAC_ALGORITHM));
-            mac.update(label);
-            mac.update(a);
-            mac.update(b);
-            return mac.doFinal();
-        } catch (GeneralSecurityException e) {
-            throw new IllegalStateException(MAC_ALGORITHM + " is not available", e);
-        }
     }
 
     /** Log a refused connection - throttled, counted, and with the uid that
