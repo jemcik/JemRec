@@ -2077,6 +2077,39 @@ def refused_grant():
             "Try again: granted, read back")
 
 
+def listener_grant():
+    """Notification access for the app's listener, granted by the recorder
+    (Wire.COMMAND_ALLOW_LISTENER), as Settings' Show who called and Hide the
+    debugging notification ask for it: taken away first, the app's ADB
+    session closed, then the app's grant (the debug op grantlistener, which
+    runs Setup.grantNotificationAccess). The recorder's own line says it
+    allowed it, the app's own line says it took the recorder's answer, and
+    Android's list holds it. The grant used to open an ADB session, which
+    needs Wireless debugging, and on the OnePlus, 2026-11-12, LineageOS had
+    switched that off by itself: Show who called said "it needs Wi-Fi", on
+    Wi-Fi. Android writes its list a moment after a grant or a withdrawal,
+    so it is waited for. What it was before is put back."""
+    component = f"{PKG}/{PKG}.capture.DebugNotificationCleaner"
+
+    def listed():
+        return component in sh("settings get secure enabled_notification_listeners")
+
+    before = listed()
+    sh(f"cmd notification disallow_listener {component}")
+    try:
+        wait_for(lambda: not listed(), 5, "the access taken away")
+        start_recorder()
+        diag("disconnect")
+        said = diag("grantlistener")
+        assert "granted" in said and "not granted" not in said, said
+        assert "listener: notification access allowed for the app" in log(), "the recorder did not say it allowed it"
+        assert "settings: notif listener -> the recorder said ok" in log(), "the app did not take the recorder's answer"
+        wait_for(listed, 5, "Android listing it")
+    finally:
+        sh(f"cmd notification {'allow' if before else 'disallow'}_listener {component}")
+    return "taken away, then allowed by the recorder with no ADB session, and in Android's list"
+
+
 def allow_this_wifi():
     """The header's Tap to allow this Wi-Fi, end to end, as 0.25.1 rewrote it:
     on a Wi-Fi Android has not allowed, with the recorder down and port 5555
@@ -2445,7 +2478,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           background_playback, one_window,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
-          debugging_off, off_just_left, background, allow_this_wifi, refused_grant,
+          debugging_off, off_just_left, background, allow_this_wifi, refused_grant, listener_grant,
           # Last, these two: they turn the emulator's Wi-Fi off and on, and a
           # simulated Wi-Fi that does not come back would fail every check
           # after them.

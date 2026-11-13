@@ -24,6 +24,8 @@ O	"OFF AFTER CALL"	"OFF AFTER CALL"	OFF AFTER CALL
 O	"OFF TOO LATE"	"OFF TOO LATE"	OFF TOO LATE
 O	startsWith("OFF")	"OFF CANCELLED"	OFF CANCELLED
 T	startsWith("TRACK ")	"TRACK "	TRACK on
+B	"LISTENER ok"	"LISTENER "	LISTENER ok
+B	"LISTENER failed"	"LISTENER "	LISTENER failed
 K	startsWith("SKIP ")	"SKIP "	SKIP current
 V	startsWith("VOIP ")	"VOIP "	VOIP 3 armed
 W	parts[0] != "WATCH"	return "WATCH " + WATCH_FORMAT	WATCH 1 since=1761990000000 watching=1 looper=ok mode=1 call=0 events=4 lastevent=1761990100000 offhooks=1 lastoffhook=1761990050000 recording=0 voip=3 voiparmed=0 tracking=1 answer=0 greeting=0

@@ -294,7 +294,7 @@ object SelfTest {
         if (VoipCallNotes.enabled(context)) {
             if (!DebugNotificationCleaner.accessGranted(context)) {
                 return "Show who called is on, but JemRec no longer has notification access, so " +
-                    "messenger callers will not be named. Turn Show who called off and on again on Wi-Fi."
+                    "messenger callers will not be named. Turn Show who called off and on again."
             }
             lines += "names:     from the apps' call notifications"
         }

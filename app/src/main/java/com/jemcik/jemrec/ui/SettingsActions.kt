@@ -206,15 +206,19 @@ internal class SettingsActions(
     }
 
     /** Caller names for messenger calls, from their call notifications. Needs
-     *  notification access, granted over ADB like the debugging one. */
+     *  notification access, granted as the debugging one's is
+     *  (Setup.grantNotificationAccess). */
     fun setVoipNames(on: Boolean) = actions.run(Action.MESSENGER_NAMES) {
-        if (on && !DebugNotificationCleaner.accessGranted(app) && !Setup.grantNotificationAccess(app)) {
-            state.update { it.copy(voipNamesProblem = true) }
-            return@run
+        if (on && !DebugNotificationCleaner.accessGranted(app)) {
+            val problem = Setup.grantNotificationAccess(app)
+            if (problem != null) {
+                state.update { it.copy(voipNamesProblem = problem) }
+                return@run
+            }
         }
         VoipCallNotes.setEnabled(app, on)
         DebugNotificationCleaner.apply(app)
-        state.update { it.copy(voipNames = on, voipNamesProblem = false) }
+        state.update { it.copy(voipNames = on, voipNamesProblem = null) }
     }
 
     /** How new recordings are named. Ones already saved keep their names. */

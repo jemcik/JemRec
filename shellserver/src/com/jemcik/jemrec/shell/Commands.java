@@ -177,6 +177,10 @@ final class Commands {
             client.getOutputStream().flush();
             return;
         }
+        if (command == Wire.COMMAND_ALLOW_LISTENER) {
+            Wire.reply(client.getOutputStream(), Wire.listener(Listener.allow()));
+            return;
+        }
         if (command == Wire.COMMAND_SET_TRACKING) {
             int value = client.getInputStream().read();
             Tracking.trackingOn = value == 1;

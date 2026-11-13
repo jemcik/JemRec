@@ -3,6 +3,7 @@ package com.jemcik.jemrec.contract
 import com.jemcik.jemrec.capture.CaptureDaemon
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -70,6 +71,10 @@ class ProtocolTest {
         assertEquals("HONOR", diag!!["maker"])
         val result = CaptureDaemon.fields(example("XR", "RESULT"), "RESULT 1")
         assertEquals("done", result!!["state"])
+
+        assertEquals(true, CaptureDaemon.parseListenerReply(example("B", "LISTENER ok")))
+        assertEquals(false, CaptureDaemon.parseListenerReply(example("B", "LISTENER failed")))
+        assertNull(CaptureDaemon.parseListenerReply("LISTENER maybe"))
 
         val sims = CaptureDaemon.parseSims(example("XP", "SIMS"))
         assertEquals("1", sims!!.defaultId)

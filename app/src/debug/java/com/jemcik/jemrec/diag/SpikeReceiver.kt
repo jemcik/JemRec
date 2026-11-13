@@ -425,6 +425,15 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "disconnect", "closed")
                     }
 
+                    // Notification access for the app's listener, as Settings'
+                    // Show who called and Hide the debugging notification ask
+                    // for it: through the recorder, or a session with none.
+                    "grantlistener" -> report(
+                        appContext, "grantlistener",
+                        com.jemcik.jemrec.setup.Setup.grantNotificationAccess(appContext)?.let { "not granted: $it" }
+                            ?: "granted",
+                    )
+
                     // Setup's last step - the grant, then the recorder - over
                     // the session `connect` opened: what Try again runs.
                     "finish" -> report(

@@ -34,6 +34,36 @@ final class Checks {
     }
 
     /**
+     * Whether [component] - "package/class", the class written out in full -
+     * is among the notification listeners Android allows, as `settings get
+     * secure enabled_notification_listeners` prints them: separated by ':',
+     * each as ComponentName.flattenToString writes it, the form an Honor
+     * kept JemRec's in (2026-11-12). The short form, "package/.class", is
+     * the same component and is taken as it.
+     */
+    static boolean listenerAllowed(@Nullable String enabled, String component) {
+        if (enabled == null) {
+            return false;
+        }
+        for (String entry : enabled.split(":")) {
+            if (fullComponent(entry.trim()).equals(component)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** "package/.class" written out as "package/package.class"; any other
+     *  form as it is. */
+    private static String fullComponent(String component) {
+        int slash = component.indexOf('/');
+        if (slash < 0 || slash + 1 >= component.length() || component.charAt(slash + 1) != '.') {
+            return component;
+        }
+        return component.substring(0, slash + 1) + component.substring(0, slash) + component.substring(slash + 1);
+    }
+
+    /**
      * Whether a caller with [peer] uid may talk to the daemon, the app's uid
      * being [app]: JemRec itself, the shell, or root. Unknown on either side
      * (negative) is let through, to the handshake.

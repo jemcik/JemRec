@@ -101,6 +101,10 @@ object DaemonClient {
      *  off" (DebugSwitchesOff). 1 goes, 0 calls off a go still waiting. */
     private const val COMMAND_DEBUGGING_OFF = 'O'.code.toByte()
 
+    /** Notification access for this app's listener, granted by the recorder
+     *  (Setup.grantNotificationAccess). A recorder before 0.31 hangs up on it. */
+    private const val COMMAND_ALLOW_LISTENER = 'B'.code.toByte()
+
     private const val NONCE_BYTES = 16
     private const val MAC_BYTES = 32
     private const val MAC_ALGORITHM = "HmacSHA256"
@@ -521,6 +525,31 @@ object DaemonClient {
                 socket.getInputStream().bufferedReader().readLine()?.startsWith("TRACK ") == true
             }
         }.getOrDefault(false)
+    }
+
+    /**
+     * Notification access for this app's listener, granted by the recorder -
+     * the shell, as an ADB session is, with no session. True or false as
+     * the recorder read Android's list back afterwards; null with no answer:
+     * no recorder, one before 0.31, which hangs up on the command, or one
+     * that took longer than the wait.
+     */
+    suspend fun allowListener(context: Context): Boolean? = withContext(Dispatchers.IO) {
+        runCatching {
+            // Ten seconds: the grant, then Android's list read for up to two
+            // (Listener), on a phone that may be slow.
+            open(context, COMMAND_ALLOW_LISTENER, readMs = 10_000).use { socket ->
+                parseListenerReply(socket.getInputStream().bufferedReader().readLine())
+            }
+        }.getOrNull()
+    }
+
+    /** The recorder's answer to COMMAND_ALLOW_LISTENER (protocol.txt, B):
+     *  null for anything else, as no answer. */
+    internal fun parseListenerReply(line: String?): Boolean? = when (line?.trim()) {
+        "LISTENER ok" -> true
+        "LISTENER failed" -> false
+        else -> null
     }
 
     /** Ask the daemon not to record the phone call starting now. Whether it

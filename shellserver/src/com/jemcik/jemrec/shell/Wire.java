@@ -155,6 +155,22 @@ final class Wire {
      */
     static final int COMMAND_REPORT = 'C';
 
+    /**
+     * Notification access for the app's own listener (Listener): the app's
+     * Show who called and Hide the debugging notification need it, and only
+     * the shell can grant it. The app used to open an ADB session for it,
+     * which needs Wireless debugging on - and LineageOS switches that off by
+     * itself a second after a revive's session has started this process
+     * (the OnePlus, 2026-11-12), so on that phone the switches could not be
+     * turned on (Show who called, measured; Hide the debugging notification
+     * goes the same way, read from the code). This process is the shell, up
+     * whenever recording works: it grants the one component it names,
+     * nothing the app could choose, and reads Android's list back for up to
+     * two seconds (Listener). Replies LISTENER ok, or LISTENER failed; an
+     * older recorder hangs up on it, and the app takes its session then.
+     */
+    static final int COMMAND_ALLOW_LISTENER = 'B';
+
     /** The answer to a ping, bare or proved: the protocol and this jar's
      *  build. */
     static String pong(String build) {
@@ -178,6 +194,12 @@ final class Wire {
 
     static String track(boolean on) {
         return "TRACK " + (on ? "on" : "off");
+    }
+
+    /** COMMAND_ALLOW_LISTENER's answer: whether Android lists the app's
+     *  listener as allowed, read back after the grant. */
+    static String listener(boolean allowed) {
+        return "LISTENER " + (allowed ? "ok" : "failed");
     }
 
     /** SKIP: "current", "next" or "cancelled". */

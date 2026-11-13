@@ -64,6 +64,8 @@ public class WireTest {
         b.put("O OFF TOO LATE", () -> Wire.OFF_TOO_LATE);
         b.put("O OFF CANCELLED", () -> Wire.OFF_CANCELLED);
         b.put("T TRACK on", () -> Wire.track(true));
+        b.put("B LISTENER ok", () -> Wire.listener(true));
+        b.put("B LISTENER failed", () -> Wire.listener(false));
         b.put("K SKIP current", () -> Wire.skip("current"));
         b.put("V VOIP 3 armed", () -> Wire.voip(3, true));
         b.put("W WATCH 1 since=1761990000000 watching=1 looper=ok mode=1 call=0 events=4 lastevent=1761990100000"

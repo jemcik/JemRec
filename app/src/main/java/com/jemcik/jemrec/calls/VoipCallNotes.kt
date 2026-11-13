@@ -17,11 +17,11 @@ import com.jemcik.jemrec.Prefs
  *
  * Only if the user turns it on ("Show who called" under Messenger calls),
  * because it needs notification access - the same access JemRec asks for to
- * hide Android's debugging notification, granted the same way, over its own
- * ADB session. With it, Android shows this app every notification; this reads
- * only the call notifications of the messengers whose calls are recorded, and
- * keeps of them only the name, the time and the direction, for the last
- * [KEEP] calls.
+ * hide Android's debugging notification, granted the same way: by the
+ * recorder, the shell, since 0.31 (Setup.grantNotificationAccess). With it,
+ * Android shows this app every notification; this reads only the call
+ * notifications of the messengers whose calls are recorded, and keeps of
+ * them only the name, the time and the direction, for the last [KEEP] calls.
  *
  * WHAT A CALL NOTIFICATION SAYS
  *

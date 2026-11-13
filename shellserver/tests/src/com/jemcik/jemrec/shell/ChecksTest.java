@@ -124,6 +124,30 @@ public class ChecksTest {
     }
 
     @Test
+    public void theAppsListenerIsAllowedWhenAndroidListsIt() {
+        String jemrec = "com.jemcik.jemrec/com.jemcik.jemrec.capture.DebugNotificationCleaner";
+        // As `settings get secure enabled_notification_listeners` printed it
+        // on the Honor, 2026-11-12: full names, ':' between.
+        assertTrue(Checks.listenerAllowed("com.google.android.as/com.google.android.as.Listener:" + jemrec, jemrec));
+        assertTrue(Checks.listenerAllowed(jemrec, jemrec));
+        assertTrue(Checks.listenerAllowed(jemrec + "\n", jemrec));
+        // The short form names the same component.
+        assertTrue(Checks.listenerAllowed("com.jemcik.jemrec/.capture.DebugNotificationCleaner", jemrec));
+        // Another app's, another of the app's, a longer name, nothing, or
+        // unreadable: not allowed.
+        assertFalse(Checks.listenerAllowed("com.other/com.other.Listener", jemrec));
+        assertFalse(Checks.listenerAllowed("com.jemcik.jemrec/com.jemcik.jemrec.capture.Other", jemrec));
+        assertFalse(Checks.listenerAllowed(jemrec + "2", jemrec));
+        assertFalse(Checks.listenerAllowed("com.jemcik.jemrec", jemrec));
+        // Cut short after the package, or no package: no class to write out.
+        assertFalse(Checks.listenerAllowed("com.jemcik.jemrec/", jemrec));
+        assertFalse(Checks.listenerAllowed("/.capture.DebugNotificationCleaner", jemrec));
+        assertFalse(Checks.listenerAllowed("", jemrec));
+        assertFalse(Checks.listenerAllowed("null", jemrec));
+        assertFalse(Checks.listenerAllowed(null, jemrec));
+    }
+
+    @Test
     public void aCableIsAnyPortModeButNone() {
         // Measured on the Honor: a computer, a wall charger, nothing.
         assertTrue(Checks.cableIn(1));

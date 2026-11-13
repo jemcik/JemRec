@@ -681,21 +681,104 @@ object Setup {
         CaptureDaemon.standDown(context)
     }
 
+    /** Why grantNotificationAccess could not grant it. */
+    enum class GrantProblem {
+        /** No recorder answered - none up, one before 0.31, one that took too
+         *  long - and no ADB session could do it either. */
+        NO_ANSWER,
+
+        /** Asked, as the shell, and Android did not allow it. */
+        REFUSED,
+    }
+
+    /** An ADB session's steps, for the grant over one (grantOver):
+     *  AdbTransport's, or a test's. */
+    internal interface GrantSession {
+        val open: Boolean
+        suspend fun connect(): Boolean
+        suspend fun exec(command: String): Result<String>
+        suspend fun close()
+    }
+
     /**
-     * Grant notification access over ADB after setup, for a yes given in
-     * Settings. finish() does it during setup; afterwards there is no session,
-     * so this opens one - which needs Wi-Fi, since Wireless debugging is the
-     * only way in - and closes it again if it was not already open.
+     * [command] run over a session: what its shell printed, or null with no
+     * session or one that broke - an exec that failed is no word from
+     * Android. Opened and closed here unless one was open already; a
+     * connect that failed leaves nothing to close, as before 0.31. Once
+     * begun it runs to its end, as a revive does: Show who called runs in
+     * the screen's scope, and the screen closed from Recents meanwhile
+     * would cut it between a connect that came up and the close, and leave
+     * the session open. Its steps are bounded - the connect's own limits
+     * (mDNS's five seconds, libadb's ten a try), the command's watchdog
+     * (watched).
      */
-    suspend fun grantNotificationAccess(context: Context): Boolean {
-        val opened = !AdbTransport.isConnected
-        if (opened && AdbTransport.autoConnect(context, timeoutMs = 5_000).isFailure) return false
-        val out = AdbTransport.exec(
-            DebugNotificationCleaner.accessCommand(context, allow = true) + " && echo granted"
-        ).getOrElse { "failed: ${it.message}" }
-        Log.i(TAG, "settings: notif listener -> $out")
-        if (opened) AdbTransport.close()
-        return out.contains("granted")
+    internal suspend fun grantOver(session: GrantSession, command: String): String? = withContext(NonCancellable) {
+        val opened = !session.open
+        if (opened && !session.connect()) return@withContext null
+        try {
+            session.exec("$command && echo granted")
+                .onFailure { Log.w(TAG, "settings: notif listener over the session failed: ${it.message}") }
+                .getOrNull()
+        } finally {
+            if (opened) session.close()
+        }
+    }
+
+    /**
+     * The grant over an ADB session, where no recorder answers (grantOver
+     * over AdbTransport). A seam: the tests' reaches no adbd - one on
+     * 127.0.0.1:5555 is an emulator's during the release's checks.
+     */
+    internal var grantOverSession: suspend (Context) -> String? = { context ->
+        grantOver(
+            object : GrantSession {
+                override val open get() = AdbTransport.isConnected
+                override suspend fun connect() = AdbTransport.autoConnect(context, timeoutMs = 5_000).isSuccess
+                override suspend fun exec(command: String) = AdbTransport.exec(command)
+                override suspend fun close() {
+                    AdbTransport.close()
+                }
+            },
+            DebugNotificationCleaner.accessCommand(context, allow = true),
+        )
+    }
+
+    /**
+     * Grant notification access after setup, for a yes given in Settings:
+     * null once granted, or why not. finish() does it during setup, over its
+     * own session. Afterwards the recorder does it - the shell, as a session
+     * is - with no session at all. This opened one, which needs Wireless
+     * debugging on, and LineageOS switches that off by itself a second after
+     * a revive's session has started the recorder: on the OnePlus, on Wi-Fi,
+     * Show who called said "it needs Wi-Fi" (2026-11-12; Hide the debugging
+     * notification goes the same way, read from the code). A session's is
+     * still the way where no recorder answers (grantOverSession); not after
+     * the recorder said no: a session's shell would be told the same.
+     * Whatever either said, this process's own word decides, read from
+     * Android at the end: the list the recorder reads is written a moment
+     * after the grant, a reply can be lost after the grant was made, and
+     * `cmd` ends well after an exception too. Once begun it runs to its end:
+     * Show who called runs in the screen's scope, and the screen closed from
+     * Recents meanwhile would drop the answer of a grant Android made, and
+     * leave the switch off over it.
+     */
+    suspend fun grantNotificationAccess(context: Context): GrantProblem? = withContext(NonCancellable) {
+        val recorderSaid = CaptureDaemon.allowListener(context)
+        val tried = if (recorderSaid != null) {
+            Log.i(
+                TAG,
+                if (recorderSaid) "settings: notif listener -> the recorder said ok"
+                else "settings: notif listener -> the recorder said failed",
+            )
+            GrantProblem.REFUSED
+        } else {
+            val out = grantOverSession(context)
+            Log.i(TAG, "settings: notif listener over a session -> ${out ?: "no session, or it broke"}")
+            if (out == null) GrantProblem.NO_ANSWER else GrantProblem.REFUSED
+        }
+        val granted = DebugNotificationCleaner.accessGranted(context)
+        Log.i(TAG, "settings: notif listener granted: $granted")
+        if (granted) null else tried
     }
 
     /**
