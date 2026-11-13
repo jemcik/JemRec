@@ -7,8 +7,6 @@ import android.media.AudioManager;
 import android.os.Handler;
 import android.os.Looper;
 
-import java.util.concurrent.TimeUnit;
-
 /**
  * The answering machine's place in the recorder: the machine itself, its
  * settings, the greeting's player, the level of each chunk it hears, the
@@ -94,7 +92,7 @@ final class Answering {
     }
 
     /** Run [task] on the main looper, where the answering machine lives, and
-     *  wait for it. */
+     *  wait for it (Hop). */
     static @Nullable <T> T onMain(java.util.concurrent.Callable<T> task) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return task.call();
@@ -103,8 +101,6 @@ final class Answering {
         if (handler == null) {
             throw new IllegalStateException("the call watch is not up, so no answering machine");
         }
-        java.util.concurrent.FutureTask<T> future = new java.util.concurrent.FutureTask<>(task);
-        handler.post(future);
-        return future.get(2, TimeUnit.SECONDS);
+        return Hop.call(handler::post, task, Hop.WAIT_MS);
     }
 }
