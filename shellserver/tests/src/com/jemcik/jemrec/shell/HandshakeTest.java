@@ -83,19 +83,23 @@ public class HandshakeTest {
     @Test
     public void theWholeExchangeIsTheVectors() throws IOException {
         // The app's nonce and proof in, the recorder's nonce and proof out -
-        // sent before the client's proof is waited for.
-        int[] flushedAt = {-1};
+        // sent, and flushed, before the client's proof is read: the client
+        // sends its proof only once it has the recorder's.
+        ByteArrayInputStream in = new ByteArrayInputStream(concat(hex("client_nonce"), hex("client_proof")));
+        int[] sentAt = {-1};
+        int[] readAt = {-1};
         ByteArrayOutputStream out = new ByteArrayOutputStream() {
             @Override
             public void flush() {
-                flushedAt[0] = size();
+                sentAt[0] = size();
+                readAt[0] = Handshake.NONCE_BYTES + Handshake.MAC_BYTES - in.available();
             }
         };
-        String refused = Handshake.prove(new ByteArrayInputStream(concat(hex("client_nonce"), hex("client_proof"))),
-                out, TOKEN, new Fixed());
+        String refused = Handshake.prove(in, out, TOKEN, new Fixed());
         assertNull(refused);
         assertArrayEquals(concat(hex("daemon_nonce"), hex("daemon_proof")), out.toByteArray());
-        assertEquals(Handshake.NONCE_BYTES + Handshake.MAC_BYTES, flushedAt[0]);
+        assertEquals(Handshake.NONCE_BYTES + Handshake.MAC_BYTES, sentAt[0]);
+        assertEquals("only the client's nonce read at the flush", Handshake.NONCE_BYTES, readAt[0]);
     }
 
     @Test
