@@ -26,6 +26,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Turn all debugging off cut short - the process gone while the recorder
@@ -72,9 +73,11 @@ class OffCutShortTest {
     @Test fun anOffCutShortWhileTheRecorderWasAskedIsFinishedByTheNextLook() = runBlocking {
         // The recorder takes a second and a half to answer the off...
         val asked = CompletableDeferred<Unit>()
+        val firstOff = AtomicReference<Thread>()
         recorder.replies["O"] = "OFF NOW"
         recorder.stall = { key ->
             if (key == "O") {
+                firstOff.set(Thread.currentThread())
                 asked.complete(Unit)
                 Thread.sleep(1_500)
             }
@@ -94,8 +97,10 @@ class OffCutShortTest {
         // recorder still up and never told: asked again, it goes, and
         // switches them off as it goes.
         recorder.stall = {}
+        // On the second off's thread only: the first's, held above, may come
+        // to its hook after this is set.
         recorder.after = { key ->
-            if (key == "O") {
+            if (key == "O" && Thread.currentThread() != firstOff.get()) {
                 TestPhone.put(context, WIFI, 0)
                 TestPhone.put(context, USB, 0)
                 recorder.close()
@@ -109,7 +114,9 @@ class OffCutShortTest {
         assertEquals(Result.success(), result)
 
         until("all debugging off") { get(WIFI) == 0 && get(USB) == 0 }
-        assertEquals(2, recorder.heard.count { it.key == "O" })
+        // Both asked it to go (1): asked again with a 0, a recorder cancels
+        // the off and stays, and debugging stays on.
+        assertEquals(listOf(listOf<Byte>(1), listOf<Byte>(1)), recorder.heard.filter { it.key == "O" }.map { it.payload.toList() })
         // Its line, for the revive log.
         assertEquals(
             "debugging off: asked the recorder again, it says OFF NOW",

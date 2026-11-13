@@ -82,8 +82,10 @@ internal class FakeRecorder(
         }
     }
 
-    /** Gone: the port free, as a recorder that exited leaves it. */
-    override fun close() {
+    /** Gone: the port free, as a recorder that exited leaves it. One caller
+     *  at a time: a test's close returning while a hook's was still on its
+     *  way would leave the port taken for the next test's recorder. */
+    @Synchronized override fun close() {
         if (!open) return
         open = false
         runCatching { server.close() }

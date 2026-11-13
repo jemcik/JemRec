@@ -7,6 +7,7 @@ import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.FakeRecorder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.junit.After
@@ -27,6 +28,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 
 /**
  * The answering machine's test call (AnswerController.startTest) against
@@ -425,10 +428,17 @@ class AnswerTestCallTest {
         val older = System.currentTimeMillis() + 60_000L
         AnswerDiagnostics.noteTestArmed(context, true, older)
         val gate = CountDownLatch(1)
-        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
         recorder.replies["XR"] = passed
-        // The recorder armed for the newer test after it gave the result.
-        recorder.after = { key -> if (key == "XR") recorder.replies["XR"] = "RESULT 1 state=armed" }
+        // The recorder armed for the newer test after it gave the result:
+        // the next reply, set once this one's line is read - set after it
+        // was written, the newer test's first read could come first and get
+        // the result again.
+        recorder.stall = {
+            if (it == "XR") {
+                recorder.replies["XR"] = "RESULT 1 state=armed"
+                gate.await(10, TimeUnit.SECONDS)
+            }
+        }
         val screen = opened(scope)
         eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
         // The other screen: it read the result, put it down, and armed again.
@@ -462,23 +472,6 @@ class AnswerTestCallTest {
         assertFalse(said.toString(), said.any { "still going on" in it })
     }
 
-    /** A watch ending unanswered, its test taken meanwhile by another screen
-     *  that armed a newer one: the newer one is watched on, not "could not
-     *  be asked" said of a test no longer this screen's. */
-    @Test fun aWatchEndingUnansweredFollowsANewerTest() {
-        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
-        val gate = CountDownLatch(1)
-        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
-        recorder.replies.remove("XR")
-        val screen = opened(scope)
-        eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
-        val newer = System.currentTimeMillis() + 60_000L
-        AnswerDiagnostics.noteTestArmed(context, true, newer)
-        gate.countDown()
-        eventually("the newer test watched") { screen.state.value.testUntil == newer && screen.state.value.test != null }
-        assertFalse(said.toString(), said.any { "could not be asked" in it })
-    }
-
     /** ...and taken there and asking its question, from a call under way here:
      *  the question is asked here too, and nothing said of this watch's
      *  test. */
@@ -494,6 +487,23 @@ class AnswerTestCallTest {
         gate.countDown()
         eventually("asked here") { screen.state.value.askHeard == "2G" && screen.state.value.test == null }
         assertFalse(said.toString(), said.any { "still going on" in it })
+    }
+
+    /** A watch ending unanswered, its test taken meanwhile by another screen
+     *  that armed a newer one: the newer one is watched on, not "could not
+     *  be asked" said of a test no longer this screen's. */
+    @Test fun aWatchEndingUnansweredFollowsANewerTest() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() - 10 * 60_000L)
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XR") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies.remove("XR")
+        val screen = opened(scope)
+        eventually("the recorder asked") { recorder.heard.any { it.key == "XR" } }
+        val newer = System.currentTimeMillis() + 60_000L
+        AnswerDiagnostics.noteTestArmed(context, true, newer)
+        gate.countDown()
+        eventually("the newer test watched") { screen.state.value.testUntil == newer && screen.state.value.test != null }
+        assertFalse(said.toString(), said.any { "could not be asked" in it })
     }
 
     /** ...and taken there and done with: nothing shown, nothing said. */
@@ -966,26 +976,86 @@ class AnswerTestCallTest {
      *  moment that one was over: each arming's words said once - the
      *  awaited one's by the wait, its own by itself - where the wait ran on
      *  into the new arming and said its words a second time, and the
-     *  awaited one's never. */
+     *  awaited one's never. The waiting screen's looks are the test's to
+     *  make (as in aWaitEndsAtTheNextArmingAndWaitsForThatOneToo): its next
+     *  one comes once its own arming is over. One that comes while it is
+     *  still under way is aWaitEndsAtItsOwnScreensArmingAndLeavesItsWordsToIt. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun aWaitSaysTheAwaitedArmingsWordsNotTheNextOnes() {
         val gate = CountDownLatch(1)
         recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
         recorder.replies["XA"] = "TEST no-greeting"
-        recorder.after = { key -> if (key == "XA") recorder.replies["XA"] = "TEST busy" }
         val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         AnswerController(context, closed, { }).startTest(incoming = true)
         eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
         closed.cancel()
-        controller.readPendingTest()
-        gate.countDown()
-        eventually("that arming over") { !testArming.get() }
-        controller.startTest(incoming = true)
-        eventually("both said") { said.size >= 2 }
-        Thread.sleep(600)
-        assertEquals(
-            listOf("the last test call is still going on", "the recorder does not have your greeting yet - try again in a moment"),
-            said.toList().sorted(),
-        )
+        val looks = TestCoroutineScheduler()
+        val screenScope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(looks))
+        val screen = AnswerController(context, screenScope, { said += it })
+        try {
+            screen.readPendingTest()
+            gate.countDown()
+            eventually("that arming over") { !testArming.get() }
+            // Its reply was read before its stall: the next arming's is this.
+            recorder.replies["XA"] = "TEST busy"
+            screen.startTest(incoming = true)
+            eventually("its own said") { said.isNotEmpty() }
+            eventually("its own over") { !testArming.get() }
+            looks.advanceTimeBy(250)
+            looks.runCurrent()
+            assertEquals(
+                listOf("the last test call is still going on", "the recorder does not have your greeting yet - try again in a moment"),
+                said.toList(),
+            )
+        } finally {
+            screenScope.cancel()
+        }
+    }
+
+    /** ...and the screen's own arming still under way when the wait looks
+     *  again - the user tapped Test the moment the awaited one was over: the
+     *  awaited one's words are said then, and the wait does not go on to
+     *  wait for the screen's own arming, whose words that arming says
+     *  itself. Waited for, they were said twice. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun aWaitEndsAtItsOwnScreensArmingAndLeavesItsWordsToIt() {
+        val first = CountDownLatch(1)
+        val second = CountDownLatch(1)
+        val armings = java.util.concurrent.atomic.AtomicInteger()
+        recorder.stall = { if (it == "XA") (if (armings.incrementAndGet() == 1) first else second).await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST no-greeting"
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        AnswerController(context, closed, { }).startTest(incoming = true)
+        eventually("the first arming asked") { armings.get() == 1 }
+        closed.cancel()
+        val looks = TestCoroutineScheduler()
+        val screenScope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(looks))
+        val screen = AnswerController(context, screenScope, { said += it })
+        try {
+            screen.readPendingTest()
+            first.countDown()
+            eventually("the first over") { !testArming.get() }
+            // Its reply was read before its stall: the screen's own is this.
+            recorder.replies["XA"] = "TEST busy"
+            screen.startTest(incoming = true)
+            eventually("its own asked") { armings.get() == 2 }
+            looks.advanceTimeBy(250)
+            looks.runCurrent()
+            assertEquals(listOf("the recorder does not have your greeting yet - try again in a moment"), said.toList())
+            second.countDown()
+            eventually("its own said") { said.size == 2 }
+            repeat(4) {
+                looks.advanceTimeBy(250)
+                looks.runCurrent()
+            }
+            assertEquals(
+                listOf("the recorder does not have your greeting yet - try again in a moment", "the last test call is still going on"),
+                said.toList(),
+            )
+        } finally {
+            second.countDown()
+            screenScope.cancel()
+        }
     }
 
     /** Why another screen's arming armed nothing is a snackbar only while
@@ -1016,34 +1086,50 @@ class AnswerTestCallTest {
     /** Waiting for another screen's arming, which armed nothing, and a third
      *  screen's begun before the wait looked again: the awaited one's words
      *  are said as the third begins, not when it ends, and the third is
-     *  waited for in turn - its words said here too. */
+     *  waited for in turn - its words said here too. The waiting screen runs
+     *  on a test dispatcher: its first look is at once, as on the main
+     *  thread, and each look after is the test's to make, so the order is
+     *  the test's, not the clock's. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun aWaitEndsAtTheNextArmingAndWaitsForThatOneToo() {
         val first = CountDownLatch(1)
         val second = CountDownLatch(1)
         val armings = java.util.concurrent.atomic.AtomicInteger()
         recorder.stall = { if (it == "XA") (if (armings.incrementAndGet() == 1) first else second).await(10, TimeUnit.SECONDS) }
         recorder.replies["XA"] = "TEST no-greeting"
-        recorder.after = { key -> if (key == "XA") recorder.replies["XA"] = "TEST busy" }
         val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         AnswerController(context, closed, { }).startTest(incoming = true)
         eventually("the first arming asked") { armings.get() == 1 }
         closed.cancel()
-        controller.readPendingTest()
-        first.countDown()
-        eventually("the first over") { !testArming.get() }
+        val looks = TestCoroutineScheduler()
+        val waitingScope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(looks))
+        val waiting = AnswerController(context, waitingScope, { said += it })
         val third = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
+            waiting.readPendingTest()
+            first.countDown()
+            eventually("the first over") { !testArming.get() }
+            // Its reply was read before its stall: the third's is this.
+            recorder.replies["XA"] = "TEST busy"
             AnswerController(context, third, { }).startTest(incoming = true)
             eventually("the third asked") { armings.get() == 2 }
-            // Held: the first's words come now, not when the third ends.
-            eventually("the first's words") { said.isNotEmpty() }
+            looks.advanceTimeBy(250)
+            looks.runCurrent()
+            // The first's words come now, while the third is held, not when it ends.
             assertEquals(listOf("the recorder does not have your greeting yet - try again in a moment"), said.toList())
+            assertTrue("the third still arming", testArming.get())
             second.countDown()
-            eventually("the third's words") { said.size == 2 }
-            assertEquals("the last test call is still going on", said[1])
+            eventually("the third over") { !testArming.get() }
+            looks.advanceTimeBy(250)
+            looks.runCurrent()
+            assertEquals(
+                listOf("the recorder does not have your greeting yet - try again in a moment", "the last test call is still going on"),
+                said.toList(),
+            )
         } finally {
             second.countDown()
             third.cancel()
+            waitingScope.cancel()
         }
     }
 
@@ -1073,8 +1159,8 @@ class AnswerTestCallTest {
         assertTrue(said.toString(), said.isEmpty())
     }
 
-    /** ...whatever else is kept: a question still waiting from an older
-     *  test does not hide why this arming armed nothing. */
+    /** Why another screen's arming armed nothing is said whatever else is
+     *  kept: a question still waiting from an older test does not hide it. */
     @Test fun whyAnArmingArmedNothingIsSaidOverAQuestionStillWaiting() {
         AnswerDiagnostics.noteTestArmed(context, true, 1_000L)
         AnswerDiagnostics.takeArmedTest(context, 1_000L, asking = "2G")
@@ -1602,7 +1688,7 @@ class AnswerTestCallTest {
     }
 
     /** "Did they hear it?" on two screens: answered on one, the other's
-     *  answer changes nothing, and opened again it no longer asks. */
+     *  answer changes nothing. */
     @Test fun theQuestionIsAnsweredOnce() {
         AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
         recorder.replies["XR"] = passed
