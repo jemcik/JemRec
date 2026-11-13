@@ -418,16 +418,19 @@ object DaemonLauncher {
             // group, so there is nothing left for that teardown to kill.
             //
             // The token and the mode ride in the ENVIRONMENT, not the
-            // arguments. Arguments are visible to every app through
-            // /proc/<pid>/cmdline; the environment of a shell-uid process is
-            // readable only by shell and root. The token is what lets the
-            // daemon wake this app's service without that service being
-            // startable by anything else on the phone, and what every loopback
-            // command is proved with. The mode is there so the daemon knows
-            // from its first millisecond whether this call should be recorded,
-            // asked about, or left alone - a push over the socket a moment
-            // later used to be the only word it got, and a call in that gap
-            // was recorded whatever the user had chosen.
+            // arguments: a process's arguments stay in /proc/<pid>/cmdline as
+            // long as it runs - the recorder's, for days - and its environment
+            // is readable only by its own uid and root. Android shows an app
+            // only its own processes there (measured on the Honor,
+            // 2026-11-10), but the environment does not rest on that. The
+            // token is what lets the daemon wake this app's service without
+            // that service being startable by anything else on the phone, and
+            // what every loopback command is proved with. The mode is there
+            // so the daemon knows from its first millisecond whether this
+            // call should be recorded, asked about, or left alone - a push
+            // over the socket a moment later used to be the only word it
+            // got, and a call in that gap was recorded whatever the user had
+            // chosen.
             //
             // KEEP THE PREVIOUS INSTANCE'S LOG. It is the only durable record of
             // what happened before this spawn - logcat's main buffer rolls in
