@@ -15,7 +15,7 @@ final class Wakes {
     private static final String APP_SERVICE = "com.jemcik.jemrec/.capture.CallMonitorService";
     static final String ACTION_CALL_STARTED = "com.jemcik.jemrec.CALL_STARTED";
     static final String ACTION_CALL_ENDED = "com.jemcik.jemrec.CALL_ENDED";
-    /** A USB cable went in or came out: adbd may be about to go. See watchCable. */
+    /** A USB cable went in or came out: adbd may be about to go. See CableWatch.watchCable. */
     static final String ACTION_CABLE = "com.jemcik.jemrec.CABLE";
     static final String ACTION_BACKGROUND_KILLED = "com.jemcik.jemrec.BACKGROUND_KILLED";
 

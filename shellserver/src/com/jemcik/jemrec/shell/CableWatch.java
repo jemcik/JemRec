@@ -49,7 +49,7 @@ final class CableWatch {
      *
      * Polled, not observed: a receiver for the power and USB broadcasts is
      * refused to a process the ActivityManager did not start, exactly as the
-     * settings observer is (keepShieldUp) - measured on the Android 17
+     * settings observer is (Shield.keepShieldUp) - measured on the Android 17
      * emulator, "registerReceiverWithFeature: no app for null". Shell's
      * MANAGE_USB lets this read the USB port's status from the USB service
      * instead, which flips the moment the cable does (the battery status

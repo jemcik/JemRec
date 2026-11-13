@@ -15,7 +15,29 @@ change behaviour.
 
 | File | Why |
 |---|---|
-| `com/jemcik/jemrec/shell/Main.java` | Ours. Replaces `Server.java`. |
+| `com/jemcik/jemrec/shell/Main.java` | Ours. Replaces `Server.java`: the start - the looper, the environment, the threads in their order. |
+| `com/jemcik/jemrec/shell/LoopbackServer.java` | Ours. The port on loopback, each connection on its own thread, who connects. |
+| `com/jemcik/jemrec/shell/Handshake.java` | Ours. The proof every command is sent with. Plain Java, tested in `../tests`. |
+| `com/jemcik/jemrec/shell/Commands.java` | Ours. What each command does, and its reply. |
+| `com/jemcik/jemrec/shell/Wire.java` | Ours. The command bytes, the reply lines and the name frame. Plain Java, tested in `../tests`. |
+| `com/jemcik/jemrec/shell/Calls.java` | Ours. The call and recording state, and what is done as a call starts and ends. |
+| `com/jemcik/jemrec/shell/CallDecisions.java` | Ours. When a call is recorded, asked about or left out, and what becomes of its recording. Plain Java, tested in `../tests`. |
+| `com/jemcik/jemrec/shell/CallWatch.java` | Ours. The phone's call state as this process hears it, and the start of the watches. |
+| `com/jemcik/jemrec/shell/RecordingSession.java` | Ours. One call's recording, written to a file. |
+| `com/jemcik/jemrec/shell/Wakes.java` | Ours. Waking the app's service with `am`, in order. |
+| `com/jemcik/jemrec/shell/Reports.java` | Ours. The last call's report, kept for Copy a report. |
+| `com/jemcik/jemrec/shell/Platform.java` | Ours. Every hidden API the core reaches by reflection, and the services rebound to the shell's context. |
+| `com/jemcik/jemrec/shell/Answering.java` | Ours. The answering machine's place in the recorder: its settings, its player, the hop to the main looper. |
+| `com/jemcik/jemrec/shell/AnswerEffects.java` | Ours. What the answering machine does to the phone. |
+| `com/jemcik/jemrec/shell/AnswerTest.java` | Ours. The answering machine's test call. |
+| `com/jemcik/jemrec/shell/Custodian.java` | Ours. The recorder letting itself out when the app is uninstalled. |
+| `com/jemcik/jemrec/shell/Shield.java` | Ours. The off-Wi-Fi shield, USB debugging kept on, and the settings it writes. |
+| `com/jemcik/jemrec/shell/CableWatch.java` | Ours. A USB cable going in or out, passed on to the app. |
+| `com/jemcik/jemrec/shell/KillWatch.java` | Ours. The app killed in the background, told to it. |
+| `com/jemcik/jemrec/shell/Tracking.java` | Ours. Exact call tracking's permission. |
+| `com/jemcik/jemrec/shell/DebuggingOff.java` | Ours. "Turn all debugging off": the wait, then both switches. |
+| `com/jemcik/jemrec/shell/Shell.java` | Ours. Android's own tools run as children, and small helpers. |
+| `com/jemcik/jemrec/shell/Paths.java` | Ours. The recorder's files in `/data/local/tmp`. |
 | `com/jemcik/jemrec/shell/Voip.java` | Ours. Messenger calls: the audio policy that copies voice-call playback, spotting a call, and the microphone guard. |
 | `com/jemcik/jemrec/shell/CallStates.java` | Ours. Telephony's call events made into calls - which way each went and when it ended. Plain Java, tested in `../tests`. |
 | `com/jemcik/jemrec/shell/Checks.java` | Ours. The daemon's small decisions - the app-op output read back, who may connect - in plain Java, tested in `../tests`. |

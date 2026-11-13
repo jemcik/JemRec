@@ -57,7 +57,7 @@ final class KillWatch {
     }
 
     /** Checks.backgroundKillStamp on a fresh `dumpsys activity exit-info`, or
-     *  null if the dump could not be read (runQuietly logs why). The package
+     *  null if the dump could not be read (Shell.runQuietly logs why). The package
      *  dump (36 ms on the Honor) is read only when the newest exit is an idle
      *  kill, the one case where stopped decides. */
     private static @Nullable String backgroundKillStamp() {

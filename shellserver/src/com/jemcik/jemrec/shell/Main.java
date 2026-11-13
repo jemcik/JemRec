@@ -12,9 +12,10 @@ import java.lang.reflect.Field;
 import java.security.MessageDigest;
 
 /**
- * The JemRec shell-side capture daemon. This is the one file written rather
- * than inherited; everything else under com.genymobile.scrcpy is a trimmed fork
- * of scrcpy v4.1 (Apache-2.0). It replaces scrcpy's Server.java.
+ * The JemRec shell-side capture daemon, and its start. The recorder's own code
+ * is the package com.jemcik.jemrec.shell; everything under com.genymobile.scrcpy
+ * is a trimmed fork of scrcpy v4.1 (Apache-2.0), and Main replaces its
+ * Server.java (shellserver/PATCHES.md lists what was kept and what changed).
  *
  * It runs as the shell UID, started once over ADB via app_process, and that is
  * the entire reason this program exists as a separate process rather than a
@@ -44,7 +45,15 @@ import java.security.MessageDigest;
  * live under /data/local/tmp, which the app cannot traverse. Loopback TCP is
  * the one channel that is actually permitted between these two domains.
  *
- * WIRE FORMAT (unchanged from scrcpy, so its tooling still reads it)
+ * Each part has a class of its own: the port and the handshake
+ * (LoopbackServer, Handshake), the commands and their bytes (Commands, Wire),
+ * the call and its recording (CallWatch, Calls, CallDecisions,
+ * RecordingSession, Wakes), the answering machine (Answering, AnswerEffects,
+ * AnswerTest), the background jobs (Custodian, Shield, CableWatch, KillWatch,
+ * Tracking, DebuggingOff), and what is reached by reflection (Platform).
+ *
+ * THE AUDIO'S FORMAT, a live capture's stream and a recording's file alike
+ * (scrcpy's, unchanged, so its tooling still reads it):
  *
  *   4 bytes    codec id, "opus"
  *   then, repeating:
@@ -159,13 +168,13 @@ public final class Main {
             custodian.start();
 
             // The off-Wi-Fi shield, kept up by the process whose life depends
-            // on it. See keepShieldUp for why the app doing it was not enough.
+            // on it. See Shield.keepShieldUp for why the app doing it was not enough.
             Thread shield = new Thread(Shield::keepShieldUp, "jemrec-shield");
             shield.setDaemon(true);
             shield.start();
 
             // The few seconds' warning a USB cable gives before adbd goes,
-            // passed on to the app. See watchCable.
+            // passed on to the app. See CableWatch.watchCable.
             Thread cable = new Thread(CableWatch::watchCable, "jemrec-cable");
             cable.setDaemon(true);
             cable.start();
@@ -231,7 +240,7 @@ public final class Main {
     private static final String ANSWER_ENV = "JEMREC_ANSWER";
 
     /** The mode the app put in the environment at spawn; OFF if there is
-     *  none, or it is not a mode. See recordingMode for why OFF. */
+     *  none, or it is not a mode. See CallDecisions' modes for why OFF. */
     private static int modeFromEnvironment(String value) {
         if (value != null) {
             try {

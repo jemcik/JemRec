@@ -167,7 +167,7 @@ final class Custodian {
         // off-Wi-Fi shield this daemon keeps up (see keepShieldUp) - and with the
         // app gone, nothing else will ever turn either of them back off.
         // Refused where an OPPO, OnePlus or realme phone's switch is off
-        // (putGlobal), and then nothing is left to do it: the app is gone.
+        // (Shield.putGlobal), and then nothing is left to do it: the app is gone.
         for (String setting : new String[]{"adb_wifi_enabled", "adb_enabled"}) {
             if (Shield.putGlobal(setting, "0")) {
                 Ln.i("custodian: turned " + setting + " off");

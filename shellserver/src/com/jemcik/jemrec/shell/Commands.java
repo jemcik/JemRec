@@ -93,7 +93,7 @@ final class Commands {
         }
         if (command == Wire.COMMAND_RECORD) {
             // Live capture straight to the socket. Calls no longer use this - the
-            // daemon writes them to a file (see startRecording) - but the app's
+            // daemon writes them to a file (see Calls.beginRecording) - but the app's
             // self-test still records a short clip this way to prove the HAL will
             // hand over voice-call audio at all.
             AudioCodec codec = RecordingSession.AUDIO_CODEC;
@@ -161,7 +161,7 @@ final class Commands {
             // The user said yes to the on-demand start-of-call prompt. Begin
             // recording the call in progress, from now.
             String name = null;
-            // Locked against onCallEnd - see there.
+            // Locked against a call's end - see Calls.endCall.
             synchronized (Calls.LOCK) {
                 if (CallDecisions.startOnDemand(Calls.callActive, Calls.recordingMode)) {
                     name = Calls.beginRecording(Calls.callIncoming, Calls.callVoipApp, Calls.callAppIncoming);
@@ -317,7 +317,7 @@ final class Commands {
             String state = Answering.onMain(() -> {
                 if (what == 'T') {
                     // The notification's Talk, or the app seeing a second call
-                    // answered: the machine tells the app (callTaken).
+                    // answered: the machine tells the app (AnswerEffects.callTaken).
                     machine.talk();
                 } else if (what == 'H') {
                     machine.hangUpNow();

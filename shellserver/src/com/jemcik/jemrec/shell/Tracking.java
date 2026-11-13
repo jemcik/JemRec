@@ -15,8 +15,8 @@ final class Tracking {
 
     /** One applyTracking at a time - the start-up thread's and the app's 'T'
      *  can overlap - so the last to run applies what trackingOn says by then,
-     *  not what it said before the other ran. Not Main.class: that is held
-     *  at call start and end, and these take a moment. */
+     *  not what it said before the other ran. Not the call lock (Calls.LOCK):
+     *  that is held at call start and end, and these take a moment. */
     private static final Object TRACKING_LOCK = new Object();
 
     static void applyTracking() {

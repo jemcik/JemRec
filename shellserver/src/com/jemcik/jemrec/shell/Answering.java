@@ -29,7 +29,7 @@ final class Answering {
 
     /** This phone's own side of the recording - the uplink, left - is not
      *  silent in the chunk being looked at. Muted, it is silent unless the
-     *  phone mixes the greeting into the recording: see greetingLoud. */
+     *  phone mixes the greeting into the recording: see AnswerEffects.greetingLoud. */
     static volatile boolean ownSideSounds;
 
     /** Every captured chunk of a phone call this process answered: a level
@@ -48,7 +48,7 @@ final class Answering {
             return;
         }
         double rms = Checks.rms(pcm, AudioConfig.CHANNELS, frames);
-        // Before the level is looked at: greetingLoud asks it.
+        // Before the level is looked at: AnswerEffects.greetingLoud asks it.
         ownSideSounds = Checks.channelRms(pcm, AudioConfig.CHANNELS, 0, frames) >= AnswerMachine.SOUND_RMS;
         machine.level(rms, chunkMs);
         if (machine.testing()) {
@@ -76,7 +76,7 @@ final class Answering {
                 // A call is up: the message this mute was for, its caller
                 // still on - muted, the room stays out - or a call of the
                 // user's, muted by them. Not this process's to unmute: the
-                // marker is looked at again as that call ends (endCall).
+                // marker is looked at again as that call ends (Calls.endCall).
                 Ln.i("answer: a mute left by a message, and a call up; the microphone stays until it ends");
                 return false;
             }
