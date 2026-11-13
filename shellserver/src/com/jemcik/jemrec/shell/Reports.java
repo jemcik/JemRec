@@ -43,7 +43,7 @@ final class Reports {
      *  still the one recorded. */
     static void lookAround(CallReport report) {
         AudioManager audio = Platform.callAudio;
-        RecordingSession rec = Main.activeRecording;
+        RecordingSession rec = Calls.activeRecording;
         if (audio != null && rec != null && rec.report == report) {
             AudioScene.lookInto(report, audio);
         }

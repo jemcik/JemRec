@@ -76,7 +76,7 @@ final class Wakes {
             command.add(app);
         }
         command.addAll(java.util.Arrays.asList(extras));
-        long seq = Main.callSeq;
+        long seq = Calls.callSeq;
         boolean start = ACTION_CALL_STARTED.equals(action) || ACTION_MESSAGE_STARTED.equals(action)
                 || ACTION_MESSAGE_TAKEN.equals(action);
         // A cable's wake has its own queue: it has three seconds before adbd
@@ -85,7 +85,7 @@ final class Wakes {
         // It is ordered against nothing a call's wakes are.
         (ACTION_CABLE.equals(action) ? CABLE_WAKES : WAKES).execute(() -> {
             for (int attempt = 1; attempt <= WAKE_ATTEMPTS; attempt++) {
-                if (CallDecisions.staleStart(start, Main.endedSeq, seq)) {
+                if (CallDecisions.staleStart(start, Calls.endedSeq, seq)) {
                     // That call is over, and its CALL_ENDED is queued behind
                     // this: a start landing now would put up a prompt, a
                     // "Recording" or a "Taking a message" for a call that has

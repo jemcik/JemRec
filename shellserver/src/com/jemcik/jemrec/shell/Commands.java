@@ -49,10 +49,10 @@ final class Commands {
         }
         if (command == Wire.COMMAND_QUIT) {
             boolean busy;
-            synchronized (Main.LOCK) {
+            synchronized (Calls.LOCK) {
                 // The app asks this to replace an older build, and will ask
                 // again; the call is worth more than a prompt update.
-                busy = Main.busyLocked();
+                busy = Calls.busyLocked();
             }
             if (busy) {
                 Wire.reply(client.getOutputStream(), Wire.BUSY);
@@ -74,7 +74,7 @@ final class Commands {
                 return;
             }
             String reply;
-            synchronized (Main.LOCK) {
+            synchronized (Calls.LOCK) {
                 if (go == 0 && DebuggingOff.switchingOff) {
                     reply = Wire.OFF_TOO_LATE;
                 } else if (go == 0) {
@@ -82,7 +82,7 @@ final class Commands {
                     reply = Wire.OFF_CANCELLED;
                 } else {
                     DebuggingOff.goingOff = true;
-                    reply = Main.busyLocked() ? Wire.OFF_AFTER_CALL : Wire.OFF_NOW;
+                    reply = Calls.busyLocked() ? Wire.OFF_AFTER_CALL : Wire.OFF_NOW;
                 }
             }
             Wire.reply(client.getOutputStream(), reply);
@@ -125,11 +125,11 @@ final class Commands {
             java.util.List<String> names = new java.util.ArrayList<>();
             // Under the lock a recording starts under: its file is created
             // before it is the active one, and in between it looked finished.
-            synchronized (Main.LOCK) {
+            synchronized (Calls.LOCK) {
                 File[] files = dir.listFiles((d, n) -> n.startsWith(Paths.REC_PREFIX) && n.endsWith(Paths.REC_SUFFIX));
                 if (files != null) {
                     // Skip the one being written right now: it is not finished.
-                    String activeName = Main.activeName();
+                    String activeName = Calls.activeName();
                     for (File f : files) {
                         if (!f.getName().equals(activeName)) {
                             names.add(f.getName());
@@ -150,14 +150,14 @@ final class Commands {
         if (command == Wire.COMMAND_SET_ENABLED) {
             int value = client.getInputStream().read();
             if (CallDecisions.isMode(value)) {
-                Main.recordingMode = value;
-                Ln.i("session: recording mode = " + Main.recordingMode);
+                Calls.recordingMode = value;
+                Ln.i("session: recording mode = " + Calls.recordingMode);
             } else {
                 // Not a mode. Keep the one in force rather than guess - and
                 // never guess AUTOMATIC, which is what this used to do.
-                Ln.w("session: ignoring unusable recording mode " + value + ", still " + Main.recordingMode);
+                Ln.w("session: ignoring unusable recording mode " + value + ", still " + Calls.recordingMode);
             }
-            Wire.reply(client.getOutputStream(), Wire.mode(Main.recordingMode));
+            Wire.reply(client.getOutputStream(), Wire.mode(Calls.recordingMode));
             return;
         }
         if (command == Wire.COMMAND_START) {
@@ -165,9 +165,9 @@ final class Commands {
             // recording the call in progress, from now.
             String name = null;
             // Locked against onCallEnd - see there.
-            synchronized (Main.LOCK) {
-                if (CallDecisions.startOnDemand(Main.callActive, Main.recordingMode)) {
-                    name = Main.beginRecording(Main.callIncoming, Main.callVoipApp, Main.callAppIncoming);
+            synchronized (Calls.LOCK) {
+                if (CallDecisions.startOnDemand(Calls.callActive, Calls.recordingMode)) {
+                    name = Calls.beginRecording(Calls.callIncoming, Calls.callVoipApp, Calls.callAppIncoming);
                 }
             }
             if (name != null) {
@@ -189,24 +189,24 @@ final class Commands {
         if (command == Wire.COMMAND_SKIP) {
             int value = client.getInputStream().read();
             String what;
-            synchronized (Main.LOCK) {
-                RecordingSession rec = Main.activeRecording;
+            synchronized (Calls.LOCK) {
+                RecordingSession rec = Calls.activeRecording;
                 CallDecisions.Skip skip = CallDecisions.skip(value, rec != null && rec.app == null,
                         rec == null ? 0 : System.currentTimeMillis() - rec.startedAt);
                 if (skip == CallDecisions.Skip.CANCELLED) {
-                    Main.skipUntil = 0;
+                    Calls.skipUntil = 0;
                     what = "cancelled";
                 } else if (skip == CallDecisions.Skip.CURRENT && rec != null) {
                     // Dialling went off-hook before the app could say: stop
                     // it now, and leave nothing behind.
                     rec.stop();
-                    Main.activeRecording = null;
+                    Calls.activeRecording = null;
                     boolean gone = new File(Paths.REC_DIR, rec.name).delete();
                     Ln.i("recording: the rules leave this call out; stopped and deleted " + rec.name + " -> " + gone);
                     Wakes.wake(Wakes.ACTION_CALL_ENDED, rec.incoming, "", null);
                     what = "current";
                 } else {
-                    Main.skipUntil = System.currentTimeMillis() + CallDecisions.SKIP_VALID_MS;
+                    Calls.skipUntil = System.currentTimeMillis() + CallDecisions.SKIP_VALID_MS;
                     what = "next";
                 }
             }
@@ -231,7 +231,7 @@ final class Commands {
         if (command == Wire.COMMAND_FETCH) {
             String name = Wire.readName(client.getInputStream());
             File file = Paths.recFileFor(name);
-            if (name.equals(Main.activeName())) {
+            if (name.equals(Calls.activeName())) {
                 // Still being written: not to be collected - nor, by a
                 // collector that then finds it empty, deleted. Its hang-up
                 // brings it.
@@ -250,7 +250,7 @@ final class Commands {
                 return;
             }
             Ln.i("session: fetching " + name + " (" + file.length() + " bytes)");
-            Main.fetches.incrementAndGet();
+            Calls.fetches.incrementAndGet();
             try (FileInputStream in = new FileInputStream(file)) {
                 OutputStream os = client.getOutputStream();
                 byte[] buf = new byte[64 * 1024];
@@ -260,14 +260,14 @@ final class Commands {
                 }
                 os.flush();
             } finally {
-                Main.fetches.decrementAndGet();
+                Calls.fetches.decrementAndGet();
             }
             return;
         }
         if (command == Wire.COMMAND_DELETE) {
             String name = Wire.readName(client.getInputStream());
             File file = Paths.recFileFor(name);
-            boolean ok = !name.equals(Main.activeName()) && file != null && file.delete();
+            boolean ok = !name.equals(Calls.activeName()) && file != null && file.delete();
             Ln.i("session: delete " + name + " -> " + ok);
             Wire.reply(client.getOutputStream(), Wire.deleted(ok));
             return;
@@ -599,9 +599,9 @@ final class Commands {
 
     /** The answer to Wire.COMMAND_WATCH. Times are wall-clock millis, 0 for never. */
     private static String watchReport() {
-        RecordingSession rec = Main.activeRecording;
-        return Wire.watch(Main.STARTED_AT, CallWatch.watching, looperResponds(), Main.recordingMode,
-                Main.callActive, CallWatch.callEvents.get(), CallWatch.lastCallEventAt, CallWatch.offHooks.get(),
+        RecordingSession rec = Calls.activeRecording;
+        return Wire.watch(Main.STARTED_AT, CallWatch.watching, looperResponds(), Calls.recordingMode,
+                Calls.callActive, CallWatch.callEvents.get(), CallWatch.lastCallEventAt, CallWatch.offHooks.get(),
                 CallWatch.lastOffHookAt, rec == null ? 0 : rec.startedAt, Voip.apps().size(), Voip.armed(),
                 Tracking.trackingOn, Answering.answerSettings.on, Greeting.present());
     }

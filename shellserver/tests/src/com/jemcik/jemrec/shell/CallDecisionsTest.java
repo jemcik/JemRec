@@ -14,8 +14,8 @@ import org.junit.Test;
 /**
  * The recorder's decisions about a call, as tables: each row the inputs and
  * what the recorder did with them before these rules had a class of their own
- * (read from Main.onCallStart, endCall, splitOffMessage, stopRecording, the
- * wake queue, 'K', 'S' and busyLocked as 0.30 has them). '*' is either value;
+ * (read from 0.30's Main.java: a call's start and end, the split, a
+ * recording's stop, the wake queue, 'K', 'S' and busy). '*' is either value;
  * every combination is checked, each against the first row it matches.
  */
 public class CallDecisionsTest {

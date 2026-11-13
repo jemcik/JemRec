@@ -6,7 +6,7 @@ package com.jemcik.jemrec.shell;
  * wake for a call already over; what becomes of a message the user took
  * over, and of a recording as its call ends; and what a quit or debugging
  * off waits out. The call state and what is done about each decision are
- * Main's; these are the rules alone, so daemon-tests holds each to a table.
+ * Calls'; these are the rules alone, so daemon-tests holds each to a table.
  */
 final class CallDecisions {
 

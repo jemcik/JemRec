@@ -135,12 +135,12 @@ final class CallWatch extends TelephonyCallback
     private static final Voip.Listener VOIP_LISTENER = new Voip.Listener() {
         @Override
         public void onVoipCallStart(String app) {
-            Main.onAppCallStart(app);
+            Calls.onAppCallStart(app);
         }
 
         @Override
         public void onVoipCallEnd() {
-            Main.onVoipCallEnd();
+            Calls.onVoipCallEnd();
         }
     };
 
@@ -184,12 +184,12 @@ final class CallWatch extends TelephonyCallback
         this.states = new CallStates(new CallStates.Effects() {
             @Override
             public void callStarted(boolean incoming) {
-                Main.onCallStart(incoming);
+                Calls.onCallStart(incoming);
             }
 
             @Override
             public void callEnded() {
-                Main.onCallEnd();
+                Calls.onCallEnd();
             }
 
             @Override

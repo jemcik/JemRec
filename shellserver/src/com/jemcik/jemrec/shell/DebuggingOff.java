@@ -25,7 +25,7 @@ final class DebuggingOff {
 
     /** Start the wait for debugging off, unless one is waiting already. */
     static void goOffWhenFree() {
-        synchronized (Main.LOCK) {
+        synchronized (Calls.LOCK) {
             if (offWaiter != null) {
                 return;
             }
@@ -44,13 +44,13 @@ final class DebuggingOff {
      */
     private static void waitThenGoOff() {
         while (true) {
-            synchronized (Main.LOCK) {
+            synchronized (Calls.LOCK) {
                 if (!goingOff) {
                     offWaiter = null;
                     Ln.i("debugging off: called off before it happened");
                     return;
                 }
-                if (!Main.busyLocked()) {
+                if (!Calls.busyLocked()) {
                     break;
                 }
             }
@@ -61,7 +61,7 @@ final class DebuggingOff {
         // And asked once more, last thing: an On whose cancel came after the
         // wait above ended would otherwise find debugging switched off under
         // it, the switches it had just put back gone again.
-        synchronized (Main.LOCK) {
+        synchronized (Calls.LOCK) {
             if (!goingOff) {
                 offWaiter = null;
                 Ln.i("debugging off: called off just before it happened");

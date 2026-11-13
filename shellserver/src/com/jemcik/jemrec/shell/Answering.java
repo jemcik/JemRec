@@ -40,8 +40,8 @@ final class Answering {
     @SuppressWarnings("NonAtomicVolatileUpdate")
     static void onChunk(short[] pcm, int frames, long atMs) {
         long chunkMs = frames * 1000L / AudioConfig.SAMPLE_RATE;
-        if (Main.captureStartedAt == 0) {
-            Main.captureStartedAt = atMs - chunkMs;
+        if (Calls.captureStartedAt == 0) {
+            Calls.captureStartedAt = atMs - chunkMs;
         }
         AnswerMachine machine = answerMachine;
         if (machine == null || !machine.answeredThisCall()) {

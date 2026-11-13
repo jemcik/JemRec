@@ -52,7 +52,7 @@ XR	"RESULT 1"	"RESULT 1 state="	RESULT 1 state=done route=1 realms=9416 audioms=
 XF	startsWith("FWD ")	Wire.fwd(telephony == null	FWD error no-telephony
 XS	startsWith("FWD ")	Wire.fwd("error bad-seconds")	FWD error bad-seconds
 XP	startsWith("SIMS")	static final String SIMS = "SIMS"	SIMS default=1 1|SIM_1 2|SIM_2
-E	-	Wire.mode(Main.recordingMode)	1
+E	-	Wire.mode(Calls.recordingMode)	1
 L	-	os.write((name + "\n")	jemrec_rec_1761990000000_in.dat
 S	-	((name != null ? name : "") + "\n")	jemrec_rec_1761990000000_out.dat
 C	-	Wire.reply(client.getOutputStream(), Reports.reportText())	Recorded by build 1a2b3c4d

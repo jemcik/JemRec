@@ -176,7 +176,7 @@ final class LoopbackServer {
     /** Log a refused connection - throttled, counted, and with the uid that
      *  made it, which is the one fact worth having about a refusal. */
     static void refuse(Socket client, String why) {
-        synchronized (Main.LOCK) {
+        synchronized (Calls.LOCK) {
             refusals++;
             long now = System.currentTimeMillis();
             if (now - lastRefusalLog < REFUSAL_LOG_GAP_MS) {

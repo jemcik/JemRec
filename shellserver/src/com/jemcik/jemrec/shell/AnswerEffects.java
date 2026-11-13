@@ -62,7 +62,7 @@ final class AnswerEffects implements AnswerMachine.Effects {
 
     @Override
     public boolean otherAppCallUp() {
-        if (Main.callVoipApp != null) {
+        if (Calls.callVoipApp != null) {
             // A messenger call this process is recording.
             return true;
         }
@@ -241,14 +241,14 @@ final class AnswerEffects implements AnswerMachine.Effects {
     @Override
     public void callTaken() {
         AnswerMachine machine = Answering.answerMachine;
-        if (machine != null && CallDecisions.splitsOffMessage(Main.recordingMode, machine.testing())) {
+        if (machine != null && CallDecisions.splitsOffMessage(Calls.recordingMode, machine.testing())) {
             // Ask first: the message ends where the user took the call,
             // and the call is theirs to record or not - asked, as at the
             // start of any call. Answering machines have always stopped
             // recording when picked up. Off the looper: stopping the
             // encoder can take a moment.
             AnswerMachine.Outcome part = machine.messageSoFar();
-            new Thread(() -> Main.splitOffMessage(part), "jemrec-split").start();
+            new Thread(() -> Calls.splitOffMessage(part), "jemrec-split").start();
             return;
         }
         Wakes.wake(Wakes.ACTION_MESSAGE_TAKEN, true, "", null);

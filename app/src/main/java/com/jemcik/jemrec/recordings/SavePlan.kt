@@ -302,7 +302,7 @@ internal object SavePlan {
      * answered call's alone. A call answered during it - a waiting one, which
      * takes the message over - has its first moments in the file, recorded
      * before the recorder heard of it: no message, and in Ask first never
-     * asked for (Main.splitOffMessage).
+     * asked for (Calls.splitOffMessage).
      *
      * Placed by the packets' own stamps, with the clocks' offset from
      * Telecom's account (PacketClock, issue #40). A message is cut by
