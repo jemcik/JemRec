@@ -274,6 +274,16 @@ final class Commands {
             AnswerMachine machine = Answering.answerMachine;
             if (machine == null) {
                 Answering.answerSettings = settings;
+                // A machine made meanwhile - the call watch starting, which
+                // configures it from the settings it finds - may have found
+                // the ones before these: given these too.
+                AnswerMachine made = Answering.answerMachine;
+                if (made != null) {
+                    Answering.onMain(() -> {
+                        made.configure(settings.on, settings.maxMessageSeconds * 1000L);
+                        return null;
+                    });
+                }
             } else {
                 // Taken with the machine's own, on its thread: a hop given
                 // up on (Hop) takes none of it, where the route, and WATCH's

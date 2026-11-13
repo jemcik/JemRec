@@ -21,7 +21,9 @@ final class Answering {
     /** The microphone can be muted from here (the audio context rebound).
      *  Without that, nothing is answered: the caller would hear the room. */
     static volatile boolean muteReady;
-    static @Nullable AnswerMachine answerMachine;
+    /** Made by the call watch's start, on the main thread, after the port is
+     *  open: read on the sessions' threads too. */
+    static volatile @Nullable AnswerMachine answerMachine;
 
     static final GreetingPlayer greetingPlayer = new GreetingPlayer();
 

@@ -19,7 +19,7 @@ final class CallDecisions {
      *   OFF       - captures nothing (the recorder switch is off).
      *   AUTOMATIC - records from off-hook, every call.
      *   ON_DEMAND - records NOTHING until the user answers a start-of-call
-     *               prompt with yes, which arrives as COMMAND_START. So a
+     *               prompt with yes, which arrives as Wire.COMMAND_START. So a
      *               declined call is never written to disk at all.
      *
      * OFF UNTIL TOLD OTHERWISE. This defaulted to AUTOMATIC, with the app

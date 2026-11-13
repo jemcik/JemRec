@@ -59,7 +59,7 @@ final class Reports {
         }
     }
 
-    /** The answer to COMMAND_REPORT: this recorder's build, then the call in
+    /** The answer to Wire.COMMAND_REPORT: this recorder's build, then the call in
      *  memory, or the one kept. */
     static String reportText() {
         return "Recorder: build " + Main.BUILD + "\n" + lastCallText();

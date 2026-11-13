@@ -22,7 +22,7 @@ final class AnswerEffects implements AnswerMachine.Effects {
 
     // The same names as the fields of Platform they are taken from, on
     // purpose: inside this class every use is of the copy, which cannot
-    // be null - startCallWatcher makes this only once it has all four,
+    // be null - CallWatch.startCallWatcher makes this only once it has all four,
     // and Platform's own stay null if anything before them fails.
     private final Handler mainHandler;
     private final AudioManager callAudio;

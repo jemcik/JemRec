@@ -87,7 +87,7 @@ final class Calls {
     }
 
     /** Off-hook handling, by mode: automatic records at once; on-demand asks
-     *  first and records nothing until the yes comes back as COMMAND_START. */
+     *  first and records nothing until the yes comes back as Wire.COMMAND_START. */
     static void onCallStart(boolean incoming) {
         onCallStart(incoming, null, null);
     }

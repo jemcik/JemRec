@@ -188,7 +188,7 @@ public final class Main {
 
             // The daemon survives the app being killed in the background, so it
             // is where the app's own death can be seen and the user told. See
-            // watchBackgroundKill.
+            // KillWatch.watchBackgroundKill.
             Thread killWatch = new Thread(KillWatch::watchBackgroundKill, "jemrec-killwatch");
             killWatch.setDaemon(true);
             killWatch.start();

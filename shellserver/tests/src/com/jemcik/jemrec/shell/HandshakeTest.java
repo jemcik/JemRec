@@ -83,8 +83,9 @@ public class HandshakeTest {
     @Test
     public void theWholeExchangeIsTheVectors() throws IOException {
         // The app's nonce and proof in, the recorder's nonce and proof out -
-        // sent, and flushed, before the client's proof is read: the client
-        // sends its proof only once it has the recorder's.
+        // written, and flushed, before the client's proof is read: the client
+        // sends its proof only once it has the recorder's, so written after
+        // the read, every connection would wait out its timeout.
         ByteArrayInputStream in = new ByteArrayInputStream(concat(hex("client_nonce"), hex("client_proof")));
         int[] sentAt = {-1};
         int[] readAt = {-1};

@@ -11,7 +11,7 @@ final class DebuggingOff {
     private DebuggingOff() {
     }
 
-    /** Set by COMMAND_DEBUGGING_OFF: the switches go off the first moment
+    /** Set by Wire.COMMAND_DEBUGGING_OFF: the switches go off the first moment
      *  nothing is in progress. */
     static volatile boolean goingOff;
 

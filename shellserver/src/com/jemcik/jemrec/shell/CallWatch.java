@@ -116,7 +116,7 @@ final class CallWatch extends TelephonyCallback
     static @Nullable CallWatch callWatch;
 
     /**
-     * WHAT THE CALL WATCH HAS HEARD, FOR THE APP'S SELF-TEST. See COMMAND_WATCH.
+     * WHAT THE CALL WATCH HAS HEARD, FOR THE APP'S SELF-TEST. See Wire.COMMAND_WATCH.
      *
      * A deaf watch is otherwise invisible: the daemon answers pings and the
      * self-test's live capture works, because neither involves the watch. These
