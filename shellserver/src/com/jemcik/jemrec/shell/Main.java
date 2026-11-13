@@ -56,19 +56,6 @@ public final class Main {
 
     static final int DEFAULT_PORT = 28472;
 
-    /**
-     * Send uncompressed PCM instead of Opus. Diagnostics only, selected by
-     * passing "raw" as the second argument.
-     *
-     * It exists because the question worth answering is not "did
-     * audio arrive" but "are BOTH directions of the call present", and that is
-     * a claim about the two channels of a stereo stream. Measuring per-channel
-     * energy on 16-bit PCM answers it arithmetically; doing the same through an
-     * Opus decoder means trusting the decoder as well as the capture. Opus
-     * remains the default and is what recordings are actually made in.
-     */
-    static boolean rawMode;
-
     private Main() {
         // not instantiable
     }
@@ -132,16 +119,13 @@ public final class Main {
                 }
             });
 
-            // Two optional positional arguments, and deliberately not a parser:
+            // One optional positional argument, and deliberately not a parser:
             // scrcpy's Options is 707 lines of command-line handling that also
             // reaches into the video, camera and display types, and dropping it
             // is what makes this fork small enough to review.
             int port = DEFAULT_PORT;
             if (args.length > 0) {
                 port = Integer.parseInt(args[0]);
-            }
-            if (args.length > 1) {
-                rawMode = "raw".equalsIgnoreCase(args[1]);
             }
 
             // Installs the fake ActivityThread and app context that let a

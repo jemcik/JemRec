@@ -6,7 +6,6 @@ import com.genymobile.scrcpy.audio.AudioCapture;
 import com.genymobile.scrcpy.audio.AudioCodec;
 import com.genymobile.scrcpy.audio.AudioDirectCapture;
 import com.genymobile.scrcpy.audio.AudioEncoder;
-import com.genymobile.scrcpy.audio.AudioRawRecorder;
 import com.genymobile.scrcpy.device.Streamer;
 import com.genymobile.scrcpy.util.Ln;
 
@@ -97,16 +96,14 @@ final class Commands {
             // daemon writes them to a file (see startRecording) - but the app's
             // self-test still records a short clip this way to prove the HAL will
             // hand over voice-call audio at all.
-            AudioCodec codec = Main.rawMode ? AudioCodec.RAW : RecordingSession.AUDIO_CODEC;
+            AudioCodec codec = RecordingSession.AUDIO_CODEC;
             Ln.i("session: live capture, source=" + RecordingSession.AUDIO_SOURCE + " codec=" + codec);
             AudioCapture capture = new AudioDirectCapture(RecordingSession.AUDIO_SOURCE);
             capture.checkCompatibility();
             ParcelFileDescriptor pfd = ParcelFileDescriptor.fromSocket(client);
             try {
                 Streamer streamer = new Streamer(pfd.getFileDescriptor(), codec, RecordingSession.SEND_CODEC_META, RecordingSession.SEND_FRAME_META);
-                AsyncProcessor recorder = Main.rawMode
-                        ? new AudioRawRecorder(capture, streamer)
-                        : new AudioEncoder(capture, streamer, RecordingSession.BIT_RATE, null, null);
+                AsyncProcessor recorder = new AudioEncoder(capture, streamer, RecordingSession.BIT_RATE, null, null);
                 CountDownLatch finished = new CountDownLatch(1);
                 recorder.start(fatalError -> finished.countDown());
                 finished.await();
@@ -289,17 +286,11 @@ final class Commands {
         if (command == Wire.COMMAND_GO_AHEAD) {
             DataInputStream in = new DataInputStream(client.getInputStream());
             int delay = in.readInt();
-            // When the app saw the ring - eight more bytes, from 0.17 on.
-            long rangAt;
-            try {
-                rangAt = in.readLong();
-            } catch (java.io.EOFException e) {
-                rangAt = 0;
-            }
+            // When the app saw the ring: eight more bytes, sent since 0.17.
             // On the machine's clock as it comes: SystemClock.elapsedRealtime,
             // since boot, is the same clock in the app and here - and a
             // wall-clock step between the ring and now cannot move it.
-            final long rang = rangAt;
+            final long rang = in.readLong();
             AnswerMachine machine = Answering.answerMachine;
             if (machine == null) {
                 reply(client, Wire.go(null));
@@ -354,8 +345,8 @@ final class Commands {
 
     /**
      * 'G': the greeting. 'Q' how long it is; 'R' and 'S' start and stop a take
-     * from the microphone; 'T' the take, 'F' the greeting, each as four bytes
-     * of length and the PCM; 'P' a new greeting, the same way in; 'D' deletes.
+     * from the microphone; 'T' the take, as four bytes of length and the PCM;
+     * 'P' a new greeting, the same way in; 'D' deletes.
      */
     private static void greeting(Socket client) throws IOException {
         DataInputStream in = new DataInputStream(client.getInputStream());
@@ -371,8 +362,7 @@ final class Commands {
                 reply(client, Wire.taken(Greeting.stopTake()));
                 break;
             case 'T':
-            case 'F':
-                sendFile(client, what == 'T' ? Greeting.TAKE : Greeting.FILE);
+                sendFile(client, Greeting.TAKE);
                 break;
             case 'P':
                 // A whole greeting over loopback takes a moment at most.
