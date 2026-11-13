@@ -431,13 +431,10 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
             row {
                 SwitchRow(
                     title = "Hide the debugging notification",
-                    summary = if (state.debugNotificationProblem) {
-                        "Could not turn this on: it needs Wi-Fi. Try again on Wi-Fi."
-                    } else {
-                        "Debugging stays on for recording, so a paired computer can " +
-                            "still connect on Wi-Fi"
-                    },
-                    summaryColor = if (state.debugNotificationProblem) {
+                    summary = state.debugNotificationProblem?.let(::grantProblem)
+                        ?: ("Debugging stays on for recording, so a paired computer can " +
+                            "still connect on Wi-Fi"),
+                    summaryColor = if (state.debugNotificationProblem != null) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -502,6 +499,17 @@ private const val KEPT_AND_TRASH = "Recordings you mark to keep are never remove
 
 /** An age to choose, in the header's words for it (ageWords) - or Never. */
 private fun ageChoice(days: Int): String = if (days == 0) "Never" else ageWords(days)
+
+/**
+ * Why a switch that needs notification access was not turned on
+ * (Setup.grantNotificationAccess), in one wording for both. It said "it
+ * needs Wi-Fi" for every failure, on Wi-Fi too, where what was missing was
+ * Wireless debugging, and the recorder grants it now without either.
+ */
+internal fun grantProblem(problem: Setup.GrantProblem): String = when (problem) {
+    Setup.GrantProblem.NO_ANSWER -> "Could not turn this on: the recorder did not answer. Try again once JemRec is ready to record."
+    Setup.GrantProblem.REFUSED -> "Could not turn this on: Android refused it."
+}
 
 /** A format's name - the same words in the dialog and on the row, so the row
  *  shows the option that was picked. */
@@ -938,12 +946,9 @@ fun MessengerCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier =
                 row {
                     SwitchRow(
                         title = "Show who called",
-                        summary = if (state.voipNamesProblem) {
-                            "Could not turn this on: it needs Wi-Fi. Try again on Wi-Fi."
-                        } else {
-                            "From each app's call notification"
-                        },
-                        summaryColor = if (state.voipNamesProblem) {
+                        summary = state.voipNamesProblem?.let(::grantProblem)
+                            ?: "From each app's call notification",
+                        summaryColor = if (state.voipNamesProblem != null) {
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant

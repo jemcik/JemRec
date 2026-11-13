@@ -1,8 +1,10 @@
 package com.jemcik.jemrec.contract
 
+import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.capture.CaptureDaemon
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,10 +14,9 @@ import org.junit.Test
  *
  * The app and the recorder each write the protocol by hand, and the app never
  * compiles the recorder's sources: a reply reworded on one side compiles, and
- * every test of the side it was changed on passes. Until the 1.0 restructuring
- * moves the recorder's formatting where daemon-tests can run it,
- * this checks the text each side has for every reply, and reads every example
- * with the app's own parsers.
+ * every test of the side it was changed on passes. This checks the text each
+ * side has for every reply, and reads every example with the app's own
+ * parsers; the recorder's WireTest builds every example with its own Wire.
  */
 class ProtocolTest {
 
@@ -71,6 +72,12 @@ class ProtocolTest {
         assertEquals("HONOR", diag!!["maker"])
         val result = CaptureDaemon.fields(example("XR", "RESULT"), "RESULT 1")
         assertEquals("done", result!!["state"])
+        // Named as the recorder sends them: the call type is read from these two.
+        assertEquals("2G", AnswerDiagnostics.callType(result["voice"]!!.toInt(), result["wifi"]!!.toInt()))
+
+        assertEquals(true, CaptureDaemon.parseListenerReply(example("B", "LISTENER ok")))
+        assertEquals(false, CaptureDaemon.parseListenerReply(example("B", "LISTENER failed")))
+        assertNull(CaptureDaemon.parseListenerReply("LISTENER maybe"))
 
         val sims = CaptureDaemon.parseSims(example("XP", "SIMS"))
         assertEquals("1", sims!!.defaultId)

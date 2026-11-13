@@ -49,9 +49,11 @@ import com.jemcik.jemrec.calls.VoipCallNotes
  *
  * Notification access is a Settings switch that, for a side-loaded app, is
  * greyed out under "restricted settings" exactly like accessibility was. It is
- * not granted through Settings. The app grants it over its own ADB shell with
- * `cmd notification allow_listener` - during setup when the answer was yes,
- * the same way it grants itself WRITE_SECURE_SETTINGS, or from Settings later.
+ * not granted through Settings. The shell grants it with `cmd notification
+ * allow_listener` - during setup when the answer was yes, over the app's own
+ * ADB shell, the same way it grants itself WRITE_SECURE_SETTINGS; from
+ * Settings later, the recorder, which is the shell too
+ * (Setup.grantNotificationAccess).
  * Granting alone does not bind the service on this ROM, so apply() toggles the
  * component's enabled state to force the bind.
  *
@@ -197,7 +199,7 @@ class DebugNotificationCleaner : NotificationListenerService() {
         /**
          * Make the listener match the answer. Safe to run on every open.
          *
-         * On a yes, force it to bind. Access is granted over ADB, but this ROM
+         * On a yes, force it to bind. Access is granted by the shell, but this ROM
          * does not then bind the service on the grant alone - measured:
          * allow-listed, app running, and the banner still there. Toggling the
          * component's enabled state makes NotificationManagerService

@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap
  * The app's presence during a call: a foreground service that exists for the
  * length of the call, shows what is happening to it, and collects the recording
  * when it ends. The shell-side daemon does the watching and the recording; this
- * is woken by it (see Main.startCallWatcher) and is never on the audio path.
+ * is woken by it (see CallWatch.startCallWatcher) and is never on the audio path.
  *
  * WHY THE APP CANNOT SIMPLY BE WOKEN BY A BROADCAST
  *

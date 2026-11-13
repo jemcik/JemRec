@@ -32,6 +32,7 @@ object AnswerDiagnostics {
 
     private const val KEY_STAGE_ONE = "answer_stage_one"
     private const val KEY_RESULT = "answer_result_"
+    private const val KEY_MIXER = "answer_mixer_"
     private const val KEY_TEST = "answer_test"
 
     enum class Verdict {
@@ -109,9 +110,19 @@ object AnswerDiagnostics {
         return if (result["tone"] == "1") Verdict.WORKS else Verdict.LIKELY
     }
 
-    /** The call's type from telephony's voice network type: the audio path
-     *  differs between them. */
-    fun callType(voice: Int): String = when (voice) {
+    /** The arming a recorder's result is for (the id the app sent with it),
+     *  or null from a recorder before 0.31, which names none. Pure. */
+    fun arming(result: Map<String, String>): Long? = result["arming"]?.toLongOrNull()
+
+    /**
+     * The call's type: the audio path differs between them. Wi-Fi Calling
+     * where Telecom marked the call so ([wifi] 1, read by the recorder
+     * mid-greeting, with the route); else from telephony's voice network type ([voice]),
+     * which a Galaxy S23 gave as LTE for a test call Telecom had on Wi-Fi
+     * from its start (2026-11-12). No mark ([wifi] 0, or -1: not read, or a recorder before
+     * 0.31, which sends none) leaves the voice type to say, as before. Pure.
+     */
+    fun callType(voice: Int, wifi: Int): String = if (wifi == 1) "Wi-Fi Calling" else when (voice) {
         1, 2, 4, 7, 11, 16 -> "2G"
         3, 5, 6, 8, 9, 10, 12, 14, 15, 17 -> "3G"
         13 -> "VoLTE"
@@ -134,9 +145,27 @@ object AnswerDiagnostics {
 
     fun rawStageOne(context: Context): String? = Prefs.of(context).getString(KEY_STAGE_ONE, null)
 
-    fun record(context: Context, callType: String, verdict: Verdict) {
-        Prefs.of(context).edit { putString(KEY_RESULT + callType, verdict.name) }
+    /** [mixer]: the test's greeting went to a call through the mixer, whose
+     *  route is the call-screening one whatever this app's (the recorder's
+     *  CallDecisions.greetingRoute); null keeps what its measurement noted,
+     *  for the caller's answer to the same test. */
+    fun record(context: Context, callType: String, verdict: Verdict, mixer: Boolean? = null) {
+        Prefs.of(context).edit {
+            putString(KEY_RESULT + callType, verdict.name)
+            when (mixer) {
+                true -> putBoolean(KEY_MIXER + callType, true)
+                false -> remove(KEY_MIXER + callType)
+                null -> Unit
+            }
+        }
     }
+
+    /** The call types whose last test went to a call through the mixer. */
+    fun mixerTypes(context: Context): Set<String> =
+        Prefs.of(context).all.entries
+            .filter { it.key.startsWith(KEY_MIXER) }
+            .map { it.key.removePrefix(KEY_MIXER) }
+            .toSet()
 
     /**
      * A test call not yet done with, kept past the screen that armed it: the
@@ -199,11 +228,34 @@ object AnswerDiagnostics {
     }
 
     /** Each call type tested, and how it came out. */
-    fun results(context: Context): Map<String, Verdict> =
-        Prefs.of(context).all.entries
+    fun results(context: Context): Map<String, Verdict> {
+        AnsweringMachine.settleRoutesByPath(context)
+        return Prefs.of(context).all.entries
             .filter { it.key.startsWith(KEY_RESULT) }
             .mapNotNull { e -> (e.value as? String)?.let { v -> runCatching { e.key.removePrefix(KEY_RESULT) to Verdict.valueOf(v) }.getOrNull() } }
             .toMap()
+    }
+
+    /** The keys of every test result and its mark, and of a test still to
+     *  be read or asked about - its question answered after a clearing would
+     *  file the route before it under the one after - for a clearing
+     *  (AnsweringMachine.settleRoutesByPath). */
+    internal fun resultKeys(context: Context): List<String> =
+        Prefs.of(context).all.keys.filter { it.startsWith(KEY_RESULT) || it.startsWith(KEY_MIXER) || it == KEY_TEST }
+
+    /**
+     * Whether a phone's route and test results from before 0.31 are put
+     * back (AnsweringMachine.settleRoutesByPath): it is on the call-screening
+     * route ([route]) though the checks found in-call music ([stage]) - which
+     * only a failed test does (routeAfterFailure; routeAfterChecks moves to it
+     * only where there is none). Not where the checks could not read the
+     * audio setup: a failed test moved those too, but so may checks run
+     * again after a first run found no in-call music output, and put back on
+     * in-call music, a phone without one would have every greeting fail and
+     * the caller hung up on. Pure.
+     */
+    fun resetsForRoutesByPath(route: String, stage: StageOne?): Boolean =
+        route == AnsweringMachine.ROUTE_SCREENING && stage?.inCallMusic == true
 
     /**
      * The route to switch to once the no-call checks found [stage], with
@@ -224,10 +276,24 @@ object AnswerDiagnostics {
      * fails too. Back as well where the checks ([stage]) could not read the
      * audio setup: no "no" to in-call music, as for the switch
      * (StageOne.possible). On the Honor the screening route reached nobody
-     * (docs/ARCHITECTURE.md).
+     * (docs/ARCHITECTURE.md). A test of a call through the mixer ([mixer]:
+     * the types whose last test went there) had the call-screening route
+     * whatever [route]: neither its failure nor its pass is this route's. A
+     * Galaxy S23 passed over Wi-Fi Calling there, which kept the route
+     * through a failure over VoLTE that only the other route mends
+     * (2026-11-13).
      */
-    fun routeAfterFailure(route: String, stage: StageOne?, results: Map<String, Verdict>, type: String): String? {
-        val passedElsewhere = results.any { (other, v) -> other != type && (v == Verdict.WORKS || v == Verdict.LIKELY) }
+    fun routeAfterFailure(
+        route: String,
+        stage: StageOne?,
+        results: Map<String, Verdict>,
+        type: String,
+        mixer: Set<String> = emptySet(),
+    ): String? {
+        if (type in mixer) return null
+        val passedElsewhere = results.any { (other, v) ->
+            other != type && other !in mixer && (v == Verdict.WORKS || v == Verdict.LIKELY)
+        }
         return when {
             passedElsewhere -> null
             route == AnsweringMachine.ROUTE_MUSIC && stage?.screening == true -> AnsweringMachine.ROUTE_SCREENING
@@ -253,7 +319,13 @@ object AnswerDiagnostics {
 
     /** Everything a report needs, for the user to paste into an issue.
      *  Nothing about calls or people: the phone, and what was measured. */
-    fun report(stageOneLine: String?, results: Map<String, Verdict>, route: String, appVersion: String): String =
+    fun report(
+        stageOneLine: String?,
+        results: Map<String, Verdict>,
+        route: String,
+        appVersion: String,
+        mixer: Set<String> = emptySet(),
+    ): String =
         buildString {
             appendLine("JemRec $appVersion - answering machine report")
             appendLine("Checks: ${stageOneLine ?: "not run"}")
@@ -261,7 +333,9 @@ object AnswerDiagnostics {
             if (results.isEmpty()) {
                 appendLine("Test calls: none yet")
             } else {
-                results.entries.sortedBy { it.key }.forEach { (type, v) -> appendLine("Test call on $type: $v") }
+                results.entries.sortedBy { it.key }.forEach { (type, v) ->
+                    appendLine("Test call on $type: $v" + if (type in mixer) " (through the mixer)" else "")
+                }
             }
         }.trimEnd()
 }

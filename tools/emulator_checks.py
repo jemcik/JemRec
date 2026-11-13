@@ -486,6 +486,14 @@ def undelivered():
     return float(m.group(1)) if m else 0.0
 
 
+def recording_start():
+    """When the recording just saved began, in ms on the wall clock: the
+    daemon's own stamp in its file's name (jemrec_rec_<ms>_...); None if no
+    save line names one."""
+    m = re.search(r"save: wrote \d+ packets, [\d.]+s from \S*?_rec_(\d+)_", log())
+    return int(m.group(1)) if m else None
+
+
 def accounted():
     """The time the app's clock says the capture left out of the daemon's
     file - before its first packet and in its gaps (PacketClock) - against
@@ -512,11 +520,18 @@ def accounted():
 def exact(name_part):
     """Saved, named with [name_part], and as long as Telecom says the call
     was - less what the capture itself never delivered inside it, which no
-    cut can put back. The Android 13 emulator's capture loses ~0.7 s just
-    after an incoming call goes off-hook, every call (2026-10-24: the
-    stamps jump, and the beep's one-second rhythm shows a merged tone);
-    0.19.2, placing packets by counting, filled it with audio from after
-    the hang-up and came out the right length."""
+    cut can put back, and less what came before the recording began: an
+    incoming call is recorded from the off-hook the recorder hears, and on
+    the Android 13 emulator that came 0.15 to 0.64 s after Telecom marked the
+    call active, the call's first moment gone before there was a recording
+    (2026-11-13: in six runs, on this tree and the one before it, what the
+    check found missing was that delay, within 0.04 s; 0.01 and 0.04 s on
+    the 12 and 16 emulators). More than LATE_START_S of it fails: JemRec
+    starting late. The Android 13 emulator's capture loses ~0.7 s just after
+    an incoming call goes off-hook, every call (2026-10-24: the stamps jump,
+    and the beep's one-second rhythm shows a merged tone); 0.19.2, placing
+    packets by counting, filled it with audio from after the hang-up and
+    came out the right length."""
     packets, _, name = saved()
     seconds = packets * 0.020  # one Opus packet, 20 ms
     lost = undelivered()
@@ -528,8 +543,17 @@ def exact(name_part):
     talk = (ended - answered) / 1000
     assert name_part in name, f"saved as {name}, wanted {name_part!r} in it"
     gone = f" + {lost:.2f} s the capture did not deliver" if lost else ""
-    assert abs(seconds + lost - talk) <= 0.15, f"{seconds:.2f} s saved{gone} for {talk:.2f} s of call"
-    return f"{name}: {seconds:.2f} s{gone} for {talk:.2f} s answered" + (f" ({agreed})" if lost else "")
+    start = recording_start()
+    late = max(0.0, (start - answered) / 1000) if start else 0.0
+    began = f" + {late:.2f} s before the recording began" if late >= 0.05 else ""
+    assert late <= LATE_START_S, f"the recording began {late:.2f} s after the answer"
+    assert abs(seconds + lost + late - talk) <= 0.15, f"{seconds:.2f} s saved{gone}{began} for {talk:.2f} s of call"
+    return f"{name}: {seconds:.2f} s{gone}{began} for {talk:.2f} s answered" + (f" ({agreed})" if lost else "")
+
+
+# The most of a call that may pass before its recording begins (exact): the
+# Android 13 emulator's late off-hook came to 0.64 s at most (2026-11-13).
+LATE_START_S = 1.0
 
 
 # --- the checks --------------------------------------------------------------------
@@ -695,15 +719,17 @@ def no_call_left():
     wait_for(phone_idle, 10, "the phone to be idle")
 
 
-def answering_on():
-    """A three-second greeting (two tones), the answering machine on after
-    five seconds, and both given to the recorder through the app."""
+def answering_on(seconds=3):
+    """A greeting of two tones, three seconds unless [seconds], the
+    answering machine on after five seconds, and both given to the recorder
+    through the app."""
     no_call_left()
     import math
     import struct
     import tempfile
     rate = 48000
-    frames = [int(6000 * math.sin(2 * math.pi * (440 if i < rate * 1.5 else 660) * i / rate)) for i in range(rate * 3)]
+    frames = [int(6000 * math.sin(2 * math.pi * (440 if i < rate * seconds / 2 else 660) * i / rate))
+              for i in range(rate * seconds)]
     with tempfile.NamedTemporaryFile(suffix=".pcm", delete=False) as f:
         f.write(struct.pack("<%dh" % len(frames), *frames))
     adb("push", f.name, GREETING, check=True)
@@ -711,6 +737,9 @@ def answering_on():
     set_prefs(answer_delay_s=5)
     said = diag("answer", "--es", "greeting", GREETING)
     assert "recorder took it: true" in said and "wire 1," in said, said
+    # All of it: a greeting the recorder refuses (Greeting.MAX_BYTES) leaves
+    # it the one before, and the check after runs on that.
+    assert f"recorder has {rate * seconds * 2} bytes" in said, said
 
 
 def mic_unmuted():
@@ -746,6 +775,135 @@ def _answering():
 
     wait_for(marked, 5, f"{name} to be marked as a message")
     return "message saved, marked, microphone back"
+
+
+def test_call_wifi():
+    try:
+        return _test_call_wifi()
+    finally:
+        no_call_left()
+
+
+def _test_call_wifi():
+    """The answering machine's test call, armed as the screen arms it, the
+    machine itself off as on a phone not yet set up: the next call answered
+    with the check tone and the greeting, and mid-greeting Telecom's list of
+    the calls there are now read for the active call's Wi-Fi mark
+    (Checks.callOnWifi) - what the voice network type cannot give: a Galaxy S23 said LTE for a test call on Wi-Fi from its start
+    (2026-11-12). The emulator's call is its modem's, never on Wi-Fi: "no"
+    says the list was found and the call in it read on this Android, where
+    "cannot tell" would leave the call's type to the voice network type
+    again. Straight to the recorder: no result kept in the app, no route of
+    its changed."""
+    answering_on()
+    said = diag("answer", "--ez", "on", "false")
+    assert "recorder took it: true" in said, said
+    time.sleep(10)  # past CallTracker's RECENT_END_MS from the call before
+    arming = int(time.time() * 1000)
+    said = diag("armtest", "--el", "arming", str(arming))
+    assert "ARMED" in said, said
+    sh("logcat -c")
+    adb("emu", "gsm", "call", STRANGER_IN)
+    wait_log(r"answer: answering", 20, "the test call to be answered")
+    # The emulator's call takes its voice path: the app's route, not the
+    # call-screening one a call through the mixer gets.
+    m = wait_log(r"answer: the greeting on route (\w+) \(([^)]*)\)", 30, "the greeting to start")
+    assert m.group(2) == "the call's voice path", f"the emulator's call read as {m.group(2)}"
+    # Only a test call reads this, so it is the test that answered.
+    m = wait_log(r"answer: test call on Wi-Fi: (yes|no|cannot tell)", 30, "Telecom's list of calls to be read")
+    assert m.group(1) == "no", f"the emulator's call read as on Wi-Fi: {m.group(1)}"
+    wait_log(r"answer: greeting played", 30, "the greeting to play")
+    adb("emu", "gsm", "cancel", STRANGER_IN)
+    wait_log(r"answer: test call over", 30, "the test call to end")
+    result = diag("testresult")
+    assert "state=done" in result and f"arming={arming}" in result and "wifi=0" in result, result
+    assert "mixer=0" in result, result
+    return ("answered, the greeting played on the call's voice path, its call read in Telecom's list as not on"
+            " Wi-Fi")
+
+
+def greeting_moves():
+    try:
+        return _greeting_moves()
+    finally:
+        fake_call_down()
+        no_call_left()
+        set_prefs(answer_route=None)
+
+
+def _greeting_moves():
+    """The call moving under its greeting, as a call handed over from LTE to
+    Wi-Fi takes communication mode: a test call answered on its voice path,
+    then the stand-in call taking "communication" as the shell over it, then
+    letting it go. On Android 14 and later the machine, told by Android's
+    mode listener, takes the phone call for gone through the mixer
+    (AnswerMachine.pathApplied): the greeting stops, plays again on the
+    call-screening route, and stops and plays again on the call's voice path
+    once the mode is back - the real listener, Telecom's questions, and a
+    call-screening track made for communication mode, which no unit test
+    runs. Before 14 a phone call never plays through the mixer here
+    (Checks.phoneCallPath): no move - but on 13 a call-screening greeting's
+    track is released as the mode leaves in call (AudioManager's
+    CallInjectionModeChangedListener), a cut, played again once the mode is
+    back. On 12, with no call-screening route, the greeting plays on. Never a
+    hang-up. The route is pinned to call-screening where there is one: the
+    emulator's default, in-call music, is released by no move, and the S23's
+    case - a call-screening greeting cut as its call moved - would go unrun."""
+    sdk = int(sh("getprop ro.build.version.sdk").strip())
+    copies = sdk >= 34
+    screening = sdk >= 33  # AudioManager.getCallUplinkInjectionAudioTrack
+    prepare_fake_call()
+    if screening:
+        set_prefs(answer_route="screening")
+    # Under Greeting.MAX_BYTES (30.5 s), long enough for both moves.
+    answering_on(seconds=25)
+    said = diag("answer", "--ez", "on", "false")
+    assert "recorder took it: true" in said, said
+    time.sleep(10)  # past CallTracker's RECENT_END_MS from the call before
+    arming = int(time.time() * 1000)
+    said = diag("armtest", "--el", "arming", str(arming))
+    assert "ARMED" in said, said
+    sh("logcat -c")
+    adb("emu", "gsm", "call", STRANGER_IN)
+    m = wait_log(r"answer: the greeting on route (\w+) \(the call's voice path\)", 30, "the greeting to start")
+    assert m.group(1) == ("screening" if screening else "music"), f"the greeting on route {m.group(1)}"
+    fake_call_up(tone=True)
+    if not copies:
+        # Back well inside the machine's 8 s wait for the call's audio: the
+        # cut comes as the mode is applied, before the stand-in says so.
+        time.sleep(1)
+        fake_call_down()
+        time.sleep(3)
+        cut = "the call's audio left" in log()
+        assert cut == screening, ("no cut of the call-screening track as communication mode came" if screening
+                                  else "a cut on Android 12, which has no call-screening track to release")
+        if cut:
+            wait_for(lambda: len(re.findall(r"answer: the greeting on route (\w+) \(the call's voice path\)",
+                                            log())) >= 2, 15, "the greeting again once the mode is back")
+        assert "the call moved" not in log(), "a phone call taken for gone through the mixer before Android 14"
+        hung = "hanging up" in log()
+        adb("emu", "gsm", "cancel", STRANGER_IN)
+        wait_log(r"answer: test call over", 30, "the test call to end")
+        assert not hung, "hung up on the caller as communication mode came and went"
+        return ("no move before Android 14; " + ("cut as its call-screening track went with the mode, played"
+                                                 " again once it was back" if cut else "the greeting played on"))
+    wait_log(r"answer: the greeting stopped \(the call moved (to the mixer|to its voice path)\)", 15,
+             "the move to stop the greeting")
+    m = wait_log(r"answer: the greeting on route (\w+) \(the call is through the mixer\)", 15,
+                 "the greeting again, for the mixer")
+    assert m.group(1) == "screening", f"the greeting through the mixer on route {m.group(1)}"
+    time.sleep(3)
+    assert "the greeting could not be played" not in log(), "the call-screening track for the mixer would not play"
+    fake_call_down()
+    wait_for(lambda: len(re.findall(r"answer: the greeting stopped \(the call moved (to the mixer|to its voice path)\)",
+                                    log())) >= 2, 15, "the move back to stop the greeting")
+    wait_for(lambda: len(re.findall(r"answer: the greeting on route (\w+) \(the call's voice path\)", log())) >= 2,
+             15, "the greeting again, on the call's voice path")
+    hung = "hanging up" in log()
+    adb("emu", "gsm", "cancel", STRANGER_IN)
+    wait_log(r"answer: test call over", 30, "the test call to end")
+    assert not hung, "hung up on the caller during the moves"
+    return "stopped and played again through the mixer on call-screening, and back on the call's voice path"
 
 
 def greeting_hangup():
@@ -830,10 +988,9 @@ def probe_stale():
     return False
 
 
-def fake_call_up(tone=False):
-    """A stand-in for a messenger call, run as the shell: the audio mode at
-    MODE_IN_COMMUNICATION, call audio playing - silence, or a tone - the
-    microphone open. Built and pushed under the build lock."""
+def prepare_fake_call():
+    """The stand-in call's jar built and pushed, under the build lock - ahead
+    of a call it must not keep waiting while it builds."""
     with build_lock():
         if probe_stale():
             built = subprocess.run(["bash", os.path.join(PROBE_DIR, "build-probe.sh")],
@@ -842,6 +999,13 @@ def fake_call_up(tone=False):
                 raise RuntimeError("could not build the stand-in call (JDK 21? set JEMREC_JAVA_HOME):\n"
                                    + built.stdout[-800:] + built.stderr[-800:])
         adb("push", PROBE_JAR, "/data/local/tmp/voip-probe.jar", check=True)
+
+
+def fake_call_up(tone=False):
+    """A stand-in for a messenger call, run as the shell: the audio mode at
+    MODE_IN_COMMUNICATION, call audio playing - silence, or a tone - the
+    microphone open."""
+    prepare_fake_call()
     sh(f"rm -f {FAKE_CALL_LOG}")
     sh("CLASSPATH=/data/local/tmp/voip-probe.jar setsid nohup app_process / "
        f"com.jemcik.jemrec.probe.FakeCallProbe 60{' tone' if tone else ''} < /dev/null > {FAKE_CALL_LOG} 2>&1 &")
@@ -1080,7 +1244,9 @@ def answer_takeover_ask_first():
         return _answer_takeover_ask_first()
     finally:
         set_prefs(recording_mode="AUTOMATIC")
-        diag("answer")  # the mode back on the recorder
+        # The mode back on the recorder, and the machine off again: on, it
+        # would answer the calls of the checks after this one.
+        diag("answer", "--ez", "on", "false")
         no_call_left()
 
 
@@ -2077,6 +2243,39 @@ def refused_grant():
             "Try again: granted, read back")
 
 
+def listener_grant():
+    """Notification access for the app's listener, granted by the recorder
+    (Wire.COMMAND_ALLOW_LISTENER), as Settings' Show who called and Hide the
+    debugging notification ask for it: taken away first, the app's ADB
+    session closed, then the app's grant (the debug op grantlistener, which
+    runs Setup.grantNotificationAccess). The recorder's own line says it
+    allowed it, the app's own line says it took the recorder's answer, and
+    Android's list holds it. The grant used to open an ADB session, which
+    needs Wireless debugging, and on the OnePlus, 2026-11-12, LineageOS had
+    switched that off by itself: Show who called said "it needs Wi-Fi", on
+    Wi-Fi. Android writes its list a moment after a grant or a withdrawal,
+    so it is waited for. What it was before is put back."""
+    component = f"{PKG}/{PKG}.capture.DebugNotificationCleaner"
+
+    def listed():
+        return component in sh("settings get secure enabled_notification_listeners")
+
+    before = listed()
+    sh(f"cmd notification disallow_listener {component}")
+    try:
+        wait_for(lambda: not listed(), 5, "the access taken away")
+        start_recorder()
+        diag("disconnect")
+        said = diag("grantlistener")
+        assert "granted" in said and "not granted" not in said, said
+        assert "listener: notification access allowed for the app" in log(), "the recorder did not say it allowed it"
+        assert "settings: notif listener -> the recorder said ok" in log(), "the app did not take the recorder's answer"
+        wait_for(listed, 5, "Android listing it")
+    finally:
+        sh(f"cmd notification {'allow' if before else 'disallow'}_listener {component}")
+    return "taken away, then allowed by the recorder with no ADB session, and in Android's list"
+
+
 def allow_this_wifi():
     """The header's Tap to allow this Wi-Fi, end to end, as 0.25.1 rewrote it:
     on a Wi-Fi Android has not allowed, with the recorder down and port 5555
@@ -2441,11 +2640,11 @@ def self_test():
 
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, number_names, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
-          answer_after_emergency, answer_takeover_ask_first, app_call, mode_switch, app_call_in_front, waveform,
+          answer_after_emergency, answer_takeover_ask_first, test_call_wifi, greeting_moves, app_call, mode_switch, app_call_in_front, waveform,
           background_playback, one_window,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
-          debugging_off, off_just_left, background, allow_this_wifi, refused_grant,
+          debugging_off, off_just_left, background, allow_this_wifi, refused_grant, listener_grant,
           # Last, these two: they turn the emulator's Wi-Fi off and on, and a
           # simulated Wi-Fi that does not come back would fail every check
           # after them.
@@ -2578,11 +2777,21 @@ def main():
     set_up(apk)
     reinstall.apk = apk
     checks = [c for c in CHECKS if not args.only or c.__name__ in args.only.split(",")]
-    if args.only and "succession" in args.only and "rules" not in args.only:
-        set_prefs(rules_other_numbers=False)  # what the rules check leaves behind
-        start_recorder()
     failed = 0
     for check in checks:
+        if args.only and check is succession and "rules" not in args.only.split(","):
+            # What the rules check leaves behind, which succession starts
+            # from - set just before it: before the run, it left out the
+            # stranger of a check picked to run ahead of it (incoming).
+            set_prefs(rules_other_numbers=False)
+            start_recorder()
+        if args.only and checks.index(check) > 0 and checks[checks.index(check) - 1] is succession \
+                and "caller_id" not in args.only.split(","):
+            # And taken off again after it, as caller_id, next in a full run,
+            # does: left on, they left out the stranger of a check picked to
+            # run after it (greeting_hangup, 2026-11-13).
+            set_prefs(rules_other_numbers=True)
+            start_recorder()
         try:
             nothing_pending()
             crashes = app_crashes()

@@ -7,6 +7,7 @@ import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.system.GlobalSettings
 
@@ -128,11 +129,11 @@ data class UiState(
     /** Whether a notification with Play, Share and Delete follows each call. */
     val afterCallNotice: Boolean = true,
     /**
-     * Turning the hiding on from Settings could not grant notification access,
-     * which takes an ADB session and so Wi-Fi. Shown under the switch until the
-     * next try.
+     * Turning the hiding on from Settings could not grant notification
+     * access, and why (Setup.grantNotificationAccess). Shown under the
+     * switch until the next try.
      */
-    val debugNotificationProblem: Boolean = false,
+    val debugNotificationProblem: Setup.GrantProblem? = null,
     /** Whether the call log has been offered to the app, and whether the
      *  one-time offer is still worth showing. */
     val canReadCallLog: Boolean = false,
@@ -202,9 +203,9 @@ data class UiState(
     val voipSupported: Boolean = true,
     val voipEnabled: Set<String> = emptySet(),
     val voipNames: Boolean = false,
-    /** Turning caller names on could not grant notification access, which
-     *  takes an ADB session and so Wi-Fi. */
-    val voipNamesProblem: Boolean = false,
+    /** Turning caller names on could not grant notification access, and
+     *  why, as debugNotificationProblem. */
+    val voipNamesProblem: Setup.GrantProblem? = null,
     /** This phone has Honor's Phone app, so its format is offered. */
     val honorDialer: Boolean = false,
     /** Recordings are going to the folder Honor's Phone app plays them from. */

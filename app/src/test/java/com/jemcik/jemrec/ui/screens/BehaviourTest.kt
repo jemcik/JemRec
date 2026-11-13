@@ -70,6 +70,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.capture.FakeRecorder
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.Recording
@@ -525,6 +526,30 @@ class BehaviourTest : ScreenTest() {
         compose.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
         compose.waitForIdle()
         assertNull(vm.answer.state.value.askHeard)
+    }
+
+    /** How a take made past its screen ended goes to the window in front:
+     *  one behind another, reading again as the take is made, leaves it; at
+     *  the front, it shows it. With two windows it went to whichever read
+     *  first. */
+    @Test fun aTakesEndingGoesToTheWindowInFront() {
+        val state = Fixtures.ready().copy(screen = Screen.ANSWERING_MACHINE)
+        val vm = viewModel(state)
+        val owner = object : LifecycleOwner {
+            val registry = LifecycleRegistry.createUnsafe(this).apply { currentState = Lifecycle.State.CREATED }
+            override val lifecycle: Lifecycle get() = registry
+        }
+        show { CompositionLocalProvider(LocalLifecycleOwner provides owner) { AnsweringMachineScreen(state, vm) } }
+        val take = Any()
+        compose.runOnUiThread { Greeting.make(take) }
+        compose.waitForIdle()
+        Greeting.ended("Nothing was heard. Hold the phone as for a call, and speak.")
+        compose.runOnUiThread { Greeting.made(take) }
+        compose.waitForIdle()
+        assertNull(vm.answer.state.value.greetingProblem)
+        compose.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
+        compose.waitForIdle()
+        assertEquals("Nothing was heard. Hold the phone as for a call, and speak.", vm.answer.state.value.greetingProblem)
     }
 
     @Test fun noLimitOnAMessageIsAskedAboutFirst() {

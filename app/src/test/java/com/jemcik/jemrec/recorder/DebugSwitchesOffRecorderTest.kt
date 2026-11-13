@@ -18,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
 /**
@@ -44,19 +45,33 @@ class DebugSwitchesOffRecorderTest {
         RecorderSwitch.set(context, false)
     }
 
-    @After fun gone() = recorder.close()
+    /** Threads that write as the recorder would, a moment after it replies:
+     *  started before its line, and waited for before the test ends, so a
+     *  write meant for this test never lands in the next one's settings. */
+    private val helpers = CopyOnWriteArrayList<Thread>()
+
+    @After fun gone() {
+        helpers.forEach { it.join(12_000) }
+        recorder.close()
+    }
 
     private fun pending() = Prefs.of(context).getBoolean("debug_off_pending", false)
     private fun heard() = recorder.heard.map { it.key to it.payload.toList() }
     private fun get(name: String) = TestPhone.get(context, name)
 
-    /** The recorder writes both switches off, as it does at OFF NOW, and goes. */
+    /** The recorder writes both switches off, as it does at OFF NOW. They
+     *  are written here as it replies, before its line, so they have landed
+     *  when the app looks: the recorder writes them just after it, and
+     *  written after the line, they could land before the app's look or
+     *  after it. After it is offNowWaitsForTheSwitchesTheRecorderIsWriting.
+     *  The recorder then goes, its write having stopped adbd; here it stays
+     *  up until the test ends, so a ping the app had no need to send is
+     *  heard - closed at once, it went to a port no one answered. */
     private fun goesOffAtOnce() {
-        recorder.after = { key ->
+        recorder.stall = { key ->
             if (key == "O") {
                 TestPhone.put(context, WIFI, 0)
                 TestPhone.put(context, USB, 0)
-                recorder.close()
             }
         }
     }
@@ -68,9 +83,46 @@ class DebugSwitchesOffRecorderTest {
 
         DebugSwitchesOff.switchOff(context)
 
-        // Asked to go (1); Developer options by the app, the other two by the
-        // recorder; seen off at once, so nothing is left pending.
+        // Asked to go (1), and nothing after: seen off at once, the app does
+        // not ask whether it is still there. Developer options by the app,
+        // the other two by the recorder; nothing is left pending.
         assertEquals(listOf("O" to listOf<Byte>(1)), heard())
+        assertEquals(listOf(DEV, WIFI, USB), writes.seen())
+        assertFalse(pending())
+        assertEquals(listOf("debugging off: the recorder says OFF NOW"), TestPhone.reviveLog(context))
+        assertEquals(DebugSwitch.entries.toSet(), DebugSwitchesOff.switchedOff(context))
+        writes.close()
+    }
+
+    /** OFF NOW, and the switches still on when the app looks - the recorder
+     *  writes them just after it replies: the app waits while the recorder
+     *  answers, and once they have landed nothing is left pending, and the
+     *  recorder is not asked again. */
+    @Test fun offNowWaitsForTheSwitchesTheRecorderIsWriting() = runBlocking {
+        recorder.replies["O"] = "OFF NOW"
+        // Written once the app has looked, found them on, and asked whether
+        // the recorder is still there; then it goes. Never asked, it writes
+        // nothing and ends: the test has failed.
+        recorder.stall = { key ->
+            if (key == "O") {
+                helpers += thread(isDaemon = true) {
+                    val deadline = System.nanoTime() + 10_000_000_000L
+                    while (recorder.heard.none { it.key == "P" }) {
+                        if (System.nanoTime() > deadline) return@thread
+                        Thread.sleep(10)
+                    }
+                    TestPhone.put(context, WIFI, 0)
+                    TestPhone.put(context, USB, 0)
+                    recorder.close()
+                }
+            }
+        }
+        val writes = TestPhone.Writes(context)
+
+        DebugSwitchesOff.switchOff(context)
+
+        assertEquals("O" to listOf<Byte>(1), heard().first())
+        assertTrue(heard().toString(), heard().size > 1 && heard().drop(1).all { it.first == "P" })
         assertEquals(listOf(DEV, WIFI, USB), writes.seen())
         assertFalse(pending())
         assertEquals(listOf("debugging off: the recorder says OFF NOW"), TestPhone.reviveLog(context))
@@ -163,9 +215,9 @@ class DebugSwitchesOffRecorderTest {
         // The call ended and the recorder is writing them off as On comes:
         // it says so, and goes a second and a half later.
         recorder.replies["O"] = "OFF TOO LATE"
-        recorder.after = { key ->
+        recorder.stall = { key ->
             if (key == "O") {
-                thread {
+                helpers += thread(isDaemon = true) {
                     Thread.sleep(1_500)
                     TestPhone.put(context, WIFI, 0)
                     TestPhone.put(context, USB, 0)
@@ -190,8 +242,10 @@ class DebugSwitchesOffRecorderTest {
         assertTrue(pending())
         val writes = TestPhone.Writes(context)
 
-        // It may be waiting out the call still: left alone.
+        // It may be waiting out the call still: left alone - asked again to
+        // go (1), as it was first.
         DebugSwitchesOff.finishOffLeftUndone(context)
+        assertEquals(listOf(listOf<Byte>(1), listOf<Byte>(1)), recorder.heard.filter { it.key == "O" }.map { it.payload.toList() })
         assertEquals(Admit.StandDown, RecorderLifecycle.admit(context, Trigger.REVIVE))
 
         assertEquals(emptyList<String>(), writes.seen())

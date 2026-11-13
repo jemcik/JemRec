@@ -29,6 +29,15 @@ import kotlinx.coroutines.withContext
  *  included: one at a time. */
 internal val testArming = java.util.concurrent.atomic.AtomicBoolean(false)
 
+/** Each arming's number, counted as it begins: the one under way is the
+ *  last counted. */
+internal val armingsBegun = java.util.concurrent.atomic.AtomicLong()
+
+/** Why an arming armed nothing, by its number - the words its own screen was
+ *  told - for a screen that waited for it: they went to that screen, which
+ *  may be gone. The last few only. */
+internal val refusals = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
 /** What the answering machine's screen shows. */
 data class AnswerUi(
     val enabled: Boolean = false,
@@ -107,7 +116,8 @@ class AnswerController(
     /** A snackbar as well as [say]'s line in Diagnostics' log: for what
      *  answers a tap on this screen, and - while this screen is shown
      *  ([shown]) - for a test call's settled ending (no call came, the
-     *  recorder restarted, the verdict's words) and a setting that did not
+     *  recorder restarted, the verdict's words), why another screen's
+     *  arming this one waited for armed nothing, and a setting that did not
      *  reach the recorder. The rest - the checks run on opening, a test kept
      *  for the next opening ("still going on", "could not be asked"), a take
      *  let go as the screen was left - is the log's alone, as every word
@@ -167,7 +177,18 @@ class AnswerController(
                 results = AnswerDiagnostics.results(app),
             )
         }
-        // How a take made past its screen ended, when not as a greeting.
+    }
+
+    /**
+     * How a take made past its screen ended, when not as a greeting, kept
+     * for the screen at the front (Greeting.takeEnding): shown once, here.
+     * Not on any reload: one runs for a screen closed since too - Delete all
+     * for good's reading outlives its screen - and took the ending to
+     * nowhere; nor in a window behind another, which took it from the one
+     * in front (AnsweringMachineScreen calls this at the front only).
+     */
+    fun readTakeEnding() {
+        if (seeded) return
         Greeting.takeEnding()?.let { words -> _state.update { it.copy(greetingProblem = words) } }
     }
 
@@ -204,10 +225,19 @@ class AnswerController(
         // Another screen's arming under way - one closed, its arming past it -
         // read once it has noted its answer. Read now, nothing was there yet,
         // and this screen showed no test until it next came to the front.
+        // And if it armed nothing, why: its words went to the screen that
+        // armed it, gone if JemRec was closed and opened again meanwhile.
         if (testArming.get()) {
             if (awaitingArming?.isActive != true) {
+                // That arming's words, and no other's: this screen may arm
+                // its own as soon as that one is over, and says its own.
+                val awaited = armingsBegun.get()
                 awaitingArming = scope.launch {
-                    while (testArming.get()) delay(250)
+                    while (testArming.get() && armingsBegun.get() == awaited) delay(250)
+                    refusals[awaited]?.let(::told)
+                    // Read now, and waited for again if another screen's
+                    // arming has begun since: this wait is over.
+                    awaitingArming = null
                     readPendingTest()
                 }
             }
@@ -372,10 +402,11 @@ class AnswerController(
                 stopPreview()
                 val sent = CaptureDaemon.uploadGreeting(app, processed.pcm)
                 _state.update { it.copy(greetingSeconds = processed.seconds, greetingProblem = null) }
-                if (!sent) {
-                    tell("the recorder will get the new greeting when it next restarts")
-                    if (!scope.isActive) Greeting.ended("The recorder will get this greeting when it next restarts.")
-                }
+                // Not sent: said here, and in the log. Not kept for the next
+                // screen, which showed it in red as a fault of the greeting -
+                // it is saved, and shown - and kept it after the recorder,
+                // restarted, had it.
+                if (!sent) tell("the recorder will get the new greeting when it next restarts")
                 // Told once: a recorder that missed the greeting misses the
                 // settings too. Past the screen, as the take is.
                 push(asked = sent, on = outliving)
@@ -606,23 +637,24 @@ class AnswerController(
         // other.
         if (!testArming.compareAndSet(false, true)) {
             tell("a test call is being armed already")
-            // Shown here once it is.
+            // Shown here once it is - or why it was not.
             readPendingTest()
             return
         }
+        val armingSeq = armingsBegun.incrementAndGet()
         // A test from before still to be read is read first. Armed by the
         // recorder and not answered, the new one would leave the old entry
-        // to be read with its result (the recorder's result names no
-        // arming).
+        // to be read with its result (a recorder before 0.31 names no
+        // arming in its results).
         if (AnswerDiagnostics.pendingTest(app) is AnswerDiagnostics.PendingTest.Armed) {
             testArming.set(false)
             tell("the last test call is read first; start the next one when it is")
             readPendingTest()
             return
         }
-        // Shown at once: arming takes the recorder a moment - an outgoing
-        // test's call goes out before it answers - and the greeting deleted
-        // meanwhile would leave the test nothing to play.
+        // Shown at once: arming takes the recorder a moment - one before
+        // 0.31 places an outgoing test's call before it answers - and the
+        // greeting deleted meanwhile would leave the test nothing to play.
         _state.update { it.copy(test = "arming", testIncoming = incoming) }
         // Armed, and noted, in the background, not in the screen's scope:
         // with the screen closed meanwhile (from Recents) the recorder arms
@@ -634,38 +666,33 @@ class AnswerController(
                 // the recorder has: both brought up to date first.
                 CaptureDaemon.syncGreeting(app)
                 CaptureDaemon.setAnswering(app)
-                val reply = CaptureDaemon.armTest(app, incoming, number)
                 // The recorder's own windows: three minutes for a caller, and
-                // fifteen seconds for the call it dials to go out.
+                // fifteen seconds for the call it dials to go out. Their end
+                // is the test's id too, sent with the arming: the recorder
+                // names its results with it.
                 val window = if (incoming) 180_000L else 15_000L
                 val until = System.currentTimeMillis() + window
+                val reply = CaptureDaemon.armTest(app, incoming, number, arming = until).let {
+                    if (it == TestArming.UNANSWERED) afterNoAnswer(until) else it
+                }
                 if (reply == TestArming.ARMED) AnswerDiagnostics.noteTestArmed(app, incoming, until)
-                Triple(reply, window, until)
+                val words = if (reply == TestArming.ARMED) null else refusal(reply, incoming)
+                // Kept, before the flag goes, for a screen that waited for
+                // this arming: its words go to this screen, which may be gone.
+                if (words != null) {
+                    refusals[armingSeq] = words
+                    refusals.keys.removeIf { it <= armingSeq - 8 }
+                }
+                Triple(window, until, words)
             } finally {
                 testArming.set(false)
             }
         }
         scope.launch {
-            val (reply, window, until) = armed.await()
-            if (reply != TestArming.ARMED) {
+            val (window, until, words) = armed.await()
+            if (words != null) {
                 _state.update { it.copy(test = null) }
-                tell(
-                    when (reply) {
-                        TestArming.BAD_NUMBER -> "that number cannot be dialled"
-                        TestArming.EMERGENCY -> "an emergency number is never called for a test"
-                        TestArming.NO_GREETING -> "the recorder does not have your greeting yet - try again in a moment"
-                        TestArming.BUSY -> "the last test call is still going on"
-                        // It may have armed all the same: told, not watched
-                        // (DaemonClient.armTest).
-                        TestArming.UNANSWERED -> if (incoming) {
-                            "the recorder did not answer, and may have armed the test all the same: " +
-                                "a call in the next three minutes may be answered with your greeting, unread"
-                        } else {
-                            "the recorder did not answer, and may be placing the call all the same; how it goes is not read"
-                        }
-                        else -> "the recorder could not arm a test call"
-                    },
-                )
+                tell(words)
                 return@launch
             }
             _state.update {
@@ -673,6 +700,36 @@ class AnswerController(
             }
             watchTest(window)
         }
+    }
+
+    /** Why an arming armed nothing, in words, by the recorder's [reply]. */
+    private fun refusal(reply: TestArming?, incoming: Boolean): String = when (reply) {
+        TestArming.BAD_NUMBER -> "that number cannot be dialled"
+        TestArming.EMERGENCY -> "an emergency number is never called for a test"
+        TestArming.NO_GREETING -> "the recorder does not have your greeting yet - try again in a moment"
+        TestArming.BUSY -> "the last test call is still going on"
+        // It may have armed all the same, and the recorder cannot say whose
+        // its results are - one before 0.31 - or cannot be asked: told, not
+        // watched.
+        TestArming.UNANSWERED -> if (incoming) {
+            "the recorder did not answer, and may have armed the test all the same: " +
+                "a call in the next three minutes may be answered with your greeting, unread"
+        } else {
+            "the recorder did not answer, and may be placing the call all the same; how it goes is not read"
+        }
+        else -> "the recorder could not arm a test call"
+    }
+
+    /**
+     * An arming the recorder did not answer, told by its last test's
+     * results: [TestArming.ARMED] when they name this arming ([until], the
+     * id sent with it), null - not armed - when they name another; still
+     * [TestArming.UNANSWERED] when it cannot be asked, or names none (a
+     * recorder before 0.31).
+     */
+    private suspend fun afterNoAnswer(until: Long): TestArming? {
+        val named = CaptureDaemon.testResult(app)?.let(AnswerDiagnostics::arming) ?: return TestArming.UNANSWERED
+        return if (named == until) TestArming.ARMED else null
     }
 
     /**
@@ -694,22 +751,29 @@ class AnswerController(
             while (true) {
                 val result = CaptureDaemon.testResult(app)
                 last = result?.get("state")
-                when (last) {
-                    "running" -> _state.update { it.copy(test = "running") }
-                    "done" -> {
-                        finishTest(result!!)
-                        return@launch
-                    }
+                // Results that name another arming are not this test's: a
+                // recorder from 0.31 on says whose they are.
+                val another = result?.let(AnswerDiagnostics::arming)?.let { it != _state.value.testUntil } == true
+                when {
                     // A recorder started since keeps no test: nothing will
                     // come, and it is said now, not when the window is out.
-                    "none" -> {
+                    last == "none" -> {
                         ending = "the recorder restarted, so no test call is armed now"
                         break
                     }
+                    another -> {
+                        ending = "the recorder no longer has this test call"
+                        break
+                    }
+                    last == "running" -> _state.update { it.copy(test = "running") }
+                    last == "done" -> {
+                        finishTest(result!!)
+                        return@launch
+                    }
                     // A call that rang in the window's last moment is
                     // answered three seconds on, and is "running" once its
-                    // audio is up.
-                    "armed" -> if (System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) {
+                    // greeting starts (ANSWER_GRACE_MS).
+                    last == "armed" -> if (System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) {
                         ending = "no test call came"
                         break
                     }
@@ -739,7 +803,7 @@ class AnswerController(
     }
 
     private fun finishTest(result: Map<String, String>) {
-        val type = AnswerDiagnostics.callType(result["voice"]?.toIntOrNull() ?: -1)
+        val type = AnswerDiagnostics.callType(result["voice"]?.toIntOrNull() ?: -1, result["wifi"]?.toIntOrNull() ?: -1)
         val verdict = AnswerDiagnostics.verdict(result)
         // Only someone who called can say. An outgoing test reached a
         // machine; its verdict is the measurements'.
@@ -751,7 +815,10 @@ class AnswerController(
             return
         }
         Log.i(TAG, "answer: test on $type -> $verdict ($result)")
-        AnswerDiagnostics.record(app, type, verdict)
+        // A recorder before 0.31 says nothing of the mixer, nor one whose
+        // test played no greeting: as before, the app's route counts as the
+        // one tested.
+        AnswerDiagnostics.record(app, type, verdict, mixer = result["mixer"] == "1")
         if (verdict == AnswerDiagnostics.Verdict.FAILS) {
             // A microphone that would not mute is this phone's, whichever way
             // the greeting goes: no reason to try the other.
@@ -811,6 +878,7 @@ class AnswerController(
     private fun tryTheOtherRoute(type: String, speak: (String) -> Unit) {
         val other = AnswerDiagnostics.routeAfterFailure(
             AnsweringMachine.route(app), _state.value.stageOne, AnswerDiagnostics.results(app), type,
+            AnswerDiagnostics.mixerTypes(app),
         ) ?: return
         AnsweringMachine.setRoute(app, other)
         push()
@@ -875,7 +943,7 @@ class AnswerController(
     fun copyReport() {
         val text = AnswerDiagnostics.report(
             AnswerDiagnostics.rawStageOne(app), AnswerDiagnostics.results(app), AnsweringMachine.route(app),
-            appVersion(app),
+            appVersion(app), AnswerDiagnostics.mixerTypes(app),
         )
         reportToClipboard(app, "JemRec answering machine report", text)
     }
@@ -886,7 +954,9 @@ class AnswerController(
 
         const val TAG = "JemRec"
         /** The recorder's three seconds to answer a test, its wait of up to
-         *  eight for the call's audio, and a poll. */
+         *  eight for the call's audio, two more for Android's word on a mode
+         *  asked for late in it (its AnswerMachine.APPLIED_WAIT_MS), and a
+         *  poll: 13 s, with 2 to spare. */
         const val ANSWER_GRACE_MS = 15_000L
     }
 }

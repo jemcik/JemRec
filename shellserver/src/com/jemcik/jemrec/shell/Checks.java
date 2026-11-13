@@ -18,7 +18,7 @@ final class Checks {
      * "Uid mode: MANAGE_ONGOING_CALLS: allow". The package's line follows it
      * and says "allow" too when only the package is allowed - which is not
      * enough - so "allow" anywhere in the output proves nothing. Lines may
-     * come joined with " | " (Main.slurp) or with newlines.
+     * come joined with " | " (Shell.slurp) or with newlines.
      */
     static boolean uidAllowed(@Nullable String said) {
         if (said == null) {
@@ -31,6 +31,36 @@ final class Checks {
             }
         }
         return false;
+    }
+
+    /**
+     * Whether [component] - "package/class", the class written out in full -
+     * is among the notification listeners Android allows, as `settings get
+     * secure enabled_notification_listeners` prints them: separated by ':',
+     * each as ComponentName.flattenToString writes it, the form an Honor
+     * kept JemRec's in (2026-11-12). The short form, "package/.class", is
+     * the same component and is taken as it.
+     */
+    static boolean listenerAllowed(@Nullable String enabled, String component) {
+        if (enabled == null) {
+            return false;
+        }
+        for (String entry : enabled.split(":")) {
+            if (fullComponent(entry.trim()).equals(component)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** "package/.class" written out as "package/package.class"; any other
+     *  form as it is. */
+    private static String fullComponent(String component) {
+        int slash = component.indexOf('/');
+        if (slash < 0 || slash + 1 >= component.length() || component.charAt(slash + 1) != '.') {
+            return component;
+        }
+        return component.substring(0, slash + 1) + component.substring(0, slash) + component.substring(slash + 1);
     }
 
     /**
@@ -98,6 +128,114 @@ final class Checks {
             }
         }
         return found;
+    }
+
+    /**
+     * Whether the audio mode has left the family of the one a call-screening
+     * track was made in ([madeIn]) - AOSP's own condition for releasing the
+     * track under its maker (AudioManager.CallInjectionModeChangedListener):
+     * in call, call screening or call redirect for a phone call's; in
+     * communication or communication redirect for one through the mixer.
+     * Made in neither, no such track was made, and nothing left.
+     */
+    static boolean modeLeftTrack(int madeIn, int now) {
+        int family = callPath(madeIn);
+        return family != PATH_NONE && family != callPath(now);
+    }
+
+    /** No call's mode: normal, ringtone, or one this does not know. */
+    static final int PATH_NONE = 0;
+    /** The call's own voice path, through the modem: in-call music mixes
+     *  into its uplink. */
+    static final int PATH_VOICE = 1;
+    /** Through the mixer, as a messenger's call: a Galaxy S23's Wi-Fi Calling
+     *  (Checks.phoneCallInMixer). */
+    static final int PATH_MIXER = 2;
+
+    /** The way a call's audio takes, by the audio mode: AudioManager's
+     *  MODE_IN_CALL, MODE_CALL_SCREENING, MODE_CALL_REDIRECT (2, 4, 5) the
+     *  voice path; MODE_IN_COMMUNICATION, MODE_COMMUNICATION_REDIRECT (3, 6)
+     *  the mixer; any other none - AOSP's two families for a call-screening
+     *  track (modeLeftTrack). */
+    static int callPath(int mode) {
+        switch (mode) {
+            case 2:
+            case 4:
+            case 5:
+                return PATH_VOICE;
+            case 3:
+            case 6:
+                return PATH_MIXER;
+            default:
+                return PATH_NONE;
+        }
+    }
+
+    /** A call's short marks in Telecom's line for it: " HD wifi" in
+     *  "prop=[ HD wifi]" - not the long "props=[Properties: ...]" a Samsung
+     *  writes too. */
+    private static final java.util.regex.Pattern CALL_PROPS = java.util.regex.Pattern.compile(", prop=\\[([^\\]]*)\\]");
+
+    /**
+     * Whether Telecom has the call under way on Wi-Fi: 1 where the active
+     * call in `dumpsys telecom`'s list of the calls there are now
+     * (CallsManager's "mCalls:") carries the wifi property, "prop=[ HD wifi]"
+     * - Android's own PROPERTY_WIFI, the mark the call log's Wi-Fi flag is
+     * taken from - 0 where it carries none, and -1 where no such call is
+     * listed or the dump could not be had. With no active call, the one
+     * disconnecting: a test whose greeting failed is hung up by the machine
+     * before its mid-greeting check, and a call this phone hangs up is
+     * listed DISCONNECTING until it is gone (Call.getParcelableCallState, in
+     * AOSP's Telecom). Never one ringing or held beside it, which is another
+     * call, nor one on another device ("xtrnl"). Only that list: the rest of
+     * the dump is history, with earlier calls on Wi-Fi in it. The voice
+     * network type cannot tell: a Galaxy S23 on Android 17 gave LTE (13) for
+     * a test call Telecom had on Wi-Fi from its start, marked wifi there and
+     * in the call log (2026-11-12).
+     */
+    static int callOnWifi(@Nullable String telecom) {
+        if (telecom == null) {
+            return -1;
+        }
+        String[] lines = telecom.split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            if (!lines[i].trim().equals("mCalls:")) {
+                continue;
+            }
+            int depth = indent(lines[i]);
+            int active = -1;
+            int disconnecting = -1;
+            for (int j = i + 1; j < lines.length && indent(lines[j]) > depth; j++) {
+                String call = lines[j].trim();
+                java.util.regex.Matcher props = CALL_PROPS.matcher(call);
+                boolean isActive = call.contains(", state=ACTIVE,");
+                if (!call.startsWith("[Call id=") || !props.find()
+                        || !(isActive || call.contains(", state=DISCONNECTING,"))) {
+                    continue;
+                }
+                java.util.List<String> marks = java.util.Arrays.asList(props.group(1).trim().split("\\s+"));
+                if (marks.contains("xtrnl")) {
+                    continue;
+                }
+                int wifi = marks.contains("wifi") ? 1 : 0;
+                if (isActive) {
+                    active = Math.max(active, wifi);
+                } else {
+                    disconnecting = Math.max(disconnecting, wifi);
+                }
+            }
+            return active >= 0 ? active : disconnecting;
+        }
+        return -1;
+    }
+
+    /** The spaces [line] starts with. */
+    private static int indent(String line) {
+        int n = 0;
+        while (n < line.length() && line.charAt(n) == ' ') {
+            n++;
+        }
+        return n;
     }
 
     /**
@@ -273,6 +411,17 @@ final class Checks {
      *  which copying a call's playback needs (Voip.Policy). */
     static final int SDK_VOICE_COPY = 34;
 
+    /** The way a phone call's audio takes, by [mode] on [sdk]: in call its
+     *  voice path, the mixer where a phone call plays through it
+     *  (phoneCallInMixer), any other none - as its audio is up or not for
+     *  the answering machine (AnswerEffects.callAudioUp). */
+    static int phoneCallPath(int mode, int sdk) {
+        if (mode == MODE_IN_CALL) {
+            return PATH_VOICE;
+        }
+        return phoneCallInMixer(mode, sdk) ? PATH_MIXER : PATH_NONE;
+    }
+
     /**
      * Whether a phone call plays through Android's mixer, as a messenger call
      * does, instead of the modem's voice path - and so is recorded as one
@@ -428,7 +577,7 @@ final class Checks {
      * mono, on the right - for every call, so the sides never swap with its
      * kind: where the call capture has them on a phone that splits the sides
      * (the Honor: its left all zeros while muted, 2026-10-22), and where the
-     * answering machine reads its own side (Main.onChunk). Up to 0.24 a
+     * answering machine reads its own side (Answering.onChunk). Up to 0.24 a
      * messenger call had them the other way round. In the
      * platform's byte order, as AudioRecord writes it; a ByteBuffer starts out
      * big-endian, which would be noise.
@@ -530,7 +679,7 @@ final class Checks {
      * timestamp string is the daemon's handle for "have I already reported
      * this one": it changes only when a newer stop lands.
      *
-     * Tolerant of Main.slurp joining lines with " | ": the work is regex within
+     * Tolerant of Shell.slurp joining lines with " | ": the work is regex within
      * each record's text, and the record markers and key=value pairs survive
      * the join.
      */
@@ -604,7 +753,7 @@ final class Checks {
             java.util.regex.Pattern.compile("(?<![A-Za-z])importance=(\\d+)");
     private static final java.util.regex.Pattern EXIT_STAMP =
             java.util.regex.Pattern.compile("timestamp=(\\d{4}-\\d{2}-\\d{2} [\\d:.]+)");
-    /** Within the line: Main.slurp joins lines with " | ". */
+    /** Within the line: Shell.slurp joins lines with " | ". */
     private static final java.util.regex.Pattern USER0_STOPPED =
             java.util.regex.Pattern.compile("User 0:[^|\\n]*?(?<![A-Za-z])stopped=(true|false)");
 

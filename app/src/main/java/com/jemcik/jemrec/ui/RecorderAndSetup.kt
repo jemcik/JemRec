@@ -622,19 +622,20 @@ internal class RecorderAndSetup(
      *
      * During setup the answer is only recorded - finish() grants notification
      * access over the session it opens anyway. After setup a yes needs that
-     * access, which only an ADB session can grant; if there is none to be had,
-     * the switch stays off and says why rather than claiming a yes it cannot
-     * act on.
+     * access, which only the shell can grant (Setup.grantNotificationAccess);
+     * if it cannot be had, the switch stays off and says why rather than
+     * claiming a yes it cannot act on.
      */
     fun setHideDebugNotification(hide: Boolean) = actions.run(Action.DEBUG_NOTIFICATION) {
-        if (hide && Setup.isComplete(app) && !DebugNotificationCleaner.accessGranted(app) &&
-            !Setup.grantNotificationAccess(app)
-        ) {
-            state.update { it.copy(debugNotificationProblem = true) }
-            return@run
+        if (hide && Setup.isComplete(app) && !DebugNotificationCleaner.accessGranted(app)) {
+            val problem = Setup.grantNotificationAccess(app)
+            if (problem != null) {
+                state.update { it.copy(debugNotificationProblem = problem) }
+                return@run
+            }
         }
         DebugNotificationCleaner.choose(app, hide)
-        state.update { it.copy(debugNotificationHidden = hide, debugNotificationProblem = false) }
+        state.update { it.copy(debugNotificationHidden = hide, debugNotificationProblem = null) }
         // From the setup step, move on to the next one.
         if (state.value.step != SetupStep.READY) recheckSetup()
     }

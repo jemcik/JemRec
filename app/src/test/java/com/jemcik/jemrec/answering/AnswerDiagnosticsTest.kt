@@ -17,6 +17,18 @@ class AnswerDiagnosticsTest {
         "DIAG 1",
     )!!
 
+    /** The arming a result is for, as a recorder from 0.31 names it; none
+     *  from an older one, or one that is not a number. */
+    @Test fun aResultNamesItsArming() {
+        val result = CaptureDaemon.fields(
+            "RESULT 1 state=done route=1 realms=9416 audioms=9539 tone=0 tonechunks=0 mute=1 voice=16 played=1 arming=1762000180000",
+            "RESULT 1",
+        )!!
+        assertEquals(1762000180000L, AnswerDiagnostics.arming(result))
+        assertNull(AnswerDiagnostics.arming(result - "arming"))
+        assertNull(AnswerDiagnostics.arming(result + ("arming" to "x")))
+    }
+
     @Test fun theHonorPassesTheNoCallChecks() {
         val stage = AnswerDiagnostics.stageOne(honor)
         assertTrue(stage.possible)
@@ -91,11 +103,24 @@ class AnswerDiagnosticsTest {
     }
 
     @Test fun callTypesByNetwork() {
-        assertEquals("2G", AnswerDiagnostics.callType(16))
-        assertEquals("3G", AnswerDiagnostics.callType(3))
-        assertEquals("VoLTE", AnswerDiagnostics.callType(13))
-        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(18))
-        assertEquals("an unknown call type", AnswerDiagnostics.callType(-1))
+        assertEquals("2G", AnswerDiagnostics.callType(16, -1))
+        assertEquals("3G", AnswerDiagnostics.callType(3, -1))
+        assertEquals("VoLTE", AnswerDiagnostics.callType(13, -1))
+        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(18, -1))
+        assertEquals("VoNR", AnswerDiagnostics.callType(20, -1))
+        assertEquals("an unknown call type", AnswerDiagnostics.callType(-1, -1))
+    }
+
+    /** Telecom's Wi-Fi mark names the call whatever the voice network type
+     *  says - a Galaxy S23 said LTE (13) for a call on Wi-Fi - and its
+     *  absence takes nothing away: the voice type says, as before. */
+    @Test fun aCallTelecomMarkedWifiIsWifiCalling() {
+        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(13, 1))
+        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(-1, 1))
+        assertEquals("VoLTE", AnswerDiagnostics.callType(13, 0))
+        assertEquals("2G", AnswerDiagnostics.callType(16, 0))
+        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(18, 0))
+        assertEquals("VoLTE", AnswerDiagnostics.callType(13, 2))
     }
 
     @Test fun theSummarySaysWhatWasTested() {
@@ -111,6 +136,13 @@ class AnswerDiagnosticsTest {
         assertTrue(report.contains("0.17"))
         assertTrue(report.contains("Test call on 2G: WORKS"))
         assertTrue(report.contains("incallmusic=1"))
+        // Which tests went to a call through the mixer, whose route is not the one above.
+        val both = AnswerDiagnostics.report(
+            null, mapOf("VoLTE" to Verdict.WORKS, "Wi-Fi Calling" to Verdict.WORKS), "music", "0.31",
+            setOf("Wi-Fi Calling"),
+        )
+        assertTrue(both, both.contains("Test call on VoLTE: WORKS\n"))
+        assertTrue(both, both.endsWith("Test call on Wi-Fi Calling: WORKS (through the mixer)"))
     }
 
     @Test fun theSimListParses() {

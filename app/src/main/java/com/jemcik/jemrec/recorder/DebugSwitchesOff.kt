@@ -289,7 +289,7 @@ object DebugSwitchesOff {
      * missed ping is not a dead recorder), may be waiting on a call, or may
      * never have been told: it is asked again, and goes as it answers - now,
      * or after its call. A second go changes nothing for one already waiting
-     * (Main.goOffWhenFree).
+     * (the daemon's DebuggingOff.goOffWhenFree).
      */
     suspend fun finishOffLeftUndone(context: Context) {
         val prefs = Prefs.of(context)

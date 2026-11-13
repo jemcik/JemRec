@@ -38,10 +38,9 @@ adb shell 'nohup sh -c "CLASSPATH=/data/local/tmp/jemrec-capture.jar \
     > /data/local/tmp/jemrec-capture.out 2>&1 &'
 ```
 
-`Main [port] [raw]` - port defaults to 28472, and passing `raw` sends
-uncompressed PCM instead of Opus. A daemon started by hand like this has no
-token (the app passes it in the environment), so it refuses every command but a
-bare ping - see Protocol.
+`Main [port]` - port defaults to 28472. A daemon started by hand like this has
+no token (the app passes it in the environment), so it refuses every command but
+a bare ping - see Protocol.
 
 It then listens on `127.0.0.1:28472` and stays. Started once, it outlives the
 ADB connection that launched it, which is the entire point: with Wi-Fi off adbd
@@ -56,15 +55,17 @@ would have to live under `/data/local/tmp`, which the app cannot traverse.
 
 Every connection but a bare ping (`P`, answered `PONG <version> <build>`)
 starts with a handshake in both directions, proved with the token the app
-passes in the environment (`A`; `Main.authenticate`), then one command byte.
-The commands and their replies are in `Main.session`, and every reply that is
-a line of text is listed in `tests/fixtures/protocol.txt`, which the app's
-ProtocolTest checks against both.
+passes in the environment (`A`; `Handshake`), then one command byte. The
+commands are in `Commands.run`, their bytes and replies in `Wire`. Every reply
+that is a line of text is listed in `tests/fixtures/protocol.txt`: the app's
+ProtocolTest reads each with the app's parsers, and WireTest builds each with
+`Wire`. One handshake worked by hand, `tests/fixtures/handshake.txt`, holds
+both sides' proofs (HandshakeTest, on each side).
 
 The audio a capture (`R`) streams is scrcpy's format, unchanged:
 
 ```
-4 bytes   codec id, ASCII ("opus" or "raw")
+4 bytes   codec id, ASCII ("opus")
 repeating:
   8 bytes pts, big endian, flags in the top 3 bits
   4 bytes payload length
@@ -79,5 +80,3 @@ Calls are recorded by the daemon itself, into files the app fetches (`F`).
 
 The app's Settings > Diagnostics > Self-test opens a real capture (`R`) over the
 path a call takes and says what came out of it, both directions included.
-`tools/capture-call.py` predates the handshake: it sends nothing, so the
-daemon refuses it.

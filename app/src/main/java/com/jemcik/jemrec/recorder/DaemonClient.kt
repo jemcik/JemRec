@@ -66,7 +66,7 @@ object DaemonClient {
     private const val COMMAND_PING = 'P'.code.toByte()
     private const val COMMAND_HELLO = 'A'.code.toByte()
 
-    /** The command byte that follows a successful handshake. See Main.session(). */
+    /** The command byte that follows a successful handshake. See Commands.run(). */
     private const val COMMAND_RECORD = 'R'.code.toByte()
     private const val COMMAND_QUIT = 'Q'.code.toByte()
     private const val COMMAND_FETCH = 'F'.code.toByte()
@@ -100,6 +100,10 @@ object DaemonClient {
     /** Switch Wireless and USB debugging off and go - "Turn all debugging
      *  off" (DebugSwitchesOff). 1 goes, 0 calls off a go still waiting. */
     private const val COMMAND_DEBUGGING_OFF = 'O'.code.toByte()
+
+    /** Notification access for this app's listener, granted by the recorder
+     *  (Setup.grantNotificationAccess). A recorder before 0.31 hangs up on it. */
+    private const val COMMAND_ALLOW_LISTENER = 'B'.code.toByte()
 
     private const val NONCE_BYTES = 16
     private const val MAC_BYTES = 32
@@ -236,11 +240,11 @@ object DaemonClient {
             } catch (_: EOFException) {
                 throw IOException("the recorder on port $PORT hung up during the handshake - out of date?")
             }
-            if (!MessageDigest.isEqual(proof, mac(key, DAEMON_LABEL, ours, theirs))) {
+            if (!MessageDigest.isEqual(proof, daemonProof(key, ours, theirs))) {
                 throw SecurityException("whatever answers on port $PORT does not know this app's token")
             }
 
-            out.write(mac(key, CLIENT_LABEL, ours, theirs))
+            out.write(clientProof(key, ours, theirs))
             out.write(byteArrayOf(command))
             out.write(payload)
             out.flush()
@@ -251,6 +255,15 @@ object DaemonClient {
             throw t
         }
     }
+
+    /** What the recorder sends to prove it knows the token, for this
+     *  connection's two nonces ([ours], the app's, first). */
+    internal fun daemonProof(key: ByteArray, ours: ByteArray, theirs: ByteArray): ByteArray =
+        mac(key, DAEMON_LABEL, ours, theirs)
+
+    /** What the app sends back to prove the same. */
+    internal fun clientProof(key: ByteArray, ours: ByteArray, theirs: ByteArray): ByteArray =
+        mac(key, CLIENT_LABEL, ours, theirs)
 
     private fun mac(key: ByteArray, label: ByteArray, a: ByteArray, b: ByteArray): ByteArray =
         Mac.getInstance(MAC_ALGORITHM).run {
@@ -318,7 +331,7 @@ object DaemonClient {
     }
 
     /** "OFF NOW", "OFF AFTER CALL", "OFF CANCELLED" or "OFF TOO LATE", as
-     *  Main.session() writes them; any other OFF is an answer of no kind
+     *  Commands.run() writes them; any other OFF is an answer of no kind
      *  known here, and anything else, or nothing, is none. */
     internal fun parseOffReply(line: String?): OffReply? {
         if (line == null || !line.startsWith("OFF")) return null
@@ -427,20 +440,22 @@ object DaemonClient {
 
     /**
      * Arm a test call: the next incoming call within three minutes, or -
-     * [number] given - one the daemon dials now. The recorder's answer;
-     * [TestArming.UNANSWERED] if the arming reached it and no answer came;
-     * null if it never did, or for an answer not known. Unanswered, it may
-     * have armed all the same: the recorder arms after its emergency-number
-     * check, which has no time limit, and before `am` starts an outgoing
-     * test's call, and answers after both - and nothing it says later tells
-     * which arming a result is. So it is told, not watched.
+     * [number] given - one the daemon dials now. [arming] is this test's id:
+     * a recorder from 0.31 on names it in each result ("arming=", see
+     * testResult), so an arming it did not answer can be told from one that
+     * took, and a result from another test's; an older recorder reads past
+     * it. The recorder's answer; [TestArming.UNANSWERED] if the arming
+     * reached it and no answer came; null if it never did, or for an answer
+     * not known.
      */
-    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): TestArming? =
+    suspend fun armTest(context: Context, incoming: Boolean, number: String = "", arming: Long = 0): TestArming? =
         withContext(Dispatchers.IO) {
-            val payload = byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number)
-            // An outgoing test's call is started before the recorder answers,
-            // with `am`, which it runs there with no time limit (its wakes
-            // allow `am` ten seconds a try): a longer wait for those.
+            val payload = byteArrayOf('A'.code.toByte(), if (incoming) 1 else 0) + nameFrame(number) +
+                java.nio.ByteBuffer.allocate(8).putLong(arming).array()
+            // A recorder before 0.31 starts an outgoing test's call before
+            // it answers, with `am`, which it runs there with no time limit
+            // (its wakes allow `am` ten seconds a try): a longer wait for
+            // those. From 0.31 it answers first.
             val socket = runCatching {
                 open(context, COMMAND_DIAGNOSE, payload, readMs = if (incoming) 5_000 else 15_000)
             }.getOrNull() ?: return@withContext null
@@ -510,6 +525,31 @@ object DaemonClient {
                 socket.getInputStream().bufferedReader().readLine()?.startsWith("TRACK ") == true
             }
         }.getOrDefault(false)
+    }
+
+    /**
+     * Notification access for this app's listener, granted by the recorder -
+     * the shell, as an ADB session is, with no session. True or false as
+     * the recorder read Android's list back afterwards; null with no answer:
+     * no recorder, one before 0.31, which hangs up on the command, or one
+     * that took longer than the wait.
+     */
+    suspend fun allowListener(context: Context): Boolean? = withContext(Dispatchers.IO) {
+        runCatching {
+            // Ten seconds: the grant, then Android's list read for up to two
+            // (Listener), on a phone that may be slow.
+            open(context, COMMAND_ALLOW_LISTENER, readMs = 10_000).use { socket ->
+                parseListenerReply(socket.getInputStream().bufferedReader().readLine())
+            }
+        }.getOrNull()
+    }
+
+    /** The recorder's answer to COMMAND_ALLOW_LISTENER (protocol.txt, B):
+     *  null for anything else, as no answer. */
+    internal fun parseListenerReply(line: String?): Boolean? = when (line?.trim()) {
+        "LISTENER ok" -> true
+        "LISTENER failed" -> false
+        else -> null
     }
 
     /** Ask the daemon not to record the phone call starting now. Whether it
@@ -592,7 +632,7 @@ object DaemonClient {
      *  or believes it is; see DaemonLauncher.retire. */
     internal enum class QuitReply { BYE, BUSY, NONE }
 
-    /** "BYE" or "BUSY", as Main.session() writes them; anything else, or
+    /** "BYE" or "BUSY", as Commands.run() writes them; anything else, or
      *  nothing, is no answer. */
     internal fun parseQuitReply(line: String?): QuitReply = when {
         line == null -> QuitReply.NONE
@@ -712,7 +752,7 @@ object DaemonClient {
     }
 
     /**
-     * What the daemon says its call watch has heard - see Main.COMMAND_WATCH
+     * What the daemon says its call watch has heard - see Wire.COMMAND_WATCH
      * for why the self-test needs it. Times are wall-clock millis on this
      * phone, 0 for never.
      */

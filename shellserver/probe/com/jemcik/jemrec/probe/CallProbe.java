@@ -117,7 +117,7 @@ public final class CallProbe {
             field.set(audio, context);
         }
         // Telephony needs its service manager set, and both managers need a
-        // context whose package belongs to shell - see Main.startCallWatch.
+        // context whose package belongs to shell - see CallWatch.startCallWatcher.
         Class<?> initializer = Class.forName("android.telephony.TelephonyFrameworkInitializer");
         Class<?> managerClass = Class.forName("android.os.TelephonyServiceManager");
         initializer.getDeclaredMethod("setTelephonyServiceManager", managerClass)

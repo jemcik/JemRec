@@ -50,4 +50,42 @@ class AnswerRoutesTest {
             AnswerDiagnostics.routeAfterFailure(ROUTE_MUSIC, stage(true, true), mapOf("2G" to Verdict.WORKS, "VoLTE" to Verdict.FAILS), "2G"),
         )
     }
+
+    /** A Galaxy S23 (2026-11-13): passed over Wi-Fi Calling, through the
+     *  mixer, on the call-screening route that call gets whatever the app's;
+     *  then nothing heard over VoLTE on the call-screening route, which only
+     *  in-call music mends. The mixer's pass does not hold the route. */
+    @Test fun aPassThroughTheMixerDoesNotHoldTheRoute() {
+        val wifi = mapOf("Wi-Fi Calling" to Verdict.WORKS)
+        assertEquals(
+            ROUTE_MUSIC,
+            AnswerDiagnostics.routeAfterFailure(ROUTE_SCREENING, stage(true, true), wifi, "VoLTE", setOf("Wi-Fi Calling")),
+        )
+        // Not known to be through the mixer - a test before 0.31: as before.
+        assertNull(AnswerDiagnostics.routeAfterFailure(ROUTE_SCREENING, stage(true, true), wifi, "VoLTE"))
+    }
+
+    /** The update to 0.31 puts back only a phone a failed test moved:
+     *  call-screening though the checks found in-call music. */
+    @Test fun onlyAPhoneAFailedTestMovedIsPutBack() {
+        assertEquals(true, AnswerDiagnostics.resetsForRoutesByPath(ROUTE_SCREENING, stage(true, true)))
+        assertEquals(false, AnswerDiagnostics.resetsForRoutesByPath(ROUTE_MUSIC, stage(true, true)))
+        // Moved there by the checks - no in-call music - never checked, or
+        // a setup that could not be read: not known to have in-call music.
+        assertEquals(false, AnswerDiagnostics.resetsForRoutesByPath(ROUTE_SCREENING, stage(false, true)))
+        assertEquals(false, AnswerDiagnostics.resetsForRoutesByPath(ROUTE_SCREENING, null))
+        assertEquals(false, AnswerDiagnostics.resetsForRoutesByPath(ROUTE_SCREENING, stage(false, true, unread = true)))
+    }
+
+    @Test fun aFailureThroughTheMixerIsNotThisRoutes() {
+        // Its greeting had the call-screening route, whatever this one.
+        assertNull(
+            AnswerDiagnostics.routeAfterFailure(ROUTE_MUSIC, stage(true, true), emptyMap(), "Wi-Fi Calling", setOf("Wi-Fi Calling")),
+        )
+        // Another type's test through the mixer leaves this one's failure to switch.
+        assertEquals(
+            ROUTE_SCREENING,
+            AnswerDiagnostics.routeAfterFailure(ROUTE_MUSIC, stage(true, true), emptyMap(), "VoLTE", setOf("Wi-Fi Calling")),
+        )
+    }
 }

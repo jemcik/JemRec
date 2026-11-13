@@ -308,8 +308,8 @@ that service — Gmail's, Slack's — are not recorded.
 **Show who called** reads the caller's name, and whether the call rang first,
 from the app's own call notification — the only place it is said. That needs
 notification access, which Android grants to all notifications; JemRec keeps
-only that from the call notifications of the apps you switched on. It is
-granted over JemRec's own ADB session, so turning it on needs Wi-Fi, once.
+only that from the call notifications of the apps you switched on. JemRec's
+recorder grants it, so turning it on needs JemRec ready to record.
 
 Tested on an Honor with Viber, Telegram and WhatsApp, both directions, and with
 Google Meet: calls both ways and a meeting. Signal takes the same path and has
@@ -369,7 +369,10 @@ message, from just before you took it - or from the caller's first words, if
 they spoke first. In **Ask first** it is not: taking the call ends the message
 there - what the caller said is kept as the message - and you are asked, as at
 the start of any call, whether to record the rest. Answering machines have
-always stopped recording when picked up.
+always stopped recording when picked up. If a call that moves between the
+mobile network and Wi-Fi cuts your greeting off, it plays again from the start,
+the way that reaches the caller there, up to twice a call, your microphone
+still muted.
 
 **The message** is saved like any recording, from just before the caller starts
 speaking, so it does not begin with them listening to your greeting. It has a
@@ -400,8 +403,8 @@ audio hardware. These tell you:
   any call, to paste into a report on GitHub.
 
 Experimental. Tested on an Honor, on 2G calls (its carrier would not register
-it for VoLTE), and on a Galaxy S23 over Wi-Fi Calling. On a phone not tried
-yet, the test call is how to know.
+it for VoLTE), and on a Galaxy S23 over VoLTE and Wi-Fi Calling. On a phone not
+tried yet, the test call is how to know.
 
 ## Playing, sharing and deleting
 
@@ -750,8 +753,8 @@ everything still works, with the time as each recording's headline.
   Wi-Fi.
 - **Hide the debugging notification** — the answer to the question in step 1,
   changeable. Debugging stays on either way while JemRec is on; this is only
-  about whether Android's notification saying so is shown. Turning it on after
-  setup needs Wi-Fi.
+  about whether Android's notification saying so is shown. After setup JemRec's
+  recorder grants what it needs, so turning it on needs JemRec ready to record.
 
 **Troubleshooting**
 

@@ -2,6 +2,7 @@ package com.jemcik.jemrec.contract
 
 import androidx.work.ListenableWorker
 import com.jemcik.jemrec.capture.CallMonitorService
+import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -70,6 +71,20 @@ class FrozenNamesTest {
             "ACTION_MESSAGE_STARTED" to CallMonitorService.ACTION_MESSAGE_STARTED,
             "ACTION_MESSAGE_TAKEN" to CallMonitorService.ACTION_MESSAGE_TAKEN,
         ).forEach { (name, appSide) -> assertEquals(name, appSide, constant(name)) }
+    }
+
+    @Test
+    fun theRecorderGrantsTheListenerTheAppDeclares() {
+        // Notification access is granted to a component, by the recorder
+        // (Wire.COMMAND_ALLOW_LISTENER), which names it: renamed, Show who
+        // called and Hide the debugging notification would have nothing to
+        // turn on, and Android would keep the old name allowed.
+        val listener = checkNotNull(Regex("""static final String APP_LISTENER = "([^"]*)";""").find(Repo.recorder)) {
+            "APP_LISTENER is gone from the recorder"
+        }.groupValues[1]
+        assertEquals("$APPLICATION_ID/${DebugNotificationCleaner::class.java.name}", listener)
+        assertEquals("$APPLICATION_ID.capture.DebugNotificationCleaner", DebugNotificationCleaner::class.java.name)
+        assertTrue(".capture.DebugNotificationCleaner" in MAIN_COMPONENTS)
     }
 
     @Test

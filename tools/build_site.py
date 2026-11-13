@@ -1879,8 +1879,8 @@ SETUP = [
           "first, from the app's own call notification — the only place it is "
           "said. That needs notification access, which Android grants to all "
           "notifications; JemRec keeps only that from the call notifications of "
-          "the apps you switched on. It is granted over JemRec's own ADB "
-          "session, so turning it on needs Wi-Fi, once."),
+          "the apps you switched on. JemRec's recorder grants it, so turning "
+          "it on needs JemRec ready to record."),
     ("p", "Tested on an Honor with Viber, Telegram and WhatsApp, both directions, "
           "and with Google Meet: calls both ways and a meeting. Signal takes the "
           "same path and has not been tested yet."),
@@ -1939,7 +1939,10 @@ SETUP = [
           "first. In **Ask first** it is not: taking the call ends the message "
           "there - what the caller said is kept as the message - and you are "
           "asked, as at the start of any call, whether to record the rest. "
-          "Answering machines have always stopped recording when picked up."),
+          "Answering machines have always stopped recording when picked up. If "
+          "a call that moves between the mobile network and Wi-Fi cuts your "
+          "greeting off, it plays again from the start, the way that reaches "
+          "the caller there, up to twice a call, your microphone still muted."),
     ("p", "**The message** is saved like any recording, from just before the "
           "caller starts speaking, so it does not begin with them listening to "
           "your greeting. It has a message icon, the **Messages** chip above "
@@ -1970,8 +1973,8 @@ SETUP = [
         "about any call, to paste into a report on GitHub.",
     ]),
     ("p", "Experimental. Tested on an Honor, on 2G calls (its carrier would not "
-          "register it for VoLTE), and on a Galaxy S23 over Wi-Fi Calling. On a "
-          "phone not tried yet, the test call is how to know."),
+          "register it for VoLTE), and on a Galaxy S23 over VoLTE and Wi-Fi "
+          "Calling. On a phone not tried yet, the test call is how to know."),
 
     ("h2", "Playing, sharing and deleting"),
     ("p", "Recordings are listed newest first, under **Today**, **Yesterday** "
@@ -2353,7 +2356,8 @@ SETUP = [
         "**Hide the debugging notification** — the answer to the question in "
         "step 1, changeable. Debugging stays on either way while JemRec is on; "
         "this is only about whether Android's notification saying so is shown. "
-        "Turning it on after setup needs Wi-Fi.",
+        "After setup JemRec's recorder grants what it needs, so turning it on "
+        "needs JemRec ready to record.",
     ]),
     ("p", "**Troubleshooting**"),
     ("ul", [
@@ -2597,8 +2601,19 @@ def render_html(blocks) -> str:
 def fill(text, **options):
     """textwrap.fill at the manual's width, for docs/SETUP.md, never breaking a
     word at its hyphen: a Markdown line ending in "Wi-" and the next starting
-    "Fi" read as "Wi- Fi"."""
-    return textwrap.fill(text, 79, break_on_hyphens=False, **options)
+    "Fi" read as "Wi- Fi". Nor starting a line with what Markdown takes for
+    the start of a block - "- ", "* ", "+ ", "1. ", "1) ", "# ", ">" with or
+    without a space; "#" ending the text (an empty heading); a run of "=" or
+    "-" ending it, or of three or more "*" or "_" - which cuts the paragraph
+    there on GitHub, or makes it a heading (a draft of the answering machine's
+    paragraph wrapped to a line beginning "- up to twice a call", 2026-11-13):
+    such a mark stays with the word before it. The pattern glues a little
+    more - a lone "*", "+" or numbered mark ending the text, any run of "-",
+    "=", "*" or "_" ending it, and any number before "." or ")" - which costs
+    nothing. Those are the marks the manual's sentences can hold; it has no
+    code fence or HTML."""
+    glued = re.sub(r" (?=(?:[-*+]|\d+[.)]|#{1,6})(?: |$)|>|[-=*_]+$)", "\x00", text)
+    return textwrap.fill(glued, 79, break_on_hyphens=False, **options).replace("\x00", " ")
 
 
 def render_markdown(blocks) -> str:
@@ -3224,9 +3239,10 @@ FAQ = [
      "phone call only when Android says the phone itself is in one."),
     ("Will callers hear my greeting?",
      "On the two phones it has been tried on, yes. No app can play sound into a "
-     "call, so the recorder does it as the shell: on the Honor through an output "
-     "Android calls <em>in-call music</em>, on a Galaxy S23 over Wi-Fi Calling "
-     "through Android's call-screening route; not every phone has either. Before you switch the "
+     "call, so the recorder does it as the shell: on the Honor, and on a Galaxy "
+     "S23 over VoLTE, through an output Android calls <em>in-call music</em>; on "
+     "that S23 over Wi-Fi Calling through Android's call-screening route, picked "
+     "for each call by the way it goes. Not every phone has either. Before you switch the "
      "answering machine on, its <em>Checks</em> tell you in a second whether "
      "yours does, and a <em>Test call</em> settles it for that kind of call: "
      "2G, VoLTE and Wi-Fi Calling differ. Your microphone is muted while the "
@@ -3507,7 +3523,7 @@ INDEX_BODY = f"""
     <ul class="table-card devices tested">
       <li>Honor Magic 8 Pro<span>MagicOS 10 and 11, Android 16 and 17 &mdash; the phone it was developed on</span></li>
       <li>Samsung Galaxy S20<span>One UI</span></li>
-      <li>Samsung Galaxy S23<span>One UI, Android 16 &mdash; over Wi-Fi Calling too</span></li>
+      <li>Samsung Galaxy S23<span>One UI, Android 16 and 17 &mdash; over Wi-Fi Calling too</span></li>
       <li>Samsung Galaxy M34<span>One UI 8.5, Android 16 &mdash; over Wi-Fi Calling too, as its owner reported</span></li>
       <li>OnePlus<span>LineageOS 23</span></li>
     </ul>
@@ -3522,7 +3538,7 @@ INDEX_BODY = f"""
        <strong>Self-test</strong> answers it on yours in about a second.</p>
     <p><strong>The answering machine</strong> has been tried on two phones: the
        Honor, on 2G calls (its carrier would not register it for VoLTE), and a
-       Galaxy S23 over Wi-Fi Calling. Whether a phone
+       Galaxy S23 over VoLTE and Wi-Fi Calling. Whether a phone
        carries a greeting to the caller is up to its audio hardware too, so the
        answering machine has its own checks and a test call.</p>
   </div>
@@ -3671,7 +3687,9 @@ HOW_BODY = f"""
   <p>Off until you switch it on. It answers a call you have not taken, plays
      your own greeting with your microphone muted, and keeps the caller&rsquo;s
      message. No app can play sound into a call, so the recorder does it, as the
-     shell, through an output Android calls in-call music. Android&rsquo;s own
+     shell, through an output Android calls in-call music &mdash; or, for a call
+     that goes through the phone&rsquo;s mixer, as Wi-Fi Calling does on a
+     Galaxy S23, Android&rsquo;s call-screening route. Android&rsquo;s own
      answer on whether a phone can do that was wrong on the Honor, so a test
      call, not a guess, says whether it works on yours.</p>
 
@@ -3832,7 +3850,8 @@ PRIVACY_DATA = [
      "Diagnostics puts it on the clipboard, only when you tap it."),
     ("Answering machine tests", "the app&rsquo;s private storage", "the latest of each kind", "only if you run them",
      "What its checks found about the phone, and the result of each test call by "
-     "call type (2G, VoLTE, Wi-Fi Calling); <em>Copy a report</em> puts these "
+     "call type (2G, VoLTE, Wi-Fi Calling), with whether that call went through "
+     "the phone&rsquo;s mixer; <em>Copy a report</em> puts these "
      "on the clipboard, only when you tap it. A test call still to be read is "
      "kept too: whether it was incoming or outgoing and when its wait ends, or, "
      "once answered, its call type until you say whether the caller heard your "

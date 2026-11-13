@@ -51,7 +51,7 @@ import java.util.Locale
  * start, and nothing above asks whether it does. A user's phone showed the gap:
  * "PASS - a call would be recorded" while every call after the first went
  * unrecorded, because the daemon's watch had been garbage-collected (see
- * Main.callWatch). So the daemon is now asked what its watch has heard, and
+ * CallWatch.callWatch). So the daemon is now asked what its watch has heard, and
  * that is held against the phone's own call log - a call the log has and the
  * watch never heard is a FAIL, whatever the capture says. The log needs
  * READ_CALL_LOG, which is optional; without it everything else still runs and
@@ -294,7 +294,7 @@ object SelfTest {
         if (VoipCallNotes.enabled(context)) {
             if (!DebugNotificationCleaner.accessGranted(context)) {
                 return "Show who called is on, but JemRec no longer has notification access, so " +
-                    "messenger callers will not be named. Turn Show who called off and on again on Wi-Fi."
+                    "messenger callers will not be named. Turn Show who called off and on again."
             }
             lines += "names:     from the apps' call notifications"
         }

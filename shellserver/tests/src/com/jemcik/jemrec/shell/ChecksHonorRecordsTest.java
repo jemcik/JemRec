@@ -17,7 +17,7 @@ import org.junit.Test;
 
 /**
  * The daemon's background-stop rule on records the Honor itself printed
- * (MagicOS 11, 2026-10-25), joined into one line the way Main.slurp reads a
+ * (MagicOS 11, 2026-10-25), joined into one line the way Shell.slurp reads a
  * dump. Another app's records, kept for what they show, carry a made-up
  * package name (com.example.chat): which apps are on the phone is no one's
  * business.

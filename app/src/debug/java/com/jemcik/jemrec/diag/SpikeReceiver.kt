@@ -425,6 +425,33 @@ class SpikeReceiver : BroadcastReceiver() {
                         report(appContext, "disconnect", "closed")
                     }
 
+                    // Notification access for the app's listener, as Settings'
+                    // Show who called and Hide the debugging notification ask
+                    // for it: through the recorder, or a session with none.
+                    "grantlistener" -> report(
+                        appContext, "grantlistener",
+                        com.jemcik.jemrec.setup.Setup.grantNotificationAccess(appContext)?.let { "not granted: $it" }
+                            ?: "granted",
+                    )
+
+                    // The answering machine's test call, straight to the
+                    // recorder as the screen's Test call asks it, and what it
+                    // found - no result or route of the screen's changes; the
+                    // call itself is noted as it ends, as any test's is
+                    // (tools/emulator_checks.py, test_call_wifi):
+                    //   --es op armtest --el arming 42
+                    //   --es op testresult
+                    "armtest" -> report(
+                        appContext, "armtest",
+                        "${com.jemcik.jemrec.capture.CaptureDaemon.armTest(
+                            appContext, incoming = true, arming = intent.getLongExtra("arming", 0),
+                        )}",
+                    )
+                    "testresult" -> report(
+                        appContext, "testresult",
+                        "${com.jemcik.jemrec.capture.CaptureDaemon.testResult(appContext)}",
+                    )
+
                     // Setup's last step - the grant, then the recorder - over
                     // the session `connect` opened: what Try again runs.
                     "finish" -> report(

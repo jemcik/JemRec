@@ -102,6 +102,7 @@ object CaptureDaemon {
     internal fun parseQuitReply(line: String?): QuitReply = DaemonClient.parseQuitReply(line)
     internal fun parseWatch(line: String?): Watch? = DaemonClient.parseWatch(line)
     internal fun parseSims(line: String?): Sims? = DaemonClient.parseSims(line)
+    internal fun parseListenerReply(line: String?): Boolean? = DaemonClient.parseListenerReply(line)
     internal fun fields(line: String?, head: String): Map<String, String>? = DaemonClient.fields(line, head)
     internal fun currentMode(context: Context): Int = DaemonClient.currentMode(context)
     suspend fun quit(context: Context): Boolean = DaemonClient.quit(context)
@@ -109,6 +110,7 @@ object CaptureDaemon {
     suspend fun sendMode(context: Context): Boolean = DaemonClient.sendMode(context)
     suspend fun setVoipApps(context: Context): Boolean = DaemonClient.setVoipApps(context)
     suspend fun setTracking(context: Context): Boolean = DaemonClient.setTracking(context)
+    suspend fun allowListener(context: Context): Boolean? = DaemonClient.allowListener(context)
     suspend fun setAnswering(context: Context): Boolean = DaemonClient.setAnswering(context)
     suspend fun skipCall(context: Context, skip: Boolean): Boolean = DaemonClient.skipCall(context, skip)
     suspend fun debuggingOff(context: Context, go: Boolean): DaemonClient.OffReply? = DaemonClient.debuggingOff(context, go)
@@ -121,8 +123,8 @@ object CaptureDaemon {
     suspend fun uploadGreeting(context: Context, pcm: ByteArray): Boolean = DaemonClient.uploadGreeting(context, pcm)
     suspend fun syncGreeting(context: Context): Boolean = DaemonClient.syncGreeting(context)
     suspend fun stageOne(context: Context): Map<String, String>? = DaemonClient.stageOne(context)
-    suspend fun armTest(context: Context, incoming: Boolean, number: String = ""): DaemonClient.TestArming? =
-        DaemonClient.armTest(context, incoming, number)
+    suspend fun armTest(context: Context, incoming: Boolean, number: String = "", arming: Long = 0): DaemonClient.TestArming? =
+        DaemonClient.armTest(context, incoming, number, arming)
     suspend fun testResult(context: Context): Map<String, String>? = DaemonClient.testResult(context)
     suspend fun forwarding(context: Context): String? = DaemonClient.forwarding(context)
     suspend fun setForwarding(context: Context, seconds: Int): String? = DaemonClient.setForwarding(context, seconds)

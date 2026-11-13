@@ -3,7 +3,7 @@ package com.jemcik.jemrec.shell;
 /**
  * The phone's call state, as telephony reports it, made into the start and
  * end of each call and which way it went. Plain Java, nothing of Android, so
- * it can be tested (shellserver/tests: CallStatesTest); Main.CallWatch feeds
+ * it can be tested (shellserver/tests: CallStatesTest); CallWatch feeds
  * it the events and does what it says through {@link Effects}.
  *
  * AN IDLE IS A CLAIM, NOT A FACT.
