@@ -139,24 +139,35 @@ final class Checks {
      * Made in neither, no such track was made, and nothing left.
      */
     static boolean modeLeftTrack(int madeIn, int now) {
-        int family = callModeFamily(madeIn);
-        return family != 0 && family != callModeFamily(now);
+        int family = callPath(madeIn);
+        return family != PATH_NONE && family != callPath(now);
     }
 
-    /** AudioManager's MODE_IN_CALL, MODE_CALL_SCREENING, MODE_CALL_REDIRECT
-     *  (2, 4, 5): 1; MODE_IN_COMMUNICATION, MODE_COMMUNICATION_REDIRECT (3,
-     *  6): 2; any other: 0. */
-    private static int callModeFamily(int mode) {
+    /** No call's mode: normal, ringtone, or one this does not know. */
+    static final int PATH_NONE = 0;
+    /** The call's own voice path, through the modem: in-call music mixes
+     *  into its uplink. */
+    static final int PATH_VOICE = 1;
+    /** Through the mixer, as a messenger's call: a Galaxy S23's Wi-Fi Calling
+     *  (Checks.phoneCallInMixer). */
+    static final int PATH_MIXER = 2;
+
+    /** The way a call's audio takes, by the audio mode: AudioManager's
+     *  MODE_IN_CALL, MODE_CALL_SCREENING, MODE_CALL_REDIRECT (2, 4, 5) the
+     *  voice path; MODE_IN_COMMUNICATION, MODE_COMMUNICATION_REDIRECT (3, 6)
+     *  the mixer; any other none - AOSP's two families for a call-screening
+     *  track (modeLeftTrack). */
+    static int callPath(int mode) {
         switch (mode) {
             case 2:
             case 4:
             case 5:
-                return 1;
+                return PATH_VOICE;
             case 3:
             case 6:
-                return 2;
+                return PATH_MIXER;
             default:
-                return 0;
+                return PATH_NONE;
         }
     }
 
@@ -399,6 +410,17 @@ final class Checks {
     /** Android 14: from here the shell holds CAPTURE_VOICE_COMMUNICATION_OUTPUT,
      *  which copying a call's playback needs (Voip.Policy). */
     static final int SDK_VOICE_COPY = 34;
+
+    /** The way a phone call's audio takes, by [mode] on [sdk]: in call its
+     *  voice path, the mixer where a phone call plays through it
+     *  (phoneCallInMixer), any other none - as its audio is up or not for
+     *  the answering machine (AnswerEffects.callAudioUp). */
+    static int phoneCallPath(int mode, int sdk) {
+        if (mode == MODE_IN_CALL) {
+            return PATH_VOICE;
+        }
+        return phoneCallInMixer(mode, sdk) ? PATH_MIXER : PATH_NONE;
+    }
 
     /**
      * Whether a phone call plays through Android's mixer, as a messenger call

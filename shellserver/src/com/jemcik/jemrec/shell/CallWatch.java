@@ -5,6 +5,7 @@ import com.genymobile.scrcpy.util.Ln;
 
 import android.content.Context;
 import android.media.AudioManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.telecom.TelecomManager;
@@ -230,11 +231,33 @@ final class CallWatch extends TelephonyCallback
         // A phone call that ends into another app's call never gets its
         // idle; the audio mode changing says (CallStates.audioModeChanged).
         // AudioManager holds its listeners itself, unlike telephony.
+        // The answering machine follows the mode Android applies by it too
+        // (AnswerMachine.pathApplied).
         try {
-            audio.addOnModeChangedListener(handler::post, mode -> states.audioModeChanged());
+            audio.addOnModeChangedListener(handler::post, mode -> {
+                states.audioModeChanged();
+                AnswerMachine machine = Answering.answerMachine;
+                if (machine != null) {
+                    machine.pathApplied(Checks.phoneCallPath(mode, Build.VERSION.SDK_INT));
+                }
+            });
+            // The listener tells changes only (AOSP's registerModeDispatcher
+            // sends none on registering), and a call ringing silently - on
+            // vibrate, under Do Not Disturb - makes none before its answer:
+            // the machine would have no word on the first call, and would
+            // start its greeting on the mode asked for. So the mode now, which,
+            // with no call moving it, is the one applied too; a change since
+            // comes after this on the same looper.
+            handler.post(() -> {
+                AnswerMachine machine = Answering.answerMachine;
+                if (machine != null) {
+                    machine.pathApplied(Checks.phoneCallPath(audio.getMode(), Build.VERSION.SDK_INT));
+                }
+            });
         } catch (Throwable t) {
             Ln.w("callwatch: no audio mode callback, so a phone call that ends into an app's call "
-                    + "records on until that one ends: " + t);
+                    + "records on until that one ends, and the answering machine goes by the mode asked for: "
+                    + t);
         }
     }
 

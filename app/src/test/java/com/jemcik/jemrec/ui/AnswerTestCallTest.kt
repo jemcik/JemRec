@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui
 
 import android.media.AudioTrack
 import com.jemcik.jemrec.answering.AnswerDiagnostics
+import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.FakeRecorder
@@ -327,6 +328,118 @@ class AnswerTestCallTest {
         eventually("the result read") { AnswerDiagnostics.results(context).isNotEmpty() }
         assertEquals(mapOf("Wi-Fi Calling" to AnswerDiagnostics.Verdict.LIKELY), AnswerDiagnostics.results(context))
         eventually("the caller asked") { screen.state.value.askHeard == "Wi-Fi Calling" }
+    }
+
+    /**
+     * The Galaxy S23's own sequence (2026-11-13): passed over Wi-Fi Calling,
+     * through the mixer; then a VoLTE test on the call-screening route the
+     * caller did not hear. The other route is tried next: the mixer's pass
+     * was not the call-screening route's to keep, as a call there gets it
+     * whatever the app's.
+     */
+    @Test fun aPassThroughTheMixerLeavesAVoiceFailureToTryTheOtherRoute() {
+        // A phone on 0.31 already: the update's one-time look is behind it.
+        AnsweringMachine.settleRoutesByPath(context)
+        AnswerDiagnostics.rememberStageOne(context, mapOf("perms" to "ok", "incallmusic" to "1", "screening" to "1"))
+        AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = "RESULT 1 state=done route=-1 realms=11820 audioms=11630 tone=0 tonechunks=0" +
+            " mute=1 voice=13 played=1 wifi=1 mixer=1"
+        val first = opened(scope)
+        eventually("the caller asked") { first.state.value.askHeard == "Wi-Fi Calling" }
+        assertEquals(setOf("Wi-Fi Calling"), AnswerDiagnostics.mixerTypes(context))
+        first.heard("Wi-Fi Calling", true)
+        // Kept through the answer: it is the same test's.
+        assertEquals(setOf("Wi-Fi Calling"), AnswerDiagnostics.mixerTypes(context))
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = "RESULT 1 state=done route=-1 realms=13043 audioms=11630 tone=0 tonechunks=0" +
+            " mute=1 voice=13 played=1 wifi=0 mixer=0"
+        val second = opened(scope)
+        eventually("the caller asked") { second.state.value.askHeard == "VoLTE" }
+        second.heard("VoLTE", false)
+        assertEquals(AnsweringMachine.ROUTE_MUSIC, AnsweringMachine.route(context))
+        assertEquals(setOf("Wi-Fi Calling"), AnswerDiagnostics.mixerTypes(context))
+    }
+
+    /**
+     * A Galaxy S23 updated from 0.30, as its tests left it: a test over
+     * Wi-Fi Calling failed on in-call music and moved it to call-screening,
+     * then passed there, filed as VoLTE. Its VoLTE callers would hear
+     * nothing on 0.31 until a VoLTE test failed: put back once, its results
+     * cleared - and only once.
+     */
+    @Test fun aPhoneMovedByATestBefore031IsPutBackOnce() {
+        AnswerDiagnostics.rememberStageOne(context, mapOf("perms" to "ok", "incallmusic" to "1", "screening" to "1"))
+        AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
+        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.WORKS)
+        AnswerDiagnostics.record(context, "Wi-Fi Calling", AnswerDiagnostics.Verdict.WORKS, mixer = true)
+        // Its last test's question still open: gone too - answered after the
+        // update, it would file the old route's test under in-call music.
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        assertTrue(AnswerDiagnostics.takeArmedTest(context, AnswerDiagnostics.pendingTest(context).let {
+            (it as AnswerDiagnostics.PendingTest.Armed).until
+        }, asking = "VoLTE"))
+        assertTrue(AnswerDiagnostics.results(context).isEmpty())
+        assertTrue(AnswerDiagnostics.mixerTypes(context).isEmpty())
+        assertNull(AnswerDiagnostics.pendingTest(context))
+        assertEquals(AnsweringMachine.ROUTE_MUSIC, AnsweringMachine.route(context))
+        // A test's move after it stands.
+        AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
+        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.FAILS)
+        assertEquals(AnsweringMachine.ROUTE_SCREENING, AnsweringMachine.route(context))
+        assertEquals(mapOf("VoLTE" to AnswerDiagnostics.Verdict.FAILS), AnswerDiagnostics.results(context))
+    }
+
+    /** The recorder's spawn reads the route before anything reads the
+     *  results: the update's step runs for that read too. */
+    @Test fun theUpdatesStepRunsForTheRoutesFirstRead() {
+        AnswerDiagnostics.rememberStageOne(context, mapOf("perms" to "ok", "incallmusic" to "1", "screening" to "1"))
+        AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
+        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.WORKS)
+        // What the launcher sends the recorder, read first.
+        assertTrue(AnsweringMachine.wire(context).endsWith(",music"))
+        assertTrue(AnswerDiagnostics.results(context).isEmpty())
+    }
+
+    /** A phone the checks put on call-screening - no in-call music - or one
+     *  never moved keeps its route and results through the update. */
+    @Test fun aPhoneNotMovedByATestKeepsItsRouteAndResults() {
+        AnswerDiagnostics.rememberStageOne(context, mapOf("perms" to "ok", "incallmusic" to "0", "screening" to "1"))
+        AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
+        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.WORKS)
+        assertEquals(mapOf("VoLTE" to AnswerDiagnostics.Verdict.WORKS), AnswerDiagnostics.results(context))
+        assertEquals(AnsweringMachine.ROUTE_SCREENING, AnsweringMachine.route(context))
+    }
+
+    @Test fun aPhoneNeverMovedKeepsItsResults() {
+        // The Honor's way: in-call music found, and on it still.
+        AnswerDiagnostics.rememberStageOne(context, mapOf("perms" to "ok", "incallmusic" to "1", "screening" to "1"))
+        AnswerDiagnostics.record(context, "2G", AnswerDiagnostics.Verdict.WORKS)
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        assertEquals(mapOf("2G" to AnswerDiagnostics.Verdict.WORKS), AnswerDiagnostics.results(context))
+        assertEquals(AnsweringMachine.ROUTE_MUSIC, AnsweringMachine.route(context))
+        assertTrue(AnswerDiagnostics.pendingTest(context) is AnswerDiagnostics.PendingTest.Armed)
+    }
+
+    /** A type tested again off the mixer - the same phone's Wi-Fi Calling
+     *  through the modem after an update, say - is this route's again. */
+    @Test fun aTypeTestedAgainOffTheMixerLosesTheMark() {
+        AnswerDiagnostics.record(context, "Wi-Fi Calling", AnswerDiagnostics.Verdict.WORKS, mixer = true)
+        AnswerDiagnostics.record(context, "Wi-Fi Calling", AnswerDiagnostics.Verdict.WORKS)
+        assertEquals(setOf("Wi-Fi Calling"), AnswerDiagnostics.mixerTypes(context))
+        AnswerDiagnostics.record(context, "Wi-Fi Calling", AnswerDiagnostics.Verdict.FAILS, mixer = false)
+        assertTrue(AnswerDiagnostics.mixerTypes(context).isEmpty())
+        assertEquals(AnswerDiagnostics.Verdict.FAILS, AnswerDiagnostics.results(context)["Wi-Fi Calling"])
+    }
+
+    /** Copy a report says which tests went to a call through the mixer: their
+     *  route was not the one it names. */
+    @Test fun theReportMarksATestThroughTheMixer() {
+        AnswerDiagnostics.record(context, "Wi-Fi Calling", AnswerDiagnostics.Verdict.WORKS, mixer = true)
+        opened(scope).copyReport()
+        val clip = context.getSystemService(android.content.ClipboardManager::class.java).primaryClip
+        val text = clip?.getItemAt(0)?.text.toString()
+        assertTrue(text, text.contains("Test call on Wi-Fi Calling: WORKS (through the mixer)"))
     }
 
     /** Two screens open on one armed test - a second JemRec window, which one

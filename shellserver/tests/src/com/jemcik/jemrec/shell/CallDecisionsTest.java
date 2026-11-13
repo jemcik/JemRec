@@ -271,6 +271,44 @@ public class CallDecisionsTest {
     }
 
     @Test
+    public void aGreetingsCheckIsItsOwn() {
+        // The test's arming and its greeting both still the ones checked for.
+        assertTrue(CallDecisions.greetingCheckApplies(7L, 7L, 3, 3, true, false));
+        // A greeting played again since: the old one's check reads the new track.
+        assertFalse(CallDecisions.greetingCheckApplies(7L, 7L, 4, 3, true, false));
+        // Another test armed, or this one over before it was read.
+        assertFalse(CallDecisions.greetingCheckApplies(8L, 7L, 3, 3, true, false));
+        assertFalse(CallDecisions.greetingCheckApplies(7L, 7L, 3, 3, false, false));
+        // Read while its greeting is cut off, the call moving: neither way's.
+        assertFalse(CallDecisions.greetingCheckApplies(7L, 7L, 3, 3, true, true));
+    }
+
+    @Test
+    public void aTestsMixerMarkIsItsGreetingsWay() {
+        assertEquals(1, CallDecisions.mixerOf(Checks.PATH_MIXER));
+        assertEquals(0, CallDecisions.mixerOf(Checks.PATH_VOICE));
+        assertEquals(-1, CallDecisions.mixerOf(Checks.PATH_NONE));
+        // As each greeting begins, until a check kept one with the readings.
+        assertEquals(1, CallDecisions.mixerAsGreetingBegins(false, 0, Checks.PATH_MIXER));
+        assertEquals(0, CallDecisions.mixerAsGreetingBegins(false, -1, Checks.PATH_VOICE));
+        assertEquals(0, CallDecisions.mixerAsGreetingBegins(true, 0, Checks.PATH_MIXER));
+        assertEquals(1, CallDecisions.mixerAsGreetingBegins(true, 1, Checks.PATH_VOICE));
+    }
+
+    @Test
+    public void aCallThroughTheMixerGetsTheCallScreeningRouteWhateverTheAppsIs() {
+        // On a Galaxy S23: in-call music over VoLTE, call-screening over
+        // Wi-Fi Calling, which goes through the mixer there.
+        assertEquals("screening", CallDecisions.greetingRoute("music", Checks.PATH_MIXER));
+        assertEquals("screening", CallDecisions.greetingRoute("screening", Checks.PATH_MIXER));
+        // The call's voice path takes the app's, either.
+        assertEquals("music", CallDecisions.greetingRoute("music", Checks.PATH_VOICE));
+        assertEquals("screening", CallDecisions.greetingRoute("screening", Checks.PATH_VOICE));
+        // No call mode read: the app's, as before the way was looked at.
+        assertEquals("music", CallDecisions.greetingRoute("music", Checks.PATH_NONE));
+    }
+
+    @Test
     public void aVoiceTypeReadMidGreetingReplacesTheOneBeforeIfItNamesOne() {
         // On Wi-Fi as the message began (IWLAN, 18), on LTE mid-greeting.
         assertEquals(13, CallDecisions.voiceAfter(18, 13));

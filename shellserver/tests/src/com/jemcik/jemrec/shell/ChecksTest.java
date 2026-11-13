@@ -376,6 +376,34 @@ public class ChecksTest {
     }
 
     @Test
+    public void theWayACallTakesFollowsItsMode() {
+        // In call, call screening, call redirect: the voice path.
+        assertEquals(Checks.PATH_VOICE, Checks.callPath(2));
+        assertEquals(Checks.PATH_VOICE, Checks.callPath(4));
+        assertEquals(Checks.PATH_VOICE, Checks.callPath(5));
+        // Communication and its redirect: the mixer.
+        assertEquals(Checks.PATH_MIXER, Checks.callPath(3));
+        assertEquals(Checks.PATH_MIXER, Checks.callPath(6));
+        // Normal, ringtone, a mode not read or not known: none.
+        assertEquals(Checks.PATH_NONE, Checks.callPath(0));
+        assertEquals(Checks.PATH_NONE, Checks.callPath(1));
+        assertEquals(Checks.PATH_NONE, Checks.callPath(-1));
+        assertEquals(Checks.PATH_NONE, Checks.callPath(7));
+    }
+
+    @Test
+    public void aPhoneCallsWayIsInCallOrTheMixerWhereOneGoesThroughIt() {
+        assertEquals(Checks.PATH_VOICE, Checks.phoneCallPath(2, 37));
+        assertEquals(Checks.PATH_MIXER, Checks.phoneCallPath(3, Checks.SDK_VOICE_COPY));
+        // Before Android 14 a phone call is never had through the mixer.
+        assertEquals(Checks.PATH_NONE, Checks.phoneCallPath(3, Checks.SDK_VOICE_COPY - 1));
+        // Call screening, the redirects, normal, ringtone: no phone call's audio up.
+        for (int mode : new int[]{-1, 0, 1, 4, 5, 6}) {
+            assertEquals("mode " + mode, Checks.PATH_NONE, Checks.phoneCallPath(mode, 37));
+        }
+    }
+
+    @Test
     public void theEmulatorsCallIsNotOnWifi() {
         assertEquals(0, Checks.callOnWifi(AVD_37));
         // Only the list is read. Further down, only the foreground call's

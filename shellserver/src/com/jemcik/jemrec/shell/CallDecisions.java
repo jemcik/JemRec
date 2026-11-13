@@ -232,6 +232,33 @@ final class CallDecisions {
         return armedNow == armedThen && testing;
     }
 
+    /** A test's mid-greeting check (testCheckApplies), and the greeting it
+     *  was for - [greetingThen] - still the latest, [greetingNow]: one cut
+     *  off and played again has its own check, and the old one's, read after
+     *  the new greeting began, would read its track as the old route's. Nor
+     *  while a cut is under way ([cut], AnswerMachine.cutUnderWay): the call
+     *  is moving then, its greeting stopped - a reading of it is of neither
+     *  way, and the next greeting's check names the call. */
+    static boolean greetingCheckApplies(long armedNow, long armedThen, int greetingNow, int greetingThen,
+            boolean testing, boolean cut) {
+        return testCheckApplies(armedNow, armedThen, testing) && greetingNow == greetingThen && !cut;
+    }
+
+    /** RESULT's mixer= for a greeting of [path] (Checks.phoneCallPath): 1
+     *  the mixer - its route the call-screening one, whatever the app's - 0
+     *  the call's voice path, -1 neither. */
+    static int mixerOf(int path) {
+        return path == Checks.PATH_MIXER ? 1 : path == Checks.PATH_VOICE ? 0 : -1;
+    }
+
+    /** A test's mixer= as a greeting of [path] begins: its way, so a greeting
+     *  that fails before its check says which way it went - until a check
+     *  has kept its own with the Wi-Fi mark and the voice type ([checked]):
+     *  then [kept] stays, the readings naming one greeting. */
+    static int mixerAsGreetingBegins(boolean checked, int kept, int path) {
+        return checked ? kept : mixerOf(path);
+    }
+
     /** A test's Wi-Fi reading (Checks.callOnWifi) over the one kept before
      *  ([before]): one that could tell replaces it, the latest naming the
      *  path the call is on now; one that could not (-1) leaves it. */
@@ -245,6 +272,24 @@ final class CallDecisions {
      *  nor -1, not read) replaces it. */
     static int voiceAfter(int before, int reading) {
         return reading > 0 ? reading : before;
+    }
+
+    /**
+     * The route a greeting takes into a call whose audio takes [path]
+     * (Checks.phoneCallPath), with [configured] the app's: the call-screening
+     * route for a call through the mixer, whatever the app's. In-call music
+     * mixes into the modem's uplink, which such a call does not go through:
+     * on a Galaxy S23 over Wi-Fi Calling it reached nobody (2026-10-24), and
+     * as a call there moved from LTE to Wi-Fi, Android left the in-call
+     * music output with no device (its log, 2026-11-12). The
+     * call-screening route makes its track for the mixer's mode there, and
+     * the caller heard it. The app's route is for the call's voice path,
+     * where each phone differs: on that S23 over VoLTE only in-call music
+     * reached the caller, the call-screening route's greeting playing out in
+     * full to nobody (2026-11-13), as on an Honor on 2G (GreetingPlayer).
+     */
+    static String greetingRoute(String configured, int path) {
+        return path == Checks.PATH_MIXER ? AnswerSettings.ROUTE_SCREENING : configured;
     }
 
     /** What 'R' says of a test in [state] with [inFlight] of its checks'

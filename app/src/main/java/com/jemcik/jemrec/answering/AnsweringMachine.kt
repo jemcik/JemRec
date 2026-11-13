@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.answering
 
 import android.content.Context
+import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
@@ -28,6 +29,7 @@ object AnsweringMachine {
     private const val KEY_LONGEST = "answer_longest_s"
     private const val KEY_SIM = "answer_sim"
     private const val KEY_ROUTE = "answer_route"
+    private const val KEY_ROUTES_BY_PATH = "answer_routes_by_path"
 
     /** Seconds of ringing before it answers. 5 suits taking every call as a
      *  message; below the carrier's own voicemail timer, always. */
@@ -86,10 +88,45 @@ object AnsweringMachine {
         Prefs.of(context).edit { putString(KEY_SIM, sim) }
     }
 
-    /** How the greeting reaches the caller on this phone: "music" (Qualcomm's
-     *  in-call music, proven on the Honor) unless a test call found that only
-     *  the call-screening route works here. */
-    fun route(context: Context): String = Prefs.of(context).getString(KEY_ROUTE, ROUTE_MUSIC) ?: ROUTE_MUSIC
+    /** How the greeting reaches the caller on this phone, for a call on its
+     *  voice path - one through the mixer gets the call-screening route
+     *  whatever this (the recorder's CallDecisions.greetingRoute): "music"
+     *  (Qualcomm's in-call music, proven on the Honor) unless a test call
+     *  found that only the call-screening route works here. */
+    fun route(context: Context): String {
+        settleRoutesByPath(context)
+        return Prefs.of(context).getString(KEY_ROUTE, ROUTE_MUSIC) ?: ROUTE_MUSIC
+    }
+
+    /**
+     * Once, at the first read after the update to 0.31, where the route
+     * followed the call (AnswerDiagnostics.resetsForRoutesByPath): a phone a
+     * failed test moved to the call-screening route, though it has in-call
+     * music, goes back to in-call music, and its test results go, so its
+     * settings say it is not tested and a test call tells again. Before 0.31
+     * one route served every call, and a test over Wi-Fi Calling - through
+     * the mixer on a Galaxy S23, and filed as VoLTE there - failed on in-call
+     * music and moved it, leaving its VoLTE callers on a route that reached
+     * nobody (2026-11-13). In one write with its mark, so it is done once.
+     */
+    @Synchronized
+    fun settleRoutesByPath(context: Context) {
+        val prefs = Prefs.of(context)
+        if (prefs.getBoolean(KEY_ROUTES_BY_PATH, false)) return
+        val route = prefs.getString(KEY_ROUTE, ROUTE_MUSIC) ?: ROUTE_MUSIC
+        val reset = AnswerDiagnostics.resetsForRoutesByPath(route, AnswerDiagnostics.stageOne(context))
+        val results = if (reset) AnswerDiagnostics.resultKeys(context) else emptyList()
+        prefs.edit {
+            if (reset) {
+                putString(KEY_ROUTE, ROUTE_MUSIC)
+                results.forEach { remove(it) }
+            }
+            putBoolean(KEY_ROUTES_BY_PATH, true)
+        }
+        if (reset) {
+            Log.i("JemRec", "answer: back on in-call music for a call's voice path since 0.31; the tests before it cleared")
+        }
+    }
 
     fun setRoute(context: Context, route: String) {
         require(route == ROUTE_MUSIC || route == ROUTE_SCREENING)

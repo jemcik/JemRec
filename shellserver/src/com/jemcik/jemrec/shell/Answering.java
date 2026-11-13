@@ -26,6 +26,10 @@ final class Answering {
     static volatile @Nullable AnswerMachine answerMachine;
 
     static final GreetingPlayer greetingPlayer = new GreetingPlayer();
+    /** The greetings played, counted on the main looper: what a greeting's
+     *  player says, and its test's check, are that greeting's alone - never
+     *  the one played again after it (AnswerEffects.playGreeting). */
+    static int greetingSeq;
 
     /** This phone's own side of the recording - the uplink, left - is not
      *  silent in the chunk being looked at. Muted, it is silent unless the

@@ -215,9 +215,15 @@ final class Platform {
      * call then stays as 0.23 recorded it.
      */
     static boolean appInCall() {
+        return !Boolean.FALSE.equals(appCallOfItsOwn());
+    }
+
+    /** appInCall's question, null where it cannot be told - for a caller
+     *  whose safe side is the other one (AnswerEffects.phoneCallOnMixer). */
+    static @Nullable Boolean appCallOfItsOwn() {
         TelecomManager t = telecom;
         if (t == null) {
-            return true;
+            return null;
         }
         try {
             // SystemApis: the accounts under MODIFY_PHONE_STATE, the calls
@@ -228,7 +234,7 @@ final class Platform {
             java.lang.reflect.Method inCall = TelecomManager.class.getMethod("isInSelfManagedCall",
                     String.class, android.os.UserHandle.class);
             if (accounts == null) {
-                return true;
+                return null;
             }
             for (Object account : accounts) {
                 android.telecom.PhoneAccountHandle handle = (android.telecom.PhoneAccountHandle) account;
@@ -242,7 +248,7 @@ final class Platform {
             Throwable why = e instanceof java.lang.reflect.InvocationTargetException && e.getCause() != null
                     ? e.getCause() : e;
             Ln.w("recording: could not tell whether another app's call is up: " + why);
-            return true;
+            return null;
         }
     }
 

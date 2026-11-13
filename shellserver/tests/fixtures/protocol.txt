@@ -50,7 +50,7 @@ XA	"TEST emergency"	Wire.test("emergency")	TEST emergency
 XA	"TEST no-greeting"	Wire.test("no-greeting")	TEST no-greeting
 XA	"TEST busy"	Wire.test("busy")	TEST busy
 XA	"TEST armed"	Wire.test("none")	TEST none
-XR	"RESULT 1"	"RESULT 1 state="	RESULT 1 state=done route=1 realms=9416 audioms=9539 tone=0 tonechunks=0 mute=1 voice=16 played=1 arming=1762000180000 wifi=0
+XR	"RESULT 1"	"RESULT 1 state="	RESULT 1 state=done route=1 realms=9416 audioms=9539 tone=0 tonechunks=0 mute=1 voice=16 played=1 arming=1762000180000 wifi=0 mixer=0
 XF	startsWith("FWD ")	Wire.fwd(telephony == null	FWD error no-telephony
 XS	startsWith("FWD ")	Wire.fwd("error bad-seconds")	FWD error bad-seconds
 XP	startsWith("SIMS")	static final String SIMS = "SIMS"	SIMS default=1 1|SIM_1 2|SIM_2

@@ -44,6 +44,12 @@ public class AnswerMachineTest {
         /** A greeting was started and not stopped: stopping an idle player
          *  does nothing, as GreetingPlayer.stop. */
         boolean playing;
+        /** The way the call's audio took as each greeting was started. */
+        final List<Integer> paths = new ArrayList<>();
+        final List<String> logs = new ArrayList<>();
+        /** Communication mode is the phone call's, not another app's call. */
+        boolean phoneCallOnMixer = true;
+        int mixerAsks;
 
         @Override
         public long now() {
@@ -112,6 +118,19 @@ public class AnswerMachineTest {
             return audioInCall || mixerCall;
         }
 
+        /** In call is the voice path - the mode is one at a time, so in call
+         *  wins over a mixer call left set. */
+        @Override
+        public int callPath() {
+            return audioInCall ? Checks.PATH_VOICE : mixerCall ? Checks.PATH_MIXER : Checks.PATH_NONE;
+        }
+
+        @Override
+        public boolean phoneCallOnMixer() {
+            mixerAsks++;
+            return phoneCallOnMixer;
+        }
+
         @Override
         public void setMuted(boolean on) {
             if (!on || muteTakes) {
@@ -126,8 +145,9 @@ public class AnswerMachineTest {
         }
 
         @Override
-        public void playGreeting(boolean checkTone) {
+        public void playGreeting(boolean checkTone, int path) {
             did.add(checkTone ? "greeting with check tone" : "greeting");
+            paths.add(path);
             playing = true;
         }
 
@@ -156,6 +176,7 @@ public class AnswerMachineTest {
 
         @Override
         public void log(String message) {
+            logs.add(message);
         }
 
         /** Run every timer due within [ms], in order, as the clock moves. */
@@ -203,6 +224,7 @@ public class AnswerMachineTest {
         world.advance(20_000L);
         machine.offHook(true);
         world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertEquals("the greeting should have begun", AnswerMachine.State.GREETING, machine.state());
     }
 
     @Test
@@ -966,6 +988,12 @@ public class AnswerMachineTest {
         answeredWithGreeting();
         assertTrue(machine.greetingFailed());
         assertTrue(world.did.contains("hang up"));
+        // Hung up: a move before the end comes is not looked at.
+        world.audioInCall = false;
+        world.mixerCall = true;
+        machine.pathApplied(Checks.PATH_MIXER);
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertEquals(world.logs.toString(), 0, world.logs.stream().filter(l -> l.contains("moved")).count());
         AnswerMachine.Outcome outcome = machine.callEnded();
         assertFalse(world.muted);
         // Said so - not taken for a caller who hung up.
@@ -985,6 +1013,787 @@ public class AnswerMachineTest {
         world.mixerCall = true;
     }
 
+    /** The call moving to the mixer, as Telecom asks and Android applies,
+     *  with nothing released under its greeting - in-call music's track,
+     *  which plays on through a move. */
+    private void movesToTheMixer() {
+        world.audioInCall = false;
+        world.mixerCall = true;
+        machine.pathApplied(Checks.PATH_MIXER);
+    }
+
+    private long movedLogs() {
+        return world.logs.stream().filter(l -> l.contains("moved")).count();
+    }
+
+    @Test
+    public void aGreetingOnTheVoicePathWhoseCallMovesToTheMixerPlaysAgainForIt() {
+        // A Galaxy S23's call answered on LTE, then handed over to Wi-Fi:
+        // its greeting stopped as Android applied communication, and played
+        // again from the start for the mixer's route.
+        answeredWithGreeting();
+        assertEquals(Arrays.asList(Checks.PATH_VOICE), world.paths);
+        world.did.clear();
+        movesToTheMixer();
+        assertDid("stop greeting");
+        // The word the S23's log showed as the greeting was stopped.
+        assertTrue(world.logs.contains("answer: Android applied the call's mode: the mixer"));
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_MIXER), world.paths);
+        assertTrue(world.muted);
+        // Told again that it is there: nothing more.
+        machine.pathApplied(Checks.PATH_MIXER);
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+        machine.greetingDone();
+        assertFalse(machine.callEnded().greetingFailed);
+    }
+
+    @Test
+    public void aGreetingThroughTheMixerWhoseCallMovesToTheVoicePathPlaysAgainForIt() {
+        world.mixerCall = true;
+        world.audioComes = false;
+        answeredWithGreeting();
+        assertEquals(Arrays.asList(Checks.PATH_MIXER), world.paths);
+        world.did.clear();
+        world.mixerCall = false;
+        world.audioInCall = true;
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+        assertEquals(Arrays.asList(Checks.PATH_MIXER, Checks.PATH_VOICE), world.paths);
+    }
+
+    @Test
+    public void aReplayWaitsForTheModeToBeApplied() {
+        // The S23's move from LTE to Wi-Fi (2026-11-13): normal then
+        // communication asked 24 ms apart; normal applied 0.13 s after,
+        // releasing the call-screening track; communication applied 0.6 s
+        // after that. A track made before then would go with the mode
+        // applied between.
+        answeredWithGreeting();
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.did.clear();
+        world.audioInCall = false;
+        world.mixerCall = true;
+        world.advance(130L);
+        machine.pathApplied(Checks.PATH_NONE);
+        machine.greetingInterrupted();
+        world.playing = false;
+        world.advance(600L);
+        assertDid();
+        machine.pathApplied(Checks.PATH_MIXER);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("greeting");
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_MIXER), world.paths);
+        // Back: in-call music has its output only with in call applied.
+        world.did.clear();
+        world.mixerCall = false;
+        world.audioInCall = true;
+        machine.pathApplied(Checks.PATH_NONE);
+        machine.greetingInterrupted();
+        world.playing = false;
+        world.advance(600L);
+        assertDid();
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("greeting");
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_MIXER, Checks.PATH_VOICE), world.paths);
+    }
+
+    /** Answered with the ringtone's mode applied and in call asked for. */
+    private void answeredBeforeTheModeIsApplied() {
+        world.audioInCall = false;
+        machine.pathApplied(Checks.PATH_NONE);
+        on();
+        machine.ringing();
+        machine.goAhead(20_000L, world.now);
+        world.advance(20_000L);
+        machine.offHook(true);
+    }
+
+    @Test
+    public void theFirstGreetingWaitsForTheModeToBeApplied() {
+        // Muted at once - the room is out as soon as the audio is asked up -
+        // the greeting once Android has applied it.
+        answeredBeforeTheModeIsApplied();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid("answer", "mute");
+        world.logs.clear();
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("answer", "mute", "greeting", "message started");
+        // The log says it waited: Android's word before the greeting.
+        assertEquals("answer: Android applied the call's mode: its voice path", world.logs.get(0));
+        // The next call waits on its own clock, not the last one's.
+        world.advance(AnswerMachine.APPLIED_WAIT_MS);
+        machine.callEnded();
+        world.did.clear();
+        answeredBeforeTheModeIsApplied();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid("answer", "mute");
+    }
+
+    @Test
+    public void aModeNeverSaidAppliedIsTakenAsAskedAfterAWhile() {
+        // Android's word lost: as before 0.31, by the asking alone - the
+        // greeting late, not the caller hung up on.
+        answeredBeforeTheModeIsApplied();
+        world.advance(AnswerMachine.APPLIED_WAIT_MS);
+        assertFalse(world.did.contains("greeting"));
+        // The poll a whole wait after the one that first saw it asked.
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertTrue(world.did.contains("greeting"));
+        assertFalse(world.did.contains("hang up"));
+        assertTrue(world.logs.toString(), world.logs.stream().anyMatch(l -> l.contains("has not said it applied")));
+        // And a replay the same: the mode it waits for never said.
+        world.did.clear();
+        world.audioInCall = false;
+        world.mixerCall = true;
+        machine.greetingInterrupted();
+        world.playing = false;
+        world.advance(AnswerMachine.APPLIED_WAIT_MS);
+        assertDid();
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("greeting");
+    }
+
+    @Test
+    public void aMoveThatBouncesBackWaitsForItsModeAgain() {
+        // Communication asked and applied, then in call asked again before
+        // Android applies it: the replay waits for in call applied, however
+        // long ago in call was first seen - a music track made before has no
+        // output a call has.
+        answeredWithGreeting();
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(3_000L);
+        world.did.clear();
+        movesToTheMixer();
+        world.mixerCall = false;
+        world.audioInCall = true;
+        world.advance(5 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting");
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_VOICE), world.paths);
+    }
+
+    @Test
+    public void aGreetingBegunBeforeItsModeWasAppliedPlaysAgainOnceItIs() {
+        // Begun on the asking alone, Android's word late: once it comes, the
+        // greeting is made again for it - once.
+        answeredBeforeTheModeIsApplied();
+        world.advance(AnswerMachine.APPLIED_WAIT_MS + 2 * AnswerMachine.AUDIO_POLL_MS);
+        assertTrue(world.did.contains("greeting"));
+        world.did.clear();
+        machine.pathApplied(Checks.PATH_VOICE);
+        assertDid("stop greeting");
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+    }
+
+    @Test
+    public void aGreetingThroughTheMixerBegunWithoutTheWordIsNotMadeAgainOnIt() {
+        // The call-screening route's track there is injected, not given an
+        // output by the mode applied: its word late changes nothing, and a
+        // greeting played again for it would only count towards the hang-up.
+        machine.pathApplied(Checks.PATH_NONE);
+        world.audioComes = false;
+        world.audioInCall = false;
+        world.mixerCall = true;
+        on();
+        machine.ringing();
+        machine.goAhead(20_000L, world.now);
+        world.advance(20_000L);
+        machine.offHook(true);
+        world.advance(AnswerMachine.APPLIED_WAIT_MS + 2 * AnswerMachine.AUDIO_POLL_MS);
+        assertEquals(Arrays.asList(Checks.PATH_MIXER), world.paths);
+        // Begun without the word, and the log says so.
+        assertTrue(world.logs.toString(), world.logs.stream().anyMatch(l -> l.contains("has not said it applied")));
+        world.did.clear();
+        // The word comes, and the mute goes as Android applies the mode, a
+        // moment after: put back, held - not taken for the user taking the
+        // call, nor a greeting played again.
+        machine.pathApplied(Checks.PATH_MIXER);
+        world.advance(300L);
+        world.muted = false;
+        world.advance(4 * AnswerMachine.MUTE_WATCH_MS);
+        assertDid("mute");
+        assertTrue(world.muted);
+        assertEquals(AnswerMachine.State.GREETING, machine.state());
+    }
+
+    @Test
+    public void theFirstGreetingPutsBackAMuteDroppedAsTheModeIsApplied() {
+        // Muted as the audio is asked up; Android applying the mode drops it:
+        // put back before the greeting, not left for the mute watch to take
+        // for the user taking the call.
+        answeredBeforeTheModeIsApplied();
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        world.muted = false;
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("answer", "mute", "mute", "greeting", "message started");
+        world.advance(2 * AnswerMachine.MUTE_WATCH_MS);
+        assertFalse(world.did.contains("call taken"));
+        // One that does not take: hung up, as for any mute that will not take.
+        machine.callEnded();
+        world.did.clear();
+        answeredBeforeTheModeIsApplied();
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        world.muted = false;
+        world.muteTakes = false;
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertTrue(world.did.contains("hang up"));
+        assertFalse(world.did.contains("greeting"));
+    }
+
+    @Test
+    public void aMoveWhileTheCallWasSaidOverIsLookedAtWhenItGoesOn() {
+        answeredWithGreeting();
+        machine.idleSignal();
+        world.did.clear();
+        movesToTheMixer();
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        assertDid();
+        long applied = world.logs.stream().filter(l -> l.contains("Android applied")).count();
+        machine.callGoesOn();
+        assertDid("stop greeting");
+        // Looked at again, not said again: no mode was applied then.
+        assertEquals(applied, world.logs.stream().filter(l -> l.contains("Android applied")).count());
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_MIXER), world.paths);
+    }
+
+    @Test
+    public void aMoveWhileTheCallWasSaidOverIsLookedAtWhenItIsOffHookAgain() {
+        // The other way out of a false idle: off-hook again, which calls off
+        // the end check, so callGoesOn never comes.
+        answeredWithGreeting();
+        machine.idleSignal();
+        world.did.clear();
+        movesToTheMixer();
+        assertDid();
+        machine.offHook(true);
+        assertDid("stop greeting");
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_MIXER), world.paths);
+    }
+
+    @Test
+    public void theWordForAFallbackGreetingWhileSaidOverIsLookedAtWhenItGoesOn() {
+        // A greeting begun on the asking alone, Android's word come while
+        // telephony said the call was over: once the call goes on, the
+        // greeting is made again for it.
+        world.audioInCall = false;
+        machine.pathApplied(Checks.PATH_NONE);
+        on();
+        machine.ringing();
+        machine.goAhead(20_000L, world.now);
+        world.advance(20_000L);
+        machine.offHook(true);
+        world.advance(AnswerMachine.APPLIED_WAIT_MS + 2 * AnswerMachine.AUDIO_POLL_MS);
+        assertTrue(world.did.contains("greeting"));
+        machine.idleSignal();
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        world.did.clear();
+        machine.callGoesOn();
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting");
+    }
+
+    @Test
+    public void aMoveWhileSaidOverIsTheCallsOwn() {
+        // A call that ended while said over, a move noted in it: the next
+        // call's false idle is no move of its own.
+        answeredWithGreeting();
+        machine.idleSignal();
+        movesToTheMixer();
+        machine.callEnded();
+        world.mixerCall = false;
+        machine.pathApplied(Checks.PATH_VOICE);
+        answeredWithGreeting();
+        machine.idleSignal();
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        world.did.clear();
+        machine.callGoesOn();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+    }
+
+    @Test
+    public void aCallGoingOnWithNoWordFromAndroidIsNoMove() {
+        // No mode ever said applied - no listener here: nothing to look at
+        // again, and nothing taken for a move.
+        answeredWithGreeting();
+        machine.idleSignal();
+        world.did.clear();
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        machine.callGoesOn();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+        assertEquals(0, movedLogs());
+    }
+
+    @Test
+    public void telecomIsAskedAboutAnAppsCallOnlySoOften() {
+        // Another app's call holding communication after a cut: asked once
+        // as Android applied it, then at most each MIXER_ASK_MS.
+        answeredWithGreeting();
+        world.phoneCallOnMixer = false;
+        movesToTheMixer();
+        machine.greetingInterrupted();
+        world.mixerAsks = 0;
+        world.advance(2 * AnswerMachine.MIXER_ASK_MS);
+        assertTrue("asked " + world.mixerAsks, world.mixerAsks <= 2);
+        // A mode applied anew: asked afresh.
+        world.mixerAsks = 0;
+        world.phoneCallOnMixer = true;
+        machine.pathApplied(Checks.PATH_MIXER);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertEquals(1, world.mixerAsks);
+        assertTrue(world.did.contains("greeting"));
+    }
+
+    @Test
+    public void aModeAskedLateIsStillWaitedForNotHungUp() {
+        // In call asked 6.5 s after the answer, Android's word never coming:
+        // greeted on the asking alone 2 s later, as 0.30 greeted it at once -
+        // not hung up at the answer's 8 s as audio that never came.
+        machine.pathApplied(Checks.PATH_NONE);
+        world.audioComes = false;
+        world.audioInCall = false;
+        on();
+        machine.ringing();
+        machine.goAhead(20_000L, world.now);
+        world.advance(20_000L);
+        machine.offHook(true);
+        world.advance(6_500L);
+        world.audioInCall = true;
+        world.advance(AnswerMachine.AUDIO_WAIT_MS - 6_500L + AnswerMachine.AUDIO_POLL_MS);
+        assertFalse(world.did.contains("hang up"));
+        world.advance(AnswerMachine.APPLIED_WAIT_MS);
+        assertTrue(world.did.contains("greeting"));
+        assertFalse(world.did.contains("hang up"));
+        // A cut's wait the same: the audio back late, its word never said.
+        world.did.clear();
+        world.audioInCall = false;
+        machine.greetingInterrupted();
+        world.playing = false;
+        world.advance(7_500L);
+        world.audioInCall = true;
+        world.advance(AnswerMachine.AUDIO_WAIT_MS - 7_500L + AnswerMachine.AUDIO_POLL_MS);
+        assertFalse(world.did.contains("hang up"));
+        world.advance(AnswerMachine.APPLIED_WAIT_MS);
+        assertDid("greeting");
+    }
+
+    @Test
+    public void aModeBetweenTheWaysIsNoMove() {
+        // Normal for a moment as one mode gives way to the next: no way, so
+        // the machine stops nothing; back on the same way, nothing was a
+        // move. What a track does through it is the platform's: a
+        // call-screening one it releases comes as a cut.
+        answeredWithGreeting();
+        world.did.clear();
+        machine.pathApplied(Checks.PATH_NONE);
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+        assertEquals(1, world.paths.size());
+    }
+
+    @Test
+    public void anotherAppsCallIsNoMove() {
+        // Communication taken by an app's call - a messenger call answered
+        // over the greeting: the phone call has not moved, and nothing plays
+        // into the app's call.
+        answeredWithGreeting();
+        world.did.clear();
+        world.phoneCallOnMixer = false;
+        movesToTheMixer();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+        // Nor after a cut: waited for the phone call's way instead.
+        machine.greetingInterrupted();
+        world.playing = false;
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+        world.phoneCallOnMixer = true;
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("greeting");
+    }
+
+    @Test
+    public void aMoveAlreadyCutIsNotStoppedAgain() {
+        // The call-screening track released as its call moved: the cut is
+        // under way, and the mode applied after it is the same move.
+        answeredWithGreeting();
+        world.did.clear();
+        world.audioInCall = false;
+        machine.greetingInterrupted();
+        world.playing = false;
+        movesToTheMixer();
+        world.advance(3 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid("greeting");
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_MIXER), world.paths);
+        assertEquals(0, movedLogs());
+    }
+
+    @Test
+    public void aModeChangeWhileTheCallIsSaidOverIsTheEnds() {
+        // Telephony's idle, then the mode: a phone call ending into another
+        // app's, say. The greeting is not stopped for it, nor played again.
+        answeredWithGreeting();
+        machine.idleSignal();
+        world.did.clear();
+        movesToTheMixer();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+        assertEquals(0, movedLogs());
+    }
+
+    @Test
+    public void movesBetweenTheWaysCountAsCuts() {
+        // Each played again counts: one more is hung up on, as for cuts.
+        answeredWithGreeting();
+        for (int i = 0; i < AnswerMachine.GREETING_RESTARTS; i++) {
+            boolean toMixer = i % 2 == 0;
+            world.audioInCall = !toMixer;
+            world.mixerCall = toMixer;
+            machine.pathApplied(toMixer ? Checks.PATH_MIXER : Checks.PATH_VOICE);
+            world.advance(AnswerMachine.AUDIO_POLL_MS);
+        }
+        assertEquals(1 + AnswerMachine.GREETING_RESTARTS, world.paths.size());
+        assertFalse(world.did.contains("hang up"));
+        boolean toMixer = AnswerMachine.GREETING_RESTARTS % 2 == 0;
+        world.audioInCall = !toMixer;
+        world.mixerCall = toMixer;
+        machine.pathApplied(toMixer ? Checks.PATH_MIXER : Checks.PATH_VOICE);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertTrue(world.did.contains("hang up"));
+        assertEquals(1 + AnswerMachine.GREETING_RESTARTS, world.paths.size());
+        // The log says why: the last cut's own words - and that cut said no
+        // more playing again.
+        assertTrue(world.logs.toString(), world.logs.stream().anyMatch(l -> l.contains("played again as often as a call may be")));
+        assertTrue(world.logs.toString(), world.logs.stream().anyMatch(l -> l.contains("hanging up")
+                && l.contains("(the last cut: the call moved to " + (toMixer ? "the mixer" : "its voice path"))));
+        assertTrue(machine.callEnded().greetingFailed);
+    }
+
+    @Test
+    public void aMoveAfterTheBeepIsTheMessages() {
+        // The greeting is over: the message is taken on whatever way the
+        // call takes, nothing stopped or played.
+        answeredWithGreeting();
+        machine.greetingDone();
+        world.did.clear();
+        movesToTheMixer();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+        assertEquals(AnswerMachine.State.MESSAGE, machine.state());
+        // A mute Android drops applying the mode is put back, as in the
+        // greeting - not taken for the user taking the call.
+        world.mixerCall = false;
+        world.audioInCall = true;
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(300L);
+        world.muted = false;
+        world.advance(4 * AnswerMachine.MUTE_WATCH_MS);
+        assertDid("mute");
+        assertTrue(world.muted);
+        assertEquals(AnswerMachine.State.MESSAGE, machine.state());
+    }
+
+    @Test
+    public void aMuteThatWillNotGoBackAfterTheBeepKeepsTheMessage() {
+        // The call moved during the message, the mute dropped and would not
+        // take again: hung up, and what the caller said kept as the message.
+        answeredWithGreeting();
+        machine.greetingDone();
+        world.muteTakes = false;
+        world.did.clear();
+        movesToTheMixer();
+        world.advance(300L);
+        world.muted = false;
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("mute", "hang up");
+        assertTrue(world.logs.contains("answer: the microphone did not mute again after the call moved; hanging up"));
+        AnswerMachine.Outcome outcome = machine.callEnded();
+        assertFalse(outcome.greetingFailed);
+        assertTrue(outcome.isMessage());
+    }
+
+    @Test
+    public void aMoveAfterTheBeepWhileSaidOverIsHeldIfTheCallGoesOn() {
+        // A false idle after the beep, a move inside it dropping the mute:
+        // once the call is seen to go on, the mute is put back - not taken for
+        // the user taking the call.
+        answeredWithGreeting();
+        machine.greetingDone();
+        machine.idleSignal();
+        movesToTheMixer();
+        world.muted = false;
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        world.did.clear();
+        machine.callGoesOn();
+        assertTrue(world.logs.contains("answer: the idle was not the call's end; listening on"));
+        world.advance(4 * AnswerMachine.MUTE_WATCH_MS);
+        assertDid("mute");
+        assertEquals(AnswerMachine.State.MESSAGE, machine.state());
+    }
+
+    @Test
+    public void aMoveAfterTheBeepWhileSaidOverIsNotMutedForIt() {
+        // The phone call ended into an app's call: the mode is that call's,
+        // and its microphone not this machine's to mute.
+        answeredWithGreeting();
+        machine.greetingDone();
+        machine.idleSignal();
+        world.muted = false;
+        world.did.clear();
+        movesToTheMixer();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+    }
+
+    @Test
+    public void anAppsCallTakenDuringACutIsTheUsersCall() {
+        // A messenger call through Telecom taken over the greeting, whose
+        // call-screening track goes with the mode: nothing muted again in the
+        // app's call, nothing hung up after the wait - an unmute as it begins
+        // (Telecom's, for a call answered through it, or the user's) is the
+        // user taking the call.
+        answeredWithGreeting();
+        world.phoneCallOnMixer = false;
+        movesToTheMixer();
+        machine.greetingInterrupted();
+        world.playing = false;
+        world.did.clear();
+        world.muted = false;
+        world.advance(AnswerMachine.AUDIO_WAIT_MS + 1_000L);
+        assertFalse(world.did.toString(), world.did.contains("mute"));
+        assertFalse(world.did.toString(), world.did.contains("hang up"));
+        assertEquals(AnswerMachine.State.TALKING, machine.state());
+        // Nothing unmuted as it began: still no hang-up on the user's call
+        // after the wait for the phone call's audio.
+        machine.callEnded();
+        world.mixerCall = false;
+        world.phoneCallOnMixer = true;
+        machine.pathApplied(Checks.PATH_VOICE);
+        answeredWithGreeting();
+        world.phoneCallOnMixer = false;
+        movesToTheMixer();
+        machine.greetingInterrupted();
+        world.playing = false;
+        world.did.clear();
+        world.advance(2 * AnswerMachine.AUDIO_WAIT_MS);
+        assertFalse(world.did.toString(), world.did.contains("hang up"));
+        // And one taken while a greeting played again holds the mute: its
+        // unmute is not undone either.
+        machine.callEnded();
+        world.mixerCall = false;
+        world.phoneCallOnMixer = true;
+        machine.pathApplied(Checks.PATH_VOICE);
+        answeredWithGreeting();
+        movesToTheMixer();
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertTrue(world.paths.toString(), world.paths.get(world.paths.size() - 1) == Checks.PATH_MIXER);
+        world.phoneCallOnMixer = false;
+        world.advance(AnswerMachine.MIXER_ASK_MS);
+        world.did.clear();
+        world.muted = false;
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertFalse(world.did.toString(), world.did.contains("mute"));
+    }
+
+    @Test
+    public void aSameWayReportWhileSaidOverIsNoMove() {
+        // In call told again while said over - normal and back, say: no leg
+        // on the other way, nothing played again once the call goes on.
+        answeredWithGreeting();
+        machine.idleSignal();
+        machine.pathApplied(Checks.PATH_NONE);
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        world.did.clear();
+        machine.callGoesOn();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+    }
+
+    @Test
+    public void aRoundTripWhileSaidOverInTheGreetingPlaysAgain() {
+        // In call, the mixer, in call again while telephony said the call was
+        // over, the mute dropped on the way: once it is seen to go on, the
+        // greeting - through the mixer leg, in-call music to no output -
+        // plays again, the mute put back, not taken for the call taken.
+        answeredWithGreeting();
+        machine.idleSignal();
+        movesToTheMixer();
+        world.mixerCall = false;
+        world.audioInCall = true;
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.muted = false;
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        world.did.clear();
+        machine.callGoesOn();
+        world.advance(4 * AnswerMachine.MUTE_WATCH_MS);
+        assertDid("stop greeting", "mute", "greeting");
+        assertEquals(AnswerMachine.State.GREETING, machine.state());
+    }
+
+    @Test
+    public void anAppsCallTakenAfterTheBeepIsNotMutedForIt() {
+        // A messenger call through Telecom taken during the message: its mode
+        // is the app's, and an unmute as it begins (Telecom's, for a call
+        // answered through it, or the user's) is the user's - the mute watch
+        // takes it for the call taken, as before.
+        answeredWithGreeting();
+        machine.greetingDone();
+        world.phoneCallOnMixer = false;
+        world.did.clear();
+        movesToTheMixer();
+        world.muted = false;
+        world.advance(4 * AnswerMachine.MUTE_WATCH_MS);
+        assertFalse(world.did.contains("mute"));
+        assertEquals(AnswerMachine.State.TALKING, machine.state());
+        // The same once a false idle ends: the app's call is still not this
+        // machine's to mute.
+        machine.callEnded();
+        world.mixerCall = false;
+        world.phoneCallOnMixer = true;
+        // The next call's in call, applied as it is answered.
+        machine.pathApplied(Checks.PATH_VOICE);
+        answeredWithGreeting();
+        machine.greetingDone();
+        machine.idleSignal();
+        world.phoneCallOnMixer = false;
+        movesToTheMixer();
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        machine.callGoesOn();
+        world.did.clear();
+        world.muted = false;
+        world.advance(4 * AnswerMachine.MUTE_WATCH_MS);
+        assertFalse(world.did.contains("mute"));
+        assertEquals(AnswerMachine.State.TALKING, machine.state());
+    }
+
+    @Test
+    public void aMoveToTheVoicePathAfterTheBeepIsThePhoneCallsWhateverAppIsInACall() {
+        // In call is the phone call's mode alone - no app's call takes it -
+        // so a mute dropped as Android applies it is put back even while an
+        // app is in a call of its own (one ringing, say): only communication
+        // mode may be that app's.
+        world.mixerCall = true;
+        world.audioComes = false;
+        answeredWithGreeting();
+        machine.greetingDone();
+        world.phoneCallOnMixer = false;
+        world.did.clear();
+        world.mixerCall = false;
+        world.audioInCall = true;
+        machine.pathApplied(Checks.PATH_VOICE);
+        world.advance(300L);
+        world.muted = false;
+        world.advance(4 * AnswerMachine.MUTE_WATCH_MS);
+        assertDid("mute");
+        assertTrue(world.muted);
+        assertEquals(AnswerMachine.State.MESSAGE, machine.state());
+    }
+
+    @Test
+    public void aMoveInAFalseIdleOfTheGreetingIsHeldIfTheBeepCameMeanwhile() {
+        // The move while said over, its greeting played on to the beep before
+        // the call is seen to go on: the mute it dropped is put back then.
+        answeredWithGreeting();
+        machine.idleSignal();
+        movesToTheMixer();
+        world.muted = false;
+        machine.greetingDone();
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        world.did.clear();
+        machine.callGoesOn();
+        world.advance(4 * AnswerMachine.MUTE_WATCH_MS);
+        assertDid("mute");
+        assertEquals(AnswerMachine.State.MESSAGE, machine.state());
+    }
+
+    @Test
+    public void aStoppedGreetingsLateEndIsNoBeep() {
+        // Its end come between a move's cut and the greeting played again:
+        // no message begun on it, the greeting plays again.
+        answeredWithGreeting();
+        movesToTheMixer();
+        machine.greetingDone();
+        assertEquals(AnswerMachine.State.GREETING, machine.state());
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_MIXER), world.paths);
+    }
+
+    @Test
+    public void aCutIsUnderWayFromTheCutToTheGreetingPlayedAgain() {
+        answeredWithGreeting();
+        assertFalse(machine.cutUnderWay());
+        movesToTheMixer();
+        assertTrue(machine.cutUnderWay());
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertFalse(machine.cutUnderWay());
+        machine.greetingInterrupted();
+        assertTrue(machine.cutUnderWay());
+        machine.callEnded();
+        assertFalse(machine.cutUnderWay());
+    }
+
+    @Test
+    public void aStoppedGreetingsLateReportIsTheSameCut() {
+        // A release the stopped greeting reports between a move's cut and
+        // the greeting played again: no second cut, the move its cause.
+        answeredWithGreeting();
+        world.logs.clear();
+        movesToTheMixer();
+        machine.greetingInterrupted();
+        assertFalse(machine.greetingFailed());
+        assertEquals(1, world.logs.stream().filter(l -> l.contains("the greeting stopped")).count());
+        assertTrue(world.logs.toString(), world.logs.stream().anyMatch(l -> l.contains("(the call moved to the mixer)")));
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertEquals(Arrays.asList(Checks.PATH_VOICE, Checks.PATH_MIXER), world.paths);
+    }
+
+    @Test
+    public void aMoveIsNotWatchedOnceTheCallIsTaken() {
+        answeredWithGreeting();
+        machine.talk();
+        world.did.clear();
+        movesToTheMixer();
+        world.advance(10 * AnswerMachine.AUDIO_POLL_MS);
+        assertDid();
+        assertEquals(0, movedLogs());
+    }
+
+    @Test
+    public void aTestMovedBeforeItsToneHasTheToneAgain() {
+        machine.armTest(true, 180_000L);
+        machine.ringing();
+        world.advance(AnswerMachine.TEST_ANSWER_MS);
+        machine.offHook(true);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        world.did.clear();
+        movesToTheMixer();
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("stop greeting", "greeting with check tone");
+    }
+
     @Test
     public void aGreetingCutOffAsTheCallMovesPlaysAgainOnceItsAudioIsBack() {
         answeredWithGreeting();
@@ -996,6 +1805,7 @@ public class AnswerMachineTest {
         // The greeting from the start, the mute held; the message the same.
         assertDid("greeting");
         assertTrue(world.muted);
+        assertTrue(world.logs.contains("answer: the call's audio is up; the greeting plays again"));
         // A move that drops the mute: muted again before it plays.
         world.did.clear();
         world.mixerCall = false;
@@ -1139,9 +1949,14 @@ public class AnswerMachineTest {
         }
         assertEquals(1 + AnswerMachine.GREETING_RESTARTS, world.did.stream().filter("greeting"::equals).count());
         assertFalse(world.did.contains("hang up"));
-        // Cut once more: hung up when its audio is back, not played again.
+        assertEquals(AnswerMachine.GREETING_RESTARTS, world.logs.stream().filter(("answer: the greeting stopped"
+                + " (the call's audio left); it plays again once the call's audio is up")::equals).count());
+        // Cut once more: hung up when its audio is back, not played again -
+        // and the log says so as it is cut.
         callMoves(500L);
         assertFalse(world.did.contains("hang up"));
+        assertTrue(world.logs.toString(), world.logs.contains("answer: the greeting stopped (the call's audio left);"
+                + " played again as often as a call may be, the call is hung up once its audio is up"));
         world.advance(AnswerMachine.AUDIO_POLL_MS);
         assertTrue(world.did.contains("hang up"));
         assertEquals(1 + AnswerMachine.GREETING_RESTARTS, world.did.stream().filter("greeting"::equals).count());
@@ -1258,9 +2073,28 @@ public class AnswerMachineTest {
     }
 
     @Test
+    public void aMuteThatWillNotGoBackAsTheGreetingPlaysAgainHangsUp() {
+        // Played again, then the mute dropped as Android applies the mode,
+        // and it will not take again: the caller would hear the room - hung
+        // up, the greeting failed, as when it will not take before.
+        answeredWithGreeting();
+        callMoves(500L);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        world.did.clear();
+        world.muteTakes = false;
+        world.muted = false;
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertDid("mute", "stop greeting", "hang up");
+        assertTrue(machine.callEnded().greetingFailed);
+    }
+
+    @Test
     public void aTestCutOffBeforeItsToneHasTheToneAgain() {
         // The S23's test call at 20:09 was cut 2.2 s after its greeting's
-        // track began, part-way through its check tone.
+        // track began, part-way through its check tone; on 2026-11-13 one
+        // answered over Wi-Fi Calling, its Wi-Fi turned off, was cut 3.5 s
+        // in, before its tone was done, and muted only after the tone of the
+        // greeting played again.
         machine.armTest(true, 180_000L);
         machine.ringing();
         world.advance(AnswerMachine.TEST_ANSWER_MS);
@@ -1269,7 +2103,9 @@ public class AnswerMachineTest {
         world.did.clear();
         callMoves(470L);
         world.advance(AnswerMachine.AUDIO_POLL_MS);
-        // Not muted yet: a test mutes after its tone.
+        // Not muted yet: a test mutes after its tone - nor by the hold as the
+        // greeting begins again, which keeps a mute, not makes one.
+        world.advance(AnswerMachine.REPLAY_MUTE_HOLD_MS);
         assertDid("greeting with check tone");
         assertFalse(world.muted);
         machine.checkToneDone();

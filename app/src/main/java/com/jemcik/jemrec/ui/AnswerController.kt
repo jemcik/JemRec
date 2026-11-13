@@ -772,7 +772,7 @@ class AnswerController(
                     }
                     // A call that rang in the window's last moment is
                     // answered three seconds on, and is "running" once its
-                    // audio is up.
+                    // greeting starts (ANSWER_GRACE_MS).
                     last == "armed" -> if (System.currentTimeMillis() > _state.value.testUntil + ANSWER_GRACE_MS) {
                         ending = "no test call came"
                         break
@@ -815,7 +815,10 @@ class AnswerController(
             return
         }
         Log.i(TAG, "answer: test on $type -> $verdict ($result)")
-        AnswerDiagnostics.record(app, type, verdict)
+        // A recorder before 0.31 says nothing of the mixer, nor one whose
+        // test played no greeting: as before, the app's route counts as the
+        // one tested.
+        AnswerDiagnostics.record(app, type, verdict, mixer = result["mixer"] == "1")
         if (verdict == AnswerDiagnostics.Verdict.FAILS) {
             // A microphone that would not mute is this phone's, whichever way
             // the greeting goes: no reason to try the other.
@@ -875,6 +878,7 @@ class AnswerController(
     private fun tryTheOtherRoute(type: String, speak: (String) -> Unit) {
         val other = AnswerDiagnostics.routeAfterFailure(
             AnsweringMachine.route(app), _state.value.stageOne, AnswerDiagnostics.results(app), type,
+            AnswerDiagnostics.mixerTypes(app),
         ) ?: return
         AnsweringMachine.setRoute(app, other)
         push()
@@ -939,7 +943,7 @@ class AnswerController(
     fun copyReport() {
         val text = AnswerDiagnostics.report(
             AnswerDiagnostics.rawStageOne(app), AnswerDiagnostics.results(app), AnsweringMachine.route(app),
-            appVersion(app),
+            appVersion(app), AnswerDiagnostics.mixerTypes(app),
         )
         reportToClipboard(app, "JemRec answering machine report", text)
     }
@@ -950,7 +954,9 @@ class AnswerController(
 
         const val TAG = "JemRec"
         /** The recorder's three seconds to answer a test, its wait of up to
-         *  eight for the call's audio, and a poll. */
+         *  eight for the call's audio, two more for Android's word on a mode
+         *  asked for late in it (its AnswerMachine.APPLIED_WAIT_MS), and a
+         *  poll: 13 s, with 2 to spare. */
         const val ANSWER_GRACE_MS = 15_000L
     }
 }

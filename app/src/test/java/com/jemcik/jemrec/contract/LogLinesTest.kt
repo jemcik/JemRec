@@ -195,6 +195,7 @@ class LogLinesTest {
             val port = listOf("const val PORT = AdbTransport.LEGACY_TCP_PORT", "const val LEGACY_TCP_PORT = 5555")
             val keepalive = listOf("\"keepalive: \${if (forWifi) \"Wi-Fi run\" else \"run\"} (attempt \${runAttemptCount + 1})\"")
             val grant = "\"setup: grant -> \$outcome ("
+            val greetingOn = "Ln.i(\"answer: the greeting on route \" + route + \" (\""
             mapOf(
                 "answering machine - not answering: whose calls to keep" to
                     listOf(machineSays, "Decision.No(\"whose calls to keep leaves this caller out\")"),
@@ -210,6 +211,14 @@ class LogLinesTest {
                     listOf("\"the call is back on the modem's voice path\"", swapped),
                 "recording: audio mode 3 during the call" to
                     listOf("Ln.i(\"recording: audio mode \" + mode + \" during the call\")"),
+                "(the call's voice path)" to
+                    listOf(greetingOn, "\"the call's voice path\""),
+                "(the call is through the mixer)" to
+                    listOf(greetingOn, "\"the call is through the mixer\""),
+                "answer: the greeting stopped (the call moved" to listOf(
+                    "effects.log(\"answer: the greeting stopped (\" + why + \"); \"",
+                    "cut(\"the call moved \" + (path == Checks.PATH_MIXER ? \"to the mixer\" : \"to its voice path\"))",
+                ),
                 "recording: audio mode 3, but another app's call is up; the call capture stays" to listOf(
                     "\"another app's call is up\"",
                     "Ln.i(\"recording: audio mode \" + mode + \", but \" + why + \"; the call capture stays\")",

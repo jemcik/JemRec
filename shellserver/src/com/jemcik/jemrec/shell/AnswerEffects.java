@@ -128,6 +128,25 @@ final class AnswerEffects implements AnswerMachine.Effects {
     }
 
     @Override
+    public int callPath() {
+        return Checks.phoneCallPath(callAudio.getMode(), Build.VERSION.SDK_INT);
+    }
+
+    @Override
+    public boolean phoneCallOnMixer() {
+        // As the capture asks (PhoneCapture.decide): Telecom's binder calls,
+        // made only as a call moves, or waits for its way back. Where Telecom
+        // cannot be asked whether an app is in a call of its own, that counts
+        // as no app's call here, and as one for the capture: no call is
+        // answered while another app's is up
+        // (otherAppCallUp), so communication mid-greeting is the phone call's
+        // but for one the user took since - and a greeting not played again
+        // would hang up on the caller.
+        return !Boolean.TRUE.equals(Platform.appCallOfItsOwn())
+                && !Boolean.FALSE.equals(Platform.phoneCallInTelecom());
+    }
+
+    @Override
     public void setMuted(boolean on) {
         if (on) {
             // The marker first: a death between the two leaves a marker
@@ -165,23 +184,41 @@ final class AnswerEffects implements AnswerMachine.Effects {
     }
 
     @Override
-    public void playGreeting(boolean checkTone) {
+    public void playGreeting(boolean checkTone, int path) {
         AnswerMachine machine = Answering.answerMachine;
         if (machine == null) {
             return; // cannot be: the machine is what asks
         }
-        String route = Answering.answerSettings.route;
+        String route = CallDecisions.greetingRoute(Answering.answerSettings.route, path);
+        Ln.i("answer: the greeting on route " + route + " ("
+                + (path == Checks.PATH_MIXER ? "the call is through the mixer"
+                    : path == Checks.PATH_VOICE ? "the call's voice path" : "no call mode") + ")");
         // The test this greeting is for, if it is one: its checks are its alone.
         long arming = AnswerTest.testArming;
+        int greeting = ++Answering.greetingSeq;
+        if (machine.testing()) {
+            AnswerTest.testMixer = CallDecisions.mixerAsGreetingBegins(AnswerTest.testChecked, AnswerTest.testMixer,
+                    path);
+        }
+        // What the player says is this greeting's alone: one stopped as the
+        // call moved can still report a release it saw before the stop
+        // (GreetingPlayer.releasedUnder), after the next one began.
         Answering.greetingPlayer.play(callAudio, route, checkTone, Greeting.FILE, new GreetingPlayer.Listener() {
             @Override
             public void checkToneDone() {
-                mainHandler.post(machine::checkToneDone);
+                mainHandler.post(() -> {
+                    if (greeting == Answering.greetingSeq) {
+                        machine.checkToneDone();
+                    }
+                });
             }
 
             @Override
             public void done(long realMs, long audioMs) {
                 mainHandler.post(() -> {
+                    if (greeting != Answering.greetingSeq) {
+                        return;
+                    }
                     if (machine.testing()) {
                         // Not the mute again: the one that matters was
                         // read back as it was asked for (setMuted), and
@@ -200,25 +237,40 @@ final class AnswerEffects implements AnswerMachine.Effects {
             @Override
             public void failed(String why) {
                 mainHandler.post(() -> {
+                    if (greeting != Answering.greetingSeq) {
+                        return;
+                    }
                     // Not played only if the machine gave up on it: one it
                     // takes for a cut plays again, and is the test's still.
                     boolean testing = machine.testing();
                     if (machine.greetingFailed() && testing) {
                         AnswerTest.testPlayed = 0;
+                        // The verdict is this greeting's: its way with it, or
+                        // a replay failed on the other way would be filed as
+                        // the way checked before it, and move that route -
+                        // and its call read again for the type it is filed
+                        // under.
+                        AnswerTest.testMixer = CallDecisions.mixerOf(path);
+                        AnswerTest.checkFailedGreeting(arming, greeting, path);
                     }
                 });
             }
 
             @Override
             public void interrupted(String why) {
-                mainHandler.post(machine::greetingInterrupted);
+                mainHandler.post(() -> {
+                    if (greeting == Answering.greetingSeq) {
+                        machine.greetingInterrupted();
+                    }
+                });
             }
         });
         if (machine.testing()) {
             // Three seconds into each greeting a test plays - one played
             // again after its call moved too - the track is up: where did it
             // go, and is the call on Wi-Fi?
-            mainHandler.postDelayed(() -> AnswerTest.checkTestRoute(arming), AnswerTest.GREETING_ROUTE_CHECK_MS);
+            mainHandler.postDelayed(() -> AnswerTest.checkTestRoute(arming, greeting, route, path),
+                    AnswerTest.GREETING_ROUTE_CHECK_MS);
         }
     }
 

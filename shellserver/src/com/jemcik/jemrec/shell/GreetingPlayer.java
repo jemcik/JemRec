@@ -33,6 +33,14 @@ import java.io.IOException;
  *    real-time pace, with no error anywhere. Reported to work on a Pixel; kept
  *    for phones where the diagnostics find it is the one that works.
  *
+ * On a Galaxy S23 (Snapdragon), the same two over VoLTE, on Android 17,
+ * 2026-11-13: in-call music reached the caller, the call-screening route
+ * played out in full to nobody, as on the Honor. Over Wi-Fi Calling, which
+ * goes through the mixer there, on Android 16, 2026-10-24, only the
+ * call-screening route did.
+ * So the route is the app's for a call's voice path, and the call-screening
+ * one for a call through the mixer (CallDecisions.greetingRoute).
+ *
  * The first heard greeting lost its opening: the call's audio takes a moment
  * to come up at the far end. Hence the lead-in.
  */
@@ -72,9 +80,9 @@ final class GreetingPlayer {
 
         /** Its track was made, and could take no more as the audio mode had
          *  left the one the track was made in - the call moving, or its end -
-         *  which Android releases it for (AnswerMachine.greetingInterrupted).
-         *  Nothing else will come from this greeting; another may play once
-         *  the call's audio is back. */
+         *  which Android releases a call-screening track for
+         *  (AnswerMachine.greetingInterrupted). Nothing else will come from
+         *  this greeting; another may play once the call's audio is back. */
         void interrupted(String why);
     }
 

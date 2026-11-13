@@ -136,6 +136,13 @@ class AnswerDiagnosticsTest {
         assertTrue(report.contains("0.17"))
         assertTrue(report.contains("Test call on 2G: WORKS"))
         assertTrue(report.contains("incallmusic=1"))
+        // Which tests went to a call through the mixer, whose route is not the one above.
+        val both = AnswerDiagnostics.report(
+            null, mapOf("VoLTE" to Verdict.WORKS, "Wi-Fi Calling" to Verdict.WORKS), "music", "0.31",
+            setOf("Wi-Fi Calling"),
+        )
+        assertTrue(both, both.contains("Test call on VoLTE: WORKS\n"))
+        assertTrue(both, both.endsWith("Test call on Wi-Fi Calling: WORKS (through the mixer)"))
     }
 
     @Test fun theSimListParses() {
