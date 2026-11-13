@@ -113,9 +113,15 @@ object AnswerDiagnostics {
      *  or null from a recorder before 0.31, which names none. Pure. */
     fun arming(result: Map<String, String>): Long? = result["arming"]?.toLongOrNull()
 
-    /** The call's type from telephony's voice network type: the audio path
-     *  differs between them. */
-    fun callType(voice: Int): String = when (voice) {
+    /**
+     * The call's type: the audio path differs between them. Wi-Fi Calling
+     * where Telecom marked the call so ([wifi] 1, read by the recorder
+     * mid-greeting, with the route); else from telephony's voice network type ([voice]),
+     * which a Galaxy S23 gave as LTE for a test call Telecom had on Wi-Fi
+     * from its start (2026-11-12). No mark ([wifi] 0, or -1: not read, or a recorder before
+     * 0.31, which sends none) leaves the voice type to say, as before. Pure.
+     */
+    fun callType(voice: Int, wifi: Int): String = if (wifi == 1) "Wi-Fi Calling" else when (voice) {
         1, 2, 4, 7, 11, 16 -> "2G"
         3, 5, 6, 8, 9, 10, 12, 14, 15, 17 -> "3G"
         13 -> "VoLTE"

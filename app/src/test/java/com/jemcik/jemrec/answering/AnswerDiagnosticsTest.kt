@@ -103,11 +103,24 @@ class AnswerDiagnosticsTest {
     }
 
     @Test fun callTypesByNetwork() {
-        assertEquals("2G", AnswerDiagnostics.callType(16))
-        assertEquals("3G", AnswerDiagnostics.callType(3))
-        assertEquals("VoLTE", AnswerDiagnostics.callType(13))
-        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(18))
-        assertEquals("an unknown call type", AnswerDiagnostics.callType(-1))
+        assertEquals("2G", AnswerDiagnostics.callType(16, -1))
+        assertEquals("3G", AnswerDiagnostics.callType(3, -1))
+        assertEquals("VoLTE", AnswerDiagnostics.callType(13, -1))
+        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(18, -1))
+        assertEquals("VoNR", AnswerDiagnostics.callType(20, -1))
+        assertEquals("an unknown call type", AnswerDiagnostics.callType(-1, -1))
+    }
+
+    /** Telecom's Wi-Fi mark names the call whatever the voice network type
+     *  says - a Galaxy S23 said LTE (13) for a call on Wi-Fi - and its
+     *  absence takes nothing away: the voice type says, as before. */
+    @Test fun aCallTelecomMarkedWifiIsWifiCalling() {
+        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(13, 1))
+        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(-1, 1))
+        assertEquals("VoLTE", AnswerDiagnostics.callType(13, 0))
+        assertEquals("2G", AnswerDiagnostics.callType(16, 0))
+        assertEquals("Wi-Fi Calling", AnswerDiagnostics.callType(18, 0))
+        assertEquals("VoLTE", AnswerDiagnostics.callType(13, 2))
     }
 
     @Test fun theSummarySaysWhatWasTested() {

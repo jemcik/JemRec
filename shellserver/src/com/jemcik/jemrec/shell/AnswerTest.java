@@ -29,6 +29,13 @@ final class AnswerTest {
     static volatile int testToneBest;
     static volatile int testMuteHeld = -1;
     static volatile int testVoice = -1;
+    /** Telecom's word on the test call mid-greeting, the latest that could
+     *  tell: 1 on Wi-Fi, 0 not, -1 not read (Checks.callOnWifi). */
+    static volatile int testWifi = -1;
+    /** The checks' readings still being taken, for 'R'
+     *  (CallDecisions.testStateToSay). */
+    static final java.util.concurrent.atomic.AtomicInteger readingsInFlight =
+            new java.util.concurrent.atomic.AtomicInteger();
     /** 0 when the test's greeting could not be played at all. */
     static volatile int testPlayed = -1;
     /** Chunks of about 21 ms in a row with the check tone: 8 is ~170 ms. */
@@ -70,14 +77,84 @@ final class AnswerTest {
 
     static final long GREETING_ROUTE_CHECK_MS = 3_000L;
 
-    /** The test's greeting, mid-way: is it on the output the caller hears? */
-    static void checkTestRoute() {
+    /**
+     * The test's greeting, mid-way: is it on the output the caller hears, and
+     * is the call on Wi-Fi? Mid-way, not at the answer: a Galaxy S23's first
+     * test call over Wi-Fi Calling began on LTE and was handed over to Wi-Fi
+     * two seconds after the machine answered it (2026-11-12). Only for the
+     * test armed as [arming] as its greeting began, and while it is under way
+     * (CallDecisions.testCheckApplies). The route, the Wi-Fi mark and the
+     * voice network type are read together, so the call is named by the path
+     * its route was checked on: a move later in a greeting the track
+     * outlives - in-call music, through the S23's handover at 19:32 - would
+     * otherwise put one path's verdict under the other's name. They are read
+     * off the main looper, the route's first, as it decides the verdict;
+     * each is kept as soon as it is read, the latest greeting's - one played
+     * again after a move - over an earlier one's.
+     */
+    static void checkTestRoute(long arming) {
+        if (!applies(arming)) {
+            return;
+        }
+        boolean music = AnswerSettings.ROUTE_MUSIC.equals(Answering.answerSettings.route);
+        readingsInFlight.incrementAndGet();
         new Thread(() -> {
-            String flinger = Shell.dump("media.audio_flinger");
-            int on = Checks.trackOutput(flinger, android.os.Process.myPid());
-            testRoute = AnswerSettings.ROUTE_MUSIC.equals(Answering.answerSettings.route) ? on : -1;
-            Ln.i("answer: test greeting on the in-call music output: "
-                    + (on == 1 ? "yes" : on == 0 ? "no" : "cannot tell"));
+            try {
+                int on = Checks.trackOutput(Shell.dump("media.audio_flinger"), android.os.Process.myPid());
+                Ln.i("answer: test greeting on the in-call music output: " + words(on));
+                keep(arming, () -> testRoute = music ? on : -1);
+                int wifi = Checks.callOnWifi(Shell.dump("telecom"));
+                Ln.i("answer: test call on Wi-Fi: " + words(wifi));
+                int voice = voiceNow();
+                keep(arming, () -> {
+                    testWifi = CallDecisions.wifiAfter(testWifi, wifi);
+                    testVoice = CallDecisions.voiceAfter(testVoice, voice);
+                });
+            } finally {
+                landed();
+            }
         }, "jemrec-route-check").start();
+    }
+
+    private static int voiceNow() {
+        TelephonyManager phone = Platform.phone;
+        try {
+            return phone == null ? -1 : phone.getVoiceNetworkType();
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    /** On the main looper: the test armed as [arming], under way. */
+    private static boolean applies(long arming) {
+        AnswerMachine machine = Answering.answerMachine;
+        return CallDecisions.testCheckApplies(testArming, arming, machine != null && machine.testing());
+    }
+
+    /** A check's readings taken: counted down on the main looper after
+     *  what they found is kept there, which was posted first. */
+    private static void landed() {
+        android.os.Handler main = Platform.mainHandler;
+        if (main == null || !main.post(readingsInFlight::decrementAndGet)) {
+            readingsInFlight.decrementAndGet();
+        }
+    }
+
+    /** [write], on the main looper where the arming is set, if the test armed
+     *  as [arming] is still the one armed: a reading taken in time is kept
+     *  however its call ended meanwhile, and never as a later test's. */
+    private static void keep(long arming, Runnable write) {
+        android.os.Handler main = Platform.mainHandler;
+        if (main != null) {
+            main.post(() -> {
+                if (CallDecisions.testCheckApplies(testArming, arming, true)) {
+                    write.run();
+                }
+            });
+        }
+    }
+
+    private static String words(int said) {
+        return said == 1 ? "yes" : said == 0 ? "no" : "cannot tell";
     }
 }

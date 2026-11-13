@@ -69,6 +69,13 @@ final class GreetingPlayer {
         /** It could not be played, or stopped moving: nothing else will come
          *  from this greeting. */
         void failed(String why);
+
+        /** Its track was made, and could take no more as the audio mode had
+         *  left the one the track was made in - the call moving, or its end -
+         *  which Android releases it for (AnswerMachine.greetingInterrupted).
+         *  Nothing else will come from this greeting; another may play once
+         *  the call's audio is back. */
+        void interrupted(String why);
     }
 
     /**
@@ -139,15 +146,19 @@ final class GreetingPlayer {
     private void run(Session session, AudioManager audio, String route, boolean checkTone, File greeting,
                      Listener listener) {
         AudioTrack tr = null;
+        int madeIn = -1;
         try {
+            // Read first: a track, once made, can be released under it at any
+            // moment, and up to MAX_BYTES of reading is a moment to give it.
+            // Whole blocks, so the loudness of what follows lines up with them.
+            byte[] words = read(greeting);
+            words = java.util.Arrays.copyOf(words, (words.length + BLOCK_FRAMES * 2 - 1) / (BLOCK_FRAMES * 2) * BLOCK_FRAMES * 2);
+            madeIn = audio.getMode();
             tr = AnswerSettings.ROUTE_SCREENING.equals(route) ? screeningTrack(audio) : musicTrack(audio);
             session.track = tr;
             if (session.stopped) {
                 return;
             }
-            // Whole blocks, so the loudness of what follows lines up with them.
-            byte[] words = read(greeting);
-            words = java.util.Arrays.copyOf(words, (words.length + BLOCK_FRAMES * 2 - 1) / (BLOCK_FRAMES * 2) * BLOCK_FRAMES * 2);
             tr.play();
             long started = SystemClock.elapsedRealtime();
             long frames = write(session, tr, new byte[framesOf(LEAD_IN_MS) * 2]);
@@ -172,9 +183,27 @@ final class GreetingPlayer {
                     + ", underruns " + tr.getUnderrunCount());
             listener.done(realMs, frames * 1000 / RATE);
         } catch (Throwable t) {
-            if (!session.stopped) {
+            if (session.stopped) {
+                return;
+            }
+            String why = t.getClass().getSimpleName() + ": " + t.getMessage();
+            if (tr != null && (releasedUnder(tr) || Checks.modeLeftTrack(madeIn, modeNow(audio)))) {
+                // Made, and gone under it: AudioManager's
+                // CallInjectionModeChangedListener releases the call-screening
+                // route's track as the mode it applies leaves the one the
+                // track was made in. On a Galaxy S23 whose call moved from LTE
+                // to Wi-Fi, the next write threw "Unable to retrieve
+                // AudioTrack pointer for write()" a millisecond after
+                // (2026-11-12). Released is the track's own word; the mode is
+                // a second, as the one getMode() gives is the one asked for,
+                // ahead of the one applied - and a move back into the same
+                // family would read as no move. Anything else is the
+                // greeting's own failure.
+                Ln.w("greeting: its track stopped taking audio part-way: " + why);
+                listener.interrupted(why);
+            } else {
                 Ln.e("greeting: could not play", t);
-                listener.failed(t.getClass().getSimpleName() + ": " + t.getMessage());
+                listener.failed(why);
             }
         } finally {
             session.track = null;
@@ -185,6 +214,33 @@ final class GreetingPlayer {
                     // nothing to do
                 }
             }
+        }
+    }
+
+    /** Whether [tr] was released by another than this player, which releases
+     *  it only after this is asked. AOSP's AudioTrack.release() stops it,
+     *  frees the native track - a write fails from there - and only then
+     *  marks it uninitialized: looked at for up to RELEASE_SEEN_MS. */
+    private static boolean releasedUnder(AudioTrack tr) {
+        long until = SystemClock.elapsedRealtime() + RELEASE_SEEN_MS;
+        while (true) {
+            if (tr.getState() == AudioTrack.STATE_UNINITIALIZED) {
+                return true;
+            }
+            if (SystemClock.elapsedRealtime() >= until) {
+                return false;
+            }
+            SystemClock.sleep(10);
+        }
+    }
+
+    private static final long RELEASE_SEEN_MS = 100L;
+
+    private static int modeNow(AudioManager audio) {
+        try {
+            return audio.getMode();
+        } catch (Throwable t) {
+            return -1;
         }
     }
 

@@ -93,7 +93,8 @@ public class WireTest {
             b.put("XA TEST " + outcome, () -> Wire.test(outcome));
         }
         b.put("XR RESULT 1 state=done route=1 realms=9416 audioms=9539 tone=0 tonechunks=0 mute=1 voice=16 played=1"
-                + " arming=1762000180000", () -> Wire.result("done", 1, 9416, 9539, 0, 0, 1, 16, 1, 1762000180000L));
+                + " arming=1762000180000 wifi=0",
+                () -> Wire.result("done", 1, 9416, 9539, 0, 0, 1, 16, 1, 1762000180000L, 0));
         b.put("XF FWD error no-telephony", () -> Wire.fwd("error no-telephony"));
         b.put("XS FWD error bad-seconds", () -> Wire.fwd("error bad-seconds"));
         b.put("XP SIMS default=1 1|SIM_1 2|SIM_2",

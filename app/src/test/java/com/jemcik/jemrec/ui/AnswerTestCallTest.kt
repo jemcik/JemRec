@@ -315,6 +315,20 @@ class AnswerTestCallTest {
         assertFalse(said.toString(), said.any { "no test call came" in it })
     }
 
+    /** A test call Telecom marked as on Wi-Fi is Wi-Fi Calling's result, not
+     *  VoLTE's, whatever the voice network type said: a Galaxy S23's said LTE
+     *  (13) for a test call on Wi-Fi from its start (that test's own result,
+     *  2026-11-12, with the mark the recorder now reads). */
+    @Test fun aTestOnWifiIsWifiCallingsResult() {
+        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
+        recorder.replies["XR"] = "RESULT 1 state=done route=-1 realms=11787 audioms=11630 tone=0 tonechunks=0" +
+            " mute=1 voice=13 played=1 wifi=1"
+        val screen = opened(scope)
+        eventually("the result read") { AnswerDiagnostics.results(context).isNotEmpty() }
+        assertEquals(mapOf("Wi-Fi Calling" to AnswerDiagnostics.Verdict.LIKELY), AnswerDiagnostics.results(context))
+        eventually("the caller asked") { screen.state.value.askHeard == "Wi-Fi Calling" }
+    }
+
     /** Two screens open on one armed test - a second JemRec window, which one
      *  window (0.30) no longer opens; this holds for whatever else reads the
      *  entry - and one result: it is acted on once. */

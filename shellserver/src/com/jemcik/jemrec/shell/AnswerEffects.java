@@ -171,6 +171,8 @@ final class AnswerEffects implements AnswerMachine.Effects {
             return; // cannot be: the machine is what asks
         }
         String route = Answering.answerSettings.route;
+        // The test this greeting is for, if it is one: its checks are its alone.
+        long arming = AnswerTest.testArming;
         Answering.greetingPlayer.play(callAudio, route, checkTone, Greeting.FILE, new GreetingPlayer.Listener() {
             @Override
             public void checkToneDone() {
@@ -198,16 +200,25 @@ final class AnswerEffects implements AnswerMachine.Effects {
             @Override
             public void failed(String why) {
                 mainHandler.post(() -> {
-                    if (machine.testing()) {
+                    // Not played only if the machine gave up on it: one it
+                    // takes for a cut plays again, and is the test's still.
+                    boolean testing = machine.testing();
+                    if (machine.greetingFailed() && testing) {
                         AnswerTest.testPlayed = 0;
                     }
-                    machine.greetingFailed();
                 });
             }
+
+            @Override
+            public void interrupted(String why) {
+                mainHandler.post(machine::greetingInterrupted);
+            }
         });
-        if (checkTone) {
-            // Two seconds in, the greeting's track is up: where did it go?
-            mainHandler.postDelayed(AnswerTest::checkTestRoute, AnswerTest.GREETING_ROUTE_CHECK_MS);
+        if (machine.testing()) {
+            // Three seconds into each greeting a test plays - one played
+            // again after its call moved too - the track is up: where did it
+            // go, and is the call on Wi-Fi?
+            mainHandler.postDelayed(() -> AnswerTest.checkTestRoute(arming), AnswerTest.GREETING_ROUTE_CHECK_MS);
         }
     }
 

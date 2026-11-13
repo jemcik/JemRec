@@ -748,6 +748,45 @@ def _answering():
     return "message saved, marked, microphone back"
 
 
+def test_call_wifi():
+    try:
+        return _test_call_wifi()
+    finally:
+        no_call_left()
+
+
+def _test_call_wifi():
+    """The answering machine's test call, armed as the screen arms it, the
+    machine itself off as on a phone not yet set up: the next call answered
+    with the check tone and the greeting, and mid-greeting Telecom's list of
+    the calls there are now read for the active call's Wi-Fi mark
+    (Checks.callOnWifi) - what the voice network type cannot give: a Galaxy S23 said LTE for a test call on Wi-Fi from its start
+    (2026-11-12). The emulator's call is its modem's, never on Wi-Fi: "no"
+    says the list was found and the call in it read on this Android, where
+    "cannot tell" would leave the call's type to the voice network type
+    again. Straight to the recorder: no result kept in the app, no route of
+    its changed."""
+    answering_on()
+    said = diag("answer", "--ez", "on", "false")
+    assert "recorder took it: true" in said, said
+    time.sleep(10)  # past CallTracker's RECENT_END_MS from the call before
+    arming = int(time.time() * 1000)
+    said = diag("armtest", "--el", "arming", str(arming))
+    assert "ARMED" in said, said
+    sh("logcat -c")
+    adb("emu", "gsm", "call", STRANGER_IN)
+    wait_log(r"answer: answering", 20, "the test call to be answered")
+    # Only a test call reads this, so it is the test that answered.
+    m = wait_log(r"answer: test call on Wi-Fi: (yes|no|cannot tell)", 30, "Telecom's list of calls to be read")
+    assert m.group(1) == "no", f"the emulator's call read as on Wi-Fi: {m.group(1)}"
+    wait_log(r"answer: greeting played", 30, "the greeting to play")
+    adb("emu", "gsm", "cancel", STRANGER_IN)
+    wait_log(r"answer: test call over", 30, "the test call to end")
+    result = diag("testresult")
+    assert "state=done" in result and f"arming={arming}" in result and "wifi=0" in result, result
+    return "answered, the greeting played, its call read in Telecom's list as not on Wi-Fi"
+
+
 def greeting_hangup():
     try:
         return _greeting_hangup()
@@ -1080,7 +1119,9 @@ def answer_takeover_ask_first():
         return _answer_takeover_ask_first()
     finally:
         set_prefs(recording_mode="AUTOMATIC")
-        diag("answer")  # the mode back on the recorder
+        # The mode back on the recorder, and the machine off again: on, it
+        # would answer the calls of the checks after this one.
+        diag("answer", "--ez", "on", "false")
         no_call_left()
 
 
@@ -2474,7 +2515,7 @@ def self_test():
 
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, number_names, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
-          answer_after_emergency, answer_takeover_ask_first, app_call, mode_switch, app_call_in_front, waveform,
+          answer_after_emergency, answer_takeover_ask_first, test_call_wifi, app_call, mode_switch, app_call_in_front, waveform,
           background_playback, one_window,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
@@ -2611,11 +2652,14 @@ def main():
     set_up(apk)
     reinstall.apk = apk
     checks = [c for c in CHECKS if not args.only or c.__name__ in args.only.split(",")]
-    if args.only and "succession" in args.only and "rules" not in args.only:
-        set_prefs(rules_other_numbers=False)  # what the rules check leaves behind
-        start_recorder()
     failed = 0
     for check in checks:
+        if args.only and check is succession and "rules" not in args.only.split(","):
+            # What the rules check leaves behind, which succession starts
+            # from - set just before it: before the run, it left out the
+            # stranger of a check picked to run ahead of it (incoming).
+            set_prefs(rules_other_numbers=False)
+            start_recorder()
         try:
             nothing_pending()
             crashes = app_crashes()

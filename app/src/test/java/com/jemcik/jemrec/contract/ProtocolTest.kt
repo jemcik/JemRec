@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.contract
 
+import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.capture.CaptureDaemon
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -71,6 +72,8 @@ class ProtocolTest {
         assertEquals("HONOR", diag!!["maker"])
         val result = CaptureDaemon.fields(example("XR", "RESULT"), "RESULT 1")
         assertEquals("done", result!!["state"])
+        // Named as the recorder sends them: the call type is read from these two.
+        assertEquals("2G", AnswerDiagnostics.callType(result["voice"]!!.toInt(), result["wifi"]!!.toInt()))
 
         assertEquals(true, CaptureDaemon.parseListenerReply(example("B", "LISTENER ok")))
         assertEquals(false, CaptureDaemon.parseListenerReply(example("B", "LISTENER failed")))

@@ -272,6 +272,160 @@ public class ChecksTest {
         assertEquals(-1, Checks.trackOutput(FLINGER.replace("31494/   2000", "31494"), 31494));
     }
 
+    /** A Wi-Fi Calling call as a Galaxy S23 on Android 17 writes it in
+     *  `dumpsys telecom` (2026-11-12): its own line from the dump's history,
+     *  where it was logged as it ended - here as it was while under way,
+     *  ACTIVE, its list of capabilities and the vendor's tail after the state
+     *  cut short, and another number. */
+    private static final String S23_CALL = "[Call id=TC@27, state=ACTIVE, tpac=ComponentInfo{com.android.phone/"
+            + "com.android.services.telephony.TelephonyConnectionService}, 1, UserHandle{0}, cmgr=ComponentInfo{"
+            + "com.android.phone/com.android.services.telephony.TelephonyConnectionService}, 1, UserHandle{0},"
+            + " handle=tel:5551234, vidst=A, childs(0), has_parent(false), cap=[ hld sup_hld mutdis_cnf !v2a"
+            + " spd_aud], prop=[ HD wifi]], voip=falsecaps=[Capabilities: CAPABILITY_HOLD CAPABILITY_SUPPORT_HOLD"
+            + " CAPABILITY_MUTE], props=[Properties: PROPERTY_HIGH_DEF_AUDIO PROPERTY_WIFI], conf(false),"
+            + " had_child(false), ACTIVE";
+
+    /** That phone's dump as it begins, its list of the calls there are now
+     *  holding [calls], and an earlier Wi-Fi call further down, as history. */
+    private static String telecom(String... calls) {
+        StringBuilder dump = new StringBuilder("telecom: samsung/dm1qxeea/dm1q:17/CP2A.260605.016/"
+                + "S911BXXUAGZIF:user/release-keys, 17\n"
+                + "Init Path: On legacy\n"
+                + "TelecomUI package: com.android.server.telecomui\n"
+                + "CallsManager: \n"
+                + "  mCalls: \n");
+        for (String call : calls) {
+            dump.append("    ").append(call).append('\n');
+        }
+        return dump.append("  mCallAudioManager:\n"
+                + "    All calls:\n"
+                + "    Ringing calls:\n"
+                + "\n"
+                + "    CallTC@25 [12 Nov 2026 19:32:06](MT - incoming)(User=UserHandle{0})\n"
+                + "      19:32:40.901 - LOG_DISCONNECTED_CALL (" + S23_CALL.replace("TC@27", "TC@25")
+                        .replace("ACTIVE", "DISCONNECTED") + "):CSW.sDc(cap)@fK0\n").toString();
+    }
+
+    @Test
+    public void aCallTelecomHasOnWifiIsOnWifi() {
+        assertEquals(1, Checks.callOnWifi(telecom(S23_CALL)));
+        assertEquals(1, Checks.callOnWifi(telecom(S23_CALL.replace("prop=[ HD wifi]", "prop=[ wifi]"))));
+        // Another call held beside it, not on Wi-Fi: the active one is.
+        assertEquals(1, Checks.callOnWifi(telecom(
+                S23_CALL.replace("state=ACTIVE", "state=ON_HOLD").replace("prop=[ HD wifi]", "prop=[ HD]"), S23_CALL)));
+    }
+
+    @Test
+    public void aCallWithoutTheMarkIsNotOnWifi() {
+        // As the S23's first test call was while it rang, and after: no
+        // mark, or none at all.
+        assertEquals(0, Checks.callOnWifi(telecom(S23_CALL.replace("prop=[ HD wifi]", "prop=[ HD]"))));
+        assertEquals(0, Checks.callOnWifi(telecom(S23_CALL.replace("prop=[ HD wifi]", "prop=[]"))));
+        // A word with wifi in it is not the mark.
+        assertEquals(0, Checks.callOnWifi(telecom(S23_CALL.replace("prop=[ HD wifi]", "prop=[ HD nowifi]"))));
+        // A call ringing or held beside the active one is another call: its
+        // Wi-Fi is not the active one's.
+        String active = S23_CALL.replace("prop=[ HD wifi]", "prop=[ HD]");
+        assertEquals(0, Checks.callOnWifi(telecom(active, S23_CALL.replace("state=ACTIVE", "state=RINGING"))));
+        assertEquals(0, Checks.callOnWifi(telecom(S23_CALL.replace("state=ACTIVE", "state=ON_HOLD"), active)));
+    }
+
+    /** The Android 17 emulator's dump as it begins, mid-call (2026-11-12):
+     *  its modem's call, no marks at all, listed again under the audio
+     *  manager's "Foreground call:". */
+    private static final String AVD_37 = "Init Path: On mainline\n"
+            + "TelecomUI package: com.google.android.telecomui\n"
+            + "CallsManager: \n"
+            + "  mCalls: \n"
+            + "    [Call id=TC@1, tId=1158, state=ACTIVE, tpac=ComponentInfo{com.android.phone/"
+            + "com.android.services.telephony.TelephonyConnectionService}, 1, UserHandle{0}, cmgr=ComponentInfo{"
+            + "com.android.phone/com.android.services.telephony.TelephonyConnectionService}, 1, UserHandle{0},"
+            + " handle=tel:*****21, vidst=A, childs(0), has_parent(false), cap=[ hld sup_hld mutsep_cnfdis_cnf !v2a"
+            + " spd_aud], prop=[]], voip=false\n"
+            + "  mCallAudioManager:\n"
+            + "    All calls:\n"
+            + "      TC@1\n"
+            + "    Active dialing, or connecting calls:\n"
+            + "      TC@1\n"
+            + "    Ringing calls:\n"
+            + "    Holding calls:\n"
+            + "    Foreground call:\n"
+            + "    [Call id=TC@1, tId=1158, state=ACTIVE, prop=[]], voip=false\n"
+            + "    CallAudioModeStateMachine:\n";
+
+    @Test
+    public void aCallScreeningTrackGoesWhenTheModeLeavesItsFamily() {
+        // AOSP's CallInjectionModeChangedListener: a phone call's track (in
+        // call 2, screening 4, redirect 5) lives in those; one through the
+        // mixer (communication 3, its redirect 6) in those.
+        assertTrue(Checks.modeLeftTrack(2, 0));
+        // The S23's move: in call, then normal, then communication.
+        assertTrue(Checks.modeLeftTrack(2, 3));
+        assertTrue(Checks.modeLeftTrack(3, 0));
+        assertTrue(Checks.modeLeftTrack(3, 2));
+        assertTrue(Checks.modeLeftTrack(4, -1));
+        assertFalse(Checks.modeLeftTrack(2, 2));
+        assertFalse(Checks.modeLeftTrack(2, 4));
+        assertFalse(Checks.modeLeftTrack(5, 2));
+        assertFalse(Checks.modeLeftTrack(3, 6));
+        assertFalse(Checks.modeLeftTrack(6, 3));
+        // Made outside a call's modes, or the mode not read: no such track.
+        assertFalse(Checks.modeLeftTrack(0, 3));
+        assertFalse(Checks.modeLeftTrack(1, 0));
+        assertFalse(Checks.modeLeftTrack(-1, 0));
+    }
+
+    @Test
+    public void theEmulatorsCallIsNotOnWifi() {
+        assertEquals(0, Checks.callOnWifi(AVD_37));
+        // Only the list is read. Further down, only the foreground call's
+        // repeat was seen; a call line there on Wi-Fi - written so on no
+        // phone yet - is not the list's call.
+        String below = "    [Call id=TC@0, state=ACTIVE, prop=[ wifi]], voip=false\n";
+        assertEquals(0, Checks.callOnWifi(AVD_37 + below));
+        assertEquals(-1, Checks.callOnWifi(AVD_37.replaceFirst("    \\[Call id=TC@1[^\n]*\n", "") + below));
+    }
+
+    @Test
+    public void noCallListedSaysNothing() {
+        // No call now: the earlier Wi-Fi call further down is history.
+        assertEquals(-1, Checks.callOnWifi(telecom()));
+        assertEquals(-1, Checks.callOnWifi(null));
+        assertEquals(-1, Checks.callOnWifi(""));
+        // A dump without the list, and a call written without the short
+        // marks - the long ones ("props=") are not read for them.
+        assertEquals(-1, Checks.callOnWifi(telecom(S23_CALL).replace("mCalls:", "calls:")));
+        assertEquals(-1, Checks.callOnWifi(telecom(S23_CALL.replace("prop=[ HD wifi]", "flags=[ HD wifi]"))));
+        assertEquals(-1, Checks.callOnWifi(telecom("CallTC@27 [ACTIVE]")));
+        // No call active or disconnecting: one ringing only, or one on
+        // another device; and a line in the list that is no call's.
+        assertEquals(-1, Checks.callOnWifi(telecom(S23_CALL.replace("state=ACTIVE", "state=RINGING"))));
+        assertEquals(-1, Checks.callOnWifi(telecom(S23_CALL.replace("prop=[ HD wifi]", "prop=[ HD wifi xtrnl]"))));
+        assertEquals(-1, Checks.callOnWifi(telecom(S23_CALL.replace("[Call id=", "Call id="))));
+    }
+
+    @Test
+    public void theListEndsWhereItsIndentationDoes() {
+        // At the dump's very end, with nothing after it.
+        assertEquals(1, Checks.callOnWifi("CallsManager: \n  mCalls: \n    " + S23_CALL));
+        // A blank line closes it: a call after that is not the list's.
+        assertEquals(0, Checks.callOnWifi("CallsManager: \n  mCalls: \n    "
+                + S23_CALL.replace("prop=[ HD wifi]", "prop=[ HD]") + "\n\n    " + S23_CALL + "\n"));
+    }
+
+    @Test
+    public void aCallThisPhoneIsHangingUpIsReadWhenNoneIsActive() {
+        // A test whose greeting failed is hung up by the machine before its
+        // mid-greeting check, as the S23's at 20:09 was: Telecom lists it as
+        // disconnecting until it is gone.
+        String hangingUp = S23_CALL.replace("state=ACTIVE", "state=DISCONNECTING");
+        assertEquals(1, Checks.callOnWifi(telecom(hangingUp)));
+        assertEquals(0, Checks.callOnWifi(telecom(hangingUp.replace("prop=[ HD wifi]", "prop=[ HD]"))));
+        // Beside an active call, the active one is the call under way.
+        assertEquals(0, Checks.callOnWifi(telecom(S23_CALL.replace("prop=[ HD wifi]", "prop=[ HD]"), hangingUp)));
+        assertEquals(1, Checks.callOnWifi(telecom(hangingUp.replace("prop=[ HD wifi]", "prop=[ HD]"), S23_CALL)));
+    }
+
     private static short[] stereo(int frames, double hzLeft, double hzRight, double amplitude) {
         short[] pcm = new short[frames * 2];
         for (int i = 0; i < frames; i++) {

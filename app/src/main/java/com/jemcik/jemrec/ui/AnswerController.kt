@@ -803,7 +803,7 @@ class AnswerController(
     }
 
     private fun finishTest(result: Map<String, String>) {
-        val type = AnswerDiagnostics.callType(result["voice"]?.toIntOrNull() ?: -1)
+        val type = AnswerDiagnostics.callType(result["voice"]?.toIntOrNull() ?: -1, result["wifi"]?.toIntOrNull() ?: -1)
         val verdict = AnswerDiagnostics.verdict(result)
         // Only someone who called can say. An outgoing test reached a
         // machine; its verdict is the measurements'.

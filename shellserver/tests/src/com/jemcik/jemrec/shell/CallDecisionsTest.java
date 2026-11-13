@@ -237,4 +237,46 @@ public class CallDecisionsTest {
         assertEquals(1, MODE_AUTOMATIC);
         assertEquals(2, MODE_ON_DEMAND);
     }
+
+    @Test
+    public void aTestsMidGreetingCheckIsItsTestsAlone() {
+        // Its test, under way: run, and what it read kept.
+        assertTrue(CallDecisions.testCheckApplies(7, 7, true));
+        // Its test over by the check's time: the next call would be read.
+        assertFalse(CallDecisions.testCheckApplies(7, 7, false));
+        // Another test armed since: not its results, under way or not.
+        assertFalse(CallDecisions.testCheckApplies(8, 7, true));
+        assertFalse(CallDecisions.testCheckApplies(8, 7, false));
+    }
+
+    @Test
+    public void aWifiReadingThatCouldNotTellLeavesTheOneBefore() {
+        // Read on LTE, then on Wi-Fi after the move: the latest.
+        assertEquals(1, CallDecisions.wifiAfter(0, 1));
+        assertEquals(0, CallDecisions.wifiAfter(1, 0));
+        // Could not tell - no call listed by then: what was read stays.
+        assertEquals(1, CallDecisions.wifiAfter(1, -1));
+        assertEquals(0, CallDecisions.wifiAfter(0, -1));
+        assertEquals(-1, CallDecisions.wifiAfter(-1, -1));
+    }
+
+    @Test
+    public void aDoneTestIsRunningUntilItsReadingsAreKept() {
+        assertEquals("running", CallDecisions.testStateToSay("done", 1));
+        assertEquals("done", CallDecisions.testStateToSay("done", 0));
+        // Only "done" waits: the app reads it once; the others it reads again.
+        assertEquals("running", CallDecisions.testStateToSay("running", 2));
+        assertEquals("armed", CallDecisions.testStateToSay("armed", 1));
+        assertEquals("none", CallDecisions.testStateToSay("none", 0));
+    }
+
+    @Test
+    public void aVoiceTypeReadMidGreetingReplacesTheOneBeforeIfItNamesOne() {
+        // On Wi-Fi as the message began (IWLAN, 18), on LTE mid-greeting.
+        assertEquals(13, CallDecisions.voiceAfter(18, 13));
+        // Unknown (0) or not read (-1) then: the one before stays.
+        assertEquals(18, CallDecisions.voiceAfter(18, 0));
+        assertEquals(18, CallDecisions.voiceAfter(18, -1));
+        assertEquals(-1, CallDecisions.voiceAfter(-1, -1));
+    }
 }

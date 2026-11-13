@@ -218,4 +218,40 @@ final class CallDecisions {
                 || (machine != null && machine != AnswerMachine.State.IDLE
                     && machine != AnswerMachine.State.RINGING);
     }
+
+    /**
+     * Whether a test call's mid-greeting check is the test's - the one armed
+     * as [armedThen], as its greeting began - with [armedNow] the arming
+     * now: the same arming, and the test still under way ([testing]). Run
+     * after it ended, a check would read whatever call came next, and keep
+     * what it found as the finished test's. A reading taken in time is kept
+     * however it ends meanwhile ([testing] true then), but never for a test
+     * armed since: those are not its results.
+     */
+    static boolean testCheckApplies(long armedNow, long armedThen, boolean testing) {
+        return armedNow == armedThen && testing;
+    }
+
+    /** A test's Wi-Fi reading (Checks.callOnWifi) over the one kept before
+     *  ([before]): one that could tell replaces it, the latest naming the
+     *  path the call is on now; one that could not (-1) leaves it. */
+    static int wifiAfter(int before, int reading) {
+        return reading >= 0 ? reading : before;
+    }
+
+    /** A test's voice network type read mid-greeting over the one read
+     *  before ([before]: as its message began, or an earlier greeting's): a
+     *  type it could name (TelephonyManager's NETWORK_TYPE_*, not 0, unknown,
+     *  nor -1, not read) replaces it. */
+    static int voiceAfter(int before, int reading) {
+        return reading > 0 ? reading : before;
+    }
+
+    /** What 'R' says of a test in [state] with [inFlight] of its checks'
+     *  readings still being taken: "running" for a "done" one until they are
+     *  kept, as the app reads a done test once - a reading kept after that
+     *  would be lost. */
+    static String testStateToSay(String state, int inFlight) {
+        return "done".equals(state) && inFlight > 0 ? "running" : state;
+    }
 }

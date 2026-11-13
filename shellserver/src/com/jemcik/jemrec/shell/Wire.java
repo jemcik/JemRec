@@ -290,9 +290,10 @@ final class Wire {
     }
 
     /** DIAGNOSE 'R': the last test call's signals, and the arming they are
-     *  for (the app's id for it). */
+     *  for (the app's id for it); [wifi] last, as an app before it reads the
+     *  line by its names and passes over one it does not know. */
     static String result(String state, int route, long realMs, long audioMs, int tone, int toneChunks, int mute,
-            int voice, int played, long arming) {
+            int voice, int played, long arming, int wifi) {
         return "RESULT 1 state=" + state
                 + " route=" + route
                 + " realms=" + realMs
@@ -302,7 +303,8 @@ final class Wire {
                 + " mute=" + mute
                 + " voice=" + voice
                 + " played=" + played
-                + " arming=" + arming;
+                + " arming=" + arming
+                + " wifi=" + wifi;
     }
 
     /** DIAGNOSE 'F' and 'S': the carrier's no-reply forwarding. */

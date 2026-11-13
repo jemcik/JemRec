@@ -492,6 +492,7 @@ final class Commands {
                     AnswerTest.testToneBest = 0;
                     AnswerTest.testMuteHeld = -1;
                     AnswerTest.testVoice = -1;
+                    AnswerTest.testWifi = -1;
                     AnswerTest.testPlayed = -1;
                     machine.armTest(incoming, incoming ? AnswerTest.TEST_INCOMING_WINDOW_MS : AnswerTest.TEST_OUTGOING_WINDOW_MS);
                     return true;
@@ -512,10 +513,12 @@ final class Commands {
                 break;
             }
             case 'R':
-                reply(client, Wire.result(AnswerTest.testState, AnswerTest.testRoute, AnswerTest.testRealMs,
+                reply(client, Wire.result(
+                        CallDecisions.testStateToSay(AnswerTest.testState, AnswerTest.readingsInFlight.get()),
+                        AnswerTest.testRoute, AnswerTest.testRealMs,
                         AnswerTest.testAudioMs, AnswerTest.testToneBest >= AnswerTest.TONE_CHUNKS ? 1 : 0,
                         AnswerTest.testToneBest, AnswerTest.testMuteHeld, AnswerTest.testVoice,
-                        AnswerTest.testPlayed, AnswerTest.testArming));
+                        AnswerTest.testPlayed, AnswerTest.testArming, AnswerTest.testWifi));
                 break;
             case 'F': {
                 client.setSoTimeout(60_000);

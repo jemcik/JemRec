@@ -46,6 +46,16 @@ final class AnswerMachine {
     static final long SPEECH_MS = 500L;
     /** Levels in the first moments after the mute may still be the room. */
     static final long SETTLE_MS = 300L;
+    /** A greeting cut off as the call moved (greetingInterrupted) is played
+     *  again at most this often in a call: one that keeps moving is no call
+     *  to take a message on. */
+    static final int GREETING_RESTARTS = 2;
+    /** After a greeting played again, the mute is held this long: the mode read
+     *  as back is the one asked for (AOSP AudioService.getMode()), applied later
+     *  - 0.39 s after getMode() began to give it, on a Galaxy S23 (its log,
+     *  2026-11-12) - which may drop the mute again. As long as the 1.5 s of
+     *  silence the greeting begins with (GreetingPlayer.LEAD_IN_MS). */
+    static final long REPLAY_MUTE_HOLD_MS = 1_500L;
     /** -45 dBFS, the level JemRec's silence check calls speech. */
     static final double SOUND_RMS = 32768 * Math.pow(10, -45 / 20.0);
     /** With no limit on the message, it ends after this long without a sound
@@ -137,7 +147,8 @@ final class AnswerMachine {
 
         /** Start the greeting: lead-in, [checkTone] first if asked, the
          *  greeting, the beep. Asynchronous; calls back checkToneDone (only
-         *  with a check tone) and greetingDone. */
+         *  with a check tone), then greetingDone - or greetingFailed, or
+         *  greetingInterrupted for one cut off part-way. */
         void playGreeting(boolean checkTone);
 
         void stopGreeting();
@@ -299,6 +310,14 @@ final class AnswerMachine {
     private volatile boolean over;
     private long overAt;
     private boolean greetingFailed;
+    /** The test's check tone has gone out: a greeting played again leaves it
+     *  out. */
+    private boolean toneDone;
+    /** Greetings played again in this call, and when the last was cut. */
+    private int greetingRestarts;
+    private long interruptedAt;
+    /** When the last greeting played again began, for REPLAY_MUTE_HOLD_MS. */
+    private long replayAt;
 
     AnswerMachine(Effects effects) {
         this.effects = effects;
@@ -521,18 +540,139 @@ final class AnswerMachine {
 
     /** The test's check tone has gone out: mute now. */
     void checkToneDone() {
-        if (state == State.GREETING && testCall && mutedAt == 0) {
-            mute();
+        if (state == State.GREETING && testCall) {
+            toneDone = true;
+            if (mutedAt == 0) {
+                mute();
+            }
         }
     }
 
-    /** The greeting could not be played. The caller hears a silent line, and
-     *  has not been told they are leaving a message: hang up. */
-    void greetingFailed() {
-        if (state != State.GREETING) {
-            return;
+    /**
+     * The greeting could not be played. The caller hears a silent line, and
+     * has not been told they are leaving a message: hang up - with the
+     * call's audio up, where the greeting itself is why. With it away, or
+     * telephony saying the call is over, a cut: the mode left between the
+     * audio being seen up and the track's making, which AOSP refuses outside
+     * the call's modes, or the end took it. After a hang-up already asked
+     * for, nothing. True if it hung up for this.
+     */
+    boolean greetingFailed() {
+        if (state != State.GREETING || ending) {
+            return false;
+        }
+        if (over || !effects.callAudioUp()) {
+            cut();
+            return false;
         }
         failAndHangUp("the greeting could not be played");
+        return true;
+    }
+
+    /**
+     * The greeting stopped part-way: the audio mode left the one its track
+     * was made in, and Android released the track (AudioManager's
+     * CallInjectionModeChangedListener, for the call-screening route's) -
+     * the call moving, or its end. A Galaxy S23's test call, answered on LTE,
+     * was cut off 2.2 s after the greeting's track began, as the call was handed
+     * over to Wi-Fi: its mode left
+     * in-call, the track went with it, and, taken for a greeting that could
+     * not play, the caller was hung up on (2026-11-12). Played again
+     * instead, from the start, once the call's audio is back, the
+     * microphone muted again first. "Back" is the mode asked for: there
+     * Telecom had asked for communication 0.13 s before the track died, and
+     * Android applied it 0.37 s after, inside the 1.5 s of silence the
+     * greeting begins with (GreetingPlayer.LEAD_IN_MS). At most
+     * GREETING_RESTARTS times in a call, and hung up as before if the audio
+     * is not back within AUDIO_WAIT_MS. Telephony saying the call is over
+     * makes the cut the end's: nothing plays, and the end follows
+     * (callEnded) - or, for an idle the call outlives (callGoesOn), the
+     * greeting plays then. Not the "message started" again: the message is
+     * the same one.
+     */
+    void greetingInterrupted() {
+        if (state != State.GREETING || ending) {
+            return;
+        }
+        cut();
+    }
+
+    private void cut() {
+        interruptedAt = effects.now();
+        effects.log("answer: the greeting stopped as the call's audio left; it plays again once that is back");
+        cancel(audioPoll);
+        audioPoll = effects.schedule(this::pollMoved, AUDIO_POLL_MS);
+    }
+
+    private void pollMoved() {
+        audioPoll = null;
+        if (state != State.GREETING || ending) {
+            return;
+        }
+        boolean audio = effects.callAudioUp();
+        if (audio && mutedAt > 0 && !effects.muted()) {
+            // Muted again as soon as the call's audio is up, not counted as
+            // muted anew: whether the mute held through the move is the
+            // platform's, and the mute watch is off while telephony says the
+            // call is over. A tap on unmute in the moment before the cut
+            // goes with it; a second takes the call (watchMute) - but while
+            // telephony says the call is over, each is undone, the room kept
+            // from a caller who may still be there: Talk to them takes it
+            // then, or a tap once the call is seen to go on.
+            effects.setMuted(true);
+            if (!effects.muted()) {
+                failAndHangUp("the microphone did not mute");
+                return;
+            }
+            // Put back: an unmute seen before it was the platform's, not a
+            // first of the user's two (watchMute).
+            unmutedSeen = false;
+        }
+        if (over) {
+            // The end's cut, most likely: its end comes - or the call goes
+            // on, and the audio is looked for again then, the wait counted
+            // from there.
+            interruptedAt = effects.now();
+        } else if (audio) {
+            // Played again, counted: cuts are not - the end's, and a second
+            // before the audio is back, play nothing.
+            if (greetingRestarts >= GREETING_RESTARTS) {
+                failAndHangUp("the greeting stopped again as the call moved");
+                return;
+            }
+            greetingRestarts++;
+            effects.log("answer: the call's audio is back; the greeting plays again");
+            effects.playGreeting(testCall && !toneDone);
+            replayAt = effects.now();
+            audioPoll = effects.schedule(this::holdMute, AUDIO_POLL_MS);
+            return;
+        } else if (effects.now() - interruptedAt >= AUDIO_WAIT_MS) {
+            failAndHangUp("the call's audio did not come back after it moved");
+            return;
+        }
+        audioPoll = effects.schedule(this::pollMoved, AUDIO_POLL_MS);
+    }
+
+    /** While a greeting played again begins, a mute dropped as Android applies
+     *  the call's mode is put back - within a poll, before the mute watch can
+     *  see it twice and take it for the user taking the call. An unmute on
+     *  the call screen then is undone with it; Talk to them takes the call. */
+    private void holdMute() {
+        audioPoll = null;
+        if (state != State.GREETING || ending) {
+            return;
+        }
+        if (mutedAt > 0 && !effects.muted() && effects.callAudioUp()) {
+            effects.setMuted(true);
+            if (!effects.muted()) {
+                failAndHangUp("the microphone did not mute");
+                return;
+            }
+            unmutedSeen = false;
+        }
+        if (effects.now() - replayAt < REPLAY_MUTE_HOLD_MS) {
+            audioPoll = effects.schedule(this::holdMute, AUDIO_POLL_MS);
+        }
     }
 
     /** The beep has finished playing. */
@@ -831,6 +971,9 @@ final class AnswerMachine {
         refused = false;
         greetingFailed = false;
         testCall = false;
+        toneDone = false;
+        greetingRestarts = 0;
+        interruptedAt = 0;
     }
 
     private void cancelTimers() {
