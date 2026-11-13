@@ -110,6 +110,8 @@ public class HopTest {
     @Test
     public void aCallAnsweredInTimeGivesItsAnswer() throws Exception {
         assertEquals(Boolean.FALSE, Hop.inTime("check", () -> false, 2_000));
+        // On a daemon thread: one never answered must not keep the process.
+        assertEquals(Boolean.TRUE, Hop.inTime("check", () -> Thread.currentThread().isDaemon(), 2_000));
     }
 
     @Test

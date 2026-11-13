@@ -42,6 +42,7 @@ public class PolicyUseTest {
     public void armedOnceAndLetGoWhenNothingHoldsIt() throws Exception {
         assertNull(use.armed());
         String p = use.arm();
+        assertSame(p, use.armed());
         assertSame(p, use.arm());
         assertEquals(List.of(p), android.registered);
         assertTrue(use.disarmIfIdle());

@@ -82,12 +82,20 @@ public class HandshakeTest {
 
     @Test
     public void theWholeExchangeIsTheVectors() throws IOException {
-        // The app's nonce and proof in, the recorder's nonce and proof out.
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        // The app's nonce and proof in, the recorder's nonce and proof out -
+        // sent before the client's proof is waited for.
+        int[] flushedAt = {-1};
+        ByteArrayOutputStream out = new ByteArrayOutputStream() {
+            @Override
+            public void flush() {
+                flushedAt[0] = size();
+            }
+        };
         String refused = Handshake.prove(new ByteArrayInputStream(concat(hex("client_nonce"), hex("client_proof"))),
                 out, TOKEN, new Fixed());
         assertNull(refused);
         assertArrayEquals(concat(hex("daemon_nonce"), hex("daemon_proof")), out.toByteArray());
+        assertEquals(Handshake.NONCE_BYTES + Handshake.MAC_BYTES, flushedAt[0]);
     }
 
     @Test

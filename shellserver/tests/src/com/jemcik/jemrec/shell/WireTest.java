@@ -130,9 +130,33 @@ public class WireTest {
 
     @Test
     public void aReplyIsOneLineSentAtOnce() throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int[] flushed = {0};
+        ByteArrayOutputStream out = new ByteArrayOutputStream() {
+            @Override
+            public void flush() {
+                flushed[0]++;
+            }
+        };
         Wire.reply(out, "TEST armed");
         assertEquals("TEST armed\n", out.toString(StandardCharsets.UTF_8));
+        assertEquals(1, flushed[0]);
+    }
+
+    /** The other word of each yes-or-no, which the fixture's examples do not
+     *  show: the app reads "looper=ok", "watching=1" and the rest as they
+     *  are, and anything else as no. */
+    @Test
+    public void eachNoIsItsOwnWord() {
+        assertEquals("WATCH 1 since=0 watching=0 looper=stuck mode=0 call=1 events=0 lastevent=0 offhooks=0"
+                        + " lastoffhook=0 recording=5 voip=0 voiparmed=1 tracking=0 answer=1 greeting=1",
+                Wire.watch(0, false, false, 0, true, 0, 0, 0, 0, 5, 0, true, false, true, true));
+        assertEquals("TRACK off", Wire.track(false));
+        assertEquals("VOIP 0 off", Wire.voip(0, false));
+        assertEquals("SIMS default=", Wire.SIMS + Wire.simsDefault(""));
+        assertEquals(" unknown|SIM", Wire.sim("", null));
+        assertEquals("DIAG 1 perms=mute,calls incallmusic=-1 screening=0 greeting=96000 route=screening sdk=31"
+                        + " voice=-1 soc=unknown maker=unknown model=Pixel_6a",
+                Wire.diag("mute,calls", -1, 0, 96000, "screening", 31, -1, "", null, "Pixel 6a"));
     }
 
     @Test
