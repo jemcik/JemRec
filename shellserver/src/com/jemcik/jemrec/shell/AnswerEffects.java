@@ -82,12 +82,7 @@ final class AnswerEffects implements AnswerMachine.Effects {
 
     @Override
     public boolean emergencyCallback() {
-        try {
-            // A SystemApi under READ_PRIVILEGED_PHONE_STATE, the shell's.
-            return (boolean) TelephonyManager.class.getMethod("getEmergencyCallbackMode").invoke(phone);
-        } catch (Throwable t) {
-            return false;
-        }
+        return Platform.emergencyCallbackMode(phone);
     }
 
     @Override

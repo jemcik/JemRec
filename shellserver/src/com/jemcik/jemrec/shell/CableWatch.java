@@ -2,8 +2,6 @@ package com.jemcik.jemrec.shell;
 
 import com.genymobile.scrcpy.util.Ln;
 
-import java.lang.reflect.Field;
-
 /**
  * A USB cable going in or out, passed on to the app while adbd may still be
  * there: see watchCable.
@@ -58,28 +56,14 @@ final class CableWatch {
      * does not: plugged in at 80 % it stayed "discharging").
      */
     static void watchCable() {
-        Object usb = null;
-        java.lang.reflect.Method status = null;
-        java.lang.reflect.Method mode = null;
-        java.util.List<String> ports = new java.util.ArrayList<>();
+        Platform.Usb usb = null;
         // Looked for until found: a recorder started just after boot can be
         // up before the USB service is. Said once, not every minute.
         boolean said = false;
-        while (ports.isEmpty()) {
+        while (usb == null || usb.ports.isEmpty()) {
             try {
-                Object binder = Class.forName("android.os.ServiceManager")
-                        .getMethod("getService", String.class).invoke(null, "usb");
-                usb = Class.forName("android.hardware.usb.IUsbManager$Stub")
-                        .getMethod("asInterface", android.os.IBinder.class).invoke(null, binder);
-                java.util.List<?> found = (java.util.List<?>) usb.getClass().getMethod("getPorts").invoke(usb);
-                status = usb.getClass().getMethod("getPortStatus", String.class);
-                mode = Class.forName("android.hardware.usb.UsbPortStatus").getMethod("getCurrentMode");
-                if (found != null) {
-                    for (Object port : found) {
-                        ports.add(portId(port));
-                    }
-                }
-                if (ports.isEmpty() && !said) {
+                usb = Platform.Usb.find();
+                if (usb.ports.isEmpty() && !said) {
                     Ln.i("cable: no USB port to watch yet");
                     said = true;
                 }
@@ -89,28 +73,24 @@ final class CableWatch {
                     said = true;
                 }
             }
-            if (ports.isEmpty()) {
+            if (usb == null || usb.ports.isEmpty()) {
                 Shell.sleep(CABLE_PORTS_RETRY_MS);
             }
         }
-        if (usb == null || status == null || mode == null) {
-            // Cannot be: ports fills only once all three were found.
-            Ln.w("cable: the USB service went before its ports could be watched");
-            return;
-        }
+        java.util.List<String> ports = usb.ports;
         Ln.i("cable: watching USB port(s) " + ports + " every " + CABLE_CHECK_INTERVAL_MS / 1000 + "s");
         Boolean before = null;
         while (true) {
             int[] modes = new int[ports.size()];
             for (int i = 0; i < modes.length; i++) {
-                modes[i] = portMode(usb, status, mode, ports.get(i));
+                modes[i] = usb.mode(ports.get(i));
             }
             int reading = Checks.portsReading(modes);
             if (reading >= 0) {
                 boolean in = Checks.cableIn(reading);
                 String change = Checks.cableChange(before, in);
                 if (change != null) {
-                    String config = property("sys.usb.config");
+                    String config = Platform.property("sys.usb.config");
                     Ln.i("cable: " + change + " at " + new java.util.Date() + " (port mode " + reading
                             + ", USB debugging " + (Checks.usbAdb(config) ? "on the cable" : "not on it")
                             + ") - waking the app to watch the recorder");
@@ -119,45 +99,6 @@ final class CableWatch {
                 before = in;
             }
             Shell.sleep(CABLE_CHECK_INTERVAL_MS);
-        }
-    }
-
-    /** A port's id: the method where there is one, the field where Android
-     *  17 has only that, and the Honor's one port's name failing both. */
-    private static String portId(Object parcelable) {
-        try {
-            return (String) parcelable.getClass().getMethod("getId").invoke(parcelable);
-        } catch (Throwable ignored) {
-            // Android 17's ParcelableUsbPort has no getter.
-        }
-        try {
-            Field field = parcelable.getClass().getDeclaredField("mId");
-            field.setAccessible(true);
-            return (String) field.get(parcelable);
-        } catch (Throwable ignored) {
-            return "port0";
-        }
-    }
-
-    /** UsbPortStatus.getCurrentMode for [port], or -1 if it could not be read.
-     *  No status at all is a port the service does not know - unknown, not
-     *  "no cable", which is a status with mode 0. */
-    private static int portMode(Object usb, java.lang.reflect.Method status, java.lang.reflect.Method mode,
-            String port) {
-        try {
-            Object reading = status.invoke(usb, port);
-            return reading == null ? -1 : (Integer) mode.invoke(reading);
-        } catch (Throwable t) {
-            return -1;
-        }
-    }
-
-    private static @Nullable String property(String name) {
-        try {
-            return (String) Class.forName("android.os.SystemProperties")
-                    .getMethod("get", String.class).invoke(null, name);
-        } catch (Throwable t) {
-            return null;
         }
     }
 }

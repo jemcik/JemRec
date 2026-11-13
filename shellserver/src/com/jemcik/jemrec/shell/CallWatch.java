@@ -11,7 +11,6 @@ import android.telecom.TelecomManager;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
 
-import java.lang.reflect.Field;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -58,69 +57,21 @@ final class CallWatch extends TelephonyCallback
             return;
         }
         try {
-            // TelephonyManager reaches the phone service through a static
-            // "service registerer" that a normal app process is handed during
-            // startup and this process never is - it was started from a shell,
-            // not by the system. Left unset it is null and registration dies
-            // in getITelephony() with an NPE (measured). The class that holds
-            // it is hidden, so it is set the way scrcpy sets every other piece
-            // of app-process furniture this daemon lacks: by reflection.
-            Class<?> initializer = Class.forName("android.telephony.TelephonyFrameworkInitializer");
-            Class<?> managerClass = Class.forName("android.os.TelephonyServiceManager");
-            Object manager = managerClass.getDeclaredConstructor().newInstance();
-            initializer.getDeclaredMethod("setTelephonyServiceManager", managerClass)
-                    .invoke(null, manager);
-
-            // The manager the system hands back is bound to the system
-            // context, whose package is "android" - and telephony checks the
-            // calling package belongs to the calling uid, so it throws
-            // "Package android does not belong to 2000" (measured, the second
-            // wall this hit). Its mContext is repointed at the FakeContext,
-            // whose package is com.android.shell and DOES belong to shell -
-            // the identical trick FakeContext already plays for the clipboard,
-            // and better than the hidden TelephonyManager(Context) constructor,
-            // which is not in the platform jar this compiles against.
+            Platform.bindTelephonyService();
             Context context = FakeContext.get();
             TelephonyManager telephony =
                     (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-            try {
-                Field mContext = TelephonyManager.class.getDeclaredField("mContext");
-                mContext.setAccessible(true);
-                mContext.set(telephony, context);
-            } catch (ReflectiveOperationException e) {
-                Ln.w("callwatch: could not rebind telephony context: " + e.getMessage());
-            }
+            Platform.rebindTelephony(telephony, context);
             AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            // Handed out with no context at all: setMicrophoneMute reads the
-            // caller's package from it, as setMode does - which died of an NPE
-            // in the answering-machine probe (the Honor, 2026-10-22). getMode
-            // swallows the same NPE, which is why the call watch never
-            // noticed. Only the answering machine mutes, so a phone where this
-            // fails loses that, not the watch.
-            try {
-                for (String name : new String[]{"mOriginalContext", "mApplicationContext"}) {
-                    Field field = AudioManager.class.getDeclaredField(name);
-                    field.setAccessible(true);
-                    field.set(audio, context);
-                }
+            if (Platform.rebindAudio(audio, context)) {
                 Answering.muteReady = true;
-            } catch (ReflectiveOperationException | RuntimeException e) {
-                Ln.w("answer: could not rebind the audio context, so no mute and no answering: " + e);
             }
             Handler handler = new Handler(Looper.getMainLooper());
             Platform.mainHandler = handler;
             Platform.callAudio = audio;
             Platform.phone = telephony;
             TelecomManager telecomManager = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
-            try {
-                Field mContext = TelecomManager.class.getDeclaredField("mContext");
-                mContext.setAccessible(true);
-                mContext.set(telecomManager, context);
-            } catch (ReflectiveOperationException | RuntimeException e) {
-                // The answering machine's, not the watch's: whatever this
-                // throws must not stop the call watch below from registering.
-                Ln.w("answer: could not rebind the telecom context: " + e);
-            }
+            Platform.rebindTelecom(telecomManager, context);
             Platform.telecom = telecomManager;
             Answering.answerMachine = new AnswerMachine(new AnswerEffects(handler, audio, telecomManager, telephony));
             AnswerSettings settings = Answering.answerSettings;

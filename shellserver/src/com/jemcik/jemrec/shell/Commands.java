@@ -549,12 +549,7 @@ final class Commands {
         }
         String perms = missing.isEmpty() ? "ok" : String.join(",", missing);
         int inCallMusic = Checks.inCallMusic(Shell.dump("media.audio_policy"));
-        boolean interceptable = false;
-        try {
-            interceptable = (boolean) AudioManager.class.getMethod("isPstnCallAudioInterceptable").invoke(Platform.callAudio);
-        } catch (Throwable ignored) {
-            // Not there before Android 13, or not allowed.
-        }
+        boolean interceptable = Platform.pstnCallAudioInterceptable(Platform.callAudio);
         long greeting = Greeting.present() ? Greeting.FILE.length() : 0;
         String route = Answering.answerSettings.route;
         int voice = -1;
