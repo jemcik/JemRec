@@ -1,0 +1,20 @@
+# One handshake worked by hand, with Python's hmac module (2026-11-10), for
+# the app's tests and the recorder's to check themselves against: the same
+# bytes on both sides, or every command a phone sends is refused. Built apart
+# - the app never compiles the recorder's sources - so each side is held to
+# this, not to the other.
+#
+#   app      -> 'A' + client_nonce
+#   recorder -> daemon_nonce + daemon_proof
+#   app      -> client_proof + command
+#
+#   daemon_proof = HMAC-SHA256(token, "jemrec-daemon" | client_nonce | daemon_nonce)
+#   client_proof = HMAC-SHA256(token, "jemrec-client" | client_nonce | daemon_nonce)
+#
+# The key is the token's UTF-8, as both sides take it; the token here has
+# the app's shape (24 random bytes as 48 hex digits). The rest is hex.
+token	0123456789abcdef0123456789abcdef0123456789abcdef
+client_nonce	000102030405060708090a0b0c0d0e0f
+daemon_nonce	101112131415161718191a1b1c1d1e1f
+daemon_proof	6e91e1c2a68250ce71e210f76157fd2062e4d50f54244ee595617adce2729dbb
+client_proof	1016d63916c4b8267213fb96ca21eb23d4c0516c98ff55b636642f237fd6140a

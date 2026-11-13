@@ -236,11 +236,11 @@ object DaemonClient {
             } catch (_: EOFException) {
                 throw IOException("the recorder on port $PORT hung up during the handshake - out of date?")
             }
-            if (!MessageDigest.isEqual(proof, mac(key, DAEMON_LABEL, ours, theirs))) {
+            if (!MessageDigest.isEqual(proof, daemonProof(key, ours, theirs))) {
                 throw SecurityException("whatever answers on port $PORT does not know this app's token")
             }
 
-            out.write(mac(key, CLIENT_LABEL, ours, theirs))
+            out.write(clientProof(key, ours, theirs))
             out.write(byteArrayOf(command))
             out.write(payload)
             out.flush()
@@ -251,6 +251,15 @@ object DaemonClient {
             throw t
         }
     }
+
+    /** What the recorder sends to prove it knows the token, for this
+     *  connection's two nonces ([ours], the app's, first). */
+    internal fun daemonProof(key: ByteArray, ours: ByteArray, theirs: ByteArray): ByteArray =
+        mac(key, DAEMON_LABEL, ours, theirs)
+
+    /** What the app sends back to prove the same. */
+    internal fun clientProof(key: ByteArray, ours: ByteArray, theirs: ByteArray): ByteArray =
+        mac(key, CLIENT_LABEL, ours, theirs)
 
     private fun mac(key: ByteArray, label: ByteArray, a: ByteArray, b: ByteArray): ByteArray =
         Mac.getInstance(MAC_ALGORITHM).run {
