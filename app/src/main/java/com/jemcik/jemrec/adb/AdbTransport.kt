@@ -8,7 +8,6 @@ import io.github.muntashirakon.adb.AdbStream
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -258,18 +257,12 @@ object AdbTransport {
             mutex.withLock {
                 forgetShell()
                 // A stream that never answers is let go by closing the whole
-                // connection, as exec's watchdog does; it is about to die anyway.
-                val watchdog = launch {
-                    kotlinx.coroutines.delay(timeoutMs)
-                    runCatching { mgr.close() }
-                }
-                try {
+                // connection, as exec's is (watched); it is about to die anyway.
+                watched(timeoutMs, onTimeout = { runCatching { mgr.close() } }) {
                     runCatching {
                         Log.i(TAG, "restartAdbd: $service")
                         mgr.openStream(service).openInputStream().bufferedReader().readLine().orEmpty().trim()
                     }
-                } finally {
-                    watchdog.cancel()
                 }
             }
         }
@@ -352,27 +345,38 @@ object AdbTransport {
                     // Watching from before the stream is opened: opening one
                     // can hang too, and then only closing the whole
                     // connection lets it go.
+                    // Its caller cancelled or not (watched).
                     var session: ShellSession? = shell
-                    val watchdog = launch {
-                        kotlinx.coroutines.delay(timeoutMs)
+                    watched(timeoutMs, onTimeout = {
                         // The command's first word only: the daemon's launch
                         // line carries its token.
                         Log.w(TAG, "exec: '${command.substringBefore(' ')} ...' timed out after ${timeoutMs}ms")
                         session?.let { runCatching { it.close() } } ?: runCatching { mgr.close() }
                         shell = null
-                    }
-                    session = session ?: ShellSession(mgr.openStream(SHELL_SERVICE)).also { shell = it }
-                    try {
-                        session!!.run(command)
-                    } catch (t: Throwable) {
-                        // A desynchronised session stays desynchronised, and a
-                        // half-read one would mis-attribute the next command's
-                        // output. Drop it; the next call opens a fresh one.
-                        runCatching { session?.close() }
-                        shell = null
-                        throw t
-                    } finally {
-                        watchdog.cancel()
+                    }) {
+                        // A stream that cannot be opened on a connection that
+                        // says it is up is adbd refusing them (ShellSession):
+                        // the connection is closed, so the next autoConnect
+                        // makes a fresh one. Before 0.31 the watchdog did it,
+                        // fifteen seconds later and as a "timed out".
+                        val open = session ?: runCatching { ShellSession(mgr.openStream(SHELL_SERVICE)) }
+                            .getOrElse { t ->
+                                runCatching { mgr.close() }
+                                shell = null
+                                throw t
+                            }
+                            .also { shell = it }
+                        session = open
+                        try {
+                            open.run(command)
+                        } catch (t: Throwable) {
+                            // A desynchronised session stays desynchronised, and a
+                            // half-read one would mis-attribute the next command's
+                            // output. Drop it; the next call opens a fresh one.
+                            runCatching { open.close() }
+                            shell = null
+                            throw t
+                        }
                     }
                 }
             }
