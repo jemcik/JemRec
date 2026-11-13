@@ -938,6 +938,49 @@ class AnswerTestCallTest {
         assertEquals(listOf("a test call is being armed already", "the last test call is still going on"), said.toList())
     }
 
+    /** The usual way to a second screen: JemRec closed from Recents and
+     *  opened again while the recorder armed. The screen opened waits for
+     *  that arming from its opening, a Test tap meanwhile included, and says
+     *  once why it armed nothing. */
+    @Test fun aScreenOpenedDuringAnArmingThatArmedNothingSaysWhy() {
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST no-greeting"
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        AnswerController(context, closed, { }).startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        closed.cancel()
+        controller.readPendingTest()
+        controller.startTest(incoming = true)
+        eventually("told") { said.isNotEmpty() }
+        gate.countDown()
+        eventually("told why") { said.size == 2 }
+        Thread.sleep(600)
+        assertEquals(
+            listOf("a test call is being armed already", "the recorder does not have your greeting yet - try again in a moment"),
+            said.toList(),
+        )
+    }
+
+    /** ...whatever else is kept: a question still waiting from an older
+     *  test does not hide why this arming armed nothing. */
+    @Test fun whyAnArmingArmedNothingIsSaidOverAQuestionStillWaiting() {
+        AnswerDiagnostics.noteTestArmed(context, true, 1_000L)
+        AnswerDiagnostics.takeArmedTest(context, 1_000L, asking = "2G")
+        val gate = CountDownLatch(1)
+        recorder.stall = { if (it == "XA") gate.await(10, TimeUnit.SECONDS) }
+        recorder.replies["XA"] = "TEST busy"
+        val closed = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        AnswerController(context, closed, { }).startTest(incoming = true)
+        eventually("the arming asked") { recorder.heard.any { it.key == "XA" } }
+        closed.cancel()
+        controller.readPendingTest()
+        gate.countDown()
+        eventually("told why") { said.isNotEmpty() }
+        assertEquals(listOf("the last test call is still going on"), said.toList())
+        eventually("the question shown") { controller.state.value.askHeard == "2G" }
+    }
+
     /** A screen opened while another's arming is under way - JemRec closed
      *  and opened again as the recorder armed - shows the test once it is
      *  noted. It read nothing, and showed no test until it next came to the

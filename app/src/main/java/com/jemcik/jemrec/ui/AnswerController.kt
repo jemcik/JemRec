@@ -30,8 +30,8 @@ import kotlinx.coroutines.withContext
 internal val testArming = java.util.concurrent.atomic.AtomicBoolean(false)
 
 /** Armings ended, and the last that armed nothing with the words its screen
- *  was told: a screen told another was under way says them too (they went
- *  to that screen, which may be gone). */
+ *  was told: a screen that waited for it says them too (they went to that
+ *  screen, which may be gone). */
 internal val armingsEnded = java.util.concurrent.atomic.AtomicLong()
 internal val lastRefusal = java.util.concurrent.atomic.AtomicReference<Pair<Long, String>?>(null)
 
@@ -213,12 +213,7 @@ class AnswerController(
      * test kept when its watch ended unanswered, or still under way, is
      * asked about again.
      */
-    fun readPendingTest() = readPendingTest(since = null)
-
-    /** As [readPendingTest]; with [since], the count of armings ended when
-     *  this screen was told another was under way: one that armed nothing
-     *  after it is said here, its words having gone to its own screen. */
-    private fun readPendingTest(since: Long?) {
+    fun readPendingTest() {
         // While this screen arms a test, the arming's answer says what it is:
         // an older test still kept would be taken up as this one's, and its
         // watch would end the new arming's state.
@@ -226,17 +221,18 @@ class AnswerController(
         // Another screen's arming under way - one closed, its arming past it -
         // read once it has noted its answer. Read now, nothing was there yet,
         // and this screen showed no test until it next came to the front.
+        // And if it armed nothing, why: its words went to the screen that
+        // armed it, gone if JemRec was closed and opened again meanwhile.
         if (testArming.get()) {
             if (awaitingArming?.isActive != true) {
+                val since = armingsEnded.get()
                 awaitingArming = scope.launch {
                     while (testArming.get()) delay(250)
-                    readPendingTest(since)
+                    lastRefusal.get()?.takeIf { it.first > since }?.let { (_, words) -> tell(words) }
+                    readPendingTest()
                 }
             }
             return
-        }
-        if (since != null && AnswerDiagnostics.pendingTest(app) == null) {
-            lastRefusal.get()?.takeIf { it.first > since }?.let { (_, words) -> tell(words) }
         }
         when (val pending = AnswerDiagnostics.pendingTest(app)) {
             is AnswerDiagnostics.PendingTest.Armed -> if (testWatch?.isActive != true) {
@@ -633,7 +629,7 @@ class AnswerController(
         if (!testArming.compareAndSet(false, true)) {
             tell("a test call is being armed already")
             // Shown here once it is - or why it was not.
-            readPendingTest(since = armingsEnded.get())
+            readPendingTest()
             return
         }
         // A test from before still to be read is read first. Armed by the
