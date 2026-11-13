@@ -17,9 +17,10 @@ final class Calls {
     /**
      * The one lock of the call and recording state. Its holders: a call's
      * start and end, a recording begun and stopped, a message split off,
-     * 'S', 'K' and LIST, a quit's and debugging off's look at busy, the
-     * debugging-off wait, and the refusals' log. It was Main.class, which
-     * Main's synchronized methods held too; every holder takes this one.
+     * 'S', 'K' and LIST, a quit's and debugging off's look at busy, and the
+     * debugging-off wait. It was Main.class, which Main's synchronized
+     * methods held too; every holder takes this one. (The refusals' log held
+     * it too, until it was given its own: LoopbackServer.refuse.)
      */
     static final Object LOCK = new Object();
 

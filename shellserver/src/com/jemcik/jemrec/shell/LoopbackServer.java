@@ -44,6 +44,11 @@ final class LoopbackServer {
     private static final long REFUSAL_LOG_GAP_MS = 10 * 1000L;
     private static long lastRefusalLog;
     private static int refusals;
+    /** The count's and the throttle's own lock. It was the call lock, held
+     *  across the read of /proc/net/tcp that names the caller: a refused
+     *  connection kept a call's start or end waiting on it, and the other
+     *  way round, for nothing the two share. */
+    private static final Object REFUSALS_LOCK = new Object();
 
     /** Six seconds of patience for a predecessor to let go of the port. */
     private static final int BIND_ATTEMPTS = 15;
@@ -176,7 +181,7 @@ final class LoopbackServer {
     /** Log a refused connection - throttled, counted, and with the uid that
      *  made it, which is the one fact worth having about a refusal. */
     static void refuse(Socket client, String why) {
-        synchronized (Calls.LOCK) {
+        synchronized (REFUSALS_LOCK) {
             refusals++;
             long now = System.currentTimeMillis();
             if (now - lastRefusalLog < REFUSAL_LOG_GAP_MS) {
