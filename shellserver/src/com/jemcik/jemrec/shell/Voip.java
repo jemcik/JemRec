@@ -94,7 +94,18 @@ final class Voip {
 
     /** The packages whose calls are recorded. Empty: nothing is watched. */
     private static volatile Set<String> apps = Collections.emptySet();
-    private static @Nullable Policy policy;
+    /** The copy's policy, and the captures reading through it (PolicyUse). */
+    private static final PolicyUse<Policy> POLICY = new PolicyUse<>(new PolicyUse.Registry<Policy>() {
+        @Override
+        public Policy register() throws Exception {
+            return Policy.register();
+        }
+
+        @Override
+        public void unregister(Policy policy) {
+            policy.unregister();
+        }
+    });
     private static @Nullable Watch watch;
     /** What configure was last given, so a recording's end can disarm. */
     private static @Nullable Handler wiredHandler;
@@ -108,7 +119,7 @@ final class Voip {
     }
 
     static boolean armed() {
-        return policy != null;
+        return POLICY.armed() != null;
     }
 
     /** The switched-on app whose call the watch is following, or null. A
@@ -147,19 +158,22 @@ final class Voip {
         apps = Collections.unmodifiableSet(new LinkedHashSet<>(newApps));
         Ln.i("voip: apps = " + (apps.isEmpty() ? "none" : String.join(",", apps)));
         if (!apps.isEmpty()) {
-            if (policy == null) {
+            if (POLICY.armed() == null) {
                 try {
-                    policy = Policy.register();
+                    POLICY.arm();
                 } catch (Throwable t) {
                     Ln.e("voip: could not register the audio policy; messenger calls will not be recorded", t);
                 }
             }
-            if (watch == null && policy != null) {
+            if (watch == null && POLICY.armed() != null) {
                 Watch started = new Watch(handler, audio, listener);
                 watch = started;
                 handler.post(started::start);
             }
-        } else if (current == null) {
+        } else if (POLICY.disarmIfIdle()) {
+            // No capture reads through the policy - none running, none
+            // starting - and it is let go; one that does keeps it until it
+            // stops, and its end comes back here (recordingEnded).
             if (watch != null) {
                 Watch gone = watch;
                 handler.removeCallbacks(gone);
@@ -169,10 +183,6 @@ final class Voip {
                 // would go on believing it is in one and refuse every phone
                 // call after it.
                 handler.post(gone::stop);
-            }
-            if (policy != null) {
-                policy.unregister();
-                policy = null;
             }
         }
     }
@@ -189,8 +199,8 @@ final class Voip {
 
     /** A capture for the call that just started, or null if not armed. */
     static @Nullable AudioCapture newCapture() {
-        Policy p = policy;
-        return p == null ? null : new Capture(p, false);
+        Policy p = POLICY.armed();
+        return p == null ? null : new Capture(p, false, true);
     }
 
     /**
@@ -201,15 +211,14 @@ final class Voip {
      * copy; the call is then recorded as any other.
      */
     static synchronized @Nullable AudioCapture newPhoneCapture() {
-        if (policy == null) {
-            try {
-                policy = Policy.register();
-            } catch (Throwable t) {
-                Ln.e("voip: could not copy the phone call's audio", t);
-                return null;
-            }
+        Policy p;
+        try {
+            p = POLICY.arm();
+        } catch (Throwable t) {
+            Ln.e("voip: could not copy the phone call's audio", t);
+            return null;
         }
-        return new Capture(policy, true);
+        return new Capture(p, true, true);
     }
 
     // --- the audio policy --------------------------------------------------------
@@ -599,9 +608,21 @@ final class Voip {
         private final short[] mine = new short[FRAMES];
         private final short[] theirs = new short[FRAMES * 2];
 
+        /** Handed out by Voip, its policy claimed as it starts (PolicyUse);
+         *  a probe's, reading through the policy it was given. */
+        private final boolean handedOut;
+        /** Claimed and not yet let go: stop() lets go once. */
+        private final java.util.concurrent.atomic.AtomicBoolean claimed =
+                new java.util.concurrent.atomic.AtomicBoolean();
+
         Capture(Policy policy, boolean phone) {
+            this(policy, phone, false);
+        }
+
+        private Capture(Policy policy, boolean phone, boolean handedOut) {
             this.policy = policy;
             this.phone = phone;
+            this.handedOut = handedOut;
         }
 
         boolean hasMic() {
@@ -617,8 +638,27 @@ final class Voip {
 
         @Override
         public void start() throws AudioCaptureException {
+            Policy live = policy;
+            if (handedOut) {
+                // The policy as it is now, held until this stops: the one
+                // this was handed out with may be gone - the list emptied,
+                // or the last capture's end let it go.
+                Policy claim;
+                try {
+                    claim = POLICY.claim(phone);
+                } catch (Throwable t) {
+                    Ln.e("voip: could not copy the phone call's audio", t);
+                    throw new AudioCaptureException();
+                }
+                if (claim == null) {
+                    Ln.w("voip: the messenger apps were switched off as the call began; not recording it");
+                    throw new AudioCaptureException();
+                }
+                claimed.set(true);
+                live = claim;
+            }
             try {
-                far = policy.sink();
+                far = live.sink();
                 far.startRecording();
             } catch (Throwable t) {
                 Ln.e("voip: could not read the call's audio", t);
@@ -755,6 +795,9 @@ final class Voip {
             dropMic();
             if (farPump != null) {
                 farPump.close();
+            }
+            if (claimed.compareAndSet(true, false)) {
+                POLICY.release();
             }
             recordingEnded();
         }

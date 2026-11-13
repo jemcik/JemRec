@@ -23,6 +23,7 @@ sourceSets {
             include("com/jemcik/jemrec/shell/Checks.java")
             include("com/jemcik/jemrec/shell/Handshake.java")
             include("com/jemcik/jemrec/shell/Hop.java")
+            include("com/jemcik/jemrec/shell/PolicyUse.java")
             include("com/jemcik/jemrec/shell/Wire.java")
             // The daemon's own @Nullable, which these classes use (NullAway).
             include("com/jemcik/jemrec/shell/Nullable.java")
