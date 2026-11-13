@@ -66,7 +66,7 @@ object DaemonClient {
     private const val COMMAND_PING = 'P'.code.toByte()
     private const val COMMAND_HELLO = 'A'.code.toByte()
 
-    /** The command byte that follows a successful handshake. See Main.session(). */
+    /** The command byte that follows a successful handshake. See Commands.run(). */
     private const val COMMAND_RECORD = 'R'.code.toByte()
     private const val COMMAND_QUIT = 'Q'.code.toByte()
     private const val COMMAND_FETCH = 'F'.code.toByte()
@@ -318,7 +318,7 @@ object DaemonClient {
     }
 
     /** "OFF NOW", "OFF AFTER CALL", "OFF CANCELLED" or "OFF TOO LATE", as
-     *  Main.session() writes them; any other OFF is an answer of no kind
+     *  Commands.run() writes them; any other OFF is an answer of no kind
      *  known here, and anything else, or nothing, is none. */
     internal fun parseOffReply(line: String?): OffReply? {
         if (line == null || !line.startsWith("OFF")) return null
@@ -592,7 +592,7 @@ object DaemonClient {
      *  or believes it is; see DaemonLauncher.retire. */
     internal enum class QuitReply { BYE, BUSY, NONE }
 
-    /** "BYE" or "BUSY", as Main.session() writes them; anything else, or
+    /** "BYE" or "BUSY", as Commands.run() writes them; anything else, or
      *  nothing, is no answer. */
     internal fun parseQuitReply(line: String?): QuitReply = when {
         line == null -> QuitReply.NONE
@@ -712,7 +712,7 @@ object DaemonClient {
     }
 
     /**
-     * What the daemon says its call watch has heard - see Main.COMMAND_WATCH
+     * What the daemon says its call watch has heard - see Commands.COMMAND_WATCH
      * for why the self-test needs it. Times are wall-clock millis on this
      * phone, 0 for never.
      */

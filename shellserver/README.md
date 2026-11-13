@@ -56,8 +56,8 @@ would have to live under `/data/local/tmp`, which the app cannot traverse.
 
 Every connection but a bare ping (`P`, answered `PONG <version> <build>`)
 starts with a handshake in both directions, proved with the token the app
-passes in the environment (`A`; `Main.authenticate`), then one command byte.
-The commands and their replies are in `Main.session`, and every reply that is
+passes in the environment (`A`; `LoopbackServer.authenticate`), then one command byte.
+The commands and their replies are in `Commands.run`, and every reply that is
 a line of text is listed in `tests/fixtures/protocol.txt`, which the app's
 ProtocolTest checks against both.
 

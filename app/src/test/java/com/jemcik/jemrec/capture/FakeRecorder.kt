@@ -18,7 +18,7 @@ import kotlin.concurrent.thread
 /**
  * A recorder answering on 127.0.0.1:28472, for the lifecycle tests: it proves
  * itself with this install's token (CaptureDaemon.token) as the recorder's
- * Main.session does, reads each command and its payload, and answers with the
+ * Commands.run does, reads each command and its payload, and answers with the
  * line the test gives it. What the app can tell of a recorder - a ping, a
  * reply, a hang-up, a port held or free - is all a test needs of one, and the
  * app's code reaches it exactly as it reaches the phone's.

@@ -99,8 +99,8 @@ final class Shield {
             String usb = readGlobal("adb_enabled");
             if (why != null) {
                 Ln.i("shield: " + why + " adb_enabled=" + usb + " adb_wifi_enabled="
-                        + readGlobal("adb_wifi_enabled") + " pings=" + Main.pings.getAndSet(0)
-                        + " sessions=" + Main.sessions.get() + " at " + new java.util.Date());
+                        + readGlobal("adb_wifi_enabled") + " pings=" + LoopbackServer.pings.getAndSet(0)
+                        + " sessions=" + LoopbackServer.sessions.get() + " at " + new java.util.Date());
             }
             // Not while debugging is going off by the user's choice
             // (COMMAND_DEBUGGING_OFF): putting it back would undo that.
