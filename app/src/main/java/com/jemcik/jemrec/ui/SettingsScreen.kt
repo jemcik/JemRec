@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
@@ -487,6 +488,26 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                     icon = SettingsIcons.Restore,
                     onClick = vm::askReset,
                     enabled = !state.busy,
+                )
+            }
+        }
+
+        // What is installed, and the way to the newest beside it (discussion
+        // #91): JemRec asks no server itself.
+        SettingsGroup("About") {
+            row {
+                SettingsRow(
+                    title = "JemRec version",
+                    summary = state.appVersion,
+                    icon = Icons.Filled.Info,
+                )
+            }
+            row {
+                SettingsRow(
+                    title = "Newest version",
+                    summary = "On GitHub, in your browser",
+                    icon = SettingsIcons.OpenInNew,
+                    onClick = vm::openNewestVersion,
                 )
             }
         }

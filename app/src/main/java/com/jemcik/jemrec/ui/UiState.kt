@@ -216,6 +216,9 @@ data class UiState(
     /** The Quick Settings tile is in the panel, as far as Android has said
      *  (see RecorderTile.isAdded). */
     val tileAdded: Boolean = false,
+    /** This app's version, as Settings' About shows it and a copied report
+     *  gives it (appVersion); empty until read. */
+    val appVersion: String = "",
     /**
      * How many of them the list is currently showing.
      *

@@ -128,6 +128,7 @@ private val SETTINGS: List<Read> = listOf(
     read(FileNames::honorDialer) { copy(honorDialer = it) },
     read(FileNames::inHonorFolder) { copy(inHonorFolder = it) },
     read(SelectHint::seen) { copy(selectHintSeen = it) },
+    read(::appVersion) { copy(appVersion = it) },
     read(RecorderTile::isAdded) { copy(tileAdded = it) },
 )
 

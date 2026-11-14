@@ -105,6 +105,16 @@ class ReadingTest : ScreenTest() {
         assertEquals(emptyList<Recording>(), vm.state.value.trashed)
     }
 
+    /** The version Settings shows is read as a copied report reads it
+     *  (appVersion), so the two never disagree. */
+    @Test fun aRefreshReadsTheVersionAReportGives() {
+        val vm = viewModel(UiState())
+        refreshed(vm)
+        val version = com.jemcik.jemrec.ui.appVersion(RuntimeEnvironment.getApplication())
+        assertEquals(version, vm.state.value.appVersion)
+        assertTrue(version, version.isNotEmpty())
+    }
+
     /** The switches the screen watches as they are saved come from what
      *  is saved as the reading lands, whatever the screen held: a reading
      *  under way when one was saved put back what it had read before. */

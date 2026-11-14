@@ -414,6 +414,7 @@ class MainViewModel @JvmOverloads constructor(
     fun setVoipApp(pkg: String, on: Boolean) = settings.setVoipApp(pkg, on)
 
     fun setVoipNames(on: Boolean) = settings.setVoipNames(on)
+    fun openNewestVersion() = settings.openNewestVersion()
 
     fun setFileNames(format: FileNames.Format) = settings.setFileNames(format)
 
