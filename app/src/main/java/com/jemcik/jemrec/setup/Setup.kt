@@ -19,6 +19,7 @@ import com.jemcik.jemrec.recorder.BackgroundKill
 import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.RecordingStore
+import com.jemcik.jemrec.rethrowingCancellation
 import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.system.DeviceSkin
 import com.jemcik.jemrec.system.GlobalSettings
@@ -613,6 +614,11 @@ object Setup {
      * Granting requires the app to be restarted before the permission takes
      * effect in this process, which is why the UI reports it as something that
      * happened rather than pretending it is instantly usable.
+     *
+     * A cancellation is thrown on, not given back as a failure: the pairing
+     * notification's service, stopped at Android's cap for it in this step,
+     * said "Paired, but the recorder did not start" over its own timed-out
+     * words (read from the code, 2026-11-14).
      */
     suspend fun finish(context: Context): Result<Unit> = runCatching {
         if (!hasSecureSettings(context)) {
@@ -679,7 +685,7 @@ object Setup {
         markComplete(context)
         // Through the door; put it back.
         CaptureDaemon.standDown(context)
-    }
+    }.rethrowingCancellation()
 
     /** Why grantNotificationAccess could not grant it. */
     enum class GrantProblem {

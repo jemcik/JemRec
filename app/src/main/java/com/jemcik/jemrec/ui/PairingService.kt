@@ -88,7 +88,7 @@ class PairingService : Service() {
         }
 
         running = true
-        scope.launch {
+        run = scope.launch {
             try {
                 run(code)
             } finally {
@@ -127,9 +127,7 @@ class PairingService : Service() {
         try {
             // Discovered, not typed. The port changes every time the dialog is
             // opened and means nothing to anyone.
-            val port = AdbTransport.discoverPort(
-                app, AdbMdns.SERVICE_TYPE_TLS_PAIRING, timeoutMs = 15_000,
-            )
+            val port = steps.discover(app)
             if (port == null) {
                 finishWith(
                     "No pairing dialog found. Open it in Settings and tap Enter code again.",
@@ -138,26 +136,28 @@ class PairingService : Service() {
                 return
             }
 
-            if (AdbTransport.pair(app, AdbTransport.LOOPBACK, port, code).isFailure) {
+            if (!steps.pair(app, port, code)) {
                 finishWith(
                     "Pairing failed. Reopen the dialog for a fresh code and try again.",
                     withReply = true,
                 )
                 return
             }
+            stage = Stage.CONNECTING
 
             // One-way door: adbd keeps the key. From here a connect that does not
             // land is "come back and finish", never "pair again" - the app reads
             // this to show the short reconnect card instead of the pairing flow.
             Setup.markPaired(app)
 
-            if (!waitAndConnect(app)) {
-                finishWith(TIMED_OUT, withReply = false)
+            if (!steps.connect(this, app)) {
+                finishWith(timedOut(Stage.CONNECTING), withReply = false)
                 return
             }
 
+            stage = Stage.FINISHING
             say("Paired. Starting the recorder…")
-            if (Setup.finish(app).isSuccess) {
+            if (steps.finish(app)) {
                 Log.i(TAG, "pairing service: done")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 PairingNotification.dismiss(app)
@@ -170,8 +170,9 @@ class PairingService : Service() {
                 )
             }
         } catch (t: Throwable) {
+            val said = failureText(t) ?: throw t
             Log.e(TAG, "pairing service: failed", t)
-            finishWith("Something went wrong: ${t.message}", withReply = false)
+            finishWith(said, withReply = false)
         }
     }
 
@@ -184,7 +185,7 @@ class PairingService : Service() {
      * looking. The deadline sits under shortService's cap so the normal ending
      * is this method's, not the system's.
      */
-    private suspend fun waitAndConnect(app: Context): Boolean {
+    internal suspend fun waitAndConnect(app: Context): Boolean {
         val deadline = SystemClock.elapsedRealtime() + WAIT_MS
         while (SystemClock.elapsedRealtime() < deadline) {
             // UNKNOWN where Android 17 hides USB debugging: never waited on,
@@ -256,24 +257,57 @@ class PairingService : Service() {
      * under the cap, so this should never be the normal ending.
      */
     override fun onTimeout(startId: Int) {
-        finishWith(TIMED_OUT, withReply = false)
+        // Nothing paired yet: the code field again, as for a failed pairing.
+        finishWith(timedOut(stage), withReply = stage == Stage.PAIRING)
     }
+
+    /** How far a pairing has gone: what the cap cuts short is said by it. */
+    internal enum class Stage { PAIRING, CONNECTING, FINISHING }
+
+    @Volatile private var stage = Stage.PAIRING
+
+    /** The pairing under way, for a test to wait for its end. */
+    @Volatile internal var run: kotlinx.coroutines.Job? = null
 
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
     }
 
-    private companion object {
-        const val TAG = "JemRec"
+    /**
+     * The pairing's steps that reach outside JemRec - adbd's pairing service
+     * found and paired with, the connect, setup's last step - each as run did
+     * them; a test puts its own in their place to hold the service at one.
+     */
+    internal interface Steps {
+        suspend fun discover(app: Context): Int?
+        suspend fun pair(app: Context, port: Int, code: String): Boolean
+        suspend fun connect(service: PairingService, app: Context): Boolean
+        suspend fun finish(app: Context): Boolean
+    }
+
+    internal object RealSteps : Steps {
+        override suspend fun discover(app: Context): Int? =
+            AdbTransport.discoverPort(app, AdbMdns.SERVICE_TYPE_TLS_PAIRING, timeoutMs = 15_000)
+
+        override suspend fun pair(app: Context, port: Int, code: String): Boolean =
+            AdbTransport.pair(app, AdbTransport.LOOPBACK, port, code).isSuccess
+
+        override suspend fun connect(service: PairingService, app: Context): Boolean =
+            service.waitAndConnect(app)
+
+        override suspend fun finish(app: Context): Boolean = Setup.finish(app).isSuccess
+    }
+
+    internal companion object {
+        private const val TAG = "JemRec"
+
+        /** The steps run takes: the real ones, except in a test. */
+        @Volatile internal var steps: Steps = RealSteps
 
         /** Under shortService's three-minute cap, with margin. */
-        const val WAIT_MS = 150_000L
-        const val POLL_MS = 1_000L
-
-        const val TIMED_OUT =
-            "Paired! I could not connect in time. Reopen JemRec to finish - it " +
-                "will say which switch to turn on. No need to pair again."
+        private const val WAIT_MS = 150_000L
+        private const val POLL_MS = 1_000L
     }
 }
 
@@ -284,3 +318,36 @@ class PairingService : Service() {
  */
 internal fun pairingCodeFrom(text: CharSequence?): String? =
     text?.toString()?.filter(Char::isDigit)?.takeIf { it.length == 6 }
+
+/**
+ * What the pairing notification says when the pairing ran out of time, by
+ * how far it had gone: still pairing - libadb's pair has no time limit of
+ * its own, and nothing is paired yet - connecting, or in setup's last step,
+ * after the connect. One text served all three: "Paired! I could not
+ * connect in time ... it will say which switch to turn on", false in the
+ * first and the last.
+ */
+internal fun timedOut(stage: PairingService.Stage): String = when (stage) {
+    PairingService.Stage.PAIRING ->
+        "Pairing did not finish in time. Reopen the dialog for a fresh code and try again."
+    PairingService.Stage.CONNECTING ->
+        "Paired! I could not connect in time. Reopen JemRec to finish - it " +
+            "will say which switch to turn on. No need to pair again."
+    PairingService.Stage.FINISHING ->
+        "Paired, but setup did not finish in time. Reopen JemRec - it will finish " +
+            "on its own. No need to pair again."
+}
+
+/**
+ * What the pairing notification says after [t] ended a pairing; null for a
+ * cancellation, which is the service being stopped and is thrown on. Android
+ * stops a shortService at its cap with onTimeout, whose own words are put up
+ * first: the cancellation that followed replaced them with "Something went
+ * wrong: Job was cancelled" (read from the code, 2026-11-14).
+ */
+internal fun failureText(t: Throwable): String? =
+    if (t is kotlin.coroutines.cancellation.CancellationException) {
+        null
+    } else {
+        "Something went wrong: ${t.message}"
+    }
