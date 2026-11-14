@@ -8,6 +8,7 @@ import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.capture.CallMonitorService
+import com.jemcik.jemrec.hex
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -145,7 +146,7 @@ object DaemonLauncher {
                 digest.update(buf, 0, n)
             }
         }
-        digest.digest().take(4).joinToString("") { "%02x".format(it) }.also { bundled = it }
+        hex(digest.digest().take(4)).also { bundled = it }
     }
 
     /** Whether the daemon that gave [answer] runs the jar this APK carries.

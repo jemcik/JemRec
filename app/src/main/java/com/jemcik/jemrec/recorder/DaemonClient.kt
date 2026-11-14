@@ -9,6 +9,7 @@ import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.hex
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -605,8 +606,7 @@ object DaemonClient {
     fun token(context: Context): String {
         val prefs = Prefs.of(context)
         prefs.getString(KEY_TOKEN, null)?.let { return it }
-        val fresh = ByteArray(24).also { random.nextBytes(it) }
-            .joinToString("") { "%02x".format(it) }
+        val fresh = hex(ByteArray(24).also { random.nextBytes(it) })
         prefs.edit { putString(KEY_TOKEN, fresh) }
         return fresh
     }

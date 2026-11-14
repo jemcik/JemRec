@@ -46,6 +46,7 @@ import com.jemcik.jemrec.diag.ops.VoipAnswerOp
 import com.jemcik.jemrec.diag.ops.VolumeOp
 import com.jemcik.jemrec.diag.ops.WaveformOp
 import com.jemcik.jemrec.diag.ops.report
+import com.jemcik.jemrec.hex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -168,7 +169,7 @@ class SpikeReceiver : BroadcastReceiver() {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.getString(KEY_TOKEN, null)?.let { return it }
         val bytes = ByteArray(8).also { SecureRandom().nextBytes(it) }
-        val token = bytes.joinToString("") { "%02x".format(it) }
+        val token = hex(bytes)
         prefs.edit { putString(KEY_TOKEN, token) }
         return token
     }

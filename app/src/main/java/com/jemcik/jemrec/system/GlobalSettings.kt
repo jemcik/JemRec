@@ -71,6 +71,11 @@ object GlobalSettings {
         else -> Reading.OFF
     }
 
+    /** This boot's number (Settings.Global.BOOT_COUNT), -1 where it cannot
+     *  be read: what a note "in this boot" is kept against. */
+    internal fun bootCount(context: Context): Int =
+        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+
     /** True if the write went through. */
     internal fun set(context: Context, name: String, on: Boolean): Boolean = runCatching {
         Settings.Global.putInt(context.contentResolver, name, if (on) 1 else 0)

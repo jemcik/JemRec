@@ -2,6 +2,7 @@ package com.jemcik.jemrec.recordings
 
 import android.content.Context
 import android.util.Log
+import com.jemcik.jemrec.hex
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -128,8 +129,7 @@ internal object WaveformCache {
     }
 
     internal fun hashOf(name: String): String =
-        MessageDigest.getInstance("SHA-256").digest(name.toByteArray())
-            .take(12).joinToString("") { "%02x".format(it) }
+        hex(MessageDigest.getInstance("SHA-256").digest(name.toByteArray()).take(12))
 
     /** A byte a level: what the cache keeps. */
     internal fun toBytes(levels: List<Float>): ByteArray =

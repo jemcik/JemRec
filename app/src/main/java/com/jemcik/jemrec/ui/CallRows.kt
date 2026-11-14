@@ -32,11 +32,11 @@ import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.calls.CallHistory.Kind
 import com.jemcik.jemrec.calls.CallHistory.Status
+import com.jemcik.jemrec.minutesSeconds
 import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.memoColors
 import com.jemcik.jemrec.ui.theme.multitrackColors
-import java.util.Locale
 
 /**
  * A call with no recording, on the Calls tab, in the look's own row - Memo's
@@ -143,7 +143,7 @@ private fun kindWord(call: CallHistory.Call): String = when (call.kind) {
 }
 
 /** "3:21", from the call log's seconds. */
-internal fun callLength(seconds: Int): String = "%d:%02d".format(Locale.US, seconds / 60, seconds % 60)
+internal fun callLength(seconds: Int): String = minutesSeconds(seconds.toLong())
 
 @Composable
 private fun MemoCallRow(call: CallHistory.Call, day: Day) {

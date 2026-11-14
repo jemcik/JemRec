@@ -10,11 +10,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * What the app's small formats print, each where it is printed: m:ss,
- * written out in four places, and hex, in six. They are to be one function
- * each. These hold what m:ss prints in all four places, and hex where its
- * output is fixed - the caller colour's key and the waveform cache's name -
- * so the merge can be seen to change none of them.
+ * What the app's small formats print, each where it is printed: m:ss in four
+ * places and hex in six, each once written out where it was used and one
+ * function now (Formats.kt). These hold what m:ss prints in all four places,
+ * and hex where its output is fixed - the caller colour's key and the
+ * waveform cache's name - as they did before the merge.
  */
 class SmallFormatsTest {
 

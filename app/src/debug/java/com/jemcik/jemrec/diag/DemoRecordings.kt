@@ -10,6 +10,7 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.jemcik.jemrec.audio.OpusOggWriter
 import com.jemcik.jemrec.calls.CallHistory
+import com.jemcik.jemrec.minutesSeconds
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Waveforms
@@ -196,7 +197,7 @@ internal object DemoRecordings {
                     ?: "jemrec-demo://call/${call.minutesAgo}".toUri(),
                 whenLabel = whenLabel(at),
                 incoming = call.incoming,
-                durationLabel = "%d:%02d".format(call.seconds / 60, call.seconds % 60),
+                durationLabel = minutesSeconds(call.seconds.toLong()),
                 sizeLabel = size(call.bytes),
                 caller = call.caller,
                 callerPhoto = call.photo?.let {
