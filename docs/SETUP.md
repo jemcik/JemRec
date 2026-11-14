@@ -281,7 +281,9 @@ to itself, and no other app can add one to its call history.
 calls too, and Google Meet calls and meetings — both sides, you on the left
 channel and the other person on the right (up to JemRec 0.24, the other way
 round). Each app has its own switch, and all are off until you turn one on. The
-ones installed on your phone are listed.
+ones installed on your phone are listed. Telegram from telegram.org and
+Telegram Beta are apps of their own, each with its own switch: *Telegram
+(telegram.org)* and *Telegram Beta*.
 
 It needs **Android 14 or newer**. Before it, Android does not let the recorder
 copy another app's call audio, and Settings says so instead of offering
@@ -394,7 +396,9 @@ audio hardware. These tell you:
   when that caller may be them. Or JemRec calls a number that answers by
   itself, such as your carrier's information line, and measures what it can;
   never an emergency number. 2G, VoLTE and Wi-Fi Calling are kept apart,
-  because each takes its own path.
+  because each takes its own path. JemRec 1.0 clears a VoLTE result kept from
+  before, once, and says so on this row until you test again: until 0.31 a test
+  over Wi-Fi Calling could be filed as VoLTE.
 - **Carrier voicemail** — asks your carrier when its voicemail answers, and can
   make it wait the longest it allows, 30 seconds. Your carrier's voicemail then
   still takes the calls JemRec does not. It is your carrier's setting, so it
@@ -768,6 +772,13 @@ everything still works, with the time as each recording's headline.
 - **Start fresh** — puts JemRec back to how it was the day you installed it, so
   setup runs again from step 1. The app closes when you confirm. **Your
   recordings are not deleted.**
+
+**About**
+
+- **JemRec version** — the version you have, the one a copied report gives.
+- **Newest version** — opens the newest release on GitHub in your browser; its
+  page has the APK, which installs over this one, F-Droid's too. JemRec makes
+  no request itself.
 
 ## If something goes wrong
 

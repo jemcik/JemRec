@@ -37,6 +37,8 @@ this one is - or to check that it does what it says.
   [when the phone refuses the grant](#when-the-phone-refuses-the-grant) ·
   [what stays switched on](#what-stays-switched-on) ·
   [off, and debugging with it](#off-and-debugging-with-it)
+- The code: [errors and cancellation](#errors-and-cancellation) ·
+  [where coroutines run](#where-coroutines-run)
 
 ## The fact and the obstacle
 
@@ -161,8 +163,10 @@ was one file of 3,559 lines; each part has a class of its own now:
 `shellserver/tests` without Android: the call's rules (`CallDecisions`, as
 tables of every combination), the call states, the answering machine, the
 protocol's lines and frames (`Wire`), the handshake (`Handshake`), the hop
-to the main looper (`Hop`), and the messenger copy's policy (`PolicyUse`).
-The protocol is written twice, in the app and here: every reply line is in
+to the main looper (`Hop`), the messenger copy's policy (`PolicyUse`), and
+the call's file closed again if its recording fails to start before the
+encoder has it (`Closing`; until 1.0 its descriptor was left to the
+garbage collector). The protocol is written twice, in the app and here: every reply line is in
 `shellserver/tests/fixtures/protocol.txt`, which the app's parsers read and
 `Wire` builds, and one handshake worked by hand,
 `shellserver/tests/fixtures/handshake.txt`, holds both sides' proofs.
@@ -838,6 +842,20 @@ each app switched on separately in Settings - and Google Meet's calls and
 meetings, though Meet reaches the recorder another way (below). Nothing is
 recorded from any of them until you do.
 
+Each build of an app is an app of its own to Android, and has to be named in
+the manifest's `<queries>` or Android 11 and later hide it from JemRec.
+Telegram from telegram.org is `org.telegram.messenger.web`, and Settings called
+it not installed until 1.0 ([#93](https://github.com/jemcik/JemRec/issues/93));
+Telegram's source builds a beta as `org.telegram.messenger.beta` too
+(`applicationIdSuffix` ".web" in `TMessagesProj_AppStandalone`, ".beta" in
+`TMessagesProj_AppHockeyApp`, read 2026-11-14). Settings lists them as
+*Telegram (telegram.org)* and *Telegram Beta*, beside the Play Store's
+*Telegram*; everywhere else each is Telegram - the ask-first prompt, the
+file's `_telegram` tag, and the reading of a caller's name, which drops a
+notification text naming the app. A test (`PackageQueriesTest`) holds every
+package JemRec looks for to the manifest's list. The recorder takes any
+package it is sent.
+
 **Android 14 or newer.** Copying another app's call audio takes
 `CAPTURE_VOICE_COMMUNICATION_OUTPUT`, and stock Android gives the shell that
 permission only from Android 14 (AOSP `packages/Shell/AndroidManifest.xml`: not
@@ -1188,7 +1206,17 @@ keeps nothing, its failure moves nothing. On the update to 0.31, a phone a
 failed test had moved to the call-screening route, though its checks found
 in-call music, is put back on in-call music once, its test results cleared -
 they could not tell a call through the mixer from one on its voice path - so
-its settings say it is not tested. A call that moves while its greeting plays
+its settings say it is not tested - and, on a phone that comes to 1.0 from
+0.30 or earlier, why (a phone that ran 0.31's step was told nothing then, and
+is not now). On the update to 1.0,
+every phone's VoLTE result goes, once, with its mixer mark and a question
+about it still to be asked: until 0.31 a test over Wi-Fi Calling was filed
+under VoLTE where the voice network read LTE through it, as the S23's did,
+and a stored result does not say which version filed it. The two steps run
+as one, under one lock, at the first read of the route, the results or the
+pending test; the Test call row says an update cleared them, and why, and
+Settings' Answering machine row, while the machine is on, to test again -
+until a test is filed. A call that moves while its greeting plays
 has the greeting stopped by the recorder as Android applies the new mode, and
 played again from the start on the route for its new path, counted with the
 cuts above: in-call music's track is not released by a move - on that S23 one
@@ -1930,6 +1958,12 @@ permission a call recorder does not explain is one its user has to guess at:
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
 | `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. |
 
+No request to any server either. *Newest version*, in Settings' About,
+hands GitHub's address for the newest release to the browser, which makes
+the request; JemRec has no updater, which would need both the internet and
+the right to install apps. The version shown beside it is the one a copied
+report gives (`appVersion`).
+
 Two more (`READ_PHONE_STATE` and `WRITE_EXTERNAL_STORAGE`) are actively
 **removed** from the manifest, because the ADB library's own manifest would
 otherwise pull them in; the third it pulls in, `READ_EXTERNAL_STORAGE`, is
@@ -2032,6 +2066,11 @@ Wi-Fi, Show who called said "it needs Wi-Fi" and could not be turned on
 (2026-11-12; Hide the debugging notification goes the same way, read from
 the code). A session is still the way where no recorder answers.
 
+Either grant runs to its end once begun, and only then saves its switch on.
+Since 1.0 Settings follows both switches as saved, as it follows the record
+switch: JemRec closed from Recents during a grant and opened again showed the
+switch off until the screen was next read, though the grant then saved it on.
+
 To switch debugging off for good, uninstall JemRec first. If the recorder is
 running, it notices the uninstall within a few minutes, turns both switches off
 and exits - on an OPPO, OnePlus or realme phone only while its *Disable system
@@ -2123,6 +2162,95 @@ any one bank looks at is not known here; the order to try is the order above.
 The emulator checks `hide_developer_options` and `debugging_off` run both
 choices end to end on Android 12, 13, 16 and 17, and `start_without_wifi` the
 third with Wi-Fi off, back on over the port.
+
+## Errors and cancellation
+
+**At the edges - the recorder, ADB, Android's settings - null or false
+means "could not ask".** The recorder's questions answer null when the
+recorder could not be reached (`DaemonClient`: the pending files, a test's
+result, the listener's grant), and a write of a setting false when it did
+not go through (`GlobalSettings.set`). A caller never takes "could not ask"
+for "no": `VoipApps.supported` counts a failure to ask as yes, and asks
+again, rather than switch messenger calls off on a phone that records them.
+
+**A `Result` where the failure itself is wanted:** its words, for setup's
+card or the log (`Setup.finish` and `reset`; ADB's `pair`, `connect`,
+`autoConnect`, `exec` and `restartAdbd`; the recorder's start,
+`ensureRunning`), or to tell a file that could not be read from one that has
+no tags (`RecordingTags.read`, read again later).
+
+**A cancellation is thrown on, never caught as a failure.** A coroutine
+cancelled - its screen closed, its service stopped, a time limit run out -
+is being stopped, and is not "could not". Where a failure is caught around a
+suspend call it is let go (`rethrowingCancellation`, or a
+`catch (e: CancellationException)` first), and work that must finish once
+begun runs under `NonCancellable` (the notification-access grant, Start
+fresh, the recorder's start in a revive, the watchdog on an ADB command).
+Since 1.0 the places that broke the rule in a way a user could meet keep it:
+the pairing notification's "timed out" was replaced - by "Something went
+wrong: Job was cancelled", or, in setup's last step (`Setup.finish`), by
+"Paired, but the recorder did not start" - when Android stopped its service
+at the three-minute cap, and its own words now say how far the pairing had
+got - still pairing, the connect, or setup's last step - where one "Paired!
+... could not connect" was false in the first and the last; the self-test,
+on the IO dispatcher already, caught its own 6 s limit and said "Timed out
+waiting for 6000 ms" instead of its words for a slow recorder; and a socket
+the recorder's client opened as its caller went was left open.
+
+Left as they are, read from the code on 2026-11-14, as none changes what a
+user sees:
+- The filter row's scroll to its first lit chip (`Narrowing`) catches the
+  cancellation of the effect it is the last line of.
+- Four catch one and could not be cancelled today: `RecorderSwitch.turnLater`
+  and `AnswerController`'s stop of a take run in process scopes never
+  cancelled, and the recorder's start (`DaemonLauncher.ensureRunningLocked`)
+  and Start fresh's stop of the recorder only under `NonCancellable`.
+- ADB's `autoConnect` and `exec` catch one inside a `withContext`, which
+  throws it again as it ends.
+
+## Where coroutines run
+
+Besides the coroutines Compose runs for a screen's own drawing
+(`LaunchedEffect`, `produceState`), WorkManager's workers
+(`RecorderKeepAlive`, `UsbDebuggingWatch`, and the debug build's
+`TurnOnLater` and `ReviveLater`), and the watchdog on an ADB command, a
+coroutine of its own under `NonCancellable` (`watched`), every coroutine
+the app starts runs in one of four kinds of scope, chosen by who is still
+there to take its answer:
+
+- **The screen's.** `viewModelScope`, handed to the view model's parts
+  (`Actions`, `Playback`, `Sharing`, `WaveformFill`, `Reading`,
+  `RecordingsList`, `RecorderAndSetup`, `AnswerController`), and the view
+  model's own watch of which screen shows, ended with it. They end when the
+  view model is cleared - JemRec closed from Recents; Back only moves it to
+  the background since Android 12 - and with them anything only the screen
+  would have shown.
+- **A component's own.** `CallMonitorService`, `PairingService` and the
+  Quick Settings tile (`RecorderTile`) each make a scope as they start and
+  cancel it in `onDestroy`.
+- **The process's, never cancelled.** For what has to finish whoever asked:
+  `RecorderSwitch`'s, where the record switch's turn runs - a tile is
+  unbound and a question's activity finishes as soon as they close;
+  `CallTracker`'s, with its two ordered channels, as Telecom unbinds the
+  tracker the moment the last call goes and the collection after it must
+  still run; `Actions.OUTLIVING`, on the main thread, where an answer
+  already given waits its turn and runs once the screen has gone (a
+  dialog's yes, Hide the debugging notification's grant); and
+  `AnswerController`'s, for what must reach the recorder after the
+  answering machine's screen has gone, a take stopped.
+- **A broadcast's.** `goAsync()` and a scope of its own on the IO
+  dispatcher, finished in `finally`: the after-call notification's delete
+  (`AfterCallReceiver`), and the debug build's receiver.
+
+Plain threads are left for three things: the check of the phone's own
+records of JemRec stopped in the background, at the process's start
+(`JemRecApp`) and at each open (`MainActivity`) - binder calls the first
+frame should not wait for; the waveform's decoder's workers; and the debug
+build's messenger-answering spike (`VoipAnswerSpike`).
+
+What runs in a scope that is never cancelled is waited for by its tests,
+which share the process: a screen test that left an outliving answer
+running had it run on into the tests after it (2026-11-14).
 
 ---
 
