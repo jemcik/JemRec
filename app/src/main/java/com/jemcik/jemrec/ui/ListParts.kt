@@ -38,11 +38,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.jemcik.jemrec.minutesSeconds
 import com.jemcik.jemrec.ui.theme.LocalLook
 import com.jemcik.jemrec.ui.theme.Look
 import com.jemcik.jemrec.ui.theme.LookFonts
 import com.jemcik.jemrec.ui.theme.multitrackColors
-import java.util.Locale
 
 /**
  * What time it is, for the lists' day headings. The clock, except in the
@@ -305,5 +305,5 @@ internal fun PauseGlyph(tint: Color, modifier: Modifier = Modifier, size: Dp = 2
  *  have, beside Latin ones - and so for every m:ss the app draws. */
 internal fun clock(ms: Int): String {
     val total = (ms / 1000).coerceAtLeast(0)
-    return "%d:%02d".format(Locale.US, total / 60, total % 60)
+    return minutesSeconds(total.toLong())
 }

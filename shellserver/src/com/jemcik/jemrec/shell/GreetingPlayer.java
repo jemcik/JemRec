@@ -76,14 +76,14 @@ final class GreetingPlayer {
 
         /** It could not be played, or stopped moving: nothing else will come
          *  from this greeting. */
-        void failed(String why);
+        void failed();
 
         /** Its track was made, and could take no more as the audio mode had
          *  left the one the track was made in - the call moving, or its end -
          *  which Android releases a call-screening track for
          *  (AnswerMachine.greetingInterrupted). Nothing else will come from
          *  this greeting; another may play once the call's audio is back. */
-        void interrupted(String why);
+        void interrupted();
     }
 
     /**
@@ -208,10 +208,10 @@ final class GreetingPlayer {
                 // family would read as no move. Anything else is the
                 // greeting's own failure.
                 Ln.w("greeting: its track stopped taking audio part-way: " + why);
-                listener.interrupted(why);
+                listener.interrupted();
             } else {
                 Ln.e("greeting: could not play", t);
-                listener.failed(why);
+                listener.failed();
             }
         } finally {
             session.track = null;
@@ -255,7 +255,7 @@ final class GreetingPlayer {
     private static void failUnlessStopped(Session session, Listener listener, String why) {
         if (!session.stopped) {
             Ln.w("greeting: " + why);
-            listener.failed(why);
+            listener.failed();
         }
     }
 

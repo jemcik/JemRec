@@ -1854,7 +1854,9 @@ SETUP = [
           "you on the left channel and the other person on the right (up to "
           "JemRec 0.24, the other way round). Each app "
           "has its own switch, and all are off until you turn one on. The ones "
-          "installed on your phone are listed."),
+          "installed on your phone are listed. Telegram from telegram.org and "
+          "Telegram Beta are apps of their own, each with its own switch: "
+          "*Telegram (telegram.org)* and *Telegram Beta*."),
     ("p", "It needs **Android 14 or newer**. Before it, Android does not let the "
           "recorder copy another app's call audio, and Settings says so instead "
           "of offering switches that would record nothing."),
@@ -1964,7 +1966,9 @@ SETUP = [
         "calls a number that answers by itself, such as your carrier's "
         "information line, and measures what it can; never an emergency "
         "number. 2G, VoLTE and Wi-Fi Calling are kept apart, because each "
-        "takes its own path.",
+        "takes its own path. JemRec 1.0 clears a VoLTE result kept from "
+        "before, once, and says so on this row until you test again: until "
+        "0.31 a test over Wi-Fi Calling could be filed as VoLTE.",
         "**Carrier voicemail** — asks your carrier when its voicemail answers, "
         "and can make it wait the longest it allows, 30 seconds. Your "
         "carrier's voicemail then still takes the calls JemRec does not. It is "
@@ -2371,6 +2375,14 @@ SETUP = [
         "**Start fresh** — puts JemRec back to how it was the day you installed "
         "it, so setup runs again from step 1. The app closes when you confirm. "
         "**Your recordings are not deleted.**",
+    ]),
+    ("p", "**About**"),
+    ("ul", [
+        "**JemRec version** — the version you have, the one a copied report "
+        "gives.",
+        "**Newest version** — opens the newest release on GitHub in your "
+        "browser; its page has the APK, which installs over this one, F-Droid's "
+        "too. JemRec makes no request itself.",
     ]),
 
     ("h2", "If something goes wrong"),
@@ -3200,7 +3212,8 @@ PRIVACY_POINTS = [
      "No account, no server, no analytics, and nothing is collected about you. "
      "<em>Copy a report</em> in Diagnostics puts how the last call was recorded "
      "on the clipboard, with no number, name or sound in it, only when you tap "
-     "it."),
+     "it. <em>Newest version</em> in Settings opens GitHub in your browser when "
+     "you tap it; JemRec itself asks no server anything."),
     ("person", "Calls and contacts only if you allow them",
      "To name callers, keep calls by who they were with, and notice a call that "
      "went unrecorded. Everything works without them."),
@@ -3278,6 +3291,23 @@ FAQ = [
      "needed Play, and F-Droid asks only that a build be free software and "
      "reproducible from its source, which this one is. It never will be on "
      "Play."),
+    ("How do I get a new version before F-Droid has it?",
+     "From <a href=\"https://github.com/jemcik/JemRec/releases\">Releases</a> "
+     "on GitHub. F-Droid builds each release on its own machines and checks it "
+     "against the APK there before publishing it, which takes some days: 0.30 "
+     "reached F-Droid four days after its release. What it publishes is that "
+     "same APK, signed by JemRec&rsquo;s own key, so the one from Releases "
+     "installs over F-Droid&rsquo;s as an update &mdash; nothing lost, no "
+     "pairing again &mdash; and the next one can come from either. Settings "
+     "&rarr; About shows the version you have, and <em>Newest version</em> "
+     "opens the newest release in your browser; its page has the APK. To be "
+     "told of each release, an app that watches GitHub releases, such as "
+     "<a href=\"https://github.com/ImranR98/Obtainium\">Obtainium</a>, "
+     "installs updates from the releases page and notifies you of new ones; "
+     "or, with a GitHub account, <em>Watch &rarr; Custom &rarr; Releases</em> "
+     "on JemRec&rsquo;s repository. JemRec does not check for updates itself: "
+     "it would have to reach the internet and be allowed to install apps, and "
+     "it does neither."),
     ("Is recording calls legal?",
      "It depends on where you and the other person are: some places need one "
      "party&rsquo;s consent, some everyone&rsquo;s, some a spoken notice. That "
@@ -3855,7 +3885,8 @@ PRIVACY_DATA = [
      "on the clipboard, only when you tap it. A test call still to be read is "
      "kept too: whether it was incoming or outgoing and when its wait ends, or, "
      "once answered, its call type until you say whether the caller heard your "
-     "greeting or put the question aside; the next test replaces it. No "
+     "greeting or put the question aside; the next test replaces it. Where "
+     "an update cleared results, which reason it was, until the next test. No "
      "numbers, no names. In the app&rsquo;s private storage; uninstalling "
      "deletes it."),
     ("Contact names and photos", "read where they are", "not copied, unless you choose", "only if you allow it",

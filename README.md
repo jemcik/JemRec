@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-1861-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-1902-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -251,7 +251,9 @@ Honor - so the answering machine's settings hold its own checks and a test call.
   capturing - calls, and your answering-machine greeting.
 - **Nothing leaves the phone**, and nothing is collected about you. *Copy a
   report* in Diagnostics puts how the last call was recorded on the clipboard,
-  with no number, name or sound in it, only when you tap it.
+  with no number, name or sound in it, only when you tap it. *Newest version*
+  in Settings opens GitHub in your browser when you tap it; JemRec itself asks
+  no server anything.
 - **Calls and contacts only if you allow them** - to name callers, keep calls
   by who they were with, and notice a call that went unrecorded. Everything
   works without them.
@@ -393,6 +395,32 @@ source, which this one is. It never will be on Play.
 </details>
 
 <details>
+<summary><b>How do I get a new version before F-Droid has it?</b></summary>
+
+<br>
+
+From [Releases](https://github.com/jemcik/JemRec/releases), here. F-Droid builds
+each release on its own machines and checks it against the APK there before
+publishing it, which takes some days: 0.30 reached F-Droid four days after its
+release. What it publishes is that same APK, signed by JemRec's own key, so the
+one from Releases installs over F-Droid's as an update - nothing lost, no
+pairing again - and the next one can come from either.
+
+- **What you have, and what is newest:** Settings → About shows this
+  version, and *Newest version* opens the newest release in your browser. Its
+  page has the APK; open the download, and allow your browser to install apps
+  if Android asks (see *Trouble installing?* above).
+- **To be told of each release:** an app that watches GitHub releases, such
+  as [Obtainium](https://github.com/ImranR98/Obtainium), installs updates from
+  the releases page and notifies you of new ones; or, with a GitHub account,
+  *Watch → Custom → Releases* on this repository.
+
+JemRec does not check for updates itself: it would have to reach the internet
+and be allowed to install apps, and it does neither.
+
+</details>
+
+<details>
 <summary><b>Is recording calls legal?</b></summary>
 
 <br>
@@ -498,7 +526,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 1861 tests, screenshots of the screens included
+    ./gradlew test              # 1902 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

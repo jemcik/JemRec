@@ -67,13 +67,13 @@ class SettingsScreenshots : ScreenTest() {
     // The rest of the app in the other looks: Material's own pieces in each
     // look's colours, as Settings will be drawn.
 
-    @Config(qualifiers = "+h1800dp")
+    @Config(qualifiers = "+h2400dp")
     @Test fun overviewDeck() {
         settings(Fixtures.ready(), look = LookChoice(Look.DECK))
         snap("settings-deck")
     }
 
-    @Config(qualifiers = "+h1800dp-night")
+    @Config(qualifiers = "+h2400dp-night")
     @Test fun overviewMultitrackDark() {
         settings(Fixtures.ready(), look = LookChoice(Look.MULTITRACK))
         snap("settings-multitrack-dark")
@@ -82,26 +82,26 @@ class SettingsScreenshots : ScreenTest() {
     // Each look in light and dark: Deck dark (the user's own) and
     // Multitrack light, beside Memo's two above and the two over these.
 
-    @Config(qualifiers = "+h1800dp-night")
+    @Config(qualifiers = "+h2400dp-night")
     @Test fun overviewDeckDark() {
         settings(Fixtures.ready(), look = LookChoice(Look.DECK))
         snap("settings-deck-dark")
     }
 
-    @Config(qualifiers = "+h1800dp")
+    @Config(qualifiers = "+h2400dp")
     @Test fun overviewMultitrack() {
         settings(Fixtures.ready(), look = LookChoice(Look.MULTITRACK))
         snap("settings-multitrack")
     }
 
     // The whole overview, so the screen is taller than a phone's.
-    @Config(qualifiers = "+h1800dp")
+    @Config(qualifiers = "+h2400dp")
     @Test fun overview() {
         settings(Fixtures.ready())
         snap("settings")
     }
 
-    @Config(qualifiers = "+h1800dp-night")
+    @Config(qualifiers = "+h2400dp-night")
     @Test fun overviewDark() {
         settings(Fixtures.ready())
         snap("settings-dark")
@@ -165,6 +165,21 @@ class SettingsScreenshots : ScreenTest() {
     @Test fun messengerCalls() {
         settings(Fixtures.ready().copy(screen = Screen.MESSENGER_CALLS))
         snap("messenger-calls-dark")
+    }
+
+    /** Telegram from the Play Store and from telegram.org, both installed
+     *  (issue #93): two rows, told apart. */
+    @Test fun messengerCallsWithTwoTelegrams() {
+        settings(
+            Fixtures.ready().copy(
+                screen = Screen.MESSENGER_CALLS,
+                voipInstalled = com.jemcik.jemrec.calls.VoipApps.KNOWN.filter {
+                    it.pkg in setOf("com.whatsapp", "org.telegram.messenger", "org.telegram.messenger.web")
+                },
+                voipEnabled = setOf("org.telegram.messenger.web"),
+            ),
+        )
+        snap("messenger-calls-two-telegrams")
     }
 
     // When JemRec is off (issue #37): three choices, each with the same two

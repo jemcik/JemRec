@@ -21,6 +21,7 @@ sourceSets {
             include("com/jemcik/jemrec/shell/CallReport.java")
             include("com/jemcik/jemrec/shell/CallStates.java")
             include("com/jemcik/jemrec/shell/Checks.java")
+            include("com/jemcik/jemrec/shell/Closing.java")
             include("com/jemcik/jemrec/shell/Handshake.java")
             include("com/jemcik/jemrec/shell/Hop.java")
             include("com/jemcik/jemrec/shell/PolicyUse.java")

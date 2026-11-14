@@ -3,6 +3,7 @@ package com.jemcik.jemrec.ui
 import android.content.Context
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.core.content.edit
+import com.jemcik.jemrec.hex
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
@@ -37,8 +38,7 @@ internal object CallerColours {
 
     /** [name]'s key: what is kept in its place. */
     fun keyOf(name: String): String = keys.getOrPut(name) {
-        MessageDigest.getInstance("SHA-256").digest(name.lowercase().toByteArray())
-            .take(6).joinToString("") { "%02x".format(it) }
+        hex(MessageDigest.getInstance("SHA-256").digest(name.lowercase().toByteArray()).take(6))
     }
 
     /** The colour by the name's hash alone: before 0.19 every colour, now

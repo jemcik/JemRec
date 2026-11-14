@@ -16,6 +16,7 @@ import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.AfterCallReceiver
 import com.jemcik.jemrec.capture.AudioCheck
+import com.jemcik.jemrec.minutesSeconds
 import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
@@ -26,7 +27,6 @@ import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.recordings.WaveformCache
 import com.jemcik.jemrec.recordings.Waveforms
-import java.util.Locale
 
 /**
  * What the user sees the moment a call has been saved.
@@ -391,7 +391,7 @@ internal object AfterCall {
     /** "3:21", or "45 s" for a call under a minute. */
     internal fun length(seconds: Double): String {
         val total = seconds.toLong()
-        return if (total < 60) "$total s" else "%d:%02d".format(Locale.US, total / 60, total % 60)
+        return if (total < 60) "$total s" else minutesSeconds(total)
     }
 
     private fun action(label: String, intent: PendingIntent): Notification.Action =

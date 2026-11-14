@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
@@ -490,6 +491,26 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                 )
             }
         }
+
+        // What is installed, and the way to the newest beside it (discussion
+        // #91): JemRec asks no server itself.
+        SettingsGroup("About") {
+            row {
+                SettingsRow(
+                    title = "JemRec version",
+                    summary = state.appVersion,
+                    icon = Icons.Filled.Info,
+                )
+            }
+            row {
+                SettingsRow(
+                    title = "Newest version",
+                    summary = "On GitHub, in your browser",
+                    icon = SettingsIcons.OpenInNew,
+                    onClick = vm::openNewestVersion,
+                )
+            }
+        }
     }
 }
 
@@ -646,7 +667,7 @@ internal fun messengerSummary(state: UiState): String = when {
     !state.voipSupported -> "Needs Android 14 or later"
     state.voipInstalled.isEmpty() -> "None of the supported apps is installed"
     else -> state.voipInstalled.filter { it.pkg in state.voipEnabled }
-        .joinToString(", ") { it.label }
+        .joinToString(", ") { it.settingsName }
         .ifEmpty { "Off" }
 }
 
@@ -932,7 +953,7 @@ fun MessengerCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier =
             state.voipInstalled.forEach { app ->
                 row {
                     SwitchRow(
-                        title = app.label,
+                        title = app.settingsName,
                         checked = app.pkg in state.voipEnabled,
                         onCheckedChange = { vm.setVoipApp(app.pkg, it) },
                         leading = { AppIcon(app.pkg) },

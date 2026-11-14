@@ -111,6 +111,9 @@ object Fixtures {
         },
         voipEnabled = setOf("com.whatsapp", "org.telegram.messenger"),
         voipNames = true,
+        // Fixed, not the build's: a release's bump would change every
+        // picture of Settings' foot.
+        appVersion = "1.0",
     )
 
     fun chosen(vararg names: String) = names.map { CallRules.Chosen(it, it, null) }

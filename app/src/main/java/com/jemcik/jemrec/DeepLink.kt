@@ -84,7 +84,7 @@ object DeepLink {
     private fun token(context: Context): String {
         val prefs = Prefs.of(context)
         prefs.getString(KEY_TOKEN, null)?.let { return it }
-        val fresh = ByteArray(16).also { random.nextBytes(it) }.joinToString("") { "%02x".format(it) }
+        val fresh = hex(ByteArray(16).also { random.nextBytes(it) })
         prefs.edit { putString(KEY_TOKEN, fresh) }
         return fresh
     }

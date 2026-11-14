@@ -160,7 +160,7 @@
   </ul>
   <p>The caller and the number come from exact call tracking or the call log, with permission to read the call log; without it, a recording is named by date and time. Google's Phone app has nothing like Honor's: it keeps its own recordings to itself, and no other app can add one to its call history.</p>
   <h2 id="messenger-calls">Messenger calls</h2>
-  <p><strong>Messenger calls</strong>, in Settings, records WhatsApp, Telegram, Signal and Viber calls too, and Google Meet calls and meetings — both sides, you on the left channel and the other person on the right (up to JemRec 0.24, the other way round). Each app has its own switch, and all are off until you turn one on. The ones installed on your phone are listed.</p>
+  <p><strong>Messenger calls</strong>, in Settings, records WhatsApp, Telegram, Signal and Viber calls too, and Google Meet calls and meetings — both sides, you on the left channel and the other person on the right (up to JemRec 0.24, the other way round). Each app has its own switch, and all are off until you turn one on. The ones installed on your phone are listed. Telegram from telegram.org and Telegram Beta are apps of their own, each with its own switch: <em>Telegram (telegram.org)</em> and <em>Telegram Beta</em>.</p>
   <p>It needs <strong>Android 14 or newer</strong>. Before it, Android does not let the recorder copy another app's call audio, and Settings says so instead of offering switches that would record nothing.</p>
   <p>An app can refuse to let its calls be recorded, and Android honours that; JemRec does not try to get round it. Your side comes from the microphone without the call app's echo cancellation, so on speakerphone the other person is heard on your side as well. JemRec never takes the microphone from the call: if Android ever silences the app's own, JemRec lets go of its own at once.</p>
   <p>These are not phone calls, so their recordings are in Recordings, marked with the app's icon, and not in the Calls tab. Whose calls to keep does not apply to them — the app's switch is the rule.</p>
@@ -184,7 +184,7 @@
   <p><strong>Test on this phone.</strong> No app can play sound into a call, so the recorder does it, as the shell, and whether a phone carries it to the caller depends on its audio hardware. These tell you:</p>
   <ul>
     <li><strong>Checks</strong> — a second, and no call: whether the recorder has what it needs and the phone has a way to play into a call. The switch can be turned on once they pass.</li>
-    <li><strong>Test call</strong> — best, someone calls you: the next call within three minutes is answered with a short tone and your greeting, whoever is calling, and then you are asked whether they heard it - not in the day after an emergency call, when that caller may be them. Or JemRec calls a number that answers by itself, such as your carrier's information line, and measures what it can; never an emergency number. 2G, VoLTE and Wi-Fi Calling are kept apart, because each takes its own path.</li>
+    <li><strong>Test call</strong> — best, someone calls you: the next call within three minutes is answered with a short tone and your greeting, whoever is calling, and then you are asked whether they heard it - not in the day after an emergency call, when that caller may be them. Or JemRec calls a number that answers by itself, such as your carrier's information line, and measures what it can; never an emergency number. 2G, VoLTE and Wi-Fi Calling are kept apart, because each takes its own path. JemRec 1.0 clears a VoLTE result kept from before, once, and says so on this row until you test again: until 0.31 a test over Wi-Fi Calling could be filed as VoLTE.</li>
     <li><strong>Carrier voicemail</strong> — asks your carrier when its voicemail answers, and can make it wait the longest it allows, 30 seconds. Your carrier's voicemail then still takes the calls JemRec does not. It is your carrier's setting, so it stays if JemRec goes.</li>
     <li><strong>Copy a report</strong> — this phone and what the tests found, with nothing about any call, to paste into a report on GitHub.</li>
   </ul>
@@ -306,6 +306,11 @@
     <li><strong>Survive a restart</strong> — on phones that have one, opens the list of apps allowed to start by themselves after a reboot.</li>
     <li><strong>Diagnostics</strong> — whether the recorder is running, a self-test that proves a call would be recorded, a way to start the recorder by hand, and <strong>Copy a report</strong>: this phone and how its last call was recorded — which way, how loud each side came out, what was playing — with no numbers or names in it. It is what a bug report wants.</li>
     <li><strong>Start fresh</strong> — puts JemRec back to how it was the day you installed it, so setup runs again from step 1. The app closes when you confirm. <strong>Your recordings are not deleted.</strong></li>
+  </ul>
+  <p><strong>About</strong></p>
+  <ul>
+    <li><strong>JemRec version</strong> — the version you have, the one a copied report gives.</li>
+    <li><strong>Newest version</strong> — opens the newest release on GitHub in your browser; its page has the APK, which installs over this one, F-Droid's too. JemRec makes no request itself.</li>
   </ul>
   <h2 id="if-something-goes-wrong">If something goes wrong</h2>
   <p><strong>Pairing fails every time.</strong> Almost always the dialog closed. It survives only while Settings is on screen, which is why step 4 uses the notification shade rather than switching back to the app. Reopen the dialog for a fresh code each attempt.</p>

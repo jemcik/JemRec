@@ -75,6 +75,14 @@ class AnswerScreenshots : ScreenTest() {
         snap("answering-paused")
     }
 
+    /** After the update cleared the VoLTE test: the Test call row says why,
+     *  under the result kept. */
+    @Config(qualifiers = "+h1700dp")
+    @Test fun aTestTheUpdateCleared() {
+        answering(ready.copy(cleared = AnswerDiagnostics.Cleared.VOLTE))
+        snap("answering-cleared")
+    }
+
     @Test fun beforeTheChecks() {
         answering(AnswerUi())
         snap("answering-not-checked")

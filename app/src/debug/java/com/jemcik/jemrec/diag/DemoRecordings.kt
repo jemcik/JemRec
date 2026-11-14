@@ -10,6 +10,7 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.jemcik.jemrec.audio.OpusOggWriter
 import com.jemcik.jemrec.calls.CallHistory
+import com.jemcik.jemrec.minutesSeconds
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Waveforms
@@ -55,16 +56,14 @@ internal const val HIDE_SETTINGS_KEY = "act_as_hidden_settings"
 internal object DemoRecordings {
 
     private const val TAG = "JemRec"
-    private const val PREFS = "jemrec_diag"
     private const val KEY = "demo_recordings"
 
     fun isOn(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
+        DiagPrefs.of(context).getBoolean(KEY, false)
 
     /** Installs or removes the override, and remembers the choice. */
     fun set(context: Context, on: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit { putBoolean(KEY, on) }
+        DiagPrefs.of(context).edit { putBoolean(KEY, on) }
         install(on)
         Log.i(TAG, "demo: invented recordings ${if (on) "on" else "off"}")
     }
@@ -196,7 +195,7 @@ internal object DemoRecordings {
                     ?: "jemrec-demo://call/${call.minutesAgo}".toUri(),
                 whenLabel = whenLabel(at),
                 incoming = call.incoming,
-                durationLabel = "%d:%02d".format(call.seconds / 60, call.seconds % 60),
+                durationLabel = minutesSeconds(call.seconds.toLong()),
                 sizeLabel = size(call.bytes),
                 caller = call.caller,
                 callerPhoto = call.photo?.let {
@@ -246,9 +245,7 @@ class DemoProvider : ContentProvider() {
         // Act like a Pixel that hides USB debugging and Developer options
         // from apps, on a phone or emulator that does not. Set with the
         // `hidesettings` diag op, or by writing the preference with run-as.
-        if (context.getSharedPreferences("jemrec_diag", Context.MODE_PRIVATE)
-                .getBoolean(HIDE_SETTINGS_KEY, false)
-        ) {
+        if (DiagPrefs.of(context).getBoolean(HIDE_SETTINGS_KEY, false)) {
             com.jemcik.jemrec.system.GlobalSettings.actAsHidden = true
             Log.i("JemRec", "diag: acting as if Android hid adb_enabled and development_settings_enabled")
         }

@@ -119,6 +119,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.annotation.GraphicsMode
@@ -161,6 +162,38 @@ class BehaviourTest : ScreenTest() {
         back()
         assertEquals(Screen.HOME, vm.state.value.screen)
         compose.onNodeWithText("Ready to record").assertIsDisplayed()
+    }
+
+    /** About, at Settings' foot: the version this is, and a tap that opens
+     *  the newest release in the browser - JemRec asks no server itself. */
+    @Test fun aboutShowsTheVersionAndOpensTheNewestRelease() {
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS))
+        showApp(vm)
+        // The version, under its title: the summary scrolled to, as the
+        // title at the screen's edge leaves the line below it out of view.
+        compose.onNodeWithText("1.0").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("JemRec version").assertIsDisplayed()
+
+        compose.onNodeWithText("Newest version").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        val opened = shadowOf(RuntimeEnvironment.getApplication()).nextStartedActivity
+        assertEquals(android.content.Intent.ACTION_VIEW, opened.action)
+        assertEquals("https://github.com/jemcik/JemRec/releases/latest", opened.dataString)
+        // The screen stays where it was.
+        assertEquals(Screen.SETTINGS, vm.state.value.screen)
+    }
+
+    /** No browser at all: said, not a tap that does nothing. */
+    @Test fun withNoBrowserTheNewestVersionSaysSo() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).checkActivities(true)
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS))
+
+        vm.openNewestVersion()
+
+        // Told (a snackbar, and the log it is kept in).
+        assertTrue(vm.state.value.log, vm.state.value.log.contains("No browser on this phone to open it"))
     }
 
     @Test fun settingsKeepsItsPlaceAfterRecentlyDeleted() {

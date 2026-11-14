@@ -46,7 +46,7 @@ internal object AutoStart {
      * manifest's <queries> block; without that, Android 11 and later hide them
      * from resolveActivity and every one of these would look absent.
      */
-    private val CANDIDATES = listOf(
+    internal val CANDIDATES = listOf(
         // HONOR FIRST, and it is its own package. Honor split from Huawei and
         // MagicOS renamed everything to com.hihonor.*, keeping the class names -
         // so a list with only the Huawei package finds nothing on an Honor,

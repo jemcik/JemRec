@@ -26,6 +26,7 @@ plugins {
 }
 
 val pure = listOf(
+    "Formats",
     "audio/AudioStream",
     "audio/OpusHead",
     "audio/OpusPackets",
@@ -42,6 +43,7 @@ val pure = listOf(
 )
 
 val pureTests = listOf(
+    "FormatsTest",
     "audio/AudioStreamTest",
     "audio/OpusHeadTest",
     "audio/OpusPacketsTest",

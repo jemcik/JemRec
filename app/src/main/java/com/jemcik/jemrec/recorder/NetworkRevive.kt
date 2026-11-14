@@ -7,11 +7,11 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.provider.Settings
 import android.util.Log
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.capture.NetworkReviveReceiver
+import com.jemcik.jemrec.system.GlobalSettings
 
 /**
  * Brings the recorder back the instant Wi-Fi returns.
@@ -181,7 +181,7 @@ object NetworkRevive {
         val handle = runCatching {
             context.getSystemService(ConnectivityManager::class.java)?.let(::wifiNetwork)?.networkHandle
         }.getOrNull()?.takeIf { it != 0L } ?: return null
-        val boot = Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+        val boot = GlobalSettings.bootCount(context)
         return "$boot:$handle"
     }
 

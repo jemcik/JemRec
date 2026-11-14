@@ -9,6 +9,8 @@ import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.hex
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -605,8 +607,7 @@ object DaemonClient {
     fun token(context: Context): String {
         val prefs = Prefs.of(context)
         prefs.getString(KEY_TOKEN, null)?.let { return it }
-        val fresh = ByteArray(24).also { random.nextBytes(it) }
-            .joinToString("") { "%02x".format(it) }
+        val fresh = hex(ByteArray(24).also { random.nextBytes(it) })
         prefs.edit { putString(KEY_TOKEN, fresh) }
         return fresh
     }
@@ -666,7 +667,7 @@ object DaemonClient {
      * records those to a file - but the self-test still records a short clip
      * this way to prove the HAL hands over voice-call audio.
      */
-    suspend fun connect(context: Context, timeoutMs: Int = 3_000): Socket = withContext(Dispatchers.IO) {
+    suspend fun connect(context: Context, timeoutMs: Int = 3_000): Socket = handedOver {
         open(context, COMMAND_RECORD, connectMs = timeoutMs, readMs = LIVE_READ_MS)
     }
 
@@ -678,10 +679,26 @@ object DaemonClient {
      * offline: the OS can throttle this app to a crawl and the only cost is a
      * slower copy, never lost audio, because the audio is already on disk.
      */
-    suspend fun fetch(context: Context, name: String, timeoutMs: Int = 3_000): Socket =
-        withContext(Dispatchers.IO) {
-            open(context, COMMAND_FETCH, nameFrame(name), connectMs = timeoutMs, readMs = FETCH_READ_MS)
+    suspend fun fetch(context: Context, name: String, timeoutMs: Int = 3_000): Socket = handedOver {
+        open(context, COMMAND_FETCH, nameFrame(name), connectMs = timeoutMs, readMs = FETCH_READ_MS)
+    }
+
+    /**
+     * The socket [opening] makes on the IO dispatcher, handed to the caller -
+     * or closed, if the caller was cancelled meanwhile. withContext then
+     * throws instead of returning, and the socket it had opened was dropped
+     * unclosed: the self-test's time limit running out in its connect, or a
+     * fetch whose service went (read from the code, 2026-11-14).
+     */
+    internal suspend fun handedOver(opening: () -> Socket): Socket {
+        val opened = java.util.concurrent.atomic.AtomicReference<Socket?>()
+        try {
+            return withContext(Dispatchers.IO) { opening().also { opened.set(it) } }
+        } catch (e: CancellationException) {
+            opened.get()?.let { runCatching { it.close() } }
+            throw e
         }
+    }
 
     /**
      * Every recording still sitting on the daemon, one name per line. The app

@@ -389,7 +389,7 @@ fun AnsweringMachineScreen(state: UiState, vm: MainViewModel, modifier: Modifier
                             else -> "Calling..."
                         }
                         "running" -> "Testing - your greeting is playing to the call"
-                        else -> AnswerDiagnostics.summary(a.results) ?: "Not tested on this phone yet"
+                        else -> testedSummary(a)
                     },
                     icon = Icons.Filled.Call,
                     onClick = if (a.test == null) ({ dialog = AnswerDialog.TEST }) else null,
@@ -575,12 +575,34 @@ internal fun timeOfDay(millis: Long): String = SimpleDateFormat("HH:mm", Locale.
 internal fun pauseEnd(millis: Long): String =
     SimpleDateFormat("d MMM 'at' HH:mm", Locale.US).format(Date(millis))
 
+/** The Test call row with no test under way: how the tests came out, and
+ *  why an update cleared any (AnswerDiagnostics.Cleared), until a test is
+ *  filed again. Tested in AnswerSummaryTest. */
+internal fun testedSummary(a: AnswerUi): String {
+    val results = AnswerDiagnostics.summary(a.results)
+    val why = when (a.cleared) {
+        AnswerDiagnostics.Cleared.VOLTE ->
+            "Your VoLTE test was cleared: before 0.31 a test over Wi-Fi Calling could be filed as VoLTE. Test again"
+        AnswerDiagnostics.Cleared.ROUTES ->
+            "Your tests were cleared: since 0.31 the greeting's way to the caller follows the call. Test again"
+        null -> null
+    }
+    return when {
+        why == null -> results ?: "Not tested on this phone yet"
+        results == null -> why
+        else -> "$results. $why"
+    }
+}
+
 /** The answering machine in a few words, for its row in Settings. Tested in
  *  AnswerSummaryTest. */
 internal fun answerSummary(a: AnswerUi): String = when {
     a.paused != null -> "Paused after an emergency call"
-    a.enabled -> "After ${a.delay} seconds" +
-        if (a.results.isEmpty()) " - not tested on this phone yet" else ""
+    a.enabled -> "After ${a.delay} seconds" + when {
+        a.cleared != null -> " - test again after the update"
+        a.results.isEmpty() -> " - not tested on this phone yet"
+        else -> ""
+    }
     a.stageOne?.possible == false -> "Not available on this phone"
     // Why it is off, where the user looks: Android's settings guide, a
     // dependent setting with "a brief explanation of why" it is unavailable.

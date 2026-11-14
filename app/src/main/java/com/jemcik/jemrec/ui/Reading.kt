@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.ui
 
 import android.app.Application
-import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallHistory
@@ -46,9 +45,24 @@ private fun <T> read(get: suspend (Application) -> T, put: UiState.(T) -> UiStat
     { app -> val value = get(app); { state -> state.put(value) } }
 
 /**
- * Everything a reading takes in besides the lists, in the order it is read:
- * each setting once, its read beside the field it fills. A new one is one
- * line here.
+ * The settings the screen also watches as they are saved (RecorderSwitch's,
+ * DebugSwitchesOff's, VoipCallNotes' and DebugNotificationCleaner's watch),
+ * read as a reading lands, not with the rest: one saved between the
+ * reading's read and its landing - the tile, a notification-access grant
+ * that outlived its screen - was shown by the watch and then put back by
+ * the reading until the next. From memory, so on the main thread.
+ */
+internal fun asSaved(app: Application, state: UiState): UiState = state.copy(
+    enabled = RecorderSwitch.isOn(app),
+    debuggingOff = DebugSwitchesOff.recorderGone(app),
+    voipNames = VoipCallNotes.enabled(app),
+    debugNotificationHidden = DebugNotificationCleaner.hiding(app),
+)
+
+/**
+ * Everything a reading takes in besides the lists and the switches the
+ * screen watches ([asSaved]), in the order it is read: each setting once,
+ * its read beside the field it fills. A new one is one line here.
  */
 private val SETTINGS: List<Read> = listOf(
     // CONFIRMED, because this reading decides whether to revive.
@@ -82,11 +96,8 @@ private val SETTINGS: List<Read> = listOf(
     read(RecordingStore::describe) { copy(folder = it) },
     read({ RecordingStore.treeUri(it) == null }) { copy(usingDefaultFolder = it) },
     read({ RecordingMode.of(it) == RecordingMode.AUTOMATIC }) { copy(automatic = it) },
-    read(DebugNotificationCleaner::hiding) { copy(debugNotificationHidden = it) },
     read(AfterCall::enabled) { copy(afterCallNotice = it) },
-    read(RecorderSwitch::isOn) { copy(enabled = it) },
     read(DebugSwitchesOff::mode) { copy(offMode = it) },
-    read(DebugSwitchesOff::recorderGone) { copy(debuggingOff = it) },
     read(StartWithoutWifi::enabled) { copy(startWithoutWifi = it) },
     read(StartWithoutWifi::readyForUser) { copy(portSet = it) },
     read(StartWithoutWifi::openedThisBoot) { copy(portOurs = it) },
@@ -113,11 +124,11 @@ private val SETTINGS: List<Read> = listOf(
     read(VoipApps::installed) { copy(voipInstalled = it) },
     read(VoipApps::supported) { copy(voipSupported = it) },
     read(VoipApps::enabled) { copy(voipEnabled = it) },
-    read(VoipCallNotes::enabled) { copy(voipNames = it) },
     read(FileNames::format) { copy(fileNames = it) },
     read(FileNames::honorDialer) { copy(honorDialer = it) },
     read(FileNames::inHonorFolder) { copy(inHonorFolder = it) },
-    read({ Prefs.of(it).getBoolean("select_hint_seen", false) }) { copy(selectHintSeen = it) },
+    read(SelectHint::seen) { copy(selectHintSeen = it) },
+    read(::appVersion) { copy(appVersion = it) },
     read(RecorderTile::isAdded) { copy(tileAdded = it) },
 )
 
@@ -125,7 +136,8 @@ private val SETTINGS: List<Read> = listOf(
  * The screen's reading of everything it shows from outside itself: the
  * recordings and the trash, the call log while its tab is up, Multitrack's
  * caller colours, the recorder's state and every setting (SETTINGS) - read
- * together, off the main thread, and put into the state at once.
+ * together, off the main thread, and put into the state at once, with the
+ * switches the screen watches as they are saved then ([asSaved]).
  *
  * After each reading is put in, in this order: the selection keeps only the
  * rows still shown, the answering machine reads its own settings again,
@@ -197,7 +209,7 @@ internal class Reading(
         if (generation < applied) return
         applied = generation
         state.update { now ->
-            settings.fold(now) { s, put -> put(s) }.copy(
+            asSaved(app, settings.fold(now) { s, put -> put(s) }).copy(
                 recordings = lists.recordings,
                 trashed = lists.trashed,
                 calls = lists.calls ?: now.calls,

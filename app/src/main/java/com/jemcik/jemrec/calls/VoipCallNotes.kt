@@ -67,6 +67,11 @@ internal object VoipCallNotes {
 
     fun enabled(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ON, false)
 
+    /** [onChange] with the switch as saved, each time it is saved - by a
+     *  screen that has closed since, too. Returns the way to stop (Prefs.watch). */
+    fun watchEnabled(context: Context, onChange: (Boolean) -> Unit): () -> Unit =
+        Prefs.watch(context, KEY_ON) { onChange(enabled(context)) }
+
     fun setEnabled(context: Context, on: Boolean) {
         Prefs.of(context).edit {
             putBoolean(KEY_ON, on)

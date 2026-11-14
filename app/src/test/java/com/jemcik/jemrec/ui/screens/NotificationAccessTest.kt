@@ -323,6 +323,73 @@ class NotificationAccessTest : ScreenTest() {
         awaitMain("Show who called saved", timeoutMs = 5_000) { com.jemcik.jemrec.calls.VoipCallNotes.enabled(app) }
     }
 
+    /** A recorder whose grant waits for [goes]; [asked] once it has the
+     *  command. */
+    private fun heldGrant(asked: java.util.concurrent.CountDownLatch, goes: java.util.concurrent.CountDownLatch) {
+        recorder = FakeRecorder(app).also { fake ->
+            fake.replies["B"] = "LISTENER ok"
+            fake.stall = { key ->
+                if (key == "B") {
+                    asked.countDown()
+                    goes.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                    grantAndroidsSide()
+                }
+            }
+        }
+    }
+
+    /** Until [vm]'s own work is done - not the process's, where a grant
+     *  that outlives its screen is held. */
+    private fun ownWorkDone(vm: com.jemcik.jemrec.ui.MainViewModel) =
+        awaitMain("the new screen's own work") {
+            vm.viewModelScope.coroutineContext[kotlinx.coroutines.Job]!!.children.all { it.isCompleted }
+        }
+
+    /** JemRec closed from Recents in the grant and opened again: the new
+     *  screen read the switch off, and shows it on once the grant saves it,
+     *  not at its next reading. */
+    @Test fun aScreenOpenedInTheGrantShowsShowWhoCalledOnOnceItIsSaved() {
+        val inGrant = java.util.concurrent.CountDownLatch(1)
+        val grantGoes = java.util.concurrent.CountDownLatch(1)
+        heldGrant(inGrant, grantGoes)
+        val first = viewModel()
+        first.setVoipNames(true)
+        awaitMain("the grant asked") { inGrant.count == 0L }
+        first.viewModelScope.cancel()
+
+        val again = viewModel()
+        ownWorkDone(again)
+        assertFalse(again.state.value.voipNames)
+        grantGoes.countDown()
+
+        awaitMain("Show who called on, on the new screen", timeoutMs = 5_000) { again.state.value.voipNames }
+        settle(again)
+    }
+
+    /** The same for Hide the debugging notification, whose grant has
+     *  outlived its screen since 0.30. */
+    @Test fun aScreenOpenedInTheGrantShowsTheNotificationHiddenOnceItIsSaved() {
+        Setup.markComplete(app)
+        val inGrant = java.util.concurrent.CountDownLatch(1)
+        val grantGoes = java.util.concurrent.CountDownLatch(1)
+        heldGrant(inGrant, grantGoes)
+        val first = viewModel()
+        first.setHideDebugNotification(true)
+        awaitMain("the grant asked") { inGrant.count == 0L }
+        first.viewModelScope.cancel()
+
+        val again = viewModel()
+        ownWorkDone(again)
+        assertFalse(again.state.value.debugNotificationHidden)
+        grantGoes.countDown()
+
+        awaitMain("hidden, on the new screen", timeoutMs = 5_000) { again.state.value.debugNotificationHidden }
+        // The first screen's answer runs on in the process's scope - its setup
+        // look after the grant asks the recorder - and is waited for here,
+        // while this test's recorder is up, not left to the next test's.
+        settle(again)
+    }
+
     @Test fun showWhoCalledIsTurnedOnThroughTheRecorder() {
         grantingRecorder()
         val vm = viewModel()

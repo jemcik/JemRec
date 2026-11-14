@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.recorder
 
 import android.content.Context
-import android.provider.Settings
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
@@ -127,8 +126,7 @@ object StartWithoutWifi {
         true
     }.getOrDefault(false)
 
-    private fun boot(context: Context): Int =
-        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+    private fun boot(context: Context): Int = GlobalSettings.bootCount(context)
 
     private fun inThisBoot(context: Context, key: String): Boolean {
         val boot = boot(context)

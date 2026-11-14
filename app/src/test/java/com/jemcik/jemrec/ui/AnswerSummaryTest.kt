@@ -29,6 +29,48 @@ class AnswerSummaryTest {
         assertEquals("Off", answerSummary(AnswerUi(pausedUntil = 1L)))
     }
 
+    /** Cleared by an update, it says so - not "not tested" - until a test is
+     *  filed again. */
+    @Test fun testsAnUpdateClearedAreSaidSo() {
+        assertEquals(
+            "After 20 seconds - test again after the update",
+            answerSummary(AnswerUi(enabled = true, cleared = AnswerDiagnostics.Cleared.ROUTES)),
+        )
+        assertEquals(
+            "After 20 seconds - test again after the update",
+            answerSummary(
+                AnswerUi(enabled = true, results = mapOf("2G" to AnswerDiagnostics.Verdict.WORKS), cleared = AnswerDiagnostics.Cleared.VOLTE),
+            ),
+        )
+        assertEquals("Not tested on this phone yet", testedSummary(AnswerUi()))
+        assertEquals("Works on 2G", testedSummary(AnswerUi(results = mapOf("2G" to AnswerDiagnostics.Verdict.WORKS))))
+        assertEquals(
+            "Works on 2G. Your VoLTE test was cleared: before 0.31 a test over Wi-Fi Calling could be filed as VoLTE. Test again",
+            testedSummary(AnswerUi(results = mapOf("2G" to AnswerDiagnostics.Verdict.WORKS), cleared = AnswerDiagnostics.Cleared.VOLTE)),
+        )
+        assertEquals(
+            "Your VoLTE test was cleared: before 0.31 a test over Wi-Fi Calling could be filed as VoLTE. Test again",
+            testedSummary(AnswerUi(cleared = AnswerDiagnostics.Cleared.VOLTE)),
+        )
+        assertEquals(
+            "Your tests were cleared: since 0.31 the greeting's way to the caller follows the call. Test again",
+            testedSummary(AnswerUi(cleared = AnswerDiagnostics.Cleared.ROUTES)),
+        )
+    }
+
+    /** What 1.0's step clears, from the stored preferences. */
+    @Test fun theVolteStepClearsTheResultItsMarkAndItsQuestion() {
+        assertEquals(
+            listOf("answer_result_VoLTE", "answer_mixer_VoLTE", "answer_test"),
+            AnswerDiagnostics.volteKeys(
+                mapOf("answer_result_VoLTE" to "WORKS", "answer_mixer_VoLTE" to true, "answer_test" to "asking VoLTE", "answer_result_2G" to "WORKS"),
+            ),
+        )
+        assertEquals(listOf<String>(), AnswerDiagnostics.volteKeys(mapOf("answer_result_2G" to "WORKS", "answer_test" to "asking 2G")))
+        assertEquals(listOf<String>(), AnswerDiagnostics.volteKeys(mapOf("answer_test" to "armed 1 1793000000000")))
+        assertEquals(listOf("answer_result_VoLTE"), AnswerDiagnostics.volteKeys(mapOf("answer_result_VoLTE" to "FAILS")))
+    }
+
     @Test fun theSwitchWaitsForTheChecksTrackingAndAGreeting() {
         assertEquals("Run the checks below first", AnswerUi().blocked)
         assertEquals(failed.problem, AnswerUi(stageOne = failed).blocked)

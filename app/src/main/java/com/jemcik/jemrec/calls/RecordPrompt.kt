@@ -11,6 +11,7 @@ import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.RecordPromptActivity
 import com.jemcik.jemrec.capture.CallMonitorService
+import com.jemcik.jemrec.hex
 import java.security.SecureRandom
 
 /**
@@ -154,8 +155,7 @@ object RecordPrompt {
     }
 
     private fun mintTicket(context: Context): String = synchronized(this) {
-        val ticket = ByteArray(16).also { random.nextBytes(it) }
-            .joinToString("") { "%02x".format(it) }
+        val ticket = hex(ByteArray(16).also { random.nextBytes(it) })
         Prefs.of(context).edit { putString(KEY_TICKET, ticket) }
         ticket
     }

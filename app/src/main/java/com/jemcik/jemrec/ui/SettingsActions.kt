@@ -2,9 +2,12 @@ package com.jemcik.jemrec.ui
 
 import android.app.Application
 import android.app.StatusBarManager
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.core.net.toUri
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallLogLookup
@@ -43,6 +46,39 @@ internal class SettingsActions(
     private val answer: AnswerController,
     private val trash: TrashActions,
 ) {
+    /**
+     * Show who called as saved, wherever it is saved from. Its grant runs to
+     * its end once begun (Setup.grantNotificationAccess), and saves the switch
+     * on after it: JemRec closed from Recents and opened again within the
+     * grant's seconds read it off, and showed it off until the screen was read
+     * again.
+     */
+    private val stopWatchingNames = VoipCallNotes.watchEnabled(app) { on ->
+        state.update { it.copy(voipNames = on) }
+    }
+
+    /** The screen is gone: the switch is no longer watched. */
+    fun close() {
+        stopWatchingNames()
+    }
+
+    /**
+     * The newest release on GitHub, in the browser (discussion #91): what
+     * there is to install, beside the version Settings shows. The browser
+     * makes the request; JemRec makes none, and needs no permission for it.
+     */
+    fun openNewestVersion() {
+        val opened = runCatching {
+            app.startActivity(
+                Intent(Intent.ACTION_VIEW, NEWEST_RELEASE.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+        opened.onFailure {
+            Log.w("JemRec", "settings: no app to open the newest release - ${it.javaClass.simpleName}")
+            log.tell("No browser on this phone to open it")
+        }
+    }
+
     /** Never offered again once waved away. An optional feature that keeps
      *  asking is not optional. */
     fun dismissCallLogOffer() {
@@ -264,3 +300,7 @@ internal class SettingsActions(
         }
     }
 }
+
+/** GitHub's newest release of JemRec, not a pre-release: its page has the
+ *  APK. */
+internal const val NEWEST_RELEASE = "https://github.com/jemcik/JemRec/releases/latest"

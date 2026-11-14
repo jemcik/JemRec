@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.answering
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.jemcik.jemrec.Prefs
 
@@ -34,6 +35,19 @@ object AnswerDiagnostics {
     private const val KEY_RESULT = "answer_result_"
     private const val KEY_MIXER = "answer_mixer_"
     private const val KEY_TEST = "answer_test"
+    private const val KEY_CLEARED = "answer_cleared_by_update"
+    private const val VOLTE = "VoLTE"
+
+    /** Why an update cleared this phone's test results: said where they are
+     *  shown until a test is filed again. Stored by name. */
+    enum class Cleared {
+        /** 1.0: its VoLTE result (AnsweringMachine.settleUpdates). */
+        VOLTE,
+
+        /** 0.31: all of them, as the greeting's route came to follow the
+         *  call (AnsweringMachine.settleRoutesByPath). */
+        ROUTES,
+    }
 
     enum class Verdict {
         /** Proven: the caller said so, or the phone's own recording carried the check tone. */
@@ -152,6 +166,8 @@ object AnswerDiagnostics {
     fun record(context: Context, callType: String, verdict: Verdict, mixer: Boolean? = null) {
         Prefs.of(context).edit {
             putString(KEY_RESULT + callType, verdict.name)
+            // A test filed: what an update cleared is no longer the news.
+            remove(KEY_CLEARED)
             when (mixer) {
                 true -> putBoolean(KEY_MIXER + callType, true)
                 false -> remove(KEY_MIXER + callType)
@@ -180,6 +196,7 @@ object AnswerDiagnostics {
     }
 
     fun pendingTest(context: Context): PendingTest? {
+        AnsweringMachine.settleUpdates(context)
         val words = Prefs.of(context).getString(KEY_TEST, null)?.split(' ') ?: return null
         return when (words.firstOrNull()) {
             "armed" -> words.getOrNull(2)?.toLongOrNull()?.let { PendingTest.Armed(words[1] == "1", it) }
@@ -229,12 +246,37 @@ object AnswerDiagnostics {
 
     /** Each call type tested, and how it came out. */
     fun results(context: Context): Map<String, Verdict> {
-        AnsweringMachine.settleRoutesByPath(context)
+        AnsweringMachine.settleUpdates(context)
         return Prefs.of(context).all.entries
             .filter { it.key.startsWith(KEY_RESULT) }
             .mapNotNull { e -> (e.value as? String)?.let { v -> runCatching { e.key.removePrefix(KEY_RESULT) to Verdict.valueOf(v) }.getOrNull() } }
             .toMap()
     }
+
+    /** Why an update cleared test results here, until a test is filed. */
+    fun cleared(context: Context): Cleared? {
+        AnsweringMachine.settleUpdates(context)
+        return Prefs.of(context).getString(KEY_CLEARED, null)?.let { runCatching { Cleared.valueOf(it) }.getOrNull() }
+    }
+
+    /** [why] noted in [edit], an update's own write (AnsweringMachine). */
+    internal fun noteCleared(edit: SharedPreferences.Editor, why: Cleared) {
+        edit.putString(KEY_CLEARED, why.name)
+    }
+
+    /**
+     * What 1.0's one step clears ([stored]: the preferences as they are): a
+     * test result filed under VoLTE, its mixer mark, and a question about a
+     * VoLTE test still to be asked. Until 0.31 a test over Wi-Fi Calling was
+     * filed under VoLTE where the phone's voice network read LTE through it
+     * (a Galaxy S23's did, 2026-11-12), and a result does not say which
+     * version filed it. Pure.
+     */
+    fun volteKeys(stored: Map<String, *>): List<String> = listOfNotNull(
+        (KEY_RESULT + VOLTE).takeIf { it in stored },
+        (KEY_MIXER + VOLTE).takeIf { it in stored },
+        KEY_TEST.takeIf { stored[KEY_TEST] == "asking $VOLTE" },
+    )
 
     /** The keys of every test result and its mark, and of a test still to
      *  be read or asked about - its question answered after a clearing would

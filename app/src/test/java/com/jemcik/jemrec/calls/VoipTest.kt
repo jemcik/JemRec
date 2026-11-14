@@ -122,6 +122,33 @@ class VoipTest {
         assertEquals("Priya Raman", VoipCallNotes.clean(" Priya Raman ", "Viber"))
     }
 
+    /** Issue #93: Telegram from telegram.org, and its beta, are known; only
+     *  Settings tells them apart from the Play Store's. */
+    @Test fun telegramsOtherBuildsAreTelegramButInSettings() {
+        val play = VoipApps.byPackage("org.telegram.messenger")!!
+        val web = VoipApps.byPackage("org.telegram.messenger.web")!!
+        val beta = VoipApps.byPackage("org.telegram.messenger.beta")!!
+        assertEquals(listOf("Telegram", "Telegram (telegram.org)", "Telegram Beta"), listOf(play, web, beta).map { it.settingsName })
+        for (app in listOf(play, web, beta)) {
+            assertEquals("Telegram", app.label)
+            assertEquals("telegram", app.tag)
+            // The prompt, and a notification naming the app, as for Play's.
+            assertEquals("Telegram call in progress.", RecordPrompt.callText(true, app.pkg))
+            assertNull(VoipCallNotes.clean("Ongoing Telegram call", app.label))
+            assertEquals("telegram", VoipApps.forRecfile("jemrec_rec_1_voip-${app.pkg}.dat")?.tag)
+        }
+        // Diagnostics' self-test names them as Settings does.
+        assertEquals(
+            "Telegram, Telegram (telegram.org)",
+            com.jemcik.jemrec.recorder.messengerNames(linkedSetOf("org.telegram.messenger", "org.telegram.messenger.web")),
+        )
+        // Every other app is named the same in Settings as anywhere.
+        assertEquals(
+            VoipApps.KNOWN.filter { "telegram.messenger." !in it.pkg }.map { it.label },
+            VoipApps.KNOWN.filter { "telegram.messenger." !in it.pkg }.map { it.settingsName },
+        )
+    }
+
     @Test fun notesRoundTrip() {
         listOf(
             Note(viber, start, "Priya Raman", true),

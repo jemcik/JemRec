@@ -174,6 +174,11 @@ class DebugNotificationCleaner : NotificationListenerService() {
         /** Whether the answer was yes. */
         fun hiding(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_HIDE, false)
 
+        /** [onChange] with the answer as saved, each time it is saved - by a
+         *  screen that has closed since, too. Returns the way to stop (Prefs.watch). */
+        fun watchHiding(context: Context, onChange: (Boolean) -> Unit): () -> Unit =
+            Prefs.watch(context, KEY_HIDE) { onChange(hiding(context)) }
+
         fun accessGranted(context: Context): Boolean =
             context.getSystemService(NotificationManager::class.java)
                 .isNotificationListenerAccessGranted(component(context))

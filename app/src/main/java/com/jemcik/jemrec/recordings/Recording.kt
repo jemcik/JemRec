@@ -5,6 +5,7 @@ import android.content.IntentSender
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.minutesSeconds
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -204,10 +205,9 @@ internal object Recordings {
         }
     }
 
-    private fun duration(millis: Long): String {
+    internal fun duration(millis: Long): String {
         if (millis <= 0) return "--:--"
-        val total = millis / 1000
-        return "%d:%02d".format(Locale.US, total / 60, total % 60)
+        return minutesSeconds(millis / 1000)
     }
 
     /** For sources that do not already know the duration, in milliseconds.

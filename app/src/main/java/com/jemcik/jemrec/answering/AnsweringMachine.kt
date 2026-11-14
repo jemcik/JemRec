@@ -30,6 +30,7 @@ object AnsweringMachine {
     private const val KEY_SIM = "answer_sim"
     private const val KEY_ROUTE = "answer_route"
     private const val KEY_ROUTES_BY_PATH = "answer_routes_by_path"
+    private const val KEY_VOLTE_CLEARED = "answer_volte_cleared"
 
     /** Seconds of ringing before it answers. 5 suits taking every call as a
      *  message; below the carrier's own voicemail timer, always. */
@@ -94,7 +95,7 @@ object AnsweringMachine {
      *  (Qualcomm's in-call music, proven on the Honor) unless a test call
      *  found that only the call-screening route works here. */
     fun route(context: Context): String {
-        settleRoutesByPath(context)
+        settleUpdates(context)
         return Prefs.of(context).getString(KEY_ROUTE, ROUTE_MUSIC) ?: ROUTE_MUSIC
     }
 
@@ -103,7 +104,7 @@ object AnsweringMachine {
      * followed the call (AnswerDiagnostics.resetsForRoutesByPath): a phone a
      * failed test moved to the call-screening route, though it has in-call
      * music, goes back to in-call music, and its test results go, so its
-     * settings say it is not tested and a test call tells again. Before 0.31
+     * settings say it is not tested, and why, and a test call tells again. Before 0.31
      * one route served every call, and a test over Wi-Fi Calling - through
      * the mixer on a Galaxy S23, and filed as VoLTE there - failed on in-call
      * music and moved it, leaving its VoLTE callers on a route that reached
@@ -120,11 +121,38 @@ object AnsweringMachine {
             if (reset) {
                 putString(KEY_ROUTE, ROUTE_MUSIC)
                 results.forEach { remove(it) }
+                AnswerDiagnostics.noteCleared(this, AnswerDiagnostics.Cleared.ROUTES)
             }
             putBoolean(KEY_ROUTES_BY_PATH, true)
         }
         if (reset) {
             Log.i("JemRec", "answer: back on in-call music for a call's voice path since 0.31; the tests before it cleared")
+        }
+    }
+
+    /**
+     * What an update does once to the answering machine's settings, at the
+     * first read after it, before anything reads them: 0.31's route by the
+     * call's path ([settleRoutesByPath]), then 1.0's: a test result filed
+     * under VoLTE goes (AnswerDiagnostics.volteKeys), as a test over Wi-Fi
+     * Calling was filed there until 0.31. Under one lock, so a reader in
+     * between cannot see the one step without the other, and in one write
+     * with its mark each. Where anything went, the screens say why
+     * (AnswerDiagnostics.Cleared) until a test is filed again.
+     */
+    @Synchronized
+    fun settleUpdates(context: Context) {
+        settleRoutesByPath(context)
+        val prefs = Prefs.of(context)
+        if (prefs.getBoolean(KEY_VOLTE_CLEARED, false)) return
+        val clear = AnswerDiagnostics.volteKeys(prefs.all)
+        prefs.edit {
+            clear.forEach { remove(it) }
+            if (clear.isNotEmpty()) AnswerDiagnostics.noteCleared(this, AnswerDiagnostics.Cleared.VOLTE)
+            putBoolean(KEY_VOLTE_CLEARED, true)
+        }
+        if (clear.isNotEmpty()) {
+            Log.i("JemRec", "answer: the VoLTE test cleared, as a Wi-Fi Calling test could be filed there before 0.31")
         }
     }
 

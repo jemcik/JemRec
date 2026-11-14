@@ -514,6 +514,10 @@ class BusyPolicyTest : ScreenTest() {
         val vm = viewModel(UiState(step = SetupStep.NEEDS_DEBUGGING_CHOICE, confirmingReset = true))
         val busy = HeldBusy(emptyList())
         busy.hold(vm)
+        // The debugging answer as it is saved, each time: the screen shows
+        // the saved answer, which Start fresh then forgets.
+        val saved = mutableListOf<Boolean>()
+        val stop = com.jemcik.jemrec.capture.DebugNotificationCleaner.watchHiding(app) { saved += it }
 
         vm.setHideDebugNotification(true)
         vm.confirmReset()
@@ -521,10 +525,14 @@ class BusyPolicyTest : ScreenTest() {
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(vm.state.value.debugNotificationHidden)
         assertFalse(vm.state.value.resetDone)
+        assertEquals(emptyList<Boolean>(), saved)
 
         busy.release()
         settle(vm)
-        assertTrue(vm.state.value.debugNotificationHidden)
+        stop()
+        // The answer ran, then Start fresh: hidden, then not asked.
+        assertEquals(listOf(true, false), saved)
+        assertFalse(vm.state.value.debugNotificationHidden)
         assertTrue(vm.state.value.resetDone)
     }
 

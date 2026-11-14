@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1861 JVM tests, no device needed - 1548 for the app and 313 for the daemon:
+1902 JVM tests, no device needed - 1585 for the app and 317 for the daemon:
 
     ./gradlew test
 
@@ -297,7 +297,14 @@ from the package's own record. Then notification access for the app's
 listener, taken away, and granted again by the recorder with the app's ADB
 session closed, as Settings' Show who called and Hide the debugging
 notification ask for it (the debug op grantlistener), and in Android's list.
-Then Wi-Fi coming back: with a kick of the keep-alive failed twice off Wi-Fi
+Then Telegram's other builds (issue #93): stand-ins named
+`org.telegram.messenger.web` and `.beta` - apps with no code, built by the
+script with the SDK's aapt2 and signed with the debug key - visible to JemRec
+in Android's own list (`dumpsys package queries`) and, from Android 14,
+listed in Messenger calls as *Telegram (telegram.org)* and *Telegram Beta*;
+removed after. Then Settings' About: the installed version shown as the
+package has it, and *Newest version* handing GitHub's newest release to the
+browser (Android's record of the start). Then Wi-Fi coming back: with a kick of the keep-alive failed twice off Wi-Fi
 and a minute or more from its next try, and no screen up, Wi-Fi's own run has
 the recorder back within 45 s, before that try - 10 s on the Android 17 AVD,
 where the build before had none, the kick's wait taking Wi-Fi's place
@@ -416,12 +423,13 @@ Reports, not gates - run them when wanted:
   and 36% at 0.21).
 - **Daemon coverage:** `./gradlew :daemon-tests:test -Pcoverage`, then
   `shellserver/tests/build/reports/jacoco/test/html`. 97% of instructions,
-  89% of branches (2026-11-13).
+  89% of branches (2026-11-14).
 - **Mutation testing:** `./gradlew :daemon-tests:pitest`, then
   `shellserver/tests/build/reports/pitest`. [PIT](https://pitest.org) changes
   the daemon's decision classes one small way at a time and runs the tests on
-  each. 975 of the 1042 changes its tests reach fail one (94%, 2026-11-13):
-  all 177 in the classes 0.31 added, 798 of 865 in the five before. At 470
+  each. 978 of the 1045 changes its tests reach fail one (94%, 2026-11-14):
+  all 3 in `Closing`, which 1.0 added, all 177 in the classes 0.31 added,
+  798 of 865 in the five before. At 470
   of 524 (2026-10-26) each change left was read: 41 change only what is
   logged, and 13 change nothing a call can meet or a listener hear: a bound
   the chime's loop never reaches, an equality that cannot occur, a go-ahead
@@ -431,8 +439,9 @@ Reports, not gates - run them when wanted:
   `app/src/test/resources/honor`).
 - **The app's mutation testing:** `./gradlew :pure-tests:pitest`, then
   `app/pure-tests/build/reports/pitest`: PIT over the pure module's files
-  (the gate above). 271 of the 276 changes its tests reach fail one
-  (2026-11-06; 254 of 259 before 0.29 added the trashed names, all 17 of whose
+  (the gate above). 272 of the 277 changes its tests reach fail one
+  (2026-11-14; the one in `Formats`, which 1.0 added, among them; 271 of 276
+  on 2026-11-06; 254 of 259 before 0.29 added the trashed names, all 17 of whose
   changes fail one; 218 of 223 before 0.28 added the lifecycle's tables, all 36
   of whose changes fail one; 119 of 123 before 0.27 added the saver's and
   the call service's decisions). The five left change nothing: frame lengths at Opus

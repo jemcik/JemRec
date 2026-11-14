@@ -235,7 +235,7 @@ final class AnswerEffects implements AnswerMachine.Effects {
             }
 
             @Override
-            public void failed(String why) {
+            public void failed() {
                 mainHandler.post(() -> {
                     if (greeting != Answering.greetingSeq) {
                         return;
@@ -257,7 +257,7 @@ final class AnswerEffects implements AnswerMachine.Effects {
             }
 
             @Override
-            public void interrupted(String why) {
+            public void interrupted() {
                 mainHandler.post(() -> {
                     if (greeting == Answering.greetingSeq) {
                         machine.greetingInterrupted();
