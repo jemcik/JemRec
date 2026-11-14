@@ -105,6 +105,28 @@ class ReadingTest : ScreenTest() {
         assertEquals(emptyList<Recording>(), vm.state.value.trashed)
     }
 
+    /** The switches the screen watches as they are saved come from what
+     *  is saved as the reading lands, whatever the screen held: a reading
+     *  under way when one was saved put back what it had read before. */
+    @Test fun aReadingShowsTheWatchedSwitchesAsSaved() {
+        com.jemcik.jemrec.calls.VoipCallNotes.setEnabled(RuntimeEnvironment.getApplication(), true)
+        com.jemcik.jemrec.capture.DebugNotificationCleaner.choose(RuntimeEnvironment.getApplication(), true)
+        com.jemcik.jemrec.recorder.RecorderSwitch.set(RuntimeEnvironment.getApplication(), false)
+        // Off with all debugging: USB debugging among what went (DebugSwitchesOff).
+        com.jemcik.jemrec.Prefs.of(RuntimeEnvironment.getApplication()).edit()
+            .putStringSet("debug_switched_off", setOf("USB_DEBUGGING", "WIRELESS_DEBUGGING")).commit()
+        val vm = viewModel(UiState(voipNames = false, debugNotificationHidden = false, enabled = true, debuggingOff = false))
+        refreshed(vm)
+        assertTrue(vm.state.value.voipNames)
+        assertTrue(vm.state.value.debugNotificationHidden)
+        assertFalse(vm.state.value.enabled)
+        assertTrue(vm.state.value.debuggingOff)
+        // And taken as saved, whatever the reading had read.
+        val stale = vm.state.value.copy(voipNames = false, debugNotificationHidden = false, enabled = true, debuggingOff = false)
+        val landed = com.jemcik.jemrec.ui.asSaved(RuntimeEnvironment.getApplication(), stale)
+        assertTrue(landed.voipNames && landed.debugNotificationHidden && !landed.enabled && landed.debuggingOff)
+    }
+
     /**
      * The call log is read only while the Calls tab shows; a refresh on the
      * Recordings tab leaves the calls read last as they were, rather than

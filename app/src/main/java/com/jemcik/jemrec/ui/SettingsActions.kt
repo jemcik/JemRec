@@ -43,6 +43,22 @@ internal class SettingsActions(
     private val answer: AnswerController,
     private val trash: TrashActions,
 ) {
+    /**
+     * Show who called as saved, wherever it is saved from. Its grant runs to
+     * its end once begun (Setup.grantNotificationAccess), and saves the switch
+     * on after it: JemRec closed from Recents and opened again within the
+     * grant's seconds read it off, and showed it off until the screen was read
+     * again.
+     */
+    private val stopWatchingNames = VoipCallNotes.watchEnabled(app) { on ->
+        state.update { it.copy(voipNames = on) }
+    }
+
+    /** The screen is gone: the switch is no longer watched. */
+    fun close() {
+        stopWatchingNames()
+    }
+
     /** Never offered again once waved away. An optional feature that keeps
      *  asking is not optional. */
     fun dismissCallLogOffer() {

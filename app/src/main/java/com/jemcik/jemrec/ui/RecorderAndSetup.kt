@@ -85,6 +85,13 @@ internal class RecorderAndSetup(
         state.update { it.copy(debuggingOff = gone) }
     }
 
+    /** Hide the debugging notification as saved, by a screen closed since
+     *  too: its grant outlives the screen that asked (Action.DEBUG_NOTIFICATION),
+     *  and one opened meanwhile read it off. */
+    private val stopWatchingHiding = DebugNotificationCleaner.watchHiding(app) { hide ->
+        state.update { it.copy(debugNotificationHidden = hide) }
+    }
+
     private val awaitingRecorder = AtomicBoolean(false)
 
     /**
@@ -650,5 +657,6 @@ internal class RecorderAndSetup(
     fun close() {
         stopWatchingSwitch()
         stopWatchingDebugSwitches()
+        stopWatchingHiding()
     }
 }

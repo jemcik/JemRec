@@ -474,6 +474,7 @@ class MainViewModel @JvmOverloads constructor(
     override fun onCleared() {
         watching.cancel()
         recorder.close()
+        settings.close()
         playback.close()
         answer.close()
     }
