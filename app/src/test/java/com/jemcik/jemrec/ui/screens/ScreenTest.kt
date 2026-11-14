@@ -159,6 +159,8 @@ abstract class ScreenTest {
             for ((pkg, colour) in listOf(
                 "com.whatsapp" to 0xFF25D366.toInt(),
                 "org.telegram.messenger" to 0xFF2AABEE.toInt(),
+                // Telegram from telegram.org (issue #93): the same circle.
+                "org.telegram.messenger.web" to 0xFF2AABEE.toInt(),
                 "com.viber.voip" to 0xFF7360F2.toInt(),
                 "com.google.android.apps.tachyon" to 0xFF00897B.toInt(),
             )) {

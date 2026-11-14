@@ -38,12 +38,30 @@ object VoipApps {
 
     private const val KEY = "voip_apps"
 
-    data class App(val pkg: String, val label: String, val tag: String)
+    /**
+     * A messenger: its package, what it is called - in the ask-first
+     * prompt, and as VoipCallNotes reads its call notifications, which drop
+     * a text naming the app - its tag in file names, and its name in
+     * Settings, where two builds of one app can be installed side by side
+     * and have to be told apart.
+     */
+    data class App(val pkg: String, val label: String, val tag: String, val settingsName: String = label)
 
+    /**
+     * Telegram comes three ways (issue #93): from the Play Store; from
+     * telegram.org, built as org.telegram.messenger.web; and its beta, built
+     * as org.telegram.messenger.beta (Telegram's source: applicationIdSuffix
+     * ".web" in TMessagesProj_AppStandalone, ".beta" in
+     * TMessagesProj_AppHockeyApp, read 2026-11-14). Each must be in the
+     * manifest's <queries> too, or Android hides it from JemRec and Settings
+     * calls it not installed.
+     */
     val KNOWN = listOf(
         App("com.whatsapp", "WhatsApp", "whatsapp"),
         App("com.whatsapp.w4b", "WhatsApp Business", "whatsapp"),
         App("org.telegram.messenger", "Telegram", "telegram"),
+        App("org.telegram.messenger.web", "Telegram", "telegram", settingsName = "Telegram (telegram.org)"),
+        App("org.telegram.messenger.beta", "Telegram", "telegram", settingsName = "Telegram Beta"),
         App("org.thunderdog.challegram", "Telegram X", "telegram"),
         App("org.thoughtcrime.securesms", "Signal", "signal"),
         App("com.viber.voip", "Viber", "viber"),

@@ -646,7 +646,7 @@ internal fun messengerSummary(state: UiState): String = when {
     !state.voipSupported -> "Needs Android 14 or later"
     state.voipInstalled.isEmpty() -> "None of the supported apps is installed"
     else -> state.voipInstalled.filter { it.pkg in state.voipEnabled }
-        .joinToString(", ") { it.label }
+        .joinToString(", ") { it.settingsName }
         .ifEmpty { "Off" }
 }
 
@@ -932,7 +932,7 @@ fun MessengerCallsScreen(state: UiState, vm: MainViewModel, modifier: Modifier =
             state.voipInstalled.forEach { app ->
                 row {
                     SwitchRow(
-                        title = app.label,
+                        title = app.settingsName,
                         checked = app.pkg in state.voipEnabled,
                         onCheckedChange = { vm.setVoipApp(app.pkg, it) },
                         leading = { AppIcon(app.pkg) },

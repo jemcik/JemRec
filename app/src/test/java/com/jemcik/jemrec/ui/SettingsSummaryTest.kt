@@ -65,6 +65,11 @@ class SettingsSummaryTest {
             "WhatsApp, Google Meet",
             messengerSummary(installed.copy(voipEnabled = setOf("com.google.android.apps.tachyon", "com.whatsapp"))),
         )
+        // Two Telegrams on, told apart as on their screen (issue #93).
+        assertEquals(
+            "Telegram, Telegram (telegram.org)",
+            messengerSummary(installed.copy(voipEnabled = setOf("org.telegram.messenger.web", "org.telegram.messenger"))),
+        )
     }
 
     @Test fun startWithoutWifiAlwaysSaysThePortIsOpenToTheNetwork() {

@@ -167,6 +167,21 @@ class SettingsScreenshots : ScreenTest() {
         snap("messenger-calls-dark")
     }
 
+    /** Telegram from the Play Store and from telegram.org, both installed
+     *  (issue #93): two rows, told apart. */
+    @Test fun messengerCallsWithTwoTelegrams() {
+        settings(
+            Fixtures.ready().copy(
+                screen = Screen.MESSENGER_CALLS,
+                voipInstalled = com.jemcik.jemrec.calls.VoipApps.KNOWN.filter {
+                    it.pkg in setOf("com.whatsapp", "org.telegram.messenger", "org.telegram.messenger.web")
+                },
+                voipEnabled = setOf("org.telegram.messenger.web"),
+            ),
+        )
+        snap("messenger-calls-two-telegrams")
+    }
+
     // When JemRec is off (issue #37): three choices, each with the same two
     // lines so they read across - the user could not tell the second from the
     // third in an earlier draft. In each look, with JemRec off (a new choice

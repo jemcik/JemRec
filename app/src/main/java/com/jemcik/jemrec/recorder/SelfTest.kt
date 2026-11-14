@@ -276,7 +276,7 @@ object SelfTest {
             lines += "messenger: none switched on"
             return null
         }
-        val labels = enabled.mapNotNull { VoipApps.byPackage(it)?.label }.joinToString(", ")
+        val labels = messengerNames(enabled)
         if (watch.voipApps == null) {
             return "this recorder is too old to record messenger calls. $RESTART"
         }
@@ -404,3 +404,8 @@ object SelfTest {
         return SimpleDateFormat(if (today) "HH:mm" else "d MMM HH:mm", Locale.US).format(Date(millis))
     }
 }
+
+/** The messengers [enabled] (packages), as Settings names them: two
+ *  Telegrams are two (issue #93), where their label said "Telegram" twice. */
+internal fun messengerNames(enabled: Set<String>): String =
+    enabled.mapNotNull { VoipApps.byPackage(it)?.settingsName }.joinToString(", ")
