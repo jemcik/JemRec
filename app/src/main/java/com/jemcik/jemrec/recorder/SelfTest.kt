@@ -15,6 +15,7 @@ import com.jemcik.jemrec.system.ShellGrant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import com.jemcik.jemrec.rethrowingCancellation
 import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -104,30 +105,28 @@ object SelfTest {
         val current = CaptureDaemon.isCurrent(context, answer)
         if (!current) lines += "build:     ${answer.build}, older than this app"
 
-        val outcome = withTimeoutOrNull(TIMEOUT_MS) {
-            runCatching {
-                AudioStream(CaptureDaemon.connect(context)).use { stream ->
-                    // The first packet carries the OpusHead. Without it there
-                    // is no container to write, so a capture that cannot
-                    // produce one cannot record a call either.
-                    val config = stream.readPacket()
-                    require(config != null && config.isConfig) {
-                        "no config packet; the capture did not start"
-                    }
-                    lines += "codec:     ${stream.codecId}"
-                    lines += "config:    ${config.data.size} bytes"
-
-                    var packets = 0
-                    var bytes = 0
-                    while (packets < PACKETS_WANTED) {
-                        val packet = stream.readPacket() ?: break
-                        if (packet.isConfig) continue
-                        packets++
-                        bytes += packet.data.size
-                    }
-                    require(packets > 0) { "the capture opened but produced no audio" }
-                    lines += "audio:     $packets packets, $bytes bytes"
+        val outcome = timed(TIMEOUT_MS) {
+            AudioStream(CaptureDaemon.connect(context)).use { stream ->
+                // The first packet carries the OpusHead. Without it there
+                // is no container to write, so a capture that cannot
+                // produce one cannot record a call either.
+                val config = stream.readPacket()
+                require(config != null && config.isConfig) {
+                    "no config packet; the capture did not start"
                 }
+                lines += "codec:     ${stream.codecId}"
+                lines += "config:    ${config.data.size} bytes"
+
+                var packets = 0
+                var bytes = 0
+                while (packets < PACKETS_WANTED) {
+                    val packet = stream.readPacket() ?: break
+                    if (packet.isConfig) continue
+                    packets++
+                    bytes += packet.data.size
+                }
+                require(packets > 0) { "the capture opened but produced no audio" }
+                lines += "audio:     $packets packets, $bytes bytes"
             }
         }
 
@@ -404,6 +403,15 @@ object SelfTest {
         return SimpleDateFormat(if (today) "HH:mm" else "d MMM HH:mm", Locale.US).format(Date(millis))
     }
 }
+
+/**
+ * [block]'s outcome, or null if [timeoutMs] ran out first. The time running
+ * out is a cancellation, and was caught with the block's own failures: the
+ * self-test said "FAIL - Timed out waiting for 6000 ms" where its own words
+ * for a slow recorder were meant (read from the code, 2026-11-14).
+ */
+internal suspend fun <T> timed(timeoutMs: Long, block: suspend () -> T): Result<T>? =
+    withTimeoutOrNull(timeoutMs) { runCatching { block() }.rethrowingCancellation() }
 
 /** The messengers [enabled] (packages), as Settings names them: two
  *  Telegrams are two (issue #93), where their label said "Telegram" twice. */
