@@ -24,6 +24,7 @@ change behaviour.
 | `com/jemcik/jemrec/shell/CallDecisions.java` | Ours. When a call is recorded, asked about or left out, and what becomes of its recording. Plain Java, tested in `../tests`. |
 | `com/jemcik/jemrec/shell/CallWatch.java` | Ours. The phone's call state as this process hears it, and the start of the watches. |
 | `com/jemcik/jemrec/shell/RecordingSession.java` | Ours. One call's recording, written to a file. |
+| `com/jemcik/jemrec/shell/Closing.java` | Ours. What is made over a file just opened, the file closed again if the making fails. Plain Java, tested in `../tests`. |
 | `com/jemcik/jemrec/shell/Wakes.java` | Ours. Waking the app's service with `am`, in order. |
 | `com/jemcik/jemrec/shell/Reports.java` | Ours. The last call's report, kept for Copy a report. |
 | `com/jemcik/jemrec/shell/Platform.java` | Ours. Every hidden API the core reaches by reflection, and the services rebound to the shell's context. |

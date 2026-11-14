@@ -135,15 +135,22 @@ final class RecordingSession {
         });
         File file = new File(Paths.REC_DIR, name);
         FileOutputStream out = new FileOutputStream(file);
-        // Fails fast and loudly on a device whose HAL will not give us this
-        // source, rather than writing a silent or one-sided file.
-        capture.checkCompatibility();
-        Streamer streamer = new Streamer(out.getFD(), AUDIO_CODEC, SEND_CODEC_META, SEND_FRAME_META);
-        AsyncProcessor recorder = new AudioEncoder(capture, streamer, BIT_RATE, null, null);
-        recorder.start(fatalError -> {
-            if (fatalError) {
-                Ln.e("recording: encoder terminated with an error");
-            }
+        // Until the encoder has it, the file is this method's to close: a
+        // start that failed here - a thread the phone cannot make - left its
+        // descriptor to the garbage collector, if that ever came (the file
+        // stays, empty, as before).
+        AsyncProcessor recorder = Closing.orClose(out, () -> {
+            // Fails fast and loudly on a device whose HAL will not give us this
+            // source, rather than writing a silent or one-sided file.
+            capture.checkCompatibility();
+            Streamer streamer = new Streamer(out.getFD(), AUDIO_CODEC, SEND_CODEC_META, SEND_FRAME_META);
+            AsyncProcessor encoder = new AudioEncoder(capture, streamer, BIT_RATE, null, null);
+            encoder.start(fatalError -> {
+                if (fatalError) {
+                    Ln.e("recording: encoder terminated with an error");
+                }
+            });
+            return encoder;
         });
         Ln.i("recording: started -> " + name);
         Reports.lastReport = report;
