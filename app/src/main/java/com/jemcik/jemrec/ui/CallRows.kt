@@ -111,7 +111,7 @@ private fun outcomeMark(call: CallHistory.Call): ImageVector? = when (call.statu
 /** What became of the call, in a few words, with how long it was where it
  *  connected: "3:12 · Recording was off". */
 internal fun outcomeWords(call: CallHistory.Call): String =
-    listOfNotNull(length(call.seconds).takeIf { call.status != Status.NOT_CONNECTED }, statusWords(call))
+    listOfNotNull(callLength(call.seconds).takeIf { call.status != Status.NOT_CONNECTED }, statusWords(call))
         .joinToString(" · ")
 
 /** What became of a call with no recording, in a few words. */
@@ -143,7 +143,7 @@ private fun kindWord(call: CallHistory.Call): String = when (call.kind) {
 }
 
 /** "3:21", from the call log's seconds. */
-private fun length(seconds: Int): String = "%d:%02d".format(Locale.US, seconds / 60, seconds % 60)
+internal fun callLength(seconds: Int): String = "%d:%02d".format(Locale.US, seconds / 60, seconds % 60)
 
 @Composable
 private fun MemoCallRow(call: CallHistory.Call, day: Day) {

@@ -6,6 +6,7 @@ import com.jemcik.jemrec.adb.AdbTransport.ConnectOutcome
 import com.jemcik.jemrec.capture.TestPhone
 import com.jemcik.jemrec.system.GlobalSettings
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -56,6 +57,18 @@ class RefusedWifiHealthTest {
         repeat(3) { RecorderHealth.onRevive(context, alive = false, connect = ConnectOutcome.REFUSED) }
 
         assertEquals(RecorderHealth.Problem.NETWORK_NOT_ALLOWED, RecorderHealth.cause(context))
+    }
+
+    /** A refusal is this Wi-Fi's in this boot only: after a restart the
+     *  network's handle can come round again for a Wi-Fi allowed since. */
+    @Test fun aRefusalNotedBeforeARestartIsNotTheWifisAfterIt() {
+        Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
+        NetworkRevive.noteWirelessRefused(context)
+        assertTrue(NetworkRevive.wirelessRefusedHere(context))
+
+        Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
+
+        assertFalse(NetworkRevive.wirelessRefusedHere(context))
     }
 
     @Test fun refusalsWithWirelessDebuggingOnAreStillThePairing() {

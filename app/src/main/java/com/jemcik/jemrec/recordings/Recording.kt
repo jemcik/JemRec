@@ -204,7 +204,7 @@ internal object Recordings {
         }
     }
 
-    private fun duration(millis: Long): String {
+    internal fun duration(millis: Long): String {
         if (millis <= 0) return "--:--"
         val total = millis / 1000
         return "%d:%02d".format(Locale.US, total / 60, total % 60)
