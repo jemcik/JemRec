@@ -109,6 +109,14 @@ through the real app and daemon, checking what each one leaves behind:
               closed again on Wi-Fi - or left open where that revive came
               over the port itself; and first, on a Wi-Fi Android has not
               allowed, no asking again after Cancel
+  telegram-builds  Telegram from telegram.org and Telegram Beta - stand-in
+              apps of those package names, built here - are visible to JemRec
+              (Android's own list of what each app may see: the manifest's
+              <queries>, issue #93), and from Android 14 Settings' Messenger
+              calls lists them as Telegram (telegram.org) and Telegram Beta
+  newest-version  Settings' About shows the installed version, as the
+              package says it, and Newest version hands GitHub's newest
+              release to the browser (discussion #91)
   background  the daemon's watch for this phone stopping JemRec in the
               background runs and reads the device's own exit records; from
               Android 15, a Force stop's open is read from the app's own
@@ -2276,6 +2284,110 @@ def listener_grant():
     return "taken away, then allowed by the recorder with no ADB session, and in Android's list"
 
 
+# Telegram's other builds (issue #93): Telegram's source builds them as
+# these (applicationIdSuffix ".web" in TMessagesProj_AppStandalone, ".beta"
+# in TMessagesProj_AppHockeyApp, read 2026-11-14).
+TELEGRAM_BUILDS = {"org.telegram.messenger.web": "Telegram (telegram.org)",
+                   "org.telegram.messenger.beta": "Telegram Beta"}
+
+
+def stub_apk(package, into):
+    """A tiny app named [package], with no code: all Android needs to list
+    it as installed. Built with the SDK's aapt2 and signed with the debug
+    key, so no real app is downloaded or installed."""
+    sdk = os.environ.get("ANDROID_HOME", os.path.expanduser("~/Library/Android/sdk"))
+    tools = os.path.join(sdk, "build-tools", os.environ.get("BUILD_TOOLS", "36.0.0"))
+    platform = os.path.join(sdk, "platforms", "android-36", "android.jar")
+    manifest = os.path.join(into, f"{package}.xml")
+    with open(manifest, "w") as f:
+        f.write('<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+                f'package="{package}" android:versionCode="1" android:versionName="stub">'
+                '<application android:label="Stub" android:hasCode="false"/></manifest>')
+    unaligned, aligned, signed = (os.path.join(into, f"{package}.{n}.apk") for n in ("u", "a", "s"))
+    for command in (
+        [os.path.join(tools, "aapt2"), "link", "--manifest", manifest, "-I", platform,
+         "--min-sdk-version", "31", "--target-sdk-version", "36", "-o", unaligned],
+        [os.path.join(tools, "zipalign"), "-p", "-f", "4", unaligned, aligned],
+        [os.path.join(tools, "apksigner"), "sign", "--ks", os.path.expanduser("~/.android/debug.keystore"),
+         "--ks-pass", "pass:android", "--key-pass", "pass:android", "--out", signed, aligned],
+    ):
+        subprocess.run(command, check=True, capture_output=True, timeout=120)
+    return signed
+
+
+def visible_to_jemrec():
+    """The packages Android lets JemRec see because its manifest names them
+    (`dumpsys package queries`, "queries via package name")."""
+    out = sh("dumpsys package queries")
+    block = out.split("queries via package name:", 1)[-1].split("queries via", 1)[0]
+    seen, mine = set(), False
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.endswith(":"):
+            mine = stripped == f"{PKG}:"
+        elif mine and stripped:
+            seen.add(stripped)
+    return seen
+
+
+def telegram_builds():
+    """Issue #93: Telegram from telegram.org (org.telegram.messenger.web)
+    was called not installed - no <queries> named it, so Android hid it
+    from JemRec. Stand-ins of both builds' package names are installed:
+    Android's own list says JemRec may see them; and where messenger calls
+    can be recorded at all - Android 14 and later - Settings' Messenger
+    calls lists each by the name that tells it from the Play Store's.
+    Removed after."""
+    installed = []
+    workdir = tempfile.mkdtemp(prefix="jemrec-stubs-")
+    try:
+        for package in TELEGRAM_BUILDS:
+            adb("install", "-r", stub_apk(package, workdir), check=True)
+            installed.append(package)
+        missing = set(TELEGRAM_BUILDS) - visible_to_jemrec()
+        assert not missing, f"hidden from JemRec: {sorted(missing)}"
+        if int(sh("getprop ro.build.version.sdk").strip()) < 34:
+            return "visible to JemRec; messenger calls need Android 14, so Settings lists none here"
+        open_settings_row("Messenger calls", "Record calls in", "Messenger calls")
+        names = list(TELEGRAM_BUILDS.values())
+        for name in names:
+            scroll_to(name)
+            assert on_screen(name), f"{name} not listed"
+        return f"visible to JemRec, and listed as {' and '.join(names)}"
+    finally:
+        for package in installed:
+            adb("uninstall", package)
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def newest_version():
+    """Discussion #91: Settings' About shows the installed version - as the
+    package says it - and Newest version hands GitHub's newest release to
+    the browser: Android's own record of the start, its address shortened
+    there to the host. JemRec asks no server anything itself."""
+    version = re.search(r"versionName=(\S+)", sh(f"dumpsys package {PKG}")).group(1)
+    sh("logcat -c")
+    sh("input keyevent KEYCODE_WAKEUP")
+    sh("wm dismiss-keyguard")
+    sh(f"am force-stop {PKG}")
+    sh(f"am start -n {PKG}/.MainActivity")
+    tap_until("Settings", "Back", 30, "the Settings gear")
+    scroll_to("Newest version")
+    assert on_screen("JemRec version") and on_screen(version), f"JemRec version {version} not shown"
+
+    def started():
+        return re.search(r"START u0 \{act=android\.intent\.action\.VIEW dat=https://github\.com/\S*",
+                         adb("logcat", "-d", "-s", "ActivityTaskManager:I"))
+
+    found = tap_until("Newest version", started, 15, "the newest release handed to the browser")
+    # The app that took it, from the same START line: JemRec's own START,
+    # earlier in the log, names JemRec.
+    taken = re.search(r"dat=https://github\.com/\S*.*?cmp=([\w.]+)/", adb("logcat", "-d", "-s", "ActivityTaskManager:I"))
+    if taken:
+        sh(f"am force-stop {taken.group(1)}")
+    return f"JemRec version {version}; {found.group(0)}"
+
+
 def allow_this_wifi():
     """The header's Tap to allow this Wi-Fi, end to end, as 0.25.1 rewrote it:
     on a Wi-Fi Android has not allowed, with the recorder down and port 5555
@@ -2645,6 +2757,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
           debugging_off, off_just_left, background, allow_this_wifi, refused_grant, listener_grant,
+          telegram_builds, newest_version,
           # Last, these two: they turn the emulator's Wi-Fi off and on, and a
           # simulated Wi-Fi that does not come back would fail every check
           # after them.
