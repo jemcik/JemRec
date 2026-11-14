@@ -338,8 +338,8 @@ class AnswerTestCallTest {
      * whatever the app's.
      */
     @Test fun aPassThroughTheMixerLeavesAVoiceFailureToTryTheOtherRoute() {
-        // A phone on 0.31 already: the update's one-time look is behind it.
-        AnsweringMachine.settleRoutesByPath(context)
+        // A phone on 1.0 already: the updates' one-time looks are behind it.
+        AnsweringMachine.settleUpdates(context)
         AnswerDiagnostics.rememberStageOne(context, mapOf("perms" to "ok", "incallmusic" to "1", "screening" to "1"))
         AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
         AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
@@ -373,21 +373,78 @@ class AnswerTestCallTest {
         AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
         AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.WORKS)
         AnswerDiagnostics.record(context, "Wi-Fi Calling", AnswerDiagnostics.Verdict.WORKS, mixer = true)
-        // Its last test's question still open: gone too - answered after the
-        // update, it would file the old route's test under in-call music.
-        AnswerDiagnostics.noteTestArmed(context, true, System.currentTimeMillis() + 60_000L)
-        assertTrue(AnswerDiagnostics.takeArmedTest(context, AnswerDiagnostics.pendingTest(context).let {
-            (it as AnswerDiagnostics.PendingTest.Armed).until
-        }, asking = "VoLTE"))
+        // Its last test's question still open, as 0.30 wrote it: gone too -
+        // answered after the update, it would file the old route's test
+        // under in-call music.
+        com.jemcik.jemrec.Prefs.of(context).edit().putString("answer_test", "asking VoLTE").commit()
         assertTrue(AnswerDiagnostics.results(context).isEmpty())
         assertTrue(AnswerDiagnostics.mixerTypes(context).isEmpty())
         assertNull(AnswerDiagnostics.pendingTest(context))
         assertEquals(AnsweringMachine.ROUTE_MUSIC, AnsweringMachine.route(context))
-        // A test's move after it stands.
+        // And said: not just "not tested".
+        assertEquals(AnswerDiagnostics.Cleared.ROUTES, AnswerDiagnostics.cleared(context))
+        // A test's move after it stands, and the test is the news now.
         AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
         AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.FAILS)
         assertEquals(AnsweringMachine.ROUTE_SCREENING, AnsweringMachine.route(context))
         assertEquals(mapOf("VoLTE" to AnswerDiagnostics.Verdict.FAILS), AnswerDiagnostics.results(context))
+        assertNull(AnswerDiagnostics.cleared(context))
+    }
+
+    /**
+     * A phone on 0.31, its route left alone by 0.31's step: a VoLTE result
+     * may still be a test over Wi-Fi Calling that 0.30 filed there, and
+     * nothing says which version filed it. 1.0 clears it once, with its
+     * mark and a question still to be asked about it, and says so; the rest
+     * stays, and a VoLTE test after it is kept.
+     */
+    @Test fun aVolteResultIsClearedOnceByTheUpdateAndSaidSo() {
+        // 0.31's step already behind it, its results filed since.
+        AnsweringMachine.settleRoutesByPath(context)
+        AnswerDiagnostics.record(context, "2G", AnswerDiagnostics.Verdict.WORKS)
+        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.WORKS, mixer = true)
+        com.jemcik.jemrec.Prefs.of(context).edit().putString("answer_test", "asking VoLTE").commit()
+
+        assertEquals(mapOf("2G" to AnswerDiagnostics.Verdict.WORKS), AnswerDiagnostics.results(context))
+        assertTrue(AnswerDiagnostics.mixerTypes(context).isEmpty())
+        assertNull(AnswerDiagnostics.pendingTest(context))
+        assertEquals(AnswerDiagnostics.Cleared.VOLTE, AnswerDiagnostics.cleared(context))
+
+        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.FAILS)
+        assertEquals(AnswerDiagnostics.Verdict.FAILS, AnswerDiagnostics.results(context)["VoLTE"])
+        assertNull(AnswerDiagnostics.cleared(context))
+    }
+
+    /** The screen may read its question before the results: the step runs
+     *  for that read too, so an old VoLTE question is never asked. */
+    @Test fun theVolteStepRunsForTheQuestionsFirstRead() {
+        AnsweringMachine.settleRoutesByPath(context)
+        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.LIKELY)
+        com.jemcik.jemrec.Prefs.of(context).edit().putString("answer_test", "asking VoLTE").commit()
+
+        assertNull(AnswerDiagnostics.pendingTest(context))
+    }
+
+    /** No VoLTE result, nothing to say: a question about another type and
+     *  an armed test are left as they are. */
+    @Test fun aPhoneWithNoVolteResultIsToldOfNoClearing() {
+        AnsweringMachine.settleRoutesByPath(context)
+        AnswerDiagnostics.record(context, "2G", AnswerDiagnostics.Verdict.WORKS)
+        com.jemcik.jemrec.Prefs.of(context).edit().putString("answer_test", "asking 2G").commit()
+
+        assertEquals(mapOf("2G" to AnswerDiagnostics.Verdict.WORKS), AnswerDiagnostics.results(context))
+        assertEquals(AnswerDiagnostics.PendingTest.Asking("2G"), AnswerDiagnostics.pendingTest(context))
+        assertNull(AnswerDiagnostics.cleared(context))
+    }
+
+    /** The recorder's spawn reads the route first: 1.0's step runs for that
+     *  read too, as 0.31's does. */
+    @Test fun theVolteStepRunsForTheRoutesFirstReadToo() {
+        AnsweringMachine.settleRoutesByPath(context)
+        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.WORKS)
+        AnsweringMachine.wire(context)
+        assertEquals(null, com.jemcik.jemrec.Prefs.of(context).getString("answer_result_VoLTE", null))
+        assertEquals(AnswerDiagnostics.Cleared.VOLTE, AnswerDiagnostics.cleared(context))
     }
 
     /** The recorder's spawn reads the route before anything reads the
@@ -406,9 +463,11 @@ class AnswerTestCallTest {
     @Test fun aPhoneNotMovedByATestKeepsItsRouteAndResults() {
         AnswerDiagnostics.rememberStageOne(context, mapOf("perms" to "ok", "incallmusic" to "0", "screening" to "1"))
         AnsweringMachine.setRoute(context, AnsweringMachine.ROUTE_SCREENING)
-        AnswerDiagnostics.record(context, "VoLTE", AnswerDiagnostics.Verdict.WORKS)
-        assertEquals(mapOf("VoLTE" to AnswerDiagnostics.Verdict.WORKS), AnswerDiagnostics.results(context))
+        // 2G: a VoLTE result goes in 1.0's own step (below).
+        AnswerDiagnostics.record(context, "2G", AnswerDiagnostics.Verdict.WORKS)
+        assertEquals(mapOf("2G" to AnswerDiagnostics.Verdict.WORKS), AnswerDiagnostics.results(context))
         assertEquals(AnsweringMachine.ROUTE_SCREENING, AnsweringMachine.route(context))
+        assertNull(AnswerDiagnostics.cleared(context))
     }
 
     @Test fun aPhoneNeverMovedKeepsItsResults() {

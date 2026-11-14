@@ -64,6 +64,8 @@ data class AnswerUi(
     val stageOne: AnswerDiagnostics.StageOne? = null,
     val checking: Boolean = false,
     val results: Map<String, AnswerDiagnostics.Verdict> = emptyMap(),
+    /** Why an update cleared test results here, until a test is filed. */
+    val cleared: AnswerDiagnostics.Cleared? = null,
     /** A test call: "arming" (the recorder asked), "armed", "running" or
      *  null; and until when it is armed. */
     val test: String? = null,
@@ -175,9 +177,15 @@ class AnswerController(
                 pausedUntil = EmergencyPause.pausedUntil(app),
                 stageOne = AnswerDiagnostics.stageOne(app),
                 results = AnswerDiagnostics.results(app),
+                cleared = AnswerDiagnostics.cleared(app),
             )
         }
     }
+
+    /** [ui] with the results as stored now, and why an update cleared any:
+     *  the two read together wherever the results are. */
+    private fun withResults(ui: AnswerUi, results: Map<String, AnswerDiagnostics.Verdict> = AnswerDiagnostics.results(app)) =
+        ui.copy(results = results, cleared = AnswerDiagnostics.cleared(app))
 
     /**
      * How a take made past its screen ended, when not as a greeting, kept
@@ -828,7 +836,7 @@ class AnswerController(
                 tryTheOtherRoute(type, ::told)
             }
         }
-        _state.update { it.copy(test = null, results = AnswerDiagnostics.results(app), askHeard = asking) }
+        _state.update { withResults(it.copy(test = null, askHeard = asking)) }
     }
 
     /**
@@ -847,13 +855,13 @@ class AnswerController(
         val results = AnswerDiagnostics.results(app)
         if (pending is AnswerDiagnostics.PendingTest.Armed && pending.until != _state.value.testUntil) {
             _state.update {
-                it.copy(test = "armed", testIncoming = pending.incoming, testUntil = pending.until, askHeard = null, results = results)
+                withResults(it.copy(test = "armed", testIncoming = pending.incoming, testUntil = pending.until, askHeard = null), results)
             }
             watchTest(pending.until - System.currentTimeMillis())
             return true
         }
         _state.update {
-            it.copy(test = null, results = results, askHeard = (pending as? AnswerDiagnostics.PendingTest.Asking)?.callType)
+            withResults(it.copy(test = null, askHeard = (pending as? AnswerDiagnostics.PendingTest.Asking)?.callType), results)
         }
         return false
     }
@@ -870,7 +878,7 @@ class AnswerController(
             // Unheard is as failed as measured wrong.
             if (!heard) tryTheOtherRoute(type, tell)
         }
-        _state.update { it.copy(askHeard = null, results = AnswerDiagnostics.results(app)) }
+        _state.update { withResults(it.copy(askHeard = null)) }
     }
 
     /** The route just failed on a [type] of call: the other one next time,
