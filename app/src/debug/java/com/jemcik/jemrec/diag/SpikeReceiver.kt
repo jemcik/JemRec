@@ -90,9 +90,8 @@ import java.security.SecureRandom
  */
 class SpikeReceiver : BroadcastReceiver() {
 
-    internal companion object {
+    private companion object {
         const val TAG = "JemRec"
-        const val PREFS = "jemrec_diag"
         const val KEY_TOKEN = "token"
     }
 
@@ -166,7 +165,7 @@ class SpikeReceiver : BroadcastReceiver() {
     }
 
     private fun tokenFor(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val prefs = DiagPrefs.of(context)
         prefs.getString(KEY_TOKEN, null)?.let { return it }
         val bytes = ByteArray(8).also { SecureRandom().nextBytes(it) }
         val token = hex(bytes)

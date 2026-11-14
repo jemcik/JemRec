@@ -1,7 +1,6 @@
 package com.jemcik.jemrec.ui
 
 import android.app.Application
-import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallHistory
@@ -117,7 +116,7 @@ private val SETTINGS: List<Read> = listOf(
     read(FileNames::format) { copy(fileNames = it) },
     read(FileNames::honorDialer) { copy(honorDialer = it) },
     read(FileNames::inHonorFolder) { copy(inHonorFolder = it) },
-    read({ Prefs.of(it).getBoolean("select_hint_seen", false) }) { copy(selectHintSeen = it) },
+    read(SelectHint::seen) { copy(selectHintSeen = it) },
     read(RecorderTile::isAdded) { copy(tileAdded = it) },
 )
 

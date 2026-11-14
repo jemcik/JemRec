@@ -57,12 +57,13 @@ class PreferencesInventoryTest {
     }
 
     @Test
-    fun theFilesAndTheOneLiteralKeyKeepTheirNames() {
+    fun theFilesKeepTheirNames() {
         assertEquals("jemrec", Prefs.FILE)
         assertTrue("private const val PREFS = \"jemrec_colours\"" in Repo.app)
         assertTrue("private const val READ_FILE = \"jemrec_tags_read\"" in Repo.app)
-        // The one key written as a literal, twice, with no owner of its own.
-        assertEquals(2, Regex("\"select_hint_seen\"").findAll(Repo.app).count())
+        // The one key that was written as a literal twice, with no owner of
+        // its own, has one now (SelectHint), and is written nowhere else.
+        assertEquals(1, Regex("\"select_hint_seen\"").findAll(Repo.app).count())
     }
 
     @Test
@@ -118,9 +119,10 @@ class PreferencesInventoryTest {
 
     private companion object {
         /** Every `const val ...KEY... = "..."` in app/src/main on 2026-11-01
-         *  (0.26), and answer_test from 0.30: preference keys, plus the
-         *  few key-named constants that are file and extra names, which a
-         *  rename breaks just the same. */
+         *  (0.26), and those since: answer_test (0.30), answer_mixer_ and
+         *  answer_routes_by_path (0.31), select_hint_seen (given its owner):
+         *  preference keys, plus the few key-named constants that are file
+         *  and extra names, which a rename breaks just the same. */
         val KEYS = listOf(
             "adb_private_key.der", "adb_refused_in_a_row", "after_call_notice", "answer_default_sim",
             "answer_delay_s", "answer_dnd_short", "answer_longest_s", "answer_mixer_", "answer_on", "answer_result_",
@@ -134,7 +136,7 @@ class PreferencesInventoryTest {
             "port_failed_boot", "port_opened_boot", "prompt_ticket", "qs_tile_added", "recorder_down_alerted",
             "recorder_down_cause", "recorder_down_since", "recorder_enabled", "recording_mode",
             "recordings_tree_uri", "rules_chosen", "rules_contacts", "rules_other_numbers", "save_failing",
-            "setup_background_asked", "setup_complete", "setup_dev_options_confirmed", "setup_paired",
+            "select_hint_seen", "setup_background_asked", "setup_complete", "setup_dev_options_confirmed", "setup_paired",
             "start_without_wifi", "tracked_calls", "voip_apps", "voip_call_notes", "voip_names",
             "wireless_debugging_refused_on", "wireless_debugging_switched_on",
         )

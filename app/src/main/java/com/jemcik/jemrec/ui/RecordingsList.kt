@@ -1,8 +1,6 @@
 package com.jemcik.jemrec.ui
 
 import android.app.Application
-import androidx.core.content.edit
-import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.RecordingMarks
 import com.jemcik.jemrec.recordings.RecordingTags
@@ -129,7 +127,7 @@ internal class RecordingsList(
 
     /** The tap-a-photo hint has done its job once selection has been used. */
     private fun rememberSelectHintSeen() {
-        Prefs.of(app).edit { putBoolean("select_hint_seen", true) }
+        SelectHint.markSeen(app)
     }
 
     fun toggleSelected(recording: Recording) = state.update { current ->
