@@ -107,6 +107,10 @@ object DaemonClient {
      *  (Setup.grantNotificationAccess). A recorder before 0.31 hangs up on it. */
     private const val COMMAND_ALLOW_LISTENER = 'B'.code.toByte()
 
+    /** Android's pairing timeout off, or put back, by the recorder (KeepPaired).
+     *  A recorder before 1.1 hangs up on it. */
+    private const val COMMAND_KEEP_PAIRED = 'J'.code.toByte()
+
     private const val NONCE_BYTES = 16
     private const val MAC_BYTES = 32
     private const val MAC_ALGORITHM = "HmacSHA256"
@@ -284,6 +288,9 @@ object DaemonClient {
         setTracking(context)
         syncGreeting(context)
         setAnswering(context)
+        // Keep JemRec paired, chosen while no recorder answered: setup asks
+        // before pairing. Nothing is sent when nothing waits.
+        KeepPaired.carryOut(context)
     }
 
     /** One command, one line back; null if the daemon could not be asked or
@@ -551,6 +558,31 @@ object DaemonClient {
     internal fun parseListenerReply(line: String?): Boolean? = when (line?.trim()) {
         "LISTENER ok" -> true
         "LISTENER failed" -> false
+        else -> null
+    }
+
+    /**
+     * Android's pairing timeout turned off ([keep]), or put back to what the
+     * recorder found before it turned it off (the recorder's PairingTimeout):
+     * true or false as the recorder read the setting back; null with no
+     * answer - no recorder, one before 1.1, which hangs up on the command, or
+     * one that took longer than the wait.
+     */
+    suspend fun keepPaired(context: Context, keep: Boolean): Boolean? = withContext(Dispatchers.IO) {
+        runCatching {
+            // Ten seconds: a read, a write and its read-back, each a `settings`
+            // run of its own, on a phone that may be slow.
+            open(context, COMMAND_KEEP_PAIRED, byteArrayOf(if (keep) 1 else 0), readMs = 10_000).use { socket ->
+                parsePairingReply(socket.getInputStream().bufferedReader().readLine())
+            }
+        }.getOrNull()
+    }
+
+    /** The recorder's answer to COMMAND_KEEP_PAIRED (protocol.txt, J): null
+     *  for anything else, as no answer. */
+    internal fun parsePairingReply(line: String?): Boolean? = when (line?.trim()) {
+        "PAIRING ok" -> true
+        "PAIRING failed" -> false
         else -> null
     }
 

@@ -111,6 +111,10 @@ object Fixtures {
         },
         voipEnabled = setOf("com.whatsapp", "org.telegram.messenger"),
         voipNames = true,
+        // A phone with an earpiece and a proximity sensor, as nearly every
+        // phone is: Settings offers "Play recordings", all three ways.
+        earpieceAvailable = true,
+        raiseAvailable = true,
         // Fixed, not the build's: a release's bump would change every
         // picture of Settings' foot.
         appVersion = "1.0",
@@ -128,16 +132,21 @@ object Fixtures {
      *  null for the plain slider before it is. The same moment in every look
      *  unless a test says otherwise: Memo's pictures were at 1:47 and the
      *  others' at 1:43, for no reason. */
+    /** A recording playing, on a phone with an earpiece and no headphones
+     *  in - as nearly every phone is - so the player offers the earpiece. */
     fun playing(
         positionMs: Int = 107_000,
         playing: Boolean = true,
         waveform: List<Float>? = Fixtures.waveform(),
         durationMs: Int = 252_000,
+        earpiece: Boolean = false,
     ): UiState = ready().copy(
         playingName = recordings().first().name,
         playing = playing,
         positionMs = positionMs,
         durationMs = durationMs,
         waveform = waveform,
+        earpiece = earpiece,
+        earpieceOffered = true,
     )
 }

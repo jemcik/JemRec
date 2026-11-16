@@ -118,6 +118,18 @@ class HomeScreenshots : ScreenTest() {
         snap("home-playing-dark")
     }
 
+    /** At the earpiece: the button an ear, in the look's colour for on. */
+    @Test fun playingAtTheEarpiece() {
+        home(Fixtures.playing(earpiece = true))
+        snap("home-playing-earpiece")
+    }
+
+    /** A long call's time beside four buttons: it must still fit at 360 dp. */
+    @Test fun playingALongCall() {
+        home(Fixtures.playing(positionMs = 1_925_000, durationMs = 2_706_000))
+        snap("home-playing-long")
+    }
+
     @Test fun playingBeforeItsWaveform() {
         // The first play of a long call, while its loudness is worked out:
         // the plain scrubber, as before there was a waveform.
@@ -256,6 +268,11 @@ class HomeScreenshots : ScreenTest() {
         snap("deck-playing")
     }
 
+    @Test fun deckPlayingAtTheEarpiece() {
+        home(Fixtures.playing(earpiece = true), look = deck)
+        snap("deck-playing-earpiece")
+    }
+
     /** The player in dark: the negative LCD, and its keys' greys. */
     @Config(qualifiers = "+night")
     @Test fun deckPlayingDark() {
@@ -304,6 +321,17 @@ class HomeScreenshots : ScreenTest() {
             look = multitrack,
         )
         snap("multitrack-playing")
+    }
+
+    @Test fun multitrackPlayingAtTheEarpiece() {
+        home(Fixtures.playing(earpiece = true), look = multitrack)
+        snap("multitrack-playing-earpiece")
+    }
+
+    /** Multitrack's timecode is the longest of the three looks' times. */
+    @Test fun multitrackPlayingALongCall() {
+        home(Fixtures.playing(positionMs = 1_925_000, durationMs = 2_706_000), look = multitrack)
+        snap("multitrack-playing-long")
     }
 
     @Config(qualifiers = "+night")

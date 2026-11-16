@@ -13,7 +13,9 @@ import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.playback.PlayThroughSetting
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.KeepPaired
 import com.jemcik.jemrec.recorder.NetworkRevive
 import com.jemcik.jemrec.recorder.RecorderHealth
 import com.jemcik.jemrec.recorder.RecorderSwitch
@@ -45,24 +47,57 @@ private fun <T> read(get: suspend (Application) -> T, put: UiState.(T) -> UiStat
     { app -> val value = get(app); { state -> state.put(value) } }
 
 /**
- * The settings the screen also watches as they are saved (RecorderSwitch's,
- * DebugSwitchesOff's, VoipCallNotes' and DebugNotificationCleaner's watch),
- * read as a reading lands, not with the rest: one saved between the
- * reading's read and its landing - the tile, a notification-access grant
- * that outlived its screen - was shown by the watch and then put back by
- * the reading until the next. From memory, so on the main thread.
+ * The settings saved while a reading may be under way, read as it lands,
+ * not with the rest: one saved between the reading's read and its landing
+ * was shown and then put back by the reading until the next.
+ *
+ * - The ones the screen watches as they are saved (RecorderSwitch's,
+ *   DebugSwitchesOff's, VoipCallNotes' and DebugNotificationCleaner's
+ *   watch): the tile, a notification-access grant that outlived its screen.
+ * - Everything the screen saves and shows at once, without a reading of its
+ *   own: every choice Settings saves from its rows, the tile's answer, the
+ *   selection tip seen, the call-log offer dismissed, the two permissions'
+ *   answers. A reading waits seconds on the recorder; one made then -
+ *   "Play recordings", file names, the rules, the tile - came back as it was
+ *   before (the 1.1 review, 2026-11-15).
+ *
+ * Preferences, read from memory, and permission checks, which Android
+ * answers from its own cache: quick enough for the main thread, where the
+ * landing is. Nothing here may read a file or query a provider.
  */
 internal fun asSaved(app: Application, state: UiState): UiState = state.copy(
     enabled = RecorderSwitch.isOn(app),
     debuggingOff = DebugSwitchesOff.recorderGone(app),
     voipNames = VoipCallNotes.enabled(app),
     debugNotificationHidden = DebugNotificationCleaner.hiding(app),
+    keepPairedWaiting = KeepPaired.waiting(app),
+    keepPairedRefused = KeepPaired.refused(app),
+    automatic = RecordingMode.of(app) == RecordingMode.AUTOMATIC,
+    afterCallNotice = AfterCall.enabled(app),
+    playThrough = PlayThroughSetting.of(app),
+    offMode = DebugSwitchesOff.mode(app),
+    startWithoutWifi = StartWithoutWifi.enabled(app),
+    autoDeleteAfterDays = Retention.maxAgeDays(app),
+    autoDeleteShorterThan = Retention.minSeconds(app),
+    ruleContacts = CallRules.contacts(app),
+    ruleOtherNumbers = CallRules.otherNumbers(app),
+    callTracking = CallTracking.enabled(app),
+    voipEnabled = VoipApps.enabled(app),
+    fileNames = FileNames.format(app),
+    tileAdded = RecorderTile.isAdded(app),
+    selectHintSeen = SelectHint.seen(app),
+    canReadCallLog = CallLogLookup.granted(app),
+    canReadAudio = AudioAccess.granted(app),
+    canReadContacts = CallLogLookup.photosGranted(app),
+    // What is left to offer is read with the rest; a dismissal, as it lands.
+    offerCallLog = state.offerCallLog && !CallLogLookup.bannerDismissed(app),
 )
 
 /**
- * Everything a reading takes in besides the lists and the switches the
- * screen watches ([asSaved]), in the order it is read: each setting once,
- * its read beside the field it fills. A new one is one line here.
+ * Everything a reading takes in besides the lists and the settings read as
+ * it lands ([asSaved]), in the order it is read: each once, its read beside
+ * the field it fills. A new one is one line here - or in [asSaved], for a
+ * setting saved from the screen.
  */
 private val SETTINGS: List<Read> = listOf(
     // CONFIRMED, because this reading decides whether to revive.
@@ -95,19 +130,18 @@ private val SETTINGS: List<Read> = listOf(
     read({ !Setup.isComplete(it) && ShellGrant.switchMayBeOff() }) { copy(systemOptimizationSwitch = it) },
     read(RecordingStore::describe) { copy(folder = it) },
     read({ RecordingStore.treeUri(it) == null }) { copy(usingDefaultFolder = it) },
-    read({ RecordingMode.of(it) == RecordingMode.AUTOMATIC }) { copy(automatic = it) },
-    read(AfterCall::enabled) { copy(afterCallNotice = it) },
-    read(DebugSwitchesOff::mode) { copy(offMode = it) },
-    read(StartWithoutWifi::enabled) { copy(startWithoutWifi = it) },
+    // An earpiece, and a proximity sensor to know when it is at the ear:
+    // what "Play recordings" offers.
+    read({ EarWatch.hasEarpiece(it) to EarWatch.canDarkenScreen(it) }) { (earpiece, darkens) ->
+        copy(earpieceAvailable = earpiece, raiseAvailable = earpiece && darkens)
+    },
+    // Android's pairing timeout, for Keep JemRec paired: a settings query.
+    read(KeepPaired::timeoutMs) { copy(pairingKept = it == 0L, pairingDays = KeepPaired.days(it)) },
     read(StartWithoutWifi::readyForUser) { copy(portSet = it) },
     read(StartWithoutWifi::openedThisBoot) { copy(portOurs = it) },
     read(StartWithoutWifi::failedThisBoot) { copy(portFailed = it) },
     read(StartWithoutWifi::closeFailedThisBoot) { copy(portCloseFailed = it) },
-    read(CallLogLookup::granted) { copy(canReadCallLog = it) },
-    read(AudioAccess::granted) { copy(canReadAudio = it) },
     read({ CallLogLookup.anythingLeftToOffer(it) && !CallLogLookup.bannerDismissed(it) }) { copy(offerCallLog = it) },
-    read(Retention::maxAgeDays) { copy(autoDeleteAfterDays = it) },
-    read(Retention::minSeconds) { copy(autoDeleteShorterThan = it) },
     // Whose calls: the choice, the contacts chosen - a contacts query or two
     // each, so only for the choices that list them - and whether contacts
     // may be read at all, which telling who is who needs. Each read once.
@@ -116,20 +150,16 @@ private val SETTINGS: List<Read> = listOf(
         val canReadContacts = CallLogLookup.photosGranted(app)
         val listed = canReadContacts && (contacts == CallRules.Contacts.ALL_BUT || contacts == CallRules.Contacts.ONLY)
         Triple(contacts, canReadContacts, if (listed) CallRules.chosen(app) else emptyList())
-    }) { (contacts, canReadContacts, chosen) ->
-        copy(ruleContacts = contacts, canReadContacts = canReadContacts, ruleChosen = chosen)
+    }) { (_, _, chosen) ->
+        // The choice and the permission are read as the reading lands
+        // (asSaved); the contacts chosen, a query, here.
+        copy(ruleChosen = chosen)
     },
-    read(CallRules::otherNumbers) { copy(ruleOtherNumbers = it) },
-    read(CallTracking::enabled) { copy(callTracking = it) },
     read(VoipApps::installed) { copy(voipInstalled = it) },
     read(VoipApps::supported) { copy(voipSupported = it) },
-    read(VoipApps::enabled) { copy(voipEnabled = it) },
-    read(FileNames::format) { copy(fileNames = it) },
     read(FileNames::honorDialer) { copy(honorDialer = it) },
     read(FileNames::inHonorFolder) { copy(inHonorFolder = it) },
-    read(SelectHint::seen) { copy(selectHintSeen = it) },
     read(::appVersion) { copy(appVersion = it) },
-    read(RecorderTile::isAdded) { copy(tileAdded = it) },
 )
 
 /**

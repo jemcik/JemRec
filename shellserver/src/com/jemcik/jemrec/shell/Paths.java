@@ -25,6 +25,11 @@ final class Paths {
 
     static final File REPORT_FILE = new File(REC_DIR, "jemrec-lastcall.txt");
 
+    /** Android's pairing timeout as it was before this process turned it
+     *  off for the app's Keep JemRec paired (PairingTimeout): what is put
+     *  back when the app asks, and when it is uninstalled. */
+    static final File PAIRING_TIMEOUT = new File(REC_DIR, "jemrec-pairing-timeout");
+
     /** A rec-file name the app sent is only ever one of ours in REC_DIR. */
     static @Nullable File recFileFor(String name) {
         if (name == null || !name.startsWith(REC_PREFIX) || !name.endsWith(REC_SUFFIX)

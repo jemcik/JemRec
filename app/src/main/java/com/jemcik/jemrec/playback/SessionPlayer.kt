@@ -60,6 +60,11 @@ internal class SessionPlayer(
     private var playing = PlaybackRules.Playing(wanted = false)
     private var why = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
 
+    /** Where it sounds: JemRec's screen moves it (AtTheEar, EarWatch) by
+     *  the audio attributes it asks for - voice-call audio for the earpiece.
+     *  Each recording starts on the speaker. */
+    private var output = Output.SPEAKER
+
     /** Whether the phone is locked: PlaybackService tells it. */
     var locked = false
         set(value) {
@@ -71,7 +76,7 @@ internal class SessionPlayer(
     override fun getState(): State {
         val state = State.Builder()
             .setAvailableCommands(COMMANDS)
-            .setAudioAttributes(ATTRIBUTES)
+            .setAudioAttributes(attributes(output))
             .setPlayWhenReady(playing.wanted, why)
             .setPlaybackSuppressionReason(
                 if (playing.heldBack) Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS
@@ -105,13 +110,43 @@ internal class SessionPlayer(
     override fun handleSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> {
         close()
         item = mediaItems.firstOrNull()
+        output = Output.SPEAKER
         return done()
     }
 
     override fun handleRemoveMediaItems(fromIndex: Int, toIndex: Int): ListenableFuture<*> {
         close()
         item = null
+        output = Output.SPEAKER
         return done()
+    }
+
+    /**
+     * To the earpiece or back, where it was: playing on if it played, paused
+     * if not. The file opens again - MediaPlayer takes its attributes only
+     * before prepare() - and its audio focus is kept, as nothing else has
+     * played. Measured on the Honor, 2026-11-15: 69-83 ms, heard as smooth.
+     */
+    override fun handleSetAudioAttributes(audioAttributes: AudioAttributes, handleAudioFocus: Boolean): ListenableFuture<*> {
+        val wanted = outputOf(audioAttributes)
+        if (wanted == output) return done()
+        output = wanted
+        if (opened) reopen()
+        return done()
+    }
+
+    private fun reopen() {
+        val uri = item?.localConfiguration?.uri ?: return
+        val at = engine.positionMs
+        opened = engine.open(uri, output, onFinished = ::finished, onFailed = ::failed)
+        if (!opened) {
+            error = PlaybackException("could not open ${item?.mediaId}", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
+            playing = PlaybackRules.Playing(wanted = false)
+            focus.abandon()
+            return
+        }
+        if (at > 0) engine.seekTo(at)
+        if (playing.sounding) sound()
     }
 
     override fun handlePrepare(): ListenableFuture<*> {
@@ -120,7 +155,7 @@ internal class SessionPlayer(
         // error kept the state IDLE over a recording playing.
         error = null
         val uri = item.localConfiguration?.uri
-        opened = uri != null && engine.open(uri, onFinished = ::finished, onFailed = ::failed)
+        opened = uri != null && engine.open(uri, output, onFinished = ::finished, onFailed = ::failed)
         if (!opened) {
             error = PlaybackException("could not open ${item.mediaId}", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
             playing = PlaybackRules.Playing(wanted = false)
@@ -248,11 +283,13 @@ internal class SessionPlayer(
             Player.COMMAND_GET_TIMELINE,
             Player.COMMAND_GET_METADATA,
             Player.COMMAND_GET_AUDIO_ATTRIBUTES,
+            Player.COMMAND_SET_AUDIO_ATTRIBUTES,
             Player.COMMAND_RELEASE,
         ).build()
 
         /** What the system's controls may do with it: play, pause, seek -
-         *  never choose what plays, which is JemRec's alone. */
+         *  never choose what plays, nor move it to the earpiece or back,
+         *  which are JemRec's alone. */
         val TRANSPORT: Player.Commands = Player.Commands.Builder().addAll(
             Player.COMMAND_PLAY_PAUSE,
             Player.COMMAND_STOP,
@@ -263,9 +300,25 @@ internal class SessionPlayer(
             Player.COMMAND_GET_AUDIO_ATTRIBUTES,
         ).build()
 
-        /** Speech, on the media stream: as RecordingPlayer plays it. */
-        private val ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
+        /** Speech, as RecordingPlayer plays it for [output]: the media
+         *  stream, or voice-call audio at the earpiece. The session's volume
+         *  keys follow these (Media3 hands them to the platform session). */
+        fun attributes(output: Output): AudioAttributes = when (output) {
+            Output.SPEAKER -> SPEAKER_ATTRIBUTES
+            Output.EARPIECE -> EARPIECE_ATTRIBUTES
+        }
+
+        /** Which output [attributes] are for. */
+        fun outputOf(attributes: AudioAttributes): Output =
+            if (attributes.usage == C.USAGE_VOICE_COMMUNICATION) Output.EARPIECE else Output.SPEAKER
+
+        private val SPEAKER_ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+            .build()
+
+        private val EARPIECE_ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_VOICE_COMMUNICATION)
             .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
             .build()
     }

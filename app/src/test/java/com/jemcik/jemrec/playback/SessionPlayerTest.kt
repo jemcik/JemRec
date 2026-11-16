@@ -28,15 +28,21 @@ class SessionPlayerTest {
     private class Engine : PlaybackEngine {
         var opensFail = false
         var opened: Uri? = null
+        var output: Output? = null
+        var opens = 0
         var sounding = false
         val seeks = mutableListOf<Int>()
         var finish: () -> Unit = {}
         var fail: () -> Unit = {}
         private var position = 0
 
-        override fun open(uri: Uri, onFinished: () -> Unit, onFailed: () -> Unit): Boolean {
+        override fun open(uri: Uri, output: Output, onFinished: () -> Unit, onFailed: () -> Unit): Boolean {
+            // As MediaPlayer's: a new open lets the last one go.
+            close()
             if (opensFail) return false
+            opens++
             opened = uri
+            this.output = output
             finish = onFinished
             fail = onFailed
             position = 0
@@ -251,6 +257,101 @@ class SessionPlayerTest {
         assertNull(engine.opened)
         assertFalse(focus.held)
         assertNull(player.currentMediaItem)
+    }
+
+    private fun moveTo(output: Output) {
+        player.setAudioAttributes(SessionPlayer.attributes(output), false)
+        idle()
+    }
+
+    @Test fun itStartsOnTheSpeaker() {
+        play()
+        assertEquals(Output.SPEAKER, engine.output)
+        assertEquals(Output.SPEAKER, SessionPlayer.outputOf(player.audioAttributes))
+    }
+
+    /** At the ear: the file opens again as voice-call audio, where it was,
+     *  playing on, with the audio it already had. */
+    @Test fun movedToTheEarpieceItPlaysOnFromWhereItWas() {
+        play()
+        player.seekTo(12_000)
+        idle()
+        moveTo(Output.EARPIECE)
+        assertEquals(Output.EARPIECE, engine.output)
+        assertEquals(2, engine.opens)
+        assertEquals(12_000, engine.seeks.last())
+        assertTrue(engine.sounding)
+        assertTrue(player.isPlaying)
+        assertTrue(focus.held)
+        assertEquals(androidx.media3.common.C.USAGE_VOICE_COMMUNICATION, player.audioAttributes.usage)
+        assertEquals(Output.EARPIECE, SessionPlayer.outputOf(player.audioAttributes))
+    }
+
+    @Test fun movedWhilePausedItStaysPaused() {
+        play()
+        player.pause()
+        idle()
+        moveTo(Output.EARPIECE)
+        assertEquals(Output.EARPIECE, engine.output)
+        assertFalse(engine.sounding)
+        assertFalse(player.playWhenReady)
+        player.play()
+        idle()
+        assertTrue(engine.sounding)
+        assertEquals(Output.EARPIECE, engine.output)
+    }
+
+    @Test fun movedBackItPlaysOnTheSpeaker() {
+        play()
+        moveTo(Output.EARPIECE)
+        moveTo(Output.SPEAKER)
+        assertEquals(Output.SPEAKER, engine.output)
+        assertTrue(engine.sounding)
+    }
+
+    @Test fun askedForWhereItAlreadyIsNothingOpensAgain() {
+        play()
+        moveTo(Output.SPEAKER)
+        assertEquals(1, engine.opens)
+    }
+
+    /** Before it opens, the move waits for the open. */
+    @Test fun movedBeforeItOpensItOpensThere() {
+        player.setMediaItem(MediaItem.Builder().setMediaId("a.ogg").setUri("file:///recordings/a.ogg").build())
+        moveTo(Output.EARPIECE)
+        player.prepare()
+        player.play()
+        idle()
+        assertEquals(Output.EARPIECE, engine.output)
+        assertTrue(engine.sounding)
+    }
+
+    @Test fun aRecordingThatWillNotOpenAgainIsReportedAndGivesTheAudioBack() {
+        play()
+        engine.opensFail = true
+        moveTo(Output.EARPIECE)
+        assertNotNull(player.playerError)
+        assertFalse(player.playWhenReady)
+        assertFalse(engine.sounding)
+        assertFalse(focus.held)
+    }
+
+    @Test fun eachRecordingStartsOnTheSpeaker() {
+        play()
+        moveTo(Output.EARPIECE)
+        player.setMediaItem(MediaItem.Builder().setMediaId("b.ogg").setUri("file:///recordings/b.ogg").build())
+        player.prepare()
+        player.play()
+        idle()
+        assertEquals(Output.SPEAKER, engine.output)
+        assertEquals(Output.SPEAKER, SessionPlayer.outputOf(player.audioAttributes))
+    }
+
+    /** The earpiece is the screen's to choose, at the ear: never a car's or
+     *  a lock screen's. */
+    @Test fun onlyJemRecMovesItToTheEarpiece() {
+        assertTrue(SessionPlayer.COMMANDS.contains(Player.COMMAND_SET_AUDIO_ATTRIBUTES))
+        assertFalse(SessionPlayer.TRANSPORT.contains(Player.COMMAND_SET_AUDIO_ATTRIBUTES))
     }
 
     @Test fun theSystemsControlsPlayAndSeekButNeverChooseWhatPlays() {

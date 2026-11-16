@@ -20,6 +20,8 @@ import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.LastCallReport
 import com.jemcik.jemrec.capture.PlaybackService
+import com.jemcik.jemrec.playback.Output
+import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.recorder.BackgroundKill
 import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recorder.SelfTest
@@ -307,6 +309,19 @@ class MainViewModel @JvmOverloads constructor(
      *  plays on (Playback.hidden). */
     fun screenHidden() = playback.hidden()
 
+    /** In front, or not: a recording moves to the earpiece at the ear only
+     *  while the screen is (EarWatch). */
+    fun screenResumed(resumed: Boolean) = playback.resumed(resumed)
+
+    /** The player's earpiece button. */
+    override fun chooseOutput(output: Output) = playback.choose(output)
+
+    /** Settings' "Play recordings": saved, and what plays follows it. */
+    fun setPlayThrough(playThrough: PlayThrough) {
+        settings.setPlayThrough(playThrough)
+        playback.playThrough(playThrough)
+    }
+
     /** Play or pause a recording (Playback). */
     override fun play(recording: Recording) = playback.play(recording)
 
@@ -469,6 +484,7 @@ class MainViewModel @JvmOverloads constructor(
     fun setEnabled(on: Boolean) = recorder.setEnabled(on)
 
     fun setHideDebugNotification(hide: Boolean) = recorder.setHideDebugNotification(hide)
+    fun setKeepPaired(keep: Boolean) = recorder.setKeepPaired(keep)
 
     /** The screen is gone for good; a recording playing goes on playing,
      *  under the system's controls, until they stop it. */

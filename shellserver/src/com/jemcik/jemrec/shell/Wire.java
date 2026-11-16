@@ -171,6 +171,17 @@ final class Wire {
      */
     static final int COMMAND_ALLOW_LISTENER = 'B';
 
+    /**
+     * Keep JemRec paired - setup's question and setup's end, the switch in
+     * Settings, and Start fresh's put back: one byte, 1 to turn Android's
+     * pairing timeout off, 0 to put back what it was before (PairingTimeout). The app cannot keep what it was where the Custodian
+     * can read it after an uninstall, and only something with shell rights
+     * is sure to be allowed the write. Replies PAIRING ok, or PAIRING failed;
+     * an older recorder hangs up on it, and the app asks again once a newer
+     * one is up.
+     */
+    static final int COMMAND_KEEP_PAIRED = 'J';
+
     /** The answer to a ping, bare or proved: the protocol and this jar's
      *  build. */
     static String pong(String build) {
@@ -200,6 +211,11 @@ final class Wire {
      *  listener as allowed, read back after the grant. */
     static String listener(boolean allowed) {
         return "LISTENER " + (allowed ? "ok" : "failed");
+    }
+
+    /** COMMAND_KEEP_PAIRED's answer: whether the timeout reads as asked. */
+    static String pairing(boolean ok) {
+        return "PAIRING " + (ok ? "ok" : "failed");
     }
 
     /** SKIP: "current", "next" or "cancelled". */

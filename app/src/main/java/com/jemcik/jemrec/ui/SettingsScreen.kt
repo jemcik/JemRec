@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.R
 import com.jemcik.jemrec.calls.CallRules
+import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.recordings.Trash
@@ -65,7 +66,7 @@ import com.jemcik.jemrec.ui.theme.LocalLookChoice
 import com.jemcik.jemrec.ui.theme.lookMono
 
 /** Which of Settings' dialogs is open. Saved by name, so a rotation keeps it. */
-private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT, TRACKING_OFF }
+private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT, TRACKING_OFF, PLAY_THROUGH }
 
 /**
  * The things that are not the answer to "would a call be recorded right now".
@@ -151,6 +152,19 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
             onChoose = { vm.setAutoDelete(shorterThan = it) },
             onDismiss = { dialog = null },
             enabled = !state.busy,
+        )
+        SettingsDialog.PLAY_THROUGH -> ChoiceDialog(
+            title = "Play recordings",
+            intro = "Headphones or Bluetooth, when they are in, always come first. The player's " +
+                "button moves the recording playing, until the next.",
+            choices = PlayThrough.entries.filter { it != PlayThrough.LOUDSPEAKER_AND_EAR || state.raiseAvailable },
+            selected = state.playThrough.takeIf { it != PlayThrough.LOUDSPEAKER_AND_EAR || state.raiseAvailable }
+                ?: PlayThrough.LOUDSPEAKER,
+            label = { playThroughLabel(it, state.raiseAvailable) },
+            detail = ::playThroughDetail,
+            detailIsExample = false,
+            onChoose = vm::setPlayThrough,
+            onDismiss = { dialog = null },
         )
         // Exact call tracking switched off with the answering machine on: the
         // machine goes off with it, and did without a word (the user found it,
@@ -287,6 +301,22 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                     icon = SettingsIcons.Palette,
                     onClick = { vm.showScreen(Screen.THEME) },
                 )
+            }
+        }
+
+        // Where recordings play (AtTheEar): only on a phone with an earpiece -
+        // a tablet has none - and the earpiece at the ear only with a
+        // proximity sensor to know when it is there.
+        if (state.earpieceAvailable) {
+            SettingsGroup("Playing") {
+                row {
+                    SettingsRow(
+                        title = "Play recordings",
+                        summary = playThroughLabel(state.playThrough, state.raiseAvailable),
+                        icon = EarpieceIcons.Ear,
+                        onClick = { dialog = SettingsDialog.PLAY_THROUGH },
+                    )
+                }
             }
         }
 
@@ -445,6 +475,22 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                     onCheckedChange = vm::setHideDebugNotification,
                 )
             }
+            // Setup's pairing question, answerable again (KeepPaired). The
+            // switch shows Android's setting as read, whoever set it.
+            row {
+                SwitchRow(
+                    title = "Keep JemRec paired",
+                    summary = keepPairedSummary(state),
+                    summaryColor = if (state.keepPairedRefused) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    icon = SettingsIcons.Link,
+                    checked = state.pairingKept,
+                    onCheckedChange = vm::setKeepPaired,
+                )
+            }
         }
 
         SettingsGroup("Troubleshooting") {
@@ -521,6 +567,22 @@ private const val KEPT_AND_TRASH = "Recordings you mark to keep are never remove
 /** An age to choose, in the header's words for it (ageWords) - or Never. */
 private fun ageChoice(days: Int): String = if (days == 0) "Never" else ageWords(days)
 
+/** "Play recordings" in Settings' words. Without a proximity sensor the
+ *  earpiece at the ear is not offered, and the default reads as the
+ *  loudspeaker it is there (AtTheEar watches no sensor). */
+internal fun playThroughLabel(playThrough: PlayThrough, raiseAvailable: Boolean): String = when (playThrough) {
+    PlayThrough.LOUDSPEAKER -> "Loudspeaker"
+    PlayThrough.LOUDSPEAKER_AND_EAR -> if (raiseAvailable) "Loudspeaker, earpiece at your ear" else "Loudspeaker"
+    PlayThrough.EARPIECE -> "Earpiece"
+}
+
+/** Each choice's line in the dialog: what holding the phone does. */
+private fun playThroughDetail(playThrough: PlayThrough): String = when (playThrough) {
+    PlayThrough.LOUDSPEAKER -> "Holding the phone to your ear changes nothing"
+    PlayThrough.LOUDSPEAKER_AND_EAR -> "Hold the phone to your ear for the earpiece, lower it for the loudspeaker"
+    PlayThrough.EARPIECE -> "Never moves to the loudspeaker by itself"
+}
+
 /**
  * Why a switch that needs notification access was not turned on
  * (Setup.grantNotificationAccess), in one wording for both. It said "it
@@ -530,6 +592,27 @@ private fun ageChoice(days: Int): String = if (days == 0) "Never" else ageWords(
 internal fun grantProblem(problem: Setup.GrantProblem): String = when (problem) {
     Setup.GrantProblem.NO_ANSWER -> "Could not turn this on: the recorder did not answer. Try again once JemRec is ready to record."
     Setup.GrantProblem.REFUSED -> "Could not turn this on: Android refused it."
+}
+
+/**
+ * Keep JemRec paired's summary: what Android does with the pairing as the
+ * switch stands, and what keeping it costs - a computer's approval is kept
+ * too, and turning it off can cost the pairing at once. A choice no recorder
+ * has carried out says when it will be; one the recorder could not, says so,
+ * in red, until a try works.
+ */
+internal fun keepPairedSummary(state: UiState): String = when {
+    state.keepPairedRefused -> "Could not change this: Android refused it"
+    state.keepPairedWaiting == true && !state.pairingKept ->
+        "Turns on when the recorder is running again"
+    state.keepPairedWaiting == false && state.pairingKept ->
+        "Turns off when the recorder is running again"
+    // Turned off, Android deletes a pairing older than its days at once:
+    // its own check runs as the setting changes (AdbDebuggingManager).
+    state.pairingKept -> "No pairing is forgotten - nor a computer you allowed for USB debugging. " +
+        "Turned off, one older than Android's limit goes at once"
+    else -> "Android forgets JemRec's pairing ${pairingDays(state.pairingDays)} after it is made. " +
+        "Then JemRec has to pair again"
 }
 
 /** A format's name - the same words in the dialog and on the row, so the row

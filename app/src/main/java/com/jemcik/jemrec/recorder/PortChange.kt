@@ -99,6 +99,16 @@ object PortChange {
         }
     }
 
+    /** For Start fresh's close of the port: its session opened while
+     *  JemRec's key still lets it in - before Android's pairing timeout is
+     *  put back, which can delete the key at once (Setup.reset). Nothing to
+     *  open where no port of ours is set, or a session is open. */
+    internal suspend fun openForReset(context: Context) {
+        val w = ReviveWorld.Live(context)
+        if (!StartWithoutWifi.openedThisBoot(context) || w.portSet() == false || w.connected) return
+        w.connect(StartWithoutWifi.PORT)
+    }
+
     /** Start fresh's close of the port (RecorderLifecycle.endForReset),
      *  under the recorder's lock. */
     internal suspend fun closeForReset(context: Context): Boolean {

@@ -1651,12 +1651,20 @@ SETUP = [
     ("p", "JemRec does **not** ask for microphone access and does not have it. "
           "The recording is done by a separate, more privileged helper that the "
           "app starts later; the app itself only collects the finished file."),
-    ("p", "**Then one question.** Before you switch anything on, JemRec says what "
+    ("p", "**Then two questions.** Before you switch anything on, JemRec says what "
           "stays on: USB debugging and Wireless debugging, for as long as it is "
           "installed, turned back on if they go off. Android shows a notification "
           "for as long as debugging is on, and JemRec asks whether to hide it. "
           "Either answer works. Hidden, nothing on screen reminds you that "
           "debugging is on; you can change it later in Settings."),
+    ("p", "Then whether to **keep JemRec paired**. Android forgets a debugging "
+          "pairing 7 days after it is made; calls are still recorded, but the "
+          "next time the recorder has to start — after a restart, say — you "
+          "would pair again. **Keep it paired** turns Android's pairing timeout "
+          "off — *Disable adb authorization timeout*, in Developer options on "
+          "phones that show it (an Honor does not) — which keeps a computer you "
+          "allowed over a cable too; **Leave it** leaves Android's "
+          "7 days. You can change it later in Settings."),
 
     ("h2", "Step 2 — Turn on Developer options"),
     ("p", "Skip this if Developer options are already on."),
@@ -2001,6 +2009,19 @@ SETUP = [
           "out pause it until you play it again. It does not start during a "
           "call. The notification's pause, or the chevron, stops it; swiping "
           "JemRec away leaves it playing, as music apps do."),
+    ("p", "**At your ear.** Hold the phone to your ear while a recording plays, "
+          "and it moves to the earpiece and the screen goes dark, as in a call - "
+          "on a phone that leaves its screen on, such as an Honor on its side, "
+          "JemRec blacks out its own and takes no touch until you lower it. "
+          "Lower the phone and it goes back to the loudspeaker, playing on. The "
+          "button at the top right of the player shows where it plays - a "
+          "loudspeaker or an ear - and a tap moves it to the other, for that "
+          "recording, without raising the phone. With headphones in, the "
+          "recording plays in them and the button is not there. **Settings → "
+          "Playing → Play recordings** chooses: the loudspeaker alone, for a "
+          "phone whose sensor a hand keeps setting off; the loudspeaker with the "
+          "earpiece at your ear, as above; or the earpiece, never switched to "
+          "the loudspeaker by itself."),
     ("p", "**Finding a recording.** The chips above the list narrow it: "
           "favourites, the phone or a messenger, kept, messages. The magnifier "
           "opens a search by name, number or time. Chips of one kind add up - "
@@ -2229,6 +2250,25 @@ SETUP = [
           "seconds, it puts up the same notification, and says how long it was "
           "held back once the recorder is back."),
 
+    ("h2", "Keeping the pairing"),
+    ("p", "Android forgets a debugging pairing 7 days after it is made, however "
+          "often JemRec connects over Wireless debugging, which never renews it. "
+          "The recorder runs on, but the next time it has to start, after a "
+          "restart or an unplug, the phone turns JemRec away and JemRec goes back "
+          "to its pairing step. Measured on an Honor: after the cable came out of "
+          "a computer every connection was refused, and Android no longer "
+          "listed JemRec's pairing — an unplug earlier that day had brought the "
+          "recorder back in seconds; on the emulator, with Android's time cut to two minutes, "
+          "JemRec's pairing went three seconds later, a second after JemRec had "
+          "connected."),
+    ("p", "**Keep JemRec paired** — the question after the debugging one, and "
+          "in Settings — turns that timeout off: on phones that show it, it is "
+          "*Disable adb authorization timeout* in Developer options (an Honor "
+          "does not), and it keeps a computer you allowed over a cable as well. JemRec's recorder changes it and "
+          "remembers what it was; turned off in Settings, by Start fresh, or by "
+          "uninstalling JemRec, it goes back to that, while the recorder runs. If you set it yourself "
+          "before, JemRec leaves it as you set it."),
+
     ("h2", "What the app tells you"),
     ("p", "The header is the honest indicator:"),
     # (the header's state, the line under it, meaning): the words are the
@@ -2245,7 +2285,8 @@ SETUP = [
          "network** and tap **Allow**; the recorder starts a few seconds "
          "later."),
         ("CANNOT", "PAIR_AGAIN", "Wireless debugging turns JemRec away, as it does "
-         "once its pairing is deleted. JemRec goes to the pairing step by itself "
+         "once its pairing is deleted — Android deletes it 7 days after it is "
+         "made, unless Keep JemRec paired is on. JemRec goes to the pairing step by itself "
          "as soon as the home screen shows; the line is there for the moment "
          "before."),
         ("STARTING", None, "Rebuilding the recorder. A few seconds."),
@@ -2327,6 +2368,14 @@ SETUP = [
         "**Theme** — Memo, Deck or Multitrack, and light, dark or as the phone; "
         "see Three looks.",
     ]),
+    ("p", "**Playing**"),
+    ("ul", [
+        "**Play recordings** — on the loudspeaker; on the loudspeaker with the "
+        "earpiece while you hold the phone to your ear (the default); or on the "
+        "earpiece, never switched to the loudspeaker by itself. Headphones, when "
+        "in, come first. Only on a phone with an earpiece; the earpiece at your "
+        "ear only with a proximity sensor.",
+    ]),
     ("p", "**Saving**"),
     ("ul", [
         "**Saving to** — which folder recordings go in, and back to the default.",
@@ -2362,6 +2411,12 @@ SETUP = [
         "this is only about whether Android's notification saying so is shown. "
         "After setup JemRec's recorder grants what it needs, so turning it on "
         "needs JemRec ready to record.",
+        "**Keep JemRec paired** — the second question in step 1, changeable. On, "
+        "Android forgets no pairing, a computer's neither; off, it forgets "
+        "JemRec's 7 days after it is made. JemRec's recorder changes it, so a "
+        "change made while the recorder is down says it waits for it. Turned "
+        "off — here, by Start fresh, or by uninstalling — it goes back to what "
+        "it was before JemRec turned it on, by the recorder, so while it runs. See Keeping the pairing.",
     ]),
     ("p", "**Troubleshooting**"),
     ("ul", [
@@ -2419,7 +2474,8 @@ SETUP = [
           "takes to fix it for a phone the developer has never held."),
     ("p", "**JemRec is back on its pairing step, or a notification says it "
           "cannot connect.** The phone has most likely forgotten its pairing — "
-          "Wireless debugging → Paired devices no longer lists JemRec, as after "
+          "Wireless debugging → Paired devices no longer lists JemRec, as 7 days "
+          "after it was made unless **Keep JemRec paired** is on, or after "
           "deleting it there. Once Wireless debugging has turned JemRec away twice "
           "in a row, the home screen gives way to the pairing step, and the "
           "notification's **Pair again** opens it too: a fresh code puts "
@@ -2435,12 +2491,13 @@ SETUP = [
     ("p", "The recorder is a separate system process rather than part of the app, "
           "so removing the package does not stop it immediately. It checks every "
           "few minutes whether JemRec is still installed, and when it is not it "
-          "turns both debugging switches off, deletes its own files and exits. A "
+          "puts Android's pairing timeout back if Keep JemRec paired turned it "
+          "off, turns both debugging switches off, deletes its own files and exits. A "
           "reinstall is never fooled by one that has not got there yet, either: "
           "the app only trusts a recorder it started itself, and retires any "
           "other on sight."),
     ("note", "**What no app can undo.** The phone goes on trusting the key it "
-             "paired with, in a list only root can edit, so it stays under "
+             "paired with, until Android's 7 days are up, in a list only root can edit, so it stays under "
              "*Wireless debugging → Paired devices*; remove it there with the "
              "gear beside it. Developer options stays on if you turned it on. And "
              "Start fresh leaves the one privileged setting granted, because "
@@ -2462,7 +2519,8 @@ SETUP = [
           "been paired with this phone can connect to it on the same Wi-Fi, and one "
           "you have allowed before can connect over a cable — so check "
           "*Wireless debugging → Paired devices* now and then and remove any you do "
-          "not recognise. If you stop using JemRec, uninstall it first, then turn "
+          "not recognise. With **Keep JemRec paired** on, Android forgets none of "
+          "them by itself. If you stop using JemRec, uninstall it first, then turn "
           "Wireless debugging, USB debugging and Developer options back off."),
 ]
 
@@ -3093,8 +3151,8 @@ WHY = [
      "Phone calls, and WhatsApp, Telegram, Viber and Google Meet calls on Android "
      "14 or newer."),
     ("self", "No root, no computer, no second app",
-     "The phone pairs with its own Wireless debugging and sets itself up, once, "
-     "in a few minutes."),
+     "The phone pairs with its own Wireless debugging and sets itself up in a "
+     "few minutes &mdash; once, if you let JemRec keep the pairing."),
     ("lock", "Nothing leaves your phone",
      "No account, no cloud, no analytics. The only network JemRec uses is the "
      "phone talking to itself."),
@@ -3171,8 +3229,10 @@ FEATURES = [
      "file-names"),
     ("Play, keep, clean up",
      "A call plays as its waveform, to see where people talk, and plays on with "
-     "the screen off, under the phone&rsquo;s media controls; a keep mark, a "
-     "30-day Recently deleted, and auto-delete for old or very short ones.",
+     "the screen off, under the phone&rsquo;s media controls; held to your ear, "
+     "it moves to the earpiece and the screen goes dark, as in a call. A keep "
+     "mark, a 30-day Recently deleted, and auto-delete for old or very short "
+     "ones.",
      "playing-sharing-and-deleting"),
     ("Hear about problems",
      "A notification after each call, and one when a recording is silent, the "
@@ -3224,7 +3284,8 @@ PRIVACY_POINTS = [
      "The recorder needs it; while JemRec is off it can go too (Settings &rarr; "
      "When JemRec is off). A computer you have paired can connect over the "
      "same Wi-Fi, so now and then check <em>Wireless debugging &rarr; Paired "
-     "devices</em>. With <em>Start without Wi-Fi</em> on, port 5555 is open "
+     "devices</em> &mdash; with <em>Keep JemRec paired</em> on, Android forgets "
+     "none by itself. With <em>Start without Wi-Fi</em> on, port 5555 is open "
      "too, to every network the phone joins, and announced there by the "
      "phone&rsquo;s serial number."),
 ]
@@ -3358,10 +3419,24 @@ FAQ = [
      "one that refuses &mdash; if yours needed the second choice, or neither "
      "worked, say so in <a href=\"https://github.com/jemcik/JemRec/issues/37\">"
      "issue #37</a>."),
+    ("Why does JemRec ask me to pair again?",
+     "Android forgets a debugging pairing 7 days after it is made, however "
+     "often JemRec connects over Wireless debugging: those connections never "
+     "renew it (ones in adb&rsquo;s older way do, over a cable or to "
+     "<em>Start without Wi-Fi</em>&rsquo;s port 5555, by Android&rsquo;s "
+     "source). The recorder keeps recording, but the next time "
+     "it has to start &mdash; after a restart, say &mdash; the phone turns "
+     "JemRec away, and JemRec opens its pairing step and says why. Turn on "
+     "<em>Keep JemRec paired</em> in Settings (setup asks about it) and "
+     "Android keeps the pairing for good: it turns Android&rsquo;s pairing "
+     "timeout off &mdash; <em>Disable adb authorization timeout</em> in "
+     "Developer options, on phones that show it (an Honor does not) &mdash; "
+     "which keeps a computer you allowed over a cable as well."),
     ("How do I turn debugging off for good?",
      "Uninstall JemRec first. If the recorder is running, it notices the "
-     "uninstall within a few minutes, turns both debugging switches off and "
-     "exits &mdash; on an OPPO, OnePlus or realme phone only while its "
+     "uninstall within a few minutes, puts back Android&rsquo;s pairing "
+     "timeout if <em>Keep JemRec paired</em> turned it off, turns both "
+     "debugging switches off and exits &mdash; on an OPPO, OnePlus or realme phone only while its "
      "<em>Disable system optimization</em> switch is set as setup asked, or "
      "they stay on for you to turn off. Either way, once JemRec is gone nothing turns them back on. To "
      "have it off only while JemRec is off, see the question above."),
@@ -3807,7 +3882,7 @@ HOW_BODY = f"""
     <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
     <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
     <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
-    <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too.</td></tr>
+    <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down.</td></tr>
   </table>
 
   <div class="note">
@@ -3878,6 +3953,13 @@ PRIVACY_DATA = [
      "no names, no sound. Kept by the recorder until the next call replaces it, "
      "and deleted with it when you uninstall. <em>Copy a report</em> in "
      "Diagnostics puts it on the clipboard, only when you tap it."),
+    ("Android&rsquo;s pairing timeout", "the recorder", "until it is put back", "only if you keep JemRec paired",
+     "Only once <em>Keep JemRec paired</em> turns Android&rsquo;s pairing "
+     "timeout off: how long Android kept a pairing before, a number, so that "
+     "turning it off in Settings, Start fresh or uninstalling JemRec puts it "
+     "back &mdash; the recorder does, so only while it runs: uninstalled while "
+     "JemRec is off with all debugging off, the timeout stays off. Kept by the "
+     "recorder, and deleted once it is put back."),
     ("Answering machine tests", "the app&rsquo;s private storage", "the latest of each kind", "only if you run them",
      "What its checks found about the phone, and the result of each test call by "
      "call type (2G, VoLTE, Wi-Fi Calling), with whether that call went through "
@@ -4000,6 +4082,15 @@ PRIVACY_BODY = f"""
      say only <em>Call recording</em>. Apps you have allowed to read your
      notifications can see it, as they can any notification; other apps are
      turned away. Nothing of it is kept: it goes when the recording stops.</p>
+  <p>While a recording plays with JemRec in front, the phone&rsquo;s proximity
+     sensor is read to know when you hold the phone to your ear - and, once
+     it is there, until you take it down, even if the recording ends or
+     JemRec&rsquo;s screen goes meanwhile. It is read too while a call holds a
+     recording back, from when you make or answer it - or a messenger app
+     puts the phone in its call mode - not while it only rings or JemRec&rsquo;s
+     answering machine takes it: so that the recording plays on after the call
+     where the phone is, at your ear or on the loudspeaker. Nothing of it is
+     kept.</p>
 
   <h2>Network use</h2>
   <p>The app holds the <code>INTERNET</code> permission and uses no network. Android

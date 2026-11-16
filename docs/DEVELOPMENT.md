@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-1902 JVM tests, no device needed - 1585 for the app and 317 for the daemon:
+2031 JVM tests, no device needed - 1712 for the app and 319 for the daemon:
 
     ./gradlew test
 
@@ -248,7 +248,16 @@ recorded, as a Meet call taken with the phone call on hold, keeping that phone
 call on the call capture. Then a call's waveform, kept as it is
 saved; a recording played from its row going on with the screen off, named
 only "Call recording" while locked and by its caller again once unlocked,
-held back by a ringing call and playing on after it; JemRec as one window -
+held back by a ringing call and playing on after it; a recording raised to
+the ear - the proximity sensor set through the emulator's console, the debug
+build acting as if the emulator had an earpiece - moving to the earpiece as
+voice-call audio with the screen's lock held and the audio mode left normal,
+back on the loudspeaker and playing on when lowered, moved to the earpiece
+while a call holds it back with JemRec off the screen and the phone raised,
+and playing on there after the call, the player's earpiece
+button moving it too, and with Earpiece in Settings a recording opening there;
+JemRec
+as one window -
 begun by its own way in, as from a notification, the same way in again and
 the tile's long press leave one window, and a folder picker opened over it
 stays when the launcher's intent comes, with the flags of an icon's tap, and
@@ -297,6 +306,13 @@ from the package's own record. Then notification access for the app's
 listener, taken away, and granted again by the recorder with the app's ADB
 session closed, as Settings' Show who called and Hide the debugging
 notification ask for it (the debug op grantlistener), and in Android's list.
+Then Keep JemRec paired (the debug op keeppaired): Android's pairing timeout
+turned off by the recorder, with its old value in the recorder's own file,
+and put back from it; then a timeout off by hand, neither recorded nor put
+back. That the off keeps a pairing was measured by hand on the Android 17
+AVD (2026-11-15): with the timeout at two minutes JemRec's key left `dumpsys
+adb` a second after JemRec had connected, and at 0 it stayed. The AVDs let
+any key in, so there the loss shows only in that list.
 Then Telegram's other builds (issue #93): stand-ins named
 `org.telegram.messenger.web` and `.beta` - apps with no code, built by the
 script with the SDK's aapt2 and signed with the debug key - visible to JemRec

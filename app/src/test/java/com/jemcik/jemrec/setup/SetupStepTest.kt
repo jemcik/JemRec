@@ -17,6 +17,7 @@ class SetupStepTest {
     private class World(
         var permissionsMissing: Boolean = false,
         var debuggingChoice: Boolean = true,
+        var keepPairedChoice: Boolean = false,
         var backgroundChoice: Boolean = false,
         var recorderOn: Boolean = true,
         var complete: Boolean = false,
@@ -34,6 +35,7 @@ class SetupStepTest {
 
         override fun missingPermissions() = permissionsMissing
         override fun debuggingChoiceMade() = debuggingChoice
+        override fun keepPairedChoiceNeeded() = keepPairedChoice
         override fun needsBackgroundChoice() = backgroundChoice
         override fun recorderOn() = recorderOn
         override fun isComplete() = complete
@@ -72,6 +74,19 @@ class SetupStepTest {
         val upgraded = World(debuggingChoice = false, daemon = true, identity = true, complete = true)
         assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, stepOf(upgraded))
         assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, stepOf(World(debuggingChoice = false, recorderOn = false, complete = true)))
+        assertEquals(0, upgraded.retired)
+    }
+
+    @Test fun theKeepPairedQuestionComesRightAfterTheDebuggingOne() {
+        val fresh = World(keepPairedChoice = true, backgroundChoice = true, wirelessDebugging = true)
+        assertEquals(SetupStep.NEEDS_KEEP_PAIRED_CHOICE, stepOf(fresh))
+        assertEquals(0, fresh.connectAttempts)
+        // The debugging question still leads it; the background one follows.
+        assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, stepOf(World(debuggingChoice = false, keepPairedChoice = true)))
+        // Recording, set up - and never asked: asked too, nothing retired.
+        val upgraded = World(keepPairedChoice = true, daemon = true, identity = true, complete = true)
+        assertEquals(SetupStep.NEEDS_KEEP_PAIRED_CHOICE, stepOf(upgraded))
+        assertEquals(SetupStep.NEEDS_KEEP_PAIRED_CHOICE, stepOf(World(keepPairedChoice = true, recorderOn = false, complete = true)))
         assertEquals(0, upgraded.retired)
     }
 

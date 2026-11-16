@@ -64,6 +64,14 @@ through the real app and daemon, checking what each one leaves behind:
               screen off, called only "Call recording" while the phone is
               locked and by its caller again once unlocked; a call ringing
               in holds it back, and it plays on once the call is over
+  raise-to-listen  a recording playing from its row moves to the earpiece
+              as the proximity sensor reads near - voice-call audio, the
+              screen covered and its lock held, the audio mode left normal
+              (the recorder's rule for a messenger call needs it changed) -
+              and back to the loudspeaker, playing
+              on, as it reads far; the player's button moves it too, and
+              with Earpiece in Settings a recording opens there (the debug
+              build acts as if the emulator had an earpiece)
   recently-deleted  a recording deleted is brought back by Restore all in
               Recently deleted; deleted again, Delete all for good removes
               it, from Android's own trash as well, its file with it
@@ -373,7 +381,9 @@ def set_up(apk):
     sh("logcat -c")
     sh(f"am broadcast -n {PKG}/.diag.SpikeReceiver --es op selftest")
     diag.token = wait_log(r"diag token: (\S+)", 20, "the diag token").group(1)
-    set_prefs(setup_complete=True, hide_debug_notification=False, file_names="DATE_AND_CALLER",
+    # Setup's keep-paired question answered (keep_paired_asked), or it would
+    # stand in front of home for every check: a check of its own sets it.
+    set_prefs(setup_complete=True, hide_debug_notification=False, keep_paired_asked=True, file_names="DATE_AND_CALLER",
               rules_other_numbers=True, call_tracking=True, recorder_enabled=True, recording_mode="AUTOMATIC")
     # Off until a check of its own turns it on: an emulator keeps its data
     # between boots, and a run that ended on an answering check left it on for
@@ -1364,6 +1374,174 @@ def background_playback():
     return f"{after - before} ms played in 5 s with the screen off, as \"{title}\"; held back by a call, then on"
 
 
+def app_uid():
+    # `dumpsys package` names it userId= on older Androids and appId= on 17.
+    return re.search(rf"package:{re.escape(PKG)} uid:(\d+)", sh(f"pm list packages -U {PKG}")).group(1)
+
+
+def players(uid):
+    """JemRec's players as `dumpsys audio` lists them: (state, usage) each."""
+    return re.findall(rf"AudioPlaybackConfiguration piid:\d+ .*?u/pid:{uid}/\d+ state:(\w+) "
+                      r"attr:AudioAttributes: usage=(\w+)", sh("dumpsys audio"))
+
+
+def audio_mode():
+    """The phone's audio mode, as `dumpsys audio` says it: NORMAL, IN_CALL, ..."""
+    dump = sh("dumpsys audio")
+    named = re.search(r"Actual mode = MODE_(\w+)", dump)
+    if named:
+        return named.group(1)
+    numbered = re.search(r"mMode=(\d+)", dump)
+    return {"0": "NORMAL", "1": "RINGTONE", "2": "IN_CALL", "3": "IN_COMMUNICATION"}.get(
+        numbered.group(1), numbered.group(1)) if numbered else None
+
+
+def ear_lock():
+    """Whether JemRec holds the lock that darkens the screen at the ear: in
+    `dumpsys power`'s wake locks held now, not in its history of them."""
+    held = re.search(r"Wake Locks: size=\d+\n(.*?)\n\s*\n", sh("dumpsys power"), re.S)
+    return bool(held) and "'jemrec:ear'" in held.group(1)
+
+
+def play_row(digits_in):
+    """Tap the row whose text holds [digits_in] until its recording plays. A
+    tap right after a cold start can be lost: the list's tip comes in a moment
+    later and moves the rows down (the Android 17 AVD, 2026-11-15). Tapped
+    again only after 4 s still not playing - a second tap would pause it -
+    where a tap that lands plays in under one."""
+    if not tap_text(digits_in):
+        return None
+    try:
+        return wait_for(lambda: session_is("PLAYING"), 4, "the recording to play")
+    except TimeoutError:
+        return None
+
+
+def covered():
+    """Whether JemRec covers its screen at the ear (EarCover): its window at
+    the lowest brightness, `sbrt=0.0` among the window's attributes in
+    `dumpsys window windows`."""
+    for block in sh("dumpsys window windows").split("Window{")[1:]:
+        head = block.split("\n", 1)[0]
+        if f"{PKG}/" in head and "MainActivity" in head:
+            return "sbrt=0.0" in block
+    return False
+
+
+def proximity(cm):
+    """The emulator's proximity sensor, through its console: 0 near, 5 far."""
+    adb("emu", "sensor", "set", "proximity", str(cm))
+
+
+def raise_to_listen():
+    """Raised to the ear - the proximity sensor set near through the
+    emulator's console - a recording playing from its row moves to the
+    earpiece: voice-call audio, the lock that darkens the screen held, the
+    screen covered, and the audio mode left normal - which is what keeps the
+    recorder from taking it for a messenger call: it counts one only in
+    communication mode (Voip.java; measured on the Honor with four messengers
+    watched, 2026-11-15; no check here switches a messenger on). Lowered,
+    it goes back to the loudspeaker and plays on. A call answered, JemRec
+    off the screen and the phone raised, moves it to the earpiece while it
+    waits, and it plays on there. The player's button moves
+    it too; and with Earpiece in Settings, a recording opens there. An
+    emulator has no earpiece: the debug build acts as if it had one (the
+    `earpiece` diag op), so what is checked is all but the sound."""
+    sh("logcat -c")
+    dial(STRANGER_OUT, ring_s=2, talk_s=30)
+    saved()
+    uid = app_uid()
+    try:
+        proximity(5)
+        sh(f"am start -n {PKG}/.MainActivity")
+        diag("earpiece", "--ez", "on", "true")
+        # Opened again, so the screen reads the earpiece it now has.
+        sh(f"am force-stop {PKG}")
+        sh(f"am start -n {PKG}/.MainActivity")
+        wait_for(lambda: play_row(STRANGER_OUT), 40, "the recording's row to play it")
+        wait_for(ear_lock, 10, "the lock that darkens the screen at the ear")
+        wait_for(lambda: ("started", "USAGE_MEDIA") in players(uid), 10, "it to play on the loudspeaker")
+        time.sleep(1)  # past the quiet start, when a reading waits (AtTheEar)
+        proximity(0)
+        wait_for(lambda: ("started", "USAGE_VOICE_COMMUNICATION") in players(uid), 10,
+                 "the recording to move to the earpiece")
+        assert session_is("PLAYING"), f"raised, it is {session()}"
+        wait_for(covered, 10, "JemRec to cover its screen at the ear")
+        mode = audio_mode()
+        assert mode == "NORMAL", f"raised, the audio mode is {mode}"
+        time.sleep(1)  # past the quiet after the move
+        proximity(5)
+        wait_for(lambda: ("started", "USAGE_MEDIA") in players(uid), 10,
+                 "the recording back on the loudspeaker as it is lowered")
+        assert session_is("PLAYING"), f"lowered, it is {session()}"
+        wait_for(lambda: not covered(), 10, "the cover to go as the phone is lowered")
+        assert ear_lock(), "lowered, the lock was let go while it plays on"
+        # A call holds it back. Answered, the call's screen over JemRec's,
+        # and raised for the call: it is moved to the earpiece while it
+        # waits, and plays on there after the call. Unwatched under the
+        # call's screen it played on 1.8 s from the loudspeaker at the ear
+        # (the Honor, 2026-11-16), until JemRec's screen came back.
+        adb("emu", "gsm", "call", STRANGER_IN)
+        wait_for(lambda: session_is("PAUSED"), 15, "a ringing call to hold it back")
+        sh("input keyevent KEYCODE_CALL")
+        wait_for(lambda: audio_mode() == "IN_CALL", 15, "the call to be answered")
+        # The Honor's call screen covers JemRec's; answered by the call key,
+        # the Android 12 and 13 AVDs left JemRec in front (2026-11-16), so
+        # it is sent Home there - off the screen, as under the call's.
+        def in_front():
+            return PKG in sh("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity:'")
+        try:
+            wait_for(lambda: not in_front(), 5, "")
+        except TimeoutError:
+            sh("input keyevent KEYCODE_HOME")
+        wait_for(lambda: not in_front(), 10, "JemRec's screen gone under the call")
+        time.sleep(1)  # past the quiet start of the watch under the call
+        proximity(0)
+        wait_for(lambda: any(u == "USAGE_VOICE_COMMUNICATION" for _, u in players(uid)), 10,
+                 "the recording to move to the earpiece under the call")
+        assert session_is("PAUSED"), f"under the call, it is {session()}"
+        hang_up()
+        wait_for(lambda: ("started", "USAGE_VOICE_COMMUNICATION") in players(uid), 15,
+                 "it to play on at the earpiece after the call")
+        time.sleep(1)  # past the quiet after the move
+        proximity(5)
+        wait_for(lambda: ("started", "USAGE_MEDIA") in players(uid), 10,
+                 "the loudspeaker as it is lowered after the call")
+        sh(f"am start -n {PKG}/.MainActivity")
+        tap_until("Playing through the loudspeaker - tap for the earpiece",
+                  "Playing through the earpiece - tap for the loudspeaker", 15, "the player's earpiece button")
+        wait_for(lambda: ("started", "USAGE_VOICE_COMMUNICATION") in players(uid), 10,
+                 "the button to move it to the earpiece")
+        # Earpiece in Settings: the next recording opens there. The screen
+        # reads the setting as it opens: opened again after.
+        diag("pref", "--es", "key", "play_through", "--es", "value", "EARPIECE")
+        sh(f"am force-stop {PKG}")
+        sh(f"am start -n {PKG}/.MainActivity")
+        wait_for(lambda: play_row(STRANGER_OUT), 40, "the recording's row to play it with Earpiece set")
+        wait_for(lambda: ("started", "USAGE_VOICE_COMMUNICATION") in players(uid), 10,
+                 "it to open at the earpiece")
+        assert ("started", "USAGE_MEDIA") not in players(uid), f"it played on the loudspeaker too: {players(uid)}"
+        mode = audio_mode()
+        assert mode == "NORMAL", f"at the earpiece by Settings, the audio mode is {mode}"
+    finally:
+        proximity(5)
+        # A step that failed under the call leaves it up for the checks after;
+        # said, not raised, so the step's own failure is the one reported.
+        try:
+            if not phone_idle():
+                hang_up()
+        except Exception as e:
+            print(f"     (the call could not be ended afterwards: {e})")
+        try:
+            diag("pref", "--es", "key", "play_through")
+            diag("earpiece", "--ez", "on", "false")
+        finally:
+            sh(f"am force-stop {PKG}")
+    return ("raised: voice-call audio, screen covered, mode NORMAL, lock held; lowered: the loudspeaker, playing on; "
+            "raised under a call: the earpiece while held back, playing on there; "
+            "the button moves it; Earpiece in Settings opens it there")
+
+
 def windows():
     """How many of JemRec's main screens Android holds, in any task."""
     return len(re.findall(r"Hist\s+#\d+: ActivityRecord\{[^}]*" + re.escape(PKG) + r"/\S*MainActivity",
@@ -2251,6 +2429,59 @@ def refused_grant():
             "Try again: granted, read back")
 
 
+PAIRING_TIMEOUT = "adb_allowed_connection_time"
+PAIRING_RECORD = "/data/local/tmp/jemrec-pairing-timeout"
+
+
+def pairing_timeout():
+    return sh(f"settings get global {PAIRING_TIMEOUT}").strip()
+
+
+def keep_paired_set(on):
+    """Keep JemRec paired set through the app, and what it says became of
+    it: (outcome, Android's timeout after)."""
+    said = diag("keeppaired", "--ez", "on", "true" if on else "false")
+    m = re.search(r"keep paired \w+: (\w+), timeout (-?\d+)", said)
+    assert m, said
+    return m.group(1), m.group(2)
+
+
+def keep_paired():
+    """Keep JemRec paired, as the switch in Settings sets it (the
+    `keeppaired` diag op, KeepPaired.choose): the recorder turns Android's
+    pairing timeout off and records what it was in its own file - what it
+    puts back when the switch goes off, and when JemRec is uninstalled
+    (Custodian, not checked here: it looks every five minutes) - and puts
+    it back from that file. A timeout off by the user's own hand stays off.
+    That off keeps a pairing was measured on this AVD by hand, 2026-11-15:
+    with the timeout at two minutes, JemRec's pairing went a second after it
+    had connected, and at 0 it stayed."""
+    original = pairing_timeout()
+    try:
+        # From a timeout on: one left off - a run cut short here - would be
+        # taken for the user's own, and nothing recorded.
+        if original == "0":
+            sh(f"settings delete global {PAIRING_TIMEOUT}")
+        before = pairing_timeout()
+        assert keep_paired_set(True) == ("DONE", "0"), pairing_timeout()
+        recorded = sh(f"cat {PAIRING_RECORD}").strip()
+        assert recorded == before, f"recorded {recorded!r}, was {before!r}"
+        outcome, _ = keep_paired_set(False)
+        assert outcome == "DONE", outcome
+        assert pairing_timeout() == before, f"put back as {pairing_timeout()!r}, was {before!r}"
+        assert "No such file" in sh(f"ls {PAIRING_RECORD} 2>&1"), "the record outlived the put back"
+        # The user's own off: nothing recorded, nothing put back.
+        sh(f"settings put global {PAIRING_TIMEOUT} 0")
+        assert keep_paired_set(True) == ("DONE", "0")
+        assert "No such file" in sh(f"ls {PAIRING_RECORD} 2>&1"), "an off by hand was recorded as JemRec's"
+        assert keep_paired_set(False) == ("DONE", "0"), "an off by hand was put back"
+    finally:
+        sh(f"rm -f {PAIRING_RECORD}")
+        sh(f"settings delete global {PAIRING_TIMEOUT}" if original == "null"
+           else f"settings put global {PAIRING_TIMEOUT} {original}")
+    return f"timeout off and put back to {before}; an off by hand left alone"
+
+
 def listener_grant():
     """Notification access for the app's listener, granted by the recorder
     (Wire.COMMAND_ALLOW_LISTENER), as Settings' Show who called and Hide the
@@ -2753,10 +2984,10 @@ def self_test():
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, number_names, self_test,
           answering, greeting_hangup, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, test_call_wifi, greeting_moves, app_call, mode_switch, app_call_in_front, waveform,
-          background_playback, one_window,
+          background_playback, raise_to_listen, one_window,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
-          debugging_off, off_just_left, background, allow_this_wifi, refused_grant, listener_grant,
+          debugging_off, off_just_left, background, allow_this_wifi, refused_grant, listener_grant, keep_paired,
           telegram_builds, newest_version,
           # Last, these two: they turn the emulator's Wi-Fi off and on, and a
           # simulated Wi-Fi that does not come back would fail every check

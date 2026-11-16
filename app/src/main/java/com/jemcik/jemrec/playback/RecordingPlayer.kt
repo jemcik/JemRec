@@ -9,9 +9,10 @@ import android.util.Log
 /** What SessionPlayer plays a recording with: RecordingPlayer on the phone,
  *  a stand-in in the tests. */
 internal interface PlaybackEngine {
-    /** Opens [uri], ready to start from the beginning; false if it will not
-     *  open. [onFinished] at its end, [onFailed] on an error while playing. */
-    fun open(uri: Uri, onFinished: () -> Unit, onFailed: () -> Unit): Boolean
+    /** Opens [uri] for [output], ready to start from the beginning; false if
+     *  it will not open. [onFinished] at its end, [onFailed] on an error while
+     *  playing. */
+    fun open(uri: Uri, output: Output, onFinished: () -> Unit, onFailed: () -> Unit): Boolean
 
     /** False if it would not start: after an error the player stays down. */
     fun start(): Boolean
@@ -41,9 +42,15 @@ internal interface PlaybackEngine {
  * Since 0.19 it plays in PlaybackService, under the system's media controls,
  * so it goes on with the screen off; SessionPlayer drives this.
  *
- * Speech, not music: USAGE_MEDIA with CONTENT_TYPE_SPEECH routes to the media
- * stream rather than the call stream, which is what a person expects when they
- * play a recording back with the phone to their ear or on speaker.
+ * Speech, not music: USAGE_MEDIA with CONTENT_TYPE_SPEECH, the media stream -
+ * the loudspeakers, or headphones when they are in. At the ear (AtTheEar) it
+ * is voice-call audio, USAGE_VOICE_COMMUNICATION, which Android sends to the
+ * earpiece as it does a call's: measured on the Honor (MagicOS 11) with a
+ * probe, 2026-11-15, routed to the earpiece with the audio mode left normal.
+ * The mode is never set here: the answering machine and the recorder read
+ * MODE_IN_COMMUNICATION as another app's call (CallTracker, Voip).
+ * MediaPlayer takes its attributes only before prepare() (Android's
+ * MediaPlayer docs), so a move between the two opens the file again.
  */
 internal class RecordingPlayer(private val context: Context) : PlaybackEngine {
 
@@ -55,13 +62,18 @@ internal class RecordingPlayer(private val context: Context) : PlaybackEngine {
     override val durationMs: Int
         get() = runCatching { player?.duration ?: 0 }.getOrDefault(0)
 
-    override fun open(uri: Uri, onFinished: () -> Unit, onFailed: () -> Unit): Boolean {
+    override fun open(uri: Uri, output: Output, onFinished: () -> Unit, onFailed: () -> Unit): Boolean {
         close()
         return runCatching {
             player = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setUsage(
+                            when (output) {
+                                Output.SPEAKER -> AudioAttributes.USAGE_MEDIA
+                                Output.EARPIECE -> AudioAttributes.USAGE_VOICE_COMMUNICATION
+                            },
+                        )
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 )

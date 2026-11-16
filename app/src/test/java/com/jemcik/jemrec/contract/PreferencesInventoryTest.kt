@@ -10,8 +10,11 @@ import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipCallNotes
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.playback.PlayThrough
+import com.jemcik.jemrec.playback.PlayThroughSetting
 import com.jemcik.jemrec.recorder.DebugSwitch
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.KeepPaired
 import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recorder.RecorderHealth
 import com.jemcik.jemrec.recorder.RecorderSwitch
@@ -82,6 +85,7 @@ class PreferencesInventoryTest {
         )
         assertEquals(listOf("WORKS", "LIKELY", "FAILS", "INCONCLUSIVE"), AnswerDiagnostics.Verdict.entries.map { it.name })
         assertEquals(listOf("VOLTE", "ROUTES"), AnswerDiagnostics.Cleared.entries.map { it.name })
+        assertEquals(listOf("LOUDSPEAKER", "LOUDSPEAKER_AND_EAR", "EARPIECE"), PlayThrough.entries.map { it.name })
     }
 
     @Test
@@ -101,6 +105,7 @@ class PreferencesInventoryTest {
         assertEquals(OffMode.KEEP_DEBUGGING, DebugSwitchesOff.mode(context))
         assertEquals(emptySet<DebugSwitch>(), DebugSwitchesOff.switchedOff(context))
         assertTrue("after-call notice on", AfterCall.enabled(context))
+        assertEquals(PlayThrough.LOUDSPEAKER_AND_EAR, PlayThroughSetting.of(context))
         assertEquals(false, VoipCallNotes.enabled(context))
         assertEquals(false, StartWithoutWifi.enabled(context))
         assertEquals(0, Retention.maxAgeDays(context))
@@ -116,13 +121,19 @@ class PreferencesInventoryTest {
             forgetTheLook()
         }
         assertEquals(false, DebugNotificationCleaner.asked(context))
+        // Asked, with Android's timeout on as a fresh phone has it, and
+        // nothing waiting for a recorder.
+        assertTrue("keep paired asked", KeepPaired.needsChoice(context))
+        assertEquals(null, KeepPaired.waiting(context))
     }
 
     private companion object {
         /** Every `const val ...KEY... = "..."` in app/src/main on 2026-11-01
          *  (0.26), and those since: answer_test (0.30), answer_mixer_ and
          *  answer_routes_by_path (0.31), select_hint_seen (given its owner),
-         *  answer_cleared_by_update and answer_volte_cleared (1.0):
+         *  answer_cleared_by_update and answer_volte_cleared (1.0),
+         *  play_through, keep_paired_asked, keep_paired_refused and
+         *  keep_paired_wish (1.1):
          *  preference keys, plus the few key-named constants that are file
          *  and extra names, which a rename breaks just the same. */
         val KEYS = listOf(
@@ -134,9 +145,9 @@ class PreferencesInventoryTest {
             "call_ledger", "call_tracking", "caller_banner_dismissed", "calls_covered_since", "coverage_history",
             "daemon_token", "debug_notification_snoozed", "debug_off_pending", "debug_switched_off",
             "emergency_call_at", "emergency_resumed_at", "file_names", "hide_debug_notification",
-            "kept_recordings", "light_dark", "link_token", "look", "message_recordings", "missed_seen_until",
+            "keep_paired_asked", "keep_paired_refused", "keep_paired_wish", "kept_recordings", "light_dark", "link_token", "look", "message_recordings", "missed_seen_until",
             "name_callers", "name_directions", "names", "off_mode", "pairing_code", "port_close_failed_boot",
-            "port_failed_boot", "port_opened_boot", "prompt_ticket", "qs_tile_added", "recorder_down_alerted",
+            "port_failed_boot", "port_opened_boot", "prompt_ticket", "play_through", "qs_tile_added", "recorder_down_alerted",
             "recorder_down_cause", "recorder_down_since", "recorder_enabled", "recording_mode",
             "recordings_tree_uri", "rules_chosen", "rules_contacts", "rules_other_numbers", "save_failing",
             "select_hint_seen", "setup_background_asked", "setup_complete", "setup_dev_options_confirmed", "setup_paired",

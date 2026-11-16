@@ -139,7 +139,7 @@ internal class FakeRecorder(
 
     /** The payload each command carries, as the app writes it (CaptureDaemon). */
     private fun payload(command: Char, input: DataInputStream): ByteArray = when (command) {
-        'O', 'E', 'T', 'K', 'H' -> ByteArray(1).also(input::readFully)
+        'O', 'E', 'T', 'K', 'H', 'J' -> ByteArray(1).also(input::readFully)
         'Y' -> ByteArray(12).also(input::readFully)
         'V', 'N', 'F', 'D' -> frame(input)
         'G' -> {

@@ -757,6 +757,46 @@ final class Checks {
     private static final java.util.regex.Pattern USER0_STOPPED =
             java.util.regex.Pattern.compile("User 0:[^|\\n]*?(?<![A-Za-z])stopped=(true|false)");
 
+    /** Android's Settings.Global.ADB_ALLOWED_CONNECTION_TIME: how long a
+     *  debugging pairing lasts, in milliseconds; 0 for never forgotten. */
+    static final String PAIRING_TIMEOUT = "adb_allowed_connection_time";
+
+    /** A value the setting can be put back to: a number, or "null" for
+     *  never set, as `settings get` prints that. */
+    private static boolean timeoutValue(@Nullable String value) {
+        return value != null && (value.equals("null") || value.matches("-?\\d+"));
+    }
+
+    /**
+     * What to record before the pairing timeout is turned off
+     * (PairingTimeout.keep): the setting as `settings get` printed it, or
+     * null to record nothing - where it could not be read, and where it is
+     * off already. Off already is either this process's own earlier write,
+     * whose record holds what came before it, or the user's own choice,
+     * which is theirs: nothing of JemRec's to put back.
+     */
+    static @Nullable String pairingTimeoutToRecord(@Nullable String current) {
+        if (!timeoutValue(current) || "0".equals(current)) {
+            return null;
+        }
+        return current;
+    }
+
+    /**
+     * What putting the pairing timeout back writes (PairingTimeout.giveBack):
+     * the value recorded before it was turned off - "null" to delete the
+     * setting, never set before - or null to write nothing. Nothing without
+     * a record, as nothing was turned off; nothing for a record that is not
+     * a value; and nothing once the setting no longer reads off, as someone
+     * changed it since and theirs stands.
+     */
+    static @Nullable String pairingTimeoutToGiveBack(@Nullable String recorded, @Nullable String current) {
+        if (!timeoutValue(recorded) || "0".equals(recorded) || !"0".equals(current)) {
+            return null;
+        }
+        return recorded;
+    }
+
     /** Root mean square of the first [frames] frames of interleaved [pcm],
      *  every channel together. */
     static double rms(short[] pcm, int channels, int frames) {

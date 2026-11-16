@@ -148,8 +148,28 @@ final class Shield {
         return false;
     }
 
+    /** `settings delete global name`, read back: true if it now reads as
+     *  never set ("null"), as on a phone where nobody ever set it. */
+    static boolean deleteGlobal(String name) {
+        try {
+            Process delete = new ProcessBuilder(SETTINGS, "delete", "global", name)
+                    .redirectErrorStream(true)
+                    .start();
+            String said = Shell.slurp(delete);
+            delete.waitFor();
+            if ("null".equals(readGlobal(name))) {
+                return true;
+            }
+            Ln.w("settings: could not delete " + name
+                    + (said.isEmpty() ? "" : " - Android said " + said.substring(0, Math.min(said.length(), 300))));
+        } catch (Throwable t) {
+            Ln.w("settings: could not delete " + name + ": " + t.getMessage());
+        }
+        return false;
+    }
+
     /** `settings get global name`, trimmed; null if it could not be read. */
-    private static @Nullable String readGlobal(String name) {
+    static @Nullable String readGlobal(String name) {
         try {
             Process process = new ProcessBuilder(SETTINGS, "get", "global", name)
                     .redirectErrorStream(true)

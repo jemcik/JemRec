@@ -124,6 +124,36 @@ public class ChecksTest {
     }
 
     @Test
+    public void thePairingTimeoutIsRecordedOnlyWhenItIsOn() {
+        // As `settings get global adb_allowed_connection_time` prints it:
+        // "null" where nobody set it (the Honor, 2026-11-15), or a number.
+        assertEquals("null", Checks.pairingTimeoutToRecord("null"));
+        assertEquals("604800000", Checks.pairingTimeoutToRecord("604800000"));
+        assertEquals("86400000", Checks.pairingTimeoutToRecord("86400000"));
+        // Off already - an earlier keep of ours, whose record stands, or the
+        // user's own - and unreadable or not a value: nothing recorded.
+        assertNull(Checks.pairingTimeoutToRecord("0"));
+        assertNull(Checks.pairingTimeoutToRecord(null));
+        assertNull(Checks.pairingTimeoutToRecord(""));
+        assertNull(Checks.pairingTimeoutToRecord("Exception occurred"));
+    }
+
+    @Test
+    public void thePairingTimeoutIsPutBackOnlyWhileItIsStillOff() {
+        assertEquals("null", Checks.pairingTimeoutToGiveBack("null", "0"));
+        assertEquals("604800000", Checks.pairingTimeoutToGiveBack("604800000", "0"));
+        // Changed since by someone else - theirs stands - or unread: nothing.
+        assertNull(Checks.pairingTimeoutToGiveBack("null", "86400000"));
+        assertNull(Checks.pairingTimeoutToGiveBack("null", "null"));
+        assertNull(Checks.pairingTimeoutToGiveBack("604800000", null));
+        // No record, an off recorded, or a record that is not a value.
+        assertNull(Checks.pairingTimeoutToGiveBack(null, "0"));
+        assertNull(Checks.pairingTimeoutToGiveBack("0", "0"));
+        assertNull(Checks.pairingTimeoutToGiveBack("", "0"));
+        assertNull(Checks.pairingTimeoutToGiveBack("60480000O", "0"));
+    }
+
+    @Test
     public void theAppsListenerIsAllowedWhenAndroidListsIt() {
         String jemrec = "com.jemcik.jemrec/com.jemcik.jemrec.capture.DebugNotificationCleaner";
         // As `settings get secure enabled_notification_listeners` printed it

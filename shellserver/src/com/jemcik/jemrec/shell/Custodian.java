@@ -121,7 +121,8 @@ final class Custodian {
 
     /**
      * Put back what the app changed that outlives it: both debugging
-     * switches, a microphone left muted by a message, and its files in
+     * switches, Android's pairing timeout (PairingTimeout), a microphone left
+     * muted by a message, and its files in
      * /data/local/tmp - the jar, the logs, recordings never collected, the
      * greeting and its take.
      *
@@ -136,6 +137,9 @@ final class Custodian {
      * away.
      */
     private static void cleanUpAfterApp() {
+        // Android's pairing timeout, if Keep JemRec paired turned it off: put
+        // back before its record goes with the rest.
+        PairingTimeout.giveBack();
         // The files first: turning the switches off can stop adbd, and this
         // process with it. The jar, the logs, and any call audio the app
         // never collected - nobody else ever will.
@@ -150,6 +154,9 @@ final class Custodian {
         leftovers.add(Paths.MUTE_MARKER);
         // The last call's report (Copy a report).
         leftovers.add(Paths.REPORT_FILE);
+        // A record of the pairing timeout that could not be put back above:
+        // nothing will try again.
+        leftovers.add(Paths.PAIRING_TIMEOUT);
         File[] recordings = new File(Paths.REC_DIR).listFiles((d, n) -> n.startsWith(Paths.REC_PREFIX) && n.endsWith(Paths.REC_SUFFIX));
         if (recordings != null) {
             leftovers.addAll(java.util.Arrays.asList(recordings));

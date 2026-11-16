@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-1902-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2031-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -40,7 +40,8 @@ the phone sets itself up.
 - **Both sides of every call.** Phone calls, and WhatsApp, Telegram, Viber and
   Google Meet calls on Android 14 or newer.
 - **No root, no computer, no second app.** The phone pairs with its own
-  Wireless debugging and sets itself up, once, in a few minutes.
+  Wireless debugging and sets itself up in a few minutes - once, if you let
+  JemRec keep the pairing.
 - **Nothing leaves your phone.** No account, no cloud, no analytics. The only
   network JemRec uses is the phone talking to itself.
 - **It tells you when something is wrong.** A recording that came out silent,
@@ -56,11 +57,13 @@ the phone sets itself up.
 1. **Install it** from [F-Droid](https://f-droid.org/packages/com.jemcik.jemrec/),
    or download the APK from [Releases](https://github.com/jemcik/JemRec/releases).
 2. **Follow the setup.** JemRec walks you through it and watches for each step:
-   one question (whether to hide Android's debugging notification), Developer
-   options, USB and Wireless debugging (no cable needed), and pairing - the
-   phone pairs with itself. Type the six-digit code into JemRec's
-   *notification*, not the app: leaving Settings closes the code window. Once;
-   the pairing survives restarts. OPPO, OnePlus and realme phones on their
+   two questions (whether to hide Android's debugging notification, and
+   whether to keep JemRec paired), Developer options, USB and Wireless
+   debugging (no cable needed), and pairing - the phone pairs with itself.
+   Type the six-digit code into JemRec's *notification*, not the app: leaving
+   Settings closes the code window. Kept paired, that is once: the pairing
+   survives restarts; otherwise Android forgets it after 7 days, and JemRec
+   asks you to pair again when the recorder next starts. OPPO, OnePlus and realme phones on their
    own systems (ColorOS, OxygenOS, realme UI) need one more switch in
    Developer options, *Disable system optimization* (*Disable permission
    monitoring* on older ones); setup names it.
@@ -165,7 +168,7 @@ screens.
 | **Messenger calls** | WhatsApp, Telegram, Viber, and Google Meet calls and meetings, both sides, each switched on separately, with the caller's name from the app's notification. Android 14+. → [more](docs/ARCHITECTURE.md#messenger-calls) |
 | **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. Search either list, or narrow it with a tap. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
 | **Name files your way** | By date and time, with the caller, with the phone number for a program that sorts them, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
-| **Play, keep, clean up** | A call plays as its waveform, to see where people talk, and plays on with the screen off, under the phone's media controls; a keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
+| **Play, keep, clean up** | A call plays as its waveform, to see where people talk, and plays on with the screen off, under the phone's media controls; held to your ear, it moves to the earpiece and the screen goes dark, as in a call. A keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
 | **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, a call went unrecorded, or the phone stopped JemRec or held it back in the background. A call that came out wrong? *Copy a report* in Diagnostics says how it was recorded, for an issue on GitHub. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
 | **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
 | **Open your banking app** | Some banking apps won't open while Developer options or debugging is on. Turning JemRec off can hide Developer options too, or switch all debugging off; turning it on puts back what it switched off - away from Wi-Fi too, with *Start without Wi-Fi*. Settings → When JemRec is off. → [more](docs/ARCHITECTURE.md#off-and-debugging-with-it) |
@@ -264,7 +267,11 @@ Honor - so the answering machine's settings hold its own checks and a test call.
   it; while it is off, it can go too (Settings → When JemRec is off). A computer you have paired with the phone can connect to it over the
   same Wi-Fi, and one you have authorised before over a cable; an unpaired one
   cannot. Now and then, check *Wireless debugging →
-  Paired devices* and remove anything you do not recognise. With *Start
+  Paired devices* and remove anything you do not recognise. With *Keep JemRec
+  paired*, which setup asks about, Android forgets no pairing - a computer's
+  you allowed over a cable neither - until you turn it off in Settings; Start
+  fresh and uninstalling put Android's timeout back - the recorder does it,
+  so only while it runs. With *Start
   without Wi-Fi* on, debugging port 5555 is open as well, to every network the
   phone joins, and announced there by the phone's serial number: a computer
   that reaches it, or an app on the phone, can ask to debug the phone, and the
@@ -293,7 +300,7 @@ recorder does not explain is one its user has to guess at:
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
 | `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine's answering is the recorder's, as the shell. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
-| `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. |
+| `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down. |
 
 What is left out, and why, is in
 [How JemRec works](docs/ARCHITECTURE.md#what-it-does-not-ask-for).
@@ -496,12 +503,33 @@ second choice, or neither worked, say so in [issue #37](https://github.com/jemci
 </details>
 
 <details>
+<summary><b>Why does JemRec ask me to pair again?</b></summary>
+
+<br>
+
+Android forgets a debugging pairing 7 days after it is made, however often
+JemRec connects over Wireless debugging: those connections never renew it.
+(Ones made in adb's older way do - over a cable, or to *Start without
+Wi-Fi*'s port 5555 - by Android's source; not measured.) The recorder keeps
+recording, but the next time it has to start - after a restart, say - the phone
+turns JemRec away, and JemRec opens its pairing step and says why. Turn on
+*Keep JemRec paired* in Settings (setup asks about it) and Android keeps the
+pairing for good: it turns Android's pairing timeout off - *Disable adb
+authorization timeout* in Developer options, on phones that show it (an Honor
+does not) - which keeps a computer you allowed over a cable as well.
+Removed under *Wireless debugging → Paired devices*, a pairing is gone at once
+either way. → [Keeping the pairing](docs/ARCHITECTURE.md#keeping-the-pairing)
+
+</details>
+
+<details>
 <summary><b>How do I turn debugging off for good?</b></summary>
 
 <br>
 
 Uninstall JemRec first. If the recorder is running, it notices the uninstall
-within a few minutes, turns both debugging switches off and exits - on an
+within a few minutes, puts back Android's pairing timeout if *Keep JemRec
+paired* turned it off, turns both debugging switches off and exits - on an
 OPPO, OnePlus or realme phone only while its *Disable system optimization*
 switch is set as setup asked, or they stay on for you to turn off. Either way, once JemRec is gone nothing
 turns them back on. To have it off only while JemRec is off, see the question
@@ -526,7 +554,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 1902 tests, screenshots of the screens included
+    ./gradlew test              # 2031 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

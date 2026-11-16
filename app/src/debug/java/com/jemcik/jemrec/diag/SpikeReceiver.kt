@@ -23,6 +23,8 @@ import com.jemcik.jemrec.diag.ops.ExecOp
 import com.jemcik.jemrec.diag.ops.FinishOp
 import com.jemcik.jemrec.diag.ops.ForgetKicksOp
 import com.jemcik.jemrec.diag.ops.GrantListenerOp
+import com.jemcik.jemrec.diag.ops.EarpieceOp
+import com.jemcik.jemrec.diag.ops.KeepPairedOp
 import com.jemcik.jemrec.diag.ops.HideSettingsOp
 import com.jemcik.jemrec.diag.ops.MonitorOp
 import com.jemcik.jemrec.diag.ops.MonitorStopOp
@@ -132,6 +134,8 @@ class SpikeReceiver : BroadcastReceiver() {
                     "revivelater" -> ReviveLaterOp.run(appContext, intent)
                     "settings" -> SettingsOp.run(appContext, intent)
                     "hidesettings" -> HideSettingsOp.run(appContext, intent)
+                    "earpiece" -> EarpieceOp.run(appContext, intent)
+                    "keeppaired" -> KeepPairedOp.run(appContext, intent)
                     "refusegrant" -> RefuseGrantOp.run(appContext, intent)
                     "disconnect" -> DisconnectOp.run(appContext, intent)
                     "grantlistener" -> GrantListenerOp.run(appContext, intent)

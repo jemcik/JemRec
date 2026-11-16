@@ -363,6 +363,15 @@ class SettingsScreenshots : ScreenTest() {
         snapWithDialog("dialog-folder-chosen")
     }
 
+    /** Where recordings play: the three ways, each with what holding the
+     *  phone to your ear does. */
+    @Test fun playRecordingsDialog() {
+        settings(Fixtures.ready())
+        compose.onNodeWithText("Play recordings").performScrollTo().performClick()
+        compose.waitForIdle()
+        snapWithDialog("dialog-play-recordings")
+    }
+
     @Config(qualifiers = "+night")
     @Test fun autoDeleteDialog() {
         settings(Fixtures.ready())

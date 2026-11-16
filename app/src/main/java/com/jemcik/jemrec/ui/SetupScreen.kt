@@ -74,7 +74,8 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
         // An install set up before the debugging question existed lands here
         // for that one question, and is not setting anything up - so it is
         // not greeted as if it were.
-        val askingAfterSetup = state.step == SetupStep.NEEDS_DEBUGGING_CHOICE &&
+        val askingAfterSetup = (state.step == SetupStep.NEEDS_DEBUGGING_CHOICE ||
+            state.step == SetupStep.NEEDS_KEEP_PAIRED_CHOICE) &&
             remember(state.step) { Setup.isComplete(context) }
 
         // titleLarge, the same style the app bar gives every other screen's
@@ -104,6 +105,10 @@ fun SetupScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
             // Android's reminder that debugging is on is a real trade, and the
             // app used to make it for everyone. See NEEDS_DEBUGGING_CHOICE.
             SetupStep.NEEDS_DEBUGGING_CHOICE -> DebuggingChoiceCard(state, vm)
+
+            // Keeping the pairing, which turns Android's own timeout off: the
+            // user's to decide, the same way. See NEEDS_KEEP_PAIRED_CHOICE.
+            SetupStep.NEEDS_KEEP_PAIRED_CHOICE -> KeepPairedCard(state, vm)
 
             // Only reached on a phone with a vendor auto-start screen (the gate
             // folds in AutoStart.available), whose name and instruction the
@@ -264,6 +269,51 @@ private fun DebuggingChoiceCard(state: UiState, vm: MainViewModel) {
     }
 }
 
+/** [days] as words: "1 day", "7 days". */
+internal fun pairingDays(days: Int): String = if (days == 1) "1 day" else "$days days"
+
+@Composable
+private fun KeepPairedCard(state: UiState, vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Keep JemRec paired", style = MaterialTheme.typography.titleMedium)
+            // What happens without it, in the user's terms: not "the key
+            // expires" but a pairing to do again, and when.
+            Text(
+                "Android forgets JemRec's pairing ${pairingDays(state.pairingDays)} after it is " +
+                    "made. Calls are still recorded, but the next time the recorder has to " +
+                    "start again - after the phone restarts, say - you would have to pair again.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            // Its name where a phone's Developer options show it - the
+            // Honor's do not (its Settings' resources, 2026-11-15) - and what
+            // else it keeps: a computer's approval is not JemRec's to extend
+            // without saying so.
+            Text(
+                "JemRec can turn Android's pairing timeout off - Disable adb " +
+                    "authorization timeout, in Developer options on phones that show " +
+                    "it - so no pairing is forgotten, nor a computer you allowed for " +
+                    "USB debugging. You can change this later in Settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // Two equal buttons, neither styled as the expected one, as the
+            // debugging question's.
+            ButtonPair(listOf("Leave it", "Keep it paired")) { i, modifier ->
+                FilledTonalButton(
+                    onClick = { haptics.tap(); vm.setKeepPaired(i == 1) },
+                    enabled = !state.busy,
+                    modifier = modifier,
+                ) { ButtonLabel(if (i == 0) "Leave it" else "Keep it paired") }
+            }
+        }
+    }
+}
+
 @Composable
 private fun BackgroundCard(state: UiState, vm: MainViewModel) {
     val haptics = LocalHapticFeedback.current
@@ -417,10 +467,15 @@ private fun PairingCard(state: UiState, vm: MainViewModel) {
             // Back here without asking: say why, and that nothing
             // else went with the pairing.
             if (state.pairingLost) {
+                // Why, where the timeout is on - the usual cause - and the
+                // switch that stops it (KeepPaired).
+                val why = if (state.pairingKept) "" else
+                    " Android deletes it ${pairingDays(state.pairingDays)} after it is made, " +
+                        "unless Keep JemRec paired is on in Settings."
                 Text(
                     "Wireless debugging no longer lets JemRec in, as happens once its " +
-                        "pairing is deleted. Pair again to record calls; your recordings " +
-                        "and settings stay as they are.",
+                        "pairing is deleted.$why Pair again to record calls; your " +
+                        "recordings and settings stay as they are.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -501,10 +556,19 @@ private fun PairingCard(state: UiState, vm: MainViewModel) {
                     )
                 }.toTypedArray()
             )
+            // How long the pairing lasts: for good only with Android's
+            // timeout off (KeepPaired). Back for a lost pairing, the card
+            // has said it above.
+            val lasts = when {
+                state.pairingKept || state.keepPairedWaiting == true ->
+                    " You only do this once; the phone remembers it after restarts."
+                state.pairingLost -> ""
+                else -> " The phone remembers it after restarts, for ${pairingDays(state.pairingDays)} - " +
+                    "unless Keep JemRec paired is on in Settings."
+            }
             Text(
                 "The JemRec notification is already waiting for you - if it " +
-                    "slides away, swipe down again. You only do this once; " +
-                    "the phone remembers it after restarts.",
+                    "slides away, swipe down again.$lasts",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

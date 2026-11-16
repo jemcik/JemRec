@@ -377,6 +377,8 @@ class ListScreensTest : ScreenTest() {
         org.mockito.Mockito.`when`(session.currentMediaItem).thenAnswer { given.get() }
         org.mockito.Mockito.`when`(session.duration).thenReturn(60_000L)
         org.mockito.Mockito.`when`(session.isPlaying).thenReturn(true)
+        // As a session gives them: never null, the speaker's (SessionPlayer).
+        org.mockito.Mockito.`when`(session.audioAttributes).thenReturn(androidx.media3.common.AudioAttributes.DEFAULT)
         // Reached once the row has been measured, as a session is, a moment on.
         val connecting = com.google.common.util.concurrent.SettableFuture.create<androidx.media3.session.MediaController>()
         try {
@@ -440,6 +442,8 @@ class ListScreensTest : ScreenTest() {
         org.mockito.Mockito.`when`(session.currentMediaItem).thenAnswer { given.get() }
         org.mockito.Mockito.`when`(session.duration).thenReturn(60_000L)
         org.mockito.Mockito.`when`(session.isPlaying).thenReturn(true)
+        // As a session gives them: never null, the speaker's (SessionPlayer).
+        org.mockito.Mockito.`when`(session.audioAttributes).thenReturn(androidx.media3.common.AudioAttributes.DEFAULT)
         val connecting = com.google.common.util.concurrent.SettableFuture.create<androidx.media3.session.MediaController>()
         try {
             val vm = viewModel(

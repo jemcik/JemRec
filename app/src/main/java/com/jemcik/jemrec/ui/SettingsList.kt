@@ -581,7 +581,9 @@ internal fun SettingsFooter(vararg paragraphs: String) {
  *
  * Choosing applies at once. With [closeOnChoose] the dialog then goes, as a
  * list preference does; without it, it stays, for a choice whose
- * consequences ([footer]) are worth seeing before leaving.
+ * consequences ([footer]) are worth seeing before leaving. Each choice's
+ * [detail] is in the look's mono when it is an example - a file name - and
+ * in the body's own type when [detailIsExample] is false, for a sentence.
  */
 @Composable
 internal fun <T> ChoiceDialog(
@@ -593,6 +595,7 @@ internal fun <T> ChoiceDialog(
     onDismiss: () -> Unit,
     intro: String? = null,
     detail: ((T) -> String)? = null,
+    detailIsExample: Boolean = true,
     closeOnChoose: Boolean = true,
     enabled: Boolean = true,
     footer: (@Composable () -> Unit)? = null,
@@ -639,7 +642,7 @@ internal fun <T> ChoiceDialog(
                                     Text(
                                         it,
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = lookMono(),
+                                        fontFamily = if (detailIsExample) lookMono() else null,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -785,6 +788,13 @@ internal object SettingsIcons {
         "M13,3h-2v10h2L13,3zM17.83,5.17l-1.42,1.42C17.99,7.86 19,9.81 19,12c0,3.87 -3.13,7 -7,7s-7,-3.13 -7,-7" +
             "c0,-2.19 1.01,-4.14 2.58,-5.42L6.17,5.17C4.23,6.82 3,9.26 3,12c0,4.97 4.03,9 9,9s9,-4.03 9,-9" +
             "c0,-2.74 -1.23,-5.18 -3.17,-6.83z",
+    )
+    /** Keep JemRec paired: Material's Link. */
+    val Link = icon(
+        "Link",
+        "M3.9,12c0,-1.71 1.39,-3.1 3.1,-3.1h4V7H7c-2.76,0 -5,2.24 -5,5s2.24,5 5,5h4v-1.9H7" +
+            "c-1.71,0 -3.1,-1.39 -3.1,-3.1zM8,13h8v-2H8v2zM17,7h-4v1.9h4c1.71,0 3.1,1.39 3.1,3.1" +
+            "s-1.39,3.1 -3.1,3.1h-4V17h4c2.76,0 5,-2.24 5,-5s-2.24,-5 -5,-5z",
     )
     /** Newest version: Material's Open In New - it leaves JemRec for the
      *  browser. */
