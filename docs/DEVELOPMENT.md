@@ -62,7 +62,7 @@ server runs, so 21 is what CI installs and what `build.sh` insists on -
 
 ## Tests
 
-2024 JVM tests, no device needed - 1705 for the app and 319 for the daemon:
+2031 JVM tests, no device needed - 1712 for the app and 319 for the daemon:
 
     ./gradlew test
 
@@ -252,7 +252,9 @@ held back by a ringing call and playing on after it; a recording raised to
 the ear - the proximity sensor set through the emulator's console, the debug
 build acting as if the emulator had an earpiece - moving to the earpiece as
 voice-call audio with the screen's lock held and the audio mode left normal,
-back on the loudspeaker and playing on when lowered, the player's earpiece
+back on the loudspeaker and playing on when lowered, moved to the earpiece
+while a call holds it back with JemRec off the screen and the phone raised,
+and playing on there after the call, the player's earpiece
 button moving it too, and with Earpiece in Settings a recording opening there;
 JemRec
 as one window -

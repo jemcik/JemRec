@@ -146,6 +146,62 @@ class PlaybackAndShareTest : ScreenTest() {
 
     /** A take pauses a recording playing: over the loudspeaker it went into
      *  the new greeting. */
+    /**
+     * A call holding a recording back reaches the watch at the ear: raised
+     * for the call, under the call's screen, the recording is moved to the
+     * earpiece before it plays on. Unwatched, it played on 1.8 s from the
+     * loudspeaker at the ear (the Honor, 2026-11-16).
+     */
+    @Test fun aCallHoldingARecordingBackLetsTheSensorMoveIt() {
+        val audio = app.getSystemService(AudioManager::class.java)
+        shadowOf(audio).setOutputDevices(
+            listOf(
+                org.robolectric.shadows.AudioDeviceInfoBuilder.newBuilder()
+                    .setType(android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE).build(),
+            ),
+        )
+        val proximity = org.robolectric.shadows.ShadowSensor.newInstance(android.hardware.Sensor.TYPE_PROXIMITY)
+            .also { shadowOf(it).setMaximumRange(5f) }
+        val sensors = shadowOf(app.getSystemService(android.hardware.SensorManager::class.java))
+        sensors.addSensor(proximity)
+        shadowOf(app.getSystemService(android.os.PowerManager::class.java))
+            .setIsWakeLockLevelSupported(android.os.PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, true)
+        val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
+        org.mockito.Mockito.`when`(session.audioAttributes).thenReturn(androidx.media3.common.AudioAttributes.DEFAULT)
+        val vm = viewModel(UiState(recordings = listOf(olivia)), connectSession = { Futures.immediateFuture(session) })
+        vm.screenResumed(true)
+        vm.play(olivia)
+        shadowOf(Looper.getMainLooper()).idle()
+        val listener = org.mockito.ArgumentCaptor.forClass(androidx.media3.common.Player.Listener::class.java)
+        org.mockito.Mockito.verify(session).addListener(listener.capture())
+        // The call rings and holds it back, its screen comes up, it is answered.
+        org.mockito.Mockito.`when`(session.currentMediaItem)
+            .thenReturn(androidx.media3.common.MediaItem.Builder().setMediaId(olivia.name).build())
+        org.mockito.Mockito.`when`(session.playWhenReady).thenReturn(true)
+        org.mockito.Mockito.`when`(session.playbackSuppressionReason)
+            .thenReturn(androidx.media3.common.Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS)
+        listener.value.onEvents(
+            session,
+            androidx.media3.common.Player.Events(
+                androidx.media3.common.FlagSet.Builder()
+                    .add(androidx.media3.common.Player.EVENT_PLAYBACK_SUPPRESSION_REASON_CHANGED).build(),
+            ),
+        )
+        vm.screenResumed(false)
+        audio.mode = AudioManager.MODE_IN_CALL
+        shadowOf(Looper.getMainLooper()).idle()
+        // Raised for the call, past the quiet start.
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600))
+        sensors.sendSensorEventToListeners(
+            org.robolectric.shadows.SensorEventBuilder.newBuilder(proximity, floatArrayOf(0f)).build(),
+        )
+        shadowOf(Looper.getMainLooper()).idle()
+        org.mockito.Mockito.verify(session).setAudioAttributes(
+            com.jemcik.jemrec.playback.SessionPlayer.attributes(com.jemcik.jemrec.playback.Output.EARPIECE),
+            false,
+        )
+    }
+
     @Test fun aTakePausesARecordingPlaying() {
         val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
         // As a session gives them: never null, the speaker's (SessionPlayer).
@@ -177,6 +233,15 @@ class PlaybackAndShareTest : ScreenTest() {
     /** Another recording starts at its beginning, its length not known
      *  yet, with its own waveform once worked out. */
     @Test fun anotherRecordingStartsAtItsBeginningWithItsWaveform() {
+        // Worked out off the main thread, held until the moment after Play
+        // is read: done at once, it landed before play() returned - a
+        // withContext whose work is done before its caller suspends comes
+        // back without a dispatch - and the test failed on CI (2026-11-16).
+        val worked = java.util.concurrent.CountDownLatch(1)
+        Waveforms.override = { name ->
+            if (Looper.myLooper() != Looper.getMainLooper()) worked.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            Fixtures.waveform(name.hashCode().toLong())
+        }
         val vm = viewModel(
             UiState(
                 recordings = listOf(olivia, marcus), playingName = marcus.name, playing = true,
@@ -190,6 +255,7 @@ class PlaybackAndShareTest : ScreenTest() {
         assertEquals(0, s.positionMs)
         assertEquals(0, s.durationMs)
         assertNull("the old waveform gone at once", s.waveform)
+        worked.countDown()
         settle(vm)
         assertEquals(Fixtures.waveform(olivia.name.hashCode().toLong()), vm.state.value.waveform)
     }

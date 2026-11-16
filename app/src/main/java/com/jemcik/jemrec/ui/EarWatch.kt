@@ -21,9 +21,9 @@ import com.jemcik.jemrec.playback.PlayThroughSetting
 
 /**
  * Listening at the ear, on the phone: the proximity sensor, the lock that
- * darkens the screen by it, and whether headphones are in, read into
- * AtTheEar, and what it decides done on the session's player through
- * [controls]. Main thread, all of it.
+ * darkens the screen by it, whether headphones are in, and Android's audio
+ * mode - for a call the user is on - read into AtTheEar, and what it decides
+ * done on the session's player through [controls]. Main thread, all of it.
  *
  * The screen goes dark by Android's own PROXIMITY_SCREEN_OFF_WAKE_LOCK, the
  * one a phone app holds in a call: "Turns the screen off when the proximity
@@ -74,6 +74,19 @@ internal class EarWatch(
     private var lastOffered: Boolean? = null
     private var covered = false
 
+    /** The session holds its recording back, to play on after - a call has
+     *  the audio - as it last said. */
+    private var heldBack = false
+
+    /** Android's audio mode is that of a call the user is on (inCall), as
+     *  last told. */
+    private var callUnderWay = false
+
+    /** Closed for good: a device or mode change already posted when close()
+     *  ran must not start the sensor or take the lock again - nothing would
+     *  let them go, and the lock renews itself. */
+    private var closed = false
+
     private var sensing = false
     private val lock: PowerManager.WakeLock? = if (canDarken) {
         power?.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, LOCK_TAG)?.apply { setReferenceCounted(false) }
@@ -102,24 +115,31 @@ internal class EarWatch(
     }
     private var watchingDevices = false
 
+    /** Told on the main thread, as the rest. */
+    private val modes = AudioManager.OnModeChangedListener { mode -> modeChanged(mode) }
+    private var watchingModes = false
+
     init {
         // From the start, not the first resume: a Play reached before it - a
         // notification's, as JemRec opens - asks startsOnEarpiece, and
         // headphones not yet read opened it at the earpiece with buds in
         // (the 1.1 review, 2026-11-15).
         watchDevices()
+        watchModes()
     }
 
     /** What the session plays: [recording] or nothing, [wanted] its Play,
-     *  [output] where it sounds. */
-    fun player(recording: String?, wanted: Boolean, output: Output) {
+     *  [heldBack] whether a call holds that Play back, [output] where it
+     *  sounds. */
+    fun player(recording: String?, wanted: Boolean, output: Output, heldBack: Boolean) {
         // Opened while a recording plays at the earpiece the button chose
         // with this screen gone: it stays there - never to the loudspeaker
         // because a screen came back.
         val arrived = recording != null && recording != facts.recording
         playingOn = output
+        this.heldBack = heldBack
         val now = clock()
-        val updated = facts.copy(recording = recording, wanted = wanted)
+        val updated = facts.copy(recording = recording, wanted = wanted, heldByCall = heldByCall())
         if (arrived && output == Output.EARPIECE) {
             ear.update(updated, now)
             facts = updated
@@ -154,6 +174,7 @@ internal class EarWatch(
      * may it go on out loud at an ear.
      */
     fun close() {
+        closed = true
         if (ear.raisedNow()) {
             controls.pause()
             controls.moveTo(Output.SPEAKER)
@@ -162,7 +183,10 @@ internal class EarWatch(
         stopSensing()
         releaseLock()
         stopWatchingDevices()
+        stopWatchingModes()
     }
+
+    private fun heldByCall(): Boolean = heldBack && callUnderWay
 
     private fun set(updated: AtTheEar.Facts) {
         facts = updated
@@ -170,6 +194,7 @@ internal class EarWatch(
     }
 
     private fun follow(wants: AtTheEar.Wants) {
+        if (closed) return
         if (facts.recording != null && wants.output != playingOn) {
             controls.moveTo(wants.output)
             // Taken as done until the session says where it plays: asked
@@ -246,6 +271,27 @@ internal class EarWatch(
         set(facts.copy(headphones = outputs.any { it.type in LISTENING }))
     }
 
+    /** Android's audio mode, for a call's answer and end: the session says
+     *  only that its Play is held back, which a call's ringing does too. */
+    private fun watchModes() {
+        if (watchingModes) return
+        val audio = audio ?: return
+        audio.addOnModeChangedListener({ handler.post(it) }, modes)
+        watchingModes = true
+        modeChanged(audio.mode)
+    }
+
+    private fun stopWatchingModes() {
+        if (!watchingModes) return
+        audio?.removeOnModeChangedListener(modes)
+        watchingModes = false
+    }
+
+    private fun modeChanged(mode: Int) {
+        callUnderWay = inCall(mode)
+        set(facts.copy(heldByCall = heldByCall()))
+    }
+
     companion object {
         private const val LOCK_TAG = "jemrec:ear"
         private const val LOCK_HOLD_MS = 15 * 60_000L
@@ -290,6 +336,15 @@ internal class EarWatch(
          */
         @Volatile
         internal var actAsEarpiece = false
+
+        /** The audio mode of a call the user is on at the phone: a phone
+         *  call made or answered - its ringing has a mode of its own - or a
+         *  messenger call. Not call screening, the mode of a call JemRec's
+         *  answering machine takes, nor a call whose audio goes to another
+         *  device (the redirect modes): the phone may be in a pocket. Measured
+         *  on the Honor, 2026-11-16: ringing, then in call at the answer,
+         *  normal again 0.26 s before the recording was given its audio back. */
+        fun inCall(mode: Int): Boolean = mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
 
         /** Whether the phone has an earpiece - a tablet has none. */
         fun hasEarpiece(context: Context): Boolean =

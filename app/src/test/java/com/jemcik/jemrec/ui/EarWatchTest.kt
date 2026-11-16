@@ -82,12 +82,17 @@ class EarWatchTest {
 
     private fun watched() = sensors.getListeners().isNotEmpty()
 
+    /** Android's audio mode, as a call sets it: its listeners told. */
+    private fun mode(mode: Int) {
+        app.getSystemService(AudioManager::class.java).mode = mode
+    }
+
     private fun darkening(): Boolean = ShadowPowerManager.getLatestWakeLock()?.let { it.isHeld && shadowOf(it).tag == "jemrec:ear" } == true
 
     /** On screen, playing on the speaker. */
     private fun playing(): EarWatch = watch().apply {
         screen(true)
-        player("a.ogg", wanted = true, output = Output.SPEAKER)
+        player("a.ogg", wanted = true, output = Output.SPEAKER, heldBack = false)
         idle()
     }
 
@@ -95,8 +100,91 @@ class EarWatchTest {
     private fun raised(): EarWatch = playing().apply {
         now = 600
         read(true)
-        player("a.ogg", wanted = true, output = Output.EARPIECE)
+        player("a.ogg", wanted = true, output = Output.EARPIECE, heldBack = false)
         idle()
+    }
+
+    /** Lowered to answer, raised for the call: under the call's screen the
+     *  sensor follows the phone, so the recording plays on at the earpiece -
+     *  the Honor played it 1.8 s from the loudspeaker at the ear first
+     *  (2026-11-16). Answered is Android's audio mode, in call. */
+    @Test fun heldBackByACallItFollowsThePhoneToTheEarpiece() {
+        val watch = playing()
+        // The call rings and holds it back; its screen comes up.
+        mode(AudioManager.MODE_RINGTONE)
+        watch.player("a.ogg", wanted = true, output = Output.SPEAKER, heldBack = true)
+        watch.screen(false)
+        idle()
+        assertFalse("not while it only rings", watched())
+        // Answered.
+        now = 1000
+        mode(AudioManager.MODE_IN_CALL)
+        idle()
+        assertTrue(watched())
+        // Raised for the call: moved while it is held back.
+        now = 1600
+        read(true)
+        assertEquals(listOf("move EARPIECE"), done)
+        assertTrue(darkening())
+        // The call over: Android's mode normal, then the audio given back.
+        now = 2000
+        mode(AudioManager.MODE_NORMAL)
+        watch.player("a.ogg", wanted = true, output = Output.EARPIECE, heldBack = false)
+        idle()
+        assertTrue("watched until it is lowered", watched())
+        assertTrue(darkening())
+        // Lowered: the loudspeaker, and nothing watched off the screen.
+        now = 2600
+        read(false)
+        assertEquals(listOf("move EARPIECE", "move SPEAKER"), done)
+        assertFalse(watched())
+    }
+
+    /** Ringing in a pocket, the recording playing there off the screen:
+     *  nothing watched, nothing moved - only a call answered is followed. */
+    @Test fun aCallOnlyRingingMovesNothing() {
+        val watch = watch()
+        watch.player("a.ogg", wanted = true, output = Output.SPEAKER, heldBack = false)
+        mode(AudioManager.MODE_RINGTONE)
+        watch.player("a.ogg", wanted = true, output = Output.SPEAKER, heldBack = true)
+        idle()
+        assertFalse(watched())
+        // Missed: the audio given back, still in the pocket.
+        mode(AudioManager.MODE_NORMAL)
+        watch.player("a.ogg", wanted = true, output = Output.SPEAKER, heldBack = false)
+        idle()
+        assertFalse(watched())
+        assertEquals(emptyList<String>(), done)
+    }
+
+    /** A call JemRec's answering machine takes (call screening), or one
+     *  whose audio goes to another device: the user is not on it at the
+     *  phone, which may be in a pocket - nothing watched. A messenger call
+     *  is followed as a phone call is. */
+    @Test fun onlyACallTheUserIsOnIsFollowed() {
+        val watch = watch()
+        watch.player("a.ogg", wanted = true, output = Output.SPEAKER, heldBack = true)
+        for (m in listOf(AudioManager.MODE_CALL_SCREENING, AudioManager.MODE_CALL_REDIRECT, AudioManager.MODE_COMMUNICATION_REDIRECT)) {
+            mode(m)
+            idle()
+            assertFalse("mode $m", watched())
+        }
+        mode(AudioManager.MODE_IN_COMMUNICATION)
+        idle()
+        assertTrue("a messenger call", watched())
+    }
+
+    /** A mode change already posted when the screen closes for good runs
+     *  after close(): it must not start the sensor or take the lock again -
+     *  nothing would let them go, and the lock renews itself. */
+    @Test fun aChangeQueuedBeforeCloseStartsNothingAfterIt() {
+        val watch = raised()
+        // Told now, run on the main thread later - after close().
+        mode(AudioManager.MODE_IN_CALL)
+        watch.close()
+        idle()
+        assertFalse(watched())
+        assertFalse(darkening())
     }
 
     @Test fun playingOnScreenItWatchesTheSensorAndTheScreenCanGoDark() {
@@ -123,7 +211,7 @@ class EarWatchTest {
     @Test fun aChosenEarpieceIsCoveredAtTheEar() {
         val w = playing()
         w.choose(Output.EARPIECE)
-        w.player("a.ogg", wanted = true, output = Output.EARPIECE)
+        w.player("a.ogg", wanted = true, output = Output.EARPIECE, heldBack = false)
         idle()
         assertTrue("watched, to cover", watched())
         assertFalse(covered)
@@ -137,7 +225,7 @@ class EarWatchTest {
      *  not darken the screen it would light at the cheek - until lowered. */
     @Test fun stoppedAtTheEarTheCoverStaysUntilLowered() {
         val w = raised()
-        w.player(null, wanted = false, output = Output.SPEAKER)
+        w.player(null, wanted = false, output = Output.SPEAKER, heldBack = false)
         idle()
         assertTrue(covered)
         now = 1500
@@ -152,7 +240,7 @@ class EarWatchTest {
         now = 1200
         read(false)
         assertEquals(listOf("move EARPIECE", "move SPEAKER"), done)
-        w.player("a.ogg", wanted = true, output = Output.SPEAKER)
+        w.player("a.ogg", wanted = true, output = Output.SPEAKER, heldBack = false)
         idle()
         assertTrue(watched())
         assertTrue(darkening())
@@ -224,7 +312,7 @@ class EarWatchTest {
     @Test fun reopenedWhileTheEarpiecePlaysItStaysThere() {
         val w = watch()
         w.screen(true)
-        w.player("a.ogg", wanted = true, output = Output.EARPIECE)
+        w.player("a.ogg", wanted = true, output = Output.EARPIECE, heldBack = false)
         idle()
         assertEquals(emptyList<String>(), done)
         assertTrue(darkening())
@@ -233,7 +321,7 @@ class EarWatchTest {
     @Test fun theButtonMovesItAndBack() {
         val w = playing()
         w.choose(Output.EARPIECE)
-        w.player("a.ogg", wanted = true, output = Output.EARPIECE)
+        w.player("a.ogg", wanted = true, output = Output.EARPIECE, heldBack = false)
         w.choose(Output.SPEAKER)
         assertEquals(listOf("move EARPIECE", "move SPEAKER"), done)
     }
@@ -269,7 +357,7 @@ class EarWatchTest {
         w.screen(true)
         idle()
         assertTrue(w.startsOnEarpiece())
-        w.player("a.ogg", wanted = true, output = Output.EARPIECE)
+        w.player("a.ogg", wanted = true, output = Output.EARPIECE, heldBack = false)
         idle()
         assertEquals(emptyList<String>(), done)
         assertTrue("watched, only to cover", watched())
@@ -316,7 +404,7 @@ class EarWatchTest {
      *  down), and the sensor is watched only until then, for the cover. */
     @Test fun stoppedEverythingIsLetGoOnceLowered() {
         val w = raised()
-        w.player(null, wanted = false, output = Output.SPEAKER)
+        w.player(null, wanted = false, output = Output.SPEAKER, heldBack = false)
         idle()
         assertFalse(darkening())
         assertTrue(watched())
@@ -339,7 +427,7 @@ class EarWatchTest {
     @Test fun closedAtAChosenEarpieceItIsLeftThere() {
         val w = playing()
         w.choose(Output.EARPIECE)
-        w.player("a.ogg", wanted = true, output = Output.EARPIECE)
+        w.player("a.ogg", wanted = true, output = Output.EARPIECE, heldBack = false)
         w.close()
         assertEquals(listOf("move EARPIECE"), done)
     }

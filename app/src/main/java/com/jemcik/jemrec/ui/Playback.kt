@@ -208,7 +208,12 @@ internal class Playback(
                 )
             }
         }
-        ear.player(name, c.playWhenReady, output)
+        ear.player(
+            name,
+            c.playWhenReady,
+            output,
+            heldBack = c.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS,
+        )
         if (arrived) state.value.recordings.firstOrNull { it.name == name }?.let(::loadWaveform)
         if (c.isPlaying && screenUp) tick() else ticker?.cancel()
     }
@@ -328,7 +333,7 @@ internal class Playback(
         state.update {
             it.copy(playing = false, playingName = null, positionMs = 0, durationMs = 0, waveform = null, earpiece = false)
         }
-        ear.player(null, wanted = false, output = Output.SPEAKER)
+        ear.player(null, wanted = false, output = Output.SPEAKER, heldBack = false)
     }
 
     /** The screen is gone for good; a recording playing goes on playing,

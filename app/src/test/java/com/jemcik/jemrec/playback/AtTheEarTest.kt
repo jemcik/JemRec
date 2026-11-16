@@ -317,6 +317,38 @@ class AtTheEarTest {
      * raise lasts only while it is watched - on the screen, playing, the
      * earpiece at the ear in Settings, nothing else to listen with.
      */
+    /** Lowered to answer and raised for the call, under the call's screen:
+     *  the call holds it back, and where the phone is when the call ends is
+     *  where it plays on. Unwatched there, it played on 1.8 s from the
+     *  loudspeaker at the ear (the Honor, 2026-11-16). */
+    @Test fun heldBackByACallItFollowsThePhoneAndPlaysOnWhereItIs() {
+        val callsScreen = playing.copy(onScreen = false)
+        val answered = callsScreen.copy(heldByCall = true)
+        raised()
+        // Lowered to answer: the loudspeaker; the call's screen comes up.
+        assertEquals(Output.SPEAKER, ear.sensed(false, playing, 1200).output)
+        assertEquals(Wants(Output.SPEAKER, sensor = false, screenOffLock = false), ear.update(callsScreen, 1300))
+        // Answered: watched under the call, past a quiet start.
+        assertTrue(ear.update(answered, 2000).sensor)
+        // Raised for the call: the earpiece, the screen darkened by the lock.
+        assertEquals(Wants(Output.EARPIECE, sensor = true, screenOffLock = true), ear.sensed(true, answered, 2600))
+        // The call over, JemRec's screen not back yet: it plays on there.
+        assertEquals(Wants(Output.EARPIECE, sensor = true, screenOffLock = true), ear.update(callsScreen, 3000))
+        // Lowered: the loudspeaker, and nothing watched off the screen.
+        assertEquals(Wants(Output.SPEAKER, sensor = false, screenOffLock = false), ear.sensed(false, callsScreen, 3600))
+    }
+
+    /** Under a call, the sensor moves only what it moves on the screen:
+     *  nothing with Loudspeaker set, nor with headphones in. */
+    @Test fun underACallOnlyTheSensorsLoudspeakerMoves() {
+        val answered = playing.copy(onScreen = false, heldByCall = true)
+        ear.update(answered.copy(playThrough = PlayThrough.LOUDSPEAKER), 0)
+        assertEquals(Wants(Output.SPEAKER, sensor = false, screenOffLock = false), ear.sensed(true, answered.copy(playThrough = PlayThrough.LOUDSPEAKER), 600))
+        val buds = AtTheEar()
+        buds.update(answered.copy(headphones = true), 0)
+        assertEquals(Output.SPEAKER, buds.sensed(true, answered.copy(headphones = true), 600).output)
+    }
+
     @Test fun aChosenEarpieceStaysAndARaiseLastsOnlyWhileWatched() {
         val random = Random(83)
         repeat(2000) {
@@ -329,10 +361,11 @@ class AtTheEarTest {
             var lastNear: Boolean? = null
             repeat(40) {
                 now += random.nextLong(0, 900)
-                val w = when (random.nextInt(9)) {
+                val w = when (random.nextInt(10)) {
                     0, 1 -> ear.sensed(true, facts, now).also { lastNear = true }
                     2, 3 -> ear.sensed(false, facts, now).also { lastNear = false }
                     4 -> ear.update(facts.copy(onScreen = !facts.onScreen).also { facts = it }, now)
+                    9 -> ear.update(facts.copy(heldByCall = !facts.heldByCall).also { facts = it }, now)
                     5 -> ear.update(facts.copy(headphones = !facts.headphones).also { facts = it }, now)
                     6 -> ear.update(facts.copy(wanted = !facts.wanted).also { facts = it }, now)
                     7 -> {
@@ -356,7 +389,7 @@ class AtTheEarTest {
                     assertEquals("a raise not watched: $facts", Output.SPEAKER, w.output)
                 }
                 if (chosen == Output.SPEAKER && before == Output.SPEAKER && w.output == Output.EARPIECE) {
-                    assertTrue("raised only on the screen: $facts", facts.onScreen)
+                    assertTrue("raised only on the screen, or under a call: $facts", facts.onScreen || facts.heldByCall)
                 }
                 before = w.output
             }

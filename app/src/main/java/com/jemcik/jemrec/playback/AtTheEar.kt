@@ -53,6 +53,10 @@ internal class AtTheEar(private val quietMs: Long = QUIET_MS) {
         val playThrough: PlayThrough,
         /** A proximity sensor, and the lock that darkens the screen by it. */
         val sensor: Boolean,
+        /** Held back by a call the user is on, by Android's audio mode - a
+         *  phone call made or answered, not one only ringing nor one the
+         *  answering machine takes, or a messenger call - to play on after it. */
+        val heldByCall: Boolean = false,
     )
 
     /** What EarWatch should make so. [cover]: JemRec's own screen blacked
@@ -124,16 +128,22 @@ internal class AtTheEar(private val quietMs: Long = QUIET_MS) {
             raised = false
         }
         // Playing here: on the screen, playing, nothing else to listen with.
-        // In a pocket, under a call's screen, with headphones in or paused,
-        // the sensor moves nothing and covers nothing.
+        // In a pocket, with headphones in or paused, the sensor moves
+        // nothing and covers nothing.
         val raising = facts.playThrough == PlayThrough.LOUDSPEAKER_AND_EAR
         val here = facts.onScreen && facts.recording != null && facts.wanted && !facts.headphones
         // Watched to move a recording that plays on the loudspeaker: raised
         // only on the screen, and once at the ear, until it is lowered,
         // whatever screen is up - left by a cheek's swipe home at the ear,
         // twice on the Honor (2026-11-15), it went on the loudspeaker there.
+        // And through a call that holds it back, so that it plays on after
+        // the call where the phone is: lowered to answer and raised for the
+        // call, it played on 1.8 s from the loudspeaker at the ear, until
+        // JemRec's screen came back from under the call's (the Honor,
+        // 2026-11-16). Not while a phone call only rings: a phone left
+        // ringing in a pocket would move it to the earpiece there.
         val raise = facts.sensor && raising && chosen == Output.SPEAKER && facts.recording != null &&
-            facts.wanted && !facts.headphones && (facts.onScreen || raised)
+            facts.wanted && !facts.headphones && (facts.onScreen || raised || facts.heldByCall)
         if (!raise) {
             // Not watched, nothing holds it at the ear: back where it was
             // started - the recording paused or ended there, headphones in.
@@ -152,8 +162,8 @@ internal class AtTheEar(private val quietMs: Long = QUIET_MS) {
                 quietUntil = nowMs + quietMs
             }
         }
-        // Lowered away from JemRec: nothing more to watch there.
-        val stillRaise = raise && (facts.onScreen || raised)
+        // Lowered away from JemRec: nothing more to watch there, past the call.
+        val stillRaise = raise && (facts.onScreen || raised || facts.heldByCall)
         if (!stillRaise) quietUntil = null
         val output = if (!facts.headphones && (chosen == Output.EARPIECE || raised)) Output.EARPIECE else Output.SPEAKER
         // Covered while a recording plays at the earpiece held to the ear,

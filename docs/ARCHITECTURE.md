@@ -1585,10 +1585,12 @@ voice notes with (`VoiceNoteProximityWakeLockManager` and
   gone home through it, twice, on the Honor.
 - **The proximity sensor** is read while a recording plays with JemRec in
   front and, once the phone is at the ear, until it comes down - the
-  recording ended or JemRec's screen gone meanwhile included. Nothing starts
-  away from JemRec's screen: in a pocket, under a call's screen, or with
-  headphones or Bluetooth in, no raise begins; at an earpiece already chosen
-  the sensor only covers the screen. A reading is near as Signal reads one: closer than 5 cm and not
+  recording ended or JemRec's screen gone meanwhile included - and while a
+  call the user is on holds a recording back to play on after it (below).
+  Otherwise nothing starts away from JemRec's screen: in a pocket, under a
+  call that only rings or that the answering machine takes, or with
+  headphones or Bluetooth in, no raise begins;
+  at an earpiece already chosen the sensor only covers the screen. A reading is near as Signal reads one: closer than 5 cm and not
   the sensor's far value. Signal ignores readings for half a second after
   Play; here one in the half second after Play, or after a move, waits and
   counts only if it still holds then - so a finger near the sensor from the
@@ -1601,14 +1603,39 @@ going out loud to whoever is near once the phone came down; but it had been
 started on the loudspeaker, and a hand passing over the sensor paused it: on
 the Honor, a hand held there 0.64 s on purpose. Now nothing the sensor reads
 pauses a recording; a hand only dips the sound for a moment. Left at the ear
-- a call's screen coming up over JemRec - it goes back to the loudspeaker as
-well, held back by the call as a recording always is, and playing on after
-it - once the phone has come down: left at the ear by a cheek's swipe home,
-it stays at the earpiece until then, whatever screen is up. If JemRec's
-screen is closed for good at the ear, nothing is left to see the phone come
-down: the recording is paused and put back on the loudspeaker. On the Honor, a call ringing unanswered at the ear held it back, with
-JemRec still in front and the phone still at the ear, and it played on in the
-earpiece once the ringing stopped. A test runs 2,000 random runs of
+by a cheek's swipe home, it stays at the earpiece until the phone comes down,
+whatever screen is up. If JemRec's screen is closed for good at the ear,
+nothing is left to see the phone come down: the recording is paused and put
+back on the loudspeaker.
+
+**A call.** A call holds a recording back, as it always has, and it plays on
+after the call - where the phone is then. The sensor follows the phone while a
+call the user is on holds the recording back: a phone call made or answered -
+not one only ringing, which has an audio mode of its own - or a messenger call
+in its call mode, as Android's audio mode tells (the session says only that it
+is held back, which a phone call's ringing does too). Not a call JemRec's
+answering machine takes (call screening), nor one whose audio goes to another
+device (the redirect modes): the phone may be in a pocket then. Lowered to answer and raised for the call, the
+recording is moved to the earpiece while it waits, plays on there, and goes to
+the loudspeaker once the phone comes down. Before, nothing watched under the
+call's screen: on the Honor, 2026-11-16, lowered to answer and raised for the
+call, it played on 1.8 s from the loudspeaker at the ear when the other side
+hung up - heard so, on the second run - until JemRec's screen came back and
+moved it. Android had given it the audio back 0.26 s after the call's mode
+ended, with the call's screen still up for 1.3 s more. With the watch, the
+same test on the Honor the same day: lowered to answer, it waited on the
+loudspeaker; raised for the call, it was moved to the earpiece 0.53 s after
+the call's mode began, while held back; and when the other side hung up it
+played on at the earpiece 0.29 s after the mode was normal again - its
+loudspeaker player never started, and it was heard at the earpiece. A call only ringing
+moves nothing: a phone left ringing in a pocket would have moved it to the
+earpiece there. On the Honor, a call ringing unanswered at the ear held it
+back, with JemRec still in front and the phone still at the ear, and it
+played on in the earpiece once the ringing stopped. The watch is the
+screen's (`EarWatch`, in the view model): with JemRec's screen closed for good -
+from Recents, the recording playing on under the system's controls - nothing
+follows the phone through a call, and it plays on where it was, as before 1.1.
+A test runs 2,000 random runs of
 everything that can happen: an earpiece the button or the setting chose is
 never left by the sensor, and the earpiece of a raise lasts only while the
 sensor is watched (`AtTheEarTest.aChosenEarpieceStaysAndARaiseLastsOnlyWhileWatched`).

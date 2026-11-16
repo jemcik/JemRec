@@ -3882,7 +3882,7 @@ HOW_BODY = f"""
     <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
     <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
     <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
-    <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen and, once the phone is at your ear, until you take it down.</td></tr>
+    <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down.</td></tr>
   </table>
 
   <div class="note">
@@ -4085,7 +4085,12 @@ PRIVACY_BODY = f"""
   <p>While a recording plays with JemRec in front, the phone&rsquo;s proximity
      sensor is read to know when you hold the phone to your ear - and, once
      it is there, until you take it down, even if the recording ends or
-     JemRec&rsquo;s screen goes meanwhile. Nothing of it is kept.</p>
+     JemRec&rsquo;s screen goes meanwhile. It is read too while a call holds a
+     recording back, from when you make or answer it - or a messenger app
+     puts the phone in its call mode - not while it only rings or JemRec&rsquo;s
+     answering machine takes it: so that the recording plays on after the call
+     where the phone is, at your ear or on the loudspeaker. Nothing of it is
+     kept.</p>
 
   <h2>Network use</h2>
   <p>The app holds the <code>INTERNET</code> permission and uses no network. Android

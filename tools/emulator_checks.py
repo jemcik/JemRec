@@ -1441,7 +1441,9 @@ def raise_to_listen():
     recorder from taking it for a messenger call: it counts one only in
     communication mode (Voip.java; measured on the Honor with four messengers
     watched, 2026-11-15; no check here switches a messenger on). Lowered,
-    it goes back to the loudspeaker and plays on. The player's button moves
+    it goes back to the loudspeaker and plays on. A call answered, JemRec
+    off the screen and the phone raised, moves it to the earpiece while it
+    waits, and it plays on there. The player's button moves
     it too; and with Earpiece in Settings, a recording opens there. An
     emulator has no earpiece: the debug build acts as if it had one (the
     `earpiece` diag op), so what is checked is all but the sound."""
@@ -1474,6 +1476,38 @@ def raise_to_listen():
         assert session_is("PLAYING"), f"lowered, it is {session()}"
         wait_for(lambda: not covered(), 10, "the cover to go as the phone is lowered")
         assert ear_lock(), "lowered, the lock was let go while it plays on"
+        # A call holds it back. Answered, the call's screen over JemRec's,
+        # and raised for the call: it is moved to the earpiece while it
+        # waits, and plays on there after the call. Unwatched under the
+        # call's screen it played on 1.8 s from the loudspeaker at the ear
+        # (the Honor, 2026-11-16), until JemRec's screen came back.
+        adb("emu", "gsm", "call", STRANGER_IN)
+        wait_for(lambda: session_is("PAUSED"), 15, "a ringing call to hold it back")
+        sh("input keyevent KEYCODE_CALL")
+        wait_for(lambda: audio_mode() == "IN_CALL", 15, "the call to be answered")
+        # The Honor's call screen covers JemRec's; answered by the call key,
+        # the Android 12 and 13 AVDs left JemRec in front (2026-11-16), so
+        # it is sent Home there - off the screen, as under the call's.
+        def in_front():
+            return PKG in sh("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity:'")
+        try:
+            wait_for(lambda: not in_front(), 5, "")
+        except TimeoutError:
+            sh("input keyevent KEYCODE_HOME")
+        wait_for(lambda: not in_front(), 10, "JemRec's screen gone under the call")
+        time.sleep(1)  # past the quiet start of the watch under the call
+        proximity(0)
+        wait_for(lambda: any(u == "USAGE_VOICE_COMMUNICATION" for _, u in players(uid)), 10,
+                 "the recording to move to the earpiece under the call")
+        assert session_is("PAUSED"), f"under the call, it is {session()}"
+        hang_up()
+        wait_for(lambda: ("started", "USAGE_VOICE_COMMUNICATION") in players(uid), 15,
+                 "it to play on at the earpiece after the call")
+        time.sleep(1)  # past the quiet after the move
+        proximity(5)
+        wait_for(lambda: ("started", "USAGE_MEDIA") in players(uid), 10,
+                 "the loudspeaker as it is lowered after the call")
+        sh(f"am start -n {PKG}/.MainActivity")
         tap_until("Playing through the loudspeaker - tap for the earpiece",
                   "Playing through the earpiece - tap for the loudspeaker", 15, "the player's earpiece button")
         wait_for(lambda: ("started", "USAGE_VOICE_COMMUNICATION") in players(uid), 10,
@@ -1491,12 +1525,20 @@ def raise_to_listen():
         assert mode == "NORMAL", f"at the earpiece by Settings, the audio mode is {mode}"
     finally:
         proximity(5)
+        # A step that failed under the call leaves it up for the checks after;
+        # said, not raised, so the step's own failure is the one reported.
+        try:
+            if not phone_idle():
+                hang_up()
+        except Exception as e:
+            print(f"     (the call could not be ended afterwards: {e})")
         try:
             diag("pref", "--es", "key", "play_through")
             diag("earpiece", "--ez", "on", "false")
         finally:
             sh(f"am force-stop {PKG}")
     return ("raised: voice-call audio, screen covered, mode NORMAL, lock held; lowered: the loudspeaker, playing on; "
+            "raised under a call: the earpiece while held back, playing on there; "
             "the button moves it; Earpiece in Settings opens it there")
 
 
