@@ -78,6 +78,9 @@ class ProtocolTest {
         assertEquals(true, CaptureDaemon.parseListenerReply(example("B", "LISTENER ok")))
         assertEquals(false, CaptureDaemon.parseListenerReply(example("B", "LISTENER failed")))
         assertNull(CaptureDaemon.parseListenerReply("LISTENER maybe"))
+        assertEquals(true, CaptureDaemon.parsePairingReply(example("J", "PAIRING ok")))
+        assertEquals(false, CaptureDaemon.parsePairingReply(example("J", "PAIRING failed")))
+        assertNull(CaptureDaemon.parsePairingReply("PAIRING maybe"))
 
         val sims = CaptureDaemon.parseSims(example("XP", "SIMS"))
         assertEquals("1", sims!!.defaultId)

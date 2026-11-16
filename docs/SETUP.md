@@ -72,12 +72,20 @@ JemRec does **not** ask for microphone access and does not have it. The
 recording is done by a separate, more privileged helper that the app starts
 later; the app itself only collects the finished file.
 
-**Then one question.** Before you switch anything on, JemRec says what stays
+**Then two questions.** Before you switch anything on, JemRec says what stays
 on: USB debugging and Wireless debugging, for as long as it is installed,
 turned back on if they go off. Android shows a notification for as long as
 debugging is on, and JemRec asks whether to hide it. Either answer works.
 Hidden, nothing on screen reminds you that debugging is on; you can change it
 later in Settings.
+
+Then whether to **keep JemRec paired**. Android forgets a debugging pairing 7
+days after it is made; calls are still recorded, but the next time the recorder
+has to start — after a restart, say — you would pair again. **Keep it paired**
+turns Android's pairing timeout off — *Disable adb authorization timeout*, in
+Developer options on phones that show it (an Honor does not) — which keeps a
+computer you allowed over a cable too; **Leave it** leaves Android's 7 days.
+You can change it later in Settings.
 
 ## Step 2 — Turn on Developer options
 
@@ -430,6 +438,18 @@ headphones coming out pause it until you play it again. It does not start
 during a call. The notification's pause, or the chevron, stops it; swiping
 JemRec away leaves it playing, as music apps do.
 
+**At your ear.** Hold the phone to your ear while a recording plays, and it
+moves to the earpiece and the screen goes dark, as in a call - on a phone that
+leaves its screen on, such as an Honor on its side, JemRec blacks out its own
+and takes no touch until you lower it. Lower the phone and it goes back to the
+loudspeaker, playing on. The button at the top right of the player shows where
+it plays - a loudspeaker or an ear - and a tap moves it to the other, for that
+recording, without raising the phone. With headphones in, the recording plays
+in them and the button is not there. **Settings → Playing → Play recordings**
+chooses: the loudspeaker alone, for a phone whose sensor a hand keeps setting
+off; the loudspeaker with the earpiece at your ear, as above; or the earpiece,
+never switched to the loudspeaker by itself.
+
 **Finding a recording.** The chips above the list narrow it: favourites, the
 phone or a messenger, kept, messages. The magnifier opens a search by name,
 number or time. Chips of one kind add up - WhatsApp and Telegram - and
@@ -665,6 +685,26 @@ times its own restart after a cable: the first moment it is allowed to run and
 finds minutes gone instead of seconds, it puts up the same notification, and
 says how long it was held back once the recorder is back.
 
+## Keeping the pairing
+
+Android forgets a debugging pairing 7 days after it is made, however often
+JemRec connects over Wireless debugging, which never renews it. The recorder
+runs on, but the next time it has to start, after a restart or an unplug, the
+phone turns JemRec away and JemRec goes back to its pairing step. Measured on
+an Honor: after the cable came out of a computer every connection was refused,
+and Android no longer listed JemRec's pairing — an unplug earlier that day had
+brought the recorder back in seconds; on the emulator, with Android's time cut
+to two minutes, JemRec's pairing went three seconds later, a second after
+JemRec had connected.
+
+**Keep JemRec paired** — the question after the debugging one, and in Settings
+— turns that timeout off: on phones that show it, it is *Disable adb
+authorization timeout* in Developer options (an Honor does not), and it keeps a
+computer you allowed over a cable as well. JemRec's recorder changes it and
+remembers what it was; turned off in Settings, by Start fresh, or by
+uninstalling JemRec, it goes back to that, while the recorder runs. If you set
+it yourself before, JemRec leaves it as you set it.
+
 ## What the app tells you
 
 The header is the honest indicator:
@@ -676,7 +716,7 @@ The header is the honest indicator:
 | **Cannot record** · Join any Wi-Fi to resume | Join any Wi-Fi and it resumes on its own. Usually a reboot, or a long stretch away from a network. |
 | **Cannot record** · Tap to start it again | On Wi-Fi, the recorder did not come back. Tap the line to try now. |
 | **Cannot record** · Tap to allow this Wi-Fi | You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick **Always allow on this network** and tap **Allow**; the recorder starts a few seconds later. |
-| **Cannot record** · Tap to pair again | Wireless debugging turns JemRec away, as it does once its pairing is deleted. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before. |
+| **Cannot record** · Tap to pair again | Wireless debugging turns JemRec away, as it does once its pairing is deleted — Android deletes it 7 days after it is made, unless Keep JemRec paired is on. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before. |
 | **Starting...** | Rebuilding the recorder. A few seconds. |
 | **Off** · Tap the button to record calls | You turned the switch off. |
 | **Off** · Debugging off · turn on over Wi-Fi | You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi - unless Start without Wi-Fi has opened its port, and then the line is the plain one above. |
@@ -726,6 +766,14 @@ everything still works, with the time as each recording's headline.
 - **Theme** — Memo, Deck or Multitrack, and light, dark or as the phone; see
   Three looks.
 
+**Playing**
+
+- **Play recordings** — on the loudspeaker; on the loudspeaker with the
+  earpiece while you hold the phone to your ear (the default); or on the
+  earpiece, never switched to the loudspeaker by itself. Headphones, when in,
+  come first. Only on a phone with an earpiece; the earpiece at your ear only
+  with a proximity sensor.
+
 **Saving**
 
 - **Saving to** — which folder recordings go in, and back to the default.
@@ -759,6 +807,12 @@ everything still works, with the time as each recording's headline.
   changeable. Debugging stays on either way while JemRec is on; this is only
   about whether Android's notification saying so is shown. After setup JemRec's
   recorder grants what it needs, so turning it on needs JemRec ready to record.
+- **Keep JemRec paired** — the second question in step 1, changeable. On,
+  Android forgets no pairing, a computer's neither; off, it forgets JemRec's 7
+  days after it is made. JemRec's recorder changes it, so a change made while
+  the recorder is down says it waits for it. Turned off — here, by Start fresh,
+  or by uninstalling — it goes back to what it was before JemRec turned it on,
+  by the recorder, so while it runs. See Keeping the pairing.
 
 **Troubleshooting**
 
@@ -817,11 +871,12 @@ which is what it takes to fix it for a phone the developer has never held.
 
 **JemRec is back on its pairing step, or a notification says it cannot
 connect.** The phone has most likely forgotten its pairing — Wireless debugging
-→ Paired devices no longer lists JemRec, as after deleting it there. Once
-Wireless debugging has turned JemRec away twice in a row, the home screen gives
-way to the pairing step, and the notification's **Pair again** opens it too: a
-fresh code puts everything back, recordings and settings included. If the
-pairing was fine after all, JemRec reconnects without asking for a code.
+→ Paired devices no longer lists JemRec, as 7 days after it was made unless
+**Keep JemRec paired** is on, or after deleting it there. Once Wireless
+debugging has turned JemRec away twice in a row, the home screen gives way to
+the pairing step, and the notification's **Pair again** opens it too: a fresh
+code puts everything back, recordings and settings included. If the pairing was
+fine after all, JemRec reconnects without asking for a code.
 
 **A notification says a call was not recorded.** Tap **Self-test**. It says
 whether the recorder is running and hearing calls; a recorder that was down at
@@ -834,20 +889,22 @@ is nothing special to do.
 
 The recorder is a separate system process rather than part of the app, so
 removing the package does not stop it immediately. It checks every few minutes
-whether JemRec is still installed, and when it is not it turns both debugging
-switches off, deletes its own files and exits. A reinstall is never fooled by
-one that has not got there yet, either: the app only trusts a recorder it
-started itself, and retires any other on sight.
+whether JemRec is still installed, and when it is not it puts Android's pairing
+timeout back if Keep JemRec paired turned it off, turns both debugging switches
+off, deletes its own files and exits. A reinstall is never fooled by one that
+has not got there yet, either: the app only trusts a recorder it started
+itself, and retires any other on sight.
 
 > **What no app can undo.** The phone goes on trusting the key it paired with,
-> in a list only root can edit, so it stays under *Wireless debugging → Paired
-> devices*; remove it there with the gear beside it. Developer options stays on
-> if you turned it on. And Start fresh leaves the one privileged setting
-> granted, because handing it back would kill the app halfway through the
-> reset. If you tapped **Wait 30 seconds** under *Carrier voicemail*, your
-> carrier still waits 30 seconds before its voicemail answers: that timer is
-> your carrier's, not the phone's, and JemRec did not keep what it was before.
-> Ask your carrier to set it back if you want the shorter wait.
+> until Android's 7 days are up, in a list only root can edit, so it stays
+> under *Wireless debugging → Paired devices*; remove it there with the gear
+> beside it. Developer options stays on if you turned it on. And Start fresh
+> leaves the one privileged setting granted, because handing it back would kill
+> the app halfway through the reset. If you tapped **Wait 30 seconds** under
+> *Carrier voicemail*, your carrier still waits 30 seconds before its voicemail
+> answers: that timer is your carrier's, not the phone's, and JemRec did not
+> keep what it was before. Ask your carrier to set it back if you want the
+> shorter wait.
 
 ## Two honest warnings
 
@@ -861,5 +918,6 @@ to record calls at all, so it keeps them on, and turns them back on if they go
 off. While they are on, a computer that has been paired with this phone can
 connect to it on the same Wi-Fi, and one you have allowed before can connect
 over a cable — so check *Wireless debugging → Paired devices* now and then and
-remove any you do not recognise. If you stop using JemRec, uninstall it first,
+remove any you do not recognise. With **Keep JemRec paired** on, Android
+forgets none of them by itself. If you stop using JemRec, uninstall it first,
 then turn Wireless debugging, USB debugging and Developer options back off.

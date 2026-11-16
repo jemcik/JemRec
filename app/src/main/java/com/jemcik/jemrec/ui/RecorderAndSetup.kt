@@ -5,6 +5,7 @@ import android.util.Log
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.KeepPaired
 import com.jemcik.jemrec.recorder.NetworkRevive
 import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recorder.RecorderHealth
@@ -645,6 +646,19 @@ internal class RecorderAndSetup(
         state.update { it.copy(debugNotificationHidden = hide, debugNotificationProblem = null) }
         // From the setup step, move on to the next one.
         if (state.value.step != SetupStep.READY) recheckSetup()
+    }
+
+    /**
+     * Keep JemRec paired, or not: the answer to setup's question, and the
+     * switch in Settings after it (KeepPaired). The recorder carries it out
+     * if one answers; otherwise it waits for the next (KeepPaired.carryOut),
+     * and the switch says so, as it says a refusal. Then a fresh reading
+     * shows the setting as Android has it, over any reading begun before.
+     */
+    fun setKeepPaired(keep: Boolean) = actions.run(Action.KEEP_PAIRED) {
+        KeepPaired.choose(app, keep)
+        // From the setup step, move on to the next one.
+        if (state.value.step != SetupStep.READY) recheckSetup() else reading.now()
     }
 
     /** Guards against two bring-ups racing when the screen is reopened. */

@@ -27,7 +27,8 @@ this one is - or to check that it does what it says.
   [Google Meet and other apps' calls](#google-meet-and-other-apps-calls-through-telecom) ·
   [the answering machine](#the-answering-machine) ·
   [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
-  [playing in the background](#playing-in-the-background) · [three looks](#three-looks) ·
+  [playing in the background](#playing-in-the-background) ·
+  [playing at your ear](#playing-at-your-ear) · [three looks](#three-looks) ·
   [a tap while it checks](#a-tap-while-the-app-is-checking) · [one window](#one-window) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [marks inside the recording](#marks-inside-the-recording) ·
@@ -36,6 +37,7 @@ this one is - or to check that it does what it says.
 - The phone: [permissions](#what-it-does-not-ask-for) ·
   [when the phone refuses the grant](#when-the-phone-refuses-the-grant) ·
   [what stays switched on](#what-stays-switched-on) ·
+  [keeping the pairing](#keeping-the-pairing) ·
   [off, and debugging with it](#off-and-debugging-with-it)
 - The code: [errors and cancellation](#errors-and-cancellation) ·
   [where coroutines run](#where-coroutines-run)
@@ -1538,6 +1540,114 @@ holds all of this below on each release AVD.
   the row's chevron, stops it. Reopened while it plays, the app shows it
   where it is, waveform and all.
 
+## Playing at your ear
+
+Held to the ear while it plays, a recording moves to the earpiece and the
+screen goes dark, as in a call; lowered, it goes back to the loudspeaker and
+plays on. Asked for in discussion #83. The parts are the ones Signal plays
+voice notes with (`VoiceNoteProximityWakeLockManager` and
+`VoiceNotePlayerCallback` in its source, read 2026-11-14):
+
+- **The earpiece is voice-call audio.** A recording plays as `USAGE_MEDIA`,
+  which goes to the loudspeakers or the headphones; at the ear it plays as
+  `USAGE_VOICE_COMMUNICATION`, which Android sends to the earpiece as it does
+  a call's. The audio mode is left alone: the answering machine and the
+  recorder read "in communication" as another app's call (`CallTracker`,
+  `Voip`), and nothing here needs it. Measured with a probe on the Honor,
+  2026-11-15: voice-call audio on the earpiece with the mode normal, heard
+  there "as in a call", and the recorder, watching four messengers, logging
+  no messenger call - it takes one only from an app that plays call audio and
+  records at once. `MediaPlayer` takes its attributes only before `prepare()`
+  (Android's `MediaPlayer` docs), so a move opens the file again where it
+  was: 69-83 ms on the Honor, heard as smooth. The volume keys follow it: at
+  the ear they moved the call volume, on the Honor's 1.1 build (Media3 hands
+  the session's attributes to Android's media session).
+- **The screen goes dark** by Android's `PROXIMITY_SCREEN_OFF_WAKE_LOCK`, the
+  lock a phone app holds in a call. On the Honor: dark at the ear with JemRec
+  still in front - not paused or stopped by it - a cheek pressed on it
+  changing nothing, and the power key at the ear lit the screen rather than
+  locking the phone. It is let go only once the phone is away from the ear
+  (`RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY`), so a recording that ends at the ear
+  does not light the screen against the cheek. Not every phone darkens it,
+  though: the Honor on its side ignores the sensor ("Not response proximity
+  sensor for rotation" in its log, 2026-11-15), and the screen stayed on at
+  the ear while a cheek pressed the player's buttons. So JemRec covers its own
+  screen as well while a recording plays at the earpiece at the ear - black,
+  at the window's lowest brightness, taking every touch, nothing under it for
+  TalkBack (`EarCover`) - and the sensor is watched for that at a chosen
+  earpiece too. The cover stays until the phone leaves the ear: a recording
+  that ends or is paused there does not take it off at the cheek, nor is a
+  turn of the phone, which remakes the screen, counted as leaving it. On the
+  Honor, 2026-11-16, turned to landscape at the ear, JemRec's screen was made
+  again in 37 ms while the recording played on in the earpiece and the
+  screen stayed dark, until the phone came down. The system's bars are hidden
+  under it, shown again by a swipe from their edge: a cheek's swipe up had
+  gone home through it, twice, on the Honor.
+- **The proximity sensor** is read while a recording plays with JemRec in
+  front and, once the phone is at the ear, until it comes down - the
+  recording ended or JemRec's screen gone meanwhile included. Nothing starts
+  away from JemRec's screen: in a pocket, under a call's screen, or with
+  headphones or Bluetooth in, no raise begins; at an earpiece already chosen
+  the sensor only covers the screen. A reading is near as Signal reads one: closer than 5 cm and not
+  the sensor's far value. Signal ignores readings for half a second after
+  Play; here one in the half second after Play, or after a move, waits and
+  counts only if it still holds then - so a finger near the sensor from the
+  tap on Play moves nothing, and a raise that wobbles stays at the ear.
+
+**Lowered, the loudspeaker.** Taken down from the ear, a recording goes back to
+the loudspeaker it was started on and plays on - the user's choice
+(2026-11-15), over pausing as Signal does. Pausing kept a private call from
+going out loud to whoever is near once the phone came down; but it had been
+started on the loudspeaker, and a hand passing over the sensor paused it: on
+the Honor, a hand held there 0.64 s on purpose. Now nothing the sensor reads
+pauses a recording; a hand only dips the sound for a moment. Left at the ear
+- a call's screen coming up over JemRec - it goes back to the loudspeaker as
+well, held back by the call as a recording always is, and playing on after
+it - once the phone has come down: left at the ear by a cheek's swipe home,
+it stays at the earpiece until then, whatever screen is up. If JemRec's
+screen is closed for good at the ear, nothing is left to see the phone come
+down: the recording is paused and put back on the loudspeaker. On the Honor, a call ringing unanswered at the ear held it back, with
+JemRec still in front and the phone still at the ear, and it played on in the
+earpiece once the ringing stopped. A test runs 2,000 random runs of
+everything that can happen: an earpiece the button or the setting chose is
+never left by the sensor, and the earpiece of a raise lasts only while the
+sensor is watched (`AtTheEarTest.aChosenEarpieceStaysAndARaiseLastsOnlyWhileWatched`).
+
+**Settings → Playing → Play recordings** chooses where recordings play:
+*Loudspeaker*, where holding the phone to the ear changes nothing - for a
+sensor a hand keeps setting off (people report it with Signal's); *Loudspeaker,
+earpiece at your ear*, the default, as above; or *Earpiece*, where each
+recording opens at the earpiece and is never moved to the loudspeaker by
+itself (asked for by the user, 2026-11-15). Headphones or Bluetooth, when in,
+come first in each - but not Bluetooth for calls alone (SCO without A2DP, a
+car kit, say), which by the Bluetooth profiles carries no media: the
+recording plays on the loudspeaker there, and the earpiece is offered. That
+is inferred, not tried; only buds, listing SCO beside A2DP, were (the Honor,
+2026-11-15). With Earpiece set, a recording's attributes are given
+before it is opened, so it is never a moment on the loudspeaker first. The
+setting shows only on a phone with an earpiece, and its middle choice only
+with a proximity sensor. A tablet has neither, and nor does an emulator: the
+Android 17 AVD lists a speaker and Telephony Tx (2026-11-15). The emulator
+check `raise_to_listen` sets the sensor through the emulator's console and has
+the debug build act as if there were an earpiece, so it holds all of this but
+the sound.
+
+**The button.** The button at the top right of the playing card shows where a
+recording plays - a loudspeaker, or an ear in the look's colour for on - and a
+tap moves the recording playing to the other, until the next one. The user
+picked it from three drawn (2026-11-15); the first, a phone handset, was
+tapped for Play on the Honor, and in a call recorder can read as "call back".
+In the player's bar beside the time it cut Multitrack's timecode off at
+360 dp, so it sits beside the name. It is the screen's alone: the system's
+controls - a lock screen, a car - may play, pause and seek, never move it
+(`SessionPlayer.TRANSPORT`). JemRec reopened while one plays at an earpiece
+the button chose finds it there.
+
+Where it lives: `AtTheEar` decides, in plain Kotlin; `EarWatch` reads the
+sensor, holds the lock and watches for headphones; `PlayThroughSetting` keeps
+the choice; `SessionPlayer` opens the file again for the output that Media3's
+`setAudioAttributes` asks for.
+
 ## Three looks
 
 The app comes in three looks, picked in Settings → Theme: **Memo**, the
@@ -1893,7 +2003,9 @@ out on the day you need the call. So JemRec says so, in four notifications.
   with its own line, and only off Wi-Fi does it say to join one. A pairing
   turned away twice in a row sends home to setup's pairing step instead, which
   says why: through 0.19 the header told the user to join a Wi-Fi they were on,
-  their pairing deleted (the Honor, 2026-10-24).
+  their pairing deleted (the Honor, 2026-10-24). Since 1.1 it also says, with
+  Android's pairing timeout on, that Android deletes a pairing 7 days after it
+  is made (see [Keeping the pairing](#keeping-the-pairing)).
 - **A call was not recorded** - in automatic mode, with call-log access, the
   call log is held against what was recorded, and an answered call with nothing
   to show for it is reported once. Recordings you delete do not count as missed:
@@ -1956,7 +2068,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
 | `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine's answering is the recorder's, as the shell. |
 | `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
-| `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. |
+| `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen at the ear ([playing at your ear](#playing-at-your-ear)); the proximity sensor it goes by needs no permission. |
 
 No request to any server either. *Newest version*, in Settings' About,
 hands GitHub's address for the newest release to the browser, which makes
@@ -2080,6 +2192,58 @@ shield stands down first, as for debugging off: until 0.31 its ten-second
 check could put USB debugging back on in the moment before the recorder
 exited (read from the code).
 
+
+## Keeping the pairing
+
+Android forgets a debugging pairing a week after it is made. Each paired key
+has a time, set when it pairs and by each connection signed in adb's older way,
+over USB or to port 5555 (adbd tells Android of those, and Android notes the
+time) - never by a connection over Wireless debugging - and a key older than
+`adb_allowed_connection_time` (7 days where nobody set it) is deleted the next
+time Android writes its list of keys: when a computer's cable goes in or out,
+at its daily check, or as debugging starts - the phone's start, or a switch-on
+with the other debugging switch off, which a revive's Wireless debugging off
+and on can be (`AdbDebuggingManager`, read in AOSP, android11-release and main,
+2026-11-15; `adbd_notify_framework_connected_key` in adbd's `adb.cpp`).
+JemRec connects over Wireless debugging - to port 5555 only with Start
+without Wi-Fi, whose revives would renew it (read, not measured) - so its
+pairing ends a week after setup, however often it connects. The recorder runs
+on - once up it needs no ADB - but the next time it has to be started, after a
+restart or a cable out on the Honor, the phone turns JemRec away, and home goes
+to the pairing step.
+
+Measured on the Honor, 2026-11-15: at 19:44:46 the cable to a computer came
+out, `adbd` stopped as it does there ([Unplugged from a
+computer](#unplugged-from-a-computer)), Wireless debugging was switched off and
+on, and each of five connections in the next two minutes was refused; `dumpsys
+adb` then listed the computer's key and not JemRec's. The same unplug at 01:13
+that day had brought the recorder back in 16.6 s. On the Android 17 emulator
+the same day, with the time set to two minutes: JemRec paired at 20:47:49,
+connected anew at 20:51:01, and its key was gone at 20:51:05, three seconds
+after the change - the connection already open kept working. Set to 0, the key
+stayed past the same two minutes, through a new connection and the same check.
+(The emulator lets any key in, so the refusal itself shows only on a phone.)
+
+0 is what Developer options' *Disable adb authorization timeout* writes, on
+phones that show it - the Honor's Settings has no such switch, only *Revoke USB
+debugging authorizations* (its resources, read 2026-11-15) - and it keeps every
+pairing - a computer allowed over a cable too - so
+setup asks first: *Keep JemRec paired*, right after the debugging question,
+and once of installs set up before 1.1. Settings → Keep JemRec paired changes
+the answer. The switch shows Android's setting as it is: turned back on by hand,
+it shows off, and nothing turns it off again.
+
+The recorder writes it, as the shell, and first keeps what it was in a file of
+its own in `/data/local/tmp`. Turned off in Settings, at Start fresh, and when
+JemRec is uninstalled (the recorder notices within five minutes, as for the
+debugging switches above), it puts that back - while the setting still reads
+off: a value changed since is left as it is. Only a running recorder can: at
+Start fresh with none up, the put back waits for the one the next setup
+starts, and JemRec uninstalled while it is off with all debugging off leaves
+the timeout off. A timeout off before JemRec asked
+is the user's: nothing is kept, nothing put back. A choice made with no
+recorder up - setup asks before pairing - waits, and goes to the next recorder
+the app finds up, with the settings it sends each.
 
 ## Off, and debugging with it
 

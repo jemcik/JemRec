@@ -53,6 +53,9 @@ import java.util.Locale
 /** The diag preference behind GlobalSettings.actAsHidden. */
 internal const val HIDE_SETTINGS_KEY = "act_as_hidden_settings"
 
+/** The diag preference behind EarWatch.actAsEarpiece. */
+internal const val EARPIECE_KEY = "act_as_earpiece"
+
 internal object DemoRecordings {
 
     private const val TAG = "JemRec"
@@ -248,6 +251,12 @@ class DemoProvider : ContentProvider() {
         if (DiagPrefs.of(context).getBoolean(HIDE_SETTINGS_KEY, false)) {
             com.jemcik.jemrec.system.GlobalSettings.actAsHidden = true
             Log.i("JemRec", "diag: acting as if Android hid adb_enabled and development_settings_enabled")
+        }
+        // Act as if the phone had an earpiece, on an emulator, which has
+        // none. Set with the `earpiece` diag op.
+        if (DiagPrefs.of(context).getBoolean(EARPIECE_KEY, false)) {
+            com.jemcik.jemrec.ui.EarWatch.actAsEarpiece = true
+            Log.i("JemRec", "diag: acting as if the phone had an earpiece")
         }
         // The after-call audio check's numbers, kept where `run-as` can read
         // them: on MagicOS 11 the app's own log lines are not readable.

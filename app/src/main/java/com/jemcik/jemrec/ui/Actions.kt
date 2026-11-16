@@ -95,6 +95,10 @@ internal enum class Action(val label: String, val whenBusy: WhenBusy, val outliv
      *  nothing (0.15's review). */
     DEBUG_NOTIFICATION("debugging notification", WhenBusy.QUEUED, outlivesTheScreen = true),
 
+    /** Keep JemRec paired (KeepPaired): setup's answer, and Settings'
+     *  switch, which is not greyed, as the one above. */
+    KEEP_PAIRED("keep paired", WhenBusy.QUEUED, outlivesTheScreen = true),
+
     /** Delete all for good, said yes to in its dialog. */
     DELETE_FOR_GOOD("delete for good", WhenBusy.QUEUED, outlivesTheScreen = true),
 

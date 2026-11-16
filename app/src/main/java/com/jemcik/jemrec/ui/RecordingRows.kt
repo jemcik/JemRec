@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.jemcik.jemrec.playback.Output
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.ui.theme.DeckColors
 import com.jemcik.jemrec.ui.theme.JemRecColors
@@ -83,6 +84,9 @@ interface RowEvents {
     fun play(recording: Recording)
     fun seekTo(ms: Int)
     fun stopPlaying()
+
+    /** The player's button: the earpiece, or back to the speaker. */
+    fun chooseOutput(output: Output)
     fun toggleKept(recording: Recording)
     fun share(recording: Recording)
     fun startSelecting(recording: Recording)
@@ -93,6 +97,7 @@ interface RowEvents {
         override fun play(recording: Recording) = Unit
         override fun seekTo(ms: Int) = Unit
         override fun stopPlaying() = Unit
+        override fun chooseOutput(output: Output) = Unit
         override fun toggleKept(recording: Recording) = Unit
         override fun share(recording: Recording) = Unit
         override fun startSelecting(recording: Recording) = Unit
@@ -415,6 +420,42 @@ internal fun RowActions(recording: Recording, events: RowEvents, tint: Color, ke
     }
 }
 
+/**
+ * The playing card's earpiece button, at the end of its name and details -
+ * the player's own bar has no room left for it at 360dp. Offered while the
+ * phone has an earpiece and no headphones are in (EarWatch).
+ */
+private fun earpieceSlot(state: UiState, events: RowEvents, tint: Color, on: Color): (@Composable () -> Unit)? =
+    if (state.earpieceOffered) {
+        { EarpieceButton(state.earpiece, events, tint, on) }
+    } else {
+        null
+    }
+
+/**
+ * The earpiece, or back to the loudspeaker. It shows where the recording
+ * plays: a loudspeaker in [tint], or an ear in [on] at the earpiece; a tap
+ * moves it to the other. Raising the phone does the same by itself
+ * (AtTheEar); this is for a phone without a proximity sensor, one set off by
+ * a hand, or Loudspeaker in Settings' "Play recordings".
+ */
+@Composable
+private fun EarpieceButton(earpiece: Boolean, events: RowEvents, tint: Color, on: Color) {
+    val haptics = LocalHapticFeedback.current
+    SmallIconButton({ haptics.tap(); events.chooseOutput(if (earpiece) Output.SPEAKER else Output.EARPIECE) }, 40.dp) {
+        Icon(
+            if (earpiece) EarpieceIcons.Ear else EarpieceIcons.Loudspeaker,
+            contentDescription = if (earpiece) {
+                "Playing through the earpiece - tap for the loudspeaker"
+            } else {
+                "Playing through the loudspeaker - tap for the earpiece"
+            },
+            tint = if (earpiece) on else tint,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
 /** Whether [recording]'s player shows under this row: it is loaded, known
  *  long, the list is not selecting - where the row's taps pick instead -
  *  and the player opens here (LocalPlayerHere). */
@@ -429,7 +470,13 @@ private fun playerShows(recording: Recording, state: UiState) =
  * top, at the user's word: the photo is the row's, not its first line's.
  */
 @Composable
-internal fun RowHead(avatar: @Composable () -> Unit, modifier: Modifier = Modifier, gap: Dp = 12.dp, lines: @Composable ColumnScope.() -> Unit) {
+internal fun RowHead(
+    avatar: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    gap: Dp = 12.dp,
+    trailing: (@Composable () -> Unit)? = null,
+    lines: @Composable ColumnScope.() -> Unit,
+) {
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -437,6 +484,7 @@ internal fun RowHead(avatar: @Composable () -> Unit, modifier: Modifier = Modifi
     ) {
         avatar()
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp), content = lines)
+        trailing?.invoke()
     }
 }
 
@@ -663,6 +711,7 @@ private fun MemoRow(recording: Recording, day: Day, state: UiState, events: RowE
         RowHead(
             modifier = Modifier.memoHead(taps = Modifier.rowTaps(recording, state, events), bottom = if (shows) 6.dp else 4.dp),
             avatar = { RowAvatar(recording, state, events) },
+            trailing = if (shows) earpieceSlot(state, events, tint = scheme.secondary, on = scheme.primary) else null,
         ) {
             RowName(recording, MaterialTheme.typography.bodyLarge)
             RowMeta(recording, day, MaterialTheme.typography.bodySmall, scheme.onSurfaceVariant)
@@ -806,6 +855,7 @@ private fun DeckPlaying(recording: Recording, day: Day, state: UiState, events: 
                 .rowTaps(recording, state, events)
                 .padding(start = 10.dp, end = 2.dp, top = 8.dp, bottom = 6.dp),
             avatar = { RowAvatar(recording, state, events) },
+            trailing = earpieceSlot(state, events, tint = scheme.secondary, on = scheme.onSurface),
         ) {
             RowName(recording, MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface))
             RowMeta(recording, day, deckMono, c.label)
@@ -959,6 +1009,7 @@ private fun MultitrackPlaying(recording: Recording, day: Day, state: UiState, ev
                 modifier = Modifier.rowTaps(recording, state, events),
                 avatar = { RowAvatar(recording, state, events, container = c.panel, content = hue, edge = hue.copy(alpha = c.edge)) },
                 gap = 10.dp,
+                trailing = earpieceSlot(state, events, tint = c.control, on = MaterialTheme.colorScheme.primary),
             ) {
                 RowName(recording, multitrackName.copy(color = c.text))
                 RowMeta(recording, day, multitrackMono, c.muted)

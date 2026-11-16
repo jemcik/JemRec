@@ -181,6 +181,12 @@ final class Commands {
             Wire.reply(client.getOutputStream(), Wire.listener(Listener.allow()));
             return;
         }
+        if (command == Wire.COMMAND_KEEP_PAIRED) {
+            int value = client.getInputStream().read();
+            boolean ok = value == 1 ? PairingTimeout.keep() : value == 0 && PairingTimeout.giveBack();
+            Wire.reply(client.getOutputStream(), Wire.pairing(ok));
+            return;
+        }
         if (command == Wire.COMMAND_SET_TRACKING) {
             int value = client.getInputStream().read();
             Tracking.trackingOn = value == 1;

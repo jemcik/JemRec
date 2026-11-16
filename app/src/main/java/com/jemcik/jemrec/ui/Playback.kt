@@ -13,7 +13,10 @@ import androidx.media3.session.MediaController
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.capture.PlaybackService
+import com.jemcik.jemrec.playback.Output
+import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.playback.PlaybackRules
+import com.jemcik.jemrec.playback.SessionPlayer
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Waveforms
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +54,29 @@ internal class Playback(
     private var screenUp = true
     private var ticker: Job? = null
     private var waveformJob: Job? = null
+
+    /** Listening at the ear: what it decides is done on the session's
+     *  player, as the screen's own taps are. */
+    private val ear = EarWatch(
+        app,
+        object : EarWatch.Controls {
+            override fun moveTo(output: Output) {
+                controller?.setAudioAttributes(SessionPlayer.attributes(output), false)
+            }
+
+            override fun pause() {
+                controller?.pause()
+            }
+
+            override fun offered(offered: Boolean) {
+                state.update { it.copy(earpieceOffered = offered) }
+            }
+
+            override fun cover(covered: Boolean) {
+                state.update { it.copy(earCovered = covered) }
+            }
+        },
+    )
 
     /** What the session does, whoever asked for it: JemRec's own taps, or
      *  the system's controls - a pause from the lock screen, a call holding
@@ -97,6 +123,9 @@ internal class Playback(
             when {
                 c.currentMediaItem?.mediaId != recording.name -> {
                     c.setMediaItem(mediaItem(recording))
+                    // Opened at the earpiece when Settings says so, rather
+                    // than a moment on the loudspeaker first.
+                    if (ear.startsOnEarpiece()) c.setAudioAttributes(SessionPlayer.attributes(Output.EARPIECE), false)
                     c.prepare()
                     c.play()
                 }
@@ -165,18 +194,21 @@ internal class Playback(
         val c = controller ?: return
         val name = c.currentMediaItem?.mediaId
         val arrived = name != null && name != state.value.playingName
+        val output = SessionPlayer.outputOf(c.audioAttributes)
         state.update {
             if (name == null) {
-                it.copy(playingName = null, playing = false, positionMs = 0, durationMs = 0, waveform = null)
+                it.copy(playingName = null, playing = false, positionMs = 0, durationMs = 0, waveform = null, earpiece = false)
             } else {
                 it.copy(
                     playingName = name,
                     playing = c.isPlaying,
                     positionMs = c.currentPosition.toInt(),
                     durationMs = c.duration.takeIf { d -> d != C.TIME_UNSET }?.toInt() ?: 0,
+                    earpiece = output == Output.EARPIECE,
                 )
             }
         }
+        ear.player(name, c.playWhenReady, output)
         if (arrived) state.value.recordings.firstOrNull { it.name == name }?.let(::loadWaveform)
         if (c.isPlaying && screenUp) tick() else ticker?.cancel()
     }
@@ -232,6 +264,15 @@ internal class Playback(
         }
     }
 
+    /** The player's button: the earpiece, or back to the speaker. */
+    fun choose(output: Output) = ear.choose(output)
+
+    /** In front, or not: listening at the ear only while it is (EarWatch). */
+    fun resumed(resumed: Boolean) = ear.screen(resumed)
+
+    /** Settings' "Play recordings". */
+    fun playThrough(playThrough: PlayThrough) = ear.playThrough(playThrough)
+
     /** The screen came forward: show what the session plays - it may have
      *  played on, or been paused from the lock screen, while it was away. */
     fun shown() {
@@ -285,14 +326,16 @@ internal class Playback(
             clearMediaItems()
         }
         state.update {
-            it.copy(playing = false, playingName = null, positionMs = 0, durationMs = 0, waveform = null)
+            it.copy(playing = false, playingName = null, positionMs = 0, durationMs = 0, waveform = null, earpiece = false)
         }
+        ear.player(null, wanted = false, output = Output.SPEAKER)
     }
 
     /** The screen is gone for good; a recording playing goes on playing,
      *  under the system's controls, until they stop it. */
     fun close() {
         ticker?.cancel()
+        ear.close()
         controller?.run {
             removeListener(sessionEvents)
             release()

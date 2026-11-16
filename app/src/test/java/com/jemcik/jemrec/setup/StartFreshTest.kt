@@ -87,11 +87,15 @@ class StartFreshTest {
         // Written on the recorder's threads, read on this one.
         val answeredAt = AtomicLong()
         val quitAt = AtomicLong()
+        // And Keep JemRec paired's put back, asked under the same lock.
+        val putBackAt = AtomicLong()
+        recorder.replies["J"] = "PAIRING ok"
         recorder.stall = { key ->
             if (key == "P" && firstPing.compareAndSet(true, false)) {
                 Thread.sleep(1_500)
                 answeredAt.set(System.nanoTime())
             }
+            if (key == "J") putBackAt.set(System.nanoTime())
             if (key == "Q") quitAt.set(System.nanoTime())
         }
         try {
@@ -104,6 +108,11 @@ class StartFreshTest {
             // Asked to quit after the revive had its answer, not while it waited.
             assertTrue(quitAt.get() > 0)
             assertTrue("quit at $quitAt, answered at $answeredAt", quitAt.get() > answeredAt.get())
+            // Android's pairing timeout put back - a 0 byte - by the recorder
+            // before it quit, and after the revive: under the lock too.
+            assertTrue(recorder.heard.any { it.key == "J" && it.payload.contentEquals(byteArrayOf(0)) })
+            assertTrue("put back at $putBackAt, answered at $answeredAt", putBackAt.get() > answeredAt.get())
+            assertTrue("put back at $putBackAt, quit at $quitAt", putBackAt.get() < quitAt.get())
             assertFalse(AdbIdentity.exists(context))
         } finally {
             recorder.close()

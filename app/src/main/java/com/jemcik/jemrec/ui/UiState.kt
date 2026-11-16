@@ -4,6 +4,7 @@ import android.content.IntentSender
 import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
@@ -128,12 +129,33 @@ data class UiState(
     val debugNotificationHidden: Boolean = false,
     /** Whether a notification with Play, Share and Delete follows each call. */
     val afterCallNotice: Boolean = true,
+    /** Settings' "Play recordings" (PlayThroughSetting). */
+    val playThrough: PlayThrough = PlayThrough.LOUDSPEAKER_AND_EAR,
+    /** The phone has an earpiece, so Settings offers "Play recordings"
+     *  (EarWatch.hasEarpiece). */
+    val earpieceAvailable: Boolean = false,
+    /** ...and a proximity sensor, so it offers the earpiece at the ear
+     *  (EarWatch.canRaise). */
+    val raiseAvailable: Boolean = false,
     /**
      * Turning the hiding on from Settings could not grant notification
      * access, and why (Setup.grantNotificationAccess). Shown under the
      * switch until the next try.
      */
     val debugNotificationProblem: Setup.GrantProblem? = null,
+    /** Android forgets no debugging pairing: its timeout is off, by Keep
+     *  JemRec paired or by hand (KeepPaired.kept). */
+    val pairingKept: Boolean = false,
+    /** How many days Android keeps a pairing while the timeout is on: 7
+     *  unless someone set it (KeepPaired.days). */
+    val pairingDays: Int = 7,
+    /** A Keep JemRec paired choice no recorder has carried out yet: true to
+     *  keep, false to put back (KeepPaired.waiting). */
+    val keepPairedWaiting: Boolean? = null,
+    /** The recorder answered that it could not carry out the choice
+     *  waiting, at its last try: said under the switch until a try works or
+     *  a new choice is made (KeepPaired.refused). */
+    val keepPairedRefused: Boolean = false,
     /** Whether the call log has been offered to the app, and whether the
      *  one-time offer is still worth showing. */
     val canReadCallLog: Boolean = false,
@@ -255,6 +277,14 @@ data class UiState(
     /** Which recording is loaded in the player, and where it is up to. */
     val playingName: String? = null,
     val playing: Boolean = false,
+    /** It sounds at the earpiece (AtTheEar), not the speaker. */
+    val earpiece: Boolean = false,
+    /** The player offers the earpiece: the phone has one, and no headphones
+     *  are in (EarWatch). */
+    val earpieceOffered: Boolean = false,
+    /** The screen covered: a recording plays at the earpiece held to the
+     *  ear (EarCover). */
+    val earCovered: Boolean = false,
     val positionMs: Int = 0,
     val durationMs: Int = 0,
     /** The loaded recording's loudness, for its waveform (Waveforms); null

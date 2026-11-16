@@ -179,6 +179,15 @@ object RecorderLifecycle {
     internal suspend fun endForReset(context: Context) = withContext(Dispatchers.IO) {
         // On IO: Start fresh is run from the screen, and getprop is a process.
         lifecycle.withLock {
+            // Android's pairing timeout put back, if Keep JemRec paired turned
+            // it off: the recorder does it, so before it quits. Android then
+            // deletes a pairing older than its days at once, and closing Start
+            // without Wi-Fi's port below takes a session opened with JemRec's
+            // key: opened first, as a session open outlives its key (the
+            // Android 17 emulator, 2026-11-15; a TLS session there, the
+            // port's inferred). Under the lock, as a revive's session is.
+            PortChange.openForReset(context)
+            KeepPaired.forget(context)
             // Over loopback, NOT over ADB. There is usually no ADB session by
             // this point - there does not need to be one for the app to work - so
             // the old `pkill` route silently did nothing and left the daemon

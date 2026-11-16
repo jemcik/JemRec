@@ -103,6 +103,7 @@ object CaptureDaemon {
     internal fun parseWatch(line: String?): Watch? = DaemonClient.parseWatch(line)
     internal fun parseSims(line: String?): Sims? = DaemonClient.parseSims(line)
     internal fun parseListenerReply(line: String?): Boolean? = DaemonClient.parseListenerReply(line)
+    internal fun parsePairingReply(line: String?): Boolean? = DaemonClient.parsePairingReply(line)
     internal fun fields(line: String?, head: String): Map<String, String>? = DaemonClient.fields(line, head)
     internal fun currentMode(context: Context): Int = DaemonClient.currentMode(context)
     suspend fun quit(context: Context): Boolean = DaemonClient.quit(context)

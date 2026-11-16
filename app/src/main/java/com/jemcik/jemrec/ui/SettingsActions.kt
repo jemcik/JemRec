@@ -19,6 +19,8 @@ import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.playback.PlayThrough
+import com.jemcik.jemrec.playback.PlayThroughSetting
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.RecordingStore
 import com.jemcik.jemrec.recordings.Retention
@@ -139,6 +141,12 @@ internal class SettingsActions(
     fun setAfterCallNotice(on: Boolean) {
         AfterCall.setEnabled(app, on)
         state.update { it.copy(afterCallNotice = on) }
+    }
+
+    /** Settings' "Play recordings". */
+    fun setPlayThrough(playThrough: PlayThrough) {
+        PlayThroughSetting.set(app, playThrough)
+        state.update { it.copy(playThrough = playThrough) }
     }
 
     /** The app repaints at once: both activities draw from Looks, and

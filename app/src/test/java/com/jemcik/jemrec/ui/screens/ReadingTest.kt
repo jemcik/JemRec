@@ -137,6 +137,65 @@ class ReadingTest : ScreenTest() {
         assertTrue(landed.voipNames && landed.debugNotificationHidden && !landed.enabled && landed.debuggingOff)
     }
 
+    /** Every choice Settings saves from its rows is taken as saved when a
+     *  reading lands: one made while the reading waited on the recorder was
+     *  put back (the 1.1 review). */
+    @Test fun aReadingLandsWithTheChoicesAsSaved() {
+        val app = RuntimeEnvironment.getApplication()
+        com.jemcik.jemrec.playback.PlayThroughSetting.set(app, com.jemcik.jemrec.playback.PlayThrough.EARPIECE)
+        com.jemcik.jemrec.calls.AfterCall.setEnabled(app, false)
+        com.jemcik.jemrec.recordings.FileNames.setFormat(app, com.jemcik.jemrec.recordings.FileNames.Format.HONOR)
+        com.jemcik.jemrec.calls.CallRules.setOtherNumbers(app, false)
+        com.jemcik.jemrec.calls.CallTracking.setEnabled(app, false)
+        com.jemcik.jemrec.recordings.Retention.setMaxAgeDays(app, 30)
+        val stale = UiState()
+        val landed = com.jemcik.jemrec.ui.asSaved(app, stale)
+        assertEquals(com.jemcik.jemrec.playback.PlayThrough.EARPIECE, landed.playThrough)
+        assertFalse(landed.afterCallNotice)
+        assertEquals(com.jemcik.jemrec.recordings.FileNames.Format.HONOR, landed.fileNames)
+        assertFalse(landed.ruleOtherNumbers)
+        assertFalse(landed.callTracking)
+        assertEquals(30, landed.autoDeleteAfterDays)
+    }
+
+    /** The tile's answer, the tip seen and the call-log offer dismissed are
+     *  saved from the screen without a reading of their own: taken as saved
+     *  when one lands. */
+    @Test fun aReadingLandsWithTheScreensOwnAnswersAsSaved() {
+        val app = RuntimeEnvironment.getApplication()
+        com.jemcik.jemrec.ui.RecorderTile.setAdded(app, true)
+        com.jemcik.jemrec.ui.SelectHint.markSeen(app)
+        com.jemcik.jemrec.calls.CallLogLookup.dismissBanner(app)
+        val stale = UiState(tileAdded = false, selectHintSeen = false, offerCallLog = true)
+        val landed = com.jemcik.jemrec.ui.asSaved(app, stale)
+        assertTrue(landed.tileAdded)
+        assertTrue(landed.selectHintSeen)
+        assertFalse(landed.offerCallLog)
+    }
+
+    /** A phone with an earpiece, a proximity sensor and the lock that
+     *  darkens the screen by it offers all of "Play recordings", read as
+     *  saved. */
+    @Test fun aRefreshReadsWhereRecordingsPlayAndWhatThePhoneCanDo() {
+        val app = RuntimeEnvironment.getApplication()
+        org.robolectric.Shadows.shadowOf(app.getSystemService(android.media.AudioManager::class.java)).setOutputDevices(
+            listOf(
+                org.robolectric.shadows.AudioDeviceInfoBuilder.newBuilder()
+                    .setType(android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE).build(),
+            ),
+        )
+        org.robolectric.Shadows.shadowOf(app.getSystemService(android.hardware.SensorManager::class.java))
+            .addSensor(org.robolectric.shadows.ShadowSensor.newInstance(android.hardware.Sensor.TYPE_PROXIMITY))
+        org.robolectric.Shadows.shadowOf(app.getSystemService(android.os.PowerManager::class.java))
+            .setIsWakeLockLevelSupported(android.os.PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, true)
+        com.jemcik.jemrec.playback.PlayThroughSetting.set(app, com.jemcik.jemrec.playback.PlayThrough.EARPIECE)
+        val vm = viewModel(UiState(earpieceAvailable = false, raiseAvailable = false))
+        refreshed(vm)
+        assertTrue(vm.state.value.earpieceAvailable)
+        assertTrue(vm.state.value.raiseAvailable)
+        assertEquals(com.jemcik.jemrec.playback.PlayThrough.EARPIECE, vm.state.value.playThrough)
+    }
+
     /**
      * The call log is read only while the Calls tab shows; a refresh on the
      * Recordings tab leaves the calls read last as they were, rather than

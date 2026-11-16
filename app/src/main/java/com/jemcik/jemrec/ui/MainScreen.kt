@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
@@ -100,6 +101,20 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         vm.stopFillingIn()
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.screenShown() }
+
+    // Listening at the ear only while JemRec is in front: in a pocket, or
+    // under a call's screen, the proximity sensor moves nothing (EarWatch).
+    // The screen going dark at the ear does not pause it (measured on the
+    // Honor, 2026-11-15). A turn of the phone remakes the screen, pausing
+    // the old one: not a leaving - counted as one, it took the cover off at
+    // the ear until the new screen read the sensor again (the 1.1 review).
+    // Turned at the ear on the Honor, 2026-11-16: it played on in the
+    // earpiece, the screen dark, until the phone came down.
+    val activity = LocalActivity.current
+    LifecycleResumeEffect(Unit) {
+        vm.screenResumed(true)
+        onPauseOrDispose { if (activity?.isChangingConfigurations != true) vm.screenResumed(false) }
+    }
 
     // A recording saved while this screen is up - by the per-call service
     // seconds after a hang-up, or by the keep-alive's reconcile right after an
@@ -162,7 +177,6 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     // Reset revokes this app's own permissions, and the system only applies
     // that once the app is out of the way. Closing is part of the operation,
     // not a courtesy.
-    val activity = LocalActivity.current
     LaunchedEffect(state.resetDone) {
         if (!state.resetDone) return@LaunchedEffect
         activity?.finishAndRemoveTask()
@@ -234,6 +248,9 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
 
     CompositionLocalProvider(LocalCallerColours provides state.callerColours) {
         Scaffold(
+            // Under the cover at the ear, nothing for TalkBack either: a cheek
+            // exploring the screen would read out and reach the rows.
+            modifier = if (state.earCovered) Modifier.clearAndSetSemantics { } else Modifier,
             snackbarHost = { SnackbarHost(snackbars) },
             topBar = {
                 // No bar during setup. There is nothing to configure yet and no
@@ -384,6 +401,9 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                 }
             }
         }
+        // Over everything, while a recording plays at the earpiece held to
+        // the ear (EarCover).
+        if (state.earCovered) EarCover()
     }
 }
 

@@ -66,6 +66,8 @@ public class WireTest {
         b.put("T TRACK on", () -> Wire.track(true));
         b.put("B LISTENER ok", () -> Wire.listener(true));
         b.put("B LISTENER failed", () -> Wire.listener(false));
+        b.put("J PAIRING ok", () -> Wire.pairing(true));
+        b.put("J PAIRING failed", () -> Wire.pairing(false));
         b.put("K SKIP current", () -> Wire.skip("current"));
         b.put("V VOIP 3 armed", () -> Wire.voip(3, true));
         b.put("W WATCH 1 since=1761990000000 watching=1 looper=ok mode=1 call=0 events=4 lastevent=1761990100000"
@@ -232,6 +234,8 @@ public class WireTest {
         assertEquals('G', Wire.COMMAND_GREETING);
         assertEquals('X', Wire.COMMAND_DIAGNOSE);
         assertEquals('C', Wire.COMMAND_REPORT);
+        assertEquals('B', Wire.COMMAND_ALLOW_LISTENER);
+        assertEquals('J', Wire.COMMAND_KEEP_PAIRED);
         assertEquals(2, Wire.PROTOCOL_VERSION);
     }
 }

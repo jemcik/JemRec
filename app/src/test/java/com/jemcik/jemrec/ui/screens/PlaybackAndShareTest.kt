@@ -106,10 +106,50 @@ class PlaybackAndShareTest : ScreenTest() {
         }
     }
 
+    /** "Earpiece" in Settings, on a phone with one: a recording opens at the
+     *  earpiece, its attributes set before it is prepared - not a moment on
+     *  the loudspeaker first. */
+    @Test fun theEarpieceSettingOpensARecordingAtTheEarpiece() {
+        shadowOf(app.getSystemService(AudioManager::class.java)).setOutputDevices(
+            listOf(
+                org.robolectric.shadows.AudioDeviceInfoBuilder.newBuilder()
+                    .setType(android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE).build(),
+            ),
+        )
+        com.jemcik.jemrec.playback.PlayThroughSetting.set(app, com.jemcik.jemrec.playback.PlayThrough.EARPIECE)
+        val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
+        org.mockito.Mockito.`when`(session.audioAttributes).thenReturn(androidx.media3.common.AudioAttributes.DEFAULT)
+        val vm = viewModel(UiState(recordings = listOf(olivia)), connectSession = { Futures.immediateFuture(session) })
+        vm.screenResumed(true)
+        vm.play(olivia)
+        shadowOf(Looper.getMainLooper()).idle()
+        val order = org.mockito.Mockito.inOrder(session)
+        order.verify(session).setMediaItem(org.mockito.Mockito.any())
+        order.verify(session).setAudioAttributes(
+            com.jemcik.jemrec.playback.SessionPlayer.attributes(com.jemcik.jemrec.playback.Output.EARPIECE),
+            false,
+        )
+        order.verify(session).prepare()
+        order.verify(session).play()
+    }
+
+    @Test fun onTheLoudspeakerARecordingOpensAsBefore() {
+        val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
+        org.mockito.Mockito.`when`(session.audioAttributes).thenReturn(androidx.media3.common.AudioAttributes.DEFAULT)
+        val vm = viewModel(UiState(recordings = listOf(olivia)), connectSession = { Futures.immediateFuture(session) })
+        vm.play(olivia)
+        shadowOf(Looper.getMainLooper()).idle()
+        org.mockito.Mockito.verify(session, org.mockito.Mockito.never())
+            .setAudioAttributes(org.mockito.Mockito.any(), org.mockito.Mockito.anyBoolean())
+        org.mockito.Mockito.verify(session).play()
+    }
+
     /** A take pauses a recording playing: over the loudspeaker it went into
      *  the new greeting. */
     @Test fun aTakePausesARecordingPlaying() {
         val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
+        // As a session gives them: never null, the speaker's (SessionPlayer).
+        org.mockito.Mockito.`when`(session.audioAttributes).thenReturn(androidx.media3.common.AudioAttributes.DEFAULT)
         val vm = viewModel(UiState(recordings = listOf(olivia)), connectSession = { Futures.immediateFuture(session) })
         vm.play(olivia)
         shadowOf(Looper.getMainLooper()).idle()

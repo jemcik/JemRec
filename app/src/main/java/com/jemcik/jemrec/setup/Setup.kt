@@ -16,6 +16,7 @@ import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.recorder.BackgroundKill
+import com.jemcik.jemrec.recorder.KeepPaired
 import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.RecordingStore
@@ -68,6 +69,19 @@ enum class SetupStep {
     NEEDS_DEBUGGING_CHOICE,
 
     /**
+     * The user has not yet been asked whether JemRec may keep its pairing:
+     * Android forgets a debugging pairing 7 days after it was made, and the
+     * recorder's next start is then refused until JemRec is paired again
+     * (KeepPaired). Turning that timeout off is what a switch in Developer
+     * options does on phones that show it, and it keeps a computer's approval
+     * too, so it is the user's to decide. Asked once, before pairing as the debugging question
+     * is - the recorder carries the answer out once it is up - and of installs
+     * set up before the question existed, as that one is. Skipped where the
+     * timeout is off already.
+     */
+    NEEDS_KEEP_PAIRED_CHOICE,
+
+    /**
      * This phone has a vendor "App launch" / auto-start screen (Honor, Huawei,
      * Xiaomi and the like), and the user has not yet been asked to let JemRec
      * run in the background there.
@@ -113,7 +127,7 @@ enum class SetupStep {
 
     /**
      * Paired once already - adbd trusts our key, and that trust survives reboots
-     * - but there is no live session. Almost always because Wireless debugging
+     * (until Android's pairing timeout, KeepPaired) - but there is no live session. Almost always because Wireless debugging
      * is off (it drops on its own on some ROMs); occasionally a connect that has
      * not caught yet. Either way the fix is "get Wireless debugging on and
      * connect", NOT "pair again" - so it is its own step, with a much shorter
@@ -427,6 +441,7 @@ object Setup {
     internal interface Probe {
         fun missingPermissions(): Boolean
         fun debuggingChoiceMade(): Boolean
+        fun keepPairedChoiceNeeded(): Boolean
         fun needsBackgroundChoice(): Boolean
         fun recorderOn(): Boolean
         fun isComplete(): Boolean
@@ -444,6 +459,7 @@ object Setup {
     private class LiveProbe(private val context: Context) : Probe {
         override fun missingPermissions() = missingRuntimePermissions(context).isNotEmpty()
         override fun debuggingChoiceMade() = DebugNotificationCleaner.asked(context)
+        override fun keepPairedChoiceNeeded() = KeepPaired.needsChoice(context)
         // The preference first: once answered, no walk of the vendor screens
         // (a package-manager call each) at every return to the app.
         override fun needsBackgroundChoice() =
@@ -489,6 +505,11 @@ object Setup {
         // existed is asked too. See NEEDS_DEBUGGING_CHOICE.
         if (!world.debuggingChoiceMade()) {
             return SetupStep.NEEDS_DEBUGGING_CHOICE
+        }
+
+        // The same, for keeping the pairing. See NEEDS_KEEP_PAIRED_CHOICE.
+        if (world.keepPairedChoiceNeeded()) {
+            return SetupStep.NEEDS_KEEP_PAIRED_CHOICE
         }
 
         // Also before the READY branches, and for the same migration reason,
@@ -593,8 +614,9 @@ object Setup {
             return if (!world.developerOptionsOn()) {
                 SetupStep.NEEDS_DEVELOPER_OPTIONS
             } else if (world.hasPaired()) {
-                // Trust already exists in adbd's keystore and survives reboots,
-                // so there is nothing to pair again - only a session to open,
+                // Trust already exists in adbd's keystore and survives reboots
+                // (a lost one comes back as refusals, and RecorderHealth sends
+                // home to the pairing step), so there is nothing to pair again - only a session to open,
                 // which needs Wireless debugging on. Routing a paired phone back
                 // through the pairing card is exactly what left setup going in
                 // circles when Wireless debugging dropped after a good pairing.
@@ -679,6 +701,11 @@ object Setup {
         Log.i(TAG, "setup: off-Wi-Fi shield -> $shield")
 
         CaptureDaemon.ensureRunning(context).getOrThrow()
+        // Keep JemRec paired, asked before pairing, to the recorder just
+        // started: nothing else sends it until the app is next opened, and a
+        // user who never opens it again would lose the pairing it was meant
+        // to keep (the 1.1 review).
+        KeepPaired.carryOut(context)
         // Recorded before standing down, because from here on this phone IS
         // set up - and the permission that would otherwise say so is not
         // readable in this process until it restarts.
@@ -801,6 +828,10 @@ object Setup {
      * Undoing only the third, which is what this did before, left the wizard
      * starting at step 3 - which is a re-pair, not a fresh start.
      *
+     * And what Keep JemRec paired changed, which a fresh install has not:
+     * Android's pairing timeout, put back by the recorder before it quits
+     * (RecorderLifecycle.endForReset).
+     *
      * ORDER IS FORCED. Stopping the daemon needs the ADB session; turning
      * Wireless debugging off destroys it. Revoking the permissions kills this
      * process, so it has to be last, and everything before it has to be on
@@ -823,8 +854,9 @@ object Setup {
      * the part the user can see, and the leftover permission unlocks nothing
      * until they pair again.
      *
-     * The phone also keeps trusting the old key forever. That list lives in
-     * /data/misc/adb, which is root's. What changes is that this app no longer
+     * The phone also keeps trusting the old key - for good with Keep JemRec
+     * paired, which this puts back first, else until Android's pairing
+     * timeout (KeepPaired). That list lives in /data/misc/adb, which is root's. What changes is that this app no longer
      * holds the key, so it must pair again - amnesia rather than revocation.
      *
      * Uninstalling remains the only true zero, and that is fine: it is one tap
@@ -842,9 +874,10 @@ object Setup {
      * library keeps the forgotten key, alive to pair again in.
      */
     private suspend fun resetSteps(context: Context): Result<Unit> = runCatching {
-        // The recorder quit, its service stopped, Start without Wi-Fi's port
-        // closed, the session and the pairing key gone: under the recorder's
-        // lock, all of it.
+        // Android's pairing timeout put back if Keep JemRec paired turned it
+        // off, the recorder quit, its service stopped, Start without Wi-Fi's
+        // port closed, the session and the pairing key gone: under the
+        // recorder's lock, all of it.
         RecorderLifecycle.endForReset(context)
 
         RecordingStore.clearTree(context)

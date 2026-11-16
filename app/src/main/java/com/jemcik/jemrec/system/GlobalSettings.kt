@@ -39,6 +39,17 @@ object GlobalSettings {
      *  Hidden from apps on some Android 17 builds. */
     const val DEVELOPMENT_SETTINGS_ENABLED = "development_settings_enabled"
 
+    /** How long Android keeps a debugging pairing, in milliseconds; 0 for
+     *  for good (what Developer options' Disable adb authorization timeout
+     *  writes, where a phone shows it - not the Honor).
+     *  Hidden from the SDK but readable (`@Readable` in AOSP's Settings,
+     *  read 2026-11-15); written by the recorder (KeepPaired). */
+    const val ADB_ALLOWED_CONNECTION_TIME = "adb_allowed_connection_time"
+
+    /** Settings.Global.DEFAULT_ADB_ALLOWED_CONNECTION_TIME, which apps cannot
+     *  see: what it is where nobody set it, a week. */
+    const val DEFAULT_PAIRING_TIMEOUT_MS = 604_800_000L
+
     /** The settings Android 17 may report as 0 to this app whatever they are. */
     private val HIDEABLE = setOf(ADB_ENABLED, DEVELOPMENT_SETTINGS_ENABLED)
 
@@ -75,6 +86,11 @@ object GlobalSettings {
      *  be read: what a note "in this boot" is kept against. */
     internal fun bootCount(context: Context): Int =
         Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+
+    /** [ADB_ALLOWED_CONNECTION_TIME] as it is now; its default where unset
+     *  or not a number, as Android reads it. */
+    internal fun pairingTimeoutMs(context: Context): Long =
+        Settings.Global.getLong(context.contentResolver, ADB_ALLOWED_CONNECTION_TIME, DEFAULT_PAIRING_TIMEOUT_MS)
 
     /** True if the write went through. */
     internal fun set(context: Context, name: String, on: Boolean): Boolean = runCatching {

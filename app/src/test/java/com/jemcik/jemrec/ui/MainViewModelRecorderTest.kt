@@ -13,6 +13,7 @@ import com.jemcik.jemrec.capture.HeldWork.Companion.PERIODIC
 import com.jemcik.jemrec.capture.HeldWork.Companion.USB_WATCH
 import com.jemcik.jemrec.capture.TestPhone
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
+import com.jemcik.jemrec.recorder.KeepPaired
 import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.StartWithoutWifi
@@ -261,8 +262,7 @@ class MainViewModelRecorderTest {
     @Test fun aReviveCutShortByClosingTheScreenIsNoFailure() {
         // Past setup's questions, so the check finds a phone set up with its
         // recorder down, and revives it in the background.
-        shadowOf(context).grantPermissions(*Setup.missingRuntimePermissions(context).toTypedArray())
-        DebugNotificationCleaner.choose(context, false)
+        pastTheQuestions()
         ShadowLog.clear()
         ran { vm.refreshSetup() }
         until("the revive") { state.starting }
@@ -279,10 +279,13 @@ class MainViewModelRecorderTest {
         vm = MainViewModel(context, given, connectSession = { SettableFuture.create() })
     }
 
-    /** Past setup's two questions, so the check can find the phone ready. */
+    /** Past setup's questions, so the check can find the phone ready: the
+     *  permissions, the debugging one, and - Android's pairing timeout off
+     *  already - none about keeping the pairing (KeepPaired.needsChoice). */
     private fun pastTheQuestions() {
         shadowOf(context).grantPermissions(*Setup.missingRuntimePermissions(context).toTypedArray())
         DebugNotificationCleaner.choose(context, false)
+        Settings.Global.putString(context.contentResolver, KeepPaired.SETTING, "0")
     }
 
     /** A check leaves the step it shows until it has the next: never

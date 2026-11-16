@@ -148,6 +148,30 @@ class SetupScreenshots : ScreenTest() {
         snap("setup-debugging-choice-after-setup")
     }
 
+    @Test fun keepPairedChoiceStep() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_KEEP_PAIRED_CHOICE))
+        compose.onNodeWithText("Keep it paired").performScrollTo().assertIsDisplayed()
+        snap("setup-keep-paired")
+    }
+
+    /** The two answers side by side at twice the text size, as the
+     *  debugging question's. */
+    @Test fun keepPairedChoiceStepAtTwiceTheTextSize() {
+        show(fontScale = 2f) {
+            val state = Fixtures.ready().copy(step = SetupStep.NEEDS_KEEP_PAIRED_CHOICE)
+            AppScaffold(state, viewModel(state))
+        }
+        compose.onNodeWithText("Keep it paired").performScrollTo().assertIsDisplayed()
+        snap("setup-keep-paired-2x")
+    }
+
+    /** Back on the pairing step for a lost pairing: why, with Android's
+     *  timeout on. */
+    @Test fun pairingLostStep() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_PAIRING, pairingLost = true, wirelessDebuggingOn = true))
+        snap("setup-pairing-lost")
+    }
+
     @Test fun developerOptionsStep() {
         step(Fixtures.ready().copy(step = SetupStep.NEEDS_DEVELOPER_OPTIONS))
         compose.onAllNodes(hasText("They are on already")).assertCountEquals(0)
