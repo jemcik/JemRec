@@ -2,6 +2,7 @@ package com.jemcik.jemrec.setup
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
@@ -53,9 +54,19 @@ class SetupStepTest {
     private fun stepOf(world: World): SetupStep = runBlocking { Setup.decide(world) }
 
     @Test fun permissionsComeBeforeEverythingElse() {
-        val world = World(permissionsMissing = true, complete = true, identity = true, daemon = true, connected = true)
+        val world = World(permissionsMissing = true, identity = true, daemon = true, connected = true)
         assertEquals(SetupStep.NEEDS_PERMISSIONS, stepOf(world))
         assertEquals(0, world.connectAttempts)
+    }
+
+    @Test fun notificationsRefusedAfterSetupDoNotUndoIt() {
+        // Turned off in Android's settings, or taken back from an app left
+        // unused: home says so (NotificationHealth), with the recordings,
+        // Settings and Off still there.
+        val world = World(permissionsMissing = true, complete = true, identity = true, daemon = true)
+        assertEquals(SetupStep.READY, stepOf(world))
+        val off = World(permissionsMissing = true, complete = true, recorderOn = false)
+        assertEquals(SetupStep.READY, stepOf(off))
     }
 
     @Test fun theDebuggingQuestionComesBeforeAnythingIsSwitchedOn() {
@@ -169,5 +180,20 @@ class SetupStepTest {
         val already = World(connected = true)
         assertEquals(SetupStep.FINISHING, stepOf(already))
         assertEquals(0, already.connectAttempts)
+    }
+
+    /** Start fresh hands back every runtime permission JemRec asks for, not
+     *  setup's list alone: it promised the permissions back and handed back
+     *  the notifications. */
+    @Test fun startFreshHandsBackEveryPermissionAskedFor() {
+        val all = Setup.toHandBack { true }
+        for (permission in listOf(
+            android.Manifest.permission.READ_CALL_LOG,
+            android.Manifest.permission.READ_CONTACTS,
+        ) + com.jemcik.jemrec.capture.AudioAccess.PERMISSIONS + Setup.RUNTIME_PERMISSIONS) {
+            assertTrue(permission, permission in all)
+        }
+        // Only what is held.
+        assertEquals(listOf(android.Manifest.permission.READ_CONTACTS), Setup.toHandBack { it == android.Manifest.permission.READ_CONTACTS })
     }
 }

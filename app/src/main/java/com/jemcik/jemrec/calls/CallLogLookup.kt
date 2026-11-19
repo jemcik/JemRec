@@ -160,8 +160,10 @@ object CallLogLookup {
         // used to parse the name again for both, with its own copy of the rules.
         // Not a messenger call: it is never in the phone's call log, and a
         // phone call at about the same time is somebody else.
+        // A part joined mid-call is matched from its call's start
+        // (Recording.callAt): its own is minutes in.
         val times = recordings.filter { it.parsedName?.app == null }.mapNotNull { r ->
-            r.startedAtMillis?.let { at -> Triple(r, at, r.incoming) }
+            CallMatch.matchedFrom(r)?.let { at -> Triple(r, at, r.incoming) }
         }
         if (times.isEmpty()) return emptyMap()
 
@@ -182,7 +184,12 @@ object CallLogLookup {
             // A name with the number in it (Honor's format) is matched on that
             // number, whichever way the call went - its name does not say.
             val number = recording.parsedName?.number
-            val match = if (number != null) CallMatch.withNumber(entries, number, at) else CallMatch.closest(entries, at, incoming)
+            // Else by its start - its call's, for a part joined mid-call.
+            val match = if (number != null) {
+                CallMatch.withNumber(entries, number, at)
+            } else {
+                CallMatch.closest(entries, at, incoming)
+            }
             if (match != null) {
                 val contact = contactFor(context, match.number, contacts)
                 out[name] = Caller(

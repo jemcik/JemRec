@@ -183,22 +183,28 @@ internal data class FollowUp(
  * over only a recorder still down ([afterFailedRevive]) and never try again
  * themselves. The rest do nothing after.
  */
-internal fun followUp(trigger: Trigger, alive: Boolean, onWifi: Boolean, forWifi: Boolean = false): FollowUp =
+internal fun followUp(trigger: Trigger, alive: Boolean, onWifi: Boolean, forWifi: Boolean = false, periodic: Boolean = false): FollowUp =
     when (trigger) {
         Trigger.KEEP_ALIVE -> FollowUp(
             arm = listOfNotNull(Keeper.WIFI_WATCH.takeUnless { onWifi }),
             collect = alive,
-            retry = triesAgain(alive, forWifi, onWifi),
+            retry = triesAgain(alive, forWifi, onWifi, periodic),
         )
         Trigger.USB_CHANGED, Trigger.CABLE -> FollowUp(arm = if (alive) emptyList() else afterFailedRevive(onWifi))
         else -> FollowUp()
     }
 
 /** Whether a keep-alive run that ended with the recorder down tries again
- *  with backoff. A kick or the heartbeat does, Wi-Fi or not: the retry is
- *  what brings the recorder back if nothing else does. The Wi-Fi run does
- *  only while it is on Wi-Fi: off it, the watch is armed again and will
- *  wake a new one, which a retry still waiting would be taken for, as the
- *  kick's was (RecorderKeepAlive.kickForWifi). */
-internal fun triesAgain(alive: Boolean, forWifi: Boolean, onWifi: Boolean): Boolean =
-    !alive && (!forWifi || onWifi)
+ *  with backoff. A kick does, Wi-Fi or not: the retry is what brings the
+ *  recorder back if nothing else does. The Wi-Fi run does only while it is
+ *  on Wi-Fi: off it, the watch is armed again and will wake a new one, which
+ *  a retry still waiting would be taken for, as the kick's was
+ *  (RecorderKeepAlive.kickForWifi). The heartbeat ([periodic]) never does:
+ *  periodic work that asks to retry is run next by its backoff - 30 s
+ *  doubling, up to five hours - not its period, until a run succeeds
+ *  (WorkManager's WorkSpec.calculateNextRunTime); without one its next run
+ *  is scheduled 15 minutes on (1.2) - when it runs is Android's: Doze's
+ *  windows, the standby buckets and the Battery setting Restricted hold
+ *  jobs back (developer.android.com, Power management restrictions). */
+internal fun triesAgain(alive: Boolean, forWifi: Boolean, onWifi: Boolean, periodic: Boolean = false): Boolean =
+    !alive && !periodic && (!forWifi || onWifi)

@@ -325,10 +325,31 @@ final class Checks {
         return withTag(name, "_from" + offset(start, captureStart));
     }
 
+    /**
+     * A recording whose encoder ended [missedMs] before it was stopped - the
+     * call went on unrecorded (RecordingSession.Ending) - named so: "_early"
+     * and the ms just after its start, where a phone call's and a
+     * messenger's names both have it, ahead of any message's or takeover's
+     * tag and of a messenger's package, whose own underscores the app's
+     * reading never looks into (DaemonFile).
+     * jemrec_rec_1792661198533_in.dat -> jemrec_rec_1792661198533_early41250_in.dat
+     */
+    static String earlyRecfile(String name, long missedMs) {
+        return name.replaceFirst("^(jemrec_rec_\\d+)_", "$1_early" + Math.max(0, missedMs) + "_");
+    }
+
     /** Where [at] falls in a capture that began at [captureStart], in ms: 0
      *  when either is unknown, or [at] came first. */
     private static long offset(long at, long captureStart) {
         return Math.max(0, at > 0 && captureStart > 0 ? at - captureStart : 0);
+    }
+
+    /** The last line of a whole LIST reply: how many names it sent. No
+     *  recording's name can be it (Paths.REC_PREFIX). The app reads a reply
+     *  without it, from a recorder whose pong says list-end, as one it could
+     *  not get, and one with it as whole (DaemonClient.listingFrom). */
+    static String listEnd(int count) {
+        return "end " + count;
     }
 
     /** [tag] in a recording's name, just before its direction. */
@@ -538,9 +559,13 @@ final class Checks {
      * it (VoipApps); a messenger outside Telecom leaves the way to its
      * notification, as before.
      */
-    static String recfileTag(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming) {
+    static String recfileTag(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming,
+                             boolean joined) {
         if (app == null) {
-            return incoming ? "_in" : "_out";
+            // A call joined mid-call: "_joined" ahead of the direction, which
+            // is then only the recorder's guess (no ring seen) - the app
+            // takes the call up at the recording's start, either way.
+            return (joined ? "_joined" : "") + (incoming ? "_in" : "_out");
         }
         return (appIncoming == null ? "" : appIncoming ? "_in" : "_out") + "_voip-" + app;
     }

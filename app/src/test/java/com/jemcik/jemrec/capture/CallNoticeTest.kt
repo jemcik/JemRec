@@ -3,6 +3,7 @@ package com.jemcik.jemrec.capture
 import com.jemcik.jemrec.capture.CallNotice.Notice
 import com.jemcik.jemrec.capture.CallNotice.State
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** What the call service's notification says, in its order of precedence. */
@@ -41,6 +42,20 @@ class CallNoticeTest {
         assertEquals(false, notice.deferred)
         assertEquals("t", notice.buttonTicket)
         assertEquals(true, CallNotice.of(idle.copy(checkingRecorder = true)).deferred)
+    }
+
+    @Test fun aRecordingStoppedMidCallSaysSoAndWhetherItIsTriedAgain() {
+        val trying = CallNotice.of(idle.copy(callUp = true, recording = true, stopped = CallNotice.Stopped.TRYING))
+        assertEquals("Recording stopped", trying.title)
+        assertEquals("Trying again - this part of the call is not recorded", trying.text)
+        val forGood = CallNotice.of(idle.copy(callUp = true, recording = true, stopped = CallNotice.Stopped.FOR_GOOD))
+        assertEquals("Recording stopped", forGood.title)
+        assertEquals("The rest of this call is not recorded", forGood.text)
+        assertFalse(forGood.deferred)
+        // A message's notice keeps its buttons over it: the machine hangs up.
+        assertEquals(message, CallNotice.of(idle.copy(messageTicket = "t", recording = true, stopped = CallNotice.Stopped.TRYING)))
+        // Not recording at all, nothing stopped.
+        assertEquals(call, CallNotice.of(idle.copy(callUp = true, stopped = CallNotice.Stopped.TRYING)))
     }
 
     @Test fun aMessageOutranksARecordingWhichOutranksNotRecording() {

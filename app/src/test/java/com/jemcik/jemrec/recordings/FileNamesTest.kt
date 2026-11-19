@@ -49,9 +49,122 @@ class FileNamesTest {
 
     @Test fun honorsNameIsWhatHonorsPhoneAppLooksFor() {
         assertEquals("Priya Shah@+447700900123_20261020165705.ogg", FileNames.build(Format.HONOR, at, true, priya))
-        assertEquals("477@477_20261020165705.ogg", FileNames.build(Format.HONOR, at, false, Party("477", null)))
+        // No name: the number and the time - not the number twice, "+44...@",
+        // which the Phone app cannot read (FileNames.build).
+        assertEquals("+447700900123_20261020165705.ogg", FileNames.build(Format.HONOR, at, false, Party("+44 7700 900123", null)))
+        assertEquals("477_20261020165705.ogg", FileNames.build(Format.HONOR, at, false, Party("477", null)))
         // A hidden number gives the Phone app nothing to match: the plain name.
         assertEquals("20261020_165705_in.ogg", FileNames.build(Format.HONOR, at, true, Party(null, "Priya Shah")))
+    }
+
+    @Test fun honorsPhoneAppReadsTheCallsNumberAndTimeInEveryNameItIsGiven() {
+        // Names a regular expression would choke on, or make something of,
+        // as the Phone app reads them (HonorPhoneApp).
+        val names = listOf(
+            null, "Priya Shah", "+1 Bob", "Mom (work)", "Ann [x]", "Bob {1}", "\$ign", "Dr. Who", "^up",
+            "Ivan+", "a*b?c", "(", "[", "{", "+", "()", "О'Коннор", "李雷", "🙂 Smile", "a\\b", "Bob|Ann",
+        )
+        names.forEach { name ->
+            val built = FileNames.build(Format.HONOR, at, true, Party("+44 7700 900123", name))
+            assertEquals("$name -> $built", "+447700900123", HonorPhoneApp.number(built))
+            assertEquals("$name -> $built", at, HonorPhoneApp.time(built))
+            // And JemRec reads it back the same.
+            assertEquals("$name -> $built", "+447700900123", FileNames.parse(built)?.number)
+            assertEquals("$name -> $built", at, FileNames.parse(built)?.startedAt)
+        }
+    }
+
+    @Test fun theNameJemRecGaveACallerWithNoNameWasOneThePhoneAppCouldNotRead() {
+        // Up to 1.1: the number before the @, a dangling + to a pattern.
+        assertEquals(HonorPhoneApp.NO_NUMBER, HonorPhoneApp.number("+380954388250@+380954388250_20261117155459.ogg"))
+        // What the Honor played that day.
+        assertEquals("+380954388250", HonorPhoneApp.number("+380954388250_20261117155459.ogg"))
+    }
+
+    @Test fun aNameSavedBefore12ThePhoneAppCannotReadIsGivenTheNameItCan() {
+        val renames = mapOf(
+            "+380954388250@+380954388250_20261117155459.ogg" to "+380954388250_20261117155459.ogg",
+            "+380954388250@+380954388250_20261117155459 (1).ogg" to "+380954388250_20261117155459 (1).ogg",
+            "+1 Bob@+15550100_20261020165705.ogg" to "1 Bob@+15550100_20261020165705.ogg",
+            "Ann [x@+447700900123_20261020165705.ogg" to "Ann x@+447700900123_20261020165705.ogg",
+        )
+        renames.forEach { (old, new) ->
+            // The old name one the app reads no number in: why it goes.
+            assertEquals(old, HonorPhoneApp.NO_NUMBER, HonorPhoneApp.number(old))
+            assertEquals(old, new, FileNames.honorRenamed(old))
+            // The Phone app reads the call's number in the new name, and its time.
+            assertEquals(new, FileNames.parse(old)?.number, HonorPhoneApp.number(new))
+            assertEquals(new, FileNames.parse(old)?.startedAt, HonorPhoneApp.time(new))
+            assertEquals(new, FileNames.parse(old)?.startedAt, FileNames.parse(new)?.startedAt)
+            // Done once: the new name is right.
+            assertNull(new, FileNames.honorRenamed(new))
+        }
+    }
+
+    /** A contact saved by its digits, or a call log that names the caller
+     *  by the number: written "<number>@<number>" in 1.2's first build, the
+     *  name was one the next reading renamed, under its own notification -
+     *  Play and Share said it was gone (review, 2026-11-18). */
+    @Test fun aCallerNamedByTheNumberIsACallerWithNoName() {
+        listOf("0501234567" to "0501234567", "+38 050 123 45 67" to "+380501234567", "380501234567" to "+380501234567").forEach { (name, number) ->
+            val built = FileNames.build(Format.HONOR, at, true, Party(number, name))
+            assertEquals(name, "${FileNames.digits(number)}_20261020165705.ogg", built)
+            assertNull(built, FileNames.honorRenamed(built))
+        }
+    }
+
+    /** Every name 1.2 writes in Honor's format is one it leaves alone. */
+    @Test fun aNameThisVersionWritesIsNeverOneItRenames() {
+        val names = listOf(null, "Priya Shah", "+1 Bob", "Mom (work)", "()", "477", "+447700900123", "О'Коннор", "Bob|Ann")
+        val numbers = listOf("+44 7700 900123", "477", "0501234567")
+        for (name in names) for (number in numbers) {
+            val built = FileNames.build(Format.HONOR, at, true, Party(number, name))
+            assertNull("$name, $number -> $built", FileNames.honorRenamed(built))
+        }
+    }
+
+    /** A name saved before 1.2 that the Phone app reads is left as it is,
+     *  odd characters and all: renamed, the user's files changed names for
+     *  nothing (review, 2026-11-18). */
+    @Test fun aNameSavedBefore12ThePhoneAppReadsIsLeftAlone() {
+        listOf(
+            "477@477_20261020165705.ogg",
+            "Mom (work)@+447700900123_20261020165705.ogg",
+            "()@+447700900123_20261020165705.ogg",
+            "Dr. Who@+447700900123_20261020165705.ogg",
+            "0501234567@0501234567_20261020165705.ogg",
+        ).forEach { old ->
+            assertEquals(old, FileNames.parse(old)?.number, HonorPhoneApp.number(old))
+            assertNull(old, FileNames.honorRenamed(old))
+        }
+    }
+
+    @Test fun aNameThatIsRightOrNotHonorsIsLeftAlone() {
+        listOf(
+            "Priya Shah@+447700900123_20261020165705.ogg",
+            "+447700900123_20261020165705.ogg",
+            "20261020_165705_in.ogg",
+            "20261020_165705_out_+447700900123.ogg",
+            "20261020_203501_in_viber_Priya Raman.ogg",
+            "notes.ogg",
+        ).forEach { assertNull(it, FileNames.honorRenamed(it)) }
+    }
+
+    @Test fun aDeletedRecordingIsOneThePhoneAppCannotMatch() {
+        listOf(priya, Party("+44 7700 900123", null)).forEach { party ->
+            val trashed = TrashNames.nameFor(FileNames.build(Format.HONOR, at, true, party), 1_795_000_000_000)
+            assertEquals(trashed, HonorPhoneApp.NO_NUMBER, HonorPhoneApp.number(trashed))
+        }
+    }
+
+    @Test fun aCallerWithNoNameReadsBackInHonorsFormat() {
+        val parsed = FileNames.parse("+447700900123_20261020165705.ogg")!!
+        assertEquals(at, parsed.startedAt)
+        assertEquals("+447700900123", parsed.number)
+        assertNull(parsed.caller)
+        assertNull(parsed.incoming)
+        // A name a provider made when the one asked was taken.
+        assertEquals(parsed, FileNames.parse("+447700900123_20261020165705 (1).ogg"))
     }
 
     @Test fun everyFormatReadsBack() {

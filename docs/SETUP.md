@@ -211,6 +211,23 @@ The phone's standard **Recordings/JemRec** folder, which any file manager or
 music app can open, and which survives uninstalling the app. To use a different
 folder, open Settings and tap **Change** under *Saving to*.
 
+## Quality and size
+
+An hour of calls takes about 12 MB at JemRec's **Standard** quality, 32 kbps,
+since 1.2. **Settings → Saving → Quality** has four:
+
+- **Smallest** — 24 kbps, about 9 MB an hour. The two sides of a call may blend
+  into one.
+- **Standard** — 32 kbps, about 12 MB an hour. The default.
+- **High** — 64 kbps, about 29 MB an hour.
+- **Highest** — 128 kbps, about 58 MB an hour: the rate every recording had
+  before 1.2 - 63 MB then, with Android's own Ogg pages.
+
+In a blind test on an Honor, a phone call, a messenger call and a message
+sounded the same at 32 kbps as at 128, through its speakers and through
+earbuds; at 24 kbps the messenger call sounded mono. A choice is for calls
+recorded from then on; recordings already made keep theirs.
+
 ## Choosing when to record
 
 **Record every call**, in Settings, decides this.
@@ -221,9 +238,10 @@ folder, open Settings and tap **Change** under *Saving to*.
   that call are not saved. That is the honest cost of being asked, and it is
   why the switch is on by default.
 
-The prompt stays up for about a minute rather than the few seconds an ordinary
-notification gets, and if you miss it, it waits in the shade for the rest of
-the call. On a locked screen you get the same question full screen.
+The prompt stays on screen until you answer it, rather than the five seconds an
+ordinary notification gets - a minute, if JemRec's full-screen notifications
+are turned off in Android's settings - and if you miss it, it waits in the
+shade for the rest of the call.
 
 ## Exact call tracking
 
@@ -235,11 +253,12 @@ Android tells JemRec when each phone call is answered and when it ends, and so:
 - With call waiting, each call gets its own recording.
 - Whose calls to keep decides before anything is recorded.
 
-Tracking only reads this: it never answers, holds or ends a call, and shows no
-screen of its own during one. The one thing that ever answers a call is the
-answering machine, below, when you switch it on. Turned off, JemRec records
-from the moment the phone goes off-hook, as it did before 0.14, and the
-answering machine, which needs it, answers nothing.
+Tracking reads this: it never answers or holds a call, and shows no screen of
+its own during one, and ends one only for the answering machine - its call, if
+the recorder is lost while it takes a message. The one thing that ever answers
+a call is the answering machine, below, when you switch it on. Turned off,
+JemRec records from the moment the phone goes off-hook, as it did before 0.14,
+and the answering machine, which needs it, answers nothing.
 
 ## Whose calls to keep
 
@@ -273,10 +292,14 @@ you already have keep their names.
   recordings by number. A hidden number leaves the date and time; a messenger
   call has no number, so its name ends with the app.
 - **For Honor's Phone app**, on a phone that has it: `Priya
-  Raman@+447700900123_20261020165705.ogg`, the name Honor's own recorder uses.
-  Saved in `Sounds/CallRecord` — the File names dialog has a button that opens
-  the folder picker right there; tap **Use this folder** and **Allow** —
-  Honor's Phone app then shows a play button on the call in its history.
+  Raman@+447700900123_20261020165705.ogg`, the name Honor's own recorder uses,
+  or `+447700900123_20261020165705.ogg` for a caller with no name - or one
+  named only by the number. Saved in `Sounds/CallRecord` — the File names
+  dialog has a button that opens the folder picker right there; tap **Use this
+  folder** and **Allow** — Honor's Phone app then shows a play button on the
+  call in its history. Honor's own Recorder app plays them from there but
+  doesn't list them: it lists only `.m4a`, `.amr` and `.wav` files, and JemRec
+  saves `.ogg`.
 
 The caller and the number come from exact call tracking or the call log, with
 permission to read the call log; without it, a recording is named by date and
@@ -318,8 +341,10 @@ that service — Gmail's, Slack's — are not recorded.
 **Show who called** reads the caller's name, and whether the call rang first,
 from the app's own call notification — the only place it is said. That needs
 notification access, which Android grants to all notifications; JemRec keeps
-only that from the call notifications of the apps you switched on. JemRec's
-recorder grants it, so turning it on needs JemRec ready to record.
+only which app, the name, the time and whether it rang, from the call
+notifications of the apps you switched on - the last 60, deleted when you turn
+it off. JemRec's recorder grants it, so turning it on needs JemRec ready to
+record.
 
 Tested on an Honor with Viber, Telegram and WhatsApp, both directions, and with
 Google Meet: calls both ways and a meeting. Signal takes the same path and has
@@ -427,7 +452,8 @@ tap or a drag on it goes to that place. A call's waveform is worked out as it
 is saved, and an older recording's while the app is open; one played before
 then has a plain slider for a moment - about two and a half seconds for a
 30-minute call. The chevron beside it folds the player away. The share button
-offers the original file or a converted copy that plays anywhere.
+offers the original file or a converted copy that plays anywhere - with both
+sides in both ears, as JemRec plays it, while that is on.
 
 **With the screen off.** A recording plays on when the screen goes off or you
 leave the app, under the phone's own media controls: in the notifications, in
@@ -473,8 +499,9 @@ kept recordings. To mark several, select them and use the bookmark in the
 toolbar.
 
 The notification after each call has the same three buttons. Play and Share
-open JemRec at that recording; Delete asks first, in the notification itself,
-and **Keep** puts it back.
+open JemRec at that recording; Delete asks first, in the notification itself -
+with the phone unlocked, so a locked phone asks for that first - and **Keep**
+puts it back.
 
 If a recording was made before JemRec was reinstalled, Android asks before
 JemRec may move it to the trash, in a dialog of its own. That is Android
@@ -490,6 +517,15 @@ Installed again, JemRec shows your recordings as they were, once you allow it
 to read them: which are messages, which you kept, and who each messenger call
 was with are written inside each recording, not only in the app. A folder you
 chose has to be chosen again, and until then its recordings are not listed.
+
+## Both sides in both ears
+
+JemRec plays both sides of a call in each ear, so one earbud hears the whole
+call, and an answering machine's message, recorded on one side, is not in one
+ear only. **Settings → Playing → Both sides in both ears**, switched off, plays
+each side in its own ear, as it was recorded; a recording playing goes on from
+where it was. The file keeps the sides apart either way, and Share's converted
+copy follows the switch.
 
 ## The Calls tab
 
@@ -717,26 +753,50 @@ The header is the honest indicator:
 | **Cannot record** · Tap to start it again | On Wi-Fi, the recorder did not come back. Tap the line to try now. |
 | **Cannot record** · Tap to allow this Wi-Fi | You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick **Always allow on this network** and tap **Allow**; the recorder starts a few seconds later. |
 | **Cannot record** · Tap to pair again | Wireless debugging turns JemRec away, as it does once its pairing is deleted — Android deletes it 7 days after it is made, unless Keep JemRec paired is on. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before. |
+| **Cannot record** · Battery Restricted · tap to allow | Ask first, with JemRec's battery use set to Restricted and exact call tracking off: Android does not let JemRec put its question up, so no call is recorded. Tap the line for App info, and allow its background use on its battery page. |
+| **Cannot record** · Tap to turn on notifications | Ask first asks in a notification, and JemRec's notifications - or that one, Record this call? - are off in Android's settings, so no call is being recorded. Tap the line to turn them on. |
 | **Starting...** | Rebuilding the recorder. A few seconds. |
+| **Checking...** | JemRec has just opened and is looking at the recorder and your recordings. No mark is lit until it knows: a moment, or a few seconds with the recorder down or a folder you chose. |
 | **Off** · Tap the button to record calls | You turned the switch off. |
 | **Off** · Debugging off · turn on over Wi-Fi | You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi - unless Start without Wi-Fi has opened its port, and then the line is the plain one above. |
 
 In Memo's words; Deck and Multitrack word the header their own way.
 
-And when the app is closed, in notifications:
+Above the recordings, a card says so when JemRec's notifications are off (and
+what that costs), when its battery use is set to Restricted - Android then lets
+nothing of it run in the background, so a recorder that stops may stay stopped
+until you open JemRec, and calls are saved only then - every call with exact
+call tracking off - or in Ask first not recorded - these two while JemRec is
+on; in Ask first, when its question is set not to pop up, or its full-screen
+notifications are turned off so it stays on screen for a minute only - either
+way it waits in the notification shade, easy to miss mid-call; or when the
+folder you chose for recordings can no longer be reached - moved, deleted, its
+drive taken out, or its access taken back - with the way to put it right:
+**Turn on**, **Open App info**, or **Choose again**. **Not now** puts the
+notifications and battery cards away until what they say changes - never one
+where no call is recorded: Ask first's question off, or the battery card in Ask
+first.
+
+And when the app is closed, in notifications. Tapping one that reports a
+problem opens JemRec where the problem is shown; its button does the fix:
 
 | It says | Meaning |
 |---|---|
 | The caller's name, **Recorded** | After every recorded call, silently, with Play, Share and Delete. Can be switched off in Settings. |
 | **Last call recorded, but silent** | The file has the right length and no sound in it. Usually Wi-Fi calling, or a phone that does not hand calls over at all. Run the self-test, or copy a report for GitHub (Settings → Diagnostics). |
-| **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with **Allow this Wi-Fi**), or it cannot connect (with **Pair again**), or it could not start. It goes away by itself when the recorder is back, and once JemRec is switched off. |
-| **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Run the self-test. |
-| **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. |
+| **JemRec is not recording calls** | The recorder has been down for two minutes. The notification says why: it needs a few seconds of Wi-Fi, or this Wi-Fi is not allowed for Wireless debugging (with **Allow this Wi-Fi**), or it cannot connect (with **Pair again**), or it could not start. During a call it comes silently, not as a sound in your ear, and once the call is over it comes again with its sound - unless you swiped it away or opened JemRec. It goes away by itself when the recorder is back, and once JemRec is switched off. |
+| **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Tapped, the Calls tab shows the calls not recorded; **Self-test** checks the recorder. |
+| **Part of a call not saved** | The recorder was started again during a call, so the call was recorded in two parts, and one of them could not be saved; the notification says why. The other part is saved, and JemRec keeps trying the one left for a week; the notification goes once it is saved. |
+| **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. One that could not be saved is tried again, and the notification goes once it is. |
+| **Recording stopped**, during a call | The call's own notification, silently: the recording stopped. *Trying again* - its capture failed more often than the recorder may start it again at once, so it tries every ten seconds, or nothing reached the recording for five seconds - and it says **Recording call** again once it has recorded for five seconds; or *the rest of this call is not recorded* - its file could not be written. A message the answering machine is taking ends at either: it hangs up. And when the recorder itself ended, JemRec starts it again during the call - over Wi-Fi, or Start without Wi-Fi's port - and it records the rest of the call as a recording of its own, so the call has two (in Ask first, a phone call goes on as you answered; a messenger call is asked about again, as JemRec cannot tell it from the next call in that app); a message being taken then is hung up on too, where Android has told JemRec which call it is - else the caller hears silence until they hang up - and kept as a message, its greeting at its start. |
+| **Recording stopped early** | The recording of your last call ended well before the call did: its capture failed, or nothing reached it, and it never came back, its file could not be written - the phone full - or the recorder itself was ended. Phone and messenger calls alike; a recorder ended during a messenger call, a call waiting, or with call tracking off, cannot be told. One saved long after its call says which call, by its time. |
+| **Recording saved elsewhere** | JemRec can no longer reach the folder you chose, so a call was saved in the standard Recordings folder. Once; **Choose again** opens Android's folder picker. |
+| **Battery use is Restricted** | JemRec's battery use is set to Restricted, so Android lets nothing of it run in the background; the notification says what that costs. Once, while it lasts and JemRec is on, its words kept to what it costs now; gone once it is lifted or JemRec is turned off. Tapped, JemRec's card says the same; **Open App info** and allow its background use on its battery page. |
 | **Checking the recorder** | A USB cable went in or came out, and the recorder went with it: JemRec is starting it again. A few seconds; a cable that changed nothing shows nothing. Minutes on a phone that holds JemRec back with the screen off - see *Unplugging from a computer*. |
 | **Taking a message** | The answering machine has a caller. **Talk to them** takes the call; **Hang up** ends it. |
 | **Message from** the caller | A message, with a sound, Play, Share and Delete. It stays until you dismiss it, whether or not each call is shown when it ends. |
 | The caller, with pause and a seek bar | A recording you played, going on with the screen off. On the lock screen it says only **Call recording**. It goes when the recording is stopped. |
-| **JemRec was stopped in the background** | This phone stopped JemRec in the background, so a call could go unrecorded. Its button opens the phone's own screen for it, and the notification says what to do there (on an Honor: **App launch**, **Manage manually**). Only on phones that stop apps that way — see *Stopped in the background*. |
+| **JemRec was stopped in the background** | This phone stopped JemRec in the background, so a call could go unrecorded. Its button opens the phone's own screen for it, and the notification says what to do there (on an Honor: **App launch**, **Manage manually**); tapped, JemRec's Settings at **Survive a restart**, which opens the same screen. Only on phones that stop apps that way — see *Stopped in the background*. |
 | **JemRec was held back in the background** | The phone froze JemRec while it was restarting the recorder after a cable, for the minutes it says. The same button and the same fix. |
 
 ## Settings
@@ -773,16 +833,24 @@ everything still works, with the time as each recording's headline.
   earpiece, never switched to the loudspeaker by itself. Headphones, when in,
   come first. Only on a phone with an earpiece; the earpiece at your ear only
   with a proximity sensor.
+- **Both sides in both ears** — on until you switch it off: both sides of a
+  call in each ear. Off, each side in its own ear, as recorded. Share's
+  converted copy follows it.
 
 **Saving**
 
 - **Saving to** — which folder recordings go in, and back to the default.
 - **File names** — date and time, with the caller, with the phone number, or
   the name Honor's Phone app plays from its call history.
+- **Quality** — Smallest, 24 kbps, about 9 MB an hour, its two sides may blend
+  into one; Standard, 32 kbps, about 12 MB (the default); High, 64 kbps, about
+  29 MB; Highest, 128 kbps, about 58 MB. For calls recorded from then on.
 - **Auto-delete old recordings** and **Auto-delete short calls** — off until
   you choose. Recordings older than 30 days, 90 days, 6 months or a year; calls
-  shorter than 5, 10 or 30 seconds. Kept recordings are never touched, and
-  whatever is removed waits in Recently deleted.
+  shorter than 5, 10 or 30 seconds - a recording of only part of a call, the
+  recorder started again in it or stopped early, is not taken for a short call
+  (after a reinstall, where the file itself says so). Kept recordings are never
+  touched, and whatever is removed waits in Recently deleted.
 - **Recently deleted** — what has been deleted in the last 30 days, with
   **Restore** for each, **Restore all**, and **Delete all for good**, which
   asks first: it cannot be undone.
@@ -817,15 +885,19 @@ everything still works, with the time as each recording's headline.
 **Troubleshooting**
 
 - **Survive a restart** — on phones that have one, opens the list of apps
-  allowed to start by themselves after a reboot.
+  allowed to start by themselves after a reboot, and not stopped in the
+  background. The *JemRec was stopped in the background* notification opens
+  Settings here.
 - **Diagnostics** — whether the recorder is running, a self-test that proves a
   call would be recorded, a way to start the recorder by hand, and **Copy a
   report**: this phone and how its last call was recorded — which way, how loud
   each side came out, what was playing — with no numbers or names in it. It is
   what a bug report wants.
-- **Start fresh** — puts JemRec back to how it was the day you installed it, so
-  setup runs again from step 1. The app closes when you confirm. **Your
-  recordings are not deleted.**
+- **Start fresh** — hands back the permissions you allowed (Android 13 and
+  later; on 12 Android lets no app do that, and says where to), turns Wireless
+  debugging off, forgets the pairing and stops the recorder, so setup runs
+  again from step 1. The app closes when you confirm. **Your recordings are not
+  deleted.**
 
 **About**
 
@@ -878,7 +950,7 @@ the pairing step, and the notification's **Pair again** opens it too: a fresh
 code puts everything back, recordings and settings included. If the pairing was
 fine after all, JemRec reconnects without asking for a code.
 
-**A notification says a call was not recorded.** Tap **Self-test**. It says
+**A notification says a call was not recorded.** Tap its **Self-test**. It says
 whether the recorder is running and hearing calls; a recorder that was down at
 the time is the usual answer.
 
@@ -899,12 +971,14 @@ itself, and retires any other on sight.
 > until Android's 7 days are up, in a list only root can edit, so it stays
 > under *Wireless debugging → Paired devices*; remove it there with the gear
 > beside it. Developer options stays on if you turned it on. And Start fresh
-> leaves the one privileged setting granted, because handing it back would kill
-> the app halfway through the reset. If you tapped **Wait 30 seconds** under
-> *Carrier voicemail*, your carrier still waits 30 seconds before its voicemail
-> answers: that timer is your carrier's, not the phone's, and JemRec did not
-> keep what it was before. Ask your carrier to set it back if you want the
-> shorter wait.
+> leaves what setup granted over debugging — changing settings, and
+> notification access, whose listener it switches off — until you uninstall:
+> handing back the first would kill the app halfway through the reset. JemRec
+> does not use them until it is set up again. If you tapped **Wait 30 seconds**
+> under *Carrier voicemail*, your carrier still waits 30 seconds before its
+> voicemail answers: that timer is your carrier's, not the phone's, and JemRec
+> did not keep what it was before. Ask your carrier to set it back if you want
+> the shorter wait.
 
 ## Two honest warnings
 

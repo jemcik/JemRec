@@ -2,8 +2,8 @@ import java.util.Properties
 
 // Unit tests for the shell-side daemon - the parts of it that are plain Java.
 //
-// The daemon is built by shellserver/build.sh, against the device's platform
-// with its @hide internals (see app/build.gradle.kts), and nothing here goes
+// The daemon is built by shellserver/build.sh, against platform 36's
+// android.jar (see that script for why it is pinned), and nothing here goes
 // into it or into the APK. This module compiles only the daemon classes listed
 // below - ones that use nothing of Android - straight from shellserver/src, so
 // the code under test is the code that ships.
@@ -18,6 +18,7 @@ sourceSets {
             include("com/jemcik/jemrec/shell/AnswerMachine.java")
             include("com/jemcik/jemrec/shell/AnswerSettings.java")
             include("com/jemcik/jemrec/shell/CallDecisions.java")
+            include("com/jemcik/jemrec/shell/CallPath.java")
             include("com/jemcik/jemrec/shell/CallReport.java")
             include("com/jemcik/jemrec/shell/CallStates.java")
             include("com/jemcik/jemrec/shell/Checks.java")
@@ -25,6 +26,11 @@ sourceSets {
             include("com/jemcik/jemrec/shell/Handshake.java")
             include("com/jemcik/jemrec/shell/Hop.java")
             include("com/jemcik/jemrec/shell/PolicyUse.java")
+            include("com/jemcik/jemrec/shell/Quality.java")
+            include("com/jemcik/jemrec/shell/RecordingLoss.java")
+            include("com/jemcik/jemrec/shell/RestartLoop.java")
+            include("com/jemcik/jemrec/shell/RestartPolicy.java")
+            include("com/jemcik/jemrec/shell/StallWatch.java")
             include("com/jemcik/jemrec/shell/Wire.java")
             // The daemon's own @Nullable, which these classes use (NullAway).
             include("com/jemcik/jemrec/shell/Nullable.java")

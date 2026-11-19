@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -13,7 +14,6 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.answering.Greeting
-import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.MissedCalls
 import com.jemcik.jemrec.calls.VoipApps
@@ -27,6 +27,8 @@ import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recorder.SelfTest
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.RecordingQuality
+import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.system.AutoStart
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
@@ -40,6 +42,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -78,13 +81,39 @@ class MainViewModel @JvmOverloads constructor(
     /** How long after a flip of Start without Wi-Fi a close still due is
      *  tried again (setStartWithoutWifi). The tests' is short. */
     portCloseAgainMs: Long = 10_000,
+    /** Where the user was, kept through the end of the process in the
+     *  background (SavedPlace): Android's own place for a view model's
+     *  saved state, given by its factory (below); none in the tests that
+     *  make one themselves. */
+    saved: SavedStateHandle? = null,
 ) : AndroidViewModel(app), RowEvents {
+
+    /** The one Android's factory makes, with the window's saved state - the
+     *  constructor lifecycle's own R8 rules keep. */
+    constructor(app: Application, saved: SavedStateHandle) : this(app, UiState(listUnread = true, callsUnread = true), saved = saved)
 
     // Whether messenger calls can work here is known at once (a cached
     // permission check): the Settings card must not show their switches'
     // text for a moment on a phone where they cannot work.
     private val _state = MutableStateFlow(initial.copy(voipSupported = VoipApps.supported(app)))
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    init {
+        // The settings as saved, at once: preferences, quick enough here.
+        // The window's first reading takes seconds, and until it landed the
+        // header drew the defaults - JemRec on, Every call - whatever was
+        // chosen (review, 2026-11-18). For any view model made with nothing
+        // read yet - Android's, and a test's that starts unread - the saved
+        // settings put in; one a test makes read keeps what it is given.
+        if (_state.value.listUnread) _state.update { asSaved(app, it) }
+        // Made new after Android ended the process in the background: back
+        // where the user was. A view model that lived through - the phone
+        // turned - is not made again, and has it already. Saved whenever
+        // the window's state is ("Save UI states": state the view model
+        // holds, saved with SavedStateHandle).
+        saved?.get<android.os.Bundle>(SavedPlace.NAME)?.let { place -> _state.update { SavedPlace.restore(it, place) } }
+        saved?.setSavedStateProvider(SavedPlace.NAME) { android.os.Bundle().also { SavedPlace.save(_state.value, it) } }
+    }
 
     /** What the screen says about what it did: Diagnostics' log, snackbars. */
     private val log = ActionLog(_state)
@@ -155,6 +184,13 @@ class MainViewModel @JvmOverloads constructor(
     /** The answer to something the user just did, for a snackbar where they are. */
     val notices: SharedFlow<String> = log.notices
 
+    /** Android's folder picker, asked for by a notification's Choose again
+     *  (DeepLink.Kind.CHOOSE_FOLDER), where to start it: the picker is the
+     *  screen's to launch (MainScreen). Kept until the screen takes it - one
+     *  asked for as the activity is made comes before the screen listens. */
+    private val folderPicks = kotlinx.coroutines.channels.Channel<android.net.Uri?>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    val folderPickRequests: kotlinx.coroutines.flow.Flow<android.net.Uri?> = folderPicks.receiveAsFlow()
+
     /** A reading of everything, for callers that only want the screen to
      *  catch up (Reading.refresh). */
     fun refresh() = reading.refresh()
@@ -217,8 +253,13 @@ class MainViewModel @JvmOverloads constructor(
     }
 
     /**
-     * A notification's button brought the user here: play that call, share
-     * it, run the self-test, or pair again.
+     * A notification brought the user here. Its button: share a call, run
+     * the self-test, pair again, allow this Wi-Fi, the phone maker's
+     * background settings, choose the folder again. Play that call: the
+     * after-call notification's tap, and its button. A problem's tap: JemRec
+     * where the problem is shown - home, the Calls tab narrowed to calls not
+     * recorded, Settings with its background row in view; home is the plain
+     * notifications' tap too.
      *
      * Each waits until nothing else is running, because opening the app from
      * a notification is also a resume, and the resume's own setup check holds
@@ -241,10 +282,14 @@ class MainViewModel @JvmOverloads constructor(
             when (link.kind) {
                 DeepLink.Kind.PLAY, DeepLink.Kind.SHARE -> {
                     refreshNow()
+                    // Or under the name this version gave it as the list was
+                    // read, its notification still on the old one
+                    // (HonorRenames).
                     val recording = _state.value.recordings.firstOrNull { it.name == link.name }
+                        ?: link.name?.let(FileNames::honorRenamed)?.let { renamed -> _state.value.recordings.firstOrNull { it.name == renamed } }
                     if (recording == null) {
                         // Gone by another way than JemRec's: a file manager's.
-                        link.name?.let { AfterCall.gone(app, it) }
+                        link.name?.let { Trash.left(app, it) }
                         tell("that recording is no longer there")
                         return@launch
                     }
@@ -267,7 +312,10 @@ class MainViewModel @JvmOverloads constructor(
                     }
                 }
                 DeepLink.Kind.SELF_TEST -> {
-                    MissedCalls.dismiss(app)
+                    // Only the missed calls' own: the silent recording's
+                    // Self-test took the list of calls not recorded down,
+                    // unread (review round 9).
+                    if (link.name == MissedCalls.LINK) MissedCalls.dismiss(app)
                     showScreen(Screen.DIAGNOSTICS)
                     actions.free()
                     selfTest()
@@ -291,9 +339,43 @@ class MainViewModel @JvmOverloads constructor(
                     BackgroundKill.cancel(app)
                     AutoStart.open(app)
                 }
+                // The Battery notice's Open App info: Android's page for
+                // JemRec, opened from here as the background warning's
+                // screen is - the notification's button names JemRec's own
+                // activity, never an implicit intent another app could
+                // answer (CodeQL java/android/implicit-pendingintents, PR
+                // #105). The notice stays until the setting is lifted.
+                DeepLink.Kind.BATTERY_SETTINGS -> com.jemcik.jemrec.system.BatteryHealth.openSettings(app)
+                // The calls not recorded, from their notification's tap: the
+                // Calls tab narrowed to them - each says it was not, and why
+                // where it knows. Its own narrowing, the Recordings tab's left
+                // as it was: a Kept or a search there hid the very calls the
+                // notification named (review round 9).
+                DeepLink.Kind.CALLS -> {
+                    MissedCalls.dismiss(app)
+                    _state.update {
+                        it.copy(screen = Screen.HOME, selecting = false, selected = emptySet(), callsNarrowing = CallsNarrowing(notRecorded = true))
+                    }
+                    showTab(HomeTab.CALLS)
+                }
+                // The background-stop warning's tap: Settings, whose
+                // Troubleshooting opens the phone maker's screen and says why.
+                DeepLink.Kind.SETTINGS -> {
+                    showScreen(Screen.SETTINGS)
+                    _state.update { it.copy(revealBackground = true) }
+                }
+                // "Recording saved elsewhere"'s Choose again: home, its card
+                // under the picker, and the picker at once.
+                DeepLink.Kind.CHOOSE_FOLDER -> {
+                    _state.update { it.revealed() }
+                    folderPicks.trySend(folderPickerStart())
+                }
             }
         }
     }
+
+    /** Settings' background row is in view: asked once. */
+    fun backgroundRevealed() = _state.update { it.copy(revealBackground = false) }
 
     /** The list's waveform fill-in stops with the screen (WaveformFill). */
     fun stopFillingIn() = fill.stop()
@@ -317,6 +399,8 @@ class MainViewModel @JvmOverloads constructor(
     override fun chooseOutput(output: Output) = playback.choose(output)
 
     /** Settings' "Play recordings": saved, and what plays follows it. */
+    fun setBothEars(on: Boolean) = settings.setBothEars(on)
+
     fun setPlayThrough(playThrough: PlayThrough) {
         settings.setPlayThrough(playThrough)
         playback.playThrough(playThrough)
@@ -326,6 +410,8 @@ class MainViewModel @JvmOverloads constructor(
     override fun play(recording: Recording) = playback.play(recording)
 
     override fun seekTo(ms: Int) = playback.seekTo(ms)
+
+    override fun positionNow(): Int? = playback.positionNow()
 
     /** The chevron on the scrubber: stop, and fold the row back. */
     override fun stopPlaying() = playback.stopPlayback()
@@ -399,6 +485,11 @@ class MainViewModel @JvmOverloads constructor(
 
     /** What Settings changes, and the permission answers (SettingsActions). */
     fun dismissCallLogOffer() = settings.dismissCallLogOffer()
+    fun dismissNotificationsOff(off: com.jemcik.jemrec.calls.NotificationHealth.Off) = settings.dismissNotificationsOff(off)
+    fun dismissBatteryNotice() = settings.dismissBatteryNotice()
+    fun openBatterySettings() = com.jemcik.jemrec.system.BatteryHealth.openSettings(getApplication())
+    fun openNotificationSettings(off: com.jemcik.jemrec.calls.NotificationHealth.Off) =
+        com.jemcik.jemrec.calls.NotificationHealth.openSettings(getApplication(), off)
 
     fun onAudioAccessResult() = settings.onAudioAccessResult()
 
@@ -432,8 +523,15 @@ class MainViewModel @JvmOverloads constructor(
     fun openNewestVersion() = settings.openNewestVersion()
 
     fun setFileNames(format: FileNames.Format) = settings.setFileNames(format)
+    fun setQuality(quality: RecordingQuality) = settings.setQuality(quality)
 
     fun useDefaultFolder() = settings.useDefaultFolder()
+
+    /** Where the folder picker opens: the folder chosen, or, choosing the
+     *  standard folder for Honor's names, Honor's own (FileNames.honorFolderUri). */
+    fun folderPickerStart(): android.net.Uri? =
+        com.jemcik.jemrec.recordings.RecordingStore.pickerStart(getApplication())
+            ?: FileNames.honorFolderUri.takeIf { state.value.fileNames == FileNames.Format.HONOR }
 
     fun onFolderChosen(uri: Uri) = settings.onFolderChosen(uri)
 
@@ -448,6 +546,9 @@ class MainViewModel @JvmOverloads constructor(
     fun confirmReset() = recorder.confirmReset()
 
     fun refreshSetup() = recorder.refreshSetup()
+
+    /** JemRec opened: the recorder-down alert seen (RecorderHealth.seen). */
+    fun alertSeen() = com.jemcik.jemrec.recorder.RecorderHealth.seen(getApplication())
 
     fun allowThisWifi() = recorder.allowThisWifi()
 

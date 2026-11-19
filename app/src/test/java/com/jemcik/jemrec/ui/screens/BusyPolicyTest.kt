@@ -552,7 +552,10 @@ class BusyPolicyTest : ScreenTest() {
 
         vm.addRuleContact(Uri.parse("content://com.android.contacts/contacts/404"))
         vm.removeRuleContact("lookup-a")
-        vm.onFolderChosen(Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ACalls"))
+        val picked = Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ACalls")
+        // Given by the picker, which offers its grant (PickerGrants).
+        com.jemcik.jemrec.recordings.PickerGrants.offer(picked)
+        vm.onFolderChosen(picked)
         awaitMain("the three to be done") {
             log(vm).contains("could not add that contact") &&
                 log(vm).contains("recordings will be saved to the folder you chose") &&

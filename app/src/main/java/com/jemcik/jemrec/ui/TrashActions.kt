@@ -2,7 +2,6 @@ package com.jemcik.jemrec.ui
 
 import android.app.Application
 import android.content.IntentSender
-import com.jemcik.jemrec.calls.AfterCall
 import com.jemcik.jemrec.recordings.BulkDeleteResult
 import com.jemcik.jemrec.recordings.DeleteResult
 import com.jemcik.jemrec.recordings.Recording
@@ -143,7 +142,7 @@ internal class TrashActions(
         reading.refresh()
         val left = asking.orEmpty()
         asking = null
-        if (granted) left.forEach { AfterCall.gone(app, it) }
+        if (granted) left.forEach { Trash.left(app, it) }
         questions.removeFirstOrNull()?.let { (request, leaving, refused) -> askAndroid(request, leaving, refused) }
     }
 

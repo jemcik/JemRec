@@ -598,6 +598,21 @@ public class ChecksTest {
         assertEquals("jemrec_rec_5_from0_out.dat", Checks.takenRecfile("jemrec_rec_5_out.dat", 0, 1_000));
     }
 
+    /** A recording that ended before its call: "_early" and the ms just
+     *  after the start, in a phone call's and a messenger's names alike, and
+     *  ahead of a message's tag, which still finds its own place after. */
+    @Test
+    public void aRecordingThatEndedEarlyIsNamedSo() {
+        assertEquals("jemrec_rec_5_early41250_in.dat", Checks.earlyRecfile("jemrec_rec_5_in.dat", 41_250));
+        assertEquals("jemrec_rec_5_early0_out.dat", Checks.earlyRecfile("jemrec_rec_5_out.dat", -3));
+        assertEquals("jemrec_rec_5_early9000_in_voip-org.telegram.messenger.dat",
+                Checks.earlyRecfile("jemrec_rec_5_in_voip-org.telegram.messenger.dat", 9_000));
+        assertEquals("jemrec_rec_5_early9000_voip-com.whatsapp.dat",
+                Checks.earlyRecfile("jemrec_rec_5_voip-com.whatsapp.dat", 9_000));
+        assertEquals("jemrec_rec_5_early9000_msg7400_in.dat", Checks.messageRecfile(
+                Checks.earlyRecfile("jemrec_rec_5_in.dat", 9_000), 8_400, 1_000, false, false));
+    }
+
     @Test
     public void theBeepIsAGentleDingDong() {
         int rate = 48000;
@@ -956,15 +971,34 @@ public class ChecksTest {
 
     @Test
     public void aRecfileSaysWhichWayAnAppsCallWentOnlyWhereTelecomSaid() {
-        assertEquals("_in", Checks.recfileTag(true, null, null));
-        assertEquals("_out", Checks.recfileTag(false, null, null));
+        assertEquals("_in", Checks.recfileTag(true, null, null, false));
+        assertEquals("_out", Checks.recfileTag(false, null, null, false));
         // WhatsApp: not through Telecom, the way left to its notification.
-        assertEquals("_voip-com.whatsapp", Checks.recfileTag(false, "com.whatsapp", null));
+        assertEquals("_voip-com.whatsapp", Checks.recfileTag(false, "com.whatsapp", null, false));
         // Google Meet, through Telecom.
         assertEquals("_in_voip-com.google.android.apps.tachyon",
-                Checks.recfileTag(true, "com.google.android.apps.tachyon", true));
+                Checks.recfileTag(true, "com.google.android.apps.tachyon", true, false));
         assertEquals("_out_voip-com.google.android.apps.tachyon",
-                Checks.recfileTag(false, "com.google.android.apps.tachyon", false));
+                Checks.recfileTag(false, "com.google.android.apps.tachyon", false, false));
+    }
+
+    /** A LIST reply's last line: how many it sent - no recording's name. */
+    @Test
+    public void aListEndsWithHowManyItSent() {
+        assertEquals("end 3", Checks.listEnd(3));
+        assertFalse(Checks.listEnd(0).startsWith("jemrec_rec_"));
+    }
+
+    /** A phone call joined mid-call: "_joined" ahead of the guessed way,
+     *  where the app reads the tags (DaemonFile); an early end's tag goes
+     *  after the start, ahead of it (review round 10). A messenger's call
+     *  is never joined. */
+    @Test
+    public void aCallJoinedMidCallIsNamedSo() {
+        String name = "jemrec_rec_1792661198533" + Checks.recfileTag(false, null, null, true) + ".dat";
+        assertEquals("jemrec_rec_1792661198533_joined_out.dat", name);
+        assertEquals("jemrec_rec_1792661198533_early4100_joined_out.dat", Checks.earlyRecfile(name, 4100));
+        assertEquals("_voip-com.whatsapp", Checks.recfileTag(false, "com.whatsapp", null, true));
     }
 }
 

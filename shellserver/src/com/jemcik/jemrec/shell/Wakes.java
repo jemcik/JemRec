@@ -21,6 +21,10 @@ final class Wakes {
 
     static final String ACTION_MESSAGE_STARTED = "com.jemcik.jemrec.MESSAGE_STARTED";
     static final String ACTION_MESSAGE_TAKEN = "com.jemcik.jemrec.MESSAGE_TAKEN";
+    /** The call's recording stopped mid-call (`for_good`: not even tried
+     *  again), and back: RecordingSession. */
+    static final String ACTION_RECORDING_STOPPED = "com.jemcik.jemrec.RECORDING_STOPPED";
+    static final String ACTION_RECORDING_BACK = "com.jemcik.jemrec.RECORDING_BACK";
 
     /**
      * The hand-off at hang-up is the one that carries the recording, and it
@@ -78,7 +82,8 @@ final class Wakes {
         command.addAll(java.util.Arrays.asList(extras));
         long seq = Calls.callSeq;
         boolean start = ACTION_CALL_STARTED.equals(action) || ACTION_MESSAGE_STARTED.equals(action)
-                || ACTION_MESSAGE_TAKEN.equals(action);
+                || ACTION_MESSAGE_TAKEN.equals(action) || ACTION_RECORDING_STOPPED.equals(action)
+                || ACTION_RECORDING_BACK.equals(action);
         // A cable's wake has its own queue: it has three seconds before adbd
         // goes, and must not wait them out behind a call's wake whose `am`
         // is slow (exit 255 has been seen; each try may take ten seconds).

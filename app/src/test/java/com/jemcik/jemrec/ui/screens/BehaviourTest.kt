@@ -72,6 +72,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.capture.FakeRecorder
+import com.jemcik.jemrec.playback.SoundPosition
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.ui.AnswerUi
@@ -182,6 +183,46 @@ class BehaviourTest : ScreenTest() {
         assertEquals("https://github.com/jemcik/JemRec/releases/latest", opened.dataString)
         // The screen stays where it was.
         assertEquals(Screen.SETTINGS, vm.state.value.screen)
+    }
+
+    /** Quality chosen in its dialog: kept, on the row at once, the dialog
+     *  gone - and the row says what an hour comes to. */
+    @Test fun aQualityChosenIsKeptAndShown() {
+        val app = RuntimeEnvironment.getApplication()
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS))
+        showApp(vm)
+        compose.onNodeWithText("Standard, about 12 MB an hour").performScrollTo().assertIsDisplayed()
+
+        compose.onNodeWithText("Quality").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("24 kbps, about 9 MB an hour. The two sides of a call may blend into one.")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Smallest").performClick()
+        compose.waitForIdle()
+
+        assertEquals(com.jemcik.jemrec.recordings.RecordingQuality.SMALLEST,
+            com.jemcik.jemrec.recordings.QualitySetting.of(app))
+        assertEquals(com.jemcik.jemrec.recordings.RecordingQuality.SMALLEST, vm.state.value.quality)
+        compose.onAllNodesWithText("For calls recorded from now on. Recordings already made keep theirs.")
+            .assertCountEquals(0)
+        compose.onNodeWithText("Smallest, about 9 MB an hour").performScrollTo().assertIsDisplayed()
+    }
+
+    /** Both sides in both ears: on until switched off, kept, and the row says
+     *  which it is - on a tablet with no earpiece too. */
+    @Test fun bothSidesInBothEarsSwitchesAndIsKept() {
+        val app = RuntimeEnvironment.getApplication()
+        val vm = viewModel(Fixtures.ready().copy(screen = Screen.SETTINGS, earpieceAvailable = false))
+        showApp(vm)
+        compose.onAllNodesWithText("Play recordings").assertCountEquals(0)
+        compose.onNodeWithText("Each ear hears the whole call").performScrollTo().assertIsDisplayed()
+
+        compose.onNodeWithText("Both sides in both ears").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        assertFalse(com.jemcik.jemrec.playback.BothEarsSetting.of(app))
+        assertFalse(vm.state.value.bothEars)
+        compose.onNodeWithText("Each side of the call in its own ear, as recorded").performScrollTo().assertIsDisplayed()
     }
 
     /** No browser at all: said, not a tap that does nothing. */
@@ -766,6 +807,64 @@ class BehaviourTest : ScreenTest() {
         compose.onAllNodesWithText("Marcus Chen").assertCountEquals(1)
     }
 
+    /** Nothing read yet: no look shows a mark lit - Memo drew its marks as
+     *  if ready under "Checking...", every setting lit from defaults and the
+     *  answering machine's growing as the reading landed (reviews,
+     *  2026-11-18). Each line also lays out unseen what it may show
+     *  (SteadyLine): only what is seen counts. */
+    @Test fun memoShowsNoMarkWhileChecking() = noMarkWhileChecking(Look.MEMO)
+
+    @Test fun deckShowsNoMarkWhileChecking() = noMarkWhileChecking(Look.DECK)
+
+    @Test fun multitrackShowsNoMarkWhileChecking() = noMarkWhileChecking(Look.MULTITRACK)
+
+    private fun noMarkWhileChecking(look: Look) {
+        // The reading held where it lists the recordings: a setup check
+        // that fails - no recorder answers here - takes one at once
+        // (RecorderAndSetup.recheckSetup), and once it lands nothing is
+        // unread. Held, the screen stays as it is before any reading.
+        val held = java.util.concurrent.CountDownLatch(1)
+        com.jemcik.jemrec.recordings.Recordings.override = {
+            held.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            emptyList()
+        }
+        try {
+            // Auto-delete on in the preferences, which the view model's
+            // state is read from as it is made: the fixture's alone was put
+            // back to off, and its mark checked nothing (review, 2026-11-18).
+            com.jemcik.jemrec.recordings.Retention.setMaxAgeDays(org.robolectric.RuntimeEnvironment.getApplication(), 90)
+            val vm = viewModel(Fixtures.ready().copy(listUnread = true, autoDeleteAfterDays = 90), AnswerUi(enabled = true))
+            assertEquals(90, vm.state.value.autoDeleteAfterDays)
+            showApp(vm, look = LookChoice(look))
+            // What a line shows, not the copy it measures itself by, drawn
+            // clear (SteadyLine) - which the test tree counts as displayed.
+            val shown = androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag(STEADY_SHOWN))
+            compose.onNode(
+                androidx.compose.ui.test.hasText(if (look == Look.MEMO) "Checking..." else "CHECKING") and shown,
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            // And what a screen reader is told: the header's sentence, said
+            // again as it changes (a polite live region; review, 2026-11-18).
+            compose.onNode(
+                androidx.compose.ui.test.hasContentDescription("Checking", substring = true) and
+                    androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                        androidx.compose.ui.semantics.SemanticsProperties.LiveRegion,
+                        androidx.compose.ui.semantics.LiveRegionMode.Polite,
+                    ),
+            ).assertIsDisplayed()
+            for (setting in com.jemcik.jemrec.ui.Marked.entries) {
+                compose.onAllNodes(androidx.compose.ui.test.hasTestTag("markface-$setting-lit") and shown, useUnmergedTree = true)
+                    .assertCountEquals(0)
+            }
+            compose.onAllNodes(androidx.compose.ui.test.hasText("Every call") and shown, useUnmergedTree = true)
+                .assertCountEquals(0)
+        } finally {
+            held.countDown()
+            com.jemcik.jemrec.recordings.Recordings.override = null
+            com.jemcik.jemrec.recordings.Retention.setMaxAgeDays(org.robolectric.RuntimeEnvironment.getApplication(), 0)
+        }
+    }
+
     /**
      * And it is the header's mark as drawn, not a likeness: drawn apart,
      * Memo's sat in circles the header never had and Multitrack's stood its
@@ -1207,50 +1306,56 @@ class BehaviourTest : ScreenTest() {
     @Test fun multitracksPlayingRowKeepsItsPhoto() = thePlayingRowKeepsItsPhoto(Look.MULTITRACK)
 
     /**
-     * The playhead glides: between the player's readings - every 300 ms - it
-     * moves on with the frames. Drawn only at the readings it stepped three
-     * times a second (the Honor, 2026-10-23). A 20-second call, so one
-     * reading's 300 ms is pixels of the scrubber. The test's clock is taken
-     * by hand first: while it runs by itself the test environment cancels
-     * infinite animations, which is what keeps the screen tests' pictures
-     * still.
+     * The playhead follows the sound, read from the player itself at every
+     * frame (SoundPosition): it moves between the screen's readings - every
+     * 300 ms - and not only at them. Drawn only at the readings it stepped
+     * three times a second (the Honor, 2026-10-23). A 20-second call, so
+     * 300 ms is pixels of the scrubber. The test's clock is taken by hand
+     * first: while it runs by itself the test environment cancels infinite
+     * animations, which is what keeps the screen tests' pictures still.
      */
-    @Test fun thePlayheadMovesBetweenReadings() {
-        val olivia = Fixtures.recordings().first()
+    @Test fun thePlayheadFollowsTheSoundEveryFrame() {
         val playing = Fixtures.playing(positionMs = 7_000, durationMs = 20_000)
+        val name = checkNotNull(playing.playingName)
         val vm = viewModel(playing)
         var shown by mutableStateOf(playing)
         show { AppScaffold(shown, vm) }
         compose.mainClock.autoAdvance = false
-        // Paused and played again, so the head's frame loop starts under
-        // the hand-run clock; a reading that shows the player moving; then
-        // the 300 ms until the next.
-        // Each change sent on before the frames, or the clock run by hand
-        // never sees it: the pause and the play would meet in one picture.
-        val frames = { n: Int ->
-            Snapshot.sendApplyNotifications()
-            repeat(n) { compose.mainClock.advanceTimeByFrame() }
+        // The sound runs with the test's clock, from 7 s; the screen's own
+        // reading stays at 7 s.
+        val from = compose.mainClock.currentTime
+        SoundPosition.source = { n -> if (n == name) (7_000 + compose.mainClock.currentTime - from).toInt() else null }
+        try {
+            // Paused and played again, so the head's frame loop starts under
+            // the hand-run clock. Each change sent on before the frames, or
+            // the clock run by hand never sees it: the pause and the play
+            // would meet in one picture.
+            val frames = { n: Int ->
+                Snapshot.sendApplyNotifications()
+                repeat(n) { compose.mainClock.advanceTimeByFrame() }
+            }
+            shown = playing.copy(playing = false)
+            frames(2)
+            shown = playing
+            frames(2)
+            val scrubber = compose.onNodeWithContentDescription("Position in the recording")
+            val before = scrubber.captureToImage().toPixelMap()
+            compose.mainClock.advanceTimeBy(300)
+            val after = scrubber.captureToImage().toPixelMap()
+            // The head, found in a band only it reaches - above the bars,
+            // which keep 6dp off the scrubber's edges - as the middle of its
+            // dark run.
+            val band = (before.height * 0.09f).toInt()
+            val headAt = { map: PixelMap ->
+                (0 until map.width).filter { map[it, band].red < 0.5f }.average()
+            }
+            // 300 ms of a 20-second call is about 7px of this scrubber.
+            val moved = headAt(after) - headAt(before)
+            assertTrue("the playhead moved ${"%.1f".format(moved)}px in 300 ms of sound", moved >= 3)
+        } finally {
+            SoundPosition.source = null
+            compose.mainClock.autoAdvance = true
         }
-        shown = playing.copy(playing = false)
-        frames(2)
-        shown = playing
-        frames(2)
-        shown = playing.copy(positionMs = 7_300)
-        frames(2)
-        val scrubber = compose.onNodeWithContentDescription("Position in the recording")
-        val before = scrubber.captureToImage().toPixelMap()
-        compose.mainClock.advanceTimeBy(300)
-        val after = scrubber.captureToImage().toPixelMap()
-        compose.mainClock.autoAdvance = true
-        // The head, found in a band only it reaches - above the bars, which
-        // keep 6dp off the scrubber's edges - as the middle of its dark run.
-        val band = (before.height * 0.09f).toInt()
-        val headAt = { map: PixelMap ->
-            (0 until map.width).filter { map[it, band].red < 0.5f }.average()
-        }
-        // 300 ms of a 20-second call is about 7px of this scrubber.
-        val moved = headAt(after) - headAt(before)
-        assertTrue("the playhead moved ${"%.1f".format(moved)}px between two readings", moved >= 3)
     }
 
     /** A messenger's chip on the Recordings tab leaves that messenger's

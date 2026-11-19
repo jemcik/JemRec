@@ -104,7 +104,7 @@ final class Commands {
             ParcelFileDescriptor pfd = ParcelFileDescriptor.fromSocket(client);
             try {
                 Streamer streamer = new Streamer(pfd.getFileDescriptor(), codec, RecordingSession.SEND_CODEC_META, RecordingSession.SEND_FRAME_META);
-                AsyncProcessor recorder = new AudioEncoder(capture, streamer, RecordingSession.BIT_RATE, null, null);
+                AsyncProcessor recorder = new AudioEncoder(capture, streamer, Quality.bitRate, null, null);
                 CountDownLatch finished = new CountDownLatch(1);
                 recorder.start(fatalError -> finished.countDown());
                 finished.await();
@@ -121,10 +121,12 @@ final class Commands {
             // or a reboot left behind before it could be saved.
             File dir = new File(Paths.REC_DIR);
             java.util.List<String> names = new java.util.ArrayList<>();
+            boolean listed;
             // Under the lock a recording starts under: its file is created
             // before it is the active one, and in between it looked finished.
             synchronized (Calls.LOCK) {
                 File[] files = dir.listFiles((d, n) -> n.startsWith(Paths.REC_PREFIX) && n.endsWith(Paths.REC_SUFFIX));
+                listed = files != null;
                 if (files != null) {
                     // Skip the one being written right now: it is not finished.
                     String activeName = Calls.activeName();
@@ -140,6 +142,12 @@ final class Commands {
             for (String name : names) {
                 os.write((name + "\n").getBytes(StandardCharsets.UTF_8));
                 count++;
+            }
+            // The end, and how many were sent: a reply cut off - this
+            // process ended mid-way - or a folder that could not be listed,
+            // which sends none, is then no "nothing pending" (review round 10).
+            if (listed) {
+                os.write((Checks.listEnd(count) + "\n").getBytes(StandardCharsets.UTF_8));
             }
             os.flush();
             Ln.i("session: listed " + count + " pending recording(s)");
@@ -185,6 +193,12 @@ final class Commands {
             int value = client.getInputStream().read();
             boolean ok = value == 1 ? PairingTimeout.keep() : value == 0 && PairingTimeout.giveBack();
             Wire.reply(client.getOutputStream(), Wire.pairing(ok));
+            return;
+        }
+        if (command == Wire.COMMAND_SET_QUALITY) {
+            Quality.bitRate = Quality.from(Wire.readName(client.getInputStream()), Quality.bitRate);
+            Ln.i("recording: quality " + Quality.words(Quality.bitRate) + " from the app");
+            Wire.reply(client.getOutputStream(), Wire.quality(Quality.bitRate));
             return;
         }
         if (command == Wire.COMMAND_SET_TRACKING) {
@@ -237,36 +251,13 @@ final class Commands {
             return;
         }
         if (command == Wire.COMMAND_FETCH) {
-            String name = Wire.readName(client.getInputStream());
-            File file = Paths.recFileFor(name);
-            if (name.equals(Calls.activeName())) {
-                // Still being written: not to be collected - nor, by a
-                // collector that then finds it empty, deleted. Its hang-up
-                // brings it.
-                Ln.w("session: fetch of the recording in progress, answering gone");
-                client.getOutputStream().write(Wire.GONE.getBytes(StandardCharsets.US_ASCII));
-                client.getOutputStream().flush();
-                return;
-            }
-            if (file == null || !file.isFile()) {
-                // Say so, in the slot the codec id would take. The app tells
-                // "collected by another path already" from "the file was
-                // empty" by it, and only the second is news for the user.
-                Ln.w("session: fetch of unknown file '" + name + "', answering gone");
-                client.getOutputStream().write(Wire.GONE.getBytes(StandardCharsets.US_ASCII));
-                client.getOutputStream().flush();
-                return;
-            }
-            Ln.i("session: fetching " + name + " (" + file.length() + " bytes)");
+            // Counted from the moment it is asked, not once the file is
+            // found: a QUIT answered BUSY only while a fetch is counted, and
+            // one arriving while this read the name or looked at the file
+            // ended the recorder mid-fetch (review, 2026-11-18).
             Calls.fetches.incrementAndGet();
-            try (FileInputStream in = new FileInputStream(file)) {
-                OutputStream os = client.getOutputStream();
-                byte[] buf = new byte[64 * 1024];
-                int n;
-                while ((n = in.read(buf)) > 0) {
-                    os.write(buf, 0, n);
-                }
-                os.flush();
+            try {
+                fetch(client);
             } finally {
                 Calls.fetches.decrementAndGet();
             }
@@ -368,6 +359,46 @@ final class Commands {
             return;
         }
         Ln.w("session: unknown command " + command + ", closing");
+    }
+
+    /** FETCH: the finished recording a name asks for, length first, or GONE
+     *  (counted in Calls.fetches by the caller, for QUIT's BUSY). */
+    private static void fetch(Socket client) throws IOException {
+        String name = Wire.readName(client.getInputStream());
+        File file = Paths.recFileFor(name);
+        if (name.equals(Calls.activeName())) {
+            // Still being written: not to be collected - nor, by a
+            // collector that then finds it empty, deleted. Its hang-up
+            // brings it.
+            Ln.w("session: fetch of the recording in progress, answering gone");
+            client.getOutputStream().write(Wire.GONE.getBytes(StandardCharsets.US_ASCII));
+            client.getOutputStream().flush();
+            return;
+        }
+        if (file == null || !file.isFile()) {
+            // Say so, in the slot the codec id would take. The app tells
+            // "collected by another path already" from "the file was
+            // empty" by it, and only the second is news for the user.
+            Ln.w("session: fetch of unknown file '" + name + "', answering gone");
+            client.getOutputStream().write(Wire.GONE.getBytes(StandardCharsets.US_ASCII));
+            client.getOutputStream().flush();
+            return;
+        }
+        long length = file.length();
+        Ln.i("session: fetching " + name + " (" + length + " bytes)");
+        try (FileInputStream in = new FileInputStream(file)) {
+            OutputStream os = client.getOutputStream();
+            // Its length first (Wire.FETCH_LENGTH): eight bytes, big-endian,
+            // whose first four are never GONE's. The file is finished - not
+            // the one being written (above) - so it no longer grows.
+            new java.io.DataOutputStream(os).writeLong(length);
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                os.write(buf, 0, n);
+            }
+            os.flush();
+        }
     }
 
     private static void reply(Socket client, String line) throws IOException {

@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-2031-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2608-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -145,6 +145,17 @@ Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 recording carries on with Wi-Fi off, on mobile data, anywhere. The measurements
 are in [How JemRec works](docs/ARCHITECTURE.md#after-a-restart).
 
+Android's own Battery setting for an app can hold JemRec back on any phone.
+Set to *Restricted*, Android lets nothing of JemRec's run in the background:
+none of its jobs runs there, so a recorder that stops may stay stopped until
+something starts JemRec - you opening it, or Android for a reason of its own.
+With exact call tracking
+off, a call is saved only when you next open JemRec - a messenger call most
+likely too, though that is not measured - and in Ask first it is not recorded
+at all. Auto-delete and the trash's 30 days wait for it as well.
+JemRec says so, on its home screen and once in a notification, with a button
+to App info, where it is changed.
+
 </details>
 
 > [!IMPORTANT]
@@ -162,14 +173,14 @@ screens.
 
 | | |
 | --- | --- |
-| **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record. A Quick Settings tile turns recording on and off, and a long press on it opens JemRec. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
+| **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record. About 12 MB an hour, or smaller or larger in Settings → Saving → Quality. A Quick Settings tile turns recording on and off, and a long press on it opens JemRec. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
 | **Start at the answer** | Exact call tracking cuts the ringing, skips calls nobody answered, and splits call waiting into one recording per call. → [more](docs/ARCHITECTURE.md#exact-call-tracking) |
 | **Keep only the calls you want** | All your contacts, all but some, only some, or none - and other numbers on their own switch. → [more](docs/ARCHITECTURE.md#whose-calls-to-keep) |
 | **Messenger calls** | WhatsApp, Telegram, Viber, and Google Meet calls and meetings, both sides, each switched on separately, with the caller's name from the app's notification. Android 14+. → [more](docs/ARCHITECTURE.md#messenger-calls) |
 | **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. Search either list, or narrow it with a tap. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
 | **Name files your way** | By date and time, with the caller, with the phone number for a program that sorts them, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
-| **Play, keep, clean up** | A call plays as its waveform, to see where people talk, and plays on with the screen off, under the phone's media controls; held to your ear, it moves to the earpiece and the screen goes dark, as in a call. A keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
-| **Hear about problems** | A notification after each call, and one when a recording is silent, the recorder is down, a call went unrecorded, or the phone stopped JemRec or held it back in the background. A call that came out wrong? *Copy a report* in Diagnostics says how it was recorded, for an issue on GitHub. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
+| **Play, keep, clean up** | A call plays as its waveform, to see where people talk, with both sides in both ears - one earbud is enough - and plays on with the screen off, under the phone's media controls; held to your ear, it moves to the earpiece and the screen goes dark, as in a call. A keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
+| **Hear about problems** | A notification after each call, and one when a recording is silent or stopped early, the recorder is down, a call went unrecorded or was saved away from your folder, or the phone stopped JemRec or held it back in the background. The home screen says so while JemRec's notifications are off, its battery use is Restricted or its folder is out of reach. A call that came out wrong? *Copy a report* in Diagnostics says how it was recorded, for an issue on GitHub. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
 | **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
 | **Open your banking app** | Some banking apps won't open while Developer options or debugging is on. Turning JemRec off can hide Developer options too, or switch all debugging off; turning it on puts back what it switched off - away from Wi-Fi too, with *Start without Wi-Fi*. Settings → When JemRec is off. → [more](docs/ARCHITECTURE.md#off-and-debugging-with-it) |
 | **Three looks** | Memo, calm and simple; Deck, a pocket recorder with an LCD and a REC key; Multitrack, a sound editor with a colour for each caller. Each light, dark or as the phone, in Settings → Theme. → [more](docs/ARCHITECTURE.md#three-looks) |
@@ -289,7 +300,7 @@ recorder does not explain is one its user has to guess at:
 | Permission | Why |
 | --- | --- |
 | `INTERNET` | Not about the internet: Android requires it for any TCP socket, including one to `127.0.0.1`. |
-| `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing. |
+| `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing - and for the background checks to ask Android for a network to run with (from Android 14 a job that asks for one needs it). |
 | `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
@@ -298,8 +309,8 @@ recorder does not explain is one its user has to guess at:
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
 | `READ_EXTERNAL_STORAGE` | Android 12 only, which has no `READ_MEDIA_AUDIO`: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
-| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine's answering is the recorder's, as the shell. |
-| `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
+| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking acts on a call in one case only: it hangs up the answering machine's call if the recorder is lost mid-message. The machine's answering is the recorder's, as the shell. |
+| `USE_FULL_SCREEN_INTENT` | Keeps Ask first's question on screen during a call until you answer it; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs. |
 | `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down. |
 
 What is left out, and why, is in
@@ -324,6 +335,10 @@ is heard on your side too: your side is the plain microphone, without the call
 app's echo cancellation. A call that still comes out with one side - over
 Wi-Fi Calling, say - is worth an issue on GitHub: tap *Copy a report* in
 Diagnostics right after it and paste that in.
+
+Played in JemRec, both sides are in both ears, so one earbud hears the whole
+call; Settings → Playing → *Both sides in both ears* switched off plays each
+side in its own ear, as recorded. The file keeps them apart either way.
 
 </details>
 
@@ -375,7 +390,10 @@ Honor's battery manager kept the recorder down for about four minutes in two
 tests of three, and 8.5 minutes in another. Until then nothing is recorded -
 the header says so, a notification says the phone held JemRec back the moment
 it lets JemRec run again, and one says the recorder is down if it stays down
-two minutes. And if When JemRec is off is set to *Turn all debugging off*,
+two minutes (silently during a call, and again with its sound after it).
+Ended during a call, the recorder is
+started again in the call where it can be, and records the rest of it as a
+second recording. And if When JemRec is off is set to *Turn all debugging off*,
 turning JemRec back on needs Wi-Fi too.
 
 **Settings → Start without Wi-Fi** takes the Wi-Fi away from all of that
@@ -445,7 +463,9 @@ JemRec records what you tell it to and warns nobody on your behalf.
 
 In the phone's standard `Recordings/JemRec` folder (or the folder you chose),
 as Opus files any music app can play; Share can also convert one to `.m4a` for
-iPhones and Macs. They are yours rather than the app's, so they stay when
+iPhones and Macs. An hour of calls takes about 12 MB; Settings → Saving →
+*Quality* has a smaller choice and two larger ones, for calls recorded from
+then on. They are yours rather than the app's, so they stay when
 JemRec is uninstalled - delete them first if you want them gone. Deleted ones
 wait in Recently deleted for 30 days. Installed again, JemRec shows them as
 they were, once you let it read them (it asks): each recording carries its own
@@ -554,7 +574,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 2031 tests, screenshots of the screens included
+    ./gradlew test              # 2608 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

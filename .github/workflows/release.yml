@@ -69,7 +69,7 @@ jobs:
     steps:
       # Full history and every tag. merge-base and reading gradle.properties
       # at a tag both need more than the single commit fetched by default.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 
@@ -127,29 +127,62 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-  release:
+  # THE COMMIT'S OWN CHECKS FIRST. build.yml runs on the same push - the
+  # tests, lint, Error Prone, the R8 constructors and 16 KB checks - and a
+  # release used to be signed and published beside it, waiting for none of
+  # them: a red commit could be released. Now it waits for that run, an hour
+  # at most, and goes on only if it passed.
+  checked:
     needs: decide
+    if: needs.decide.outputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Wait for build.yml on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.decide.outputs.sha }}
+        run: |
+          for i in $(seq 1 120); do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?head_sha=$SHA&event=push" \
+              --jq '.workflow_runs[0] | "\(.status) \(.conclusion)"' 2>/dev/null || true)
+            case "$run" in
+              "completed success") echo "build.yml passed on $SHA."; exit 0 ;;
+              completed*) echo "::error::build.yml on $SHA ended $run: not released."; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::build.yml on $SHA did not finish within an hour: not released."
+          exit 1
+
+  release:
+    needs: [decide, checked]
     if: needs.decide.outputs.tag != ''
     runs-on: ubuntu-latest
     env:
       TAG: ${{ needs.decide.outputs.tag }}
       SHA: ${{ needs.decide.outputs.sha }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ needs.decide.outputs.sha }}
+          # Not left in .git/config for the build: this job holds the signing
+          # key, and the release is uploaded with gh and its own token below.
+          persist-credentials: false
 
       # 21, and exactly 21, because the daemon's bytecode depends on the javac
       # major that compiled it - see shellserver/build.sh, which refuses any
       # other. F-Droid's build server is Debian trixie with default-jdk, which
       # is 21; a release built with a different major cannot be reproduced
       # there, and F-Droid would have to sign it with its own key instead.
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
 
       # AGP 9 numbers the newest platform with a minor version, so compileSdk 37
       # is "platforms;android-37.0" and NOT "platforms;android-37" - which is
@@ -168,7 +201,7 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/d8" \
             || { echo "::error::build-tools 36.0.0 d8 is missing"; ls "$ANDROID_HOME/build-tools"; exit 1; }
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
 
       # The version is READ from gradle.properties and CHECKED against the tag,
       # not derived from the tag. F-Droid's update checker reads
@@ -248,7 +281,17 @@ jobs:
             exit 1
           fi
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs "$APK"
+          CERTS=$("$APKSIGNER" verify --print-certs "$APK")
+          echo "$CERTS"
+          # And signed by the key every release is: the digest README, the
+          # site and SETUP.md give users to check against. Signed by another,
+          # it would install over nothing already installed, and F-Droid,
+          # which checks the developer's signature, would refuse it.
+          EXPECTED=50aeab3630f0198ea3845db51413b1ad29582f78240fa2df6fe55ba8537afdf8
+          if ! grep -qi "certificate SHA-256 digest: $EXPECTED" <<<"$CERTS"; then
+            echo "::error::$APK is not signed with JemRec's key (SHA-256 $EXPECTED). Is the keystore secret the right one?"
+            exit 1
+          fi
           echo "APK=$APK" >> "$GITHUB_ENV"
 
       # Named from VERSION rather than the raw tag, so "0.2" and "v0.2" produce

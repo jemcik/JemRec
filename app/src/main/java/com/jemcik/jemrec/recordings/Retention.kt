@@ -69,12 +69,15 @@ object Retention {
         if (r.parsedName == null) return@filter false
         val old = maxAgeDays > 0 &&
             r.startedAtMillis?.let { now - it > maxAgeDays * DAY_MS } == true
-        // Not a message - see dropIfTooShort.
-        val short = !r.message && minSeconds > 0 && r.durationMillis in 1 until minSeconds * 1000L
+        // Not a message, nor one of a call's parts - see dropIfTooShort.
+        val short = !r.message && !r.part && minSeconds > 0 && r.durationMillis in 1 until minSeconds * 1000L
         old || short
     }
 
-    /** From the keep-alive job: the pass, if a day has gone by since the last. */
+    /** From the keep-alive job: the pass, if a day has gone by since the
+     *  last - which waits with the job for a network where it asks for one
+     *  (RecorderKeepAlive.constraints), and under the Battery setting
+     *  Restricted for JemRec to be opened. */
     fun runIfDue(context: Context) {
         val last = Prefs.of(context).getLong(KEY_LAST_RUN, 0L)
         if (System.currentTimeMillis() - last < DAY_MS) return
@@ -128,7 +131,9 @@ object Retention {
      */
     fun dropIfTooShort(context: Context, saved: RecordingSaver.Outcome.Saved): Boolean {
         val min = minSeconds(context)
-        if (saved.message || min == 0 || saved.seconds <= 0 || saved.seconds >= min) return false
+        // Nor one of a call's recordings, a recorder lost mid-call having
+        // left more: the call is not short (RecordingMarks.Parts).
+        if (saved.message || saved.part || min == 0 || saved.seconds <= 0 || saved.seconds >= min) return false
         val result = Trash.trash(context, saved.uri, saved.filePath, saved.name)
         Log.i(TAG, "retention: ${FileNames.forLog(saved.name)} is %.1fs, under ${min}s -> ${result.javaClass.simpleName}".format(saved.seconds))
         if (result !is DeleteResult.Deleted) return false

@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.recordings
 
+import com.jemcik.jemrec.audio.OggPages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import java.io.ByteArrayOutputStream
@@ -25,14 +26,16 @@ internal object OggSamples {
             "0000",
     )
 
-    /** The Honor's two header pages, then audio pages of made-up packets - one
-     *  over 255 bytes, laced across segments - and the last marked as the
-     *  stream's end. */
+    /** The Honor's two header pages, then audio pages of made-up 20 ms
+     *  packets - one over 255 bytes, laced across segments - as Android's
+     *  muxer writes them: each page at where its packet starts, none marked
+     *  the stream's end. */
     fun recording(): ByteArray {
         val serial = ByteBuffer.wrap(honorHeaders, 14, 4).order(ByteOrder.LITTLE_ENDIAN).int
         val audio = (0 until 4).map { i ->
-            val body = ByteArray(if (i == 1) 700 else 120) { (it + i).toByte() }
-            page(serial, seq = i + 2, granule = (i + 1) * 960L + 312, type = if (i == 3) 4 else 0, body = body)
+            // A TOC byte for one 20 ms CELT frame, then made-up bytes.
+            val body = ByteArray(if (i == 1) 700 else 120) { if (it == 0) 0xFC.toByte() else (it + i).toByte() }
+            page(serial, seq = i + 2, granule = 960L * i, type = 0, body = body)
         }
         return honorHeaders + audio.reduce { a, b -> a + b }
     }
@@ -74,7 +77,7 @@ internal object OggSamples {
 
     /** The page's CRC as Ogg computes it: with the CRC's own four bytes zero. */
     fun crcOf(page: ByteArray): Int =
-        RecordingTags.crc(page.copyOf().also { for (i in 22 until 26) it[i] = 0 })
+        OggPages.crc(page.copyOf().also { for (i in 22 until 26) it[i] = 0 })
 
     fun hex(s: String): ByteArray = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 }

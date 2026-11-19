@@ -33,9 +33,15 @@ import android.util.Log
  * found by looking, and they change between versions - so every one of them is
  * checked for existence before it is offered, launching is wrapped, and the
  * fallback is this app's own page in Settings, which every phone has. The
- * button simply does not appear on a phone where nothing here resolves, which
- * is the right answer for a Pixel: there is no such screen because there is no
- * such restriction.
+ * button simply does not appear on a phone where nothing here resolves, as on
+ * a Pixel: no vendor screen there. Stock Android's own rules still apply -
+ * the user's Battery "Restricted" and the standby buckets: what they do to a
+ * call's recording is the release check battery_restricted's
+ * (tools/emulator_checks.py), ARCHITECTURE's "Stopped in the background"
+ * says what it found, and BatteryHealth tells the user of the Restricted
+ * setting, under which no job runs in the background, a recorder that stops
+ * may stay stopped until something starts JemRec, and some calls are saved
+ * only then.
  */
 internal object AutoStart {
 

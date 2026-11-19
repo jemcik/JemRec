@@ -8,6 +8,7 @@ import android.content.Intent
 //   --es op pref --es key file_names --es value DATE_AND_CALLER
 //   --es op pref --es key rules_other_numbers --ez bool false
 //   --es op pref --es key emergency_call_at --el long 1792680000000
+//   --es op pref --es key voip_apps --es set org.telegram.messenger.web
 //   --es op pref --es key emergency_call_at   (no value: removed)
 // Through the app's own SharedPreferences, because writing the
 // file from outside loses to a running app process, which
@@ -36,6 +37,12 @@ internal object PrefOp : DiagOp {
             intent.hasExtra("value") -> {
                 edit.putString(key, intent.getStringExtra("value")).commit()
                 "$key = ${intent.getStringExtra("value")}"
+            }
+            // A string set, comma-separated.
+            intent.hasExtra("set") -> {
+                val set = intent.getStringExtra("set").orEmpty().split(',').filter { it.isNotEmpty() }.toSet()
+                edit.putStringSet(key, set).commit()
+                "$key = ${set.sorted()}"
             }
             else -> {
                 edit.remove(key).commit()

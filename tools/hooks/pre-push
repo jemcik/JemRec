@@ -4,9 +4,11 @@
 # Install once per clone:   git config core.hooksPath tools/hooks
 # Skip deliberately:        git push --no-verify
 #
-# The same two checks CI runs, so a push that passes here is a push that goes
-# green - the point being to find out in twenty seconds rather than in three
-# minutes and a failed workflow.
+# Two of the checks CI runs - the tests and lint, the two most often broken -
+# to find out in twenty seconds rather than in three minutes and a failed
+# workflow. CI runs more (the site made again, Error Prone, the shrunk APK, the
+# release APK's R8 and 16 KB checks): a push that passes here can still fail
+# there.
 set -e
 cd "$(git rev-parse --show-toplevel)"
 

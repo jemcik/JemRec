@@ -2354,6 +2354,158 @@ public class AnswerMachineTest {
         assertTrue(world.now - beep <= AnswerMachine.SILENCE_HANGUP_MS + AnswerMachine.SILENCE_CHECK_MS);
     }
 
+    /** The message's recording stopped mid-message: the silence watch read
+     *  a caller still talking as silent, and hung up 30 s on (review,
+     *  2026-11-18). Hung up at once now: nothing more of it can be kept. */
+    @Test
+    public void aRecordingThatStopsMidMessageHangsUpAtOnce() {
+        noLimitToTheBeep();
+        world.advance(5_000L);
+        machine.level(AnswerMachine.SOUND_RMS * 2, 20L);
+        machine.recordingStopped();
+        world.advance(0L);
+        assertTrue(world.did.contains("hang up"));
+        // Its own hang-up: not a takeover as the call ends.
+        machine.callEnded();
+        assertFalse(world.muted);
+    }
+
+    /** Stopped as the call was answered, before the greeting: no greeting is
+     *  played into a dead recording, and the call is let go; back before
+     *  the greeting, it plays as ever. */
+    @Test
+    public void aRecordingThatStopsBeforeTheGreetingIsNotGreetedInto() {
+        world.audioInCall = false;
+        on();
+        machine.ringing();
+        machine.goAhead(20_000L, world.now);
+        world.advance(20_000L);
+        machine.recordingStopped();
+        world.advance(0L);
+        machine.offHook(true);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertFalse(world.did.contains("greeting"));
+        assertTrue(world.did.contains("hang up"));
+        // Not played: the greeting failed, not the caller hanging up during
+        // it (review round 10).
+        AnswerMachine.Outcome out = machine.callEnded();
+        assertTrue(out.greetingFailed);
+        assertFalse(out.nothingLeft());
+    }
+
+    /** The machine's own hang-up for a stopped recording is not the caller
+     *  hanging up during the greeting: what was kept is a message, never
+     *  "_msgnone" (review round 10: the Calls tab said "Hung up during the
+     *  greeting"). */
+    @Test
+    public void aHangUpForAStoppedRecordingIsNotTheCallersHangUp() {
+        answeredWithGreeting();
+        machine.recordingStopped();
+        world.advance(0L);
+        AnswerMachine.Outcome out = machine.callEnded();
+        assertTrue(out.lostRecording);
+        assertFalse(out.nothingLeft());
+    }
+
+    /** A stop skipped while telephony said the call was over is acted on
+     *  once the call goes on - not forgotten, the message running into a
+     *  dead recording (review round 10). */
+    @Test
+    public void aStopWhileTheCallWasSaidOverIsActedOnWhenItGoesOn() {
+        noLimitToTheBeep();
+        machine.idleSignal();
+        machine.recordingStopped();
+        world.advance(0L);
+        assertFalse(world.did.contains("hang up"));
+        world.advance(AnswerMachine.FALSE_IDLE_MS);
+        machine.callGoesOn();
+        assertTrue(world.did.contains("hang up"));
+    }
+
+    /** One skipped for an unmute - a takeover maybe - is acted on once the
+     *  mute is back, the platform's, not the user's (review round 10). */
+    @Test
+    public void aStopSkippedForAnUnmuteIsActedOnWhenTheMuteIsBack() {
+        noLimitToTheBeep();
+        world.muted = false;
+        machine.recordingStopped();
+        world.advance(0L);
+        assertFalse(world.did.contains("hang up"));
+        world.muted = true;
+        world.advance(AnswerMachine.MUTE_WATCH_MS);
+        assertTrue(world.did.contains("hang up"));
+    }
+
+    /** A stop that lands after its call ended - the machine reset - is no
+     *  stop of the next call: an outgoing test call's greeting plays (review
+     *  round 10: it was hung up on). */
+    @Test
+    public void aStopAfterTheCallEndedIsNotTheNextCalls() {
+        answeredWithGreeting();
+        machine.callEnded();
+        machine.recordingStopped();
+        world.advance(0L);
+        world.did.clear();
+        machine.armTest(false, 60_000L);
+        world.audioInCall = true;
+        machine.offHook(false);
+        world.advance(AnswerMachine.TEST_OUTGOING_WAIT_MS);
+        assertTrue(world.did.contains("greeting with check tone"));
+        assertFalse(world.did.contains("hang up"));
+    }
+
+    @Test
+    public void aRecordingBackBeforeTheGreetingIsGreetedAsEver() {
+        world.audioInCall = false;
+        on();
+        machine.ringing();
+        machine.goAhead(20_000L, world.now);
+        world.advance(20_000L);
+        machine.recordingStopped();
+        machine.recordingBack();
+        world.advance(0L);
+        machine.offHook(true);
+        world.advance(AnswerMachine.AUDIO_POLL_MS);
+        assertTrue(world.did.contains("greeting"));
+        assertFalse(world.did.contains("hang up"));
+    }
+
+    /** The user unmuted on the call screen - a takeover on its way: a
+     *  recording that stops then does not hang up their call. */
+    @Test
+    public void aRecordingThatStopsAsTheUserTakesTheCallLeavesItToThem() {
+        noLimitToTheBeep();
+        world.muted = false;
+        machine.recordingStopped();
+        world.advance(0L);
+        assertFalse(world.did.contains("hang up"));
+    }
+
+    @Test
+    public void aRecordingThatStopsDuringTheGreetingHangsUpAtOnce() {
+        answeredWithGreeting();
+        machine.recordingStopped();
+        world.advance(0L);
+        assertTrue(world.did.contains("hang up"));
+    }
+
+    /** Taken over, the call is the user's: a recording that stops then ends
+     *  nothing. Nor does one after the machine's own hang-up, twice. */
+    @Test
+    public void aRecordingThatStopsAfterATakeoverOrAHangUpDoesNothing() {
+        noLimitToTheBeep();
+        machine.talk();
+        machine.recordingStopped();
+        world.advance(1_000L);
+        assertFalse(world.did.contains("hang up"));
+        machine.callEnded();
+        noLimitToTheBeep();
+        machine.recordingStopped();
+        machine.recordingStopped();
+        world.advance(1_000L);
+        assertEquals(1, world.did.stream().filter("hang up"::equals).count());
+    }
+
     @Test
     public void takingTheCallStopsTheSilenceWatch() {
         noLimitToTheBeep();

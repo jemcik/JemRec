@@ -19,16 +19,17 @@ internal object TrashNames {
      * there (FileNames.Format.HONOR) stayed playable from the call history for
      * its 30 days here, the @ written %40 or not (the Honor, Phone app
      * 19.0.8.606, 2026-11-06: the button stayed and played, then with the _
-     * written %5F it went). So in such a name the @ is written %40 and the _
-     * %5F; in any name % is written %25, so that reads back unchanged. Other
-     * names keep their _; older trashed names, with no %5F, read back too.
+     * written %5F it went). So in such a name - either of HonorNames' - the
+     * @ is written %40 and the _ %5F; in any name % is written %25, so that
+     * reads back unchanged. Other names keep their _; older trashed names,
+     * with no %5F, read back too.
      */
     internal fun nameFor(name: String, expiresAtMillis: Long): String =
         "$PREFIX${expiresAtMillis / 1000}-${escape(name)}"
 
     private fun escape(name: String): String {
         val percent = name.replace("%", "%25")
-        return if ('@' in name) percent.replace("@", "%40").replace("_", "%5F") else percent
+        return if (HonorNames.playable(name)) percent.replace("@", "%40").replace("_", "%5F") else percent
     }
 
     /** The original name and expiry of a trashed name, or null if it is not one. */

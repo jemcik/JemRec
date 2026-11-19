@@ -189,7 +189,8 @@ internal fun Modifier.recordToggle(state: UiState, vm: MainViewModel): Modifier 
 
 /** The tap an instruction is, in every look's header - none for one that
  *  is not (Instruction.tap): asking Android to allow this Wi-Fi, pairing
- *  again, starting the recorder again. Written three times, the Wi-Fi copies
+ *  again, starting the recorder again, turning notifications on, opening
+ *  App info for the Battery setting. Written three times, the Wi-Fi copies
  *  had drifted - Deck's and Multitrack's lost the old header's haptic,
  *  Memo's had no label for TalkBack. Taken while busy too, as the record
  *  control's is (allowThisWifi): the words show while the recorder is down,
@@ -207,12 +208,15 @@ internal fun Modifier.recordToggle(state: UiState, vm: MainViewModel): Modifier 
 internal fun Modifier.instructionTap(vm: MainViewModel, instruction: Instruction?): Modifier {
     val label = instruction?.tap ?: return this
     val haptics = LocalHapticFeedback.current
+    val turnOnNotifications = LocalTurnOnNotifications.current
     return clickable(onClickLabel = label) {
         haptics.tap()
         when (instruction) {
             Instruction.ALLOW_WIFI -> vm.allowThisWifi()
             Instruction.PAIR_AGAIN -> vm.pairAgain()
             Instruction.START_AGAIN -> vm.startAgain()
+            Instruction.TURN_ON_NOTIFICATIONS -> turnOnNotifications()
+            Instruction.ALLOW_BACKGROUND -> vm.openBatterySettings()
             Instruction.SWITCH_ON, Instruction.SWITCH_ON_OVER_WIFI, Instruction.JOIN_WIFI -> Unit
         }
     }

@@ -55,21 +55,28 @@ object RecordingSaver {
 
     /** What the saver asks of the recorder about its files. */
     internal interface DaemonFiles {
-        /** The file's stream (AudioStream); throws if the recorder cannot be reached. */
-        suspend fun fetch(context: Context, name: String): Socket
+        /** The file's stream (AudioStream), and whether it starts with its
+         *  length; throws if the recorder cannot be reached. */
+        suspend fun fetch(context: Context, name: String): AudioStream.Fetched
 
         /** Whether the recorder deleted it. */
         suspend fun delete(context: Context, name: String): Boolean
 
         /** The files it holds; null when it could not be asked. */
         suspend fun pending(context: Context): List<String>?
+
+        /** The same, and whether the list is known whole - an older
+         *  recorder's may be cut short unseen (com.jemcik.jemrec.recorder.DaemonClient.Listing). */
+        suspend fun listing(context: Context): com.jemcik.jemrec.recorder.DaemonClient.Listing? =
+            pending(context)?.let { com.jemcik.jemrec.recorder.DaemonClient.Listing(it, whole = true) }
     }
 
     /** The recorder itself. */
     private object Recorder : DaemonFiles {
-        override suspend fun fetch(context: Context, name: String): Socket = CaptureDaemon.fetch(context, name)
+        override suspend fun fetch(context: Context, name: String): AudioStream.Fetched = CaptureDaemon.fetch(context, name)
         override suspend fun delete(context: Context, name: String): Boolean = CaptureDaemon.deleteRecording(context, name)
         override suspend fun pending(context: Context): List<String>? = CaptureDaemon.listPendingOrNull(context)
+        override suspend fun listing(context: Context): com.jemcik.jemrec.recorder.DaemonClient.Listing? = CaptureDaemon.listingOrNull(context)
     }
 
     /**
@@ -113,6 +120,10 @@ object RecordingSaver {
             val startMillis: Long,
             /** A call the answering machine took: a message. */
             val message: Boolean = false,
+            /** One of a call's recordings (save's part): no short call. */
+            val part: Boolean = false,
+            /** A part joined mid-call: its call's start; -1 for none. */
+            val callAt: Long = -1,
         ) : Outcome
 
         /** The file was read in full but held no audio; deleted rather than kept. */
@@ -145,7 +156,11 @@ object RecordingSaver {
 
         /** Could not fetch or the read broke off; the daemon copy is LEFT for a
          *  later retry. */
-        data class Failed(val reason: String) : Outcome
+        data class Failed(val reason: String) : Outcome {
+            /** The file could not be written - the storage full, likeliest -
+             *  as opposed to a recorder out of reach or a transfer cut short. */
+            val writing: Boolean get() = reason == NOT_WRITTEN || reason == UNPUBLISHED
+        }
     }
 
     /**
@@ -185,18 +200,70 @@ object RecordingSaver {
      * [justEnded]: the call hung up moments ago, so its call-log entry may
      * still be on its way and is worth waiting a few seconds for. A reconcile
      * collects calls whose entry is either in the log by now or never will be.
+     * [part]: one of a call's recordings, a recorder lost mid-call having
+     * left more (CallMonitorService.saveCall) - so is a file joined mid-call:
+     * marked so, it is no short call to the short-call rule (Retention).
      */
-    suspend fun save(context: Context, recfile: String, incoming: Boolean, justEnded: Boolean = true): Outcome =
+    suspend fun save(context: Context, recfile: String, incoming: Boolean, justEnded: Boolean = true, part: Boolean = false): Outcome =
         withContext(io) {
             if (!claim(recfile)) return@withContext Outcome.Busy
             try {
-                saveClaimed(context, recfile, incoming, justEnded)
+                saveHeld(context, recfile, incoming, justEnded, part)
             } finally {
                 release(recfile)
             }
         }
 
-    private suspend fun saveClaimed(context: Context, recfile: String, incoming: Boolean, justEnded: Boolean): Outcome {
+    /**
+     * A call's files ([files], each with its way) saved as one, in order:
+     * every one claimed before the first is saved, so no reconcile takes one
+     * of them meanwhile - the keep-alive's, kicked at the call's end, saved
+     * the end's own file as a call of its own while the part before was
+     * still saving, its notice the call's, a short part judged a short call
+     * (review round 14). One another save holds already is Busy. More than
+     * one, each is a part ([save]'s part).
+     */
+    internal suspend fun saveAll(
+        context: Context,
+        files: List<Pair<String, Boolean>>,
+        justEnded: Boolean = true,
+    ): List<Pair<String, Outcome>> =
+        withContext(io) {
+            val held = files.map { it.first }.filter { claim(it) }.toSet()
+            try {
+                files.map { (recfile, incoming) ->
+                    recfile to if (recfile in held) saveHeld(context, recfile, incoming, justEnded, files.size > 1) else Outcome.Busy
+                }
+            } finally {
+                held.forEach { release(it) }
+            }
+        }
+
+    /** [save], the file claimed already. */
+    private suspend fun saveHeld(context: Context, recfile: String, incoming: Boolean, justEnded: Boolean, part: Boolean): Outcome =
+        // Come to an end, whichever: each place published or abandoned.
+        // Thrown, it stays for the next save (SaveJournal); and so it does
+        // when a save cut short before is left for later (pickUp's LATER,
+        // said as Busy - inside the claim, no other save says it).
+        saveClaimed(context, recfile, incoming, justEnded, part).also {
+            if (it != Outcome.Busy) {
+                SaveHold.reached(SaveHold.At.DONE, recfile)
+                SaveJournal.done(context, recfile)
+            }
+        }
+
+    private suspend fun saveClaimed(context: Context, recfile: String, incoming: Boolean, justEnded: Boolean, part: Boolean): Outcome {
+        // A save of this file cut short before - the app's process killed in
+        // the middle (SaveJournal): finished, and nothing left to save; or
+        // undone, and saved from the recorder's copy as the first time.
+        SaveJournal.of(context, recfile)?.let {
+            when (val picked = pickUp(context, it, recorderHasIt = true)) {
+                is PickedUp.Done -> return picked.saved ?: Outcome.Gone
+                // Not a failure to tell of: tried again at the next collection.
+                PickedUp.Later -> return Outcome.Busy
+                PickedUp.SaveAgain -> Unit
+            }
+        }
         // Named for when the CALL happened, taken from the daemon file, so a
         // recording collected late by the reconcile still carries the right
         // time rather than the time it was picked up.
@@ -238,10 +305,39 @@ object RecordingSaver {
         }
         if (messenger != null) {
             val history = CoverageHistory.read(context)
-            return saveMessenger(context, recfile, startedAt, messenger, file.messengerIncoming) { span ->
+            val missed = SavePlan.markedEarlyMs(file.missedMs)
+            // A part of a longer call, a stop the recorder marked too: no
+            // short call (review round 14: messenger parts were never marked).
+            return saveMessenger(
+                context, recfile, startedAt, messenger, file.messengerIncoming, missed,
+                SavePlan.isPart(part, file, CallParts.contains(context, recfile)),
+            ) { span ->
                 SavePlan.offAt(history, startedAt.time + span)
             }
         }
+        // A message whose recorder was lost mid-message: the recorder names
+        // a message's file only as its call ends, which it never did - saved
+        // as one, whole, the greeting at its start; a test call's not kept
+        // (LostMessages; review round 14).
+        // The recorder asked for its other files only where a lost message
+        // could be this one: a save names nothing else from it otherwise.
+        val lost = if (file.message == null) {
+            val noted = LostMessages.all(context)
+            LostMessages.of(noted, startedAt.time)?.let { LostMessages.of(noted, startedAt.time, otherStarts(context, recfile)) }
+        } else {
+            null
+        }
+        if (lost?.test == true) {
+            Log.i(TAG, "save: $recfile - the answering machine's test call, its recorder lost; not kept")
+            dropFromDaemon(context, recfile, announce = true) {
+                // Its other file - the replacing recorder's - counted once
+                // already (LostMessages.Lost.counted; review round 33).
+                if (lost.counted) CallLedger.noteTestCall(context, startedAt.time, incoming, 0)
+            }
+            LostMessages.used(context, lost)
+            return Outcome.Skipped
+        }
+        if (lost != null) Log.i(TAG, "save: $recfile - a message whose recorder was lost; saved whole as one")
 
         // Who it was with - asked only when something needs to know: the
         // rules on whose calls to keep, or a file name with the caller in it.
@@ -254,7 +350,7 @@ object RecordingSaver {
         // recording holds. Without it - switched off, or Telecom told us
         // nothing about this one - the call log is the one way to know.
         val tracked = if (CallTracking.enabled(context)) {
-            CallTracking.callsIn(CallTracking.calls(context), startedAt.time, incoming)
+            CallTracking.callsIn(CallTracking.calls(context), startedAt.time, incoming, joined = file.joined)
         } else {
             emptyList()
         }
@@ -262,13 +358,15 @@ object RecordingSaver {
         if (SavePlan.switchedOff(tracked, history)) {
             Log.i(TAG, "save: recording was switched off during $recfile; discarding it")
             dropFromDaemon(context, recfile, announce = true)
+            lost?.let { LostMessages.used(context, it) }
             return Outcome.Skipped
         }
         // The daemon's other files are calls too: one whose save failed is
         // not in the ledger yet, and its call-log entry must not be taken for
         // this one's.
         val pending = if (ruled || format != FileNames.Format.DATE) {
-            CallMatch.pendingRecorded(daemon.pending(context).orEmpty().filter { it != recfile })
+            // Not one joined mid-call: its way a guess, it claims no entry.
+            CallMatch.pendingRecorded(daemon.pending(context).orEmpty().filter { it != recfile }).filterNot { it.joined }
         } else {
             emptyList()
         }
@@ -279,9 +377,11 @@ object RecordingSaver {
             incoming = incoming,
             tracked = tracked,
             tries = if (justEnded) IDENTIFY_TRIES else 1,
+            joined = file.joined,
         )
         return when (decision) {
             is SavePlan.Decision.NotAnswered -> {
+                lost?.let { LostMessages.used(context, it) }
                 Log.i(TAG, "save: $recfile was never answered - only ringing, not saved")
                 dropFromDaemon(context, recfile, announce = true) {
                     CallLedger.noteRecording(context, decision.start, decision.incoming, 0)
@@ -289,10 +389,11 @@ object RecordingSaver {
                 Outcome.NotAnswered
             }
             is SavePlan.Decision.LeaveOut -> {
+                lost?.let { LostMessages.used(context, it) }
                 Log.i(TAG, "save: $recfile is a call the rules leave out - deleting it unsaved")
                 // Announced: a Calls tab on screen says so now, not at the next open.
                 dropFromDaemon(context, recfile, announce = true) {
-                    decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
+                    decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds, it.callAt) }
                 }
                 Outcome.Skipped
             }
@@ -300,25 +401,70 @@ object RecordingSaver {
                 if (decision.leftOut.isNotEmpty()) {
                     Log.i(TAG, "save: ${decision.leftOut.size} call(s) in $recfile are ones the rules leave out")
                 }
-                decision.leftOut.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds) }
+                // Noted with the kept parts once they are published (write):
+                // the own call's is at the file's start, which tells the next
+                // collection the file was saved - noted before the write, a
+                // save that failed had its retry delete the recorder's only
+                // copy (the 1.2 capped review).
+                val skips = decision.leftOut.map { SaveJournal.Skip(it.start, it.incoming, it.seconds, it.callAt) }
                 val cut = SavePlan.cut(decision, file, startedAt.time, tracked)
+                val message = cut.message || lost != null
                 if (cut.notKept > 0) {
                     Log.i(TAG, "save: $recfile - ${cut.notKept} call(s) answered during the message, not kept")
                 }
-                val clock = PacketClock(startedAt.time, cut.clockOffset)
+                val clock = PacketClock(startedAt.time, cut.clockOffset, cut.fromFirst)
                 // Without Telecom's end, the recording's own, once it is read.
                 val offBy = if (SavePlan.telecomEnded(tracked) != null) {
                     null
                 } else {
                     { span: Long -> SavePlan.offAt(history, startedAt.time + span) }
                 }
-                val written = write(
-                    context, recfile, cut.parts, phoneCall = true, message = cut.message, clock = clock,
-                    orWhole = cut.orWhole, offBy = offBy,
-                ) { part ->
-                    RecordingTags.Facts(message = cut.message, incoming = part.incoming)
+                // One call Telecom saw end: a recording that stopped well
+                // before it is said (SavePlan.stoppedEarlyMs). Not a
+                // message: in Ask first, taking the call over ends the
+                // message on purpose while the call goes on (Calls.
+                // splitOffMessage), and a message's file is named the same
+                // either way (review, 2026-11-18).
+                val endedAt = SavePlan.telecomEnded(tracked)?.takeIf { tracked.size == 1 && !message }
+                // Without it - call tracking off, or more than one call in
+                // the recording - the recorder's own mark, where it saw the
+                // recording end before the call (StoppedEarly.marked).
+                val missed = if (endedAt == null) SavePlan.markedEarlyMs(file.missedMs) else null
+                // The other recordings known, read before this one is noted:
+                // one may carry the call on (StoppedEarly).
+                // Its call's other parts too: a group carries its own files
+                // on, the later one still being written and in no list
+                // (review round 15).
+                val others = if (endedAt == null) {
+                    emptyList()
+                } else {
+                    otherStarts(context, recfile) + CallParts.groups(context).filter { recfile in it }
+                        .flatMap { g -> g.mapNotNull { DaemonFile.parse(it).start } }
                 }
-                if (cut.message && written == Outcome.Empty) {
+                // A part of a longer call: the short-call rule leaves it -
+                // so too a recording the recorder marked as stopped early,
+                // known before the write, so its tags carry it; one Telecom's
+                // end says so is marked as it is published (review round 14:
+                // a lost recorder's file collected alone was trashed as short).
+                val isPart = SavePlan.isPart(part, file, CallParts.contains(context, recfile))
+                val written = write(
+                    context, recfile, cut.parts, phoneCall = true, message = message, clock = clock,
+                    orWhole = cut.orWhole, offBy = offBy, part = isPart, skips = skips,
+                    lastPacket = when {
+                        endedAt != null -> { lastSlot -> StoppedEarly.check(startedAt.time, lastSlot, endedAt, others) }
+                        missed != null -> { lastSlot -> StoppedEarly.marked(startedAt.time, lastSlot, missed) }
+                        else -> null
+                    },
+                ) { p ->
+                    RecordingTags.Facts(
+                        message = message, incoming = p.incoming, startedAt = p.startMillis, part = isPart,
+                        callAt = p.callAt.takeIf { it >= 0 },
+                    )
+                }
+                // Used up at every end of its file but one left to try again
+                // (review round 16).
+                if (lost != null && written !is Outcome.Failed && written != Outcome.Busy) LostMessages.used(context, lost)
+                if (message && written == Outcome.Empty) {
                     // Nothing from the message's start on: the sound the
                     // recorder took for the caller came as the line went down
                     // (measured on the Android 12 emulator, 2026-10-22). The
@@ -334,6 +480,174 @@ object RecordingSaver {
             }
         }
     }
+
+    private fun noteSkips(context: Context, skips: List<SaveJournal.Skip>) =
+        skips.forEach { CallLedger.noteSkipped(context, it.start, it.incoming, it.seconds, it.callAt) }
+
+    /** failingSince's key for a save cut short whose place will not say. */
+    private const val SILENT = "silent:"
+
+    /** What [pickUp] made of a save cut short. */
+    private sealed interface PickedUp {
+        /** Nothing of it is left, or what was is deleted: save the
+         *  recorder's copy as the first time. */
+        data object SaveAgain : PickedUp
+
+        /** Finished: every part published and noted, the recorder's copy
+         *  deleted - nothing left to save. [saved]: the last part noted, for
+         *  what follows any save (AfterSave: a message's notice, the silence
+         *  check, the short-call rule) - a save finished here went without
+         *  them, and a message left unsaid (review round 10). */
+        data class Done(val saved: Outcome.Saved? = null) : PickedUp
+
+        /** Its places would not say what they hold: left as it is, journal
+         *  and all, for a later collection - never taken for gone. */
+        data object Later : PickedUp
+    }
+
+    /**
+     * What a save cut short left of [cut]'s recorder file (SaveJournal), put
+     * right - under its claim, so no save of it is under way. [recorderHasIt]:
+     * the recorder still holds the file, so a part lost can be saved again.
+     *
+     * Still writing: no place it opened is a whole recording; each is
+     * deleted. Publishing: every part was written whole. Each is read first,
+     * changing nothing (SaveJournal.Left): one whose provider will not say
+     * leaves the whole for LATER - an unanswered query taken for "published"
+     * deleted the recorder's only copy (review, 2026-11-18). Then, with none
+     * lost, each still pending is published, each part noted as publish()
+     * notes it, and the recorder's copy deleted. A part lost - abandoned when
+     * it would not publish, or a pending row expired - is saved again from
+     * the recorder's copy, the parts not yet seen by anyone deleted first;
+     * a part the save published itself (SaveJournal.Part.published) is the
+     * user's, and never deleted. With the recorder's copy gone, what is
+     * there is published and noted, and nothing is undone.
+     */
+    private suspend fun pickUp(context: Context, cut: SaveJournal.Entry, recorderHasIt: Boolean): PickedUp {
+        val recfile = cut.recfile
+        if (cut is SaveJournal.Writing) {
+            val gone = cut.places.count { deleteLeft(context, it) }
+            Log.i(TAG, "save: $recfile was cut short while writing; ${cut.places.size} unfinished file(s), $gone deleted")
+            SaveJournal.done(context, recfile)
+            return if (recorderHasIt) PickedUp.SaveAgain else PickedUp.Done()
+        }
+        cut as SaveJournal.Publishing
+        val left = cut.parts.map { if (it.published) SaveJournal.Left.THERE else leftAt(context, it.place) }
+        if (left.any { it == null }) {
+            // Not for ever: a place that has not said for a week - its folder
+            // gone, its grant let go with a folder chosen since - is given up
+            // on, the recorder's copy saved again wherever saving goes now,
+            // nothing deleted: waiting on, it was never saved, and never said
+            // (review round 10).
+            // Its own clock (SILENT): a save's failures share failingSince's
+            // key, and either shortened the other's week - a re-save failing
+            // once after 6.5 days silent gave up within hours, deleting the
+            // recorder's only copy (review round 11).
+            if (clock() - failingSince(context, SILENT + recfile) > GIVE_UP_MS) {
+                Log.w(TAG, "save: $recfile was cut short while publishing, and where it was written has not said for a week; " +
+                    if (recorderHasIt) "saving it again" else "given up")
+                failingSince(context, SILENT + recfile, clear = true)
+                SaveJournal.done(context, recfile)
+                return if (recorderHasIt) PickedUp.SaveAgain else PickedUp.Done()
+            }
+            Log.w(TAG, "save: $recfile was cut short while publishing, and where it was written would not say; left for later")
+            return PickedUp.Later
+        }
+        failingSince(context, SILENT + recfile, clear = true)
+        val parts = cut.parts.zip(left)
+        val lost = parts.any { (part, l) -> l == SaveJournal.Left.MISSING && !part.published }
+        if (lost && recorderHasIt) {
+            // An unpublished part not there - nothing in it, or gone - is
+            // deleted with the pending ones: an empty file kept under the
+            // recording's name made the save again "(1)".
+            val unfinished = parts.filter { (part, l) -> !part.published && l != SaveJournal.Left.THERE }.map { it.first.place }
+            unfinished.forEach { deleteLeft(context, it) }
+            Log.i(TAG, "save: $recfile was cut short while publishing, a part of it lost; ${unfinished.size} unpublished file(s) deleted, saving it again")
+            SaveJournal.done(context, recfile)
+            return PickedUp.SaveAgain
+        }
+        // A part the save published, there or since deleted by the user, or
+        // one seen there now, is noted; one pending is published first; one
+        // lost with the recorder's copy gone is beyond help, and said.
+        val noted = mutableListOf<SaveJournal.Part>()
+        for ((part, l) in parts) {
+            when {
+                part.published || l == SaveJournal.Left.THERE -> noted += part
+                l == SaveJournal.Left.PENDING -> if (publishLeft(context, part.place)) {
+                    noted += part
+                } else {
+                    Log.w(TAG, "save: $recfile was cut short while publishing, and a part would not publish; left for later")
+                    return PickedUp.Later
+                }
+                else -> Log.w(TAG, "save: a part of $recfile was lost, and the recorder no longer has it")
+            }
+        }
+        for (part in noted) {
+            val name = RecordingStore.nameOf(context, part.place.uri) ?: part.name
+            if (part.phoneCall) RecordingMarks.Directions.note(context, name, part.incoming)
+            RecordingMarks.Starts.note(context, mapOf(name to RecordingMarks.Starts.Start(part.startMillis, part.callAt.takeIf { it >= 0 })))
+            if (part.message) RecordingMarks.Messages.mark(context, name)
+            if (part.part) RecordingMarks.Parts.mark(context, listOf(name))
+            if (part.phoneCall) {
+                CallLedger.noteRecording(context, part.startMillis, part.incoming, part.seconds, part.callAt)
+            } else {
+                CallLedger.noteMessenger(context, part.startMillis, part.incoming, part.seconds)
+            }
+            RecordingLibrary.announce(name)
+        }
+        // The calls the rules left out, noted with the parts as the save
+        // would have (SaveJournal.Skip).
+        noteSkips(context, cut.skips)
+        Log.i(TAG, "save: $recfile was cut short while publishing; ${noted.size} file(s) finished")
+        if (noted.isNotEmpty()) cut.early?.let {
+            StoppedEarly.tell(context, it, clock())
+            SaveJournal.told(context, recfile)
+        }
+        // Noted in the ledger first: a delete that does not get through
+        // leaves the copy to the next collection, which only deletes it.
+        if (recorderHasIt) daemon.delete(context, recfile)
+        SaveJournal.done(context, recfile)
+        // The last part noted that is still there: one the user deleted
+        // since would get an after-call notice to play a file that is gone
+        // (review round 11).
+        val shown = noted.lastOrNull { leftAt(context, it.place) == SaveJournal.Left.THERE }
+        return PickedUp.Done(shown?.let { part ->
+            Outcome.Saved(
+                name = RecordingStore.nameOf(context, part.place.uri) ?: part.name,
+                // Whole seconds in the journal: a part under a second is not
+                // 0 here, which the short-call rule reads as "no length".
+                seconds = part.seconds.toDouble().coerceAtLeast(0.5),
+                uri = part.place.uri,
+                filePath = part.place.filePath,
+                incoming = part.incoming,
+                startMillis = part.startMillis,
+                message = part.message,
+                part = part.part,
+                callAt = part.callAt,
+            )
+        })
+    }
+
+    /** What a place of a save cut short holds; null where it will not say. */
+    private fun leftAt(context: Context, place: SaveJournal.Place): SaveJournal.Left? = when {
+        place.filePath != null -> java.io.File(place.filePath)
+            .let { if (it.isFile && it.length() > 0L) SaveJournal.Left.THERE else SaveJournal.Left.MISSING }
+        place.uri.authority == android.provider.MediaStore.AUTHORITY -> MediaStoreRecordings.leftAt(context, place.uri)
+        else -> FolderRecordings.leftAt(context, place.uri)
+    }
+
+    /** A MediaStore row a save cut short wrote whole, published. */
+    private fun publishLeft(context: Context, place: SaveJournal.Place): Boolean =
+        place.filePath == null && place.uri.authority == android.provider.MediaStore.AUTHORITY &&
+            MediaStoreRecordings.publishLeft(context, place.uri)
+
+    /** A place a save cut short left, deleted. */
+    private fun deleteLeft(context: Context, place: SaveJournal.Place): Boolean =
+        if (place.filePath == null && place.uri.authority == android.provider.MediaStore.AUTHORITY) {
+            MediaStoreRecordings.deleteLeft(context, place.uri)
+        } else {
+            runCatching { RecordingLocation.of(place.uri, place.filePath).deleteForGood(context) == true }.getOrDefault(false)
+        }
 
     /**
      * A recording dropped unsaved: deleted from the recorder, [note]d in the
@@ -383,6 +697,8 @@ object RecordingSaver {
         startedAt: Date,
         app: VoipApps.App,
         incoming: Boolean?,
+        missed: Long?,
+        part: Boolean,
         offBy: (Long) -> Boolean,
     ): Outcome {
         val note = VoipCallNotes.find(context, app.pkg, startedAt.time, incoming)
@@ -390,8 +706,10 @@ object RecordingSaver {
         val name = FileNames.buildVoip(format, startedAt.time, note?.incoming, app.tag, note?.name)
         val outcome = write(
             context, recfile, listOf(Part.whole(name, note?.incoming ?: false, startedAt.time)), phoneCall = false, offBy = offBy,
+            lastPacket = missed?.let { m -> { lastSlot -> StoppedEarly.marked(startedAt.time, lastSlot, m) } },
+            part = part,
         ) {
-            RecordingTags.Facts(incoming = note?.incoming, caller = note?.name)
+            RecordingTags.Facts(incoming = note?.incoming, caller = note?.name, startedAt = startedAt.time, part = part)
         }
         // Where the name does not say who: the date and number formats, or a
         // caller with nothing a file name can take.
@@ -413,6 +731,9 @@ object RecordingSaver {
         /** For the ledger: when this part's call began. */
         val startMillis: Long,
         val packets: List<LongRange>,
+        /** For the ledger: a part joined mid-call's own call start, which
+         *  matches it to its call (CallLedger.Recorded.callAt); -1 for none. */
+        val callAt: Long = -1,
     ) {
         fun holds(index: Long): Boolean = packets.any { index in it }
 
@@ -434,11 +755,12 @@ object RecordingSaver {
         fun from(first: Long): Part = Part(
             name, incoming, startMillis,
             packets.mapNotNull { r -> maxOf(r.first, first).let { if (it > r.last) null else it..r.last } },
+            callAt,
         )
 
         companion object {
-            fun whole(name: String, incoming: Boolean, startMillis: Long) =
-                Part(name, incoming, startMillis, listOf(0L until Long.MAX_VALUE))
+            fun whole(name: String, incoming: Boolean, startMillis: Long, callAt: Long = -1) =
+                Part(name, incoming, startMillis, listOf(0L until Long.MAX_VALUE), callAt)
         }
     }
 
@@ -466,9 +788,11 @@ object RecordingSaver {
         val undelivered: Double
             get() = part.undeliveredSlots(firstSlot, lastSlot, writer.packets) * CallTracking.PACKET_MS / 1000.0
 
-        /** Copy the finished file into place, with [facts] in it. */
+        /** Copy the finished file into place, with [facts] in it - or, where
+         *  the muxer wrote into place itself, give its pages their positions
+         *  where they lie. Either way written through to the storage. */
         fun copyIn(facts: RecordingTags.Facts) {
-            val from = work ?: return
+            val from = work ?: return RecordingTags.mendInPlace(target.descriptor.fileDescriptor)
             workFd?.close()
             RecordingTags.copyTagged(from, target.descriptor.fileDescriptor, facts)
         }
@@ -503,10 +827,11 @@ object RecordingSaver {
         var read = WriteOutcome.Read.BROKE_OFF
             private set
 
-        fun from(socket: Socket) {
+        fun from(fetched: AudioStream.Fetched) {
+            val socket = fetched.socket
             try {
                 val stream = try {
-                    AudioStream(socket)
+                    AudioStream(socket, fetched.lengthFirst)
                 } catch (e: java.io.EOFException) {
                     // Nothing at all, not even a codec id: a file the daemon
                     // created and never wrote to (it could not start capturing).
@@ -523,7 +848,9 @@ object RecordingSaver {
                         read = WriteOutcome.Read.GONE
                     } else {
                         val config = stream.readPacket()
-                        if (config == null || !config.isConfig) {
+                        if (config == null && stream.cutShort) {
+                            Log.w(TAG, "save: the transfer of $recfile was cut short; the recorder's copy is kept")
+                        } else if (config == null || !config.isConfig) {
                             // Empty or malformed - a completed read with nothing in it.
                             Log.w(TAG, "save: $recfile had no config packet")
                             read = WriteOutcome.Read.COMPLETE
@@ -543,14 +870,29 @@ object RecordingSaver {
                                         nowhere = true
                                         null
                                     } else {
+                                        SaveJournal.opened(context, recfile, SaveJournal.Place(target.uri, target.filePath))
                                         open(part, target, config.data).also { open[part] = it }
                                     }
                                 } ?: break
                                 if (into.firstSlot < 0) into.firstSlot = slot
                                 into.lastSlot = slot
                                 into.writer.write(packet.data, packet.pts)
+                                // Written, not read: a call's ringing is read and cut.
+                                if (into.writer.packets == SaveHold.TRANSFER_PACKETS) SaveHold.reached(SaveHold.At.TRANSFER, recfile)
                             }
-                            read = if (nowhere) WriteOutcome.Read.NOWHERE else WriteOutcome.Read.COMPLETE
+                            read = when {
+                                nowhere -> WriteOutcome.Read.NOWHERE
+                                // Fewer bytes than the recorder said: not the
+                                // whole recording. Taken for it, the shorter
+                                // one was saved and, at the next collection,
+                                // the recorder's whole copy dropped as saved
+                                // already (SavePlan's DUPLICATE).
+                                stream.cutShort -> {
+                                    Log.w(TAG, "save: the transfer of $recfile was cut short; the recorder's copy is kept")
+                                    WriteOutcome.Read.BROKE_OFF
+                                }
+                                else -> WriteOutcome.Read.COMPLETE
+                            }
                         }
                     }
                 }
@@ -606,9 +948,14 @@ object RecordingSaver {
         clock: PacketClock? = null,
         orWhole: Part? = null,
         offBy: ((Long) -> Boolean)? = null,
+        lastPacket: ((lastSlot: Long) -> StoppedEarly.Early?)? = null,
+        part: Boolean = false,
+        /** Calls the rules leave out, noted only as the file is done with:
+         *  with the parts once all are published, or as an empty one goes. */
+        skips: List<SaveJournal.Skip> = emptyList(),
         facts: (Part) -> RecordingTags.Facts,
     ): Outcome {
-        val socket = try {
+        val fetched = try {
             daemon.fetch(context, recfile)
         } catch (e: CancellationException) {
             // Stopped, not failed: the recorder's copy stays for the next
@@ -620,13 +967,16 @@ object RecordingSaver {
             return Outcome.Failed("The recorder could not be reached.")
         }
 
-        // Tagged, unless saving this file has failed before: a work copy and
+        // Tagged, unless writing this file has failed before: a work copy and
         // then the copy into place need its size free twice, where writing
         // into place needs it once, and a file that cannot be saved is given
         // up on after a week. Untagged, it is saved as it always was; its
         // marks are in the preferences still, and only a reinstall loses them.
-        val transfer = Transfer(context, recfile, parts, clock, tagged = !failedBefore(context, recfile))
-        transfer.from(socket)
+        // Only a write's failure: a recorder out of reach, or a transfer cut
+        // short, says nothing of the room, and its file was saved untagged
+        // and unjoined - 50 pages a second - for nothing (review, 2026-11-18).
+        val transfer = Transfer(context, recfile, parts, clock, tagged = !writeFailedBefore(context, recfile))
+        transfer.from(fetched)
         // Where the capture put its first packet, and what it lost after: the
         // first thing to ask of a cut that looks wrong (issue #40).
         val first = clock?.firstMs
@@ -670,13 +1020,27 @@ object RecordingSaver {
             WriteOutcome.Ending.NOT_WRITTEN -> {
                 Log.e(TAG, "save: a file from $recfile could not be finished; keeping the daemon's copy")
                 open.values.forEach { it.target.abandon() }
-                Outcome.Failed("The recording could not be written. Is the storage full?")
+                Outcome.Failed(NOT_WRITTEN)
             }
-            WriteOutcome.Ending.PUBLISH -> publish(context, recfile, counts, phoneCall, message)
+            WriteOutcome.Ending.PUBLISH -> {
+                SaveHold.reached(SaveHold.At.PUBLISH, recfile)
+                // Decided now, said once published - and written down with
+                // the rest, for a save cut short there (SaveJournal).
+                val early = lastPacket?.invoke(transfer.lastSlot)
+                publish(context, recfile, counts, phoneCall, message, early, part, skips).also {
+                    if (it is Outcome.Saved && early != null) {
+                        StoppedEarly.tell(context, early, clock())
+                        SaveJournal.told(context, recfile)
+                    }
+                }
+            }
             WriteOutcome.Ending.WHOLE -> {
                 Log.w(TAG, "save: none of the ${transfer.seen} packets of $recfile fell inside the call Telecom reported; saving it whole")
                 open.values.forEach { it.target.abandon() }
-                write(context, recfile, listOf(checkNotNull(whole)), phoneCall, message, offBy = offBy, facts = facts)
+                write(
+                    context, recfile, listOf(checkNotNull(whole)), phoneCall, message, offBy = offBy, part = part,
+                    skips = skips, facts = facts,
+                )
             }
             WriteOutcome.Ending.EMPTY -> {
                 // Read the whole thing; there was simply no call audio in it.
@@ -685,7 +1049,7 @@ object RecordingSaver {
                 // check that says so.
                 Log.w(TAG, "save: no audio in $recfile, discarding")
                 open.values.forEach { it.target.abandon() }
-                dropFromDaemon(context, recfile, announce = false)
+                dropFromDaemon(context, recfile, announce = false) { noteSkips(context, skips) }
                 Outcome.Empty
             }
             WriteOutcome.Ending.BROKE_OFF -> {
@@ -712,10 +1076,31 @@ object RecordingSaver {
         counts: List<Pair<Open, Pair<Long, Double>>>,
         phoneCall: Boolean,
         message: Boolean,
+        early: StoppedEarly.Early? = null,
+        partOf: Boolean = false,
+        skips: List<SaveJournal.Skip> = emptyList(),
     ): Outcome = withContext(NonCancellable) {
+        // Stopped well before its call: shorter than the call, no short call
+        // (review round 14) - marked by name, and in the journal.
+        val part = partOf || early != null
         // From the first publish to the daemon's delete, one piece: a
         // cancellation between them left a saved recording on the
-        // daemon too, and the next reconcile saved it again as "(1)".
+        // daemon too, and the next reconcile saved it again as "(1)". So
+        // did the app's process killed there, which NonCancellable cannot
+        // stop - written down first, and finished by the next save
+        // (SaveJournal, pickUp).
+        SaveJournal.publishing(
+            context, recfile,
+            counts.filter { (_, count) -> count.first > 0L }.map { (o, count) ->
+                SaveJournal.Part(
+                    SaveJournal.Place(o.target.uri, o.target.filePath), o.target.name, o.part.startMillis,
+                    o.part.incoming, count.second.toInt(), phoneCall, message, callAt = o.part.callAt, part = part,
+                )
+            },
+            early,
+            skips,
+        )
+        SaveHold.reached(SaveHold.At.PUBLISHING, recfile)
         var last: Outcome.Saved? = null
         var unpublished = false
         val published = mutableListOf<Pair<Part, Int>>()
@@ -731,6 +1116,9 @@ object RecordingSaver {
                 unpublished = true
                 continue
             }
+            // Published: written down at once, so a part gone later is told
+            // from one lost before it was (SaveJournal, pickUp).
+            SaveJournal.published(context, recfile, o.target.uri)
             // The recording's daemon name, not its own: with the
             // caller in it, a file name is a name and a number, and
             // logcat is no place for those.
@@ -747,14 +1135,17 @@ object RecordingSaver {
             // and a place that found it taken gave another.
             val name = o.target.name
             if (phoneCall) RecordingMarks.Directions.note(context, name, o.part.incoming)
+            RecordingMarks.Starts.note(context, mapOf(name to RecordingMarks.Starts.Start(o.part.startMillis, o.part.callAt.takeIf { it >= 0 })))
             published += o.part to seconds.toInt()
             if (message) RecordingMarks.Messages.mark(context, name)
+            if (part) RecordingMarks.Parts.mark(context, listOf(name))
             RecordingLibrary.announce(name)
             last = Outcome.Saved(
                 name, seconds, o.target.uri, o.target.filePath, o.part.incoming, o.part.startMillis,
-                message = message,
+                message = message, part = part, callAt = o.part.callAt,
             )
         }
+        SaveHold.reached(SaveHold.At.PUBLISHED, recfile)
         // In the ledger before anyone can delete them - see CallLedger for
         // why the missed-call check asks it and not the disk - and before the
         // recorder's copy goes: one that outlives this, its delete not getting
@@ -765,14 +1156,17 @@ object RecordingSaver {
         if (!unpublished) {
             published.forEach { (part, seconds) ->
                 if (phoneCall) {
-                    CallLedger.noteRecording(context, part.startMillis, part.incoming, seconds)
+                    CallLedger.noteRecording(context, part.startMillis, part.incoming, seconds, part.callAt)
                 } else {
                     CallLedger.noteMessenger(context, part.startMillis, part.incoming, seconds)
                 }
             }
+            // And the calls the rules left out, by the same rule: the own
+            // call's entry is the file's start (SaveJournal.Skip).
+            noteSkips(context, skips)
         }
         when {
-            last == null -> return@withContext Outcome.Failed("The recording could not be written.")
+            last == null -> return@withContext Outcome.Failed(UNPUBLISHED)
             // A part that would not publish: the daemon's copy stays,
             // so its audio is not lost - a duplicate of the others later,
             // from the next collection, is better.
@@ -794,6 +1188,14 @@ object RecordingSaver {
      *  cannot be read, retried at every start forever. */
     private const val GIVE_UP_MS = 7L * 24 * 60 * 60 * 1000
 
+    /** A reconcile left everything because a call was up: the next call's
+     *  end kicks the keep-alive for it, under a work name of its own
+     *  (RecorderKeepAlive.kickAfterCall). Process-wide - the call's service
+     *  stands down between calls, and a flag of its own went with it
+     *  (review rounds 25-27). */
+    @Volatile
+    var reconcileOwed = false
+
     /**
      * Collect anything the daemon still holds - normally nothing, but a crash or
      * a reboot between hang-up and the fetch can leave a file behind. Safe to
@@ -809,10 +1211,117 @@ object RecordingSaver {
      * app happened to miss the hang-up.
      */
     suspend fun reconcile(context: Context) {
-        val pending = daemon.pending(context).orEmpty()
+        // Nothing while a call is up: a phone call's file is not in the log
+        // yet - a reconcile's save reads it once - and whatever it finishes or
+        // saves posts its notice, muted while the call is up (AOSP
+        // NotificationAttentionHelper.disableNotificationEffects), a tone in
+        // the earpiece in an app's call outside Telecom (playInCallNotification)
+        // - a messenger's file and a save cut short as much as a phone call's
+        // (review rounds 10 and 11). The call's end collects them
+        // (CallMonitorService). Not at a ring's mode, which another app can
+        // leave set: it held the collecting for ever (round 12).
+        if (CaptureDaemon.callUp(context)) {
+            Log.i(TAG, "reconcile: a call is up; leaving it all for after it")
+            // Owed: the call's end kicks for it (CallMonitorService) - a kick
+            // made for files a lost recorder left, its run landing in the
+            // next call, left them to the heartbeat (review round 25).
+            reconcileOwed = true
+            return
+        }
+        val listing = daemon.listing(context)
+        // Paid once the recorder has said what it holds - not when it would
+        // not answer, nothing then collected (review round 25).
+        if (listing != null) reconcileOwed = false
+        val listed = listing?.names
+        // A save cut short whose recorder copy is gone - killed after the
+        // delete, before the journal was told - is put right here, as no
+        // save of that file will come (SaveJournal). Only when the recorder
+        // answered with a list known whole: an older recorder's, with no end
+        // to it, may be cut short unseen, and a file missing from it is no
+        // proof it is gone (review round 11).
+        if (listed != null && listing.whole) {
+            withContext(io) {
+                for (stale in SaveJournal.all(context)) {
+                    if (stale.recfile in listed || !claim(stale.recfile)) continue
+                    try {
+                        // Read again under the claim: a save of it may have
+                        // ended between the read above and the claim, and
+                        // its entry gone with it (review, 2026-11-18).
+                        val picked = SaveJournal.of(context, stale.recfile)?.let { pickUp(context, it, recorderHasIt = false) }
+                        // Finished here, it is a save like any other: what
+                        // follows one follows it - a message's notice too.
+                        (picked as? PickedUp.Done)?.saved?.let { saved ->
+                            AfterSave.react(context, saved, stale.recfile, saved.incoming, AfterSave.Collector.RECONCILE) {
+                                AfterCall.postNotRecorded(context, it)
+                            }
+                        }
+                    } finally {
+                        release(stale.recfile)
+                    }
+                }
+            }
+        }
+        val pending = listed.orEmpty()
+        if (listed != null && listing.whole) CallParts.prune(context, listed)
         if (pending.isEmpty()) return
         Log.i(TAG, "reconcile: ${pending.size} pending")
+        val groups = CallParts.groups(context)
+        // Files by their start, not their name: the recorder renames the
+        // end's file at the end (_early), and the group and the service hold
+        // the name it began with (review round 17).
+        fun startOf(name: String) = DaemonFile.parse(name).start
+        val pendingStarts = pending.mapNotNullTo(HashSet()) { startOf(it) }
+        val done = HashSet<String>()
         for (recfile in pending) {
+            if (recfile in done) continue
+            // One call's parts, saved together and told once, as the call's
+            // end would have (CallParts; review round 14).
+            // A part whose call's other part is still being written - not
+            // listed, not saved - while the call's service is up: its end
+            // saves them together (review round 15: saved alone, told twice).
+            val whole = groups.firstOrNull { g -> g.any { startOf(it) == startOf(recfile) } }
+            // Read before what the service holds, which its end writes first
+            // (onCallEnded): a message's file is one or the other at every
+            // moment, never neither (review round 30).
+            val messageSince = com.jemcik.jemrec.capture.CallMonitorService.messageSince
+            val heldStarts = com.jemcik.jemrec.capture.CallMonitorService.heldNow.mapNotNullTo(HashSet()) { startOf(it) }
+            if (whole != null && whole.any { startOf(it) !in pendingStarts && startOf(it) in heldStarts }) {
+                // Only a file the call's service itself holds: any service
+                // running, a messenger part saved, one dropped empty, read as
+                // still being written (review round 16).
+                Log.i(TAG, "reconcile: $recfile is a part of a call still being saved; leaving it to the call's end")
+                done += whole
+                continue
+            }
+            // A file the call's service holds itself - its call just over,
+            // the end's wake (an am, up to 10 s) on its way: its end saves it,
+            // the call log waited for. Taken here, it was read once, before
+            // Telecom wrote the entry - the rules on whose calls to keep and
+            // the caller's name went unapplied (review round 28; read, not
+            // produced).
+            // And a message's file, not named till its end: one begun about
+            // as the message started (the recorder begins it at the answer,
+            // before the message's own wake) - round 29.
+            val aMessages = messageSince > 0 && (startOf(recfile) ?: Long.MIN_VALUE) >= messageSince - 60_000
+            if (startOf(recfile) in heldStarts || aMessages) {
+                Log.i(TAG, "reconcile: $recfile is its call's, still being saved by it; leaving it to the call's end")
+                done += recfile
+                continue
+            }
+            val group = whole?.let { g -> g.mapNotNullTo(HashSet()) { startOf(it) } }?.let { s -> pending.filter { startOf(it) in s } }
+            if (group != null && group.size > 1) {
+                done += group
+                val outcomes = saveAll(context, group.map { it to isIncoming(it) }, justEnded = false)
+                    .map { (file, outcome) -> Triple(file, isIncoming(file), outcome) }
+                // A part's failure is not said here: told at the hang-up, it
+                // is counted toward its week as any reconcile's, or every run
+                // said it again, with a sound, for a week (review round 15).
+                AfterSave.reactToCall(
+                    context, outcomes, own = null, AfterSave.Collector.RECONCILE, { AfterCall.postNotRecorded(context, it) },
+                    partBy = AfterSave.Collector.PART_LATER,
+                ) { AfterCall.postNotRecorded(context, it) }
+                continue
+            }
             val incoming = isIncoming(recfile)
             val outcome = save(context, recfile, incoming, justEnded = false)
             AfterSave.react(context, outcome, recfile, incoming, AfterSave.Collector.RECONCILE) {
@@ -828,11 +1337,14 @@ object RecordingSaver {
 
     /** Saving [recfile] failed again, for [reason]: noted, and given up on -
      *  the recorder's copy deleted - a week after the first time. */
-    internal suspend fun failedAgain(context: Context, recfile: String, reason: String) {
+    internal suspend fun failedAgain(context: Context, recfile: String, failed: Outcome.Failed) {
+        val reason = failed.reason
+        if (failed.writing) noteWriteFailed(context, recfile)
         if (clock() - failingSince(context, recfile) > GIVE_UP_MS) {
             Log.w(TAG, "reconcile: giving up on $recfile ($reason)")
             daemon.delete(context, recfile)
             failingSince(context, recfile, clear = true)
+            AfterCall.neverSaved(context, recfile)
         } else {
             Log.w(TAG, "reconcile: left $recfile for later ($reason)")
         }
@@ -840,10 +1352,22 @@ object RecordingSaver {
 
     private const val KEY_FAILING = "save_failing"
 
-    /** Whether saving [recfile] has failed before, noting nothing. */
-    private fun failedBefore(context: Context, recfile: String): Boolean =
-        com.jemcik.jemrec.Prefs.of(context).getStringSet(KEY_FAILING, emptySet()).orEmpty()
-            .any { it.substringBefore('|') == recfile }
+    /** The files whose write has failed: saved untagged from then on. */
+    private const val KEY_WRITE_FAILED = "save_write_failed"
+
+    private const val NOT_WRITTEN = "The recording could not be written. Is the storage full?"
+    private const val UNPUBLISHED = "The recording could not be written."
+
+    /** Whether writing [recfile] has failed before, noting nothing. */
+    private fun writeFailedBefore(context: Context, recfile: String): Boolean =
+        recfile in com.jemcik.jemrec.Prefs.of(context).getStringSet(KEY_WRITE_FAILED, emptySet()).orEmpty()
+
+    @Synchronized
+    private fun noteWriteFailed(context: Context, recfile: String) {
+        val prefs = com.jemcik.jemrec.Prefs.of(context)
+        val all = prefs.getStringSet(KEY_WRITE_FAILED, emptySet()).orEmpty()
+        if (recfile !in all) prefs.edit { putStringSet(KEY_WRITE_FAILED, all + recfile) }
+    }
 
     /** When saving [recfile] first failed (noted now, if this is the first);
      *  [clear] forgets it. Kept in the preferences as "recfile|millis". */
@@ -854,12 +1378,24 @@ object RecordingSaver {
         val mine = all.firstOrNull { it.substringBefore('|') == recfile }
         if (clear) {
             if (mine != null) prefs.edit { putStringSet(KEY_FAILING, all - mine) }
+            val writes = prefs.getStringSet(KEY_WRITE_FAILED, emptySet()).orEmpty()
+            if (recfile in writes) prefs.edit { putStringSet(KEY_WRITE_FAILED, writes - recfile) }
             return 0L
         }
         mine?.substringAfter('|')?.toLongOrNull()?.let { return it }
         val now = clock()
         prefs.edit { putStringSet(KEY_FAILING, all + "$recfile|$now") }
         return now
+    }
+
+    /** The starts of the recordings known besides [recfile]: those saved
+     *  (CallLedger) and those still waiting on the recorder. */
+    private suspend fun otherStarts(context: Context, recfile: String): List<Long> {
+        val ledger = com.jemcik.jemrec.calls.CallLedger.read(context)
+        // Every recording the ledger knows: one left out, a message's, a
+        // messenger's too - a skipped file shielded nothing (review round 16).
+        return (daemon.pending(context).orEmpty() - recfile).mapNotNull { startMillis(it) } +
+            (ledger.accounted + ledger.messengerRecordings).map { it.startMillis }
     }
 
     /** The call's start time, from the recorder's name for its file. */

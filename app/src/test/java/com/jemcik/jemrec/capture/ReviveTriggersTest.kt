@@ -86,7 +86,9 @@ class ReviveTriggersTest {
     }
 
     @Test fun aLockedBootArmsNothing() {
-        // The identity is still encrypted then; BOOT_COMPLETED follows.
+        // The identity is still encrypted then; BOOT_COMPLETED follows. Not
+        // delivered to this receiver at all (not directBootAware): were it,
+        // nothing would be armed.
         TestPhone.setUp(context)
         boot(Intent.ACTION_LOCKED_BOOT_COMPLETED)
         assertEquals(emptySet<String>(), armed())

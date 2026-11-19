@@ -59,7 +59,7 @@ class ProtocolTest {
         fun example(command: String, startingWith: String) =
             replies.first { it.command == command && it.example.startsWith(startingWith) }.example
 
-        assertEquals(CaptureDaemon.Answer(2, "1a2b3c4d"), CaptureDaemon.parsePong(example("P", "PONG")))
+        assertEquals(CaptureDaemon.Answer(2, "1a2b3c4d", fetchLength = true, listEnd = true), CaptureDaemon.parsePong(example("P", "PONG")))
         assertEquals(CaptureDaemon.QuitReply.BYE, CaptureDaemon.parseQuitReply(example("Q", "BYE")))
         assertEquals(CaptureDaemon.QuitReply.BUSY, CaptureDaemon.parseQuitReply(example("Q", "BUSY")))
 
@@ -85,6 +85,13 @@ class ProtocolTest {
         val sims = CaptureDaemon.parseSims(example("XP", "SIMS"))
         assertEquals("1", sims!!.defaultId)
         assertEquals(2, sims.all.size)
+
+        // A listing: the names, then its end, which is no name.
+        val listed = example("L", "jemrec_rec_")
+        assertEquals(
+            com.jemcik.jemrec.recorder.DaemonClient.Listing(listOf(listed), whole = true),
+            com.jemcik.jemrec.recorder.DaemonClient.listingFrom(listOf(listed, example("L", "end "))),
+        )
 
         // The rest are read by their head alone.
         replies.filter { it.app.startsWith("startsWith(\"") }.forEach {

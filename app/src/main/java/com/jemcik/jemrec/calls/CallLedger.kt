@@ -45,7 +45,24 @@ internal object CallLedger {
     /** How far back the missed-call check looks, and so how long this keeps. */
     const val KEEP_MS = 7L * 24 * 60 * 60 * 1000
 
-    data class Recorded(val startMillis: Long, val incoming: Boolean, val seconds: Int)
+    /**
+     * A call's recording, or its fate. [callAt]: for a part whose recording
+     * began after its call did - one joined mid-call, the recorder started
+     * again during it - the call's own start as the saver found it
+     * (Telecom's, or the log's date), which is what matches it to its call:
+     * its own start is minutes in. -1 for a part that began with its call.
+     * Matched instead by any start inside a call's logged span, a redial's
+     * recording was taken for the call before (review round 12). [joined]:
+     * a recorder's file joined mid-call, not saved yet - its call not
+     * decided, its way a guess (CallMatch.pendingRecorded); never stored.
+     */
+    data class Recorded(
+        val startMillis: Long,
+        val incoming: Boolean,
+        val seconds: Int,
+        val callAt: Long = -1,
+        val joined: Boolean = false,
+    )
 
     data class Ledger(
         val recordings: List<Recorded>,
@@ -74,13 +91,13 @@ internal object CallLedger {
     fun read(context: Context): Ledger =
         parse(Prefs.of(context).getStringSet(KEY, emptySet()) ?: emptySet())
 
-    /** A call the daemon recorded, saved or not. */
-    fun noteRecording(context: Context, startMillis: Long, incoming: Boolean, seconds: Int) =
-        add(context, encodeRecording(Recorded(startMillis, incoming, seconds)))
+    /** A call the daemon recorded, saved or not; [callAt] (see [Recorded]). */
+    fun noteRecording(context: Context, startMillis: Long, incoming: Boolean, seconds: Int, callAt: Long = -1) =
+        add(context, encodeRecording(Recorded(startMillis, incoming, seconds, callAt)))
 
     /** A call the rules left out: recorded, and deleted unsaved. */
-    fun noteSkipped(context: Context, startMillis: Long, incoming: Boolean, seconds: Int) =
-        add(context, encodeRecording(Recorded(startMillis, incoming, seconds), kind = "s"))
+    fun noteSkipped(context: Context, startMillis: Long, incoming: Boolean, seconds: Int, callAt: Long = -1) =
+        add(context, encodeRecording(Recorded(startMillis, incoming, seconds, callAt), kind = "s"))
 
     /** A call the answering machine took, where the caller hung up during
      *  the greeting: answered, recorded, and nothing kept. */
@@ -118,9 +135,11 @@ internal object CallLedger {
     /** "r" for a recording, "s" for a call the rules skipped, "g" for a
      *  message call the caller left during the greeting, "f" for one whose
      *  greeting could not be played, "t" for a test call of the answering
-     *  machine, "v" for a messenger call's recording. */
+     *  machine, "v" for a messenger call's recording. A fifth field is a
+     *  joined part's call start ([Recorded.callAt]). */
     internal fun encodeRecording(r: Recorded, kind: String = "r"): String =
-        "$kind:${r.startMillis}:${if (r.incoming) "in" else "out"}:${r.seconds}"
+        "$kind:${r.startMillis}:${if (r.incoming) "in" else "out"}:${r.seconds}" +
+            if (r.callAt >= 0) ":${r.callAt}" else ""
 
     /** Tolerant of anything it does not understand: an unreadable entry is
      *  dropped, never a reason to stop checking. */
@@ -135,10 +154,11 @@ internal object CallLedger {
         for (entry in entries) {
             val parts = entry.split(':')
             when (val kind = parts.firstOrNull()) {
-                "r", "s", "g", "f", "t", "v" -> if (parts.size == 4) {
+                "r", "s", "g", "f", "t", "v" -> if (parts.size == 4 || parts.size == 5) {
                     val start = parts[1].toLongOrNull() ?: continue
                     val seconds = parts[3].toIntOrNull() ?: continue
-                    val recorded = Recorded(start, parts[2] == "in", seconds)
+                    val callAt = if (parts.size == 5) parts[4].toLongOrNull() ?: continue else -1
+                    val recorded = Recorded(start, parts[2] == "in", seconds, callAt)
                     when (kind) {
                         "r" -> recordings += recorded
                         "s" -> skipped += recorded

@@ -21,7 +21,9 @@ import com.jemcik.jemrec.Prefs
  * recorder, the shell, since 0.31 (Setup.grantNotificationAccess). With it,
  * Android shows this app every notification; this reads only the call
  * notifications of the messengers whose calls are recorded, and keeps of
- * them only the name, the time and the direction, for the last [KEEP] calls.
+ * them only the app, the name, the time and the direction, for the last
+ * [KEEP] call notifications (a repeat within [SAME_NOTE_MS] not noted
+ * again) - all deleted when Show who called is turned off.
  *
  * WHAT A CALL NOTIFICATION SAYS
  *

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.TextAutoSize
@@ -89,6 +90,9 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     // strategy.
     LifecycleResumeEffect(Unit) {
         vm.refreshSetup()
+        // JemRec seen: an alert said silently in a call is not said again
+        // with its sound after it (RecorderHealth.seen; review round 14).
+        vm.alertSeen()
         onPauseOrDispose { }
     }
 
@@ -206,6 +210,23 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
     // read back from Android in each case (onCallLogResult).
     val callLogPermission = rememberPermissionRequest { vm.onCallLogResult() }
     val askForCallLog = { callLogPermission.launch(CallLogLookup.PERMISSIONS) }
+    // Android's folder picker, the same way, for Settings' Saving to and file
+    // names and home's lost-folder notice. Registered here, whatever screen
+    // is up, as Android's guide asks ("must be unconditionally registered"):
+    // the app's process can be ended while the picker is open, and its answer
+    // comes back to a new one - registered only in Settings, it went to home,
+    // where nothing took it.
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri -> if (uri != null) vm.onFolderChosen(uri) }
+    val pickFolder: (android.net.Uri?) -> Unit = { start -> folderPicker.launch(start) }
+    // A notification's Choose again (DeepLink.Kind.CHOOSE_FOLDER).
+    LaunchedEffect(vm) { vm.folderPickRequests.collect { start -> pickFolder(start) } }
+    // And Whose calls' contact picker, for the same reason.
+    val contactPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickContact(),
+    ) { uri -> if (uri != null) vm.addRuleContact(uri) }
+    val pickContact = { contactPicker.launch(null) }
     // The record control's question, when turning off would leave JemRec
     // needing Wi-Fi it has not got (MainViewModel.toggleRecording). Here, not
     // in MainScreen, so the screen tests draw it as the app does.
@@ -246,7 +267,11 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
     val window = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.let { DpSize(it.width.toDp(), it.height.toDp()) } }
     val aside = ready && !offHome && headerAside(window.width.value.toInt(), window.height.value.toInt())
 
-    CompositionLocalProvider(LocalCallerColours provides state.callerColours) {
+    val turnOnNotifications = rememberTurnOnNotifications(state, vm)
+    CompositionLocalProvider(
+        LocalCallerColours provides state.callerColours,
+        LocalTurnOnNotifications provides turnOnNotifications,
+    ) {
         Scaffold(
             // Under the cover at the ear, nothing for TalkBack either: a cheek
             // exploring the screen would read out and reach the rows.
@@ -274,7 +299,15 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
             // deleted was up waited, and jumped Diagnostics to the bottom when it
             // was next opened.
             val subScroll = key(state.screen) { rememberScrollState() }
-            val scrollState = if (state.screen == Screen.SETTINGS || !ready) settingsScroll else subScroll
+            // Setup's own: Settings' brought back after the process ended was
+            // laid out over the checking card first, cut to its height, and
+            // Settings came back at its top (review, 2026-11-18).
+            val setupScroll = rememberScrollState()
+            val scrollState = when {
+                !ready -> setupScroll
+                state.screen == Screen.SETTINGS -> settingsScroll
+                else -> subScroll
+            }
             // A self-test's result lands in the log at the very bottom of
             // Diagnostics - below the fold on a long log, so the user pressed
             // the button and saw nothing move. Run the scroll to the end, so
@@ -313,12 +346,21 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                 // branch's, and a turn brought the list back to its top. A
                 // place per tab, as before: another tab, or Settings and back,
                 // starts at the top.
-                val listState = key(state.homeTab) { rememberLazyListState() }
+                //
+                // And until the list is read, a place of its own: laid out
+                // over the empty list, the place brought back after the
+                // process ended - row 45, say - was cut to the empty list's
+                // end and lost (Compose's LazyListState keeps no index past
+                // the items it has). With the rows there, it is where it was
+                // (review, 2026-11-18).
+                val kept = key(state.homeTab) { rememberLazyListState() }
+                val unread = remember { LazyListState() }
+                val listState = if (state.listUnread) unread else kept
                 val list = @Composable { modifier: Modifier, narrowingAside: Boolean ->
                     if (state.homeTab == HomeTab.CALLS) {
                         CallsScreen(state, vm, askForCallLog, listState, modifier = modifier, narrowingAside = narrowingAside)
                     } else {
-                        HomeScreen(state, vm, askForCallLog, listState, modifier = modifier, narrowingAside = narrowingAside)
+                        HomeScreen(state, vm, askForCallLog, listState, modifier = modifier, narrowingAside = narrowingAside, pickFolder = pickFolder)
                     }
                 }
                 if (aside) {
@@ -365,6 +407,15 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                 } else {
                     list(Modifier.padding(padding), false)
                 }
+            } else if (ready && state.listUnread) {
+                // Nothing read yet - the window just opened, or made again
+                // after the process ended: no screen drawn from defaults it
+                // has not read - Recently deleted said "Nothing here", and
+                // Settings' rows read with the rest (the recorder, the folder,
+                // the earpiece) would show defaults - nor its place, brought
+                // back, laid out over them and lost. Home is the exception,
+                // above: its header is the app's state (reviews, 2026-11-18).
+                Box(Modifier.fillMaxSize().padding(padding))
             } else if (inTrash) {
                 // A list too, with its own scroll, for the same reason.
                 TrashScreen(state, vm, modifier = Modifier.padding(padding))
@@ -390,12 +441,12 @@ internal fun AppScaffold(state: UiState, vm: MainViewModel) {
                     } else {
                         when (state.screen) {
                             Screen.THEME -> ThemeScreen(vm)
-                            Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm, askForCallLog)
+                            Screen.WHOSE_CALLS -> WhoseCallsScreen(state, vm, askForCallLog, pickContact)
                             Screen.MESSENGER_CALLS -> MessengerCallsScreen(state, vm)
                             Screen.DIAGNOSTICS -> DiagnosticsScreen(state, vm)
                             Screen.ANSWERING_MACHINE -> AnsweringMachineScreen(state, vm)
                             Screen.WHEN_OFF -> WhenOffScreen(state, vm)
-                            else -> SettingsScreen(state, vm, askForCallLog)
+                            else -> SettingsScreen(state, vm, askForCallLog, pickFolder)
                         }
                     }
                 }
@@ -421,14 +472,15 @@ internal fun headerAside(widthDp: Int, heightDp: Int): Boolean = heightDp < 480 
  *
  * WHAT THE OLD HOME HEADER DID, AND WHERE EACH NOW IS. It was one TopAppBar
  * for every look; each look's header now does all of it in its own way:
- * - the state as the headline (Off, Starting..., Ready to record, Cannot
- *   record), one line at any text size, green, coral or grey: each header's
- *   word, from recorderStatus, auto-sized;
+ * - the state as the headline (Off, Starting..., Checking..., Ready to
+ *   record, Cannot record), one line at any text size, green, coral or grey:
+ *   each header's word, from recorderStatus, auto-sized;
  * - "Recording every call" / "Asks before each call" under it: the AUTO or
  *   ASK mark (Deck, Multitrack) and Memo's first mark, its dot and words;
  * - what brings the recorder back, when it is down: "Join any Wi-Fi",
  *   or a tap - to Android's question for this Wi-Fi, to pairing again, to
- *   starting it again - each look's words for it (Instruction), and the
+ *   starting it again, to turning notifications on, to App info for the
+ *   Battery setting - each look's words for it (Instruction), and the
  *   same tap, haptic and label (instructionTap);
  * - the on/off switch: each record control (recordToggle). It was disabled
  *   while busy, which showed; the controls looked the same and dropped the
@@ -438,7 +490,8 @@ internal fun headerAside(widthDp: Int, heightDp: Int): Boolean = heightDp < 480 
  * - the gradient rule, moving while busy: each look's own busy signal in
  *   its status instead (Deck's LCD segments, Memo's ring, Multitrack's
  *   LEDs) - and only while recording is switching on, not on the check each
- *   opening of the app makes, which moved the line for nothing the user did.
+ *   opening of the app makes, which moved the line for nothing the user did:
+ *   that check is CHECKING, drawn still (RecorderStatus).
  *   At rest each header ends on its own edge.
  *
  * Its own composable so the screen tests can draw it without MainScreen, whose

@@ -46,6 +46,7 @@ class SavePlanCutTest {
         assertEquals(listOf(own), cut.parts)
         assertFalse(cut.message)
         assertEquals(42L, cut.clockOffset)
+        assertFalse(cut.fromFirst)
         assertEquals(listOf(0L until Long.MAX_VALUE), cut.orWhole!!.packets)
         assertEquals(0, cut.notKept)
     }
@@ -56,6 +57,8 @@ class SavePlanCutTest {
         assertEquals("own.ogg", cut.parts.single().name)
         assertTrue(cut.message)
         assertNull(cut.clockOffset)
+        // Reckoned from the first packet's stamp, as its start was.
+        assertTrue(cut.fromFirst)
         assertNull(cut.orWhole)
         assertEquals(1, cut.notKept)
     }
@@ -65,6 +68,7 @@ class SavePlanCutTest {
         assertEquals(listOf(listOf(100L until 500L), listOf(500L until 750L)), cut.parts.map { it.packets })
         assertFalse(cut.message)
         assertNull(cut.clockOffset)
+        assertTrue(cut.fromFirst)
         assertNull(cut.orWhole)
         assertEquals(0, cut.notKept)
     }

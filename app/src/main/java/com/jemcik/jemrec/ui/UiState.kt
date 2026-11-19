@@ -7,6 +7,7 @@ import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.recorder.OffMode
 import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.RecordingQuality
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
@@ -111,6 +112,11 @@ data class UiState(
      *  null on every other step. */
     val backgroundLabel: String? = null,
     val backgroundInstruction: String? = null,
+    /** This phone's own screen for letting JemRec run in the background, by
+     *  name, for Settings - null where there is none. Read with the rest, on
+     *  IO: until 1.2 Settings looked it up on the main thread as it opened,
+     *  a call into the package manager for each candidate screen. */
+    val autoStartLabel: String? = null,
     /**
      * Whether JemRec's notifications are off, or the pairing channel muted, so
      * the pairing code would have nowhere to appear. Only read on the pairing
@@ -118,6 +124,26 @@ data class UiState(
      * never accuses before it has been looked at.
      */
     val pairingNotificationsBlocked: Boolean = false,
+    /** Notifications JemRec needs that are off, to be said on home - or
+     *  null (NotificationHealth.notice). */
+    val notificationsOff: com.jemcik.jemrec.calls.NotificationHealth.Off? = null,
+    /** Settings' row for this phone's background settings to be brought
+     *  into view: the "stopped in the background" warning's tap. */
+    val revealBackground: Boolean = false,
+    /** What Android said is off of JemRec's notifications, as the last
+     *  reading found it: what [notificationsOff] is decided from, with the
+     *  mode and a dismissal, as the reading lands (NotificationHealth). */
+    val notificationSwitches: com.jemcik.jemrec.calls.NotificationHealth.Switches? = null,
+    /** JemRec's Battery setting is Restricted, to be said on home
+     *  (BatteryHealth.notice). */
+    val batteryNotice: Boolean = false,
+    /** Whether Android said JemRec's battery use is Restricted, as the last
+     *  reading found it - null before any: what [batteryNotice] is decided
+     *  from, with the mode and a dismissal, as the reading lands. */
+    val batteryRestricted: Boolean? = null,
+    /** The folder chosen for recordings can no longer be reached
+     *  (FolderAccess): saves go elsewhere, and its recordings do not show. */
+    val folderLost: Boolean = false,
     /** An OPPO, OnePlus or realme phone that may refuse setup's grant until
      *  its own switch is on (ShellGrant), so the pairing card names it. */
     val systemOptimizationSwitch: Boolean = false,
@@ -131,6 +157,9 @@ data class UiState(
     val afterCallNotice: Boolean = true,
     /** Settings' "Play recordings" (PlayThroughSetting). */
     val playThrough: PlayThrough = PlayThrough.LOUDSPEAKER_AND_EAR,
+
+    /** Settings' "Both sides in both ears" (BothEarsSetting). */
+    val bothEars: Boolean = true,
     /** The phone has an earpiece, so Settings offers "Play recordings"
      *  (EarWatch.hasEarpiece). */
     val earpieceAvailable: Boolean = false,
@@ -214,6 +243,9 @@ data class UiState(
     val ruleChosen: List<CallRules.Chosen> = emptyList(),
     /** Whether the contacts may be read: the rules need them to tell who is who. */
     val canReadContacts: Boolean = false,
+    /** How many bits a second new recordings get. See RecordingQuality. */
+    val quality: RecordingQuality = RecordingQuality.STANDARD,
+
     /** How new recordings are named. See FileNames. */
     val fileNames: FileNames.Format = FileNames.Format.DATE,
     /** Exact call tracking - see CallTracking. On unless turned off. */
@@ -251,6 +283,23 @@ data class UiState(
      * would cost real time - but it has to announce itself.
      */
     val visibleCount: Int = PAGE,
+    /**
+     * The window opened, nothing read yet: from the view model's making
+     * until its first reading lands (Reading). Meanwhile home says nothing of
+     * the list being empty or matching nothing - it said "No recordings yet"
+     * for a moment at every start, and under a selection brought back after
+     * the process ended (SavedPlace) - its list's place is not laid out over
+     * the empty list, which would have lost it, and the other screens wait,
+     * blank, rather than show defaults they have not read (MainScreen,
+     * CallsScreen). The view model Android makes starts with it; one a test
+     * makes, not.
+     */
+    val listUnread: Boolean = false,
+    /** The call log not read yet in this window: it is read only by a
+     *  reading taken while the Calls tab is up (Reading), and until the
+     *  first such landed the tab said "No calls in the call log yet."
+     *  (review, 2026-11-18). Set as [listUnread] is. */
+    val callsUnread: Boolean = false,
     /** A recording a notification's Play or Share asked for: the list
      *  brings its row into view, then lets this go (RecordingsList.onRevealed). */
     val reveal: String? = null,

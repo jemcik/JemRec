@@ -139,23 +139,50 @@ object CallHistory {
         // none of these calls, however close in time.
         @Suppress("NAME_SHADOWING") val recordings = recordings.filter { it.parsedName?.app == null }
         @Suppress("NAME_SHADOWING") val trashed = trashed.filter { it.parsedName?.app == null }
-        val recorded = CallMatch.assign(recordings, connectable, { it.at }, { it.kind == Kind.INCOMING })
-        val binned = CallMatch.assign(trashed, connectable, { it.at }, { it.kind == Kind.INCOMING })
+        // A part joined mid-call - its start minutes into its call - by its
+        // call's start alone (Recording.callAt): by any start in a call's
+        // span a redial's recording played for the call before (review round
+        // 12), and by its own start, call waiting's other call took it
+        // (round 13).
+        fun isJoined(r: Recording) = r.callAt != null
+        fun assign(of: List<Recording>) =
+            CallMatch.assign(of.filterNot(::isJoined), connectable, { it.at }, { it.kind == Kind.INCOMING })
+        fun assignJoined(of: List<Recording>) =
+            CallMatch.assign(of.filter(::isJoined), connectable, { it.at }, { it.kind == Kind.INCOMING }) { it.callAt }
+        val recorded = assign(recordings)
+        val binned = assign(trashed)
+        val joinedIn = assignJoined(recordings)
+        val binnedJoined = assignJoined(trashed)
+        // Each entry its own call, and any begun while it ran (CallMatch.accounted).
+        fun accounted(entries: List<CallLedger.Recorded>) =
+            CallMatch.accounted(entries, connectable, { it.at }, { it.seconds }, { it.kind == Kind.INCOMING })
+        val pendingFor = accounted(pending)
+        val hungUpFor = accounted(ledger.greetingHangUps)
+        val failedFor = accounted(ledger.greetingFailures)
+        val testFor = accounted(ledger.testCalls)
+        val skippedFor = accounted(ledger.skipped)
+        val deletedFor = accounted(ledger.recordings)
         return calls.map { call ->
-            val incoming = call.kind != Kind.OUTGOING
             val canHaveOne = call.kind == Kind.INCOMING || call.kind == Kind.OUTGOING
-            val recording = if (canHaveOne) recorded[call] ?: CallMatch.during(recordings, call.at) else null
+            val recording = if (canHaveOne) {
+                recorded[call] ?: CallMatch.during(recordings, call.at) ?: joinedIn[call] ?:
+                    // Call waiting's other call, up at the revive: in the part.
+                    CallMatch.joinedDuring(recordings, call.at, call.seconds)
+            } else {
+                null
+            }
             val status = when {
                 recording != null -> Status.RECORDED
                 !canHaveOne -> Status.NOT_CONNECTED
                 call.kind == Kind.OUTGOING && call.seconds == 0 -> Status.NOT_CONNECTED
-                binned[call] != null || CallMatch.during(trashed, call.at) != null -> Status.IN_TRASH
-                pending.any { CallMatch.accounts(it, call.at, incoming) } -> Status.PENDING
-                ledger.greetingHangUps.any { CallMatch.accounts(it, call.at, incoming) } -> Status.GREETING_HANGUP
-                ledger.greetingFailures.any { CallMatch.accounts(it, call.at, incoming) } -> Status.GREETING_FAILED
-                ledger.testCalls.any { CallMatch.accounts(it, call.at, incoming) } -> Status.TEST_CALL
-                ledger.skipped.any { CallMatch.accounts(it, call.at, incoming) } -> Status.SKIPPED
-                ledger.recordings.any { CallMatch.accounts(it, call.at, incoming) } -> Status.DELETED
+                binned[call] != null || binnedJoined[call] != null || CallMatch.during(trashed, call.at) != null ||
+                    CallMatch.joinedDuring(trashed, call.at, call.seconds) != null -> Status.IN_TRASH
+                call in pendingFor -> Status.PENDING
+                call in hungUpFor -> Status.GREETING_HANGUP
+                call in failedFor -> Status.GREETING_FAILED
+                call in testFor -> Status.TEST_CALL
+                call in skippedFor -> Status.SKIPPED
+                call in deletedFor -> Status.DELETED
                 call.seconds < MissedCalls.MIN_SECONDS -> Status.TOO_SHORT
                 else -> when (CoverageHistory.stateAt(history, call.at)) {
                     CoverageHistory.State.OFF -> Status.RECORDING_OFF

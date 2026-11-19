@@ -30,22 +30,109 @@ class RecordingTagsTest {
         pages.forEachIndexed { i, page -> assertEquals(stored[i], crcOf(page)) }
     }
 
+    /**
+     * RFC 7845's positions, read from the file here, not by OggPages: the
+     * header pages at 0; each audio page at the end of the last packet that
+     * ends on it - every packet here one 20 ms frame, 960 samples - or -1
+     * where none ends; the last page alone marked the stream's end; every
+     * checksum good.
+     */
+    private fun assertSpecPositions(file: ByteArray) {
+        val pages = pages(file)
+        var samples = 0L
+        pages.forEachIndexed { i, page ->
+            val granule = ByteBuffer.wrap(page, 6, 8).order(ByteOrder.LITTLE_ENDIAN).long
+            val segments = page[26].toInt() and 0xff
+            val ended = (0 until segments).count { (page[27 + it].toInt() and 0xff) < 255 }
+            if (i < 2) {
+                assertEquals("header page $i", 0L, granule)
+            } else {
+                samples += 960L * ended
+                assertEquals("page $i", if (ended == 0) -1L else samples, granule)
+            }
+            assertEquals("page $i: the stream's end", i == pages.size - 1, (page[5].toInt() and 0x04) != 0)
+            assertEquals("page $i: its checksum", ByteBuffer.wrap(page, 22, 4).order(ByteOrder.LITTLE_ENDIAN).int, crcOf(page))
+        }
+    }
+
+    private fun tempFile(bytes: ByteArray) = java.io.File.createTempFile("recording", ".ogg").apply {
+        deleteOnExit()
+        writeBytes(bytes)
+    }
+
+    /** The muxer's file written straight into the recording - a save with
+     *  no room for a work file - is given its positions where it lies, and
+     *  nothing else changes. Until the review of 2026-11-18 no test held
+     *  this path; the saver's tests write raw packets, not Ogg. */
+    @Test fun aRecordingSavedWithoutAWorkFileHasItsPositions() {
+        val before = recording()
+        val file = tempFile(before)
+        java.io.RandomAccessFile(file, "rw").use { RecordingTags.mendInPlace(it.fd) }
+        val after = file.readBytes()
+        assertEquals(before.size, after.size)
+        assertSpecPositions(after)
+        // The pages' lacing and audio are as the muxer wrote them.
+        pages(before).zip(pages(after)).forEach { (b, a) -> assertArrayEquals(b.copyOfRange(26, b.size), a.copyOfRange(26, a.size)) }
+    }
+
+    /** A save with a work file: the copy has its tags and its positions. */
+    @Test fun aTaggedCopyHasItsTagsAndItsPositions() {
+        val from = tempFile(recording())
+        val to = tempFile(ByteArray(0))
+        java.io.RandomAccessFile(to, "rw").use { RecordingTags.copyTagged(from, it.fd, RecordingTags.Facts(message = true, incoming = true)) }
+        val out = to.readBytes()
+        assertSpecPositions(out)
+        assertEquals(true, RecordingTags.read(out.inputStream())?.message)
+    }
+
     @Test fun aFileAsTheMuxerWroteItHasNothingOfOurs() {
         assertNull(RecordingTags.read(recording().inputStream()))
     }
 
-    @Test fun spliceReplacesTheTagsPageAndNothingElse() {
+    @Test fun spliceReplacesTheTagsPageAndJoinsTheAudio() {
         val before = recording()
         val after = splice(before, RecordingTags.Facts(message = true, incoming = true))
         val a = pages(before)
         val b = pages(after)
-        assertEquals(a.size, b.size)
-        for (i in a.indices) if (i != 1) assertArrayEquals("page $i", a[i], b[i])
+        // OpusHead as it was; the tags page new; the first audio page alone,
+        // the other three one (OggPages) - each at where its last packet
+        // ends, the last marked the stream's end (RFC 7845).
+        assertEquals(6, a.size)
+        assertEquals(4, b.size)
+        assertArrayEquals(a[0], b[0])
         assertFalse(a[1].contentEquals(b[1]))
-        // Every page's CRC holds, the new one's included.
+        assertArrayEquals(a[2].copyOfRange(26, a[2].size), b[2].copyOfRange(26, b[2].size))
+        assertArrayEquals(packets(a.drop(2)).toTypedArray(), packets(b.drop(2)).toTypedArray())
+        assertEquals(960L, granule(b[2]))
+        assertEquals(4 * 960L, granule(b[3]))
+        assertEquals(0, b[2][5].toInt() and 4)
+        assertEquals(4, b[3][5].toInt() and 4)
+        // Every page's CRC holds, the new ones' included.
         b.forEach { page -> assertEquals(ByteBuffer.wrap(page, 22, 4).order(ByteOrder.LITTLE_ENDIAN).int, crcOf(page)) }
         // Numbered as the page it replaced: the same stream, the same place.
         assertArrayEquals(a[1].copyOfRange(4, 22), b[1].copyOfRange(4, 22))
+    }
+
+    private fun granule(page: ByteArray) = ByteBuffer.wrap(page, 6, 8).order(ByteOrder.LITTLE_ENDIAN).long
+
+    /** The packets on [pages], rebuilt from their lacing. */
+    private fun packets(pages: List<ByteArray>): List<ByteArray> {
+        val out = mutableListOf<ByteArray>()
+        val partial = ByteArrayOutputStream()
+        for (p in pages) {
+            val segments = p[26].toInt() and 0xff
+            var at = 27 + segments
+            for (s in 0 until segments) {
+                val lace = p[27 + s].toInt() and 0xff
+                partial.write(p, at, lace)
+                at += lace
+                if (lace < 255) {
+                    out += partial.toByteArray()
+                    partial.reset()
+                }
+            }
+        }
+        return out
     }
 
     @Test fun whatGoesInComesBackOut() {
@@ -55,6 +142,10 @@ class RecordingTagsTest {
             RecordingTags.Facts(incoming = false, caller = "Priya Raman"),
             RecordingTags.Facts(incoming = null, caller = "Олена Коваль", kept = true),
             RecordingTags.Facts(caller = "Ann = Bob 👋"),
+            // The start no zone moves, and a call's part (review round 13).
+            RecordingTags.Facts(incoming = true, startedAt = 1_795_000_000_123L, part = true),
+            // A joined part's call start (review round 14).
+            RecordingTags.Facts(incoming = false, startedAt = 1_795_000_300_000L, part = true, callAt = 1_795_000_000_000L),
         )
         for (facts in every) assertEquals(facts, RecordingTags.read(splice(recording(), facts).inputStream()))
     }

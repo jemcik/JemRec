@@ -70,6 +70,8 @@ class FrozenNamesTest {
             "ACTION_BACKGROUND_KILLED" to CallMonitorService.ACTION_BACKGROUND_KILLED,
             "ACTION_MESSAGE_STARTED" to CallMonitorService.ACTION_MESSAGE_STARTED,
             "ACTION_MESSAGE_TAKEN" to CallMonitorService.ACTION_MESSAGE_TAKEN,
+            "ACTION_RECORDING_STOPPED" to CallMonitorService.ACTION_RECORDING_STOPPED,
+            "ACTION_RECORDING_BACK" to CallMonitorService.ACTION_RECORDING_BACK,
         ).forEach { (name, appSide) -> assertEquals(name, appSide, constant(name)) }
     }
 
@@ -97,6 +99,8 @@ class FrozenNamesTest {
             "\"--es\", \"cable\"" to CallMonitorService.EXTRA_CABLE,
             "\"--ez\", \"test\"" to CallMonitorService.EXTRA_TEST,
             "\"--el\", \"started\"" to CallMonitorService.EXTRA_STARTED,
+            "\"--ez\", \"for_good\"" to CallMonitorService.EXTRA_FOR_GOOD,
+            "\"--ez\", \"joined\"" to CallMonitorService.EXTRA_JOINED,
         ).forEach { (sent, read) ->
             assertTrue("the recorder no longer sends $sent", sent in Repo.recorder)
             assertTrue("the service reads \"$read\", the recorder sends $sent", "\"$read\"" in sent)
@@ -144,7 +148,7 @@ class FrozenNamesTest {
             ".capture.PlaybackService",
             ".ui.PairingService",
             ".ui.RecorderTile",
-            "androidx.core.content.FileProvider",
+            ".recordings.RecordingsFileProvider",
         )
 
         val DEBUG_COMPONENTS = setOf(

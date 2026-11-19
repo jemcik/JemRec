@@ -14,7 +14,7 @@ public class CallReportTest {
     private long now = 1_000_000L;
 
     private CallReport report() {
-        return new CallReport("a phone call, incoming", () -> now);
+        return new CallReport("a phone call, incoming", "32 kbps", () -> now);
     }
 
     /** [frames] frames of interleaved stereo, each channel at its own level. */
@@ -38,7 +38,7 @@ public class CallReportTest {
         now += 2000;
         r.ended();
         String text = r.text();
-        assertTrue(text, text.startsWith("Last call: a phone call, incoming. Recorded for 6.1 s."));
+        assertTrue(text, text.startsWith("Last call: a phone call, incoming. Recorded for 6.1 s at 32 kbps."));
         assertTrue(text, text.contains("    0.0 s  the call capture (VOICE_CALL)\n"
                 + "         left -20.0 dB (peak -20.0 dB); right -20.0 dB (peak -20.0 dB)"));
         assertTrue(text, text.contains("    4.1 s  the mixer: a copy of the call's audio, and the microphone, "
@@ -70,7 +70,7 @@ public class CallReportTest {
         r.route(CallReport.Route.CALL_CAPTURE, -1);
         now += 1500;
         String text = r.text();
-        assertTrue(text, text.startsWith("Last call: a phone call, incoming. Still being recorded, 1.5 s so far."));
+        assertTrue(text, text.startsWith("Last call: a phone call, incoming. Still being recorded, 1.5 s at 32 kbps so far."));
         assertTrue(text, text.contains("no sound reached the recording this way"));
         assertFalse(text, text.contains("Along the way"));
         assertFalse(text, text.contains("What was playing"));
@@ -149,5 +149,56 @@ public class CallReportTest {
         assertEquals("device 99", CallReport.device(99));
         assertEquals(-120.0, CallReport.db(0), 0);
         assertEquals(0.0, CallReport.db(32768), 1e-9);
+    }
+
+    /** A capture made anew every ten seconds for a long call says the same
+     *  line again and again: kept once, with how many more and when the last
+     *  came, and the notes' room is not used up (review, 2026-11-18). */
+    @Test
+    public void aNoteRepeatedInARowIsKeptOnceWithItsCount() {
+        CallReport r = report();
+        r.note("made anew on the call capture, where the call was");
+        for (int i = 0; i < 50; i++) {
+            now += 10_000;
+            r.note("made anew on the call capture, where the call was");
+        }
+        r.note("a capture read again");
+        r.ended();
+        String text = r.text();
+        assertTrue(text, text.contains("made anew on the call capture, where the call was (and 50 more, the last at "));
+        assertTrue(text, text.contains("a capture read again"));
+        assertFalse("nothing left out: no \"and N more\" line", text.contains("\n         and "));
+    }
+
+    /** A capture that reads once and dies, made anew each slow try: the
+     *  routes listed stop at MAX_SEGMENTS, the rest counted (review round
+     *  10: ~360 an hour, unbounded). */
+    @Test
+    public void routesPastTheListAreCountedNotListed() {
+        CallReport r = report();
+        short[] chunk = new short[2 * 160];
+        java.util.Arrays.fill(chunk, (short) 1000);
+        for (int i = 0; i < CallReport.MAX_SEGMENTS + 7; i++) {
+            r.route(i % 2 == 0 ? CallReport.Route.CALL_CAPTURE : CallReport.Route.PHONE_MIXER, 2);
+            r.chunk(chunk, 160, 2);
+        }
+        r.ended();
+        String text = r.text();
+        assertTrue(text, text.contains("and 7 more ways after these, not listed"));
+    }
+
+    /** A capture made anew that read nothing yet is the same way on: no new
+     *  line of "no sound" for each try. */
+    @Test
+    public void aRouteWithNothingReadYetIsNotSaidAgain() {
+        CallReport r = report();
+        r.route(CallReport.Route.CALL_CAPTURE, 2);
+        for (int i = 0; i < 30; i++) {
+            now += 10_000;
+            r.route(CallReport.Route.CALL_CAPTURE, 2);
+        }
+        r.ended();
+        String text = r.text();
+        assertEquals(text, 1, text.split("the call capture \\(VOICE_CALL\\)", -1).length - 1);
     }
 }

@@ -65,9 +65,11 @@ fun TrashScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifier
                     TextButton(onClick = { haptics.tap(); vm.restoreAll() }, enabled = !state.busy) {
                         Text("Restore all")
                     }
+                    // Live while the app checks: it only asks, and the yes
+                    // waits its turn (DELETE_FOR_GOOD, QUEUED), as home's
+                    // Delete does (review, 2026-11-18).
                     TextButton(
                         onClick = { haptics.tap(); vm.askEmptyTrash() },
-                        enabled = !state.busy,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     ) { Text("Delete all for good") }
                 }

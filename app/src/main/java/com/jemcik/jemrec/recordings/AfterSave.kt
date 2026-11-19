@@ -3,14 +3,37 @@ package com.jemcik.jemrec.recordings
 /**
  * What follows a save, for each of the two that collect recordings: the
  * hang-up's (CallMonitorService, as the call ends) and the reconcile's
- * (RecordingSaver.reconcile: the keep-alive, and after the last call). One
- * table: an outcome added is answered for both at once, and where the two
- * differ, the row says so. Pure; RecordingSaver's AfterSave.react does it.
+ * (RecordingSaver.reconcile: the keep-alive, and after the last call) - and
+ * for the other parts of one call, a recorder lost mid-call having left more
+ * than one, saved together by either ([Collector.PART] at the hang-up,
+ * [Collector.PART_LATER] in a reconcile). One table: an outcome added is
+ * answered for all at once, and where they differ, the row says so. Pure;
+ * RecordingSaver's AfterSave.react does it.
  */
 internal object AfterSave {
 
     /** Who collected the recording, and the tag of its log lines. */
-    enum class Collector(val tag: String) { HANG_UP("monitor"), RECONCILE("reconcile") }
+    enum class Collector(val tag: String) {
+        HANG_UP("monitor"),
+        RECONCILE("reconcile"),
+
+        /** A call's part other than the one the call is told by - the part
+         *  with the most audio (CallMonitorService.saveCall): no notice of
+         *  its own, nor "Call not recorded" - told one by one, an empty part
+         *  said that of a call with minutes saved, and the call's notice was
+         *  whichever part finished last (review rounds 12 and 13). A failure
+         *  is said, as a part of the call not saved (round 14: never said,
+         *  "Recorded 2:00" for a call whose first five minutes failed), and
+         *  counts toward its week, as the reconcile's. */
+        PART("part"),
+
+        /** As [PART], for a reconcile's group: a failure not said, only
+         *  counted - told at the hang-up, said again at every run it was
+         *  (review rounds 15 and 16); a greeting that failed told as the
+         *  reconcile tells it, never told before - dropped at its first
+         *  collection (round 17). */
+        PART_LATER("part"),
+    }
 
     /** What a save came to (RecordingSaver.Outcome), as the rows know it. */
     enum class Kind { SAVED, EMPTY, GONE, BUSY, SKIPPED, NOT_ANSWERED, GREETING_HANG_UP, GREETING_FAILED, FAILED }
@@ -53,6 +76,25 @@ internal object AfterSave {
         val failing: Failing = Failing.LEAVE,
     )
 
+    /** Which of a call's files the call is told by (reactToCall): each
+     *  with what its save came to and, saved, its seconds. The one saved
+     *  with the most audio; else one kept by another collector (own first);
+     *  nothing kept, [own] - unless own came to less than another's
+     *  failure, kept to try again: an empty own's "No call audio" replaced
+     *  "Is the storage full?" (review round 15) - else the last. */
+    fun toldOf(files: List<Triple<String, Kind, Double>>, own: String?): String {
+        files.filter { it.second == Kind.SAVED }.maxByOrNull { it.third }?.let { return it.first }
+        val ownKind = files.firstOrNull { it.first == own }?.second
+        // Saved by another collector, or being saved: kept - told by a log
+        // line, not "Call not recorded" of a call saved (review round 16).
+        val kept = setOf(Kind.GONE, Kind.BUSY)
+        if (ownKind in kept) return own!!
+        files.firstOrNull { it.second in kept }?.let { return it.first }
+        if (ownKind == Kind.FAILED) return own!!
+        return files.firstOrNull { it.second == Kind.FAILED }?.first
+            ?: own?.takeIf { ownKind != null } ?: files.last().first
+    }
+
     fun row(kind: Kind, by: Collector): Row = when (by) {
         Collector.HANG_UP -> when (kind) {
             // While the service still holds the foreground: the check decodes
@@ -79,6 +121,25 @@ internal object AfterSave {
             // Every answered call would end this way until it is put right.
             Kind.GREETING_FAILED -> Row(tell = Tell.GREETING_FAILED)
             Kind.FAILED -> Row(tell = Tell.REASON)
+        }
+        Collector.PART -> when (kind) {
+            Kind.SAVED -> Row({ "part: saved $it, a part of its call" }, failing = Failing.CLEAR)
+            Kind.EMPTY -> Row({ "part: dropped empty $it, a part of its call" }, failing = Failing.CLEAR)
+            Kind.GONE -> Row({ "part: $it was collected already" }, failing = Failing.CLEAR)
+            Kind.BUSY -> Row({ "part: $it is being saved by another collector" })
+            Kind.SKIPPED -> Row({ "part: $it was left out (the rules, or recording switched off)" }, failing = Failing.CLEAR)
+            Kind.NOT_ANSWERED -> Row({ "part: $it was never answered" }, failing = Failing.CLEAR)
+            Kind.GREETING_HANG_UP -> Row({ "part: $it - the caller hung up during the greeting" }, failing = Failing.CLEAR)
+            // Every answered call would end this way until it is put right.
+            Kind.GREETING_FAILED -> Row(tell = Tell.GREETING_FAILED, failing = Failing.CLEAR)
+            Kind.FAILED -> Row(tell = Tell.REASON, failing = Failing.COUNT)
+        }
+        // A greeting that failed is told as the reconcile tells it: never
+        // told before, dropped at its first collection (review round 17).
+        Collector.PART_LATER -> when (kind) {
+            Kind.FAILED -> Row(failing = Failing.COUNT)
+            Kind.GREETING_FAILED -> row(kind, Collector.RECONCILE)
+            else -> row(kind, Collector.PART)
         }
         Collector.RECONCILE -> when (kind) {
             // A hang-up whose wake never arrived is still a call that just

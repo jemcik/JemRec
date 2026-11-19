@@ -13,17 +13,19 @@ android {
     // Three separate decisions that must not be collapsed:
     //
     //   compileSdk 37  - what we compile and lint against. Newest installed.
-    //   targetSdk  36  - which platform behaviour changes we opt into. The
-    //                    device under test reports ro.build.version.sdk 36, so
-    //                    36 is the newest target any measurement here covers.
+    //   targetSdk  36  - which platform behaviour changes we opt into: the
+    //                    newest whose changes have been gone through here. The
+    //                    phones and the newest AVD run Android 17 (37) by now;
+    //                    moving the target is a change of its own, made with
+    //                    Android 17's behaviour changes read and measured.
     //   minSdk     31  - the run-time floor. Android 12 is where the shell-side
     //                    capture approach starts working at all.
     //
-    // A FOURTH "36" exists elsewhere and is not this one: the shell-side
-    // capture binary must be compiled against ANDROID_PLATFORM=36 because it
-    // links @hide framework internals and has to match the platform the device
-    // actually runs. That is a property of the binary, not of the app, and the
-    // two happening to share the number 36 today is a coincidence.
+    // A FOURTH "36" exists elsewhere and is not this one: the recorder's jar
+    // is compiled against ANDROID_PLATFORM=36's android.jar (shellserver/
+    // build.sh), pinned because its bytes depend on it, not because a phone
+    // must run 36 - one jar runs on Android 12 and later. The two sharing the
+    // number today is a coincidence.
     compileSdk = 37
 
     // Pinned because shellserver/build.sh reads d8 out of build-tools/36.0.0 by
@@ -301,11 +303,14 @@ dependencies {
     implementation("androidx.core:core-ktx:1.19.0")
 
     // Playing a recording with the screen off: a media session in a service,
-    // Android's documented route, under the system's media controls. The
-    // session alone, not ExoPlayer: recordings still play with MediaPlayer
-    // (playback/SessionPlayer.kt). Measured on the release APK, 2026-10-23:
-    // 9.19 MB -> 9.75 MB with it; ExoPlayer as well would have made 10.73.
+    // Android's documented route, under the system's media controls.
+    // Measured on the release APK, 2026-10-23: 9.19 MB -> 9.75 MB with it.
     implementation("androidx.media3:media3-session:1.11.1")
+    // And ExoPlayer to play with, since 1.2: it can mix both sides of a call
+    // into both ears, which MediaPlayer cannot (playback/RecordingPlayer.kt).
+    // Cut down to the Ogg extractor and one audio renderer, measured on the
+    // release APK, 2026-11-16: 10,240,823 -> 10,751,859 bytes.
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
 
     // Keeps the shell-side recorder alive without a permanent foreground
     // service: a periodic job revives it when it is down and Wi-Fi is around.
@@ -327,11 +332,13 @@ dependencies {
     lintChecks("com.slack.lint.compose:compose-lint-checks:1.6.1")
 
     testImplementation("junit:junit:4.13.2")
-    // Mockito stands in for the two Android types the pure-logic tests cannot
-    // construct on the JVM: android.net.Uri (abstract in the stub android.jar,
-    // and Uri.EMPTY/parse() are null there) and android.app.Application. The
-    // inline mock maker in Mockito 5 mocks abstract classes without extra
-    // setup. Nothing else in the tests needs a framework.
+    // Mockito stands in for the Android types the tests cannot construct on
+    // the JVM: android.net.Uri (abstract in the stub android.jar, and
+    // Uri.EMPTY/parse() are null there), android.app.Application, and
+    // android.telecom.Call with its Details (no public constructor;
+    // CallTrackerTest). The inline mock maker in Mockito 5 mocks abstract and
+    // final classes without extra setup. Nothing else in the tests needs a
+    // framework.
     testImplementation("org.mockito:mockito-core:5.14.2")
 
     // The screen tests: Robolectric runs the real Compose UI on the JVM, and
@@ -347,6 +354,13 @@ dependencies {
     // doWork and for what each trigger enqueues: an in-process WorkManager
     // over a synchronous executor. Its version is work-runtime-ktx's above.
     testImplementation("androidx.work:work-testing:2.12.0")
+    // Media3's own parts for testing a player off the phone, at the
+    // version the app plays with: ExoPlayer run to a state on a clock the
+    // test moves (TestPlayerRunHelper, FakeClock), and codecs Robolectric can
+    // stand in for (ShadowMediaCodecConfig) - for RecordingPlayer, which no
+    // test reached before (review, 2026-11-18). Test-only: not in the APK.
+    testImplementation("androidx.media3:media3-test-utils:1.11.1")
+    testImplementation("androidx.media3:media3-test-utils-robolectric:1.11.1")
     // Virtual time for the revive's sequence tests (ReviveSequenceTest): its
     // waits - adbd's four seconds, Allow's twenty - pass at once. The version
     // the app's own coroutines resolve to, which the UI test library already
@@ -365,10 +379,9 @@ kotlin {
 // asset compiled by this build is part of the binary, an opaque blob fetched at
 // runtime is a dependency on someone else's server.
 //
-// It is built by shellserver/build.sh rather than by Gradle, because it must be
-// compiled against the platform the DEVICE runs (android-36) with its @hide
-// internals intact - which is a different toolchain from the app's, not a
-// variant of it.
+// It is built by shellserver/build.sh rather than by Gradle: a plain javac
+// against android-36's android.jar and d8 - a toolchain of its own, pinned for
+// the jar's bytes (see that script), not a variant of the app's.
 val shellServerDir = rootProject.file("shellserver")
 val shellServerJar = File(shellServerDir, "jemrec-capture.jar")
 
@@ -378,6 +391,27 @@ val buildShellServer = tasks.register<Exec>("buildShellServer") {
     commandLine("./build.sh")
     inputs.dir(File(shellServerDir, "src"))
     inputs.file(File(shellServerDir, "build.sh"))
+    // And what build.sh reads besides: the platform and build tools it may be
+    // told to use, and which JDK - each changes the jar's bytes. Left out, a
+    // change to one kept the jar built before (audit, 2026-11-17).
+    inputs.property("ANDROID_PLATFORM", providers.environmentVariable("ANDROID_PLATFORM").orElse("36"))
+    inputs.property("BUILD_TOOLS", providers.environmentVariable("BUILD_TOOLS").orElse("36.0.0"))
+    inputs.property("JEMREC_JAVA_HOME", providers.environmentVariable("JEMREC_JAVA_HOME").orElse(""))
+    inputs.property("JAVA_HOME", providers.environmentVariable("JAVA_HOME").orElse(""))
+    inputs.property("JEMREC_JDK_MAJOR", providers.environmentVariable("JEMREC_JDK_MAJOR").orElse("21"))
+    // And the files themselves, found as build.sh finds them: an SDK update
+    // can change a platform's android.jar, or a build tools' d8, under the
+    // same number (review, 2026-11-18). A javac found on the PATH alone is
+    // not followed: build.sh checks its major, which is what the bytes
+    // depend on.
+    val sdk = providers.environmentVariable("ANDROID_HOME").orElse("${System.getProperty("user.home")}/Library/Android/sdk")
+    val platform = providers.environmentVariable("ANDROID_PLATFORM").orElse("36")
+    val buildTools = providers.environmentVariable("BUILD_TOOLS").orElse("36.0.0")
+    inputs.files(sdk.zip(platform) { home, p -> File(home, "platforms/android-$p/android.jar") })
+        .withPropertyName("androidJar").optional()
+    // d8 itself, not its launcher script: lib/d8.jar is what dexes.
+    inputs.files(sdk.zip(buildTools) { home, b -> File(home, "build-tools/$b/lib/d8.jar") })
+        .withPropertyName("d8").optional()
     outputs.file(shellServerJar)
 }
 

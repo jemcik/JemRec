@@ -35,8 +35,13 @@ class PermissionRequest internal constructor(private val start: (Array<String>) 
 /** Back faster than this, and no dialog was shown. */
 private const val SILENT_MS = 500L
 
+/** [settings]: where to go once Android no longer asks - the app's page
+ *  unless the permission has a page of its own (the notifications'). */
 @Composable
-fun rememberPermissionRequest(onResult: (Map<String, Boolean>) -> Unit): PermissionRequest {
+fun rememberPermissionRequest(
+    settings: (Context) -> Unit = ::openAppSettings,
+    onResult: (Map<String, Boolean>) -> Unit,
+): PermissionRequest {
     val context = LocalContext.current
     val activity = LocalActivity.current
     val askedAt = remember { LongArray(1) }
@@ -55,7 +60,7 @@ fun rememberPermissionRequest(onResult: (Map<String, Boolean>) -> Unit): Permiss
         val blocked = refused.none { activity.shouldShowRequestPermissionRationale(it) }
         if (blocked && SystemClock.elapsedRealtime() - askedAt[0] < SILENT_MS) {
             Log.i("JemRec", "permissions: Android no longer asks for ${refused.joinToString()}; opening settings")
-            openAppSettings(context)
+            settings(context)
         }
     }
     return remember(launcher) {

@@ -85,14 +85,40 @@ class RecorderHealthTest {
 
     @Test fun aRecorderBackWithinTheGraceIsNeverAnnounced() {
         // A reboot on Wi-Fi: down for seconds, then up.
-        assertFalse(RecorderHealth.shouldAlert(since + RecorderHealth.GRACE_MS - 1, since, null, Problem.CANNOT_START))
-        assertTrue(RecorderHealth.shouldAlert(since + RecorderHealth.GRACE_MS, since, null, Problem.CANNOT_START))
+        assertEquals(null, RecorderHealth.alert(since + RecorderHealth.GRACE_MS - 1, since, null, Problem.CANNOT_START, callUp = false))
+        assertEquals(
+            RecorderHealth.Alert(silent = false),
+            RecorderHealth.alert(since + RecorderHealth.GRACE_MS, since, null, Problem.CANNOT_START, callUp = false),
+        )
+    }
+
+    /** Silent in a call - a tone in the earpiece else - and told all the
+     *  same, not held to an end no service may see (review rounds 10, 11);
+     *  posted again with its sound once the call is over - marked said, it
+     *  was never heard (review round 12). */
+    @Test fun aCallUpMakesTheAlertSilentAndTheEndHearsIt() {
+        val later = since + RecorderHealth.GRACE_MS * 2
+        assertEquals(RecorderHealth.Alert(silent = true), RecorderHealth.alert(later, since, null, Problem.NEEDS_WIFI, callUp = true))
+        val saidSilent = Problem.NEEDS_WIFI.name + "|silent"
+        assertEquals("not again in the call", null, RecorderHealth.alert(later, since, saidSilent, Problem.NEEDS_WIFI, callUp = true))
+        assertEquals(
+            RecorderHealth.Alert(silent = false, again = true),
+            RecorderHealth.alert(later, since, saidSilent, Problem.NEEDS_WIFI, callUp = false),
+        )
+        assertEquals(
+            "a new cause after the call: heard too",
+            RecorderHealth.Alert(silent = false, again = true),
+            RecorderHealth.alert(later, since, saidSilent, Problem.CANNOT_START, callUp = false),
+        )
     }
 
     @Test fun oneAlertPerCauseNotOneEveryRetry() {
         val later = since + RecorderHealth.GRACE_MS * 10
-        assertFalse(RecorderHealth.shouldAlert(later, since, Problem.NEEDS_WIFI.name, Problem.NEEDS_WIFI))
-        assertTrue(RecorderHealth.shouldAlert(later, since, Problem.NEEDS_WIFI.name, Problem.CANNOT_CONNECT))
+        assertEquals(null, RecorderHealth.alert(later, since, Problem.NEEDS_WIFI.name, Problem.NEEDS_WIFI, callUp = false))
+        assertEquals(
+            RecorderHealth.Alert(silent = false),
+            RecorderHealth.alert(later, since, Problem.NEEDS_WIFI.name, Problem.CANNOT_CONNECT, callUp = false),
+        )
     }
 }
 

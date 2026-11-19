@@ -3,6 +3,11 @@ package com.jemcik.jemrec.recordings
 import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.jemcik.jemrec.audio.OggPages
+import com.jemcik.jemrec.audio.OggPages.HEADER
+import com.jemcik.jemrec.audio.OggPages.LONGEST_PAGE
+import com.jemcik.jemrec.audio.OggPages.Page
+import com.jemcik.jemrec.audio.OggPages.readPage
 import java.io.File
 import java.io.FileDescriptor
 import java.io.FileInputStream
@@ -32,7 +37,9 @@ import java.nio.channels.FileChannel
  * skips past or shows. MediaMuxer writes it with "libopus" and no fields, and
  * cannot be told to write any (measured on the Honor). So the saver lets the
  * muxer write the file somewhere else and copies it into place with that one
- * page swapped for one of these ([splice]); every other byte is the muxer's.
+ * page swapped for one of these, and its audio pages joined and given their
+ * positions on the way (OggPages; [splice]): the audio itself is the
+ * muxer's, byte for byte.
  *
  * The fields are JemRec's own names, JEMREC_*: Android's media index reads
  * only the standard ones (TITLE, ARTIST...), so these show in no music app.
@@ -66,6 +73,16 @@ internal object RecordingTags {
         val caller: String? = null,
         /** Marked to keep (RecordingMarks.Keep). */
         val kept: Boolean = false,
+        /** When the recording began, in UTC ms (RecordingMarks.Starts): its
+         *  name holds only the wall clock. */
+        val startedAt: Long? = null,
+        /** One of a call's recordings - a recorder lost mid-call having left
+         *  more, one started mid-call (joined), or one stopped before its call
+         *  ended (RecordingMarks.Parts, SavePlan.isPart): no short call. */
+        val part: Boolean = false,
+        /** A part joined mid-call: its call's start, in UTC ms
+         *  (Recording.callAt). */
+        val callAt: Long? = null,
     )
 
     /** Says the fields are JemRec's, and which version of them. */
@@ -75,6 +92,9 @@ internal object RecordingTags {
     private const val DIRECTION = "JEMREC_DIRECTION"
     private const val CALLER = "JEMREC_CALLER"
     private const val KEPT = "JEMREC_KEEP"
+    private const val START = "JEMREC_START"
+    private const val PART = "JEMREC_PART"
+    private const val CALL = "JEMREC_CALL"
 
     /** A caller's name is cut to this many characters in the tags: a name,
      *  not a paragraph, and the page must stay [PACKET_SIZE]. */
@@ -89,6 +109,9 @@ internal object RecordingTags {
         facts.incoming?.let { add("$DIRECTION=${if (it) "in" else "out"}") }
         facts.caller?.trim()?.ifEmpty { null }?.let { add("$CALLER=${FileNames.shorten(it, LONGEST_CALLER)}") }
         if (facts.kept) add("$KEPT=1")
+        facts.startedAt?.let { add("$START=$it") }
+        if (facts.part) add("$PART=1")
+        facts.callAt?.let { add("$CALL=$it") }
     }
 
     /** What [fields] say; null if they are not JemRec's. Field names are
@@ -106,6 +129,9 @@ internal object RecordingTags {
             },
             caller = byName[CALLER]?.trim()?.ifEmpty { null },
             kept = byName[KEPT] == "1",
+            startedAt = byName[START]?.toLongOrNull(),
+            part = byName[PART] == "1",
+            callAt = byName[CALL]?.toLongOrNull(),
         )
     }
 
@@ -116,64 +142,8 @@ internal object RecordingTags {
 
     // --- Ogg -----------------------------------------------------------------
 
-    private val OGGS = "OggS".toByteArray(Charsets.US_ASCII)
     private val OPUS_HEAD = "OpusHead".toByteArray(Charsets.US_ASCII)
     private val OPUS_TAGS = "OpusTags".toByteArray(Charsets.US_ASCII)
-    private const val HEADER = 27
-    /** The longest a page can be: 255 segments of 255 bytes. */
-    private const val LONGEST_PAGE = HEADER + 255 + 255 * 255
-
-    /** Ogg's CRC-32: polynomial 0x04c11db7, not reflected, no final xor -
-     *  not java.util.zip's. */
-    private val CRC_TABLE = IntArray(256) { i ->
-        var r = i shl 24
-        repeat(8) { r = if (r and 0x80000000.toInt() != 0) (r shl 1) xor 0x04c11db7 else r shl 1 }
-        r
-    }
-
-    internal fun crc(bytes: ByteArray, from: Int = 0, until: Int = bytes.size): Int {
-        var c = 0
-        for (i in from until until) {
-            c = (c shl 8) xor CRC_TABLE[((c ushr 24) xor (bytes[i].toInt() and 0xff)) and 0xff]
-        }
-        return c
-    }
-
-    /** One page: its bytes, and where its packet data starts in them. */
-    private class Page(val bytes: ByteArray, val bodyStart: Int) {
-        val headerType: Int get() = bytes[5].toInt() and 0xff
-        val segments: Int get() = bytes[26].toInt() and 0xff
-        private fun lace(i: Int): Int = bytes[HEADER + i].toInt() and 0xff
-        /** Whether the page is one packet, ending on it: every lacing value
-         *  255 but the last. */
-        val onePacket: Boolean get() = segments > 0 && (0 until segments - 1).all { lace(it) == 255 } && lace(segments - 1) < 255
-        fun body(): ByteArray = bytes.copyOfRange(bodyStart, bytes.size)
-        fun startsWith(magic: ByteArray): Boolean =
-            bytes.size - bodyStart >= magic.size && magic.indices.all { bytes[bodyStart + it] == magic[it] }
-    }
-
-    /** The next page of [input]; null at its end, or where what follows is
-     *  not a page. */
-    private fun readPage(input: InputStream): Page? {
-        val header = ByteArray(HEADER)
-        if (!readFully(input, header)) return null
-        if (!OGGS.indices.all { header[it] == OGGS[it] }) return null
-        val lacing = ByteArray(header[26].toInt() and 0xff)
-        if (!readFully(input, lacing)) return null
-        val body = ByteArray(lacing.sumOf { it.toInt() and 0xff })
-        if (!readFully(input, body)) return null
-        return Page(header + lacing + body, HEADER + lacing.size)
-    }
-
-    private fun readFully(input: InputStream, into: ByteArray): Boolean {
-        var at = 0
-        while (at < into.size) {
-            val n = input.read(into, at, into.size - at)
-            if (n < 0) return false
-            at += n
-        }
-        return true
-    }
 
     /** The two header pages, if they are what an Ogg Opus file starts with:
      *  OpusHead, then OpusTags complete on its own page, as the RFC has it. */
@@ -245,18 +215,23 @@ internal object RecordingTags {
         val lacing = ByteArray(packet.size / 255 + 1) { i -> if (i < packet.size / 255) 255.toByte() else (packet.size % 255).toByte() }
         val page = like.bytes.copyOfRange(0, HEADER) + lacing + packet
         page[26] = lacing.size.toByte()
-        for (i in 22 until 26) page[i] = 0
-        val crc = crc(page)
-        ByteBuffer.wrap(page, 22, 4).order(ByteOrder.LITTLE_ENDIAN).putInt(crc)
-        return page
+        return OggPages.sealed(page)
     }
 
     /**
      * Copy an Ogg Opus file from [input] to [output] with its tags page
      * replaced by one carrying [facts], at a size that leaves room to mark it
-     * kept later. Every other page is copied as it was. A file that does not
-     * start as an Ogg Opus file should is copied untouched. Returns whether
-     * the tags went in.
+     * kept later, and its audio pages joined about a second to a page
+     * (OggPages: the muxer's page a packet cost about 11 kbps), each with the
+     * position RFC 7845 gives it and the last marked the stream's end. The
+     * first page, OpusHead, is copied as it was. A file that does not start
+     * as an Ogg Opus file should is copied untouched. Returns whether the
+     * tags went in.
+     *
+     * This copy is the only pass over a recording after the muxer, so a save
+     * retried without a work file (RecordingSaver: storage for one copy, not
+     * two) keeps the muxer's pages, as it keeps no tags - given their
+     * positions where they lie ([mendInPlace]), not joined.
      */
     fun splice(input: InputStream, output: OutputStream, facts: Facts): Boolean {
         val (headers, read) = readHeaders(input)
@@ -272,10 +247,11 @@ internal object RecordingTags {
         if (replaced != null) {
             output.write(headers!!.head.bytes)
             output.write(replaced)
+            OggPages.join(input, output)
         } else {
             output.write(read)
+            input.copyTo(output)
         }
-        input.copyTo(output)
         return replaced != null
     }
 
@@ -316,6 +292,33 @@ internal object RecordingTags {
             if (!splice(input, output, facts)) Log.w(TAG, "tags: not an Ogg Opus start; copied without tags")
             output.flush()
         }
+        synced(to)
+    }
+
+    /** The muxer's file, written into a recording's [to] itself where no
+     *  work file fit: its pages given their positions and the last mark
+     *  where they lie (OggPages.mend). A file that would not take them plays
+     *  as the muxer left it, so this only says so. */
+    fun mendInPlace(to: FileDescriptor) {
+        // Positional reads and writes on the one descriptor: neither moves it.
+        val reading = FileInputStream(to).channel
+        val writing = FileOutputStream(to).channel
+        runCatching {
+            OggPages.mend(
+                read = { offset, into, at, length -> reading.read(ByteBuffer.wrap(into, at, length), offset) },
+                write = { offset, page -> writing.write(ByteBuffer.wrap(page), offset) },
+            )
+        }.onFailure { Log.w(TAG, "tags: the muxer's pages could not be given their positions: ${it.javaClass.simpleName}") }
+        synced(to)
+    }
+
+    /** [to] written through to the storage before the recorder's copy may
+     *  go: a power cut after an unsynced save could leave the published file
+     *  without its sound and the recorder's copy deleted (AtomicFile syncs
+     *  before it commits for the same reason). One that cannot be synced -
+     *  not every provider's descriptor can - is only logged. */
+    private fun synced(to: FileDescriptor) {
+        runCatching { to.sync() }.onFailure { Log.w(TAG, "tags: a saved recording could not be synced: ${it.javaClass.simpleName}") }
     }
 
     /**

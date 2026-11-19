@@ -116,6 +116,11 @@ object RecorderSwitch {
         return background.launch {
             runCatching { turn(app, on) }
                 .onFailure { Log.w("JemRec", "could not turn recording ${if (on) "on" else "off"}", it) }
+            // The Battery setting Restricted said as JemRec is switched on,
+            // taken back as it is switched off: its notification holds only
+            // while JemRec is on (BatteryHealth.tellIfRestricted).
+            runCatching { com.jemcik.jemrec.system.BatteryHealth.tellIfRestricted(app) }
+                .onFailure { Log.w("JemRec", "battery: not looked at as the switch turned", it) }
         }
     }
 

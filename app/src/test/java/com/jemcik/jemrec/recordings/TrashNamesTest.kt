@@ -27,6 +27,18 @@ class TrashNamesTest {
         assertEquals(honor to expires, TrashNames.parse(trashed))
     }
 
+    @Test fun honorsNameForACallerWithNoNameLosesItsUnderscoreToo() {
+        val honor = "+447700900123_20261020223141.ogg"
+        val trashed = TrashNames.nameFor(honor, expires)
+        assertEquals(".trashed-1795000000-+447700900123%5F20261020223141.ogg", trashed)
+        assertEquals(honor to expires, TrashNames.parse(trashed))
+        // And one a provider renamed, which the Phone app still matches.
+        assertEquals(
+            ".trashed-1795000000-+447700900123%5F20261020223141 (1).ogg",
+            TrashNames.nameFor("+447700900123_20261020223141 (1).ogg", expires),
+        )
+    }
+
     @Test fun onlyHonorsNameLosesItsUnderscore() {
         assertEquals(".trashed-1795000000-20261020_161205_out_Priya Shah.ogg", TrashNames.nameFor("20261020_161205_out_Priya Shah.ogg", expires))
     }

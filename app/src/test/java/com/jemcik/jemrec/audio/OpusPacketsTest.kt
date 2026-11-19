@@ -159,4 +159,17 @@ class OpusPacketsTest {
             OpusPackets.joinInto(ByteArray(0), IntArray(0), 0, ByteBuffer.allocate(8))
         }
     }
+
+    @Test fun aPacketPlaysItsFramesTimesTheirLength() {
+        // RFC 6716 3.1: code 0 one frame, codes 1 and 2 two, code 3 the count
+        // in the second byte; at 48 kHz, as an Ogg Opus position counts.
+        assertEquals(960, OpusPackets.samples(0xFC, 0))          // CELT FB 20 ms
+        assertEquals(1920, OpusPackets.samples(0xFC or 1, 0))
+        assertEquals(1920, OpusPackets.samples(0xFC or 2, 0))
+        assertEquals(5760, OpusPackets.samples(0xFC or 3, 6))     // six of the recorder's, joined
+        assertEquals(480, OpusPackets.samples(0x00, 0))          // SILK NB 10 ms
+        assertEquals(2880, OpusPackets.samples(0x18, 0))         // SILK NB 60 ms
+        assertEquals(120, OpusPackets.samples(0x80, 0))          // CELT NB 2.5 ms
+        assertEquals(0, OpusPackets.samples(0xFC or 3, 0))       // a code 3 packet with no frames
+    }
 }

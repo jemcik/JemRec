@@ -28,6 +28,60 @@ class CallTrackingTest {
         assertEquals(180L until 847L, segments.single().second)
     }
 
+    /** A recording joined mid-call - the recorder started again 4 minutes
+     *  into an incoming call, which it guessed outgoing: its call is the one
+     *  up at its start, whichever way, kept from the recording's first packet
+     *  to the call's end. Matched as any other, it was none (review round 10). */
+    @Test fun aRecordingJoinedMidCallIsTheCallUpAtItsStart() {
+        val before = call(t - 10 * 60 * s, incoming = false, t - 9 * 60 * s, ended = t - 8 * 60 * s)
+        val up = call(t, incoming = true, t + 8 * s, ended = t + 6 * 60 * s)
+        val start = t + 4 * 60 * s
+        assertTrue("as any other: no call", CallTracking.callsIn(listOf(before, up), start, incoming = false).isEmpty())
+        val calls = CallTracking.callsIn(listOf(before, up), start, incoming = false, joined = true)
+        assertEquals(listOf(up), calls)
+        assertEquals(0L until 6_000L, CallTracking.segments(start, calls).single().second)
+    }
+
+    /** Joined during call waiting: A answered at 0, B at 5 min, back to A at
+     *  6 min, the recorder back at 7 min. A, the call active then, is its
+     *  own; B, up too, is in the chain - each stretch its own call's, none
+     *  of the file given to B alone nor dropped (review round 11). */
+    @Test fun aRecordingJoinedDuringCallWaitingHoldsBothCalls() {
+        // A taken off hold again at 10.5 min, after B ended.
+        val a = call(t, incoming = true, t + 8 * s, t + 6 * 60 * s, t + 630 * s, ended = t + 12 * 60 * s)
+        val b = call(t + 5 * 60 * s - 10 * s, incoming = true, t + 5 * 60 * s, t + 8 * 60 * s, ended = t + 10 * 60 * s)
+        val start = t + 7 * 60 * s
+        val calls = CallTracking.callsIn(listOf(a, b), start, incoming = false, joined = true)
+        assertEquals(listOf(a, b), calls)
+        val segments = CallTracking.segments(start, calls)
+        assertEquals(listOf(a, b, a), segments.map { it.first })
+    }
+
+    /** Joined: a call up at the start that adds no audio - ended on hold
+     *  just after it, or one Telecom never said ended, a day and more ago
+     *  (a reboot mid-call) - is no call of the file's: it skipped the
+     *  one-call checks, and a never-ended one chained every later call
+     *  (review round 12). */
+    @Test fun aJoinedRecordingHoldsOnlyCallsWithAudioInIt() {
+        val start = t + 7 * 60 * s
+        val a = call(t, incoming = true, t + 8 * s, t + 6 * 60 * s, ended = t + 12 * 60 * s)
+        // On hold since 5 min, ended at 7 min 10 s without being taken back.
+        val held = call(t + 4 * 60 * s, incoming = false, t + 5 * 60 * s, ended = start + 10 * s)
+        // Answered two days ago, its end never said.
+        val stale = call(t - 2 * 24 * 60 * 60 * s, incoming = true, t - 2 * 24 * 60 * 60 * s + 5 * s)
+        val later = call(t + 20 * 60 * s, incoming = true, t + 20 * 60 * s + 5 * s, ended = t + 22 * 60 * s)
+        assertEquals(listOf(a), CallTracking.callsIn(listOf(a, held, stale, later), start, incoming = false, joined = true))
+    }
+
+    /** Joined, a call Telecom never said ended, answered over a day before
+     *  - a reboot mid-call - is no call up: taken for the file's own, the
+     *  recording was cut to it and named after yesterday's caller (review
+     *  round 12). */
+    @Test fun aCallNeverEndedADayAgoIsNoCallUp() {
+        val stale = call(t - 2 * 24 * 60 * 60 * s, incoming = true, t - 2 * 24 * 60 * 60 * s + 5 * s)
+        assertEquals(emptyList<Tracked>(), CallTracking.callsIn(listOf(stale), t, incoming = false, joined = true))
+    }
+
     @Test fun nobodyAnsweredMeansNothingToSave() {
         val unanswered = call(t, incoming = false, ended = t + 30 * s)
         val calls = CallTracking.callsIn(listOf(unanswered), t + 50, incoming = false)

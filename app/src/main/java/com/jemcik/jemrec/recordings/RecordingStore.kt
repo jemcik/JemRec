@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.content.edit
@@ -145,10 +146,30 @@ object RecordingStore {
         }
     }
 
+    /** Where the folder picker opens to choose the folder again: the one
+     *  chosen, as a document - EXTRA_INITIAL_URI takes a document's uri, or
+     *  a tree's with its document - so Choose again is the folder again
+     *  where it is still there ("Access documents and other files from
+     *  shared storage": the picker's first directory). Null for none chosen;
+     *  the picker opens where it would. */
+    fun pickerStart(context: Context): Uri? = treeUri(context)?.let { tree ->
+        runCatching { DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree)) }.getOrNull()
+    }
+
     fun treeUri(context: Context): Uri? =
         Prefs.of(context)
             .getString(KEY_TREE, null)
             ?.toUri()
+
+    /** The words for a folder chosen whose name cannot be read - a
+     *  drive's root, which the picker allows on a USB drive. */
+    const val CHOSEN = "the folder you chose"
+
+    /** "<folder>, the folder you chose" for [described] (describe), or
+     *  the words alone where its name could not be read: said twice, they
+     *  read "the folder you chose, the folder you chose" (review,
+     *  2026-11-18). Pure. */
+    fun chosenWords(described: String): String = if (described == CHOSEN) CHOSEN else "$described, $CHOSEN"
 
     /** What to show the user, in words they can act on. */
     fun describe(context: Context): String {
@@ -157,24 +178,62 @@ object RecordingStore {
             // Tree ids look like "primary:Documents/Calls"; the half after the
             // colon is the part a person recognises.
             val readable = id?.substringAfter(':')?.takeIf { it.isNotBlank() }
-            return readable ?: "the folder you chose"
+            return readable ?: CHOSEN
         }
         return relativePath()
     }
 
-    fun setTree(context: Context, uri: Uri) {
-        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) }
+    /**
+     * The folder recordings go to from now on, if Android lets JemRec keep
+     * it: whether it did. Not kept, the folder before stays - it used to be
+     * taken all the same, and every save fell back elsewhere while Settings
+     * said "the folder you chose". The folder before is let go of: Android
+     * keeps a limited number of grants an app holds.
+     */
+    fun setTree(context: Context, uri: Uri): Boolean {
+        val kept = runCatching { context.contentResolver.takePersistableUriPermission(uri, FLAGS) }
             .onFailure { Log.w(TAG, "store: could not persist folder permission", it) }
-        Prefs.of(context)
-            .edit { putString(KEY_TREE, uri.toString()) }
+            .isSuccess
+        if (!kept) return false
+        val before = treeUri(context)
+        Prefs.of(context).edit { putString(KEY_TREE, uri.toString()) }
+        if (before != null && before != uri) letGo(context, before)
+        FolderAccess.reached(context)
         Log.i(TAG, "store: recordings will go to $uri")
+        return true
     }
 
-    /** Go back to the standard Recordings folder. */
+    /** Go back to the standard Recordings folder, letting go of the one
+     *  chosen. */
     fun clearTree(context: Context) {
-        Prefs.of(context)
-            .edit { remove(KEY_TREE) }
+        val before = treeUri(context)
+        Prefs.of(context).edit { remove(KEY_TREE) }
+        before?.let { letGo(context, it) }
+        FolderAccess.reached(context)
+    }
+
+    private fun letGo(context: Context, uri: Uri) {
+        runCatching { context.contentResolver.releasePersistableUriPermission(uri, FLAGS) }
+    }
+
+    private const val FLAGS = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+
+    /**
+     * Whether the folder chosen can still be written: its grant still JemRec's
+     * - Android lets it go when the folder is moved or deleted, "you need to
+     * ask permission again" (developer.android.com, Access documents and
+     * other files) - and the folder still there. Null with none chosen.
+     */
+    fun folderReachable(context: Context): Boolean? {
+        val tree = treeUri(context) ?: return null
+        val granted = context.contentResolver.persistedUriPermissions
+            .any { it.uri == tree && it.isReadPermission && it.isWritePermission }
+        if (!granted) return false
+        return runCatching {
+            val folder = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+            context.contentResolver.query(folder, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+                ?.use { it.moveToFirst() } == true
+        }.getOrDefault(false)
     }
 
     fun nameFor(startedAt: Date, incoming: Boolean): String {
@@ -196,12 +255,22 @@ object RecordingStore {
      */
     fun open(context: Context, name: String): Target? {
         Waveforms.writingStarted(name)
-        val target = FolderRecordings.open(context, name)
+        val inFolder = FolderRecordings.open(context, name)
+        val target = inFolder
             ?: MediaStoreRecordings.open(context, name)
             ?: AppRecordings.open(context, name)
         if (target == null) {
             Waveforms.writingEnded(context, name)
             return null
+        }
+        // Not in the folder chosen: said, once, if it is lost (FolderAccess).
+        // In it again - a drive put back - what was said goes, and the next
+        // loss is said again: only an open of the app took it back, and a
+        // drive out, back and out again was said once (review, 2026-11-18).
+        if (inFolder == null && treeUri(context) != null) {
+            FolderAccess.savedElsewhere(context, if (target.uri.authority == MediaStore.AUTHORITY) relativePath() else "JemRec's own storage")
+        } else if (inFolder != null) {
+            FolderAccess.reached(context)
         }
         // A name its place changed: the file of the one asked for is another
         // recording, finished, and its levels are its own.

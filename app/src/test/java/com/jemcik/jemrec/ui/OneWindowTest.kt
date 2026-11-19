@@ -66,6 +66,12 @@ class OneWindowTest {
         assertEquals("home", home.identifier)
         assertFalse(DeepLink.leadsElsewhere(home))
         assertTrue(DeepLink.leadsElsewhere(DeepLink.intent(app, DeepLink.Kind.PLAY, "a.ogg")))
+        // The taps that open JemRec where a problem is shown are openings,
+        // as home's were until 1.2 (review round 10) - and Choose again, a
+        // button that opens home under the folder picker.
+        for (kind in listOf(DeepLink.Kind.CALLS, DeepLink.Kind.SETTINGS, DeepLink.Kind.CHOOSE_FOLDER)) {
+            assertFalse("$kind", DeepLink.leadsElsewhere(DeepLink.intent(app, kind)))
+        }
     }
 
     /** The launcher over JemRec's task begun another way - a notification,

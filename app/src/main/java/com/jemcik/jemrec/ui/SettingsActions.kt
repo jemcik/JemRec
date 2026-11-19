@@ -19,9 +19,12 @@ import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.playback.BothEarsSetting
 import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.playback.PlayThroughSetting
 import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.QualitySetting
+import com.jemcik.jemrec.recordings.RecordingQuality
 import com.jemcik.jemrec.recordings.RecordingStore
 import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.setup.Setup
@@ -81,6 +84,21 @@ internal class SettingsActions(
         }
     }
 
+    /** The notifications notice put away while that one stays off, the
+     *  next one down shown at once (only where it may be:
+     *  NotificationHealth.dismissable). */
+    fun dismissNotificationsOff(off: com.jemcik.jemrec.calls.NotificationHealth.Off) {
+        com.jemcik.jemrec.calls.NotificationHealth.dismiss(app, off)
+        // The next one down at once, not at the next reading (review round
+        // 11): preferences only, on what Android said last.
+        state.update { it.copy(notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.notice(app, it.notificationSwitches)) }
+    }
+
+    fun dismissBatteryNotice() {
+        com.jemcik.jemrec.system.BatteryHealth.dismiss(app)
+        state.update { it.copy(batteryNotice = false) }
+    }
+
     /** Never offered again once waved away. An optional feature that keeps
      *  asking is not optional. */
     fun dismissCallLogOffer() {
@@ -130,10 +148,31 @@ internal class SettingsActions(
             app,
             if (automatic) RecordingMode.AUTOMATIC else RecordingMode.ON_DEMAND,
         )
-        state.update { it.copy(automatic = automatic) }
+        // And what home says of notifications with it: Ask first's question
+        // off matters in Ask first alone, and a notice put away in Automatic
+        // cannot be in Ask first (NotificationHealth.notice). Left to the
+        // next reading, a switch to Ask first with its question off said
+        // nothing - the calls this notice is for (review, 2026-11-18).
+        state.update {
+            it.copy(
+                automatic = automatic,
+                notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.notice(app, it.notificationSwitches),
+                batteryNotice = com.jemcik.jemrec.system.BatteryHealth.notice(app, it.batteryRestricted),
+            )
+        }
+        // The Battery notification in the words that hold now (BatteryHealth.refresh).
+        refreshBatteryNotification()
         // The daemon decides at off-hook whether to record or to ask first, so
         // it has to be told which the moment this changes.
         actions.run(Action.TELL_RECORDER) { CaptureDaemon.pushMode(app) }
+    }
+
+    /** Off the main thread: a question to Android's activity manager. */
+    private fun refreshBatteryNotification() {
+        Thread({
+            runCatching { com.jemcik.jemrec.system.BatteryHealth.refresh(app) }
+                .onFailure { android.util.Log.w("JemRec", "battery: notification not said anew", it) }
+        }, "jemrec-battery").start()
     }
 
     /** The Settings switch for the notification that follows each call.
@@ -141,6 +180,13 @@ internal class SettingsActions(
     fun setAfterCallNotice(on: Boolean) {
         AfterCall.setEnabled(app, on)
         state.update { it.copy(afterCallNotice = on) }
+    }
+
+    /** Both sides of a call in both ears, or each in its own. The playing
+     *  recording follows at once: PlaybackService watches the setting. */
+    fun setBothEars(on: Boolean) {
+        BothEarsSetting.set(app, on)
+        state.update { it.copy(bothEars = on) }
     }
 
     /** Settings' "Play recordings". */
@@ -219,7 +265,13 @@ internal class SettingsActions(
     /** Exact call tracking on or off; the daemon allows or withdraws it at once. */
     fun setCallTracking(on: Boolean) {
         CallTracking.setEnabled(app, on)
-        state.update { it.copy(callTracking = on) }
+        // The Battery notice and notification say what tracking off costs:
+        // home's put away for words that now say more comes back (review,
+        // 2026-11-18).
+        state.update {
+            it.copy(callTracking = on, batteryNotice = com.jemcik.jemrec.system.BatteryHealth.notice(app, it.batteryRestricted))
+        }
+        refreshBatteryNotification()
         // The answering machine answers on tracking's word alone: left on
         // without it, it would say it answers and never would. Settings asks
         // before this (SettingsDialog.TRACKING_OFF).
@@ -265,6 +317,18 @@ internal class SettingsActions(
         state.update { it.copy(voipNames = on, voipNamesProblem = null) }
     }
 
+    /** How many bits a second the next call is recorded at; recordings
+     *  already made keep theirs. The recorder is told at once. */
+    fun setQuality(quality: RecordingQuality) {
+        QualitySetting.set(app, quality)
+        state.update { it.copy(quality = quality) }
+        actions.run(Action.TELL_RECORDER) {
+            if (!CaptureDaemon.setQuality(app)) {
+                log.say("the recorder will pick up the quality when it next restarts")
+            }
+        }
+    }
+
     /** How new recordings are named. Ones already saved keep their names. */
     fun setFileNames(format: FileNames.Format) {
         FileNames.setFormat(app, format)
@@ -281,8 +345,13 @@ internal class SettingsActions(
      *  screen resumes, while its check runs (Action.FOLDER_CHOSEN). */
     fun onFolderChosen(uri: Uri) {
         actions.run(Action.FOLDER_CHOSEN) {
-            withContext(Dispatchers.IO) { RecordingStore.setTree(app, uri) }
-            log.say("recordings will be saved to the folder you chose")
+            if (withContext(Dispatchers.IO) { RecordingStore.setTree(app, uri) }) {
+                log.say("recordings will be saved to the folder you chose")
+            } else {
+                // Android would not let JemRec keep it: the folder before
+                // stays, and the user is told, not left to find out.
+                log.tell("Android did not let JemRec keep that folder. Recordings still go where they went.")
+            }
             reading.now()
         }
     }

@@ -197,10 +197,66 @@ final class Voip {
         }
     }
 
-    /** A capture for the call that just started, or null if not armed. */
-    static @Nullable AudioCapture newCapture() {
+    /** A capture for the call that just started, or null if not armed;
+     *  [withMic] false for one made anew where the guard had given the
+     *  microphone back to the call app (micKept). */
+    static @Nullable AudioCapture newCapture(boolean withMic) {
         Policy p = POLICY.armed();
-        return p == null ? null : new Capture(p, false, true);
+        return p == null ? null : new Capture(p, false, true, withMic);
+    }
+
+    /**
+     * Whether [failed], the capture a new one replaces, still had the
+     * microphone - not given back to the call app by the guard (dropMic):
+     * what a capture made anew for the same call takes up (RecordingSession).
+     * Opened again, the guard gave it back only at its next look, the call
+     * app's microphone silenced until then (review, 2026-11-18). Read from
+     * the capture itself, stopped as it failed (RestartLoop): the one in
+     * progress, as this read first, is none by then.
+     */
+    static boolean micKept(AudioCapture failed) {
+        return !(failed instanceof Capture) || !((Capture) failed).micDropped;
+    }
+
+    /** A claim on the policy across a capture's restart (Restarting). */
+    private static boolean holding;
+
+    /**
+     * The policy held while a capture through the mixer is made anew -
+     * a messenger call's, or a phone call's on the mixer: the failed one is
+     * stopped first (RestartLoop), and with the list empty - emptied during
+     * a messenger call, or never filled on a phone that copies only its
+     * phone calls - the stop let the policy go: the watch with it and so a
+     * messenger call; for a phone call, a policy registered again while the
+     * audio server is still down may be refused (AudioService's
+     * registerAudioPolicy, read). Held, the policy is the one Android
+     * reconnects itself once the server is back (onAudioServerDied, read)
+     * (reviews, 2026-11-18). Until releaseHold; with no policy registered,
+     * nothing is held.
+     */
+    static synchronized void holdPolicy() {
+        if (holding) {
+            return;
+        }
+        try {
+            holding = POLICY.claim(false) != null;
+        } catch (Throwable t) {
+            Ln.w("voip: could not hold the audio policy over a restart: " + t);
+        }
+    }
+
+    /** The restart over: the hold let go, and the policy too if nothing
+     *  else holds it and the list is empty. */
+    static void releaseHold() {
+        boolean was;
+        synchronized (Voip.class) {
+            was = holding;
+            holding = false;
+        }
+        if (was) {
+            POLICY.release();
+            recordingEnded();
+        }
     }
 
     /**
@@ -210,7 +266,7 @@ final class Voip {
      * with none on the list (recordingEnded). Null when Android refuses the
      * copy; the call is then recorded as any other.
      */
-    static synchronized @Nullable AudioCapture newPhoneCapture() {
+    static synchronized @Nullable AudioCapture newPhoneCapture(boolean withMic) {
         Policy p;
         try {
             p = POLICY.arm();
@@ -218,7 +274,7 @@ final class Voip {
             Ln.e("voip: could not copy the phone call's audio", t);
             return null;
         }
-        return new Capture(p, true, true);
+        return new Capture(p, true, true, withMic);
     }
 
     // --- the audio policy --------------------------------------------------------
@@ -600,7 +656,8 @@ final class Voip {
         private @Nullable AudioRecord far;
         private volatile @Nullable AudioRecord near;
         private @Nullable Pump farPump;
-        private @Nullable Pump nearPump;
+        /** Volatile: the guard's thread closes it, the reader opens it again. */
+        private volatile @Nullable Pump nearPump;
         private volatile boolean running;
         private long framesOut;
         private long startUs;
@@ -614,15 +671,20 @@ final class Voip {
         /** Claimed and not yet let go: stop() lets go once. */
         private final java.util.concurrent.atomic.AtomicBoolean claimed =
                 new java.util.concurrent.atomic.AtomicBoolean();
+        /** Whether to open the microphone at all (micKept). */
+        private final boolean withMic;
+        /** Given back to the call app by the guard (dropMic). */
+        volatile boolean micDropped;
 
         Capture(Policy policy, boolean phone) {
-            this(policy, phone, false);
+            this(policy, phone, false, true);
         }
 
-        private Capture(Policy policy, boolean phone, boolean handedOut) {
+        private Capture(Policy policy, boolean phone, boolean handedOut, boolean withMic) {
             this.policy = policy;
             this.phone = phone;
             this.handedOut = handedOut;
+            this.withMic = withMic;
         }
 
         boolean hasMic() {
@@ -666,15 +728,21 @@ final class Voip {
             }
             farPump = new Pump("far", far, 2);
             farPump.start();
-            try {
-                AudioRecord mic = mic();
-                mic.startRecording();
-                near = mic;
-                nearPump = new Pump("near", mic, 1);
-                nearPump.start();
-            } catch (Throwable t) {
-                // The other side alone is still worth having.
-                Ln.w("voip: no microphone, recording the other side only: " + t);
+            if (!withMic) {
+                // Made anew after the guard gave it back: it stays the call's.
+                micDropped = true;
+                Ln.i("voip: the microphone stays with the call, as the capture before left it");
+            } else {
+                try {
+                    AudioRecord mic = mic();
+                    mic.startRecording();
+                    near = mic;
+                    nearPump = new Pump("near", mic, 1);
+                    nearPump.start();
+                } catch (Throwable t) {
+                    // The other side alone is still worth having.
+                    Ln.w("voip: no microphone, recording the other side only: " + t);
+                }
             }
             if (phone) {
                 audio = (AudioManager) FakeContext.get().getSystemService(Context.AUDIO_SERVICE);
@@ -708,8 +776,96 @@ final class Voip {
                     .build();
         }
 
-        /** The guard's call: the call app needs the microphone more. */
+        /** The microphone opened again once after its record failed. */
+        private boolean micReopened;
+
+        /** Our microphone said silenced, once. */
+        private boolean silencedNoted;
+
+        /**
+         * Our own microphone silenced by Android for another app's capture:
+         * a capture outranked "continues to run, but receives silence"
+         * (developer.android.com, Sharing audio input) - the user's side of
+         * the call gone silent, with nothing failing. Said in the call's
+         * report, once; the guards look only at the call app's capture and
+         * left it unsaid (review, 2026-11-18).
+         */
+        private void noteIfSilenced() {
+            AudioRecord mic = near;
+            if (silencedNoted || mic == null) {
+                return;
+            }
+            try {
+                android.media.AudioRecordingConfiguration config = mic.getActiveRecordingConfiguration();
+                if (config != null && config.isClientSilenced()) {
+                    silencedNoted = true;
+                    Ln.w("voip: our microphone is silenced by Android for another capture");
+                    CallReport report = Reports.lastReport;
+                    if (report != null) {
+                        report.note("our microphone was silenced by Android for another app's capture: your side silent from here");
+                    }
+                }
+            } catch (Throwable t) {
+                silencedNoted = true; // not asked again; nothing said
+            }
+        }
+
+        /**
+         * The microphone's record failed (read [failed]) with the other
+         * side's going on: opened again, once - left closed, the user's own
+         * side was gone for the rest of the call unless the other side failed
+         * too, and Copy a report never said so (review, 2026-11-18). Not
+         * where the guard gave it back: that is the call app's.
+         */
+        private void reopenMic(int failed) {
+            CallReport report = Reports.lastReport;
+            if (micDropped || micReopened) {
+                if (report != null) {
+                    report.note("the microphone's record failed (read " + failed + "): the other side alone from here");
+                }
+                return;
+            }
+            micReopened = true;
+            AudioRecord mic = null;
+            try {
+                mic = mic();
+                mic.startRecording();
+                Pump pump = new Pump("near", mic, 1);
+                pump.start();
+                nearPump = pump;
+                near = mic;
+                // The guard may have given it back meanwhile, finding none
+                // to close: closed now (check-then-act; review, 2026-11-18).
+                if (micDropped) {
+                    closeMic();
+                    return;
+                }
+                Ln.i("voip: the microphone opened again");
+                if (report != null) {
+                    report.note("the microphone's record failed (read " + failed + "): opened again");
+                }
+            } catch (Throwable t) {
+                if (mic != null) {
+                    mic.release();
+                }
+                Ln.w("voip: the microphone would not open again: " + t);
+                if (report != null) {
+                    report.note("the microphone's record failed (read " + failed
+                            + ") and would not open again: the other side alone from here");
+                }
+            }
+        }
+
+        /** The guard's call: the call app needs the microphone more - for
+         *  the rest of the call (micKept, CallPath.micGone). */
         void dropMic() {
+            micDropped = true;
+            closeMic();
+        }
+
+        /** The microphone let go: by the guard, or as this stops - which is
+         *  not the guard's drop, and leaves [micDropped] as it was. */
+        private void closeMic() {
             AudioRecord mic = near;
             near = null;
             if (mic != null && nearPump != null) {
@@ -728,10 +884,9 @@ final class Voip {
                 return -1;
             }
             if (!fromMic) {
-                // No microphone - never started, or dropped by the guard while
-                // this read waited on it. The call goes on with the other
-                // side only, paced by the clock: failing the read here would
-                // end the whole recording, theirs included.
+                // No microphone - never started, dropped by the guard while
+                // this read waited on it, or failed (below). The call goes on
+                // with the other side only, paced by the clock.
                 java.util.Arrays.fill(mine, (short) 0);
                 long due = startUs + (framesOut + FRAMES) * 1_000_000L / SAMPLE_RATE;
                 long wait = due - System.nanoTime() / 1000;
@@ -743,6 +898,27 @@ final class Voip {
             if (fp == null) {
                 return -1; // start() sets it before running, or throws
             }
+            // The other side's record failed - the audio server gone, say:
+            // its error, so the recording's capture is made anew
+            // (Restarting). Until 1.2's reviews it was read as silence, and
+            // the rest of a messenger call, or of a phone call through the
+            // mixer, would have been recorded silent with nothing said (read
+            // from the code, 2026-11-18; not produced).
+            if (fp.failed != 0) {
+                return fp.failed;
+            }
+            // The microphone's failed: let go, said, and the other side goes
+            // on - failed as a read, a microphone that would not come back
+            // ended the whole recording once the restarts ran out, the call's
+            // side with it. Not the guard's drop, which is the call's for the
+            // rest of it (micDropped): a capture made anew later opens the
+            // microphone again (reviews, 2026-11-18). The guard's own drop
+            // closes the pump, whose read then stops unsaid (Pump.run).
+            if (np != null && np.failed != 0 && near != null) {
+                Ln.w("voip: the microphone's record failed (read " + np.failed + "); the other side goes on");
+                closeMic();
+                reopenMic(np.failed);
+            }
             fp.dropBeyond(MAX_AHEAD * 2);
             fp.take(theirs, FRAMES * 2, false);
             Checks.stereo(mine, theirs, FRAMES, out);
@@ -750,8 +926,11 @@ final class Voip {
             long pts = startUs + framesOut * 1_000_000L / SAMPLE_RATE;
             framesOut += FRAMES;
             info.set(0, bytes, pts, 0);
-            if (phone && ++reads % GUARD_READS == 0) {
-                phoneGuard();
+            if (++reads % GUARD_READS == 0) {
+                noteIfSilenced();
+                if (phone) {
+                    phoneGuard();
+                }
             }
             return bytes;
         }
@@ -792,7 +971,7 @@ final class Voip {
             if (current == this) {
                 current = null;
             }
-            dropMic();
+            closeMic();
             if (farPump != null) {
                 farPump.close();
             }
@@ -815,6 +994,10 @@ final class Voip {
         private int head;
         private int size;
         private volatile boolean running = true;
+
+        /** The read error this side stopped on, or 0: the capture says it,
+         *  rather than going on with silence for it (Capture.read). */
+        volatile int failed;
 
         Pump(String name, AudioRecord record, int channels) {
             this.name = name;
@@ -866,6 +1049,11 @@ final class Voip {
                 int n = record.read(buf, 0, buf.length);
                 if (n < 0) {
                     Ln.w("voip: " + name + " read error " + n);
+                    // An error of the record's own, not one from close()
+                    // stopping it under this read: only that one is said.
+                    if (running) {
+                        failed = n;
+                    }
                     break;
                 }
                 if (n > 0) {

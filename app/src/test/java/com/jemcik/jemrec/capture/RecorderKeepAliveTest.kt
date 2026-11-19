@@ -19,9 +19,17 @@ class RecorderKeepAliveTest {
         }
     }
 
-    @Test fun aKickOrTheHeartbeatTriesAgainWiFiOrNot() {
+    @Test fun aKickTriesAgainWiFiOrNot() {
         assertTrue(RecorderKeepAlive.triesAgain(alive = false, forWifi = false, onWifi = false))
         assertTrue(RecorderKeepAlive.triesAgain(alive = false, forWifi = false, onWifi = true))
+    }
+
+    /** The heartbeat never does: its backoff, not its period, would set its
+     *  next run - hours away after a day off Wi-Fi (1.2). */
+    @Test fun theHeartbeatNeverTriesAgain() {
+        for (onWifi in listOf(false, true)) {
+            assertFalse(RecorderKeepAlive.triesAgain(alive = false, forWifi = false, onWifi = onWifi, periodic = true))
+        }
     }
 
     @Test fun theWiFiRunTriesAgainOnlyOnWiFi() {

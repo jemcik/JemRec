@@ -13,6 +13,7 @@ import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.playback.BothEarsSetting
 import com.jemcik.jemrec.playback.PlayThroughSetting
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.KeepPaired
@@ -21,6 +22,7 @@ import com.jemcik.jemrec.recorder.RecorderHealth
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.QualitySetting
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.recordings.RecordingStore
@@ -40,11 +42,23 @@ import kotlinx.coroutines.withContext
 
 /** A setting the screen shows: read off the main thread, then put into the
  *  state as it is when the reading arrives. */
-private typealias Read = suspend (Application) -> (UiState) -> UiState
+internal typealias Read = suspend (Application) -> (UiState) -> UiState
 
-/** [get]'s value, put by [put]. */
-private fun <T> read(get: suspend (Application) -> T, put: UiState.(T) -> UiState): Read =
-    { app -> val value = get(app); { state -> state.put(value) } }
+/** [get]'s value, put by [put]. One that throws leaves the state's own
+ *  value as it was, and the reading lands with the rest: thrown on, it kept
+ *  the window unread - home at Checking, every other screen blank - until
+ *  the next return to the app (review, 2026-11-18). */
+internal fun <T> read(get: suspend (Application) -> T, put: UiState.(T) -> UiState): Read = { app ->
+    val read: Result<T> = try {
+        Result.success(get(app))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("JemRec", "reading: one read failed, its value kept", e)
+        Result.failure(e)
+    }
+    read.fold(onSuccess = { value -> { state -> state.put(value) } }, onFailure = { { state -> state } })
+}
 
 /**
  * The settings saved while a reading may be under way, read as it lands,
@@ -75,6 +89,7 @@ internal fun asSaved(app: Application, state: UiState): UiState = state.copy(
     automatic = RecordingMode.of(app) == RecordingMode.AUTOMATIC,
     afterCallNotice = AfterCall.enabled(app),
     playThrough = PlayThroughSetting.of(app),
+    bothEars = BothEarsSetting.of(app),
     offMode = DebugSwitchesOff.mode(app),
     startWithoutWifi = StartWithoutWifi.enabled(app),
     autoDeleteAfterDays = Retention.maxAgeDays(app),
@@ -84,6 +99,7 @@ internal fun asSaved(app: Application, state: UiState): UiState = state.copy(
     callTracking = CallTracking.enabled(app),
     voipEnabled = VoipApps.enabled(app),
     fileNames = FileNames.format(app),
+    quality = QualitySetting.of(app),
     tileAdded = RecorderTile.isAdded(app),
     selectHintSeen = SelectHint.seen(app),
     canReadCallLog = CallLogLookup.granted(app),
@@ -91,6 +107,12 @@ internal fun asSaved(app: Application, state: UiState): UiState = state.copy(
     canReadContacts = CallLogLookup.photosGranted(app),
     // What is left to offer is read with the rest; a dismissal, as it lands.
     offerCallLog = state.offerCallLog && !CallLogLookup.bannerDismissed(app),
+    // What the notice says, as it lands: the mode switched, or the notice
+    // put away, while a reading was out came back as before - the header
+    // Ready over Ask first's question off (review, 2026-11-18). From what
+    // the reading found Android saying, and preferences.
+    notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.notice(app, state.notificationSwitches),
+    batteryNotice = com.jemcik.jemrec.system.BatteryHealth.notice(app, state.batteryRestricted),
 )
 
 /**
@@ -125,10 +147,19 @@ private val SETTINGS: List<Read> = listOf(
     },
     read(NetworkRevive::onWifi) { copy(onWifi = it) },
     read(PairingNotification::blocked) { copy(pairingNotificationsBlocked = it) },
+    // What Android says is off of JemRec's notifications: questions to its
+    // notification service, so here, off the main thread; what the notice
+    // says of it is decided as the reading lands (asSaved).
+    read(com.jemcik.jemrec.calls.NotificationHealth::switches) { copy(notificationSwitches = it) },
+    // The Battery setting Restricted: a question to Android's activity
+    // manager, so here; the notice is decided as the reading lands.
+    read(com.jemcik.jemrec.system.BatteryHealth::read) { copy(batteryRestricted = it) },
     // Only until setup is done: a getprop, on the phones that may have the
     // switch.
     read({ !Setup.isComplete(it) && ShellGrant.switchMayBeOff() }) { copy(systemOptimizationSwitch = it) },
     read(RecordingStore::describe) { copy(folder = it) },
+    read({ if (com.jemcik.jemrec.system.AutoStart.available(it)) com.jemcik.jemrec.system.AutoStart.label(it) else null }) { copy(autoStartLabel = it) },
+    read(com.jemcik.jemrec.recordings.FolderAccess::lost) { copy(folderLost = it) },
     read({ RecordingStore.treeUri(it) == null }) { copy(usingDefaultFolder = it) },
     // An earpiece, and a proximity sensor to know when it is at the ear:
     // what "Play recordings" offers.
@@ -218,7 +249,16 @@ internal class Reading(
             // lookup per number, and nobody is looking at it otherwise. Null
             // when not read, so this reading leaves alone a list a later one
             // has read already.
+            // Whether this is the call log itself: without the permission the
+            // list is an empty one, which says nothing of the calls - and a
+            // reading that began before a grant and lands after it took the
+            // tab out of unread with it (review, 2026-11-18). Asked before the
+            // load: a grant between the two is then read as no grant, and the
+            // next reading reads the log; the other way round, the empty list
+            // passed for it (review, 2026-11-18).
+            val withLog = CallLogLookup.granted(app)
             val calls = if (state.value.homeTab == HomeTab.CALLS) CallHistory.load(app, recordings, trashed) else null
+            val callsRead = calls != null && withLog
             // Before the lists reach the screen, so no row shows a colour and
             // then changes it; and given only in Multitrack, the one look that
             // has them - a look never chosen keeps nothing. Once given, they
@@ -232,7 +272,7 @@ internal class Reading(
                 emptyMap()
             }
             val settings = SETTINGS.map { it(app) }
-            Lists(recordings, trashed, calls, colours) to settings
+            Lists(recordings, trashed, calls, colours, callsRead) to settings
         }
         val (lists, settings) = reading
 
@@ -245,6 +285,8 @@ internal class Reading(
                 calls = lists.calls ?: now.calls,
                 callerColours = lists.colours,
                 connected = AdbTransport.lastKnownConnected,
+                listUnread = false,
+                callsUnread = now.callsUnread && !lists.callsRead,
             ).let { next ->
                 // A name that is no longer shown cannot stay selected. It would
                 // still be counted by the toolbar - the count the user reads
@@ -263,5 +305,7 @@ internal class Reading(
         val trashed: List<Recording>,
         val calls: List<CallHistory.Call>?,
         val colours: Map<String, Int>,
+        /** [calls] read from the call log, the permission held. */
+        val callsRead: Boolean,
     )
 }

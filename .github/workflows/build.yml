@@ -1,9 +1,12 @@
-# Everything the pre-push hook checks, plus the APK, on every branch and PR.
+# Everything the pre-push hook checks, and more - the APK, the site made again,
+# Error Prone, the shrunk APK built, the release APK's R8 and 16 KB checks - on
+# pushes to main and on pull requests.
 #
 # THE SDK LIST IS LONGER THAN A NORMAL ANDROID PROJECT'S, and the extra entries
 # are load-bearing. The shell-side capture daemon is not a Gradle module: it is
-# compiled by shellserver/build.sh against the platform the DEVICE runs, with
-# its @hide framework internals intact, and dexed with d8 by hand. Gradle runs
+# compiled by shellserver/build.sh against android-36's android.jar (pinned:
+# the jar's bytes depend on it; one jar runs on Android 12 and later), and
+# dexed with d8 by hand. Gradle runs
 # that script as part of preBuild, so a runner without android-36 and
 # build-tools 36.0.0 fails before the app is compiled at all - not at the end,
 # where it would be obvious.
@@ -18,27 +21,33 @@ on:
 permissions:
   contents: read
 
+# A pull request's new push makes its last run moot; main's never: the
+# release waits for the version bump's own run to pass (release.yml,
+# `checked`), and cancelled by the next merge it would stop the release. So
+# each run off a pull request is a group of its own - in a shared one, a run
+# waiting its turn is cancelled by the next to come, cancel-in-progress or
+# not (GitHub, "Control the concurrency of workflows and jobs").
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       # 21, and exactly 21, because the daemon's bytecode depends on the javac
       # major that compiled it - see shellserver/build.sh, which refuses any
       # other. F-Droid's build server is Debian trixie with default-jdk, which
       # is 21; a release built with a different major cannot be reproduced
       # there, and F-Droid would have to sign it with its own key instead.
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
 
       # AGP 9 numbers the newest platform with a minor version, so compileSdk 37
       # is "platforms;android-37.0" and NOT "platforms;android-37" - which is
@@ -57,7 +66,7 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/d8" \
             || { echo "::error::build-tools 36.0.0 d8 is missing"; ls "$ANDROID_HOME/build-tools"; exit 1; }
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
 
       - name: Tests
         run: ./gradlew test
@@ -69,6 +78,16 @@ jobs:
 
       - name: Lint
         run: ./gradlew lint
+
+      # The site and the manual are made from tools/build_site.py, which reads
+      # the app's own header words: made again here, they must come out as
+      # committed - an edit to either side alone fails, as a screen's picture
+      # does (review, 2026-11-18). Standard library only, no dates written.
+      - name: The site as its source makes it
+        run: |
+          python3 tools/build_site.py
+          # New files too, which a diff of tracked ones leaves out.
+          test -z "$(git status --porcelain -- docs/)" || { git status --porcelain -- docs/; exit 1; }
 
       - name: Build debug APK
         run: ./gradlew assembleDebug
@@ -121,7 +140,7 @@ jobs:
         run: python3 tools/check_r8_constructors.py app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Upload APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: jemrec-debug-apk
           path: app/build/outputs/apk/debug/*.apk
@@ -129,7 +148,7 @@ jobs:
 
       - name: Upload reports when something fails
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: reports
           path: app/build/reports/

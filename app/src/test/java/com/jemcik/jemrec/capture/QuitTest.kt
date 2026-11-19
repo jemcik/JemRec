@@ -33,4 +33,14 @@ class QuitTest {
             AudioManager.MODE_COMMUNICATION_REDIRECT,
         ).forEach { mode -> assertTrue("mode $mode", CaptureDaemon.inCall(mode)) }
     }
+
+    /** What waits out a call takes only a call's own modes - a ringtone's
+     *  or screening's, which an app can leave set, held all of it for ever
+     *  (review round 12). */
+    @Test fun aCallIsUpOnlyInACallsMode() {
+        assertTrue(com.jemcik.jemrec.recorder.DaemonLauncher.callUp(AudioManager.MODE_IN_CALL))
+        assertTrue(com.jemcik.jemrec.recorder.DaemonLauncher.callUp(AudioManager.MODE_IN_COMMUNICATION))
+        listOf(AudioManager.MODE_NORMAL, AudioManager.MODE_RINGTONE, AudioManager.MODE_CALL_SCREENING)
+            .forEach { mode -> assertFalse("mode $mode", com.jemcik.jemrec.recorder.DaemonLauncher.callUp(mode)) }
+    }
 }

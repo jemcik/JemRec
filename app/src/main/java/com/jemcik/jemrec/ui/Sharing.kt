@@ -4,8 +4,10 @@ import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import com.jemcik.jemrec.audio.Transcoder
+import com.jemcik.jemrec.playback.BothEarsSetting
 import com.jemcik.jemrec.recordings.AppRecordings
 import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.ShareCopies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -14,7 +16,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * Share: the format asked first, then the original at once or an .m4a made
@@ -55,12 +56,14 @@ internal class Sharing(
         state.update { it.copy(shareChoice = null, converting = true) }
         conversionJob = scope.launch {
             val m4a = withContext(Dispatchers.Default) {
-                val dir = File(app.getExternalFilesDir(null), "shares").apply { mkdirs() }
-                sweepStaleShares(dir)
-                val out = File(dir, recording.name.substringBeforeLast('.') + ".m4a")
+                // No external files dir (storage not mounted): no copy to make,
+                // where a File with a null parent would have been made relative.
+                val dir = ShareCopies.dir(app)?.apply { mkdirs() } ?: return@withContext null
+                ShareCopies.sweep(dir)
+                val out = ShareCopies.of(dir, recording.name)
                 // isActive goes false the instant the job is cancelled, which is
                 // how Cancel reaches the transcode loop.
-                if (Transcoder.toM4a(app, recording.uri, out) { !isActive }) out else null
+                if (Transcoder.toM4a(app, recording.uri, out, BothEarsSetting.of(app)) { !isActive }) out else null
             }
             state.update { it.copy(converting = false) }
             if (m4a == null) {
@@ -96,12 +99,5 @@ internal class Sharing(
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { app.startActivity(chooser) }
             .onFailure { log.tell("could not share that recording") }
-    }
-
-    /** Delete share copies older than a few hours. A share in flight is minutes
-     *  old at most, so the cutoff never sweeps one still being read. */
-    private fun sweepStaleShares(dir: File) {
-        val cutoff = System.currentTimeMillis() - 6 * 60 * 60 * 1000L
-        dir.listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
     }
 }

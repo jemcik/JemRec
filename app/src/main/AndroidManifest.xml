@@ -153,13 +153,15 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!--
-      Lets the mid-call prompt survive longer than five seconds.
+      Keeps Ask first's mid-call question on screen until it is answered:
+      without it, a minute (RecordPromptActivity says how that was measured).
 
-      NOT auto-granted. From Android 14 this is given automatically only to
-      apps that declare themselves calling or alarm apps, which this is not, so
-      the user grants it in Settings or the prompt simply behaves as an ordinary
-      notification. Everything still works without it - the prompt is in the
-      shade either way - so nothing is gated on it and nothing nags.
+      Given at install. From Android 14 the user can turn it off (Settings,
+      Special app access, Full screen notifications), and Google Play takes it
+      from apps that are not calling or alarm apps (AOSP's "Full-screen intent
+      limits"). Turned off, the question still asks and waits in the shade, so
+      nothing is gated on it; in Ask first, home says what it costs
+      (NotificationHealth, ASK_FIRST_BRIEF).
     -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
@@ -314,7 +316,8 @@
 
         <!--
           The after-call notification's Delete (asked, then confirmed), Keep,
-          and the missed-call notification being cleared. Not exported: only
+          and the missed-call notification and the recorder-down alert being
+          cleared. Not exported: only
           this app's own immutable PendingIntents reach it, so the recording it
           is told to delete is one this app put in the notification.
         -->
@@ -326,16 +329,18 @@
           Not exported: BOOT_COMPLETED is a protected broadcast that only the
           system may send, so exporting would gain nothing.
 
-          directBootAware is deliberately FALSE. LOCKED_BOOT_COMPLETED arrives
-          before first unlock while /data is still encrypted, and everything
-          this app needs - its ADB identity above all - lives there.
+          directBootAware is deliberately FALSE, so it takes no
+          LOCKED_BOOT_COMPLETED - Android sends that to encryption-aware
+          components alone (developer.android.com, Direct Boot), before the
+          first unlock, while /data is still encrypted, and everything this
+          app needs - its ADB identity above all - lives there. Its filter for
+          it, here until 1.2, could never be met.
         -->
         <receiver
             android:name=".capture.BootReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 
@@ -413,13 +418,15 @@
             android:foregroundServiceType="shortService" />
 
         <!--
-          Hands out a read-only URI for ONE recording at a time, so tapping a
-          call opens it in a music player. Recordings live in app-private
-          storage that nothing else may read; this is how a file is shared
-          deliberately instead of by loosening that.
+          Hands out a read-only URI for ONE file at a time: a recording kept
+          in app storage - the last place a save falls back to, which nothing
+          else may read (recordings are saved in Recordings/JemRec, or a folder
+          chosen, before that) - and Share's .m4a copies. This is how such a
+          file is shared deliberately instead of by loosening that. Its own
+          subclass, as FileProvider's reference asks (RecordingsFileProvider).
         -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".recordings.RecordingsFileProvider"
             android:authorities="${applicationId}.recordings"
             android:exported="false"
             android:grantUriPermissions="true">
@@ -449,8 +456,11 @@
         <!--
           Cancels the system "Wireless debugging connected" notification, which
           the recorder cannot avoid keeping on. Bound by the system once granted
-          notification access - given over ADB during setup, not through the
-          Settings switch a side-loaded app cannot reach. See the service class.
+          notification access - given over ADB during setup, after the user's
+          yes there, rather than sending them through Android's restricted
+          settings: a side-loaded app's switch for it is greyed out until App
+          info, More, Allow restricted settings - which Google's help warns
+          against unless you trust the app. See the service class.
         -->
         <service
             android:name=".capture.DebugNotificationCleaner"

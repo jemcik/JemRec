@@ -123,6 +123,84 @@ class CallHistoryTest {
         assertEquals(Status.NO_RECORDING, classify(listOf(call(t - minute)), history = history).single().status)
     }
 
+    /** A redial 20 s after the call before's logged end: its recording is
+     *  its own, not the call before's - whose own was deleted - which it
+     *  played, RECORDED (review round 12). */
+    @Test fun aRedialsRecordingIsNotTheCallBefores() {
+        val before = call(t, Kind.OUTGOING)
+        val redial = call(t + 140_000, Kind.OUTGOING)
+        val recording = rec(t + 140_000 + 2_000, incoming = false)
+        val result = classify(listOf(before, redial), recordings = listOf(recording), now = t + 10 * minute)
+        assertEquals(recording, result.single { it.at == redial.at }.recording)
+        assertNull(result.single { it.at == t }.recording)
+        assertEquals(Status.NOT_RECORDED, result.single { it.at == t }.status)
+    }
+
+    /** A part joined mid-call, 5 minutes into its call, plays for it - by
+     *  the call's start the ledger has - and a redial's recording does not
+     *  take its place (review round 12). */
+    @Test fun aJoinedPartPlaysForItsCall() {
+        val joinedAt = t + 5 * minute
+        val joined = rec(joinedAt, incoming = false).copy(callAt = t)
+        val redial = rec(t + 8 * minute, incoming = false)
+        val result = classify(
+            listOf(call(t, Kind.OUTGOING, seconds = 400), call(t + 8 * minute - 2_000, Kind.OUTGOING)),
+            recordings = listOf(redial, joined),
+            ledger = listOf(CallLedger.Recorded(joinedAt, false, 100, callAt = t)),
+            now = t + 20 * minute,
+        )
+        assertEquals(joined, result.single { it.at == t }.recording)
+        assertEquals(redial, result.single { it.at != t }.recording)
+    }
+
+    /** Call waiting at the revive: the held call's part, from its first
+     *  packet minutes in, is nearer the waiting call by its own start - it
+     *  played on the waiting call's row, that call's own part on none. By
+     *  its call's start only (review round 13). */
+    @Test fun aJoinedPartIsNeverTakenByItsOwnStart() {
+        val held = call(t, seconds = 600)
+        val waiting = call(t + 170_000, seconds = 90)
+        val heldPart = rec(t + 300_000, seconds = 60).copy(callAt = t)
+        val waitingPart = rec(t + 180_000, seconds = 50).copy(callAt = t + 170_000)
+        val result = classify(
+            listOf(held, waiting),
+            recordings = listOf(heldPart, waitingPart),
+            ledger = listOf(
+                CallLedger.Recorded(t + 300_000, true, 60, callAt = t),
+                CallLedger.Recorded(t + 180_000, true, 50, callAt = t + 170_000),
+            ),
+            now = t + 20 * minute,
+        )
+        assertEquals(heldPart, result.single { it.at == t }.recording)
+        assertEquals(waitingPart, result.single { it.at == waiting.at }.recording)
+    }
+
+    /** Call waiting at a revive, tracking off: the part matched to the
+     *  waiting call holds the held one's audio too - it plays for that call,
+     *  and in the trash says so; it read DELETED, nothing to play (review
+     *  round 14). A call over before the revive is not held. */
+    @Test fun aHeldCallPlaysTheJoinedPartItIsIn() {
+        val held = call(t, seconds = 400)
+        val waiting = call(t + 100_000, Kind.OUTGOING, seconds = 60)
+        val before = call(t - 200_000, seconds = 150)
+        val part = rec(t + 120_000, incoming = false, seconds = 100).copy(callAt = t + 100_000)
+        val ledger = listOf(CallLedger.Recorded(t + 120_000, false, 100, callAt = t + 100_000))
+        val result = classify(listOf(held, waiting, before), recordings = listOf(part), ledger = ledger, now = t + 20 * minute)
+        assertEquals(part, result.single { it.at == t }.recording)
+        assertEquals(part, result.single { it.at == waiting.at }.recording)
+        assertNull(result.single { it.at == before.at }.recording)
+        val binned = classify(listOf(held), trashed = listOf(part), ledger = ledger, now = t + 20 * minute).single()
+        assertEquals(Status.IN_TRASH, binned.status)
+    }
+
+    /** Saved in another time zone, its name's time hours off: matched by
+     *  the start the saver noted (review round 13). */
+    @Test fun aRecordingIsMatchedByItsNotedStartNotItsName() {
+        val recording = rec(t + 2 * 60 * minute).copy(startUtc = t + 20_000)
+        val result = classify(listOf(call(t)), recordings = listOf(recording)).single()
+        assertEquals(recording, result.recording)
+    }
+
     @Test fun aCallThatCameInDuringARecordingIsInIt() {
         // Call waiting: an incoming call 30 s into an outgoing recording.
         val outgoing = rec(t, incoming = false, seconds = 300)

@@ -53,6 +53,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +85,11 @@ import java.util.Locale
 interface RowEvents {
     fun play(recording: Recording)
     fun seekTo(ms: Int)
+
+    /** Where the sound of the recording playing is now, for the playhead's
+     *  every frame; null when nothing can say - the row then draws what its
+     *  state says. */
+    fun positionNow(): Int? = null
     fun stopPlaying()
 
     /** The player's button: the earpiece, or back to the speaker. */
@@ -176,9 +183,19 @@ internal fun Modifier.rowTaps(recording: Recording, state: UiState, events: RowE
     if (!LocalRowsSelectable.current) {
         return clickable(onClickLabel = "Play") { haptics.tap(); events.play(recording) }
     }
-    return combinedClickable(
-        onClickLabel = if (state.selecting) "Select" else "Play",
-        onLongClickLabel = if (state.selecting) "Select" else "Start selecting",
+    // Selecting, the row says whether it is picked - TalkBack's "Selected" -
+    // and what a tap does to it: the custom control's own state, as Android
+    // asks (Compose accessibility, semantics). Until 1.2 every row said
+    // "Select", picked or not; only a picked row's photo said "Selected".
+    val picked = state.selecting && recording.name in state.selected
+    val selection = if (state.selecting) {
+        semantics { selected = picked; stateDescription = if (picked) "Selected" else "Not selected" }
+    } else {
+        this
+    }
+    return selection.combinedClickable(
+        onClickLabel = if (state.selecting) (if (picked) "Deselect" else "Select") else "Play",
+        onLongClickLabel = if (state.selecting) (if (picked) "Deselect" else "Select") else "Start selecting",
         onClick = {
             if (state.selecting) {
                 haptics.toggle(recording.name !in state.selected)
@@ -385,8 +402,12 @@ internal fun PlayLength(recording: Recording, state: UiState, style: TextStyle, 
  * An icon button [size] across, its ripple round. The rows' Keep and Share
  * are 36dp, under Android's 48dp touch-target advice
  * (developer.android.com, "Make apps more accessible"): the user chose the
- * room for the name over the full size (2026-10-23). The player's are 40dp,
- * Material's icon-button size.
+ * room for the name over the full size (2026-10-23). The player's are 40dp:
+ * Material's icon button DRAWN size - its touch target is 48dp all the same
+ * (minimumInteractiveComponentSize), which these, plain clickables, do not
+ * keep. Until 1.2 this said 40dp was Material's size; whether to give them the
+ * 48dp target, which moves the player's layout, is the user's to decide (the
+ * practice audit, 2026-11-17).
  */
 @Composable
 private fun SmallIconButton(onClick: () -> Unit, size: Dp, content: @Composable () -> Unit) {
@@ -548,6 +569,7 @@ private fun Seeker(
             rest = rest,
             head = head,
             playing = state.playing && dragging == null,
+            positionNow = events::positionNow,
         )
     } else {
         // Where the drag is, read when it ends. A tap, and TalkBack's adjust,

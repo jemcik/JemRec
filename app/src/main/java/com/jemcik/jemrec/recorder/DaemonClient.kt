@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.recorder
 
+import com.jemcik.jemrec.audio.AudioStream
 import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
@@ -10,6 +11,7 @@ import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.hex
+import com.jemcik.jemrec.recordings.QualitySetting
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -86,6 +88,9 @@ object DaemonClient {
     /** Exact call tracking on or off (CallTracking): the daemon allows or
      *  withdraws MANAGE_ONGOING_CALLS for this app's uid. */
     private const val COMMAND_SET_TRACKING = 'T'.code.toByte()
+    /** How many bits a second the next recording is given (QualitySetting):
+     *  a name frame, "32000". A daemon older than 1.2 hangs up on it. */
+    private const val COMMAND_SET_QUALITY = 'Z'.code.toByte()
     /** Leave out the phone call ringing or being dialled - the rules said so
      *  before it was recorded (CallTracker). 1 skips, 0 takes it back. */
     private const val COMMAND_SKIP = 'K'.code.toByte()
@@ -141,13 +146,30 @@ object DaemonClient {
      * of the jar it runs from. The version says whether we can talk to it;
      * the build says whether it is the code this APK carries.
      */
-    internal data class Answer(val version: Int, val build: String?)
+    internal data class Answer(
+        val version: Int,
+        val build: String?,
+        /** Its fetches start with the file's length (the recorder's
+         *  Wire.FETCH_LENGTH): one cut short is told from one finished. */
+        val fetchLength: Boolean = false,
+        /** Its LIST ends with how many it sent (Wire.LIST_END). */
+        val listEnd: Boolean = false,
+    )
 
     /** The build a recorder says it runs when it cannot read its own jar
      *  (Main.jarBuild). */
     internal const val UNKNOWN_BUILD = "unknown"
 
-    /** "PONG" (version 1), "PONG 2", "PONG 2 1a2b3c4d"; anything else is not an answer. */
+    /** The recorder's word for fetches that start with their length. */
+    private const val FETCH_LENGTH = "fetch-length"
+
+    /** And for a LIST that ends with its count. */
+    private const val LIST_END_WORD = "list-end"
+
+    /** "PONG" (version 1), "PONG 2", "PONG 2 1a2b3c4d", "PONG 2 1a2b3c4d
+     *  fetch-length list-end" - what the recorder does besides, by word,
+     *  words not known passed over; a line not starting "PONG" is not an
+     *  answer. */
     internal fun parsePong(line: String?): Answer? {
         if (line == null || !line.startsWith("PONG")) return null
         val rest = line.removePrefix("PONG")
@@ -156,6 +178,8 @@ object DaemonClient {
         return Answer(
             version = parts.getOrNull(0)?.toIntOrNull() ?: LEGACY_PROTOCOL_VERSION,
             build = parts.getOrNull(1),
+            fetchLength = FETCH_LENGTH in parts.drop(2),
+            listEnd = LIST_END_WORD in parts.drop(2),
         )
     }
 
@@ -165,7 +189,7 @@ object DaemonClient {
         try {
             open(context, COMMAND_PING, connectMs = PING_CONNECT_MS, readMs = PING_READ_MS).use { socket ->
                 parsePong(socket.getInputStream().bufferedReader().readLine())
-            }
+            }?.also { lastAnswer = it }
         } catch (_: Exception) {
             null
         }
@@ -286,6 +310,7 @@ object DaemonClient {
         sendMode(context)
         setVoipApps(context)
         setTracking(context)
+        setQuality(context)
         syncGreeting(context)
         setAnswering(context)
         // Keep JemRec paired, chosen while no recorder answered: setup asks
@@ -586,6 +611,22 @@ object DaemonClient {
         else -> null
     }
 
+    /**
+     * Tell the daemon the rate to record the next call at (QualitySetting).
+     * Best-effort, like the mode: one too old to know the command hangs up,
+     * records at 128 kbps as it always did, and is replaced at the next revive
+     * because its build no longer matches this app's.
+     */
+    suspend fun setQuality(context: Context): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            open(context, COMMAND_SET_QUALITY, nameFrame(QualitySetting.wire(context)), readMs = 1_500).use { socket ->
+                val reply = socket.getInputStream().bufferedReader().readLine()
+                Log.i(TAG, "quality: daemon says $reply")
+                reply?.startsWith("QUALITY ") == true
+            }
+        }.getOrDefault(false)
+    }
+
     /** Ask the daemon not to record the phone call starting now. Whether it
      *  understood: an older one hangs up, and the saver deletes it after. */
     suspend fun skipCall(context: Context, skip: Boolean): Boolean = withContext(Dispatchers.IO) {
@@ -711,8 +752,16 @@ object DaemonClient {
      * offline: the OS can throttle this app to a crawl and the only cost is a
      * slower copy, never lost audio, because the audio is already on disk.
      */
-    suspend fun fetch(context: Context, name: String, timeoutMs: Int = 3_000): Socket = handedOver {
-        open(context, COMMAND_FETCH, nameFrame(name), connectMs = timeoutMs, readMs = FETCH_READ_MS)
+    suspend fun fetch(context: Context, name: String, timeoutMs: Int = 3_000): AudioStream.Fetched {
+        // Asked first, of the recorder answering now: one from before 1.2
+        // sends no length, and an app speaks to it for days after an update.
+        // The reply says which it is (AudioStream); the answer settles only
+        // a reply with nothing in it - null, unanswered, reads it as cut off.
+        val lengthFirst = withContext(Dispatchers.IO) { probe(context)?.fetchLength }
+        val socket = handedOver {
+            open(context, COMMAND_FETCH, nameFrame(name), connectMs = timeoutMs, readMs = FETCH_READ_MS)
+        }
+        return AudioStream.Fetched(socket, lengthFirst)
     }
 
     /**
@@ -738,15 +787,59 @@ object DaemonClient {
      * behind between hang-up and the fetch. Null when the daemon could not be
      * asked, which the missed-call check must not mistake for nothing pending.
      */
-    suspend fun listPendingOrNull(context: Context): List<String>? = withContext(Dispatchers.IO) {
+    suspend fun listPendingOrNull(context: Context): List<String>? = listingOrNull(context)?.names
+
+    /** The recorder's files, and whether the list is known to be whole: one
+     *  ending with its count, from a recorder that says it ends them
+     *  (Wire.LIST_END). An older recorder's, read to its end as before, may
+     *  be cut short unseen: a file missing from it is no proof the file is
+     *  gone (the reconcile's stale pass). */
+    internal data class Listing(val names: List<String>, val whole: Boolean)
+
+    /** The recorder's last answer to a ping: what it does besides, without
+     *  a ping of its own before every list. Its build changes in a process
+     *  only by a revive, which pings it first. */
+    @Volatile
+    private var lastAnswer: Answer? = null
+
+    internal suspend fun listingOrNull(context: Context): Listing? = withContext(Dispatchers.IO) {
         runCatching {
+            val ends = (lastAnswer ?: probe(context))?.listEnd == true
             open(context, COMMAND_LIST).use { socket ->
-                socket.getInputStream().bufferedReader().readLines()
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
+                listingFrom(socket.getInputStream().bufferedReader().readLines(), ends)
             }
         }.getOrNull()
     }
+
+    /**
+     * What a LIST reply holds: whole when it ends with how many it sent
+     * (Checks.listEnd, "end N"). Read to its end before, a reply cut off -
+     * the recorder ended mid-way, an unplug - or one with nothing it could
+     * list was "these are all": the reconcile took a file missing from it as
+     * gone, and the save it finished let the next collection delete the
+     * recorder's only copy of a lost part (review round 10). From a recorder
+     * that says it ends them ([ends]: list-end in its pong), a reply without
+     * its end is none; from an older one, or one whose pong was not had - a
+     * ping timed out as a recorder came up - it is read to its end as
+     * before, not known whole, and only names in the recorder's form are
+     * names: a 1.2 reply read so had "end 1" saved as a recording (review
+     * rounds 12 and 13). Pure.
+     */
+    internal fun listingFrom(lines: List<String>, ends: Boolean = true): Listing? {
+        val read = lines.map { it.trim() }.filter { it.isNotEmpty() }
+        val end = read.lastOrNull()?.takeIf { it.startsWith(LIST_END) }
+        if (end != null && end.removePrefix(LIST_END).toIntOrNull() == read.size - 1) {
+            return Listing(read.dropLast(1), whole = true)
+        }
+        if (ends) return null
+        // Only names in the recorder's form, as every recorder's LIST has
+        // sent: a reply cut inside its end ("en") was a name too (review
+        // round 13).
+        return Listing(read.filter { it.startsWith("jemrec_rec_") && it.endsWith(".dat") }, whole = false)
+    }
+
+    /** What the recorder's last line of a whole LIST reply starts with. */
+    private const val LIST_END = "end "
 
     /** Delete a recording from the daemon's scratch area once it is saved. */
     suspend fun deleteRecording(context: Context, name: String): Boolean = withContext(Dispatchers.IO) {

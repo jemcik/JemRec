@@ -22,11 +22,14 @@ import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.jemcik.jemrec.DeepLink
+import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.R
+import com.jemcik.jemrec.playback.BothEarsSetting
 import com.jemcik.jemrec.playback.FocusHolder
 import com.jemcik.jemrec.playback.PlaybackRules
 import com.jemcik.jemrec.playback.RecordingPlayer
 import com.jemcik.jemrec.playback.SessionPlayer
+import com.jemcik.jemrec.playback.SoundPosition
 
 /**
  * Plays a recording with the screen off and the app out of sight, under the
@@ -64,6 +67,10 @@ class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private var player: SessionPlayer? = null
 
+    /** Stops the watch on Settings' "Both sides in both ears", which moves
+     *  what plays at once (SessionPlayer.bothEarsChanged). */
+    private var stopWatchingBothEars: () -> Unit = {}
+
     /** What system_server sends: the screen going off and coming on, and
      *  headphones coming out. */
     private val events = object : BroadcastReceiver() {
@@ -99,10 +106,12 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         running = true
         val focus = AndroidAudioFocus(this)
-        val player = SessionPlayer(mainLooper, RecordingPlayer(this), focus)
+        val player = SessionPlayer(mainLooper, RecordingPlayer(this), focus, bothEars = { BothEarsSetting.of(this) })
+        stopWatchingBothEars = Prefs.watch(this, BothEarsSetting.KEY) { this.player?.bothEarsChanged() }
         focus.listener = player::onFocusChange
         player.locked = keyguard().isKeyguardLocked
         this.player = player
+        SoundPosition.source = player::positionOf
         session = MediaSession.Builder(this, player)
             .setSessionActivity(
                 PendingIntent.getActivity(
@@ -141,6 +150,8 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        stopWatchingBothEars()
+        SoundPosition.source = null
         runCatching { unregisterReceiver(events) }
         runCatching { unregisterReceiver(unlocked) }
         session?.release()
@@ -155,6 +166,17 @@ class PlaybackService : MediaSessionService() {
 
     private inner class Gate : MediaSession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            // Media3's notification controller is JemRec's own, and what it is
+            // given is what the platform session - the system's controls -
+            // offers (Media3, "Use the media notification controller"): the
+            // transport alone, as for any trusted controller. Given everything
+            // as JemRec's own, the platform session advertised choosing what
+            // plays, which every system controller was then refused.
+            if (session.isMediaNotificationController(controller)) {
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailablePlayerCommands(SessionPlayer.TRANSPORT)
+                    .build()
+            }
             val own = controller.packageName == packageName && controller.uid == Process.myUid()
             return when (PlaybackRules.access(own, controller.isTrusted)) {
                 PlaybackRules.Access.ALL -> MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()

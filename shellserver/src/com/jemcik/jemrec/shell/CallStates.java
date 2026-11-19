@@ -17,10 +17,12 @@ package com.jemcik.jemrec.shell;
  * and then "idle" arriving while the call was still up, followed immediately
  * by the encoder's ECONNRESET. The call was not over; the state said it was.
  *
- * So an idle before any off-hook is ignored outright - that one is just the
- * current state being handed over at registration, which used to fire a
- * CALL_ENDED at every daemon start. And a real idle is confirmed against the
- * AUDIO MODE rather than the call state - see {@link #endCheck}.
+ * So an idle before any off-hook ends nothing - that one is just the current
+ * state being handed over at registration, which used to fire a CALL_ENDED
+ * at every daemon start (as the first state, with a phone call in Telecom
+ * and the audio in a call, it is a call on the other SIM, joined: idle()).
+ * And a real idle is confirmed against the AUDIO MODE rather than the call
+ * state - see {@link #endCheck}.
  *
  * NOT EVERY CALL THE STATE REPORTS IS A PHONE CALL.
  *
@@ -40,8 +42,14 @@ final class CallStates {
 
     /** What the call states do to the world. */
     interface Effects {
-        /** A call went off-hook: record it (or ask), as [incoming] or not. */
-        void callStarted(boolean incoming);
+        /** A call went off-hook: record it (or ask), as [incoming] or not.
+         *  [joined]: it was up already when this recorder began to watch -
+         *  its first state was off-hook, a ring over a call already up (call
+         *  waiting), or an idle with a phone call in Telecom and the audio in
+         *  a call (the other SIM) - so which way it went is not known (no
+         *  ring of its own was there to see), and the recording starts
+         *  mid-call. */
+        void callStarted(boolean incoming, boolean joined);
 
         /** The call is over. */
         void callEnded();
@@ -75,6 +83,17 @@ final class CallStates {
     private final Effects effects;
     /** The call starting now rang first: it is incoming. */
     private boolean sawRinging;
+    /** Any state told yet. Android tells the default SIM's state as the
+     *  watch registers (TelephonyRegistry's notifyNow, per phoneId):
+     *  off-hook first is a call this recorder joined - one started again
+     *  mid-call (RecorderWatch's revive, review round 10); a call on the
+     *  other SIM is read from Telecom and the audio mode instead (idle). */
+    private boolean told;
+    /** The first state told was a ring over a call already up - call
+     *  waiting (CALL_STATE_RINGING is "ringing or waiting", TelephonyManager):
+     *  the next off-hook is still the call this recorder joined, its way
+     *  unknown (review round 11). */
+    private boolean joinedPending;
     private boolean inCall;
     private boolean endCheckPending;
     /** Another app's call through Telecom rang, and has not gone off-hook. */
@@ -146,18 +165,54 @@ final class CallStates {
     }
 
     void ringing() {
+        // Telecom must answer, as for idle(): one that cannot be asked takes
+        // the ring for a call of its own, as before round 11 (review round
+        // 12). It counts the ringing call itself (isInManagedCall: dialing,
+        // ringing, active or holding), so the audio mode is what says a call
+        // was up already.
+        if (!told && effects.audioInCall() && Boolean.TRUE.equals(effects.phoneCallInTelecom())) {
+            joinedPending = true;
+        }
+        told = true;
         sawRinging = true;
         effects.log("callwatch: ringing");
     }
 
     void offHook() {
         cancelEndCheck();
+        boolean joined = !told || joinedPending;
+        told = true;
+        joinedPending = false;
         inCall = true;
-        effects.log("callwatch: off-hook (" + (sawRinging ? "incoming" : "outgoing") + ")");
-        effects.callStarted(sawRinging);
+        if (joined) {
+            // Whole, as the release check waits for it (LogLinesTest).
+            effects.log("callwatch: off-hook (joined mid-call)");
+        } else {
+            effects.log("callwatch: off-hook (" + (sawRinging ? "incoming" : "outgoing") + ")");
+        }
+        effects.callStarted(sawRinging, joined);
     }
 
     void idle() {
+        // Idle as the first state told, with a phone call in Telecom and the
+        // audio in a call: a call on the other SIM - the state told at
+        // registration is the default SIM's own (AOSP TelephonyRegistry,
+        // notifyNow per phoneId), and Telecom's for the other is stored
+        // nowhere a new listener is told. Joined, or the rest of that call
+        // went unrecorded while the watch said it recorded (review round 11;
+        // read from AOSP, not produced - no dual-SIM phone measured).
+        if (!told && !inCall && effects.audioInCall() && Boolean.TRUE.equals(effects.phoneCallInTelecom())) {
+            told = true;
+            inCall = true;
+            effects.log("callwatch: off-hook (joined mid-call)");
+            effects.callStarted(false, true);
+            return;
+        }
+        told = true;
+        // The call joined at a ring is over, and the ring with it: the next
+        // off-hook is a call of its own. Kept, it made a call hours later
+        // "joined" (review round 12).
+        joinedPending = false;
         // Nothing is up, an app's call included: its ring and its way go.
         appRang = false;
         appCallIncoming = null;
@@ -237,6 +292,16 @@ final class CallStates {
      * left in Telecom stands in for that idle, confirmed as any idle is.
      */
     void audioModeChanged() {
+        // The call joined at a ring hung up while the ring goes on - the
+        // state stays ringing, so no idle says it. AOSP's
+        // CallAudioModeStateMachine leaves the call's mode for the ring's
+        // (RingingFocusState, MODE_RINGTONE) with no call left active: the
+        // ring is a call of its own, and its answer is not the joined call
+        // (review round 12; read from AOSP, not produced).
+        if (joinedPending && !inCall && !effects.audioInCall()) {
+            joinedPending = false;
+            effects.log("callwatch: the call up at the ring is over; the ringing call is one of its own");
+        }
         if (inCall && !endCheckPending && Boolean.FALSE.equals(effects.phoneCallInTelecom())) {
             effects.log("callwatch: no phone call left in Telecom, though the state is still off-hook");
             idle();

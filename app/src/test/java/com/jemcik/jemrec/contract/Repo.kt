@@ -29,6 +29,13 @@ internal object Repo {
     /** The app's own code, as a release has it. */
     val app: String by lazy { tree("app/src/main/java") }
 
+    /** The same, file by file - (its path under the tree, its code without
+     *  comments) - for a test that must tie a call to where its arguments
+     *  were made (ProblemButtonsTest). */
+    fun appFiles(): List<Pair<String, String>> = file("app/src/main/java").walk()
+        .filter { it.extension == "kt" }.sortedBy { it.path }
+        .map { it.name to code(it.readText(), kotlin = true) }.toList()
+
     /** The recorder's code (shellserver/src), scrcpy's included. */
     val recorder: String by lazy { tree("shellserver/src") }
 

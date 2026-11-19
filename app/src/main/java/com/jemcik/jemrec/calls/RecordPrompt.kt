@@ -29,9 +29,10 @@ import java.security.SecureRandom
  * "display over other apps", would allow it - that is exactly the permission
  * tapjacking needs, it is alarming to grant, and this app already decided
  * against it once when the pairing overlay turned out to be blocked over
- * Settings. A full-screen intent is gated behind USE_FULL_SCREEN_INTENT, which
- * from Android 14 is granted automatically only to calling and alarm apps, and
- * even when granted it opens full screen only while the device is locked.
+ * Settings. A full-screen intent opens a window while the phone is asleep or
+ * its lock screen is in front, and over a locked call's screen only where no
+ * heads-up can show - in the calls measured, the call's own screen in front,
+ * it came as a heads-up (RecordPromptActivity says how).
  *
  * A high-importance notification needs none of that. It arrives as a banner
  * over the dialer with the buttons on it, and if the banner is missed it is
@@ -44,7 +45,7 @@ import java.security.SecureRandom
 object RecordPrompt {
 
     private const val TAG = "JemRec"
-    private const val CHANNEL_ID = "jemrec.ask.v2"
+    const val CHANNEL_ID = "jemrec.ask.v2"
     private const val LEGACY_CHANNEL_ID = "jemrec.ask"
     private const val NOTIFICATION_ID = 3
     private const val KEY_TICKET = "prompt_ticket"
@@ -57,8 +58,10 @@ object RecordPrompt {
         app?.let { "${VoipApps.byPackage(it)?.label ?: "Messenger"} call in progress." }
             ?: if (incoming) "Incoming call in progress." else "Outgoing call in progress."
 
-    fun show(context: Context, incoming: Boolean, app: String? = null) {
-        val ticket = mintTicket(context)
+    /** Its channel, made at the app's start too (JemRecApp), so it is there
+     *  in Android's settings before the first call asks - to be found, and
+     *  checked (NotificationHealth). */
+    fun ensureChannel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         runCatching { manager.deleteNotificationChannel(LEGACY_CHANNEL_ID) }
         manager.createNotificationChannel(
@@ -80,18 +83,26 @@ object RecordPrompt {
                 description = "Asked at the start of a call when automatic recording is off"
             }
         )
+    }
 
+    fun show(context: Context, incoming: Boolean, app: String? = null) {
+        val ticket = mintTicket(context)
+        ensureChannel(context)
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setContentTitle("Record this call?")
             .setContentText(callText(incoming, app))
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setCategory(Notification.CATEGORY_EVENT)
-            // The banner otherwise vanishes after about five seconds, which is
-            // not long enough to notice mid-conversation. There is no API for
-            // that timeout - it belongs to SystemUI - and a full-screen intent
-            // is the one supported lever: SystemUI leaves a heads-up backed by
-            // one on screen far longer. On a locked phone it opens the activity
-            // properly, which is the case with no shade to pull down.
+            // The banner otherwise vanishes after five seconds (SystemUI's
+            // heads_up_notification_decay), not long enough to notice
+            // mid-conversation. There is no API for that timeout - it belongs
+            // to SystemUI - and a full-screen intent is the one supported
+            // lever: a heads-up backed by one stays until it is answered, or,
+            // with full-screen intents turned off for JemRec, a minute
+            // (sticky_heads_up_notification_time). Measured on the Android 17
+            // emulator in a call (2026-11-18): up all 100 s watched, and gone
+            // between 57 and 60 s turned off. RecordPromptActivity: when its
+            // window opens.
             .setFullScreenIntent(fullScreen(context, incoming, ticket, app), true)
             .addAction(action(context, "Record", CallMonitorService.ACTION_RECORD_NOW, incoming, ticket))
             .addAction(action(context, "Not now", CallMonitorService.ACTION_DECLINE, incoming, ticket))
@@ -102,7 +113,7 @@ object RecordPrompt {
             .setAutoCancel(true)
             .build()
 
-        manager.notify(NOTIFICATION_ID, notification)
+        context.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
         Log.i(TAG, "prompt: asking whether to record this call")
     }
 

@@ -184,8 +184,8 @@ final class CallWatch extends TelephonyCallback
         this.audio = audio;
         this.states = new CallStates(new CallStates.Effects() {
             @Override
-            public void callStarted(boolean incoming) {
-                Calls.onCallStart(incoming);
+            public void callStarted(boolean incoming, boolean joined) {
+                Calls.onCallStart(incoming, joined);
             }
 
             @Override
@@ -242,8 +242,9 @@ final class CallWatch extends TelephonyCallback
                 }
             });
             // The listener tells changes only (AOSP's registerModeDispatcher
-            // sends none on registering), and a call ringing silently - on
-            // vibrate, under Do Not Disturb - makes none before its answer:
+            // sends none on registering), and a call ringing silently makes
+            // none - only a ring that sounds, or one Do Not Disturb lets
+            // through with a Bluetooth headset connected, sets a mode:
             // the machine would have no word on the first call, and would
             // start its greeting on the mode asked for. So the mode now, which,
             // with no call moving it, is the one applied too; a change since
@@ -320,7 +321,9 @@ final class CallWatch extends TelephonyCallback
         }
         boolean up = mode == AudioManager.MODE_IN_CALL
                 || mode == AudioManager.MODE_IN_COMMUNICATION;
-        Ln.i("callwatch: idle seen, audio mode=" + mode + (up ? " (still in a call)" : " (call is over)"));
+        // Asked at an idle, at a first ring and at a change of mode: the
+        // line says only what the mode is (review round 12).
+        Ln.i("callwatch: audio mode=" + mode + (up ? " (in a call)" : " (no call)"));
         return up;
     }
 }

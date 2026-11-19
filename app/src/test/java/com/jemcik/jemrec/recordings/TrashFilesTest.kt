@@ -52,6 +52,24 @@ class TrashFilesTest {
         assertTrue(folder.listFiles()!!.isEmpty())
     }
 
+    @Test fun aRecordingThatLeavesTheListTakesItsShareCopy() {
+        // Share's .m4a of a call is a copy of the call: deleted for good, or
+        // trashed, the recording takes it along, once no app may still be
+        // reading it; another's copy stays.
+        val shares = ShareCopies.dir(app)!!.apply { mkdirs() }
+        val read = System.currentTimeMillis() - ShareCopies.IN_FLIGHT_MS - 60_000
+        val doomed = trashed("20261020_101010_in.ogg")
+        val copy = ShareCopies.of(shares, doomed.name).apply { writeText("aac"); setLastModified(read) }
+        val other = ShareCopies.of(shares, "20261021_111111_out.ogg").apply { writeText("aac"); setLastModified(read) }
+        Trash.deleteForGood(app, listOf(doomed))
+        assertFalse(copy.exists())
+        assertTrue(other.exists())
+
+        val file = File(folder, "20261021_111111_out.ogg").apply { writeText("not audio") }
+        assertEquals(DeleteResult.Deleted, Trash.trash(app, Uri.fromFile(file), file.absolutePath, file.name))
+        assertFalse(other.exists())
+    }
+
     @Test fun oneAlreadyGoneCountsAsDeleted() {
         val gone = trashed("20261020_101010_in.ogg").also { File(it.filePath!!).delete() }
         assertEquals(1, Trash.deleteForGood(app, listOf(gone)).deleted)

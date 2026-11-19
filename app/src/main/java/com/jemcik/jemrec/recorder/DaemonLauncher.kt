@@ -9,6 +9,7 @@ import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.VoipApps
 import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.hex
+import com.jemcik.jemrec.recordings.QualitySetting
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -132,6 +133,17 @@ object DaemonLauncher {
     /** Our daemon's answer to an authenticated ping, or null if it is not answering. */
     internal suspend fun answer(context: Context): DaemonClient.Answer? = withContext(Dispatchers.IO) { DaemonClient.probe(context) }
 
+    /** When a recorder was last started here (System.currentTimeMillis),
+     *  0 for none since the process began. One is started only when none
+     *  answers, or once an out-of-date one has quit (retire: never with a
+     *  call, recording or fetch under way) or a wedged one was killed - so
+     *  the recorder that said a call's start before then is gone, though no
+     *  look of the call's watch may have found it: another path - the Wi-Fi
+     *  revive, the heartbeat, the app opened - can start one first, between
+     *  the watch's looks (CallMonitorService.cutSince; review rounds 30, 31). */
+    @Volatile
+    internal var launchedAtMs = 0L
+
     @Volatile
     private var bundled: String? = null
 
@@ -217,6 +229,27 @@ object DaemonLauncher {
     internal fun callInProgress(context: Context): Boolean {
         val audio = context.getSystemService(AudioManager::class.java) ?: return true
         return inCall(audio.mode)
+    }
+
+    /**
+     * Whether a call is up: the audio in a call's mode, a phone call's or an
+     * app's (MODE_IN_CALL, MODE_IN_COMMUNICATION) - what the recorder ends a
+     * recording by (CallWatch.audioInCall). For the reconcile and the call's
+     * watch with no recorder to say the end: not a ringtone's or screening's
+     * mode, which another app can leave set with nothing playing
+     * (AudioService's SetModeDeathHandler.isActive) - held there, they
+     * waited for ever (review round 12; read from AOSP, not produced). What
+     * is posted to be heard waits for any mode but normal ([callInProgress]):
+     * Android mutes every notification while telephony is not idle, a ring
+     * too (AOSP NotificationAttentionHelper.disableNotificationEffects), so
+     * one posted at a ring was never heard (review round 13).
+     */
+    internal fun callUp(mode: Int): Boolean =
+        mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+
+    internal fun callUp(context: Context): Boolean {
+        val audio = context.getSystemService(AudioManager::class.java) ?: return true
+        return callUp(audio.mode)
     }
 
     /** How asking an out-of-date daemon to make way turned out. */
@@ -439,12 +472,14 @@ object DaemonLauncher {
             // already destroyed the one piece of evidence that mattered, once.
             // One generation back is enough to read a death; two would just be
             // clutter in /data/local/tmp.
+            launchedAtMs = System.currentTimeMillis()
             exec(
                 "mv -f $LOG_PATH $LOG_PATH.1 2>/dev/null; " +
                     "JEMREC_TOKEN=${DaemonClient.token(context)} JEMREC_MODE=${DaemonClient.currentMode(context)} " +
                     "JEMREC_VOIP=${VoipApps.wire(context)} " +
                     "JEMREC_TRACK=${if (CallTracking.enabled(context)) 1 else 0} " +
                     "JEMREC_ANSWER=${AnsweringMachine.wire(context)} " +
+                    "JEMREC_QUALITY=${QualitySetting.wire(context)} " +
                     "CLASSPATH=$DEVICE_PATH setsid nohup " +
                     "app_process / $MAIN_CLASS $PORT < /dev/null > $LOG_PATH 2>&1 &"
             )

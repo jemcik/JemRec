@@ -24,7 +24,7 @@ class LogLinesTest {
 
     @Test
     fun everyLineTheChecksMatchIsStillWritten() {
-        val missing = matched().filter { it !in Repo.sources && it !in BUILT }
+        val missing = matched().filter { it !in Repo.sources && it !in BUILT && it !in ANDROIDS }
         assertTrue(
             "The emulator checks match text no source writes as it is, and BUILT does not say how it is built:\n" +
                 missing.joinToString("\n"),
@@ -36,6 +36,12 @@ class LogLinesTest {
     fun everyPieceABuiltLineIsMadeOfIsStillInTheSources() {
         val missing = BUILT.flatMap { (line, pieces) -> pieces.filter { it !in Repo.sources }.map { "$line <- $it" } }
         assertTrue("A built line lost a piece:\n" + missing.joinToString("\n"), missing.isEmpty())
+    }
+
+    @Test
+    fun adjacentLiteralsAreOneString() {
+        val twoLines = "r\"monitor: (out\"\n        r\"|back)\""
+        assertEquals("monitor: (out|back)", joined(twoLines))
     }
 
     @Test
@@ -79,9 +85,17 @@ class LogLinesTest {
 
         /** What the checks match against that the app or the recorder wrote:
          *  logcat, the revive log, the recorder's log, the call report, the
-         *  debug receiver's answers. The rest (`sh(...)` of dumpsys,
-         *  uiautomator dumps, content queries) is Android's own text. */
-        const val OURS = """(?:log\(\)|revive_since\(|revive_log\(|sh\(daemon_log\)|""" +
+         *  debug receiver's answers, and the app's own notifications as
+         *  `dumpsys notification` shows them (review rounds 25, 26), and any
+         *  variable a `diag(...)` answer is kept in (matched(); round 27).
+         *  Not read: the app's preferences file and a recording's tags as the
+         *  checks read them (keys and tags in their own XML and Ogg framing),
+         *  the app's own text in uiautomator dumps, mixed with Android's, nor
+         *  `ls` listings of the recorder's file names (`"jemrec_rec_" not in
+         *  sh("ls ...")`) - a rename there shows at the emulator run. The rest (other `sh(...)`
+         *  of dumpsys, content queries) is Android's own text. */
+        const val OURS = """(?:log\(\)|notes\b(?:\(\))?|sh\("dumpsys notification[^"]*"\)|""" +
+            """revive_since\(|revive_log\(|sh\(daemon_log\)|capture_log\(\)|""" +
             """sh\("cat /data/local/tmp/jemrec-capture|(?:log_text|text|since|seen|said|report|after|line|l)\b)"""
 
         /** The literal text of every match on our own lines: each literal run
@@ -89,16 +103,37 @@ class LogLinesTest {
          *  Shorter than six characters is too little to say anything. */
         fun matched(): List<String> {
             val checks = Repo.text("tools/emulator_checks.py")
+            // And whatever a check keeps a debug receiver's answer in: `held
+            // = diag(...)` read as `"held at" in held` (review round 27).
+            val answers = Regex("""(\w+)\s*=\s*diag\(""").findAll(checks).map { it.groupValues[1] }.toSet()
+            val ours = """(?:$OURS|diag\(|(?:${answers.joinToString("|")})\b)"""
             val regexes = (
-                Regex("""wait_log\(\s*$STR""").findAll(checks) +
-                    Regex("""re\.(?:search|findall|match|finditer)\(\s*$STR\s*,\s*$OURS""").findAll(checks)
-                ).flatMap { literalRuns(it.text()) }
-            val substrings = Regex("""$STR\s+(?:not\s+)?in\s+$OURS""").findAll(checks)
+                Regex("""wait_log\(\s*($LITERALS)""").findAll(checks) +
+                    // count() and wait_more() read log() (review round 25).
+                    Regex("""(?<![\w.])(?:count|wait_more)\(\s*($LITERALS)""").findAll(checks) +
+                    Regex("""re\.(?:search|findall|match|finditer)\(\s*($LITERALS)\s*,\s*$ours""").findAll(checks)
+                ).flatMap { literalRuns(joined(it.groupValues[1])) }
+            val substrings = Regex("""$STR\s+(?:not\s+)?in\s+$ours""").findAll(checks)
                 .map { it.text().substringBefore('{') }
             return (regexes + substrings).map { it.trim() }.filter { it.length >= 6 }.distinct().toList()
         }
 
         fun MatchResult.text() = groupValues[1].ifEmpty { groupValues[2] }
+
+        /** Python's adjacent literals, one string: a pattern split over two
+         *  lines was checked by its first piece only (review round 24). */
+        const val LITERALS = """$STR(?:\s*$STR)*"""
+
+        /** Android's own words in what [OURS] reads: the notification dump
+         *  frames the app's text in its own record format. */
+        val ANDROIDS = setOf(
+            "NotificationRecord(",
+            // The check's own contact, made by the check (add_contact).
+            "TestKept",
+        )
+
+        /** The text of [LITERALS]' pieces, joined as Python joins them. */
+        fun joined(literals: String): String = Regex(STR).findAll(literals).joinToString("") { it.text() }
 
         /**
          * The runs of text a regex matches literally, split wherever it
@@ -196,7 +231,53 @@ class LogLinesTest {
             val keepalive = listOf("\"keepalive: \${if (forWifi) \"Wi-Fi run\" else \"run\"} (attempt \${runAttemptCount + 1})\"")
             val grant = "\"setup: grant -> \$outcome ("
             val greetingOn = "Ln.i(\"answer: the greeting on route \" + route + \" (\""
+            // The recorder's test result line, built field by field
+            // (Wire.result): what the answering machine's test check reads.
+            val result = { key: String -> listOf("\" $key=\" + $key") }
             mapOf(
+                // Our wake lock's tag, as the power dump quotes it.
+                "'jemrec:ear'" to listOf("LOCK_TAG = \"jemrec:ear\""),
+                // The service says each audio mode it hears (modeChanged).
+                "monitor: audio mode 0" to listOf("\"monitor: audio mode \$mode\""),
+                "state=done" to listOf("\"RESULT 1 state=\" + state", "AnswerTest.testState = \"done\""),
+                "wifi=0" to result("wifi"),
+                "mixer=0" to result("mixer"),
+                // The off-hook's way, the recorder's and the service's
+                // alike (succession counts the incoming one).
+                "off-hook (incoming)" to listOf(
+                    "\"callwatch: off-hook (\" + (sawRinging ? \"incoming\"",
+                    "\"monitor: off-hook (\${if (incoming) \"incoming\" else \"outgoing\"})",
+                ),
+                // The recorder's wakes to the app (Wakes): the action by its
+                // constant, the try by its count - and Android's own answer
+                // to `am start-foreground-service`, which the line carries
+                // (battery_restricted reads that it refused).
+                "wake: com.jemcik.jemrec.CALL_ENDED" to listOf(
+                    "Ln.i(\"wake: \" + action + \" (\" + recfile + \") -> exit 0\"",
+                    "ACTION_CALL_ENDED = \"com.jemcik.jemrec.CALL_ENDED\"",
+                ),
+                "on attempt 3" to listOf("\" on attempt \" + attempt", "WAKE_ATTEMPTS = 3"),
+                // And with its file's name, which early_end reads the mark in.
+                "wake: com.jemcik.jemrec.CALL_ENDED (jemrec_rec_" to listOf(
+                    "Ln.i(\"wake: \" + action + \" (\" + recfile + \") -> exit 0\"",
+                    "ACTION_CALL_ENDED = \"com.jemcik.jemrec.CALL_ENDED\"",
+                    "REC_PREFIX = \"jemrec_rec_\"",
+                ),
+                "no service started" to listOf("\" on attempt \" + attempt + \": \" + said"),
+                // The quality (1.2): the app's line with the recorder's reply
+                // in it, and the recorder's own at its start.
+                "quality: daemon says QUALITY" to
+                    listOf("\"quality: daemon says \$reply\"", "\"QUALITY \" + bps"),
+                // The recorder's own word on exact call tracking, at its start
+                // and at the app's 'T' (Tracking.applyTracking).
+                "tracking: off" to listOf(
+                    "Ln.i(\"tracking: \" + (trackingOn ?",
+                    ": \"off\"));",
+                ),
+                "recording: quality 128 kbps" to listOf(
+                    "Ln.i(\"recording: quality \" + Quality.words(Quality.bitRate))",
+                    "(bps / 1000) + \" kbps\"",
+                ),
                 "answering machine - not answering: whose calls to keep" to
                     listOf(machineSays, "Decision.No(\"whose calls to keep leaves this caller out\")"),
                 "not answering: paused after an emergency call" to

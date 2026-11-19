@@ -8,10 +8,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -78,7 +80,17 @@ internal fun SelectableAvatar(
                 cameraDistance = 12f * density
             }
             .clip(CircleShape)
-            .clickable(onClick = onClick),
+            // A control of its own, picking the row: a checkbox, checked when
+            // the row is picked, whether or not it has a photo or a name in it
+            // to read (until 1.2 a photo's, or an unknown number's, said
+            // nothing at all). A checkbox has two states (Compose's
+            // Role.Checkbox); said as one with none, a picked photo offered
+            // "Select" and deselected (review, 2026-11-18).
+            .toggleable(value = selected, role = Role.Checkbox, onValueChange = { onClick() })
+            // And named: what it shows - a photo, initials, a person - says
+            // nothing to a screen reader, which read "Not checked, checkbox"
+            // alone (Android's "Label elements"; review, 2026-11-18).
+            .semantics { contentDescription = caller ?: "Unknown caller" },
         contentAlignment = Alignment.Center,
     ) {
         if (rotation <= 90f) {
@@ -94,7 +106,8 @@ internal fun SelectableAvatar(
             ) {
                 Icon(
                     Icons.Filled.Check,
-                    contentDescription = "Selected",
+                    // Said by the checkbox's state.
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(20.dp),
                 )

@@ -121,7 +121,9 @@ class MainViewModelRecorderTest {
         // The Wi-Fi watch too, which opening the app (MainActivity) does not arm.
         assertEquals(setOf(PERIODIC, USB_WATCH, NOW, wifiWatch), armed())
         // The mode and the rest of pushMode, first thing, recorder up or not.
-        assertEquals(listOf("E", "V", "T", "GQ", "N"), recorder!!.heard.map { it.key }.take(5))
+        assertEquals(listOf("E", "V", "T", "Z", "GQ", "N"), recorder!!.heard.map { it.key }.take(6))
+        // The quality as its rate: Standard's 32 kbps.
+        assertEquals("32000", String(recorder!!.heard.first { it.key == "Z" }.payload))
     }
 
     @Test fun theSetupCheckWithJemRecOffArmsNothingAndStillTellsTheRecorder() {
@@ -301,7 +303,10 @@ class MainViewModelRecorderTest {
             wasBusy && !state.busy
         }
         assertFalse(seen.toString(), SetupStep.CHECKING in seen)
-        assertEquals(SetupStep.NEEDS_PERMISSIONS, state.step)
+        // The first question left: the phone is set up (TestPhone.setUp), so
+        // its notifications refused no longer put it back on setup's first
+        // step (NotificationHealth says so on home).
+        assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, state.step)
     }
 
     /** The pairing step's "why" goes once setup is ready again, and not
@@ -309,7 +314,7 @@ class MainViewModelRecorderTest {
     @Test fun thePairingLostNoteGoesOnlyWhenReady() {
         over(UiState(step = SetupStep.NEEDS_PAIRING, pairingLost = true))
         ran { vm.refreshSetup() }
-        assertEquals(SetupStep.NEEDS_PERMISSIONS, state.step)
+        assertEquals(SetupStep.NEEDS_DEBUGGING_CHOICE, state.step)
         assertTrue(state.pairingLost)
         pastTheQuestions()
         ran { vm.refreshSetup() }
@@ -358,6 +363,9 @@ class MainViewModelRecorderTest {
             UiState(step = SetupStep.READY, enabled = true, daemonRunning = true),
             UiState(step = SetupStep.READY, enabled = false, daemonRunning = false),
             UiState(step = SetupStep.NEEDS_CONNECTION, enabled = true, daemonRunning = false),
+            // Nothing read yet: daemonRunning is its default, not the
+            // recorder's word (review, 2026-11-18).
+            UiState(step = SetupStep.READY, enabled = true, daemonRunning = false, listUnread = true),
         )) {
             over(given)
             vm.onWifiAvailable()

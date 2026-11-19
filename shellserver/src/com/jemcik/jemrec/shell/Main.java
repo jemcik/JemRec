@@ -156,6 +156,8 @@ public final class Main {
             Calls.recordingMode = modeFromEnvironment(System.getenv(MODE_ENV));
             Tracking.trackingOn = "1".equals(System.getenv(TRACK_ENV));
             Answering.answerSettings = AnswerSettings.parse(System.getenv(ANSWER_ENV));
+            Quality.bitRate = Quality.from(System.getenv(QUALITY_ENV), Quality.DEFAULT_BPS);
+            Ln.i("recording: quality " + Quality.words(Quality.bitRate));
 
             final int bound = port;
             LoopbackServer.listenPort = bound;
@@ -238,6 +240,8 @@ public final class Main {
     private static final String TRACK_ENV = "JEMREC_TRACK";
 
     private static final String ANSWER_ENV = "JEMREC_ANSWER";
+
+    private static final String QUALITY_ENV = "JEMREC_QUALITY";
 
     /** The mode the app put in the environment at spawn; OFF if there is
      *  none, or it is not a mode. See CallDecisions' modes for why OFF. */

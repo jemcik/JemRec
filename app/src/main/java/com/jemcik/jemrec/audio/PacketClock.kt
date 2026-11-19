@@ -37,9 +37,17 @@ import com.jemcik.jemrec.calls.CallTracking
  * The stamps are on the monotonic clock and the calls on the wall clock;
  * [offset] is the one minus the other, as CallTracker measured it during the
  * call (Tracked.clockOffset). Without it - a call tracked by an older version
- * - every packet is counted, as before.
+ * - every packet is counted, as before; or, [fromFirst], the stamps are read
+ * from the first packet's: what a message's or a takeover's cut is reckoned
+ * in, as the recorder measured where the message starts from the capture's
+ * start. Counted, a gap in the capture before that start put the cut that
+ * much later - 1.1 s, an audio server's restart on the emulators - and the
+ * caller's first words went (review, 2026-11-18).
  */
-internal class PacketClock(private val start: Long, private val offset: Long?) {
+internal class PacketClock(private val start: Long, private val offset: Long?, private val fromFirst: Boolean = false) {
+
+    /** The first packet's stamp, where [fromFirst] reads from. */
+    private var firstPtsUs = -1L
 
     private var last = -1L
 
@@ -95,10 +103,18 @@ internal class PacketClock(private val start: Long, private val offset: Long?) {
         return slot
     }
 
-    /** A stamp in ms from the start; null without the offset, and for one
-     *  that cannot be right - before the start, or half a day after it. */
+    /** A stamp in ms from the start - or from the first packet, [fromFirst]
+     *  - null without either, and for one that cannot be right: before the
+     *  start, or half a day after it. */
     private fun stampedMs(ptsUs: Long): Long? {
-        val ms = ptsUs / 1000 + (offset ?: return null) - start
+        val ms = when {
+            offset != null -> ptsUs / 1000 + offset - start
+            fromFirst -> {
+                if (firstPtsUs < 0) firstPtsUs = ptsUs
+                (ptsUs - firstPtsUs) / 1000
+            }
+            else -> return null
+        }
         return ms.takeIf { it in 0..MAX_MS }
     }
 

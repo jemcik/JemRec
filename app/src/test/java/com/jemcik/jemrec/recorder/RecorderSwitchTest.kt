@@ -63,7 +63,16 @@ class RecorderSwitchTest {
      *  the next test. */
     @After fun closeWorkManager() {
         runBlocking { RecorderSwitch.turnsDone() }
+        service?.destroy()
         work.close()
+    }
+
+    private var service: org.robolectric.android.controller.ServiceController<CallMonitorService>? = null
+
+    /** The call service up, as in a call: Off stops only one that runs
+     *  (CallMonitorService.stop). */
+    private fun aCallServiceRunning() {
+        service = org.robolectric.Robolectric.buildService(CallMonitorService::class.java).create()
     }
 
     /**
@@ -174,6 +183,7 @@ class RecorderSwitchTest {
 
     @Test fun offStopsTheCallServiceAndLeavesTheRecorderAndItsWatches() = runBlocking {
         TestPhone.setUp(context)
+        aCallServiceRunning()
         RecorderKeepAlive.schedule(context)
         RecorderKeepAlive.kickNow(context)
         NetworkRevive.arm(context)
@@ -197,6 +207,7 @@ class RecorderSwitchTest {
 
     @Test fun offWithAllDebuggingStopsTheServiceThenSwitchesThemOff() = runBlocking {
         TestPhone.setUp(context)
+        aCallServiceRunning()
         DebugSwitchesOff.setMode(context, OffMode.ALL_DEBUGGING_OFF)
         val writes = TestPhone.Writes(context)
 
@@ -237,7 +248,16 @@ class RecorderSwitchTest {
         writes.close()
     }
 
+    @Test fun offWithNoCallServiceRunningStartsNone() = runBlocking {
+        TestPhone.setUp(context)
+        RecorderSwitch.set(context, false)
+        RecorderSwitch.turn(context, false)
+        // A start with STOP made one not running only to stop it.
+        assertEquals(emptyList<Intent>(), stopsSent())
+    }
+
     @Test fun turnInBackgroundSavesTheSwitchBeforeItReturns() = runBlocking {
+        aCallServiceRunning()
         RecorderSwitch.turnInBackground(context, false)
         // Saved at once, so a second tap reads it and turns the other way.
         assertFalse(RecorderSwitch.isOn(context))
