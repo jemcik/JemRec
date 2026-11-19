@@ -365,7 +365,7 @@ dependencies {
     // waits - adbd's four seconds, Allow's twenty - pass at once. The version
     // the app's own coroutines resolve to, which the UI test library already
     // brings to the tests; named here because they use it.
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
 
 kotlin {
