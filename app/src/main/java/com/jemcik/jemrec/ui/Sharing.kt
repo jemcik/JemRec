@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.ui
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.jemcik.jemrec.audio.Transcoder
@@ -16,6 +17,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * What makes the .m4a: Transcoder on a phone. A test's stand-in holds a
+ * conversion in flight for as long as it needs: the real one, given no real
+ * recording, fails at once - at times before shareUniversal has returned, as
+ * withContext carries on without suspending when its block is already done -
+ * and the test that cancels a running conversion found none running (CI,
+ * 2026-11-19).
+ */
+internal var convertToM4a: (Context, Uri, File, Boolean, () -> Boolean) -> Boolean = Transcoder::toM4a
 
 /**
  * Share: the format asked first, then the original at once or an .m4a made
@@ -63,7 +75,7 @@ internal class Sharing(
                 val out = ShareCopies.of(dir, recording.name)
                 // isActive goes false the instant the job is cancelled, which is
                 // how Cancel reaches the transcode loop.
-                if (Transcoder.toM4a(app, recording.uri, out, BothEarsSetting.of(app)) { !isActive }) out else null
+                if (convertToM4a(app, recording.uri, out, BothEarsSetting.of(app)) { !isActive }) out else null
             }
             state.update { it.copy(converting = false) }
             if (m4a == null) {

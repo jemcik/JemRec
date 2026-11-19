@@ -7,6 +7,7 @@ import android.os.Looper
 import com.google.common.util.concurrent.Futures
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.Greeting
+import com.jemcik.jemrec.audio.Transcoder
 import com.jemcik.jemrec.capture.FakeRecorder
 import com.jemcik.jemrec.playback.SoundPosition
 import com.jemcik.jemrec.recordings.Recording
@@ -15,6 +16,7 @@ import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.ui.MainViewModel
 import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.UiState
+import com.jemcik.jemrec.ui.convertToM4a
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -76,6 +78,7 @@ class PlaybackAndShareTest : ScreenTest() {
         listening?.cancel()
         Recordings.override = null
         Waveforms.override = null
+        convertToM4a = Transcoder::toM4a
         app.getSystemService(AudioManager::class.java).mode = AudioManager.MODE_NORMAL
     }
 
@@ -356,8 +359,15 @@ class PlaybackAndShareTest : ScreenTest() {
         assertTrue(send.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     }
 
-    /** The .m4a, cancelled at once: no sheet, nothing said. */
+    /** The .m4a, cancelled at once: no sheet, nothing said. The conversion
+     *  held until cancelled: the real one fails at once on this made-up
+     *  recording, at times before shareUniversal returns (convertToM4a). */
     @Test fun aConversionCancelledLeavesNothing() {
+        convertToM4a = { _, _, _, _, cancelled ->
+            val until = System.currentTimeMillis() + 10_000
+            while (!cancelled() && System.currentTimeMillis() < until) Thread.sleep(5)
+            false
+        }
         val vm = viewModel(UiState(recordings = listOf(olivia)))
         listen(vm)
         vm.share(olivia)
