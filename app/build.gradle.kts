@@ -343,7 +343,7 @@ dependencies {
     // CallTrackerTest). The inline mock maker in Mockito 5 mocks abstract and
     // final classes without extra setup. Nothing else in the tests needs a
     // framework.
-    testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.mockito:mockito-core:5.24.0")
 
     // The screen tests: Robolectric runs the real Compose UI on the JVM, and
     // Roborazzi turns what it draws into a PNG to compare. Test-only, so the
