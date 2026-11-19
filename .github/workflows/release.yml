@@ -201,7 +201,7 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/d8" \
             || { echo "::error::build-tools 36.0.0 d8 is missing"; ls "$ANDROID_HOME/build-tools"; exit 1; }
 
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       # The version is READ from gradle.properties and CHECKED against the tag,
       # not derived from the tag. F-Droid's update checker reads
