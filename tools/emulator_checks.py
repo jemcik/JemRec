@@ -270,6 +270,7 @@ Exit status: 0 if every check passed.
 import argparse
 import atexit
 import contextlib
+import datetime
 import fcntl
 import hashlib
 import os
@@ -712,6 +713,23 @@ def undelivered():
     return float(m.group(1)) if m else 0.0
 
 
+def call_audio_at(start_ms):
+    """When Telecom last put the phone in call mode at or before [start_ms]
+    (a recording's start), in ms on the wall clock: its
+    CallAudioModeStateMachine's own log in `dumpsys telecom` ("Mode
+    MODE_IN_CALL", the phone's local time). None where it is not found."""
+    offset = sh("date +%z").strip()  # the phone's zone, as its log's times are
+    if not re.fullmatch(r"[+-]\d{4}", offset):
+        return None
+    zone = datetime.timezone(datetime.timedelta(hours=int(offset[:3]), minutes=int(offset[0] + offset[3:])))
+    best = None
+    for stamp in re.findall(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+) - Mode MODE_IN_CALL", sh("dumpsys telecom")):
+        at = int(datetime.datetime.fromisoformat(stamp).replace(tzinfo=zone).timestamp() * 1000)
+        if at <= start_ms + 1000 and (best is None or at > best):
+            best = at
+    return best
+
+
 def recording_start():
     """When the recording just saved began, in ms on the wall clock: the
     daemon's own stamp in its file's name (jemrec_rec_<ms>_...); None if no
@@ -771,14 +789,26 @@ def exact(name_part):
     gone = f" + {lost:.2f} s the capture did not deliver" if lost else ""
     start = recording_start()
     late = max(0.0, (start - answered) / 1000) if start else 0.0
+    # Android's own part: no call audio can be captured before Telecom puts
+    # the phone in call mode, and on a loaded emulator that came 2.5 s after
+    # the answer - the call's off-hook to the recorder as late, and JemRec
+    # recording the moment it was told (the Android 17 AVD, 2026-11-19; on
+    # the Honor the same day, a recording began 24 ms after the answer).
+    audio = call_audio_at(start) if start else None
+    android = max(0.0, (audio - answered) / 1000) if audio else 0.0
+    own = max(0.0, late - android)
     began = f" + {late:.2f} s before the recording began" if late >= 0.05 else ""
-    assert late <= LATE_START_S, f"the recording began {late:.2f} s after the answer"
+    if android >= 0.05:
+        began += f" (Android's call audio {android:.2f} s after the answer)"
+    assert own <= LATE_START_S, (f"the recording began {own:.2f} s after the call's audio"
+                                 f" (Android's own {android:.2f} s after the answer)")
     assert abs(seconds + lost + late - talk) <= 0.15, f"{seconds:.2f} s saved{gone}{began} for {talk:.2f} s of call"
     return f"{name}: {seconds:.2f} s{gone}{began} for {talk:.2f} s answered" + (f" ({agreed})" if lost else "")
 
 
-# The most of a call that may pass before its recording begins (exact): the
-# Android 13 emulator's late off-hook came to 0.64 s at most (2026-11-13).
+# The most of a call that may pass before its recording begins (exact),
+# counted from the call's audio (call_audio_at): the Android 13 emulator's
+# late off-hook came to 0.64 s at most (2026-11-13).
 LATE_START_S = 1.0
 
 
@@ -1962,9 +1992,47 @@ def no_underrun(what):
     assert "player: underrun" not in log(), f"the audio track ran short {what}"
 
 
+def speaker_backlog():
+    """The emulator's speaker output: audio written to it and not yet played,
+    in ms - AudioFlinger's own "Threadloop write latency" for the speaker's
+    mixer thread, from the live part of `dumpsys media.audio_flinger` (before
+    its history of closed threads). None before it has played at all."""
+    live = sh("dumpsys media.audio_flinger").split("Historical")[0]
+    for block in live.split("Output thread ")[1:]:
+        if "AUDIO_DEVICE_OUT_SPEAKER" in block:
+            found = re.search(r"Threadloop write latency stats: ave=([\d.]+)", block)
+            return float(found.group(1)) if found else None
+    return None
+
+
+def fresh_audio_server():
+    """The audio server started afresh before a check that times playback
+    against the clock; the speaker backlog it had, for the check's line.
+    An emulator's speaker builds a backlog of audio written and not yet
+    played that nothing drains until the audio server restarts: on the
+    Android 13 AVD alone, 1510 ms after the 24 checks run before these, and
+    about 0.35 ms a second from ringing alone, growing in jumps when the
+    Mac's audio stalls under load (inferred). A player started behind it is
+    heard that much late, and these checks read that as JemRec's playhead
+    running ahead: background_playback, both_ears and raise_to_listen failed
+    first and passed on a fresh boot in two runs of three on 12 and 13.
+    Restarted, the same checks passed on the same boot (2026-11-19). A
+    phone's audio hardware keeps its own clock; there is no host to fall
+    behind. The recorder holds no capture between calls, so it loses
+    nothing; audio_server_restart is the check of a restart mid-call."""
+    backlog = speaker_backlog()
+    server = sh("pidof audioserver").strip()
+    assert server, "no audio server to start afresh"
+    su(f"kill -9 {server}")
+    wait_for(lambda: sh("pidof audioserver").strip() not in ("", server), 15, "the audio server back")
+    time.sleep(3)  # its outputs opened again
+    return "no speaker backlog yet" if backlog is None else f"a speaker backlog of {backlog:.0f} ms cleared"
+
+
 def background_playback():
     """Played from its row, a recording goes on in PlaybackService with the
     screen off, named for the lock screen; a call holds it back."""
+    fresh = fresh_audio_server()
     sh("logcat -c")
     dial(STRANGER_OUT, ring_s=2, talk_s=30)
     saved()
@@ -2002,7 +2070,7 @@ def background_playback():
         no_underrun("as it played, the screen off and on, and held back by a call")
     finally:
         sh(f"am force-stop {PKG}")
-    return f"{after - before} ms played in 5 s with the screen off, as \"{title}\"; held back by a call, then on"
+    return f"{fresh}; {after - before} ms played in 5 s with the screen off, as \"{title}\"; held back by a call, then on"
 
 
 def both_ears():
@@ -2012,6 +2080,7 @@ def both_ears():
     opens again with the sides apart, from where it was, and plays on; and
     back. What the ears hear is the Honor's to say (2026-11-16): this is the
     wiring."""
+    fresh = fresh_audio_server()
     sh("logcat -c")
     dial(STRANGER_OUT, ring_s=2, talk_s=30)
     saved()
@@ -2047,7 +2116,7 @@ def both_ears():
     finally:
         quietly(set_prefs, both_ears=None)
         sh(f"am force-stop {PKG}")
-    return "opened mixed; " + "; ".join(said)
+    return f"{fresh}; opened mixed; " + "; ".join(said)
 
 
 def stalled_sound():
@@ -2157,6 +2226,7 @@ def raise_to_listen():
     it too; and with Earpiece in Settings, a recording opens there. An
     emulator has no earpiece: the debug build acts as if it had one (the
     `earpiece` diag op), so what is checked is all but the sound."""
+    fresh = fresh_audio_server()
     sh("logcat -c")
     dial(STRANGER_OUT, ring_s=2, talk_s=30)
     saved()
@@ -2284,7 +2354,7 @@ def raise_to_listen():
             quietly(diag, "earpiece", "--ez", "on", "false")
         finally:
             sh(f"am force-stop {PKG}")
-    return (f"raised: voice-call audio, aimed {skipped[0]:+.0f} ms, {skipped[1]:.0f} ms ahead of the clock, "
+    return (f"{fresh}; raised: voice-call audio, aimed {skipped[0]:+.0f} ms, {skipped[1]:.0f} ms ahead of the clock, "
             f"screen covered, mode NORMAL, lock held; "
             f"lowered: the loudspeaker, aimed {skipped_down[0]:+.0f} ms, {skipped_down[1]:.0f} ms, playing on; "
             f"paused, moved and played: aimed {skipped_paused[0]:+.0f} ms, {skipped_paused[1]:.0f} ms; "
@@ -4812,6 +4882,34 @@ def uid_idle(uid):
     return record is None or re.search(r"\bidle\b", record.split(" change:")[0]) is not None
 
 
+def keepalive_retry_job(due=False):
+    """The keep-alive's retry waiting in JobScheduler: (its namespace, or None
+    before Android 14, and its job id) - WorkManager's job for
+    RecorderKeepAlive with the shortest minimum latency, two minutes at most
+    (a retry's backoff: 30 s, 60, 120), so never the periodic heartbeat's,
+    which waits most of its 15 minutes. With [due], only once JobScheduler
+    reads it ready - its backoff over: WorkManager puts off a backed-off
+    work started before its next run time ("Delaying execution ... because
+    it is being executed before schedule", WorkerWrapper), and a run forced
+    any sooner did nothing on the 16 and 17 AVDs (2026-11-19). None if there
+    is none."""
+    dump = sh(f"dumpsys jobscheduler {PKG}")
+    found = []
+    # Android 14 and later name the worker in the job's line; before, every
+    # WorkManager job is the same service, and the latency picks the retry
+    # (the USB watch has none, the heartbeat minutes): the Android 13 AVD's
+    # "JOB #u0a223/186: 40a91fa com.jemcik.jemrec/androidx.work...".
+    for m in re.finditer(r"JOB (?:([\w.]+):)?#?u\d+a\d+/(\d+): \S+ (?:#RecorderKeepAlive#|"
+                         r"com\.jemcik\.jemrec/androidx\.work\.impl\.background\.systemjob\.SystemJobService)", dump):
+        block = re.split(r"\n\s+JOB ", dump[m.end():m.end() + 3000])[0]
+        latency = re.search(r"Minimum latency: \+(?:(\d+)m)?(\d+)s(\d+)ms", block)
+        if latency and (not due or "Ready: true" in block):
+            seconds = int(latency[1] or 0) * 60 + int(latency[2]) + int(latency[3]) / 1000
+            if seconds <= 120:
+                found.append((seconds, m[1], int(m[2])))
+    return min(found)[1:] if found else None
+
+
 def wifi_back():
     """Wi-Fi coming back starts the recorder within seconds, though a kick of
     the keep-alive is waiting out a long retry. A kick that runs off Wi-Fi -
@@ -4838,7 +4936,16 @@ def wifi_back():
     2026-11-05, the second came 189 s after the first, as the app was opened.
     Any retry, not the second: a kick joins one already waiting (KEEP), and
     with one left by an earlier check the first try seen here was number 3
-    (Android 12 AVD, the same day)."""
+    (Android 12 AVD, the same day).
+
+    Since 1.2 the keep-alive's runs ask for a network, and on mobile data
+    JobScheduler may hold such a job until three are ready or for 31 minutes
+    (conn_transport_batch_threshold, conn_max_connectivity_job_batch_delay_ms;
+    JobSchedulerService.shouldForceBatchJob) - WorkManager never expedites a
+    retry: on the Android 17 AVD, 2026-11-19, the retry sat ready, every
+    constraint met, for the whole five minutes this waited, twice. So once a
+    try has failed, the retry waiting is run at once with Android's own tool
+    for testing jobs (`cmd jobscheduler run -f`, keepalive_retry_job)."""
     set_prefs(start_without_wifi=False)
     log_before = revive_log()
     try:
@@ -4856,7 +4963,21 @@ def wifi_back():
                     return int(tried[1])
             return None
 
-        failed = wait_for(failed_retry, 300, "a retry of the kick to fail off Wi-Fi", step=2)
+        def failed_try():
+            since = revive_since(log_before)
+            tried = re.search(r"keepalive: run \(attempt (\d+)\)", since)
+            return tried is not None and "recorder down" in since[tried.end():]
+
+        wait_for(failed_try, 120, "the kick to fail off Wi-Fi", step=2)
+        # Its retry: tried already by JobScheduler, or waiting there - the
+        # job queued a moment after the try that failed.
+        found = wait_for(lambda: failed_retry() or keepalive_retry_job(due=True), 150,
+                         "the kick's retry, tried or due in JobScheduler", step=2)
+        failed = found if isinstance(found, int) else None
+        if failed is None:
+            namespace, job_id = found
+            sh(f"cmd jobscheduler run -f {f'-n {namespace} ' if namespace else ''}{PKG} {job_id}")
+            failed = wait_for(failed_retry, 60, "the kick's retry, run at once, to fail off Wi-Fi", step=2)
         wifi_on(True)
         on_at = time.time()
         wait_wifi_connected()
