@@ -42,7 +42,7 @@ jobs:
       # other. F-Droid's build server is Debian trixie with default-jdk, which
       # is 21; a release built with a different major cannot be reproduced
       # there, and F-Droid would have to sign it with its own key instead.
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '21'
