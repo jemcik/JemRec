@@ -12,10 +12,10 @@ import java.util.concurrent.ConcurrentHashMap
  * Android's rule for a folder's grant, which Robolectric's resolver does not
  * keep: one can be taken only where the folder picker offered it, and Android
  * throws for any other - "No persistable permission grants found"
- * (UriGrantsManagerService.takePersistableUriPermission). Robolectric 4.17
- * takes any, so the refusal and what JemRec does with it went untested, and
- * tests that set a folder no picker gave passed by that leniency (review,
- * 2026-11-18). Every test has it (robolectric.properties); FakeFolder offers
+ * (UriGrantsManagerService.takePersistableUriPermission). Robolectric takes
+ * any - 4.17, and 4.18 still (its ShadowContentResolver, read 2026-11-19) -
+ * so the refusal and what JemRec does with it went untested, and tests that
+ * set a folder no picker gave passed by that leniency (review, 2026-11-18). Every test has it (robolectric.properties); FakeFolder offers
  * its tree, as the picker would, and a test that means a folder chosen
  * offers it first ([offer]).
  */

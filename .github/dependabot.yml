@@ -6,19 +6,55 @@
 # A Gradle one fails its build until gradle/verification-metadata.xml has the
 # new version's checksums: Dependabot does not write them (dependabot-core
 # issue 1996). docs/DEVELOPMENT.md, Dependency verification, says how.
+#
+# Monthly and grouped: its first weekly run (the 1.2 merge, 2026-11-19)
+# opened nine pull requests at once, each needing its own checksums and test
+# run.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      actions:
+        patterns:
+          - "*"
+    ignore:
+      # From v6 its caching is a proprietary component: "By upgrading to v6,
+      # you accept the Terms of Use" (gradle/actions v6.0.0's notes). Kept
+      # on v5, MIT, by the maintainer's choice (2026-11-19).
+      - dependency-name: "gradle/actions/setup-gradle"
+        versions: [">= 6"]
   - package-ecosystem: gradle
     directory: /
     schedule:
-      interval: weekly
-    # Media3's parts in one pull request: its test utilities apart from the
-    # player the app ships would test bytes that do not ship (review round 9).
+      interval: monthly
     groups:
+      # Media3's parts in one pull request: its test utilities apart from the
+      # player the app ships would test bytes that do not ship (review round 9).
       media3:
         patterns:
           - "androidx.media3:*"
+      # The Kotlin plugins move together: the Compose plugin's version is the
+      # Kotlin the app compiles with, and the jvm plugin's must be the same
+      # (build.gradle.kts). Alone, Dependabot moved only the jvm one (#112).
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+      # Test-only: what they change shows in the tests and the screenshots,
+      # not in the APK. Roborazzi's parts together (#111 moved one).
+      test-libraries:
+        patterns:
+          - "org.robolectric:*"
+          - "io.github.takahirom.roborazzi*"
+          - "junit:*"
+          - "org.mockito*"
+      # The rest of the app's libraries in one.
+      libraries:
+        patterns:
+          - "*"
+    ignore:
+      # Kept at the coroutines the app itself resolves to, so the tests run
+      # what ships (app/build.gradle.kts); it moves with them, by hand.
+      - dependency-name: "org.jetbrains.kotlinx:kotlinx-coroutines-test"
