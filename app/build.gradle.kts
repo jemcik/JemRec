@@ -289,7 +289,7 @@ dependencies {
     // (pageSizeCompat 256 before, 0 after, in `dumpsys package`).
     implementation("org.conscrypt:conscrypt-android:2.7.0")
 
-    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.material3:material3")
     // Play and Share glyphs for the recordings list. The -core set, not
     // -extended: extended is thousands of vectors for the two we use.
@@ -348,7 +348,7 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.18")
     testImplementation("io.github.takahirom.roborazzi:roborazzi:1.79.0")
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.79.0")
-    testImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
+    testImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
     // WorkManager's test driver, for the keep-alive's and the USB watch's
     // doWork and for what each trigger enqueues: an in-process WorkManager
