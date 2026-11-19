@@ -41,6 +41,23 @@ internal object OpusPackets {
         }
     }
 
+    /** The 48 kHz samples a packet plays, from its first two bytes (RFC 6716,
+     *  3.1): its frames' length by the TOC byte's configuration, times how
+     *  many it holds - one (code 0), two (codes 1 and 2), or the count in its
+     *  second byte (code 3). An Ogg Opus position is counted in these
+     *  (RFC 7845, 4). */
+    fun samples(toc: Int, second: Int): Int {
+        val frames = when (toc and 3) {
+            0 -> 1
+            1, 2 -> 2
+            else -> second and 0x3f
+        }
+        return frames * frameUnits(toc) * SAMPLES_PER_UNIT
+    }
+
+    /** 2.5 ms at 48 kHz. */
+    private const val SAMPLES_PER_UNIT = 120
+
     /** Whether a packet [size] bytes long, with this [toc] byte, is one
      *  frame with sound in it: one that can be joined. */
     fun joinable(toc: Int, size: Int): Boolean = size >= 2 && toc and 3 == 0

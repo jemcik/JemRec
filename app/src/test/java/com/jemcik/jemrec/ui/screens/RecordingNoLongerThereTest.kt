@@ -47,6 +47,24 @@ class RecordingNoLongerThereTest : ScreenTest() {
         assertEquals(0, manager.activeNotifications.size)
     }
 
+    /** A notification's link to a recording saved for Honor's Phone app
+     *  before 1.2 under a name it cannot read: the list's reading renames
+     *  it (HonorRenames), and the link still finds it, under the name it has
+     *  now - not "no longer there", its notification taken away (review,
+     *  2026-11-18). */
+    @Test fun aLinkFindsTheRecordingRenamedSince() {
+        val app = RuntimeEnvironment.getApplication()
+        FakeStorage.forgetFileProviderFolders()
+        FakeMediaStore.install(File(app.cacheDir, "media"))
+        com.jemcik.jemrec.recordings.FakeFolder.install(app, id = "primary:Sounds/CallRecord")
+        val old = "+380954388250@+380954388250_20261117155459.ogg"
+        com.jemcik.jemrec.recordings.FakeFolder.file(old)
+        val vm = viewModel()
+        vm.open(DeepLink.Link(DeepLink.Kind.SHARE, old))
+        settle(vm)
+        assertEquals("+380954388250_20261117155459.ogg", vm.state.value.shareChoice?.name)
+    }
+
     /** A message Android will not let this app move, its notification up,
      *  selected and deleted, and Android's question out. */
     private fun askedAbout(): Pair<MainViewModel, NotificationManager> {

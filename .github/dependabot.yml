@@ -1,0 +1,24 @@
+# Updates proposed as pull requests, for the maintainer to review: the
+# actions, pinned by commit (each with its tag in a comment, which Dependabot
+# reads and keeps), and the Gradle dependencies - the advisories in them
+# reach the maintainer this way rather than not at all (lint's own version
+# checks are off: they would fail a build that did not change, app/lint.xml).
+# A Gradle one fails its build until gradle/verification-metadata.xml has the
+# new version's checksums: Dependabot does not write them (dependabot-core
+# issue 1996). docs/DEVELOPMENT.md, Dependency verification, says how.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    # Media3's parts in one pull request: its test utilities apart from the
+    # player the app ships would test bytes that do not ship (review round 9).
+    groups:
+      media3:
+        patterns:
+          - "androidx.media3:*"

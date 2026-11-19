@@ -217,6 +217,26 @@ internal class RecorderAndSetup(
      * with no path out until the screen happened to be reopened.
      */
     private suspend fun recheckSetup() {
+        try {
+            checkSetup()
+        } catch (t: Throwable) {
+            // Failed before its reading, with nothing read yet: read anyway,
+            // or home stayed at Checking and the other screens blank until
+            // the next return to the app (review, 2026-11-18). The failure
+            // still goes on to be said (holdingBusy).
+            if (t !is CancellationException && state.value.listUnread) {
+                try {
+                    reading.now()
+                } catch (r: Throwable) {
+                    if (r is CancellationException) throw r
+                    Log.w("JemRec", "a reading after the setup check failed failed too", r)
+                }
+            }
+            throw t
+        }
+    }
+
+    private suspend fun checkSetup() {
         // DELIBERATELY NOT BLANKING THE STEP.
         //
         // This set CHECKING first, so every return to the app replaced the card
@@ -303,7 +323,9 @@ internal class RecorderAndSetup(
 
     private fun reviveIfDown(request: CaptureDaemon.Request) {
         val s = state.value
-        if (s.step == SetupStep.READY && s.enabled && !s.daemonRunning) reviveInBackground(request)
+        // Not before anything is read: daemonRunning is then its default,
+        // not the recorder's word (review, 2026-11-18).
+        if (s.step == SetupStep.READY && s.enabled && !s.daemonRunning && !s.listUnread) reviveInBackground(request)
     }
 
     private var pairingWatch: Job? = null
@@ -479,6 +501,9 @@ internal class RecorderAndSetup(
     fun toggleRecording(on: Boolean) {
         // The port's reading the screen shows ("Back on: anywhere"), so the
         // question and the screen agree - and no getprop on the main thread.
+        // Before anything is read the port counts as closed: the question
+        // is then asked where it might not be needed, the safe side - not
+        // left out where turning on would need Wi-Fi.
         if (!on && DebugSwitchesOff.asksBeforeOff(app) { state.value.portSet }) {
             state.update { it.copy(askingToTurnOff = true) }
             return
@@ -540,6 +565,9 @@ internal class RecorderAndSetup(
         state.update { it.copy(startWithoutWifi = on) }
         scope.launch {
             withContext(Dispatchers.IO) {
+                // The runs queued now ask for a network, or none: with the
+                // port, a revive needs none (RecorderKeepAlive.constraints).
+                runCatching { com.jemcik.jemrec.capture.RecorderKeepAlive.startWithoutWifiChanged(app) }
                 if (StartWithoutWifi.step(app) != StartWithoutWifi.PortStep.LEAVE) NetworkRevive.forgetWirelessRefused(app)
             }
             reviveForThePort()

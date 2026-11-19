@@ -67,6 +67,23 @@ final class Answering {
         }
     }
 
+    /** The recording of a call this process answered has stopped: the
+     *  machine hangs up on a message it can no longer keep. */
+    static void recordingStopped() {
+        AnswerMachine machine = answerMachine;
+        if (machine != null && machine.answeredThisCall()) {
+            machine.recordingStopped();
+        }
+    }
+
+    /** It reads again: forgotten (AnswerMachine.recordingBack). */
+    static void recordingBack() {
+        AnswerMachine machine = answerMachine;
+        if (machine != null && machine.answeredThisCall()) {
+            machine.recordingBack();
+        }
+    }
+
     /** A marker left mid-message - by this process's predecessor, dead: the
      *  microphone may still be muted. Give it back. False while a call is up
      *  and the mute is left for its end; true when nothing is left to do. */

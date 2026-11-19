@@ -24,10 +24,12 @@ against upstream and why each one exists.
 (about 85 KB). `ANDROID_PLATFORM` and `BUILD_TOOLS` are overridable but default
 to 36 and 36.0.0.
 
-`ANDROID_PLATFORM` must match the platform the **device** runs, not the app's
-`minSdk`. This code links `@hide` framework internals, so it has to compile
-against the API level it will execute on. The app's `minSdk 31` is a different
-decision that happens to be a different number on purpose.
+`ANDROID_PLATFORM` is the `android.jar` this compiles against, not the platform
+a phone runs: one jar runs on every Android from 12 (`d8 --min-api 31`). The
+framework's hidden parts are reached by reflection or through stubs compiled
+with it, and `:daemon-lint` checks each call against Android 12. It stays
+pinned because the jar's bytes depend on it (constants are compiled in), and
+F-Droid's rebuild must make the same bytes.
 
 ## Run
 

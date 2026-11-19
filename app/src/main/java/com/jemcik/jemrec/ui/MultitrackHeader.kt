@@ -29,7 +29,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -57,13 +59,14 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
     val haptics = LocalHapticFeedback.current
     val status = recorderStatus(state)
     val marks = marks(state, answering)
-    val (word, wordColor) = when (status) {
-        RecorderStatus.READY -> "ARMED" to c.armed
-        RecorderStatus.STARTING -> "ARMING" to c.muted
-        RecorderStatus.OFF -> "DISARMED" to c.off
-        RecorderStatus.CANNOT -> "NO LINK" to c.cannot
-    }
     val instruction = instruction(state)
+    val word = multitrackWord(status, instruction)
+    val wordColor = when (status) {
+        RecorderStatus.READY -> c.armed
+        RecorderStatus.STARTING, RecorderStatus.CHECKING -> c.muted
+        RecorderStatus.OFF -> c.off
+        RecorderStatus.CANNOT -> c.cannot
+    }
     val asks = instruction?.tap != null
     Column(
         Modifier
@@ -108,7 +111,12 @@ internal fun MultitrackHeader(state: UiState, vm: MainViewModel, answering: Bool
                             Modifier
                         },
                     )
-                    .clearAndSetSemantics { contentDescription = headerSpeech(state, marks) },
+                    .clearAndSetSemantics { contentDescription = headerSpeech(state, marks)
+                    // Said when it changes - Checking to Ready, say - as
+                    // Compose's semantics guide asks of content that changes
+                    // on its own (liveRegion, Polite; review, 2026-11-18).
+                    liveRegion = LiveRegionMode.Polite
+                },
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 // Each line as tall as the tallest thing it shows: the
@@ -143,6 +151,8 @@ private fun multiWords(instruction: Instruction): String = when (instruction) {
     Instruction.JOIN_WIFI -> "JOIN ANY WI-FI · RESUMES ITSELF"
     Instruction.PAIR_AGAIN -> "TAP TO PAIR AGAIN"
     Instruction.START_AGAIN -> "TAP TO START IT AGAIN"
+    Instruction.TURN_ON_NOTIFICATIONS -> "TAP TO TURN ON NOTIFICATIONS"
+    Instruction.ALLOW_BACKGROUND -> "TAP TO ALLOW BACKGROUND USE"
 }
 
 /** The state in the editor's capitals: shrunk to fit one line, unless not
@@ -266,4 +276,18 @@ private fun MultiTabs(state: UiState, c: MultitrackColors, modifier: Modifier = 
             }
         }
     }
+}
+
+/** Multitrack's word for the recorder: a lost link to it, in a studio's
+ *  words - but Ask first unable to ask is no link lost, and only while the
+ *  recorder is there is that what the header asks of the user
+ *  ([Instruction.cannotAsk]: the notifications, or the Battery setting);
+ *  with it down too, the link is
+ *  what is lost, as Memo and Deck say (review, 2026-11-18). */
+internal fun multitrackWord(status: RecorderStatus, instruction: Instruction?): String = when (status) {
+    RecorderStatus.READY -> "ARMED"
+    RecorderStatus.STARTING -> "ARMING"
+    RecorderStatus.CHECKING -> "CHECKING"
+    RecorderStatus.OFF -> "DISARMED"
+    RecorderStatus.CANNOT -> if (instruction?.cannotAsk == true) "CAN'T ASK" else "NO LINK"
 }

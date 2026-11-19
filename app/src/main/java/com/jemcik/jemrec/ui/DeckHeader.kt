@@ -31,7 +31,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -100,6 +102,7 @@ private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColo
     val word = when (status) {
         RecorderStatus.READY -> "REC READY"
         RecorderStatus.STARTING -> "STARTING"
+        RecorderStatus.CHECKING -> "CHECKING"
         RecorderStatus.OFF -> "OFF"
         RecorderStatus.CANNOT -> "CAN'T REC"
     }
@@ -125,7 +128,12 @@ private fun DeckLcd(state: UiState, vm: MainViewModel, marks: Marks, c: DeckColo
     ) {
         Column(
             Modifier
-                .clearAndSetSemantics { contentDescription = headerSpeech(state, marks) }
+                .clearAndSetSemantics { contentDescription = headerSpeech(state, marks)
+                    // Said when it changes - Checking to Ready, say - as
+                    // Compose's semantics guide asks of content that changes
+                    // on its own (liveRegion, Polite; review, 2026-11-18).
+                    liveRegion = LiveRegionMode.Polite
+                }
                 .padding(horizontal = 9.dp, vertical = 5.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -155,6 +163,8 @@ private fun deckWords(instruction: Instruction): String = when (instruction) {
     Instruction.JOIN_WIFI -> "JOIN ANY WI-FI · RESUMES ITSELF"
     Instruction.PAIR_AGAIN -> "TAP TO PAIR AGAIN"
     Instruction.START_AGAIN -> "TAP TO START IT AGAIN"
+    Instruction.TURN_ON_NOTIFICATIONS -> "TAP TO TURN ON NOTIFICATIONS"
+    Instruction.ALLOW_BACKGROUND -> "TAP TO ALLOW BACKGROUND USE"
 }
 
 /** The state in the LCD's dots: shrunk to fit one line, unless not

@@ -122,7 +122,7 @@ class CableWakeTest {
         // and a kick; nothing else.
         assertEquals(1, TestPhone.wifiWatches(context).size)
         assertEquals(mapOf("for_wifi" to false), work.inputOf(work.unique(HeldWork.NOW).single().id))
-        listOf(HeldWork.PERIODIC, HeldWork.WIFI, HeldWork.USB_WATCH).forEach {
+        (HeldWork.ALL - HeldWork.NOW).forEach {
             assertEquals(it, emptyList<WorkInfo>(), work.unique(it))
         }
         // The note stays for the next revive on Wi-Fi.

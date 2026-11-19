@@ -59,6 +59,7 @@ object CaptureDaemon {
     suspend fun standDown(context: Context) = DaemonLauncher.standDown(context)
     internal fun inCall(mode: Int): Boolean = DaemonLauncher.inCall(mode)
     internal fun callInProgress(context: Context): Boolean = DaemonLauncher.callInProgress(context)
+    internal fun callUp(context: Context): Boolean = DaemonLauncher.callUp(context)
     suspend fun readLog(): String = DaemonLauncher.readLog()
 
     // The lock and what takes it (RecorderLifecycle).
@@ -111,6 +112,7 @@ object CaptureDaemon {
     suspend fun sendMode(context: Context): Boolean = DaemonClient.sendMode(context)
     suspend fun setVoipApps(context: Context): Boolean = DaemonClient.setVoipApps(context)
     suspend fun setTracking(context: Context): Boolean = DaemonClient.setTracking(context)
+    suspend fun setQuality(context: Context): Boolean = DaemonClient.setQuality(context)
     suspend fun allowListener(context: Context): Boolean? = DaemonClient.allowListener(context)
     suspend fun setAnswering(context: Context): Boolean = DaemonClient.setAnswering(context)
     suspend fun skipCall(context: Context, skip: Boolean): Boolean = DaemonClient.skipCall(context, skip)
@@ -131,9 +133,10 @@ object CaptureDaemon {
     suspend fun setForwarding(context: Context, seconds: Int): String? = DaemonClient.setForwarding(context, seconds)
     suspend fun sims(context: Context): Sims? = DaemonClient.sims(context)
     suspend fun connect(context: Context, timeoutMs: Int = 3_000): Socket = DaemonClient.connect(context, timeoutMs)
-    suspend fun fetch(context: Context, name: String, timeoutMs: Int = 3_000): Socket =
+    suspend fun fetch(context: Context, name: String, timeoutMs: Int = 3_000): com.jemcik.jemrec.audio.AudioStream.Fetched =
         DaemonClient.fetch(context, name, timeoutMs)
     suspend fun listPendingOrNull(context: Context): List<String>? = DaemonClient.listPendingOrNull(context)
+    internal suspend fun listingOrNull(context: Context): DaemonClient.Listing? = DaemonClient.listingOrNull(context)
     suspend fun deleteRecording(context: Context, name: String): Boolean = DaemonClient.deleteRecording(context, name)
     suspend fun startOnDemand(context: Context): String? = DaemonClient.startOnDemand(context)
     internal suspend fun watch(context: Context): Watch? = DaemonClient.watch(context)

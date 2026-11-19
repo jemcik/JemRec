@@ -18,6 +18,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.ui.LocalNow
@@ -28,6 +29,7 @@ import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
@@ -186,6 +188,25 @@ class ListScreensTest : ScreenTest() {
         assertEquals(40, vm.state.value.visibleCount)
     }
 
+    /** Opened, then read: the list draws its first page and no more. Laid
+     *  out first with the throwaway place it has until it is read
+     *  (MainScreen), "near its end" was read from that empty list and kept,
+     *  and a page more came at every turn till the whole list was drawn -
+     *  select-all then took it all (review, 2026-11-18). */
+    @Test fun aListReadAfterTheWindowOpensDrawsItsFirstPageOnly() {
+        val many = List(65) { i -> Fixtures.recordings()[0].copy(name = "20261021_${"%06d".format(100000 + i)}_in.ogg") }
+        Recordings.override = { many }
+        val vm = viewModel(Fixtures.ready().copy(recordings = emptyList(), listUnread = true))
+        showApp(vm)
+        compose.waitForIdle()
+        vm.refresh()
+        settle(vm)
+        compose.waitForIdle()
+        assertEquals(false, vm.state.value.listUnread)
+        assertEquals(65, vm.state.value.recordings.size)
+        assertEquals("the first page only", 20, vm.state.value.visibleCount)
+    }
+
     /**
      * Turned so the header goes beside the list, or back, the list stays
      * where it was scrolled to - turning the phone remakes the screen, its
@@ -234,6 +255,77 @@ class ListScreensTest : ScreenTest() {
         restoring.emulateSavedInstanceStateRestore()
         compose.waitForIdle()
         assertTrue("still scrolled upright", scrolled() > 0f)
+    }
+
+    /**
+     * After the process ended in the background: the screen remade from what
+     * it saved, its list not read for a moment - nothing in it - and then
+     * read. The list is where it was scrolled to. Laid out over the empty
+     * list first, its place was cut to that list's end, and it came back at
+     * its top (review, 2026-11-18).
+     */
+    @Test fun theListComesBackWhereItWasAfterTheProcessEnded() {
+        val many = List(40) { i -> Fixtures.recordings()[0].copy(name = "20261021_${"%06d".format(100000 + i)}_in.ogg") }
+        val read = Fixtures.ready().copy(recordings = many, visibleCount = 40)
+        var state by mutableStateOf(read)
+        val vm = viewModel(read)
+        val restoring = StateRestorationTester(compose)
+        restoring.setContent {
+            CompositionLocalProvider(LocalNow provides { Fixtures.NOW }) {
+                JemRecTheme(LookChoice()) {
+                    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+                        AppScaffold(state, vm)
+                    }
+                }
+            }
+        }
+        fun scrolled() = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange].value()
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(20)
+        compose.waitForIdle()
+        assertTrue("scrolled", scrolled() > 0f)
+
+        // The process ended: a view model made new, its list not read yet.
+        state = read.copy(recordings = emptyList(), listUnread = true)
+        restoring.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+        // Its first reading lands.
+        state = read
+        compose.waitForIdle()
+        assertTrue("back where it was", scrolled() > 0f)
+    }
+
+    /** Settings brought back after the process ended is where it was
+     *  scrolled to, though setup's checking card came first: laid out over
+     *  that card, Settings' place was cut to its height (review, 2026-11-18). */
+    @Test fun settingsComesBackWhereItWasThoughSetupCameFirst() {
+        Recordings.override = { emptyList() }
+        val read = Fixtures.ready().copy(screen = Screen.SETTINGS)
+        var state by mutableStateOf(read)
+        val vm = viewModel(read)
+        val restoring = StateRestorationTester(compose)
+        restoring.setContent {
+            CompositionLocalProvider(LocalNow provides { Fixtures.NOW }) {
+                JemRecTheme(LookChoice()) {
+                    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+                        AppScaffold(state, vm)
+                    }
+                }
+            }
+        }
+        val scrollable = androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+        fun scrolled() = compose.onAllNodes(scrollable).fetchSemanticsNodes().maxOf { it.config[SemanticsProperties.VerticalScrollAxisRange].value() }
+        compose.onNodeWithText("About").performScrollTo()
+        compose.waitForIdle()
+        assertTrue("scrolled", scrolled() > 0f)
+
+        // The process ended: setup checks first, then Settings is back.
+        state = read.copy(step = com.jemcik.jemrec.setup.SetupStep.CHECKING)
+        restoring.emulateSavedInstanceStateRestore()
+        compose.waitForIdle()
+        state = read
+        compose.waitForIdle()
+        assertTrue("back where it was", scrolled() > 0f)
     }
 
     /** Seventy recordings a minute apart from 17:59, forty on the day the
@@ -493,6 +585,224 @@ class ListScreensTest : ScreenTest() {
         compose.onNodeWithContentDescription("Search calls").performClick()
         compose.waitForIdle()
         compose.onNode(hasSetTextAction()).assertIsFocused()
+    }
+
+    /** Selecting, a screen reader hears which rows are picked, what a tap
+     *  does to each, and the select-all box's name - not "Select" on every
+     *  row, picked or not. */
+    @Test fun aScreenReaderHearsWhichRowsArePicked() {
+        val recordings = Fixtures.recordings()
+        Recordings.override = { recordings }
+        val first = recordings.first().name
+        val state = Fixtures.ready().copy(recordings = recordings, selecting = true, selected = setOf(first))
+        val vm = viewModel(state)
+        show { AppScaffold(state, vm) }
+        compose.onAllNodes(androidx.compose.ui.test.SemanticsMatcher.expectValue(
+            androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "Selected")).assertCountEquals(1)
+        // That row picked as Android means it (the tab picked is the other).
+        compose.onNode(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "Selected") and
+                androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Selected, true),
+        ).assertExists()
+        compose.onNodeWithContentDescription("Select all").assertExists()
+        // The photos select, as checkboxes with a state: the picked row's
+        // checked, each other row's not - the select-all box, a checkbox too,
+        // is neither while some are picked. Until the review of 2026-11-18
+        // the photos had the role and no state, and this counted the
+        // select-all box alone.
+        fun photos(state: androidx.compose.ui.state.ToggleableState) = compose.onAllNodes(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Checkbox,
+            ) and androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.ToggleableState, state,
+            ) and androidx.compose.ui.test.hasContentDescription("Select all").not(),
+        ).fetchSemanticsNodes().size
+        assertEquals(1, photos(androidx.compose.ui.state.ToggleableState.On))
+        assertTrue("the other photos, unchecked", photos(androidx.compose.ui.state.ToggleableState.Off) >= 2)
+        // Each named, as a checkbox must be: the picked row's by its caller.
+        val picked = recordings.first()
+        compose.onNode(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.ToggleableState, androidx.compose.ui.state.ToggleableState.On,
+            ) and androidx.compose.ui.test.hasContentDescription(picked.caller ?: "Unknown caller"),
+        ).assertExists()
+    }
+
+    /** Opened, its list not read yet - at every start, and after the
+     *  process ended with rows picked: home does not say the list is empty,
+     *  nor offer to delete what it has not read (review, 2026-11-18). */
+    @Test fun aListNotReadYetIsNotSaidToBeEmpty() {
+        Recordings.override = { emptyList() }
+        val unread = Fixtures.ready().copy(recordings = emptyList(), listUnread = true, selecting = true, selected = setOf("a.ogg"))
+        var state by mutableStateOf(unread)
+        val vm = viewModel(unread)
+        show { AppScaffold(state, vm) }
+        compose.onAllNodesWithText("No recordings yet").assertCountEquals(0)
+        compose.onAllNodesWithText("match", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Delete selected").assertCountEquals(0)
+        // Nor select-all: tapped over the empty list, it let the selection
+        // brought back go.
+        compose.onNodeWithContentDescription("Select all").assertIsNotEnabled()
+        // Read, and empty: said so.
+        state = unread.copy(listUnread = false, selecting = false, selected = emptySet())
+        compose.waitForIdle()
+        compose.onNodeWithText("No recordings yet").assertExists()
+    }
+
+    /** The header's own tap does as the notice's Turn on does: Android's
+     *  question first, where the permission is what is missing - one rule
+     *  for one thing (review, 2026-11-18). */
+    @Test fun theHeadersTapAsksForTheNotificationPermissionToo() {
+        Recordings.override = { emptyList() }
+        val state = Fixtures.ready().copy(automatic = false, notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL)
+        val vm = viewModel(state)
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Tap to turn on notifications").performClick()
+        compose.waitForIdle()
+        val asked = shadowOf(compose.activity).lastRequestedPermission
+        assertTrue(android.Manifest.permission.POST_NOTIFICATIONS in asked.requestedPermissions)
+    }
+
+    /** The header's Battery Restricted line and the card's Open App info
+     *  both open App info, where the setting is - not another screen
+     *  (review, 2026-11-18). */
+    @Test fun theBatteryWaysOutOpenAppInfo() {
+        Recordings.override = { emptyList() }
+        val state = Fixtures.ready().copy(automatic = false, batteryRestricted = true, callTracking = false, batteryNotice = true)
+        val vm = viewModel(state)
+        show { AppScaffold(state, vm) }
+        val started = org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication())
+        // JemRec's own App info, by its package (review, 2026-11-18).
+        val own = "package:" + org.robolectric.RuntimeEnvironment.getApplication().packageName
+        compose.onNodeWithText("Battery Restricted · tap to allow").performClick()
+        compose.waitForIdle()
+        started.nextStartedActivity.let {
+            assertEquals(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, it.action)
+            assertEquals(own, it.dataString)
+        }
+        compose.onNodeWithText("Open App info").performClick()
+        compose.waitForIdle()
+        started.nextStartedActivity.let {
+            assertEquals(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, it.action)
+            assertEquals(own, it.dataString)
+        }
+    }
+
+    /** Nothing read yet, the other screens wait blank rather than draw
+     *  defaults they have not read: Settings, Recently deleted, the Calls
+     *  tab - and the Calls tab says nothing of an empty call log until it
+     *  has read it (review, 2026-11-18). */
+    @Test fun screensNotReadYetSayNothing() {
+        Recordings.override = { emptyList() }
+        val unread = Fixtures.ready().copy(screen = Screen.SETTINGS, listUnread = true)
+        var state by mutableStateOf(unread)
+        val vm = viewModel(unread)
+        show { AppScaffold(state, vm) }
+        compose.onAllNodesWithText("Quality").assertCountEquals(0)
+        state = unread.copy(screen = Screen.TRASH)
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Nothing here", substring = true).assertCountEquals(0)
+        // The calls not read: nothing of them. Whether the log may be read
+        // is known from the view model's making: its card, where it may not.
+        state = unread.copy(screen = Screen.HOME, homeTab = HomeTab.CALLS, canReadCallLog = true)
+        compose.waitForIdle()
+        compose.onAllNodesWithText("See every call here").assertCountEquals(0)
+        compose.onAllNodesWithText("No calls in the call log yet.").assertCountEquals(0)
+        state = unread.copy(screen = Screen.HOME, homeTab = HomeTab.CALLS, canReadCallLog = false)
+        compose.waitForIdle()
+        compose.onNodeWithText("See every call here").assertExists()
+        // Read, but not the call log yet: no word of it being empty.
+        state = unread.copy(screen = Screen.HOME, homeTab = HomeTab.CALLS, canReadCallLog = true, listUnread = false, callsUnread = true, calls = emptyList())
+        compose.waitForIdle()
+        compose.onAllNodesWithText("No calls in the call log yet.").assertCountEquals(0)
+        state = state.copy(callsUnread = false)
+        compose.waitForIdle()
+        compose.onNodeWithText("No calls in the call log yet.").assertExists()
+        state = unread.copy(listUnread = false)
+        compose.waitForIdle()
+        compose.onNodeWithText("Quality").performScrollTo().assertExists()
+    }
+
+    @Test fun turnOnAsksForTheNotificationPermission() {
+        Recordings.override = { emptyList() }
+        val state = Fixtures.ready().copy(notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL)
+        val vm = viewModel(state)
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Turn on").performClick()
+        compose.waitForIdle()
+        val asked = shadowOf(compose.activity).lastRequestedPermission
+        assertTrue(android.Manifest.permission.POST_NOTIFICATIONS in asked.requestedPermissions)
+    }
+
+    /** Refused at once, Android no longer asking: the app's notification
+     *  settings, where the switch is - not App info, a level above them
+     *  (review, 2026-11-18). */
+    @Test fun turnOnRefusedOpensTheNotificationSettings() {
+        Recordings.override = { emptyList() }
+        val state = Fixtures.ready().copy(notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL)
+        val vm = viewModel(state)
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Turn on").performClick()
+        compose.waitForIdle()
+        val asked = shadowOf(compose.activity).lastRequestedPermission
+        compose.activity.onRequestPermissionsResult(
+            asked.requestCode, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+            intArrayOf(android.content.pm.PackageManager.PERMISSION_DENIED),
+        )
+        compose.waitForIdle()
+        val started = org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication()).nextStartedActivity
+        assertEquals(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS, started.action)
+        assertEquals(app.packageName, started.getStringExtra(android.provider.Settings.EXTRA_APP_PACKAGE))
+    }
+
+    /** Ask first's question off, the permission granted: that channel's own
+     *  settings, the question's switch. */
+    @Test fun turnOnForAskFirstsQuestionOpensItsChannel() {
+        Recordings.override = { emptyList() }
+        shadowOf(app).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val state = Fixtures.ready().copy(automatic = false, notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST)
+        val vm = viewModel(state)
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Turn on").performClick()
+        compose.waitForIdle()
+        val started = org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication()).nextStartedActivity
+        assertEquals(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS, started.action)
+        assertEquals(com.jemcik.jemrec.calls.RecordPrompt.CHANNEL_ID, started.getStringExtra(android.provider.Settings.EXTRA_CHANNEL_ID))
+    }
+
+    /** The question turned down, or shown briefly: said, with Not now -
+     *  it still asks, in the shade - and Turn on opens that page. */
+    @Test fun askFirstsQuestionTurnedDownOrBriefSaysSoAndOpensItsPage() {
+        Recordings.override = { emptyList() }
+        shadowOf(app).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val quiet = Fixtures.ready().copy(automatic = false, notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST_QUIET)
+        var state by mutableStateOf(quiet)
+        val vm = viewModel(quiet)
+        show { AppScaffold(state, vm) }
+        compose.onNodeWithText("Ask first's question will not pop up").assertIsDisplayed()
+        compose.onNodeWithText("Not now").assertIsDisplayed()
+        // Asking still works: the header does not say it cannot record.
+        compose.onAllNodesWithText("Tap to turn on notifications").assertCountEquals(0)
+        val shadow = org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication())
+        compose.onNodeWithText("Turn on").performClick()
+        compose.waitForIdle()
+        assertEquals(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS, shadow.nextStartedActivity.action)
+        state = quiet.copy(notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST_BRIEF)
+        compose.onNodeWithText("Ask first's question will not stay up").assertIsDisplayed()
+        compose.onNodeWithText("Turn on").performClick()
+        compose.waitForIdle()
+        assertEquals(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, shadow.nextStartedActivity.action)
+    }
+
+    /** JemRec switched off: the Battery card is not shown, as its
+     *  notification is not - nothing it records is held back (review,
+     *  2026-11-18). */
+    @Test fun theBatteryCardWaitsWhileJemRecIsOff() {
+        Recordings.override = { emptyList() }
+        val state = Fixtures.ready().copy(enabled = false, batteryRestricted = true, batteryNotice = true)
+        val vm = viewModel(state)
+        show { AppScaffold(state, vm) }
+        compose.onAllNodesWithText(com.jemcik.jemrec.system.BatteryHealth.TITLE).assertCountEquals(0)
     }
 
     /** Android's call-log question closed under the user - a link opening

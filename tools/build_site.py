@@ -1783,6 +1783,23 @@ SETUP = [
           "app. To use a different folder, open Settings and tap **Change** under "
           "*Saving to*."),
 
+    ("h2", "Quality and size"),
+    ("p", "An hour of calls takes about 12 MB at JemRec's **Standard** quality, "
+          "32 kbps, since 1.2. **Settings → Saving → Quality** has four:"),
+    ("ul", [
+        "**Smallest** — 24 kbps, about 9 MB an hour. The two sides of a call "
+        "may blend into one.",
+        "**Standard** — 32 kbps, about 12 MB an hour. The default.",
+        "**High** — 64 kbps, about 29 MB an hour.",
+        "**Highest** — 128 kbps, about 58 MB an hour: the rate every recording "
+        "had before 1.2 - 63 MB then, with Android's own Ogg pages.",
+    ]),
+    ("p", "In a blind test on an Honor, a phone call, a messenger call and a "
+          "message sounded the same at 32 kbps as at 128, through its speakers "
+          "and through earbuds; at 24 kbps the messenger call sounded mono. A "
+          "choice is for calls recorded from then on; recordings already made "
+          "keep theirs."),
+
     ("h2", "Choosing when to record"),
     ("p", "**Record every call**, in Settings, decides this."),
     ("ul", [
@@ -1792,10 +1809,10 @@ SETUP = [
         "seconds of that call are not saved. That is the honest cost of being "
         "asked, and it is why the switch is on by default.",
     ]),
-    ("p", "The prompt stays up for about a minute rather than the few seconds an "
-          "ordinary notification gets, and if you miss it, it waits in the shade "
-          "for the rest of the call. On a locked screen you get the same question "
-          "full screen."),
+    ("p", "The prompt stays on screen until you answer it, rather than the five "
+          "seconds an ordinary notification gets - a minute, if JemRec's full-screen "
+          "notifications are turned off in Android's settings - and if you miss it, "
+          "it waits in the shade for the rest of the call."),
 
     ("h2", "Exact call tracking"),
     ("p", "**Exact call tracking**, in Settings, is on unless you turn it off. "
@@ -1807,10 +1824,11 @@ SETUP = [
         "With call waiting, each call gets its own recording.",
         "Whose calls to keep decides before anything is recorded.",
     ]),
-    ("p", "Tracking only reads this: it never answers, holds or ends a call, and "
-          "shows no screen of its own during one. The one thing that ever "
-          "answers a call is the answering machine, below, when you switch it "
-          "on. Turned off, JemRec records from the moment the phone goes "
+    ("p", "Tracking reads this: it never answers or holds a call, and shows no "
+          "screen of its own during one, and ends one only for the answering "
+          "machine - its call, if the recorder is lost while it takes a message. "
+          "The one thing that ever answers a call is the answering machine, "
+          "below, when you switch it on. Turned off, JemRec records from the moment the phone goes "
           "off-hook, as it did before 0.14, and the answering machine, which "
           "needs it, answers nothing."),
 
@@ -1845,10 +1863,13 @@ SETUP = [
         "messenger call has no number, so its name ends with the app.",
         "**For Honor's Phone app**, on a phone that has it: "
         "`Priya Raman@+447700900123_20261020165705.ogg`, the name Honor's own "
-        "recorder uses. Saved in `Sounds/CallRecord` — the File names dialog has "
+        "recorder uses, or `+447700900123_20261020165705.ogg` for a caller with "
+        "no name - or one named only by the number. Saved in `Sounds/CallRecord` — the File names dialog has "
         "a button that opens the folder picker right there; tap **Use this folder** and "
         "**Allow** — Honor's Phone app then shows a play button on the call in "
-        "its history.",
+        "its history. Honor's own Recorder app plays them from there but doesn't "
+        "list them: it lists only `.m4a`, `.amr` and `.wav` files, and JemRec "
+        "saves `.ogg`.",
     ]),
     ("p", "The caller and the number come from exact call tracking or the call "
           "log, with permission to read the call log; without it, a recording is named by "
@@ -1888,8 +1909,9 @@ SETUP = [
     ("p", "**Show who called** reads the caller's name, and whether the call rang "
           "first, from the app's own call notification — the only place it is "
           "said. That needs notification access, which Android grants to all "
-          "notifications; JemRec keeps only that from the call notifications of "
-          "the apps you switched on. JemRec's recorder grants it, so turning "
+          "notifications; JemRec keeps only which app, the name, the time and "
+          "whether it rang, from the call notifications of the apps you switched "
+          "on - the last 60, deleted when you turn it off. JemRec's recorder grants it, so turning "
           "it on needs JemRec ready to record."),
     ("p", "Tested on an Honor with Viber, Telegram and WhatsApp, both directions, "
           "and with Google Meet: calls both ways and a meeting. Signal takes the "
@@ -1999,7 +2021,8 @@ SETUP = [
           "and a half seconds for a 30-minute call. The chevron beside it folds "
           "the player away. "
           "The share button offers the original file or a converted copy that "
-          "plays anywhere."),
+          "plays anywhere - with both sides in both ears, as JemRec plays it, "
+          "while that is on."),
     ("p", "**With the screen off.** A recording plays on when the screen goes "
           "off or you leave the app, under the phone's own media controls: in "
           "the notifications, in Quick Settings, on the lock screen, and on an "
@@ -2044,7 +2067,8 @@ SETUP = [
           "use the bookmark in the toolbar."),
     ("p", "The notification after each call has the same three buttons. Play and "
           "Share open JemRec at that recording; Delete asks first, in the "
-          "notification itself, and **Keep** puts it back."),
+          "notification itself - with the phone unlocked, so a locked phone "
+          "asks for that first - and **Keep** puts it back."),
     ("p", "If a recording was made before JemRec was reinstalled, Android asks "
           "before JemRec may move it to the trash, in a dialog of its own. That "
           "is Android checking who owns the file, not JemRec asking twice."),
@@ -2058,6 +2082,15 @@ SETUP = [
           "each messenger call was with are written inside each recording, not "
           "only in the app. A folder you chose has to be chosen again, and until "
           "then its recordings are not listed."),
+
+    ("h2", "Both sides in both ears"),
+    ("p", "JemRec plays both sides of a call in each ear, so one earbud hears "
+          "the whole call, and an answering machine's message, recorded on one "
+          "side, is not in one ear only. **Settings → Playing → Both sides in "
+          "both ears**, switched off, plays each side in its own ear, as it was "
+          "recorded; a recording playing goes on from where it was. The file "
+          "keeps the sides apart either way, and Share's converted copy follows "
+          "the switch."),
 
     ("h2", "The Calls tab"),
     ("p", "The **Calls** tab, beside Recordings, is your phone's call log, under "
@@ -2289,14 +2322,43 @@ SETUP = [
          "made, unless Keep JemRec paired is on. JemRec goes to the pairing step by itself "
          "as soon as the home screen shows; the line is there for the moment "
          "before."),
+        ("CANNOT", "ALLOW_BACKGROUND", "Ask first, with JemRec's battery use set to "
+         "Restricted and exact call tracking off: Android does not let JemRec "
+         "put its question up, so no call is recorded. Tap the line for App "
+         "info, and allow its background use on its battery page."),
+        ("CANNOT", "TURN_ON_NOTIFICATIONS", "Ask first asks in a notification, and "
+         "JemRec's notifications - or that one, Record this call? - are off in "
+         "Android's settings, so no call is being recorded. Tap the line to turn "
+         "them on."),
         ("STARTING", None, "Rebuilding the recorder. A few seconds."),
+        ("CHECKING", None, "JemRec has just opened and is looking at the recorder "
+         "and your recordings. No mark is lit until it knows: a moment, or a few "
+         "seconds with the recorder down or a folder you chose."),
         ("OFF", "SWITCH_ON", "You turned the switch off."),
         ("OFF", "SWITCH_ON_OVER_WIFI", "You turned the switch off with When JemRec "
          "is off set to Turn all debugging off. Turning it on needs Wi-Fi - "
          "unless Start without Wi-Fi has opened its port, and then the line is "
          "the plain one above."),
     ]),
-    ("p", "And when the app is closed, in notifications:"),
+    ("p", "Above the recordings, a card says so when JemRec's notifications are "
+          "off (and what that costs), when its battery use is set to Restricted - "
+          "Android then lets nothing of it run in the background, so a recorder "
+          "that stops may stay stopped until you open JemRec, and calls are "
+          "saved only then - every call with exact call tracking off - or in Ask "
+          "first not recorded - these two while JemRec is on; in Ask first, when "
+          "its question is set not to pop up, or its full-screen notifications are "
+          "turned off so it stays on screen for a minute only - either way it "
+          "waits in the notification shade, easy to miss mid-call; or when the folder "
+          "you chose for recordings can no longer be reached - moved, deleted, "
+          "its drive taken out, or its access taken back - "
+          "with the way to put it right: **Turn on**, **Open App info**, or "
+          "**Choose again**. **Not now** puts the notifications and battery "
+          "cards away until what they say changes - never one where no call "
+          "is recorded: Ask first's question off, or the battery card in Ask "
+          "first."),
+    ("p", "And when the app is closed, in notifications. Tapping one that "
+          "reports a problem opens JemRec where the problem is shown; its button "
+          "does the fix:"),
     ("table", (["It says", "Meaning"], [
         ["The caller's name, **Recorded**", "After every recorded call, silently, "
          "with Play, Share and Delete. Can be switched off in Settings."],
@@ -2308,15 +2370,55 @@ SETUP = [
          "minutes. The notification says why: it needs a few seconds of Wi-Fi, "
          "or this Wi-Fi is not allowed for Wireless debugging (with **Allow "
          "this Wi-Fi**), or it cannot connect (with **Pair again**), or it could "
-         "not start. It goes away by itself when the recorder is back, and once "
+         "not start. During a call it comes silently, not as a sound in your ear, "
+         "and once the call is over it comes again with its sound - unless you "
+         "swiped it away or opened JemRec. It goes away by itself when the recorder is back, and once "
          "JemRec is switched off."],
         ["**A call was not recorded**", "An answered call in your call log has no "
          "recording. Only in Record every call mode, and only with call log "
-         "access. Run the self-test."],
+         "access. Tapped, the Calls tab shows the calls not recorded; "
+         "**Self-test** checks the recorder."],
+        ["**Part of a call not saved**", "The recorder was started again during a "
+         "call, so the call was recorded in two parts, and one of them could not "
+         "be saved; the notification says why. The other part is saved, and "
+         "JemRec keeps trying the one left for a week; the notification goes once "
+         "it is saved."],
         ["**Call not recorded**", "A call was recorded but could not be saved, or no "
          "call audio came through - or the answering machine answered and could "
          "not play your greeting, so it hung up. The notification says which; "
-         "for the greeting, run the answering machine's test call."],
+         "for the greeting, run the answering machine's test call. One that could "
+         "not be saved is tried again, and the notification goes once it is."],
+        ["**Recording stopped**, during a call", "The call's own notification, "
+         "silently: the recording stopped. *Trying again* - its capture failed "
+         "more often than the recorder may start it again at once, so it tries "
+         "every ten seconds, or nothing reached the recording for five seconds - "
+         "and it says **Recording call** again once it has recorded for five "
+         "seconds; or *the rest of this call is not recorded* - its file could not "
+         "be written. A message the answering machine is taking ends at either: "
+         "it hangs up. And when the recorder itself ended, JemRec starts it again "
+         "during the call - over Wi-Fi, or Start without Wi-Fi's port - and it "
+         "records the rest of the call as a recording of its own, so the call has "
+         "two (in Ask first, a phone call goes on as you answered; a messenger "
+         "call is asked about again, as JemRec cannot tell it from the next call "
+         "in that app); a message being taken then is hung up on too, where Android has "
+         "told JemRec which call it is - else the caller hears silence until they "
+         "hang up - and kept as a message, its greeting at its start."],
+        ["**Recording stopped early**", "The recording of your last call ended "
+         "well before the call did: its capture failed, or nothing reached it, "
+         "and it never came back, its file could not be written - the "
+         "phone full - or the recorder itself was ended. Phone "
+         "and messenger calls alike; a recorder ended during a messenger call, "
+         "a call waiting, or with call tracking off, cannot be told. One saved long after its "
+         "call says which call, by its time."],
+        ["**Recording saved elsewhere**", "JemRec can no longer reach the folder "
+         "you chose, so a call was saved in the standard Recordings folder. "
+         "Once; **Choose again** opens Android's folder picker."],
+        ["**Battery use is Restricted**", "JemRec's battery use is set to "
+         "Restricted, so Android lets nothing of it run in the background; "
+         "the notification says what that costs. Once, while it lasts and "
+         "JemRec is on, its words kept to what it costs now; gone once it is "
+         "lifted or JemRec is turned off. Tapped, JemRec's card says the same; "
+         "**Open App info** and allow its background use on its battery page."],
         ["**Checking the recorder**", "A USB cable went in or came out, and "
          "the recorder went with it: JemRec is starting it again. A few "
          "seconds; a cable that changed nothing shows nothing. Minutes on a "
@@ -2333,7 +2435,8 @@ SETUP = [
         ["**JemRec was stopped in the background**", "This phone stopped JemRec "
          "in the background, so a call could go unrecorded. Its button opens the "
          "phone's own screen for it, and the notification says what to do there "
-         "(on an Honor: **App launch**, **Manage manually**). Only on phones "
+         "(on an Honor: **App launch**, **Manage manually**); tapped, JemRec's "
+         "Settings at **Survive a restart**, which opens the same screen. Only on phones "
          "that stop apps that way — see *Stopped in the background*."],
         ["**JemRec was held back in the background**", "The phone froze JemRec "
          "while it was restarting the recorder after a cable, for the minutes it "
@@ -2375,15 +2478,25 @@ SETUP = [
         "earpiece, never switched to the loudspeaker by itself. Headphones, when "
         "in, come first. Only on a phone with an earpiece; the earpiece at your "
         "ear only with a proximity sensor.",
+        "**Both sides in both ears** — on until you switch it off: both sides "
+        "of a call in each ear. Off, each side in its own ear, as recorded. "
+        "Share's converted copy follows it.",
     ]),
     ("p", "**Saving**"),
     ("ul", [
         "**Saving to** — which folder recordings go in, and back to the default.",
         "**File names** — date and time, with the caller, with the phone number, "
         "or the name Honor's Phone app plays from its call history.",
+        "**Quality** — Smallest, 24 kbps, about 9 MB an hour, its two sides "
+        "may blend into one; Standard, 32 kbps, about 12 MB (the default); "
+        "High, 64 kbps, about 29 MB; Highest, 128 kbps, about 58 MB. For calls "
+        "recorded from then on.",
         "**Auto-delete old recordings** and **Auto-delete short calls** — off "
         "until you choose. Recordings older than 30 days, 90 days, 6 months or a "
-        "year; calls shorter than 5, 10 or 30 seconds. Kept recordings are never "
+        "year; calls shorter than 5, 10 or 30 seconds - a recording of only part of "
+        "a call, the recorder started again in it or stopped early, is not taken "
+        "for a short call (after a reinstall, where the file itself says so). "
+        "Kept recordings are never "
         "touched, and whatever is removed waits in Recently deleted.",
         "**Recently deleted** — what has been deleted in the last 30 days, with "
         "**Restore** for each, **Restore all**, and **Delete all for good**, which "
@@ -2421,14 +2534,18 @@ SETUP = [
     ("p", "**Troubleshooting**"),
     ("ul", [
         "**Survive a restart** — on phones that have one, opens the list of apps "
-        "allowed to start by themselves after a reboot.",
+        "allowed to start by themselves after a reboot, and not stopped in the "
+        "background. The *JemRec was stopped in the background* notification "
+        "opens Settings here.",
         "**Diagnostics** — whether the recorder is running, a self-test that "
         "proves a call would be recorded, a way to start the recorder by "
         "hand, and **Copy a report**: this phone and how its last call was "
         "recorded — which way, how loud each side came out, what was playing "
         "— with no numbers or names in it. It is what a bug report wants.",
-        "**Start fresh** — puts JemRec back to how it was the day you installed "
-        "it, so setup runs again from step 1. The app closes when you confirm. "
+        "**Start fresh** — hands back the permissions you allowed (Android 13 "
+        "and later; on 12 Android lets no app do that, and says where to), turns "
+        "Wireless debugging off, forgets the pairing and stops the recorder, so "
+        "setup runs again from step 1. The app closes when you confirm. "
         "**Your recordings are not deleted.**",
     ]),
     ("p", "**About**"),
@@ -2481,7 +2598,7 @@ SETUP = [
           "notification's **Pair again** opens it too: a fresh code puts "
           "everything back, recordings and settings included. If the pairing was "
           "fine after all, JemRec reconnects without asking for a code."),
-    ("p", "**A notification says a call was not recorded.** Tap **Self-test**. It "
+    ("p", "**A notification says a call was not recorded.** Tap its **Self-test**. It "
           "says whether the recorder is running and hearing calls; a recorder "
           "that was down at the time is the usual answer."),
 
@@ -2500,8 +2617,11 @@ SETUP = [
              "paired with, until Android's 7 days are up, in a list only root can edit, so it stays under "
              "*Wireless debugging → Paired devices*; remove it there with the "
              "gear beside it. Developer options stays on if you turned it on. And "
-             "Start fresh leaves the one privileged setting granted, because "
-             "handing it back would kill the app halfway through the reset. If "
+             "Start fresh leaves what setup granted over debugging — changing "
+             "settings, and notification access, whose listener it switches off — "
+             "until you uninstall: handing back the first would kill the app "
+             "halfway through the reset. JemRec does not use them until it is set "
+             "up again. If "
              "you tapped **Wait 30 seconds** under *Carrier voicemail*, your "
              "carrier still waits 30 seconds before its voicemail answers: that "
              "timer is your carrier's, not the phone's, and JemRec did not keep "
@@ -2550,21 +2670,33 @@ def header_words() -> dict:
     phone says "Join any Wi-Fi to resume" - and Deck and Multitrack say it
     differently again."""
     ui = ROOT / "app/src/main/java/com/jemcik/jemrec/ui"
-    want = {"READY", "STARTING", "OFF", "CANNOT", "SWITCH_ON", "SWITCH_ON_OVER_WIFI",
-            "ALLOW_WIFI", "JOIN_WIFI", "PAIR_AGAIN", "START_AGAIN"}
+    want = {"READY", "STARTING", "CHECKING", "OFF", "CANNOT", "SWITCH_ON", "SWITCH_ON_OVER_WIFI",
+            "ALLOW_WIFI", "JOIN_WIFI", "PAIR_AGAIN", "START_AGAIN", "TURN_ON_NOTIFICATIONS",
+            "ALLOW_BACKGROUND"}
     out = {}
     # The lines that are a tap: the Instruction entries that carry one
     # (HeaderFacts.kt), which Memo draws in its primary colour.
     facts = (ui / "HeaderFacts.kt").read_text()
     enum = facts[facts.index("enum class Instruction"):]
-    out["taps"] = set(re.findall(r'^\s*(\w+)\("[^"]+"\)', enum[:enum.index("}")], re.M))
+    out["taps"] = set(re.findall(r'^\s*(\w+)\("[^"]+"[,)]', enum[:enum.index("}")], re.M))
+    # The ones that mean Ask first cannot ask (Instruction.cannotAsk), which
+    # Multitrack words apart: read here, so a new one cannot drift.
+    out["cannot_ask"] = set(re.findall(r'^\s*(\w+)\([^)]*cannotAsk = true', enum[:enum.index("}")], re.M))
+    assert out["cannot_ask"] <= want, f"HeaderFacts.kt: unknown cannotAsk {out['cannot_ask'] - want}"
     assert out["taps"] <= want, f"HeaderFacts.kt: unknown taps {out['taps'] - want}"
     for look, file in (("memo", "MemoHeader.kt"), ("deck", "DeckHeader.kt"),
                        ("multitrack", "MultitrackHeader.kt")):
         words: dict = {}
-        for key, word in re.findall(r'(?:RecorderStatus|Instruction)\.(\w+) -> "([^"]+)"',
-                                    (ui / file).read_text()):
+        text = (ui / file).read_text()
+        for key, word in re.findall(r'(?:RecorderStatus|Instruction)\.(\w+) -> "([^"]+)"', text):
             words.setdefault(key, html.escape(word, quote=False))
+        # A look that names Ask first unable to ask apart from a recorder down
+        # (MultitrackHeader.multitrackWord):
+        # `RecorderStatus.CANNOT -> if (instruction?.cannotAsk == true) "CAN'T ASK" else "NO LINK"`.
+        both = re.search(r'RecorderStatus\.CANNOT -> if \(instruction\?\.cannotAsk == true\) "([^"]+)" else "([^"]+)"', text)
+        if both:
+            words["CANNOT_ASK"] = html.escape(both.group(1), quote=False)
+            words["CANNOT"] = html.escape(both.group(2), quote=False)
         assert want <= set(words), f"{file}: no words for {sorted(want - set(words))}"
         out[look] = words
     return out
@@ -2574,7 +2706,7 @@ def status_html(rows) -> str:
     """What the header says, drawn as each look's header draws it; the page's
     look shows one. A notification is Android's, the same in every look."""
     words = header_words()
-    tone = {"READY": "ready", "STARTING": "idle", "OFF": "idle", "CANNOT": "alarm"}
+    tone = {"READY": "ready", "STARTING": "idle", "CHECKING": "idle", "OFF": "idle", "CANNOT": "alarm"}
     out = []
     for state, line, meaning in rows:
         if state == "notification":
@@ -2586,7 +2718,8 @@ def status_html(rows) -> str:
                 w = words[look]
                 off = " off" if state == "OFF" else ""
                 tap = ' class="tap"' if look == "memo" and line in words["taps"] else ""
-                said = f'<b class="{tone[state]}">{w[state]}</b>' + (f"<small{tap}>{w[line]}</small>" if line else "")
+                word = w.get("CANNOT_ASK", w[state]) if line in words["cannot_ask"] else w[state]
+                said = f'<b class="{tone[state]}">{word}</b>' + (f"<small{tap}>{w[line]}</small>" if line else "")
                 busy = " busy" if state == "STARTING" else ""
                 mark = {"memo": f'<span class="hd-disc{off}{busy}"><i></i></span>',
                         "deck": f'<span class="hd-key{off}"></span>',
@@ -3202,8 +3335,9 @@ SCREENS = [
 FEATURES = [
     ("Record every call, or be asked",
      "Automatic mode records every call; ask-first records nothing until you "
-     "tap Record. A Quick Settings tile turns recording on and off, and a "
-     "long press on it opens JemRec.",
+     "tap Record. About 12&nbsp;MB an hour, or smaller or larger in Settings "
+     "&rarr; Saving &rarr; Quality. A Quick Settings tile turns recording on "
+     "and off, and a long press on it opens JemRec.",
      "choosing-when-to-record"),
     ("Start at the answer",
      "Exact call tracking cuts the ringing, skips calls nobody answered, and "
@@ -3228,16 +3362,20 @@ FEATURES = [
      "call history.",
      "file-names"),
     ("Play, keep, clean up",
-     "A call plays as its waveform, to see where people talk, and plays on with "
+     "A call plays as its waveform, to see where people talk, with both sides "
+     "in both ears &mdash; one earbud is enough &mdash; and plays on with "
      "the screen off, under the phone&rsquo;s media controls; held to your ear, "
      "it moves to the earpiece and the screen goes dark, as in a call. A keep "
      "mark, a 30-day Recently deleted, and auto-delete for old or very short "
      "ones.",
      "playing-sharing-and-deleting"),
     ("Hear about problems",
-     "A notification after each call, and one when a recording is silent, the "
-     "recorder is down, a call went unrecorded, or the phone stopped JemRec or "
-     "held it back in the background. A call that came out wrong? <em>Copy a "
+     "A notification after each call, and one when a recording is silent or "
+     "stopped early, the recorder is down, a call went unrecorded or was saved "
+     "away from your folder, or the phone stopped JemRec or held it back in the "
+     "background. The home screen says so while JemRec's notifications are off, "
+     "its battery use is Restricted or its folder is out of reach. A call that "
+     "came out wrong? <em>Copy a "
      "report</em> in Diagnostics says how it was recorded, for an issue on "
      "GitHub.",
      "what-the-app-tells-you"),
@@ -3303,7 +3441,10 @@ FAQ = [
      "call app&rsquo;s echo cancellation. A call that still comes out with one "
      "side &mdash; over Wi-Fi Calling, say &mdash; is worth an issue on GitHub: "
      "tap <em>Copy a report</em> in Diagnostics right after it and paste that "
-     "in."),
+     "in. Played in JemRec, both sides are in both ears, so one earbud hears "
+     "the whole call; Settings &rarr; Playing &rarr; <em>Both sides in both "
+     "ears</em> switched off plays each side in its own ear, as recorded. The "
+     "file keeps them apart either way."),
     ("Does it record Google Meet?",
      "Yes, calls and meetings, both sides, on Android 14 or newer &mdash; once "
      "you switch Google Meet on under <em>Messenger calls</em>. Like the "
@@ -3337,7 +3478,10 @@ FAQ = [
      "minutes in another. Until then nothing is recorded &mdash; the header says "
      "so, a notification says the phone held JemRec back the moment it lets "
      "JemRec run again, and one says the recorder is down if it stays down two "
-     "minutes. And if When JemRec is off is set to <em>Turn all debugging "
+     "minutes (silently during a call, and again with its sound after it). "
+     "Ended during a call, the recorder is "
+     "started again in the call where it can be, and records the rest of it as "
+     "a second recording. And if When JemRec is off is set to <em>Turn all debugging "
      "off</em>, turning JemRec back on needs Wi-Fi too. Settings &rarr; "
      "<em>Start without Wi-Fi</em> takes the Wi-Fi away from all of that until "
      "the phone restarts: it opens debugging port 5555, which the recorder can "
@@ -3377,7 +3521,10 @@ FAQ = [
     ("Where are my recordings, and what happens to them if I uninstall?",
      "In the phone&rsquo;s standard <code>Recordings/JemRec</code> folder (or "
      "the folder you chose), as Opus files any music app can play; Share can "
-     "also convert one to <code>.m4a</code> for iPhones and Macs. They are "
+     "also convert one to <code>.m4a</code> for iPhones and Macs. An hour of "
+     "calls takes about 12&nbsp;MB; Settings &rarr; Saving &rarr; "
+     "<em>Quality</em> has a smaller choice and two larger ones, for calls "
+     "recorded from then on. They are "
      "yours rather than the app&rsquo;s, so they stay when JemRec is "
      "uninstalled &mdash; delete them first if you want them gone. Deleted ones "
      "wait in Recently deleted for 30 days. Installed again, JemRec shows them "
@@ -3778,6 +3925,16 @@ HOW_BODY = f"""
      leaving it stopped &mdash; a notification says so. Android&rsquo;s routine
      clean-up of an idle app is not counted: on an Honor, 2,015 of 2,062 such
      records were that, and none had left the app stopped.</p>
+  <p>Android&rsquo;s own Battery setting for an app can hold JemRec back on any
+     phone. Set to <em>Restricted</em>, Android lets nothing of JemRec&rsquo;s run
+     in the background: none of its jobs runs there, so a recorder that stops
+     may stay stopped until something starts JemRec &mdash; you opening it, or
+     Android for a reason of its own. With exact call tracking off, a call is saved only when
+     you next open JemRec &mdash; a messenger call most likely too, though that
+     is not measured &mdash; and in Ask first it is not recorded at all.
+     Auto-delete and the trash&rsquo;s 30 days wait for it as well. JemRec says so, on its home screen and
+     once in a notification, with a button to App info, where it is
+     changed.</p>
 
   <h2 id="what-it-does">What it does</h2>
 
@@ -3805,8 +3962,16 @@ HOW_BODY = f"""
      out silent is reported; a recorder that is down says why, with
      <strong>Pair again</strong> when the pairing is gone and
      <strong>Allow this Wi-Fi</strong> when Android has not allowed the network;
-     and with call log
-     access, an answered call that has no recording is reported once.</p>
+     a recording that stops before its call ends says so during the call and
+     goes on once it can, a gap in it; a recorder that was itself ended is
+     started again, and the call then has two recordings; one that never came
+     back is said after the call, with how much was missed, where JemRec can
+     tell; a call, or a part of one, that could not be saved says
+     why; a folder you chose that can no longer be reached is said, and the
+     call saved in the standard one; cards above the recordings say what
+     stands in the way - notifications off, battery use Restricted; and with
+     call log access, an answered call that has no recording is reported
+     once.</p>
 
   <h3>Every call, recorded or not</h3>
   <p>A Calls tab shows the phone's call log with a play mark on each recorded
@@ -3872,16 +4037,17 @@ HOW_BODY = f"""
   <table>
     <tr><th>Permission</th><th>Why</th></tr>
     <tr><td><code>INTERNET</code></td><td>Not about the internet: Android requires it for any TCP socket, including one to <code>127.0.0.1</code>.</td></tr>
-    <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing.</td></tr>
+    <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing - and for the background checks to ask Android for a network to run with (from Android 14 a job that asks for one needs it).</td></tr>
     <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to.</td></tr>
     <tr><td><code>POST_NOTIFICATIONS</code></td><td>The recording notice, the ask-first prompt, the pairing code box.</td></tr>
     <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
+    <tr><td><code>FOREGROUND_SERVICE_MEDIA_PLAYBACK</code></td><td>To play a recording on with the screen off, under the phone's media controls. It plays; it never records.</td></tr>
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>
     <tr><td><code>READ_MEDIA_AUDIO</code></td><td>To list recordings made before a reinstall. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_EXTERNAL_STORAGE</code></td><td>Android 12 only, which has no <code>READ_MEDIA_AUDIO</code>: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those.</td></tr>
-    <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
-    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
-    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
+    <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
+    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking acts on a call in one case only: it hangs up the answering machine&rsquo;s call if the recorder is lost mid-message. The machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
+    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Keeps Ask first's question on screen during a call until you answer it; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs.</td></tr>
     <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down.</td></tr>
   </table>
 
@@ -3919,17 +4085,42 @@ HOW_BODY = f"""
 # never add to them; where they differ, the words are the policy.
 # (data, where, how long, when, the words)
 PRIVACY_DATA = [
-    ("Call recordings", "Recordings/JemRec, or your folder", "until you delete them", "every recorded call",
+    ("Call recordings", "Recordings/JemRec, or your folder; a shared copy in the app&rsquo;s folder; marks in the app&rsquo;s private storage",
+     "until you delete them; a shared copy six hours; marks by name until uninstalled", "every recorded call",
      "The phone&rsquo;s <code>Recordings/JemRec</code> folder, or a folder you "
      "choose. Yours to play, share, move or delete like any other file. One "
      "deleted in JemRec waits 30 days in Recently deleted, then is removed: in "
      "the standard folder, Android&rsquo;s own trash does that; in a folder you "
      "chose, it waits as a hidden file that JemRec removes. <em>Delete all for "
-     "good</em> removes them all at once, when you ask. Messages the answering "
+     "good</em> removes them all at once, when you ask. Shared as <code>.m4a</code>, "
+     "a recording is converted into a copy in the app&rsquo;s own folder on the phone, "
+     "which is removed once it is six hours old, at JemRec&rsquo;s next share, "
+     "background check or start - sooner when the recording is "
+     "deleted, unless that is within ten minutes of sharing it, while the app "
+     "you shared it to may still be reading it. "
+     "While a recording is being saved, where it is being written &mdash; its "
+     "file&rsquo;s name, which may hold the caller&rsquo;s name or number "
+     "&mdash; and its call&rsquo;s time, direction and length are noted in the "
+     "app&rsquo;s private storage, so that a save cut short &mdash; the app "
+     "stopped in the middle &mdash; is finished or undone by the next save of "
+     "it. The note goes as the save ends; one cut short stays until that next "
+     "save, and goes with JemRec when it is uninstalled. "
+     "Messages the answering "
      "machine took are recordings too; which ones are messages, and which you "
      "marked to keep, is kept by file name in the app&rsquo;s private storage, "
      "and written inside each recording as well, with which way the call went "
-     "where JemRec knows it, so that a reinstall still knows."),
+     "where JemRec knows it, so that a reinstall still knows. So is when each "
+     "recording began, in UTC - a file you share carries it, and so the "
+     "difference from your time zone - and, for a call recorded in parts "
+     "(the recorder started again mid-call, or stopped before the call "
+     "ended), that a recording is one of its parts and, for a part begun "
+     "mid-call, when its call began, so it is matched to that call. What "
+     "JemRec keeps by a recording&rsquo;s file name &mdash; that it is a "
+     "message, kept or a part, which way the call went, a messenger "
+     "caller&rsquo;s name, when it began, and that its file has been read "
+     "&mdash; stays after the recording is deleted, as Recently deleted brings "
+     "a file back by its name: the newest 2000 of each, every keep mark, until "
+     "JemRec is uninstalled."),
     ("Caller colours", "the app&rsquo;s private storage", "until you uninstall", "once you use Multitrack",
      "Only once you use the Multitrack look: which of its six colours each "
      "caller has, so a caller keeps theirs, also after you change the look. Kept "
@@ -3991,14 +4182,15 @@ PRIVACY_DATA = [
      "&mdash; and its number, only if you allowed JemRec to read the call log, "
      "which has it anyway. In the app&rsquo;s private storage, to cut each "
      "recording to its call and name it. Turning tracking off deletes it."),
-    ("Messenger callers", "the app&rsquo;s private storage, and the recording", "the last 30 calls", "only if Show who called is on",
+    ("Messenger callers", "the app&rsquo;s private storage, and the recording", "the last 60 call notifications; by file name longer", "only if Show who called is on",
      "Only if you turn on Show who called for messenger calls: from the call "
      "notifications of the apps whose calls you record &mdash; the messengers "
-     "and Google Meet &mdash; the caller&rsquo;s name, the time, and whether the "
-     "call rang first, for the last 30 calls, in the app&rsquo;s private "
-     "storage. A recording named by date alone, or with the phone number "
+     "and Google Meet &mdash; which app, the caller&rsquo;s name, the time, and whether the "
+     "call rang first, for the last 60 call notifications, in the app&rsquo;s private "
+     "storage; turning Show who called off deletes them. A recording named by date alone, or with the phone number "
      "&mdash; a messenger call has none &mdash; keeps its caller&rsquo;s name "
-     "there too, by file name; one named with the caller has it in the file "
+     "there too, by file name, as long as its other marks (see Call "
+     "recordings); one named with the caller has it in the file "
      "name. Either way the name is also written inside the recording, where no "
      "music app shows it, so that a reinstall still knows who it was &mdash; and "
      "a recording you share carries it."),
@@ -4015,7 +4207,19 @@ PRIVACY_DATA = [
      "passed, so the answering machine stands down for a day after such a call: "
      "the latest time of each, no number, until the next. Also when recording "
      "was switched on or off or changed mode, so the Calls tab can say why a "
-     "call was not recorded: times and the setting only, the last 300 changes."),
+     "call was not recorded: times and the setting only, the last 300 changes. "
+     "And, briefly, the recorder&rsquo;s own file names, which hold a time, "
+     "a direction and, for a messenger call, which app, no name or number: "
+     "which of them are one call&rsquo;s parts, until none is left on the "
+     "recorder; which ones a <em>Call not recorded</em> or <em>Part of a call "
+     "not saved</em> notification is about, until each is saved, dropped or "
+     "given up, or a later failure is told once the notification has gone, or "
+     "one no save mends; which ones "
+     "could not be saved, since when, and whether the write failed, until "
+     "each is saved or given up after a week; and when the answering machine "
+     "began a greeting its recorder did not live to finish, with its call&rsquo;s "
+     "start, so that message is saved as one - until its file is collected, "
+     "or, past a week, at the next such greeting."),
     ("Notifications", "read on the phone", "only the IDs of ones it hid", "only if you ask for it",
      "Only if you ask JemRec to hide Android&rsquo;s debugging notification, or "
      "turn on Show who called for messenger calls. It then has notification "
@@ -4036,7 +4240,10 @@ PRIVACY_DATA = [
      "save, how to name files, whose calls to keep, which messengers&rsquo; "
      "calls to record, the auto-delete rules, the answering machine&rsquo;s, "
      "what turning JemRec off switches off besides, whether Start without "
-     "Wi-Fi is on, which recordings you marked to keep (by file name), and "
+     "Wi-Fi is on, the recordings&rsquo; quality, whether both sides play in "
+     "both ears, which recordings you marked to keep (by file name), which "
+     "folders JemRec has gone through to mend recordings made before 1.2 "
+     "(the folder&rsquo;s address Android gave JemRec), and "
      "random tokens the app uses to talk to its own recorder and to its own "
      "notifications. And a few notes for the phone&rsquo;s current boot and "
      "Wi-Fi: whether JemRec opened debugging port 5555, or could not open or "
@@ -4098,7 +4305,12 @@ PRIVACY_BODY = f"""
      <code>127.0.0.1</code>, and the app&rsquo;s two sockets are both to the phone
      itself: pairing with the phone&rsquo;s own Wireless debugging during setup, and
      talking to its recorder afterwards. Neither reaches your router, let alone the
-     internet.</p>
+     internet. Its background checks ask Android to run only while the phone
+     has a network - Android lets an app left idle for long reach even
+     <code>127.0.0.1</code> only then - and send nothing over it; with
+     <em>Start without Wi-Fi</em> on, the steady one asks for none, as its
+     port needs none, and the others none once that port is open and the
+     phone has no network.</p>
   <p><em>Start without Wi-Fi</em>, off until you switch it on, has the
      phone&rsquo;s own debugging service listen on port 5555 as well, so that the
      app can reach it at <code>127.0.0.1</code> with no Wi-Fi. The app still
@@ -4140,8 +4352,9 @@ PRIVACY_BODY = f"""
 
   <h2>Deleting your data</h2>
   <p>Delete individual recordings in the app, or the whole folder from any file
-     manager. <em>Start fresh</em> in Settings undoes the setup and hands the
-     permissions back, and deliberately keeps your recordings. Uninstalling the app
+     manager. <em>Start fresh</em> in Settings undoes the setup and hands back
+     the permissions you allowed (Android 13 and later), and deliberately keeps
+     your recordings. Uninstalling the app
      removes the app and its settings; the recordings stay, because they are yours
      and are not the app&rsquo;s to take.</p>
 

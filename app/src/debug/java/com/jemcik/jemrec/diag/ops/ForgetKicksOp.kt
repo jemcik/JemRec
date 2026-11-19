@@ -12,6 +12,7 @@ internal object ForgetKicksOp : DiagOp {
     override suspend fun run(appContext: Context, intent: Intent) {
         val work = androidx.work.WorkManager.getInstance(appContext)
         work.cancelUniqueWork("jemrec.keepalive.now")
+        work.cancelUniqueWork("jemrec.keepalive.aftercall")
         work.cancelUniqueWork("jemrec.keepalive.wifi")
         report(appContext, "forgetkicks", "ended")
     }

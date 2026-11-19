@@ -85,7 +85,10 @@ internal object MissedCalls {
         if (!CallLogLookup.granted(context)) return
         if (!CoverageHistory.automatic(context)) return
         // A call in progress is not in the log yet, and its recording is not
-        // saved yet. Ask again after it.
+        // saved yet. Ask again after it - and after a ring: Android mutes
+        // every notification while telephony is not idle (AOSP
+        // NotificationAttentionHelper.disableNotificationEffects), so the
+        // notice was never heard (review round 13).
         if (CaptureDaemon.callInProgress(context)) return
         val covered = coveredSince(context)
         // Anything still on the daemon will be saved; it counts as recorded.
@@ -105,11 +108,13 @@ internal object MissedCalls {
     /**
      * The calls in [calls] that should have a recording and do not.
      *
-     * A recording accounts for a call when it went the same way and started
-     * where the call log's date says it could have, or when the call began
-     * while it was running - call waiting puts the second call into the
-     * first one's recording (CallMatch.accounts). A pending one ([pending],
-     * length unknown) accounts by its start only.
+     * A recording accounts for its own call - the closest of its way where
+     * the call log's date says it could have started, a part joined
+     * mid-call from its call's start, which the saver found - and for any
+     * call that began while it was running - call waiting puts the second
+     * call into the first one's recording (CallMatch.accounted). A pending
+     * one ([pending], length unknown) accounts by its start only; one joined
+     * mid-call, for the call it began during, either way.
      */
     internal fun unrecorded(
         calls: List<CallLogLookup.LoggedCall>,
@@ -119,13 +124,13 @@ internal object MissedCalls {
         now: Long,
     ): List<CallLogLookup.LoggedCall> {
         // A call the rules left out was recorded and thrown away on purpose.
-        val known = ledger.accounted + pending
+        val accounted = CallMatch.accounted(ledger.accounted + pending, calls, { it.at }, { it.seconds }, { it.incoming })
         return calls.filter { call ->
             call.at > coveredSince &&
                 call.seconds >= MIN_SECONDS &&
                 call.at + call.seconds * 1000L + SETTLE_MS <= now &&
                 call.at !in ledger.reported &&
-                known.none { CallMatch.accounts(it, call.at, call.incoming) }
+                call !in accounted
         }
     }
 
@@ -144,10 +149,16 @@ internal object MissedCalls {
             (if (lines.size > 5) "\n…and ${lines.size - 5} more" else "") +
             "\n\nRun the self-test to see why."
         val selfTest = PendingIntent.getActivity(
-            context, 3201, DeepLink.intent(context, DeepLink.Kind.SELF_TEST),
+            context, 3201, DeepLink.intent(context, DeepLink.Kind.SELF_TEST, LINK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = AfterCall.problem(context, title, body, selfTest, "Self-test", collapsed = lines.first())
+        // The tap: the Calls tab, where each of these calls says it was not
+        // recorded; the button runs the self-test.
+        val calls = PendingIntent.getActivity(
+            context, 3202, DeepLink.intent(context, DeepLink.Kind.CALLS),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = AfterCall.problem(context, title, body, calls, "Self-test" to selfTest, collapsed = lines.first())
             .setDeleteIntent(seen(context))
             .setOnlyAlertOnce(true)
             // Callers' names are not for the lock screen: there it says only
@@ -173,6 +184,10 @@ internal object MissedCalls {
         )
 
     const val ACTION_SEEN = "com.jemcik.jemrec.missed.SEEN"
+
+    /** Its Self-test's mark: the self-test from this notification, which
+     *  takes it down, and not from another's (MainViewModel). */
+    const val LINK = "missed"
 
     fun markSeen(context: Context) {
         Prefs.of(context).edit { putLong(KEY_SEEN_UNTIL, System.currentTimeMillis()) }

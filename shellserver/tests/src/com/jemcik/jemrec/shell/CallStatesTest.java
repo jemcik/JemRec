@@ -21,9 +21,13 @@ public class CallStatesTest {
         boolean audioInCall;
         boolean checkScheduled;
 
+        /** Each start's joined flag, in order. */
+        final List<Boolean> joined = new ArrayList<>();
+
         @Override
-        public void callStarted(boolean incoming) {
+        public void callStarted(boolean incoming, boolean joined) {
             did.add(incoming ? "start in" : "start out");
+            this.joined.add(joined);
         }
 
         @Override
@@ -126,6 +130,125 @@ public class CallStatesTest {
         assertFalse(world.checkScheduled);
         states.offHook();
         assertDid("start out");
+    }
+
+    /** Android tells the state there is as the watch registers: idle, then
+     *  a call's off-hook, is a call seen from its start (review round 10). */
+    @Test
+    public void aCallAfterTheRegistrationsIdleIsNotJoined() {
+        states.idle();
+        states.offHook();
+        assertDid("start out");
+        assertEquals(List.of(false), world.joined);
+    }
+
+    /** Off-hook as the first state told: a recorder started mid-call - the
+     *  watch's revive - joined the call, its way not known. A ring first
+     *  is a call seen ringing. */
+    @Test
+    public void offHookAsTheFirstStateIsACallJoined() {
+        states.offHook();
+        assertEquals(List.of(true), world.joined);
+        states.idle();
+        checkDue();
+        states.ringing();
+        states.offHook();
+        assertEquals("the next call, seen ringing", List.of(true, false), world.joined);
+    }
+
+    /** A ring as the first state, no call up: a call seen ringing, not
+     *  joined (review round 11: no test held it). */
+    @Test
+    public void aRingFirstWithNoCallUpIsNotJoined() {
+        states.ringing();
+        states.offHook();
+        assertDid("start in");
+        assertEquals(List.of(false), world.joined);
+    }
+
+    /** A ring as the first state over a call already up - call waiting:
+     *  the next off-hook is still the call this recorder joined (review
+     *  round 11). */
+    @Test
+    public void aRingFirstOverACallUpIsStillJoined() {
+        world.audioInCall = true;
+        world.phoneCallInTelecom = true;
+        states.ringing();
+        states.offHook();
+        assertEquals(List.of(true), world.joined);
+    }
+
+    /** A change of mode that stays in a call - a hold, Samsung's Wi-Fi
+     *  Calling between its modes - is no end of the call up: the next
+     *  off-hook is still joined (review round 13: no test held it). */
+    @Test
+    public void aModeChangeStillInACallKeepsTheRingJoined() {
+        world.audioInCall = true;
+        world.phoneCallInTelecom = true;
+        states.ringing();
+        states.audioModeChanged();
+        states.offHook();
+        assertEquals(List.of(true), world.joined);
+    }
+
+    /** Telecom that cannot be asked takes the ring for a call of its own,
+     *  as idle() does (review round 12). */
+    @Test
+    public void aRingFirstWithTelecomUnsureIsNotJoined() {
+        world.audioInCall = true;
+        states.ringing();
+        states.offHook();
+        assertEquals(List.of(false), world.joined);
+    }
+
+    /** The waiting call never answered, and nothing up after it: the next
+     *  call, hours later, is a call of its own - kept, it was "joined"
+     *  (review round 12). */
+    @Test
+    public void aRingFirstOverACallThenIdleLeavesTheNextCallItsOwn() {
+        world.audioInCall = true;
+        world.phoneCallInTelecom = true;
+        states.ringing();
+        world.audioInCall = false;
+        states.idle();
+        states.offHook();
+        assertDid("start out");
+        assertEquals(List.of(false), world.joined);
+    }
+
+    /** The call up at the ring hangs up while it still rings - the state
+     *  stays ringing, the mode leaves the call - and the ring is answered:
+     *  a call of its own, incoming (review round 12; AOSP's
+     *  CallAudioModeStateMachine, read, not produced). */
+    @Test
+    public void theCallUpAtTheRingEndingFirstLeavesTheRingItsOwn() {
+        world.audioInCall = true;
+        world.phoneCallInTelecom = true;
+        states.ringing();
+        world.audioInCall = false;
+        states.audioModeChanged();
+        world.audioInCall = true;
+        states.offHook();
+        assertDid("start in");
+        assertEquals(List.of(false), world.joined);
+    }
+
+    /** Idle as the first state, but Telecom holds a phone call and the
+     *  audio is in a call: a call on the other SIM, joined (review round
+     *  11; read from AOSP). Idle with Telecom unsure is no call. */
+    @Test
+    public void anIdleFirstWithAPhoneCallInTelecomIsJoined() {
+        world.audioInCall = true;
+        world.phoneCallInTelecom = true;
+        states.idle();
+        assertEquals(List.of(true), world.joined);
+    }
+
+    @Test
+    public void anIdleFirstWithTelecomUnsureIsNoCall() {
+        world.audioInCall = true;
+        states.idle();
+        assertEquals(List.of(), world.joined);
     }
 
     @Test

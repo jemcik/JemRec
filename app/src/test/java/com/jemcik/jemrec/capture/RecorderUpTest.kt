@@ -256,7 +256,7 @@ class RecorderUpTest {
         // auto-delete runs; no other run is started.
         assertEquals(1, TestPhone.wifiWatches(context).size)
         assertTrue(Prefs.of(context).getLong("auto_delete_last_run", 0L) > 0L)
-        listOf(PERIODIC, NOW, WIFI).forEach { assertEquals(it, emptyList<WorkInfo>(), work.unique(it)) }
+        (HeldWork.ALL - USB_WATCH).forEach { assertEquals(it, emptyList<WorkInfo>(), work.unique(it)) }
         assertEquals(1, work.unique(USB_WATCH).size)
     }
 

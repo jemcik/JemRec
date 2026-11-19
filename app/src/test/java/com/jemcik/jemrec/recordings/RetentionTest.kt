@@ -20,10 +20,11 @@ class RetentionTest {
         kept: Boolean = false,
         name: String? = null,
         message: Boolean = false,
+        part: Boolean = false,
     ) = Recording(
         name = name ?: RecordingStore.nameFor(Date(now - daysAgo * day), true),
         uri = uri, whenLabel = "", incoming = true, durationLabel = "", sizeLabel = "",
-        durationMillis = seconds * 1000, kept = kept, message = message,
+        durationMillis = seconds * 1000, kept = kept, message = message, part = part,
     )
 
     private fun select(list: List<Recording>, maxAgeDays: Int = 0, minSeconds: Int = 0) =
@@ -58,6 +59,12 @@ class RetentionTest {
         // The age rule is not about length: an old message goes like any call.
         val oldMessage = rec(daysAgo = 31, seconds = 3, message = true)
         assertEquals(listOf(oldMessage), select(listOf(oldMessage), maxAgeDays = 30, minSeconds = 10))
+    }
+
+    /** One of a call's recordings - the 20 s before the recorder was lost
+     *  in a ten-minute call - is no short call (review round 13). */
+    @Test fun aShortPartOfALongerCallIsNotAShortCall() {
+        assertTrue(select(listOf(rec(daysAgo = 1, seconds = 20, part = true)), minSeconds = 30).isEmpty())
     }
 
     @Test fun whatCannotBeReadIsLeftAlone() {

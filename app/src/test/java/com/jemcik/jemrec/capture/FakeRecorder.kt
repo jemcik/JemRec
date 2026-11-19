@@ -49,6 +49,7 @@ internal class FakeRecorder(
             "E" to "1",
             "V" to "VOIP 0 off",
             "T" to "TRACK off",
+            "Z" to "QUALITY 32000",
             "GQ" to "GREETING 0",
             "D" to "OK",
             "K" to "SKIP current",
@@ -141,7 +142,7 @@ internal class FakeRecorder(
     private fun payload(command: Char, input: DataInputStream): ByteArray = when (command) {
         'O', 'E', 'T', 'K', 'H', 'J' -> ByteArray(1).also(input::readFully)
         'Y' -> ByteArray(12).also(input::readFully)
-        'V', 'N', 'F', 'D' -> frame(input)
+        'V', 'N', 'F', 'D', 'Z' -> frame(input)
         'G' -> {
             val op = input.readUnsignedByte()
             if (op == 'P'.code) {

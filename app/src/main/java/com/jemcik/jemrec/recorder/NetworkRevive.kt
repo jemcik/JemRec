@@ -35,8 +35,8 @@ import com.jemcik.jemrec.system.GlobalSettings
  * The app is dormant between calls, by design - there is no permanent service
  * to hold a normal NetworkCallback, and one registered by the process would die
  * with it and never see Wi-Fi return. registerNetworkCallback with a
- * PendingIntent is the one form the SYSTEM keeps: it fires the intent - waking a
- * stopped app - when a Wi-Fi network appears, with nothing of ours running in
+ * PendingIntent is the one form the SYSTEM keeps: it fires the intent - starting
+ * the app's process if none runs - when a Wi-Fi network appears, with nothing of ours running in
  * between. Same shape as the keep-alive job, but triggered by the exact event
  * that matters instead of a clock.
  *

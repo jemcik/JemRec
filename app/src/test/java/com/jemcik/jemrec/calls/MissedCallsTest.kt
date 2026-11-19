@@ -55,6 +55,19 @@ class MissedCallsTest {
         assertTrue(missed(listOf(logged()), listOf(Recorded(call + 20_000, true, 100))).isEmpty())
     }
 
+    /** A call whose only recording is a part joined mid-call is not
+     *  missed - matched by the call's start the saver found - nor while
+     *  that part waits on the recorder; a redial's recording, 20 s after
+     *  the logged end, is no recording of this call's (review round 12). */
+    @Test fun aJoinedPartCountsAndARedialsDoesNot() {
+        val joinedAt = call + 5 * 60_000L
+        assertTrue(missed(listOf(logged(seconds = 420)), listOf(Recorded(joinedAt, true, 100, callAt = call))).isEmpty())
+        assertTrue(missed(listOf(logged(seconds = 420)), pending = listOf(Recorded(joinedAt, false, -1, joined = true))).isEmpty())
+        // The redial two minutes on, recorded: its own call's, not this one's too.
+        val redial = logged(at = call + 130_000L, seconds = 60)
+        assertEquals(listOf(logged()), missed(listOf(logged(), redial), listOf(Recorded(call + 140_000L, true, 60))))
+    }
+
     @Test fun aRecordingTheUserDeletedStillCounts() {
         // The ledger is written at save time, so a deleted file is not a gap.
         val ledgerOnly = listOf(Recorded(call + 5_000, true, 115))

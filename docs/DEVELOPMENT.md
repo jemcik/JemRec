@@ -17,9 +17,10 @@ Then:
 
     ./gradlew assembleDebug
 
-The daemon is not a Gradle module. `shellserver/build.sh` compiles it against the
-platform the *device* runs, with its `@hide` internals intact, and Gradle runs
-that script as part of every build and packages the jar as an app asset.
+The daemon is not a Gradle module. `shellserver/build.sh` compiles it against
+android-36's `android.jar` - pinned because the jar's bytes depend on it; one
+jar runs on Android 12 and later - and Gradle runs that script as part of every
+build and packages the jar as an app asset.
 
 The release build is shrunk with R8 and the debug build is not. Measured on
 0.4, the unshrunk APK was 38 MB of which this app's own code was 0.2 MB; the
@@ -32,7 +33,8 @@ the whole file.
 A third build, `shrunk`, is the debug build through R8 with the same rules,
 and it is what the emulator checks install. The script builds it first
 (`./gradlew :app:assembleShrunk`, which redoes only what changed), so a run
-never checks an APK older than the sources; CI builds it on every push.
+never checks an APK older than the sources; CI builds it on each push to main
+and each pull request.
 Until 0.25.3 they installed debug, so nothing ever ran what R8 makes, and a
 library rule that let R8 remove a constructor WorkManager finds by reflection
 failed every one-time work in every release from 0.5 to 0.25.2 - each kick of
@@ -60,9 +62,39 @@ differs by machine is one F-Droid cannot reproduce. 21 is what F-Droid's build
 server runs, so 21 is what CI installs and what `build.sh` insists on -
 `JEMREC_JAVA_HOME` points it at one if the default is something else.
 
+**Dependency verification.** Every artifact the build downloads - libraries,
+plugins, their metadata - must match the SHA-256 in
+`gradle/verification-metadata.xml`, or the build stops (Gradle's "Verifying
+dependencies"; from 1.2). A dependency changed, its checksums are written
+again with the tasks that resolve everything, and the diff read before it is
+committed:
+
+    ./gradlew --refresh-dependencies --write-verification-metadata sha256 assembleRelease assembleShrunk assembleDebug test :daemon-tests:errorProne lint
+    ./gradlew --refresh-dependencies --write-verification-metadata sha256 -Pcoverage createDebugUnitTestCoverageReport :daemon-tests:test :daemon-tests:pitest :pure-tests:pitest
+
+(the second for the coverage reports' JaCoCo and the mutation tests' PIT,
+which only those tasks fetch). `--refresh-dependencies` makes Gradle fetch
+everything as CI does from nothing: written from the local cache, the file
+missed metadata a fresh fetch reads - BouncyCastle's BOM `.module` among
+five - and CI failed on it before building anything (PR #105, 2026-11-19).
+
+Gradle adds what is new and keeps what the file holds, including what was
+written by hand: aapt2's jar for Linux and for Windows, which a Mac build never
+downloads - taken from dl.google.com and checked against the `.sha256` files
+published beside them - so CI and F-Droid's builder, on Linux, find theirs. A
+new AGP brings a new aapt2: its three jars are added the same way. Javadoc
+and source jars are trusted as they are, as Gradle advises, for the IDEs that
+fetch them. Dependabot's Gradle pull requests fail their build until this is
+done on their branch: Dependabot does not write the file (dependabot-core
+issue 1996).
+
+The actions in `.github/workflows` are pinned to a commit, each with its tag
+beside it, as GitHub's hardening guide advises: a tag can be moved, a commit
+cannot. Dependabot proposes their updates, keeping both.
+
 ## Tests
 
-2031 JVM tests, no device needed - 1712 for the app and 319 for the daemon:
+2608 JVM tests, no device needed - 2203 for the app and 405 for the daemon:
 
     ./gradlew test
 
@@ -120,7 +152,7 @@ and the USB watch's runs and what each trigger arms (WorkManager's test
 driver), the record switch, a revive while JemRec stays off, and the main
 screen's reading and busy rules. Where one pins something that looks wrong,
 its comment says so ("Pins today's behaviour, which looks like a bug") and
-what: the fix comes in a commit of its own, which turns the test round.
+what: the fix, when it comes, turns the test round.
 
 **Every branch of a save** (`RecordingSaverTest`, from 0.27): the saver takes
 the recorder's files, the Ogg writer, where a file goes, the clock and its
@@ -200,17 +232,72 @@ tests hold their side to too.
 
 Before a release, the same calls go through the real app and daemon on an
 emulator, for each Android version it claims (12, 13, 16 and 17 for 0.29 -
-16 is what the Galaxy phones of the issues run), each booted cold
-(`emulator -avd <name> -no-snapshot`):
+16 is what the Galaxy phones of the issues run). The script boots each AVD
+itself, from nothing, two at a time, and shuts it down when its checks are
+done:
 
-    python3 tools/emulator_checks.py --serial emulator-5554
+    python3 tools/emulator_checks.py --avds jemrec-api31-0.14,jemrec-api33,jemrec-api36,jemrec-api37.2
+
+Each one is started with `-no-snapshot -memory 4096 -no-boot-anim -camera-back
+none -camera-front none -no-window -crash-report-mode never` (`EMULATOR_FLAGS`, with
+why: an emulator that crashed before asks at its next start whether to send
+the report, in a dialog that holds the boot until answered) - with `--wipe`, its
+data wiped too (`-wipe-data`), so a run is not shaped by the runs before it: by
+2026-11-17 the Android 12 AVD held 11 empty recordings and hundreds of an old
+install's - and is given until its load settles after the boot, up to three
+minutes. Then it is set up with
+animations off, as Android's testing guide sets a device up for UI tests.
+Every line of each run is printed after its AVD's name, and kept in
+`app/build/emulator-checks/<avd>.log`. The run ends with one line for each
+AVD. `--serial emulator-5554` checks an emulator that is already up instead.
 
 Cold, not `-no-snapshot-save` alone, which still loads the AVD's quick-boot
 snapshot at every start and throws away whatever happened since it was taken:
 the 17 AVD showed JemRec 0.9 for eight days that way, until 2026-10-28 (every
 run installed the current build first, so the results were for it).
 
-Any crash of the app during a check fails that check, whatever else it found.
+Any crash of the app during a check fails that check, whatever else it found,
+and so does an "isn't responding" of its own (Android's DropBox keeps both).
+
+A check that fails is run again, with the others that failed, on the same
+emulator shut down and booted cold again by the script itself; it fails only
+if it fails both times, and its first failure stays in the output - unless
+JemRec crashed or stopped responding during it, which fails the run whatever
+the retry does, as a retry is for the emulator's bad moments, not the app's
+(the 12 AVD's "isn't responding" in `usb_debugging`, 2026-11-18, passed on its
+retry and was found only so); a setup
+that fails before any check is tried once more the same way (`--no-retry`
+turns both off, for working on a check). Every check's first try and retry is
+kept across runs with retries, with the tree it ran on
+(`~/.cache/jemrec/emulator-checks.tsv`; a `--no-retry` run is not kept), the
+summary names each check that passed only on its retry and in how many of its
+last runs it did so, and one that did so in 2 of the last 3 runs on an
+Android version fails the run - Android's guide: "keep track of and fix flaky
+tests". A check that failed both times failed as it was, and counts as no
+flake. Three past "flakes" here were bugs (answer_during_voip on Android 12
+failed 4 runs of 5, 0.24). And for the whole run, every few
+seconds, an Android "isn't responding" dialog - System UI's, on a loaded
+emulator, or JemRec's own, which fails its check as above - is answered Wait, as it would otherwise hold the screen from the
+check under way. Android's own `hide_error_dialogs` is left off: with it on,
+Android kills the app that stopped answering instead of asking
+(`AppErrors.handleShowAnrUi`), and System UI would restart in the middle of a
+check. The emulator's own
+call network, Wi-Fi and timing give way now and then under load: in a full
+run on 2026-11-17 the Android 17 AVD failed `caller_id`, `app_call`,
+`mode_switch` and `allow_this_wifi`, and the Android 12 one `ringing_gap` and
+`start_without_wifi`, with no crash and nothing changed in what they check;
+such failures used to be rerun by hand, on a fresh boot. An emulator that
+ends mid-run - ten crash reports between 2026-11-12 and 2026-11-18, all
+the emulator's own: four its hang detector ending it with its sound output
+on the Mac deadlocked in CoreAudio, three its GPU renderer freeing what a
+process that ended had drawn with (gfxstream), three its window on the Mac,
+which the AVDs are now booted without (`-no-window`) - stops the pass: the check under way and those left
+are run on the fresh boot, kept in the history as LOST rather than as their
+failures; the lines where the emulator ended - GONE, or the check's own
+failure - name the Mac's crash report and what it says.
+Booting the AVDs without sound (`-audio none`) avoids that, but the Android
+17 AVD then played too slowly for `answering`, `background_playback` and
+`both_ears` (2026-11-18): the sound stays.
 
 It installs the shrunk build (see above), sets JemRec up from nothing and
 places simulated calls: the ringing cut, the same cut with nothing captured
@@ -222,7 +309,10 @@ country code named by the number with it (the number format, issue #71)
 and a call that the call log says was made in Ukraine named with
 Ukraine's code, the self-test, and the answering machine: a message
 taken and marked with the microphone given back, a caller who hangs
-up during the greeting, a caller the rules leave out left to ring, a phone
+up during the greeting, the recorder killed mid-message and the message's
+call hung up by the call's own service, its file saved as a message and the
+mute given back by the recorder started again (`message_recorder_lost`), a caller
+the rules leave out left to ring, a phone
 call ringing over a messenger call left to ring (a stand-in call from
 `shellserver/probe`, built by the script if need be), a caller left to ring
 in the day after an emergency call (the pause set as the call tracker sets it;
@@ -245,17 +335,42 @@ through the call capture again once the mode is back, saved exactly, and
 Diagnostics' *Copy a report* saying each way (before Android 14, kept on the
 call capture); and the stand-in app call placed over a phone call being
 recorded, as a Meet call taken with the phone call on hold, keeping that phone
-call on the call capture. Then a call's waveform, kept as it is
-saved; a recording played from its row going on with the screen off, named
-only "Call recording" while locked and by its caller again once unlocked,
-held back by a ringing call and playing on after it; a recording raised to
+call on the call capture; and a messenger call - a stand-in app named as
+Telegram's telegram.org build (`shellserver/probe/standin`, built by the script
+with javac and d8), holding a call as a messenger does - whose recorder is
+ended mid-call and brought back by the call's own watch, both parts saved as
+one call and told once, and a call ended while its recorder is down ended
+from the audio mode (1.5 s out), what the recorder left saved as a part
+(`messenger_recorder_lost`, Android 14 and later). Then a call's waveform, kept as it is
+saved; three Quality choices made in Settings, each the rate the recorder
+starts the next call at, the file's first audio page holding one packet and
+no other page longer than a second, every checksum good and its last
+position its length, the file's own rate within a fifth over the choice and
+the three in its order, Highest well over the rest, and a recorder started afterwards taking the choice from its
+environment; a recording played from its row going on with the
+screen off, named only "Call recording" while locked and by its caller again
+once unlocked, held back by a ringing call and playing on after it; a
+recording playing switched by its setting - the key Settings' switch writes,
+which a screen test taps - from both sides in both ears to each
+in its own ear and back, opening again each time from where it was, and its
+sound stalled 0.8 s by stopping the app, the playhead falling behind the
+device's clock by the stall rather than running on ahead of the sound; a
+recording raised to
 the ear - the proximity sensor set through the emulator's console, the debug
 build acting as if the emulator had an earpiece - moving to the earpiece as
 voice-call audio with the screen's lock held and the audio mode left normal,
 back on the loudspeaker and playing on when lowered, moved to the earpiece
 while a call holds it back with JemRec off the screen and the phone raised,
 and playing on there after the call, the player's earpiece
-button moving it too, and with Earpiece in Settings a recording opening there;
+button moving it too, and with Earpiece in Settings a recording opening there
+- and each move opening the recording again where the sound was, raised,
+lowered, or paused, moved and played on: where it aimed, from its own log
+line, within 50 ms of the session's place at that moment, and its place
+across the move, against the device's clock, no more than 100 ms ahead - a
+move done right reads 117 to 160 ms behind, for its gap, so a skip of about
+a quarter second is the most this lets through (on the 1.2 branch, before
+its release, a move dropped what Android's audio track held, 390 ms on the
+Android 17 AVD);
 JemRec
 as one window -
 begun by its own way in, as from a notification, the same way in again and
@@ -334,17 +449,80 @@ itself, left open, as it must be. And first, where the AVD's Wi-Fi has not
 been allowed for Wireless debugging - on Android 12 always, the check taking
 its allowance back first, as root with system_server stopped - that once the
 question is cancelled no revive for the port asks again or opens it; then
-the check allows that Wi-Fi for the rest. These checks, the USB-debugging one
-and the adbd one take a snapshot through the emulator's console first, and
-load it if adb never comes back.
-And, run before those Wi-Fi checks (they go last: they turn the emulator's
-Wi-Fi off and on), the daemon's watch for the phone
+the check allows that Wi-Fi for the rest. These checks, the USB-debugging one,
+the adbd one and `debugging_off` take a snapshot through the emulator's console
+first, and load it if adb never comes back - taken before any change of window,
+as saving one stops the emulator for seconds (`usb_debugging` pressed Home and
+then saved: JemRec's window took its focus event late, an "isn't responding" on
+the Android 12 AVD, 2026-11-18).
+And, run before those Wi-Fi checks (they come late - stopped_early, wifi_back,
+start_without_wifi: they turn the emulator's Wi-Fi off and on, and only
+battery_restricted, audio_server_restart and stall_told, which start the
+recorder themselves, run after them), the daemon's watch for the phone
 stopping JemRec in the background:
 that it runs and reads the device's own exit records; and on Android 15 and
 later, that the app reads its own start record - a Force stop, then an open,
 read as "started stopped" and, being the user's own stop, not warned of. The
 phone's stop itself cannot be made on an emulator, which never kills apps the
-way a vendor power manager does.
+way a vendor power manager does. And, from 1.2, what Android itself can do to
+JemRec, made on the emulator rather than waited for: on battery and with
+JemRec's uid idle, a call recorded and saved at once with the Battery set to
+Restricted and in the restricted standby bucket, each with exact call tracking
+on and off - but for Restricted with tracking off, where Android refuses the
+recorder's wake, and the call is saved once JemRec opens, home and a
+notification saying why; in Ask first there, no call asked about or recorded
+and the header saying so; under Restricted the keep-alive's jobs held, as
+JobScheduler says; and in the restricted bucket a kick bringing an ended
+recorder back (`battery_restricted`); the audio server ended in the middle of a call and
+the recording going on, its sound after the kill as before it - Android's own
+AudioRecord restores itself (a gap of 1.1 to 1.5 s - 4.7 s once beside
+another AVD under load, held under 6 s - the Android 12 and 17
+AVDs, 2026-11-18; held down 2 and 5 s on the 12 AVD, and 20 s on the 12 and
+17, it restored itself too, no read failing) (`audio_server_restart`); held
+down mid-call, the call's notification saying the recording stopped within
+seconds and that it goes on once the server does - the stall watch, no read
+failing, the same recorder throughout saying the stop itself, and the saved
+call not said to have stopped early (`stall_told`). A read that does fail - the
+recorder's to make anew (`Restarting`, `CallPath`) - has not been produced on
+an emulator: its decisions are held by the daemon's tests (`RestartLoopTest`,
+`RestartPolicyTest`, `CallPathTest`), the captures' use of them only read in
+review; notifications taken back after setup, leaving home and
+the recordings there with a notice and, in Ask first, the header saying no call
+can be recorded, and from Android 14 full-screen notifications taken away (an
+app op) said in Ask first - and not while they are allowed - its Turn on on
+their own page (`notifications_off`,
+Android 13 and later); a picked folder
+deleted, the next call saved in the standard folder with a notification and
+home's notice saying so (`folder_lost`); and the recorder ended mid-call,
+brought back while the call is up by the call's own watch, said in the call's
+notification, both parts saved and neither said to have stopped early -
+brought back during an incoming call, the new recorder joining it, both parts
+saved incoming and none said to have stopped early - lost unnoticed just before a hang-up and a redial, two calls, the first's file a part, three times: redialled at once with exact call tracking on, a second after the call's mode went normal with it off, and after a recorder started between the calls - and, Wi-Fi off, not brought back, the call's end read from the audio mode at once, its notification gone after the call and
+its recording collected and said to have stopped early (`stopped_early`); the
+app's process killed (SIGKILL as root, as the low-memory killer sends) while it
+saves a call - a second into the transfer, written but not published, and
+published with the recorder's copy not yet deleted, the debug build holding
+the save there (`SaveHold`), and the process ending itself straight after
+the save journal's writes (before the first publish, and after the
+recorder's copy went) - in the standard folder and a picked one, the call
+saved whole and once at the next open, nothing left pending
+(`killed_mid_save`); the
+recorder's encoder ended mid-call by a full phone, with exact call tracking
+off, the call's notification saying so during the call, its file named with
+what it missed and the app saying it stopped early from that alone, and a
+message's recording ended the same way hung up on at once, what was kept
+saved (`early_end`); the phone put in Doze by Android's own test
+command, a call recorded and saved at once and an ended recorder brought back
+by a kick (`doze`); and the
+app's process ended in the background - `am kill`, which ends an app's
+process only once it is safe to, in the background, as Android does for the
+memory -
+and JemRec back on the screen and the home tab it was left on
+(`process_death`). And that
+a call's recording is a valid Ogg Opus stream by RFC 7845 - each page's position
+where its last packet ends, the last page marked - read from its bytes without
+the app's code, and every recording this install owns so after the pass over
+ones saved before 1.2 (`opus_valid`).
 It turns the emulator's sounds down to about half before it starts - ringtone,
 notifications, system, alarms and media, never the call's, which the checks
 measure - and it
@@ -356,9 +534,12 @@ A pre-push hook runs the tests and lint before anything leaves the machine:
 
 ## Checks beyond the tests
 
-CI runs the first four on every push and pull request; each runs locally too.
+CI runs the first four on each push to main and each pull request; each runs
+locally too.
 They exist because reviews kept finding bugs by chance that a tool finds every
-time.
+time. CI also makes the site again (`python3 tools/build_site.py`) and fails
+if `docs/` comes out other than committed, and the tests hold the F-Droid
+listing to its lengths (`ListingLimitsTest`).
 
 - **Lint is a gate.** `./gradlew lint`: every warning is an error, and there
   is no baseline - the 121 found when the gate went in were fixed (80 of them
@@ -492,8 +673,13 @@ changes that file to a version not yet released, the release workflow:
 
 - refuses a `versionCode` that is not `MAJOR*10000 + MINOR*100 + PATCH`;
 - refuses a release with no changelog;
+- waits, up to an hour, for the build workflow's run on that same commit, and
+  refuses unless it passed - every test, Error Prone and lint (`checked`);
+  main's runs are never cancelled by a later merge, so that run is there to
+  wait for;
 - builds a release APK signed with the project key held in repository secrets;
-- refuses to publish anything `apksigner` cannot verify;
+- refuses to publish anything `apksigner` cannot verify, or signed by any
+  other key than the one whose SHA-256 the README and the site publish;
 - tags that same merge commit and attaches `jemrec-0.9.apk` to the release.
 
 F-Droid takes it from there without being asked: its update checker reads

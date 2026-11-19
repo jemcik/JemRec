@@ -25,10 +25,31 @@ internal object RecordingLibrary {
     /** What the screens show. */
     data class Library(val recordings: List<Recording>, val trashed: List<Recording>)
 
-    /** The two places that are listed whole, trashed or not. */
-    class Scan(val documents: List<FolderRecordings.Document>, val files: List<File>)
+    /** The places listed: the folder chosen and app storage whole, trashed
+     *  or not, and Recordings/JemRec's rows and its trash as MediaStore gives
+     *  them - asked once each, where used. [folderListed]: false if the
+     *  folder chosen could not be listed, its [documents] then none;
+     *  [standardListed], whether MediaStore answered both. */
+    class Scan(
+        val documents: List<FolderRecordings.Document>,
+        val files: List<File>,
+        val folderListed: Boolean,
+        context: Context,
+    ) {
+        private val app = context.applicationContext
+        private val stored by lazy { MediaStoreRecordings.listing(app) }
+        private val storedTrashed by lazy { MediaStoreRecordings.trashedListing(app) }
+        val inStandard: List<Recording> get() = stored.orEmpty()
+        val inStandardTrash: List<Recording> get() = storedTrashed.orEmpty()
+        val standardListed: Boolean get() = stored != null && storedTrashed != null
+    }
 
-    fun scan(context: Context) = Scan(FolderRecordings.documents(context), AppRecordings.files(context))
+    /** The folder's files - old names Honor's Phone app cannot read put
+     *  right first (HonorRenames) - app storage's, and MediaStore's. */
+    fun scan(context: Context): Scan {
+        val listed = FolderRecordings.listing(context)?.let { HonorRenames.fix(context, it) }
+        return Scan(listed ?: emptyList(), AppRecordings.files(context), folderListed = listed != null, context)
+    }
 
     /** The recordings and Recently deleted, from one [Scan]. Only the debug
      *  build's invented list has no trash. */
@@ -45,7 +66,7 @@ internal object RecordingLibrary {
     /** Every recording, newest first. */
     fun list(context: Context, scan: Scan = scan(context), withCallers: Boolean = true): List<Recording> {
         val listed = (
-            MediaStoreRecordings.list(context) +
+            scan.inStandard +
                 FolderRecordings.list(context, scan.documents) +
                 AppRecordings.list(context, scan.files)
             )
@@ -61,7 +82,7 @@ internal object RecordingLibrary {
         // heard of: every one, after a reinstall (RecordingTags). Before the
         // marks are read - and auto-delete reads them from here.
         RecordingMarks.recover(context, listed)
-        val found = RecordingMarks.onto(context, listed)
+        val found = RecordingMarks.Starts.onto(context, RecordingMarks.onto(context, listed))
         return if (withCallers) RecordingMarks.withCallers(context, found) else RecordingMarks.withDirections(context, found)
     }
 
@@ -82,7 +103,7 @@ internal object RecordingLibrary {
      * twice in Delete all for good's question.
      */
     fun trashed(context: Context, scan: Scan = scan(context)): List<Recording> {
-        val inMediaStore = MediaStoreRecordings.trashed(context)
+        val inMediaStore = scan.inStandardTrash
         val sameFile = inMediaStore.mapTo(HashSet()) { it.name to it.expiresAtMillis }
         val found = (
             inMediaStore +
@@ -90,7 +111,7 @@ internal object RecordingLibrary {
                 AppRecordings.trashed(context, scan.files)
             )
             .sortedWith(compareBy(nullsLast()) { it.expiresAtMillis })
-        return RecordingMarks.withCallers(context, found)
+        return RecordingMarks.withCallers(context, RecordingMarks.Starts.onto(context, found))
     }
 
     private val _changed = MutableSharedFlow<String>(extraBufferCapacity = 16)

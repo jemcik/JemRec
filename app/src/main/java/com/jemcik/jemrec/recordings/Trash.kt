@@ -65,7 +65,7 @@ object Trash {
     /** Move one recording to the trash. Deleted means it is there now. */
     fun trash(context: Context, uri: Uri, filePath: String?, name: String): DeleteResult =
         RecordingLocation.of(uri, filePath).trash(context, name, System.currentTimeMillis() + DAYS * DAY_MS)
-            .also { if (it is DeleteResult.Deleted) AfterCall.gone(context, name) }
+            .also { if (it is DeleteResult.Deleted) left(context, name) }
 
     /** Move these to the trash, asking once for whatever MediaStore will not
      *  take this app's word for. */
@@ -132,7 +132,7 @@ object Trash {
             when (gone) {
                 true -> {
                     done++
-                    AfterCall.gone(context, recording.name)
+                    left(context, recording.name)
                 }
                 false -> failed++
                 null -> disputed += recording
@@ -141,6 +141,17 @@ object Trash {
         val ask = MediaStoreRecordings.askToDelete(context, disputed.map { it.uri })
         if (done > 0) Log.i(TAG, "trash: deleted $done recording(s) for good")
         return outcome(done, failed, disputed, ask)
+    }
+
+    /** What goes with a recording that has left the list - trashed, deleted
+     *  for good, either on a yes to Android's question (TrashActions), or
+     *  gone by another app's hand: its notification (AfterCall.gone), and
+     *  Share's copy of it once no app may still be reading it
+     *  (ShareCopies.forget), a copy of the call that would otherwise stay
+     *  until it went stale. */
+    fun left(context: Context, name: String) {
+        AfterCall.gone(context, name)
+        ShareCopies.forget(context, name)
     }
 
     private fun outcome(done: Int, failed: Int, disputed: List<Recording>, ask: IntentSender?) =

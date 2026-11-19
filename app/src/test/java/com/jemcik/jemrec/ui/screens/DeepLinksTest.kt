@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui.screens
 
 import android.app.Notification
 import android.app.NotificationManager
+import kotlinx.coroutines.flow.first
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -17,6 +18,7 @@ import com.jemcik.jemrec.ui.Screen
 import com.jemcik.jemrec.ui.UiState
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -267,5 +269,80 @@ class DeepLinksTest : ScreenTest() {
         val opened: Intent = shadowOf(app).nextStartedActivity
         assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, opened.action)
         assertEquals(app.packageName, opened.data?.schemeSpecificPart)
+    }
+
+    /** The Battery notice's Open App info: Android's page for JemRec, opened
+     *  from JemRec's own activity - the notification's button names no
+     *  implicit intent (CodeQL, PR #105). */
+    @Test fun batterySettingsOpensAppInfo() {
+        val vm = viewModel()
+        vm.open(DeepLink.Link(DeepLink.Kind.BATTERY_SETTINGS, null))
+        settle(vm)
+        val opened: Intent = shadowOf(app).nextStartedActivity
+        assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, opened.action)
+        assertEquals(app.packageName, opened.data?.schemeSpecificPart)
+    }
+
+    /** The calls not recorded, tapped: the Calls tab, where each says it was
+     *  not, and the notification seen; its button runs the self-test. */
+    @Test fun theMissedCallsTapOpensTheCallsTab() {
+        val manager = app.getSystemService(NotificationManager::class.java)
+        manager.notify(32, Notification.Builder(app, "x").setSmallIcon(android.R.drawable.ic_dialog_info).build())
+        val kept = com.jemcik.jemrec.ui.RecordingsNarrowing(kept = true)
+        val vm = viewModel(
+            UiState(
+                step = SetupStep.READY, screen = Screen.SETTINGS, recordingsNarrowing = kept,
+                callsNarrowing = com.jemcik.jemrec.ui.CallsNarrowing(favorites = true, query = "x"),
+            ),
+        )
+        vm.open(DeepLink.Link(DeepLink.Kind.CALLS, null))
+        awaitMain("the Calls tab") { vm.state.value.homeTab == HomeTab.CALLS }
+        assertEquals(Screen.HOME, vm.state.value.screen)
+        // Narrowed to the calls not recorded - a Favorites or a search there
+        // hid them - and the Recordings tab's own left as it was.
+        assertEquals(com.jemcik.jemrec.ui.CallsNarrowing(notRecorded = true), vm.state.value.callsNarrowing)
+        assertEquals(kept, vm.state.value.recordingsNarrowing)
+        assertTrue("the notification seen and taken down", manager.activeNotifications.none { it.id == 32 })
+        settle(vm)
+    }
+
+    /** Another notification's Self-test - a silent recording's - leaves
+     *  the calls not recorded up, unread; only theirs takes them down. */
+    @Test fun onlyTheMissedCallsSelfTestTakesThemDown() {
+        val manager = app.getSystemService(NotificationManager::class.java)
+        manager.notify(32, Notification.Builder(app, "x").setSmallIcon(android.R.drawable.ic_dialog_info).build())
+        val vm = viewModel(UiState(step = SetupStep.READY))
+        vm.open(DeepLink.Link(DeepLink.Kind.SELF_TEST, null))
+        awaitMain("Diagnostics") { vm.state.value.screen == Screen.DIAGNOSTICS }
+        assertTrue(manager.activeNotifications.any { it.id == 32 })
+        vm.open(DeepLink.Link(DeepLink.Kind.SELF_TEST, com.jemcik.jemrec.calls.MissedCalls.LINK))
+        awaitMain("taken down") { manager.activeNotifications.none { it.id == 32 } }
+        settle(vm)
+    }
+
+    /** The background warning, tapped: Settings, whose Troubleshooting
+     *  opens the phone maker's screen; its button opens that screen itself. */
+    @Test fun theBackgroundWarningsTapOpensSettings() {
+        val vm = viewModel(UiState(step = SetupStep.READY))
+        vm.open(DeepLink.Link(DeepLink.Kind.SETTINGS, null))
+        awaitMain("Settings") { vm.state.value.screen == Screen.SETTINGS }
+        // Its row asked into view: Settings' top said nothing of it.
+        assertTrue(vm.state.value.revealBackground)
+        vm.backgroundRevealed()
+        assertFalse(vm.state.value.revealBackground)
+        settle(vm)
+    }
+
+    /** Recording saved elsewhere's Choose again: home, and Android's folder
+     *  picker asked for - kept until the screen takes it. */
+    @Test fun chooseAgainAsksForThePicker() {
+        val vm = viewModel(UiState(step = SetupStep.READY, screen = Screen.SETTINGS))
+        vm.open(DeepLink.Link(DeepLink.Kind.CHOOSE_FOLDER, null))
+        awaitMain("home") { vm.state.value.screen == Screen.HOME }
+        val asked = kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.withTimeoutOrNull(5_000) { vm.folderPickRequests.first() to true }
+        }
+        assertNotNull("the picker asked for", asked)
+        settle(vm)
     }
 }

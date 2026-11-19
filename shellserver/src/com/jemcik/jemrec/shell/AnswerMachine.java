@@ -212,6 +212,11 @@ final class AnswerMachine {
          *  not be played, the microphone would not mute, or the call's audio
          *  never came (failAndHangUp). */
         final boolean greetingFailed;
+        /** The machine hung up because the recording stopped
+         *  (stoppedRecording): not the caller's hang-up, whatever was said
+         *  by then - what was kept is saved, a message, its early stop told
+         *  (review round 10: filed as "hung up during the greeting"). */
+        final boolean lostRecording;
 
         /** When the caller's first words began (see SPEECH_MS); 0 if none. */
         final long speechAt;
@@ -233,6 +238,7 @@ final class AnswerMachine {
             this.talked = talked;
             test = m.testCall;
             greetingFailed = m.greetingFailed;
+            lostRecording = m.hungUpLost;
         }
 
         /**
@@ -269,7 +275,7 @@ final class AnswerMachine {
          * greeting never reached - there, all of the recording is the call.
          */
         boolean nothingLeft() {
-            return !talked && !greetingFailed && mutedAt > 0 && beepEndedAt == 0 && speechAt == 0;
+            return !talked && !greetingFailed && !lostRecording && mutedAt > 0 && beepEndedAt == 0 && speechAt == 0;
         }
 
         private long words() {
@@ -336,6 +342,10 @@ final class AnswerMachine {
      *  recording hears from here on is the line going down, not a caller -
      *  unless the call outlives the claim (see FALSE_IDLE_MS). */
     private volatile boolean over;
+    /** The recording stopped and is not back: no message can be kept. */
+    private volatile boolean recordingLost;
+    /** Hung up for it (stoppedRecording): the call's Outcome says so. */
+    private boolean hungUpLost;
     private long overAt;
     private boolean greetingFailed;
     /** The test's check tone has gone out: a greeting played again leaves it
@@ -581,6 +591,17 @@ final class AnswerMachine {
     }
 
     private void startGreeting(int path) {
+        if (recordingLost && !ending) {
+            // Its recording stopped as the call was answered: no message
+            // could be kept, so none is asked for (review, 2026-11-18). Not
+            // played: the greeting failed, as the app then says - not the
+            // caller hanging up during it (review round 10).
+            effects.log("answer: the recording stopped before the greeting - nothing could be kept; hanging up");
+            greetingFailed = true;
+            ending = true;
+            effects.hangUp();
+            return;
+        }
         state = State.GREETING;
         play(testCall, path);
         effects.messageStarted();
@@ -858,6 +879,10 @@ final class AnswerMachine {
             // Put back: an unmute seen before it was the platform's, not a
             // first of the user's two (watchMute).
             unmutedSeen = false;
+            actOnLostRecording();
+            if (ending) {
+                return;
+            }
         }
         int path = applied(asked);
         if (over) {
@@ -915,6 +940,10 @@ final class AnswerMachine {
                 return;
             }
             unmutedSeen = false;
+            actOnLostRecording();
+            if (ending) {
+                return;
+            }
         }
         if (effects.now() - replayAt < REPLAY_MUTE_HOLD_MS) {
             audioPoll = effects.schedule(this::holdMute, AUDIO_POLL_MS);
@@ -958,6 +987,61 @@ final class AnswerMachine {
         silenceWatch = effects.schedule(this::watchSilence, SILENCE_CHECK_MS);
     }
 
+    /**
+     * The recording stopped mid-call (RecordingSession): what the caller
+     * says from here is not kept, and the silence watch, which reads the
+     * caller's sound from that recording, hears a caller still talking as
+     * silent, and would hang up on it 30 s on (read in review, 2026-11-18;
+     * not produced). A greeting or a message then ends at once: a caller
+     * talking into nothing believes a message is being left, and can call
+     * back; what was kept is saved. Stopped as the call is answered, before
+     * the greeting, it is remembered, and the greeting not played into a
+     * dead recording ([startGreeting]); back again, it is forgotten. Never
+     * over a call the user is taking - unmuted on the call screen, or Talk
+     * to them on its way - nor while telephony says the call is over, when
+     * an end call would reject a ringing one. From the recording's thread:
+     * acted on on the machine's.
+     */
+    void recordingStopped() {
+        effects.schedule(this::stoppedRecording, 0);
+    }
+
+    /** The recording reads again (RecordingSession's back). */
+    void recordingBack() {
+        effects.schedule(() -> recordingLost = false, 0);
+    }
+
+    private void stoppedRecording() {
+        // Not this machine's call: a stop posted as the call ended runs
+        // after its reset, and left armed it hung up the next outgoing test
+        // call's greeting (review round 10).
+        if (!answered) {
+            return;
+        }
+        recordingLost = true;
+        actOnLostRecording();
+    }
+
+    /** A recording lost and not back, acted on now if it can be: its
+     *  hang-up skipped while telephony said the call was over, or while a
+     *  takeover might be under way, is looked at again when that clears -
+     *  overEnds, the mute back with no takeover - not forgotten, the
+     *  message running on into a dead recording until the silence watch
+     *  hung up on a caller still talking (review round 10). */
+    private void actOnLostRecording() {
+        if (!recordingLost || (state != State.GREETING && state != State.MESSAGE) || ending || over) {
+            return;
+        }
+        if (unmutedSeen || (mutedAt > 0 && !effects.muted())) {
+            effects.log("answer: the recording stopped as the call was being taken; leaving it to the user");
+            return;
+        }
+        effects.log("answer: the recording stopped - nothing more of the message can be kept; hanging up");
+        hungUpLost = true;
+        ending = true;
+        effects.hangUp();
+    }
+
     private void limitReached() {
         messageLimit = null;
         if (state == State.MESSAGE) {
@@ -986,6 +1070,10 @@ final class AnswerMachine {
             unmutedSeen = true;
         } else {
             unmutedSeen = false;
+            actOnLostRecording();
+            if (ending) {
+                return;
+            }
         }
         muteWatch = effects.schedule(this::watchMute, MUTE_WATCH_MS);
     }
@@ -1105,6 +1193,10 @@ final class AnswerMachine {
     private void overEnds(String said) {
         over = false;
         effects.log(said);
+        actOnLostRecording();
+        if (ending) {
+            return;
+        }
         if (movedWhileOver && state == State.GREETING && playing && !ending) {
             // A leg on the other way while it was said over, back since or
             // not: the greeting went through it - in-call music's output
@@ -1263,6 +1355,8 @@ final class AnswerMachine {
         runStartAt = 0;
         runSoundMs = 0;
         speechAt = 0;
+        recordingLost = false;
+        hungUpLost = false;
         talked = false;
         talkedAt = 0;
         ending = false;

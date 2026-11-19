@@ -130,7 +130,10 @@ class PlacesTest {
     }
 
     @Test fun aFolderWithNoProviderListsNothing() {
-        RecordingStore.setTree(app, "content://no.such.provider/tree/primary%3ACalls".toUri())
+        // Chosen once, its provider gone since - uninstalled, say.
+        val gone = "content://no.such.provider/tree/primary%3ACalls".toUri()
+        PickerGrants.offer(gone)
+        assertTrue(RecordingStore.setTree(app, gone))
         assertTrue(Recordings.list(app).isEmpty())
         assertTrue(Trash.list(app).isEmpty())
     }

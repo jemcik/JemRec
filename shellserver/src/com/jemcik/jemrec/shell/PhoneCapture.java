@@ -60,8 +60,9 @@ final class PhoneCapture implements AudioCapture {
         AudioCapture voice();
 
         /** A new mixer capture, not started - null where Android refused
-         *  the copy (Voip.newPhoneCapture). */
-        @Nullable AudioCapture mixer();
+         *  the copy (Voip.newPhoneCapture); [withMic] false where the guard
+         *  had given the microphone back to the call (CallPath.micKept). */
+        @Nullable AudioCapture mixer(boolean withMic);
 
         /** Whether Telecom holds a phone call; null if it cannot be asked. */
         @Nullable Boolean phoneCallInTelecom();
@@ -77,8 +78,10 @@ final class PhoneCapture implements AudioCapture {
 
     /** A mode change counts once it has held this long. */
     static final long SETTLE_MS = 500L;
-    /** How often a call put on the mixer mid-call is asked about again. */
+    /** How often a call put on the mixer mid-call is asked about again,
+     *  and a mixer wanted and not had tried again (CallPath.recheck). */
     static final long RECHECK_MS = 1000L;
+
     /** A look at what is playing this long after a swap: long enough for
      *  the call's players to start, short enough for any call. */
     static final long LOOK_AFTER_MS = 3000L;
@@ -98,6 +101,8 @@ final class PhoneCapture implements AudioCapture {
     private final Call call;
     private final @Nullable AudioManager audio;
     private final CallReport report;
+    /** Made anew for the call (Restarting), not at its off-hook. */
+    private final boolean madeAnew;
 
     // Guarded by this: the capture being read, the one waiting to take over,
     // and whether this was stopped.
@@ -109,24 +114,48 @@ final class PhoneCapture implements AudioCapture {
     private volatile @Nullable ScheduledExecutorService modeThread;
     private volatile @Nullable AudioManager.OnModeChangedListener modeListener;
 
-    // The mode's thread only.
+    // The mode's thread's.
     private @Nullable ScheduledFuture<?> decision;
-    private boolean asked;
-    /** The last mode told: Android also tells the one there was as it
-     *  takes the listener (the Android 17 emulator, 2026-10-27). */
-    private int lastMode = -1;
-    /** Where the decisions have put the call: the mixer or the call capture. */
-    private boolean onMixer;
-    /** The mode said "communication" as the call went off-hook: 0.23's
-     *  mixer call, which nothing else playing takes off it. */
-    private boolean startedOnMixer;
-    /** The mixer by a change during the call: asked about again. */
-    private boolean mixerMidCall;
 
-    PhoneCapture(Call call, @Nullable AudioManager audio, CallReport report) {
+    /** Where the call stands (CallPath): one value, replaced whole by the
+     *  mode's thread and the reader, read whole by the next capture - made
+     *  from the one read last (RestartLoop), or from a first one whose own
+     *  start failed, whose path is the call's start (OFF_HOOK). The last mode told in it: Android also tells the
+     *  one there was as it takes the listener (the Android 17 emulator,
+     *  2026-10-27). */
+    private volatile CallPath path;
+    private final Object pathLock = new Object();
+
+    /** [path] changed whole, one change at a time: the mode's thread and
+     *  the reader both change it. */
+    private CallPath update(java.util.function.UnaryOperator<CallPath> change) {
+        synchronized (pathLock) {
+            CallPath changed = change.apply(path);
+            path = changed;
+            return changed;
+        }
+    }
+
+    /** [from]: where the call stood, for a capture made anew for it; null
+     *  at its off-hook. */
+    PhoneCapture(Call call, @Nullable AudioManager audio, CallReport report, @Nullable CallPath from) {
         this.call = call;
         this.audio = audio;
         this.report = report;
+        this.madeAnew = from != null;
+        this.path = from != null ? from : CallPath.OFF_HOOK;
+    }
+
+    /** Where the call stands, for a capture made anew to take up - the
+     *  microphone gone too if the guard gave it back in the capture being
+     *  read. */
+    CallPath path() {
+        AudioCapture reading;
+        synchronized (this) {
+            reading = current;
+        }
+        boolean dropped = reading instanceof Voip.Capture && ((Voip.Capture) reading).micDropped;
+        return dropped ? update(CallPath::micGone) : path;
     }
 
     @Override
@@ -136,12 +165,49 @@ final class PhoneCapture implements AudioCapture {
 
     @Override
     public void start() throws AudioCaptureException {
-        AudioCapture voice = call.voice();
-        voice.start();
-        synchronized (this) {
-            current = voice;
+        CallPath was = path;
+        AudioCapture first = null;
+        String fallback = null;
+        if (madeAnew && was.startOnMixer()) {
+            first = call.mixer(was.micKept);
+            if (first == null) {
+                fallback = "the copy of the call's audio was refused";
+            } else {
+                try {
+                    first.start();
+                } catch (Throwable t) {
+                    first.stop();
+                    first = null;
+                    fallback = "the mixer capture would not start: " + t;
+                }
+            }
         }
-        report.route(CallReport.Route.CALL_CAPTURE, -1);
+        boolean mixer = first != null;
+        if (first == null) {
+            // May throw, and the restart makes another (RestartLoop) - this
+            // one stopped first, as the mixer's and a swap's are.
+            AudioCapture voice = call.voice();
+            try {
+                voice.start();
+            } catch (AudioCaptureException | RuntimeException e) {
+                voice.stop();
+                throw e;
+            }
+            first = voice;
+        }
+        synchronized (this) {
+            current = first;
+        }
+        if (madeAnew) {
+            update(p -> p.madeAnew(mixer));
+            // Decided again at once below, the mixer asked for with it -
+            // where there is an audio service to read the mode from.
+            report.note(fallback == null
+                    ? "made anew on the " + (mixer ? "mixer" : "call capture") + ", where the call was"
+                    : "made anew on the call capture: " + fallback
+                            + (audio != null ? "; the mixer asked for again" : "; no audio service to ask for it again"));
+        }
+        report.route(mixer ? CallReport.Route.PHONE_MIXER : CallReport.Route.CALL_CAPTURE, was.lastMode);
         AudioManager am = audio;
         if (am == null) {
             return;
@@ -162,7 +228,9 @@ final class PhoneCapture implements AudioCapture {
             Ln.w("recording: no audio mode callback, so the call stays the way its first mode put it: " + t);
             report.note("no audio mode callback: " + t);
         }
-        thread.execute(this::askMode);
+        // Made anew where the call's start was decided: decided again from
+        // where it stood, with its checks - not asked as at off-hook.
+        thread.execute(madeAnew && was.decideAgain() ? this::decide : this::askMode);
     }
 
     private void askMode() {
@@ -177,33 +245,35 @@ final class PhoneCapture implements AudioCapture {
         } catch (Throwable t) {
             // The start stays on the voice path; the changes are still
             // followed, each read again when it is decided.
-            this.asked = true;
+            update(p -> p.asked(p.lastMode, false));
             Ln.w("recording: could not read the audio mode; the call's voice path: " + t);
             report.note("could not read the audio mode: " + t);
             return;
         }
         long took = SystemClock.elapsedRealtime() - asked;
-        this.asked = true;
-        lastMode = mode;
+        // Set before the mixer is asked for, whatever comes of it
+        // (CallPath.firstLook).
+        boolean beganOnMixer = update(p -> p.firstLook(mode, Build.VERSION.SDK_INT)).startedOnMixer;
         report.note("audio mode " + mode + " as the call went off-hook (told in " + took + " ms)");
-        if (isStopped() || !Checks.phoneCallInMixer(mode, Build.VERSION.SDK_INT)) {
+        if (isStopped() || !beganOnMixer) {
             Ln.i("recording: the call's voice path (audio mode " + mode + ", told in " + took + " ms)");
             return;
         }
         if (swap(true, mode, false)) {
-            startedOnMixer = true;
             Ln.i("recording: the call plays through the mixer (audio mode " + mode + ", told in " + took
                     + " ms); recording it as messenger calls are");
         }
+        lookAgainIfDue(true);
     }
 
     /** The mode's thread: a change, decided once it has held. */
     private void modeChanged(int mode) {
+        CallPath now = path;
         // Before the first ask has answered, the ask reads it anyway.
-        if (isStopped() || !asked || mode == lastMode) {
+        if (isStopped() || !now.asked || mode == now.lastMode) {
             return;
         }
-        lastMode = mode;
+        update(p -> p.mode(mode));
         Ln.i("recording: audio mode " + mode + " during the call");
         report.note("audio mode " + mode);
         decideIn(SETTLE_MS);
@@ -228,8 +298,9 @@ final class PhoneCapture implements AudioCapture {
     /** The mode's thread: which capture now, and the swap if it changed. */
     private void decide() {
         AudioManager am = audio;
+        CallPath now = path;
         // The first ask decides the start; a change before it waits for it.
-        if (am == null || isStopped() || !asked) {
+        if (am == null || isStopped() || !now.asked) {
             return;
         }
         int mode;
@@ -241,12 +312,12 @@ final class PhoneCapture implements AudioCapture {
         }
         // Telecom is asked only where its answer can change anything: every
         // phone call's end is a change of mode too.
-        boolean ask = Checks.phoneCallInMixer(mode, Build.VERSION.SDK_INT) && !startedOnMixer;
+        boolean ask = Checks.phoneCallInMixer(mode, Build.VERSION.SDK_INT) && !now.startedOnMixer;
         boolean appCall = ask && call.appInCall();
         Boolean phoneCall = ask ? call.phoneCallInTelecom() : null;
-        boolean mixer = Checks.mixerAfterModeChange(onMixer, startedOnMixer, mode, Build.VERSION.SDK_INT,
+        boolean mixer = Checks.mixerAfterModeChange(now.onMixer, now.startedOnMixer, mode, Build.VERSION.SDK_INT,
                 phoneCall, appCall);
-        if (mixer != onMixer) {
+        if (mixer != now.onMixer) {
             String why = mixer ? "the call plays through the mixer now"
                     : mode == Checks.MODE_IN_CALL ? "the call is back on the modem's voice path"
                     : appCall ? "another app's call is up" : "no phone call is left in Telecom";
@@ -260,26 +331,47 @@ final class PhoneCapture implements AudioCapture {
             Ln.i("recording: audio mode " + mode + ", but " + why + "; the call capture stays");
             report.note(why + ": the call capture stays");
         }
-        if (onMixer && mixerMidCall) {
-            decideIn(RECHECK_MS);
+        lookAgainIfDue(mixer);
+    }
+
+    /** The mode's thread, after a look that [wantsMixer]: decided again in a
+     *  second where the call is due it (CallPath.recheck), a try spent for a
+     *  mixer wanted and not had. */
+    private void lookAgainIfDue(boolean wantsMixer) {
+        switch (path.afterLook(wantsMixer)) {
+            case WOULD_NOT_COME:
+                Ln.w("recording: the mixer would not come; the call capture stays");
+                report.note("the mixer would not come: the call capture stays");
+                return;
+            case TRY_AGAIN:
+                update(CallPath::mixerTried);
+                decideIn(RECHECK_MS);
+                return;
+            case LOOK_AGAIN:
+                decideIn(RECHECK_MS);
+                return;
+            case DONE:
+            default:
         }
     }
 
     /**
      * Start the capture for [mixer] and hand it to the reader. False, with
-     * nothing changed, if it cannot be had or this was stopped meanwhile.
+     * nothing changed, if it cannot be had or this was stopped meanwhile;
+     * the caller decides whether it is tried again (lookAgainIfDue).
+     * [midCall]: by a change of mode, not the first look.
      */
     private boolean swap(boolean mixer, int mode, boolean midCall) {
-        AudioCapture capture = mixer ? call.mixer() : call.voice();
+        AudioCapture capture = mixer ? call.mixer(path.micKept) : call.voice();
         if (capture == null) {
-            report.note("the copy of the call's audio was refused; the call capture stays");
+            report.note("the copy of the call's audio was refused");
             return false; // Voip.newPhoneCapture logged why
         }
         try {
             capture.start();
         } catch (Throwable t) {
             capture.stop();
-            Ln.w("recording: the " + (mixer ? "mixer" : "call") + " capture would not start; staying as it is: " + t);
+            Ln.w("recording: the " + (mixer ? "mixer" : "call") + " capture would not start: " + t);
             report.note("the " + (mixer ? "mixer" : "call") + " capture would not start: " + t);
             return false;
         }
@@ -301,10 +393,7 @@ final class PhoneCapture implements AudioCapture {
             // Never read: the reader had not come for it yet.
             replaced.capture.stop();
         }
-        onMixer = mixer;
-        // A call that began on the mixer is never taken off it but for the
-        // modem's voice path: nothing to ask again.
-        mixerMidCall = mixer && midCall && !startedOnMixer;
+        update(p -> p.swapped(mixer, midCall));
         lookSoon();
         return true;
     }
@@ -343,6 +432,10 @@ final class PhoneCapture implements AudioCapture {
         }
         if (took != null) {
             if (old != null) {
+                // The guard's drop is the call's: kept for the captures after.
+                if (old instanceof Voip.Capture && ((Voip.Capture) old).micDropped) {
+                    update(CallPath::micGone);
+                }
                 old.stop();
             }
             report.route(took.mixer ? CallReport.Route.PHONE_MIXER : CallReport.Route.CALL_CAPTURE, took.mode);

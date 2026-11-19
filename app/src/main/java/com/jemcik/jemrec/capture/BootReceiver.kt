@@ -10,21 +10,36 @@ import com.jemcik.jemrec.recorder.Trigger
 /**
  * Brings the monitor back after a reboot.
  *
- * This is the one broadcast worth relying on here. PHONE_STATE is dropped by
+ * The broadcast most worth relying on here. PHONE_STATE is dropped by
  * Honor's iAware when the app is not running, which is exactly when it would
- * matter - but BOOT_COMPLETED is delivered to stopped-but-installed apps by
- * design, and is one of the few cases where Android 12+ still permits starting
- * a foreground service from the background.
+ * matter; BOOT_COMPLETED reaches an app that is not stopped, and is one of
+ * the few cases where Android 12+ still permits starting a foreground
+ * service from the background. Not every app: one the user force-stopped (or
+ * never opened) is stopped, and broadcasts have left stopped apps out since
+ * Android 3.1 (FLAG_INCLUDE_STOPPED_PACKAGES, which the boot intent does not
+ * carry). What Android 15 added: an app entering the stopped state has all
+ * its pending intents cancelled - NetworkRevive's Wi-Fi watch among them -
+ * and "When the user's actions remove the app from the stopped state, the
+ * ACTION_BOOT_COMPLETED broadcast is delivered to the app" (developer.
+ * android.com, Android 15 behavior changes, "Changes to package stopped
+ * state"), which re-arms the watch here. And for an app whose
+ * Battery is Restricted, Android 13 and later hold it until the app is
+ * started for another reason (developer.android.com, Background
+ * optimization) - BatteryHealth says what that costs. What it does at a
+ * restart is not measured: the shell's Restricted does not outlive one on
+ * the AVDs (2026-11-18), and a recorder back 114 s after one, measured
+ * earlier, was the setting already gone.
  *
  * It can be late, and only Android decides: on a Galaxy S20 locked again
  * straight after the first unlock, 2026-11-04, it came 4 min 46 s after the
  * unlock, the phone asleep for most of them.
  *
- * LOCKED_BOOT_COMPLETED is handled too, and deliberately does nothing but log.
- * It arrives before the user has unlocked the phone for the first time, while
- * /data is still encrypted - measured after a real reboot, where `ls /data/data`
- * failed until unlock. The app's ADB identity lives there, so there is nothing
- * useful to do until BOOT_COMPLETED.
+ * Not LOCKED_BOOT_COMPLETED: that comes before the first unlock, while /data
+ * is still encrypted - measured after a real reboot, where `ls /data/data`
+ * failed until unlock - and only to components marked directBootAware, which
+ * this is not: the app's ADB identity lives in /data, so there is nothing
+ * useful to do until BOOT_COMPLETED. (A filter for it, and a branch that only
+ * logged, were here until 1.2; neither could ever run.)
  *
  * What it starts is the keep-alive job, not a service. A reboot kills the
  * daemon, and leaves adbd without Wireless debugging: switched off on some
@@ -39,9 +54,6 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            Intent.ACTION_LOCKED_BOOT_COMPLETED ->
-                Log.i(TAG, "boot: device booted but still locked; waiting for unlock")
-
             Intent.ACTION_BOOT_COMPLETED -> {
                 // Revive whenever set up, regardless of the recorder switch: the
                 // daemon must be alive so recording can be turned on later

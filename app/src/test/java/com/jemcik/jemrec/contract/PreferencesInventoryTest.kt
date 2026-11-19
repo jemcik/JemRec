@@ -10,6 +10,7 @@ import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.VoipCallNotes
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
+import com.jemcik.jemrec.playback.BothEarsSetting
 import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.playback.PlayThroughSetting
 import com.jemcik.jemrec.recorder.DebugSwitch
@@ -20,6 +21,8 @@ import com.jemcik.jemrec.recorder.RecorderHealth
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recorder.StartWithoutWifi
 import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.QualitySetting
+import com.jemcik.jemrec.recordings.RecordingQuality
 import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.ui.theme.LightDark
 import com.jemcik.jemrec.ui.theme.Look
@@ -64,6 +67,7 @@ class PreferencesInventoryTest {
         assertEquals("jemrec", Prefs.FILE)
         assertTrue("private const val PREFS = \"jemrec_colours\"" in Repo.app)
         assertTrue("private const val READ_FILE = \"jemrec_tags_read\"" in Repo.app)
+        assertTrue("private const val FILE = \"jemrec_starts\"" in Repo.app)
         // The one key that was written as a literal twice, with no owner of
         // its own, has one now (SelectHint), and is written nowhere else.
         assertEquals(1, Regex("\"select_hint_seen\"").findAll(Repo.app).count())
@@ -86,6 +90,7 @@ class PreferencesInventoryTest {
         assertEquals(listOf("WORKS", "LIKELY", "FAILS", "INCONCLUSIVE"), AnswerDiagnostics.Verdict.entries.map { it.name })
         assertEquals(listOf("VOLTE", "ROUTES"), AnswerDiagnostics.Cleared.entries.map { it.name })
         assertEquals(listOf("LOUDSPEAKER", "LOUDSPEAKER_AND_EAR", "EARPIECE"), PlayThrough.entries.map { it.name })
+        assertEquals(listOf("SMALLEST", "STANDARD", "HIGH", "HIGHEST"), RecordingQuality.entries.map { it.name })
     }
 
     @Test
@@ -102,10 +107,12 @@ class PreferencesInventoryTest {
         assertEquals("default", AnsweringMachine.sim(context))
         assertEquals("music", AnsweringMachine.route(context))
         assertEquals(FileNames.Format.DATE, FileNames.format(context))
+        assertEquals(RecordingQuality.STANDARD, QualitySetting.of(context))
         assertEquals(OffMode.KEEP_DEBUGGING, DebugSwitchesOff.mode(context))
         assertEquals(emptySet<DebugSwitch>(), DebugSwitchesOff.switchedOff(context))
         assertTrue("after-call notice on", AfterCall.enabled(context))
         assertEquals(PlayThrough.LOUDSPEAKER_AND_EAR, PlayThroughSetting.of(context))
+        assertTrue("both sides in both ears", BothEarsSetting.of(context))
         assertEquals(false, VoipCallNotes.enabled(context))
         assertEquals(false, StartWithoutWifi.enabled(context))
         assertEquals(0, Retention.maxAgeDays(context))
@@ -133,7 +140,12 @@ class PreferencesInventoryTest {
          *  answer_routes_by_path (0.31), select_hint_seen (given its owner),
          *  answer_cleared_by_update and answer_volte_cleared (1.0),
          *  play_through, keep_paired_asked, keep_paired_refused and
-         *  keep_paired_wish (1.1):
+         *  keep_paired_wish (1.1), recording_quality, both_ears,
+         *  old_pages_done_in, notifications_off_dismissed,
+         *  battery_restricted_dismissed_words, battery_restricted_told, save_write_failed,
+         *  folder_lost_told, heartbeat_version, heartbeat_port, save_journal,
+         *  call_parts, lost_messages, name_starts, not_recorded_for and
+         *  part_recordings (1.2):
          *  preference keys, plus the few key-named constants that are file
          *  and extra names, which a rename breaks just the same. */
         val KEYS = listOf(
@@ -141,15 +153,15 @@ class PreferencesInventoryTest {
             "answer_delay_s", "answer_dnd_short", "answer_longest_s", "answer_mixer_", "answer_on", "answer_result_",
             "answer_route", "answer_routes_by_path", "answer_sim", "answer_sim_count", "answer_stage_one", "answer_test",
             "answer_volte_cleared", "auto_delete_after_days",
-            "auto_delete_last_run", "auto_delete_shorter_than", "background_kill_warned_ms", "cable_stopped_adbd",
-            "call_ledger", "call_tracking", "caller_banner_dismissed", "calls_covered_since", "coverage_history",
+            "auto_delete_last_run", "auto_delete_shorter_than", "background_kill_warned_ms", "battery_restricted_dismissed_words", "battery_restricted_told", "both_ears", "cable_stopped_adbd",
+            "call_ledger", "call_parts", "call_tracking", "caller_banner_dismissed", "calls_covered_since", "coverage_history",
             "daemon_token", "debug_notification_snoozed", "debug_off_pending", "debug_switched_off",
-            "emergency_call_at", "emergency_resumed_at", "file_names", "hide_debug_notification",
-            "keep_paired_asked", "keep_paired_refused", "keep_paired_wish", "kept_recordings", "light_dark", "link_token", "look", "message_recordings", "missed_seen_until",
-            "name_callers", "name_directions", "names", "off_mode", "pairing_code", "port_close_failed_boot",
-            "port_failed_boot", "port_opened_boot", "prompt_ticket", "play_through", "qs_tile_added", "recorder_down_alerted",
-            "recorder_down_cause", "recorder_down_since", "recorder_enabled", "recording_mode",
-            "recordings_tree_uri", "rules_chosen", "rules_contacts", "rules_other_numbers", "save_failing",
+            "emergency_call_at", "emergency_resumed_at", "file_names", "folder_lost_told", "heartbeat_port", "heartbeat_version", "hide_debug_notification",
+            "keep_paired_asked", "keep_paired_refused", "keep_paired_wish", "kept_recordings", "light_dark", "link_token", "look", "lost_messages", "message_recordings", "missed_seen_until",
+            "name_callers", "name_directions", "name_starts", "names", "not_recorded_for", "notifications_off_dismissed", "off_mode", "old_pages_done_in", "pairing_code", "port_close_failed_boot",
+            "part_recordings", "port_failed_boot", "port_opened_boot", "prompt_ticket", "play_through", "qs_tile_added", "recorder_down_alerted",
+            "recorder_down_cause", "recorder_down_since", "recorder_enabled", "recording_mode", "recording_quality",
+            "recordings_tree_uri", "rules_chosen", "rules_contacts", "rules_other_numbers", "save_failing", "save_journal", "save_write_failed",
             "select_hint_seen", "setup_background_asked", "setup_complete", "setup_dev_options_confirmed", "setup_paired",
             "start_without_wifi", "tracked_calls", "voip_apps", "voip_call_notes", "voip_names",
             "wireless_debugging_refused_on", "wireless_debugging_switched_on",

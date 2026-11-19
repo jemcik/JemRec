@@ -20,6 +20,7 @@ this one is - or to check that it does what it says.
   [coming back without you](#coming-back-without-you) ·
   [stopped in the background](#stopped-in-the-background)
 - The features: [recording and being asked](#recording-and-being-asked) ·
+  [quality and size](#quality-and-size) ·
   [exact call tracking](#exact-call-tracking) ·
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
   [messenger calls](#messenger-calls) ·
@@ -28,7 +29,8 @@ this one is - or to check that it does what it says.
   [the answering machine](#the-answering-machine) ·
   [the Calls tab](#the-calls-tab) · [playing a recording](#playing-a-recording) ·
   [playing in the background](#playing-in-the-background) ·
-  [playing at your ear](#playing-at-your-ear) · [three looks](#three-looks) ·
+  [playing at your ear](#playing-at-your-ear) ·
+  [both sides in both ears](#both-sides-in-both-ears) · [three looks](#three-looks) ·
   [a tap while it checks](#a-tap-while-the-app-is-checking) · [one window](#one-window) ·
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [marks inside the recording](#marks-inside-the-recording) ·
@@ -98,16 +100,68 @@ a few seconds after the last call. Both go through one saver, and what each
 does after a save is one table, so where the two differ it is written down:
 only the call service tells you at once of a recording that came out empty or
 could not be saved; only a later collection keeps trying a file that fails,
-and gives it up after a week. The missed-call check runs after both: after a
+and gives it up after a week, deleting the recorder's copy. The missed-call check runs after both: after a
 call the call service saved, and after each of the keep-alive's collections.
 
 - A recording is noted as saved before the recorder's copy is deleted, so a
   copy that outlives its save — a delete that did not get through — is only
   deleted next time. A messenger call's too, since 0.27; before, it was saved
   a second time.
+- A save cut short - the app's process killed in the middle of it, as Android
+  kills one it needs the memory of - is finished or undone by the next save
+  of that file (1.2, `SaveJournal`). Before each step the save writes down
+  what it is about to do, at once (`commit`: `apply` "starts an asynchronous
+  commit to disk", and a kill meanwhile loses it). Killed while writing, the
+  places it opened are deleted - a MediaStore row still pending, a picked
+  folder's file already under its own name - and the recorder's copy is
+  saved anew under the same names; killed while publishing, every part
+  written whole, the next save reads what each place holds before it changes
+  anything - still pending, there, gone - publishes what is pending, notes
+  each as the save would have, says it stopped early if it was to be (decided
+  before the publish, and written down with it), and deletes the recorder's
+  copy. A place whose provider will not say what it holds leaves it all for a
+  later collection: taken for published, an unanswered question had the
+  recorder's only copy deleted (review round 9). After a week of that silence,
+  timed apart from a failing save's week, the recorder's copy is saved anew
+  where saving goes now and nothing is deleted - if the place answers again,
+  the call may then have two copies (round 11). A part lost - abandoned when
+  it would not publish, or its pending row expired - is saved again from the
+  recorder's copy, only parts no one has seen deleted first; each part is
+  written down as published as it is, so one the user deleted since is told
+  from one lost. With the recorder's copy already gone, nothing is undone.
+  Produced on the Android 17 and 12 emulators (`killed_mid_save`, 2026-11-18),
+  the debug build holding the save where the check kills it (`SaveHold`), or
+  ending the process itself straight after a write of the journal: before, a
+  kill right after publishing saved the call twice, the second as "(1)" -
+  the ledger's note and the recorder's delete come after the publish, and
+  `NonCancellable` keeps out a cancellation, not a kill - and a kill while
+  writing left its MediaStore row pending, hidden, for Android's seven days;
+  in a picked folder the file under the recording's own name showed. With
+  the journal, the six kills first produced - mid-transfer, before and after
+  publishing, in the standard folder and a picked one - were each saved
+  whole and once, nothing left.
 - A recording of two calls (call waiting) is saved as one file each, and noted
   only once every file is saved: a part that would not save is saved at the
   next try, the others again with it, rather than lost.
+- A fetch says how long the file is before it sends it (1.2; the recorder's
+  `fetch-length`, said in its answer to a ping), and one that brings fewer
+  bytes is a transfer cut short - the recorder ended in the middle of it, as
+  an Honor's unplug or Android's memory reaper does - and the recorder's copy
+  is kept for the next try. Before, the bytes that came were taken for the
+  whole recording and saved, and at the next collection the recorder's whole
+  copy was dropped as one saved already. A recorder from before 1.2 says no
+  length, and is read as it always was: an app talks to one for days after an
+  update, until a revive replaces it.
+- The recorder's list of its files ends with how many it sent (1.2; its
+  `list-end`, said in its answer to a ping), and a list without that end is
+  no answer: one cut short - the recorder ended mid-reply - read before as
+  "these are all", let a pass take a file missing from it for gone, and a
+  save it then finished let the next collection delete the recorder's only
+  copy of a part that was lost (review round 10). A recorder from before 1.2
+  says no `list-end`, and its list is read to its end as before - but not
+  trusted for "gone": until round 11 of the reviews every list of one was no
+  answer, and nothing it held was collected nor any missed call told until a
+  revive replaced it.
 - A recording is dropped when recording is switched off at its call's end;
   switched off and on again before the end, it is kept whole (the Honor,
   2026-11-02). Both collectors judge that moment: the call service reads the
@@ -143,6 +197,86 @@ was one file of 3,559 lines; each part has a class of its own now:
 
 - **The start** (`Main`): the main looper prepared before anything else
   touches Android, the environment read, the threads started in their order.
+- **A capture that fails** (`Restarting`, `RestartLoop`, `RestartPolicy`): a read of nothing
+  is read again for a while, and a failed one - Android's `AudioRecord` says
+  `ERROR_DEAD_OBJECT` "needs to be recreated" - makes the capture anew, up to
+  three times within a minute, each time noted in the call's report; past
+  that the recording is said to have stopped - the call's notification says
+  so during the call, and the answering machine hangs up on a message it can
+  no longer keep - and a capture is made once every 10 s for the rest of the
+  call, the recording going on, a gap in it, once one reads (said too). Every
+  recording ended at its first failed read before 1.2 (scrcpy's encoder, as it
+  came), and until 1.2's reviews at the fourth within a minute, the rest of
+  the call unrecorded for a failure that may pass. Within a minute, not a recording: three
+  a recording, as 1.2 first had, never came back, and an hour's call whose
+  audio server went down four times, far apart, would have ended at the
+  fourth - an Erlang/OTP supervisor, the practice this follows, gives up only
+  on more than its intensity of restarts within a period; here, as the call is
+  not the recorder's to end and a capture costs little once in ten seconds,
+  that slows the restarts down rather than ending them. The call's end
+  interrupts the slow wait (the encoder interrupts its input thread before
+  the capture is stopped), so a hang-up's save does not wait it out; the
+  wait is cut into one-second slices besides. A stall in which no read
+  fails - a read that only blocks: the audio server held down, AudioRecord
+  came back by itself after 22.5 and 23.7 s (below) - is said as any stop
+  since round 10 of 1.2's reviews: five seconds with nothing delivered is
+  told stopped, and back once reads have flowed for five seconds, as the
+  restart policy's own back (`StallWatch`), where the call's notice went on
+  saying it recorded. A stall still not back at the recording's end - one
+  read or two since, or the restart loop's own stop since - is a loss from
+  the last read to the end, and the file is named as ended early; reads
+  still flowing at the end are back, no loss (review rounds 12 and 13). Each restart waits
+  first, longer each time - 250, 500 and 750 ms - for an audio server still
+  coming back, and a new capture that will not start uses a restart without
+  the failed one being read again: without either, the three would have gone
+  in milliseconds. The failed capture is stopped before the new one is made,
+  and the new one is given it to take up where the call stood: left running
+  through the wait, a phone call's mode thread could swap captures under the
+  one being made (all three read in review, 2026-11-18; not measured). Not
+  every failure of the audio server reaches it: killed in the middle of a
+  call on the Android 12 and 17 emulators (2026-11-18), the server came back
+  and Android's own `AudioRecord` restored itself, no read failing, a gap of
+  1.1 to 1.5 s in the recording and its sound after it as before (the release
+  check `audio_server_restart`). A read that fails all the same is what this
+  is for; none has been produced on an emulator - held down by init for 2 and
+  then 5 s mid-call on the Android 12 emulator, and for 20 s on the 12 and 17
+  (2026-11-18), the server came back and AudioRecord restored itself each
+  time, gaps of 3.2, 5.7, 22.5 and 23.7 s and no read failing; and a phone
+  call on the mixer (the 17 emulator, the stand-in call's "communication"
+  mode), the server killed or held down 5 s, had the copy's sound back with
+  the server, no read failing either. So its decisions are plain Java, held by the daemon's
+  tests (`RestartLoopTest`, `RestartPolicyTest`, `CallPathTest`); how
+  `PhoneCapture` and `Voip` put them to use is read in review, not produced.
+  A messenger call's capture, and a phone call's through the mixer, fail the
+  same way when the other side's record does (`Voip.Capture.read`) - until
+  1.2's reviews it went on as silence, unsaid; the microphone's failing lets
+  the microphone go and opens it again once, said in the call's report, and
+  the other side goes on - unlike the guard's giving it back, which is the
+  call's for the rest of it. While a messenger capture is made anew, its
+  audio policy is held: stopped first, with the messenger list emptied during
+  the call, it would have let the policy go, and the call with it. A capture
+  made anew takes up where the call stood, from the one read last
+  ([`CallPath`](../shellserver/src/com/jemcik/jemrec/shell/CallPath.java),
+  one value replaced whole): on the mixer or the call capture, as the
+  call's mode had decided, with the checks for another app's call kept, and
+  without the microphone where the guard had given it back to the call. A
+  mixer that would not come - at the call's first look or later - is tried
+  again each second, five times; refused at the first look, it was never
+  asked for again, and the call lost its other side, which VOICE_CALL does
+  not hear in such a call. Made as at the call's start, a capture made anew
+  had put a call in "communication" mode straight on the mixer, past the
+  check that keeps a Meet call over a held phone call out of its recording
+  (read in review, 2026-11-18; not produced). A recording whose encoder ends
+  before its call - the codec or the file failing, or a stop it never came
+  back from (a capture that kept failing, tried slowly, or a stall) - is
+  named so (`_early` and how much it missed,
+  `Checks.earlyRecfile`), and said at once (the recorder's `RECORDING_STOPPED`
+  wake), for the app to say it [stopped early](#after-the-call-and-when-something-is-wrong)
+  of any call, a messenger's or one recorded with call tracking off too.
+  Produced end to end on the Android 17 emulator (2026-11-18): the phone's
+  storage filled for 6 s mid-call, tracking off, the encoder's write failed,
+  the file was named `_early16085`, and the app said so (the release check
+  `early_end`).
 - **The port** (`LoopbackServer`, `Handshake`): bound to `127.0.0.1`, each
   connection on a thread of its own, who connects checked, then the proof
   above. **The commands** (`Commands`, `Wire`): what each does, and its bytes.
@@ -531,11 +665,59 @@ recording carries on with Wi-Fi off, on mobile data, anywhere.
 ## Coming back without you
 
 Five things bring a stopped recorder back with nobody touching the phone: a
-heartbeat every 15 minutes (`RecorderKeepAlive`), and four that cut it short -
+heartbeat every 15 minutes (`RecorderKeepAlive`; since 1.2 it never asks to be
+retried, as WorkManager runs periodic work that does by its backoff - 30 s
+doubling up to five hours - not its period, and a day off Wi-Fi had put the
+next heartbeat hours away), and four that cut it short -
 a one-time run at a restart, another when Wi-Fi returns (`NetworkRevive`), the
 watch on USB debugging (`UsbDebuggingWatch`, a one-time run itself), and after
 a cable is pulled the app's own revive (`CableWatch`), which falls back to a
-one-time run. Opening JemRec starts it too, on the app's own.
+one-time run. Opening JemRec starts it too, on the app's own. Each of these
+jobs asks for a network, and the one-time runs but the USB watch are
+expedited - its content trigger keeps it a regular job ("Expedited jobs may
+only set network, storage-not-low, and persistence constraints",
+`JobInfo.Builder.setExpedited`), so in the restricted bucket it waits for
+the day's session: the revive
+reaches adbd and the recorder over 127.0.0.1, and Android takes the network,
+the loopback with it, from an app idle in the rare standby bucket or below
+on battery - giving it back to a job only if it asks for one ("bypass Doze,
+app standby, and battery saver network restrictions (if the job has a
+setRequiredNetwork(NetworkRequest))", `JobInfo.Builder.setExpedited`). In the
+restricted bucket, JemRec idle on battery (2026-11-18): without it, on the
+Android 17 emulator, a kick's run started and its revive timed out at every
+step, 15 to 18 s each - so too with the emulator's charger in, though whether
+Android took that for charging, which lifts the standby firewall (AOSP's
+AppStandbyController), was not read; with it, on the Android 12 and 17
+emulators, the recorder was back 4 s after the kick.
+Any network, not validated internet: WorkManager's "connected" becomes
+JobScheduler's "any network", which asks for validated internet (the Android
+12 emulator's dump), and on a Wi-Fi without internet with no mobile data -
+where Wireless debugging works, as above - no job would have run; with a
+request of its own, on the Android 17 emulator (2026-11-18) with its Wi-Fi
+not validated and mobile data off, the jobs had their network and a kick
+had an ended recorder back in 4 s. With no network at all - no Wi-Fi joined
+and mobile data off, as a traveller often has it, calls still coming - a
+revive over Wireless debugging could not succeed anyway, and the runs wait
+for one, the collecting of a stranded recording, the missed-call check,
+auto-delete and the recorder-down alert a revive posts with them - all but a
+kick made while JemRec is in front - an activity on the screen, or a
+foreground service such as the call's (its end, its watch's end and revive,
+said so outright as the service may stand down before the kick is read;
+review round 13) - which asks for none when there is none: the loopback is
+never taken from an app in front
+("visible or in foreground state: Network: No restrictions"), and a kick that
+waited kept every kick after it (review round 9). A kick waiting on a network
+ask that no longer fits is replaced. Not with Start without Wi-Fi on: its port needs no
+network, so the heartbeat and the USB watch ask for none
+(`RecorderKeepAlive.constraints`) - a run that waited for one never came
+there (reviews, 2026-11-18) - and a one-time run asks for one unless the port
+is open and the phone has no network (`runConstraints`): after a restart the
+port is closed, a revive needs Wi-Fi to open it again, and a run that asks
+keeps the network a job is given in the buckets and in Doze. The trade, for
+that switch: in the rare or restricted bucket on battery a run that asks for
+none finds no loopback, as every run did before 1.2.
+The user's Battery setting *Restricted* runs none of them while JemRec is in
+the background ([Stopped in the background](#stopped-in-the-background)).
 
 **What each does is one table** (`Triggers.kt`): what each of these, boot,
 opening the app, its check of setup, On and Off arms to keep the recorder
@@ -611,7 +793,7 @@ job, so nothing brought the recorder back. On *Manage manually* the same test
 left it running and the recorder returned on its own in **fifteen seconds**.
 
 JemRec cannot read or change that setting, so it does three things around it,
-each only on a phone that has such a screen (never a Pixel):
+each only on a phone that has such a screen (none on a Pixel):
 
 - **Asks during setup.** A step offers to open the phone's own screen for it,
   before the first call rather than after the first lost one. It is asked once
@@ -676,6 +858,74 @@ each only on a phone that has such a screen (never a Pixel):
 The notification points at App launch; it does not claim JemRec can fix the
 setting, because it cannot.
 
+**Stock Android's own rules hold any phone's app back too**, and JemRec says
+so. Measured on the Android 12 and 17 emulators (2026-11-18), on battery and
+with JemRec's uid made idle - an app counts as active for a minute after it
+leaves the screen (ActivityManagerConstants' background settle time), and
+Android holds it back only once it is not. (Not the charger: the user's
+setting and the restricted bucket both hold while charging - the Javadoc
+below, and Android's App Standby Buckets page. A first measurement,
+2026-11-17, seconds after JemRec left the screen, found nothing: review,
+2026-11-18.)
+
+- **The restricted standby bucket**, which an app left unused for days
+  falls into: a call was recorded and saved at once, exact call tracking on
+  or off: the call's service runs in the foreground, which has the network
+  and is not rationed. The keep-alive is: a regular job runs "once per day
+  for up to 10 minutes", and an app there in the background has no network,
+  127.0.0.1 included. So its one-time runs are expedited and ask for a
+  network ([Coming back without you](#coming-back-without-you)): a kick, the
+  recorder ended, brought it back in 4 s (the release check), where without
+  the network asked every step of its revive timed out. The heartbeat and the
+  USB watch are still regular jobs there, once a day. With Start without
+  Wi-Fi on, its runs ask for no network - its port needs none - and there
+  they time out as before. A restart in that bucket brought the
+  recorder back 51 and 164 s after the boot on the Android 12 and 17
+  emulators - but Android had JemRec in the active bucket again by then, so
+  what the bucket does at a real restart is not measured. An app falls into
+  it after days unused (8 from Android 13, Android's App Standby Buckets
+  page).
+- **The user's Battery setting *Restricted*.** Android's word: "jobs and
+  alarms will not execute and foreground services cannot be started unless
+  an app activity is in the foreground", charging or not
+  (`ActivityManager.isBackgroundRestricted`), and from Android 13 the boot
+  broadcast waits until the app is started for another reason (Background
+  optimization). Measured: every one of the keep-alive's jobs waiting on
+  `BACKGROUND_NOT_RESTRICTED` in JobScheduler's own dump (Android 17), so a
+  recorder that stops may stay down until something starts JemRec. At a
+  restart it is not measured: the shell's Restricted does not outlive one on
+  the AVDs - the app op written out (`cmd appops write-settings`) or the
+  restriction level set (`am set-bg-restriction-level`), it read "allow"
+  after the boot (Android 17 emulator, 2026-11-18) - and a recorder back
+  114 s after one, measured earlier and said here, was the setting already
+  gone. After a restart any start would do: its jobs are not kept over one, and
+  WorkManager, finding them gone, hands its work to its own scheduler in the
+  app's process (GreedyScheduler), whatever JobScheduler holds back - with a
+  network asked, only where the app's network is not blocked (read from
+  WorkManager 2.12.0's sources; not measured). Not at a plain start of the
+  process, where that scheduler is handed only work enqueued then. Auto-delete and Recently deleted's 30
+  days wait with the keep-alive, a day or more late. (A first probe also ended the recorder and turned Wi-Fi off and on,
+  and nothing came back - nor would it have on an app held back by nothing:
+  the Wi-Fi watch is armed only by a run off Wi-Fi, which a few seconds off
+  it never had. Not evidence, and not said.) With exact call tracking off, Android refused both of a
+  call's wakes ("Error: Not found; no service started"): the call recorded by
+  the recorder, but saved, and told of, only once JemRec was opened. With
+  tracking on, a phone call was saved at once: Telecom binds JemRec's call
+  service for the call first, which brings it out of the background; a
+  messenger call has no such bind (inferred, not measured). In Ask first, a
+  call whose question cannot be put is not recorded: with tracking off that
+  is every call, and the header says *Cannot record*, as it does for Ask
+  first's notifications off; with it on, a messenger call most likely
+  (inferred), and the header says Ready, which a phone call is.
+  So JemRec says so: on home while it is set, and once in a notification at
+  a start of its process, with the way to App info, where it is lifted
+  ([`BatteryHealth`](../app/src/main/java/com/jemcik/jemrec/system/BatteryHealth.kt);
+  *Not now* puts the card away, but not in Ask first). JemRec does not go
+  round the setting - the shell could let each wake past it - as it is the
+  user's.
+
+The release check `battery_restricted` keeps each of these so.
+
 ## Recording, and being asked
 
 Automatic mode records every call from the moment it goes off-hook. Ask-first
@@ -704,12 +954,117 @@ On a Pixel with Android 17 both channels carry the same mix (reported in
 [issue #20](https://github.com/jemcik/JemRec/issues/20), 2026-10-27, not
 measured here). Splitting such a call would take two captures at once, the
 call's uplink and downlink, which other recorders report working only on some
-phones; it is not built.
+phones; it is not built. Played in JemRec, the two sides are heard in both
+ears unless you choose otherwise, and the file keeps them apart either way:
+[both sides in both ears](#both-sides-in-both-ears).
 
 A Quick Settings tile turns recording on and off without opening the app. It
 is the same switch as the one in the app's header. A long press on it opens
 JemRec, not App info: the main activity takes `ACTION_QS_TILE_PREFERENCES`, as
 Android's Quick Settings tiles guide says (asked for in issue #37).
+
+## Quality and size
+
+A recording takes about 12 MB an hour since 1.2, a fifth of what it did.
+Settings → Saving → **Quality** has four choices, each with its size an hour:
+Smallest, 24 kbps, about 9 MB - "the two sides of a call may blend into
+one"; Standard, 32 kbps, about 12 MB, the default, for updates too; High,
+64 kbps, about 29 MB; Highest, 128 kbps, about 58 MB, what every recording
+was before - less the pages: with Android's muxer's page to every packet, the
+same rate came to about 63 MB an hour (below). A choice is for calls recorded from then on: the recorder reads
+the rate once, as a call's recording starts. Asked for in discussion #84.
+
+- **Why 128 was too much.** It was scrcpy's default. The 101 recordings on
+  the Honor (MagicOS 11, Android 17) averaged 139.9 kbps, 1.05 MB a minute,
+  about 63 MB an hour (MediaStore's sizes and lengths, 2026-11-16). A call
+  carries far less: on the phone network AMR-WB, 50 to 7000 Hz in at most
+  23.85 kbps (GSMA IR.36), or EVS (GSMA's HD Voice+ asks at least 13.2 kbps
+  for super-wideband, 24.4 for fullband); in a messenger, Opus at a few tens of
+  kbps (WebRTC's default is 32 for fullband). RFC 6716 puts Opus's own sweet
+  spots at 16-20 kbps for wideband speech and 28-40 for fullband.
+- **A blind test.** On the Honor, 2026-11-16: about 45 s of a phone call, 45 s
+  of a messenger call and 26 s of an answering-machine message, each encoded on
+  the phone with its own Opus encoder at 24, 32, 48, 64 and 128 kbps, the
+  letters shuffled and the key read only after the answers. Its owner heard no
+  difference through the phone's speakers, nor through earbuds, but for one:
+  the messenger call at 24 kbps "sounds in mono". That fits what libopus's
+  source says its speech mode does - narrow the stereo when the share of bits
+  for what both sides have in common falls below its minimum
+  (`silk/stereo_LR_to_MS.c`, "reduce stereo width", read in 1.3.1) - though
+  the encoder was not asked; below about 19 kbps it codes stereo as mono
+  outright (`opus_encoder.c`). So 32 is the default, and 24 is offered saying
+  what it costs.
+- **What each choice came to** in that test, kbps for the phone call, the
+  messenger call and the message - Opus gives quiet stretches fewer bits, so
+  a recording is about this, not exactly: 24 → 18.2, 23.1, 17.0; 32 → 23.4,
+  30.0, 21.6; 64 → 65.1, 65.1, 63.3; 128 → 129.4, 129.5, 125.2.
+- **Fewer page headers.** Android's Ogg muxer (AOSP's `OggWriter`, behind
+  `MediaMuxer`) ends a page after every packet: 20 ms of sound to a page, 50
+  pages a second, each with a 27-byte header and its lacing - about 11 kbps,
+  whatever the bitrate (read in its source; on the Honor, the pages read of a
+  recording each 960 samples on from the last and about 350 bytes, 29 of them
+  header). At 24 kbps that
+  would be a third of the file. The copy that puts the
+  [marks](#marks-inside-the-recording) into a recording now joins its audio
+  pages about a second to a page (`OggPages`; RFC 7845 allows 255 packets to
+  a page and sets no limit on how long one plays), every packet as it was.
+  Every page is also given the position Ogg Opus means (RFC 7845, 4): where
+  its last packet *ends*, in 48 kHz samples from the start, worked out from
+  each packet's own first byte - and the last page is marked the stream's
+  end. The muxer writes where that packet *starts*, and marks no page last
+  (measured on the Android 12 and 17 emulators, 2026-11-17). RFC 7845 calls
+  such a stream invalid - its first audio page at 0 with 960 samples on it -
+  and libopusfile refuses to open it (`op_find_initial_pcm_offset`, read in
+  its source, not run), so players built on it would have too; CoreAudio,
+  AVFoundation, ffmpeg, Chromium and
+  Android, all that had been tried, played it. And Android heard it wrong:
+  its extractor stamped each page a packet early, and its decode **cut 312
+  samples a channel, 6.5 ms, at the start of the second packet, 13.5 ms in**
+  - through MediaExtractor and MediaCodec on the Android 17 emulator, a 34 s
+  test call's sound jumped from 15456 to -334 there; with the positions
+  written so, it decoded without the cut, 1701 × 960 - 312 samples a channel
+  as RFC 7845 counts them, its start as libopus (ffmpeg) decoded it, and
+  MediaPlayer gave it 20 ms more, its last packet. The same on the Android 12
+  emulator, six calls in all (the debug build's `repage`). Through 1.1 this
+  note read those 312 samples the other way - that joining the first page
+  made Android play the pre-skip as sound; it was this cut, gone.
+  The first audio page is still not joined: MediaPlayer and ExoPlayer landed
+  on the same millisecond at five seeks either way, MediaStore gave the same
+  length, and the file went from 9,490,960 to 8,773,057 bytes (the Honor,
+  2026-11-16). In the test above the joined pages saved 10.5 to 10.6 kbps at
+  every rate.
+  A save retried without a work file - storage for one copy, not two - is
+  written straight into place and keeps the muxer's pages, as it keeps no
+  marks; their positions and last mark are written where they lie
+  (`OggPages.mend`), each page its own length, and the file synced before
+  the recorder's copy may go.
+  **Recordings from before 1.2** get the same where they lie: each
+  keep-alive run, every quarter hour or so, goes on through JemRec's own a
+  minute at a time until it has been through every one once - once for each
+  folder chosen in turn, and only with that folder there - passing over
+  any already marked after a look at its last
+  page (`OldRecordingPages`). Only Opus streams, only names JemRec gives,
+  only files this install may write - after a reinstall, Android counts the
+  old install's as nobody's, and those play as they did. Stopped part way, a
+  file's positions still only go on.
+- **Not offered.** Recording in mono: with Opus a bitrate sets the size, not
+  the channels, so mono would make a file no smaller at the same rate, and the
+  two sides, once mixed, never come apart again - the after-call check that
+  finds a dead side needs them. Other formats: Android guarantees no MP3
+  encoder,
+  uncompressed stereo at 48 kHz is 11.5 MB a minute for a call that was lossy
+  already, and Share's `.m4a` already reaches Apple's and Windows' players.
+- **To the recorder.** The rate goes in the recorder's environment at its
+  start (`JEMREC_QUALITY`) and as command `Z` on a change, the way the
+  messenger apps and exact call tracking go; a value that is not a rate keeps
+  the one there was. A recorder from before 1.2 hangs up on it and records at
+  128 kbps until the app replaces it, at its next revive. *Copy a report* says
+  the rate a call was recorded at.
+- **Checked** by the emulator check `quality`: each of three rates chosen in
+  Settings is the rate the recorder starts the next call at, a recorder
+  started afterwards takes it from its environment, and the file has its
+  first audio page alone, no other page more than a second of audio, each
+  page's checksum good and its last position its length, to the second.
 
 ## Exact call tracking
 
@@ -729,11 +1084,14 @@ way each phone call went, when it was answered, and when it ended. With that:
 - **The end of a call reaches the app directly**, a second way to collect the
   recording beside the daemon's own.
 
-Call tracking only reads. The permission would let an app answer, hold and end
-calls; JemRec's service does none of that and shows no screen. (The
+Call tracking reads. The permission would let an app answer, hold and end
+calls; JemRec's service answers and holds none, shows no screen, and ends one
+call only: the answering machine's, when its recorder is lost mid-message
+(1.2, `MessageHangUp`, below). (The
 [answering machine](#the-answering-machine), when you switch it on, is the
 recorder's doing, under the shell's own permissions: it answers, mutes and hangs
-up the calls it takes messages on, and nothing else.) It is on unless you
+up the calls it takes messages on, and nothing else - but for that one hang-up,
+its recorder gone.) It is on unless you
 turn it off in Settings (*Exact call tracking*). Off, the daemon takes the
 permission back and JemRec works exactly as it did before 0.14. The answering
 machine answers on tracking's word, so it goes off with it: with the machine
@@ -795,6 +1153,17 @@ lost one cannot be made again. In ask-first mode a call
 you tap Record on is always kept. This needs the call-log and contacts
 permissions, to tell who a call was with.
 
+One recording can hold two calls - call waiting - and the rules may leave
+out one and keep the other. The call left out is noted in the ledger (the
+missed-call check reads it) only as the kept part is safely saved, with the
+part's own entry, or as an empty recording is dropped: the recording's own
+call is noted at the file's start, which tells the next collection the file
+was saved, so noted before the write, a save that failed - the recorder out
+of reach, the app's process killed, a full phone - had its retry delete the
+recorder's only copy and the kept call was lost. A save cut short after
+publishing notes it as it finishes (the save journal carries it; 1.2's
+capped review, reproduced in RecordingSaverTest).
+
 ## File names
 
 - **Date and time**, the default - `20261020_165705_out.ogg`.
@@ -813,11 +1182,44 @@ permissions, to tell who a call was with.
   pause. A messenger call has no number: its name is the date, direction and
   app, and its caller is kept as for the date format.
 - **For Honor's Phone app** - `Priya Raman@+447700900123_20261020165705.ogg`,
-  in `Sounds/CallRecord`: the name and folder Honor's own recorder uses.
+  or `+447700900123_20261020165705.ogg` for a caller with no name, in
+  `Sounds/CallRecord`: the name and folder Honor's own recorder uses.
   Honor's Phone app then shows a play button on the call in its history.
   Offered only on a phone that has that app. Tested on an Honor: the time
   may be anywhere inside the call, the number has to be the call's, and the
-  part before the `@` is not read at all.
+  part before the `@` is not matched - but the Phone app reads it as a
+  regular expression, to take the `_` out of it. Until 1.2 a caller with no
+  name got the number there too, `+447700900123@...`: a pattern with a
+  dangling `+`, which the Phone app fails on, reading no number, so those
+  calls had no play button (the Honor, 2026-11-17: a real call and two
+  copies had none, the same recording named with the number alone got one;
+  the cause read in the Phone app's code, HnContacts 19.0.8.606). Now a
+  name loses what a pattern gives a meaning to, and a caller with no name
+  gets the number alone (`FileNames.honorWho`, `HonorNames`); a test reads
+  every name JemRec makes the way the Phone app's code does. Recordings
+  already in `Sounds/CallRecord` under a name the Phone app reads no number
+  in - by that same reading of its code (`HonorPhoneApp`) - are renamed to
+  the one 1.2 gives the same call, as the folder is read and while it is the
+  folder recordings go to (`HonorRenames`); one it reads keeps its name,
+  odd characters and all - in review, "Dr. Who" and "Mom (work)" were found
+  renamed for nothing (2026-11-18). What JemRec remembers of each by name -
+  kept, a message, which way the call went - goes with it, a name already
+  taken is left as it is, and one restored from Recently deleted is put
+  right at the next read.
+  Honor's own Recorder app does not list them, though it plays one the Phone
+  app hands it: its lists scan `Sounds` and `Sounds/CallRecord` and keep only
+  names ending `.amr`, `.m4a` or `.wav` (`FileUtils.AUDIO_EXTENSIONS`, read in
+  Recorder 17.0.2.705), so an `.ogg` is dropped before anything else is
+  looked at - its log on the Honor, 2026-11-17, found 0 files in a folder
+  holding 2; the `.nomedia`, Honor's recording databases and the names play
+  no part, and the Phone app's play button goes straight to the file. Only an
+  `.m4a` would be listed, and that is a second format, which 1.2 does not
+  have (the user's decision): AAC holds speech worse than Opus at these
+  rates, so the same sound would take about twice the size (the codecs'
+  known behaviour, not measured here); everything that reads a recording -
+  its tags, pages, waveform, the check of its two sides - reads Ogg Opus;
+  and the Recorder deletes and renames what it lists, which JemRec would see
+  only as recordings gone or renamed.
 
 The caller and the number come from what Android gave exact call tracking,
 or else from the call log as the call is saved - either way, only with the
@@ -900,7 +1302,10 @@ the other.
   called* reads it, with notification access, which Android grants to all
   notifications. JemRec keeps the caller's name, the time and whether the call
   rang first - from the call notifications of the apps switched on, for the
-  last 30 calls - and nothing else.
+  last 60 call notifications (a repeat within two minutes not noted again),
+  each with which app it came from - deleted when Show who called is turned
+  off - and, once a recording is saved, its caller by the recording's file
+  name (`name_callers`, with its other marks: the newest 2000).
 - **Speakerphone.** Your side is the plain microphone, without the call app's
   echo cancellation, so on speakerphone the other person is on your side too.
 
@@ -1260,7 +1665,17 @@ in full. Its test was filed under VoLTE, the path its greeting was heard on.
 **A message's length** is the user's: 30 seconds to 2 minutes, then the
 recorder hangs up - or no limit, which ends the call after 30 seconds without a
 sound from the caller, because a pocket dial or a line left open would
-otherwise hold the phone in the call for as long as it stayed open.
+otherwise hold the phone in the call for as long as it stayed open. Whatever
+the length, a greeting or a message whose recording stops - its capture
+failed too often, or its file could not be written - is hung up on at once
+(1.2's reviews): nothing more of it can be kept, and the silence watch, which
+hears the caller through that recording, would take a caller still talking for
+30 seconds of silence (read in review; not produced). Stopped as the call is
+answered, before the greeting, it is remembered and no greeting is played into
+it; nor is a call the user is taking over hung up. Produced on the Android 17
+and 12 emulators, the phone's storage filled mid-message (`early_end`): hung up
+1 to 3 s after the recording ended, what was kept saved. Too short to be said
+to have stopped early, which a recording is from 5 s missed.
 
 **During a message**, a notification - *Taking a message* - offers *Talk to
 them* (the greeting stops, the microphone opens, the call carries on) and *Hang
@@ -1284,7 +1699,26 @@ such a call ringing from one under way (AOSP's isInSelfManagedCall counts
 both). The recorder leaves a marker while it holds the mute, and a recorder
 started after a crash gives the microphone back - at once between calls, or as
 the call in progress ends: muted, the room stays out of a message whose caller
-is still on. The mute comes as soon as the call's audio is up - on the Honor
+is still on. A recorder ended mid-message takes the machine with it - its
+greeting, its limit, its hang-up when the recording stops - and from 0.17 the
+caller heard silence until they hung up: a recorder started again cannot tell
+that call from one of the user's. The call's own service can, with exact call
+tracking on (1.2, review round 13, `MessageHangUp`): Telecom binds
+`CallTracker` into every call, and ending a call through its own
+`android.telecom.Call` ends that call and no other (AOSP Telecom's
+`InCallAdapter.disconnectCall` takes the call by its id, for any in-call
+service bound; read, not produced). So its watch, finding the recorder gone
+while a message is taken, hangs up the message's call - the one call up and
+active as the message started - while it is still that call, still active,
+and the microphone still muted (given back, someone took the call); where
+Telecom has not told the tracker which call it is, it leaves the call up, as
+before. The message's file, which the
+recorder names as one only as its call ends, is saved as a message - whole,
+the greeting at its start - by when its greeting began (`LostMessages`), and
+a test call's is not kept (review round 14). Telecom gives the microphone
+back by itself as the call ends (AOSP `CallAudioRouteStateMachine`, its
+reinitialize), and the recorder started again clears the mute it left. The
+release check `message_recorder_lost` kills the recorder mid-message. The mute comes as soon as the call's audio is up - on the Honor
 that is before the network connects the call (2026-10-22: 14 ms after the
 answer, connected at 235 ms) - and the greeting, and the app's *Taking a
 message*, wait for the off-hook: a caller gone in that moment left no call, and
@@ -1513,10 +1947,13 @@ holds all of this below on each release AVD.
   name did not come back; the broadcast is protected, so no other app can
   send it. Measured on the Honor, 2026-10-23: *Call recording* on the lock
   screen, the name again within two seconds of unlocking.
-- **The same player.** Recordings still play with `MediaPlayer` - its exact
-  seeking, measured, kept - wrapped for the session (`SessionPlayer`). The
-  session alone added 0.56 MB to the release APK; ExoPlayer would have added
-  1.54 MB (9.19 MB before, measured). So what ExoPlayer does by itself is
+- **The player.** Recordings play with ExoPlayer since 1.2, cut down to
+  what a recording needs, for [both sides in both ears](#both-sides-in-both-ears);
+  until then with `MediaPlayer`, chosen for its size - the session alone
+  added 0.56 MB to the release APK, and ExoPlayer with its default factories
+  would have added 1.54 MB (9.19 MB before, measured 2026-10-23). Either way it
+  is wrapped for the session (`SessionPlayer`), and ExoPlayer's own audio
+  focus and becoming-noisy handling stay off: what a player should do is
   written out (`PlaybackRules`), from Android's audio-focus guide: a ringing
   call holds it back and it plays on after; another app taking the audio
   pauses it until you play it again; asked to duck, speech pauses instead,
@@ -1557,9 +1994,25 @@ voice notes with (`VoiceNoteProximityWakeLockManager` and
   2026-11-15: voice-call audio on the earpiece with the mode normal, heard
   there "as in a call", and the recorder, watching four messengers, logging
   no messenger call - it takes one only from an app that plays call audio and
-  records at once. `MediaPlayer` takes its attributes only before `prepare()`
-  (Android's `MediaPlayer` docs), so a move opens the file again where it
-  was: 69-83 ms on the Honor, heard as smooth. The volume keys follow it: at
+  records at once. A move opens the file again where it was, with the new
+  attributes - as `MediaPlayer`, which takes them only before `prepare()`,
+  had to: 69-83 ms on the Honor with it, heard as smooth; with ExoPlayer,
+  raised and lowered on the Honor it moved as before (2026-11-16). Not
+  changed on the player as it plays, which ExoPlayer allows: its audio sink
+  lets its AudioTrack go with them, with what the track held and had not
+  played - up to its 500 ms buffer (Media3 1.11.1's `DefaultAudioSink.flush`)
+  - and a seek back is done for nothing when it is to the player's own
+  position, to the millisecond (`ExoPlayerImplInternal.seekToInternal`): on
+  the Android 17 emulator (2026-11-18) a raise so skipped 390 ms with no seek,
+  400 to 460 ms with that seek. Stopping the player and preparing it again
+  first lost nothing, and cost what opening it again does - a new decoder,
+  the file read again - so a move opens it again, as Both sides in both ears
+  does (`SessionPlayer.reopen`): one way. The release check
+  `raise_to_listen` holds it: each move opens the file again within 50 ms of
+  where the playhead's clock had the sound (`SessionPlayer.reopen` logs
+  where and when it aims), and its sound runs on no more than about a
+  quarter second ahead across the move.
+  The volume keys follow it: at
   the ear they moved the call volume, on the Honor's 1.1 build (Media3 hands
   the session's attributes to Android's media session).
 - **The screen goes dark** by Android's `PROXIMITY_SCREEN_OFF_WAKE_LOCK`, the
@@ -1675,6 +2128,100 @@ sensor, holds the lock and watches for headphones; `PlayThroughSetting` keeps
 the choice; `SessionPlayer` opens the file again for the output that Media3's
 `setAudioAttributes` asks for.
 
+## Both sides in both ears
+
+A recording plays with both sides of the call in each ear: one earbud hears
+the whole call, and an answering-machine message, its left side silent, is
+not in one ear only. Settings → Playing → **Both sides in both ears**, on
+unless switched off, for updates too; off, each side plays in its own ear,
+as it was recorded. The file keeps the sides apart either way, and Share's
+converted `.m4a` follows the switch. Asked for in discussion #92: "I am heard
+in one earpiece and the interlocutor in the other".
+
+- **Why ExoPlayer.** `MediaPlayer` cannot put one channel into the other:
+  `setVolume(left, right)` only scales each, and nothing in
+  `android.media.audiofx` mixes. Media3's `ChannelMixingAudioProcessor` does,
+  in ExoPlayer, and Android's `MediaPlayer` page recommends Media3 for new
+  playback. Cut down to the Ogg extractor and one audio renderer it added
+  511,036 bytes to the release APK (10,240,823 to 10,751,859, measured
+  2026-11-16); with its default factories it had come to about a megabyte. What
+  `MediaPlayer` did, and how each still holds, is listed in `RecordingPlayer`.
+- **The mix.** Each ear gets both sides at 1/√2 - the mix that keeps the
+  loudness - chosen by ear on the Honor over 0.5 (every voice 6 dB down) and
+  1.0 (a plain sum). Over the 101 recordings there, 7.3 hours decoded on the
+  phone: a plain sum would have gone past full scale 113,936 times in 27 of
+  them, 21 of those loud messenger calls; this one 922 times in 6, about 19
+  ms in all, and none was heard. What goes past is held at full scale, as Media3
+  holds its 16-bit output, and Share's copy is mixed by the same formula
+  (`BothEars`), in the encoder's buffer - the decoder's is read-only. A mono
+  file plays as it is.
+- **Switched while it plays,** the recording opens again with the sides
+  mixed or apart - the mix is part of the player as it is built - and goes on
+  from where the sound was, by the playhead's clock - the place a move to
+  the earpiece goes back to: `PlaybackService` watches the setting.
+- **A smooth playhead.** ExoPlayer runs its playback loop as rarely as it can
+  (dynamic scheduling, on by default), and the position it gave the app stood
+  still and then jumped about 256 ms, four times a second, where
+  `MediaPlayer`'s was worked out when asked. The media session handed that on,
+  and every three seconds the screen's reading was put right by 110 to 210 ms,
+  back about one time in three, where the playhead - which never goes back -
+  stood still; its user saw it slow down (the Honor, 2026-11-16). Turning the
+  scheduling off smoothed it, at half again the app's CPU while playing (7.1%
+  of a core to 10.8%, measured with the probe running), and the switch is one
+  Media3 marks experimental, to be renamed or removed. So
+  the position comes from the clock once the sound is under way - Media3 says
+  when playout started - with ExoPlayer's own word while it is not, or when
+  the clock runs behind it, or more than a second ahead (`PlayClock`), or
+  after the audio track says it ran dry (Media3's `onAudioUnderrun`), until
+  the word moves on: a shorter stall left the clock ahead of the sound for
+  good, and a move then skipped as much (reviews, 2026-11-18; the release
+  check `both_ears` stops the app 0.8 s to make one); and
+  the sound getting under way reaches the controllers at once, as a jump in
+  position, not at the session's next word. After: over 40 s, the screen's
+  reading ran at exactly the clock's pace, put right once, by 104 ms, a
+  quarter of a second after Play. Its user: "Smooth now". The screen's
+  playhead reads the sound's place every frame since (`SoundPosition`,
+  `PlayheadGlide`).
+- **Paused where the sound stopped.** Paused, ExoPlayer's own word is its
+  last step, and the session showed it until the next play: at four pauses on
+  the Honor, 2026-11-17, the player went on 112 to 231 ms past the position
+  shown, and the screen's playhead went back to it at each pause (read from
+  its rules, not seen). A pause now
+  keeps where the clock had the sound (`PlayClock.pausedAt`): at the fourth,
+  worked out from the log's times, 10 ms short of where the player went on.
+- **The playhead from the player itself.** With an earbud (Bluetooth) the
+  playhead slowed again after Play and after each tap: the screen's
+  controller ran on from Play while the sound started 0.67 s later, Media3
+  said the sound was under way 2.1 s after Play, and the controller was put
+  back 0.5 s then (the Honor, 2026-11-17). The player itself said 0:00 until
+  the sound started and moved with it from there. So while it plays the
+  screen reads the position from the player, in this process, at every frame
+  (`SoundPosition`), not the controller's working-out: the playhead waits at
+  the start for the sound and runs with the clock. Paused, it shows the
+  controller's word, which is where the player paused (the clock's place) and
+  has a seek in it before the player does. The controller is kept for
+  playing, pausing and seeking; the system's controls still follow the
+  session's word.
+- **What a frame log showed then** (a debug probe, every frame's drawn
+  position, the same day): on the loudspeaker the playhead waited 75 ms for
+  the sound after Play and 25 to 60 ms after a tap, then ran at the sound's
+  pace within about a pixel. On the earbud two things were left. ExoPlayer's
+  word stood still and stepped on about 257 ms at a time, and the clock ran
+  up to 359 ms ahead of it in one run and past 400 in another, which the
+  clock took for a stall: the playhead went back 389 ms and on again. So a
+  stall is now more than a second (`PlayClock.MOST_AHEAD_MS`). And until
+  Media3 said when the sound started, ExoPlayer's word ran 104 to 132 ms
+  behind it and then jumped: the playhead now takes such a correction at a
+  tenth faster or slower than the sound, over about a second, and a word
+  that moves in steps in small ones (`PlayheadGlide`).
+- **Tried on the Honor** on the 1.2 build, 2026-11-16, with earbuds: both
+  sides in both ears and in one earbud, the switch off and on while playing,
+  seeking, pausing, the end, raised to the ear and lowered, the screen off
+  with the lock screen's controls, and a shared `.m4a` played in another
+  app, mixed. The emulator check `both_ears` holds the wiring - the recording
+  opening mixed, apart when switched off while it plays and on from where it
+  was, and back; what the ears hear, an emulator cannot say.
+
 ## Three looks
 
 The app comes in three looks, picked in Settings → Theme: **Memo**, the
@@ -1695,7 +2242,13 @@ AUTO or ASK, ANS, MSG, DEL - carries the same mark in Settings, from one
 function. To a screen reader each header is one sentence, the same in all
 three: the state, then what is on (Memo's read its marks' own names until
 0.30). A look draws nothing that is not data: no meter moves between calls,
-no LED is lit for show.
+no LED is lit for show. Opened, until its first look at the recorder lands,
+the header says *Checking* and draws it still, no mark lit and none spoken:
+nothing is starting, and nothing it marks has been read. Until 1.2 it showed
+the defaults for that moment - *Cannot record*, seconds with the recorder
+down - and in 1.2's first rework *Starting*, its animation running and the
+answering machine's and messengers' marks growing as the reading landed
+(reviews, 2026-11-18).
 
 The Theme screen previews the picked look with the home screen's own parts,
 drawn over five invented calls: a preview of the user's calls would put them
@@ -1759,7 +2312,8 @@ What a tap does meanwhile is one table, an action a row with its reason (`Action
 - **Not taken, the control greyed meanwhile:** Diagnostics' Self-test and
   Start recorder, Recently deleted's Restore and Restore all, auto-delete's
   choices, Messenger calls' caller-names switch, the folder dialog's Use
-  default, setup's buttons that only move it on. The check itself is one of
+  default and home's lost-folder notice's Use the standard folder, setup's
+  buttons that only move it on. The check itself is one of
   these: one at a time is enough, and the next return asks again.
 - **Waits its turn, then runs:** an answer already given in a dialog that has
   closed - Delete, Delete all for good, Start fresh - and a control that is
@@ -1783,9 +2337,12 @@ What a tap does meanwhile is one table, an action a row with its reason (`Action
   folder - which arrives as the app comes back to the front, while it
   checks (dropped, the contact was picked and nothing added: measured on an
   emulator while 0.12 was made, 2026-10-20); a chosen contact's removal, one
-  preference written, and Diagnostics' Copy a report, which changes nothing;
-  and what the recorder is told as a setting changes, as the next call can
-  come seconds later.
+  preference written, as File names' and Whose calls' choices are; the call
+  log's Allow, Android's own question, wherever it is offered; and
+  Diagnostics' Copy a report, which changes nothing; and what the recorder is
+  told as a setting changes, as the next call can come seconds later. Each of
+  these stays live while the app checks: until 1.2 Settings greyed some of
+  them there, and home did not (review, 2026-11-18).
 - **Allow this Wi-Fi** waits for the check, then asks Android, with
   *Starting* in the header meanwhile rather than the screen held still.
 
@@ -1832,9 +2389,28 @@ notification's tap each could open a second window over the first - read from
 the code, not measured: their intents had no CLEAR_TOP, and only the media
 notification's had SINGLE_TOP - and two answering machine screens could then
 arm a test, or play the greeting into a take, unseen by each other. The
-record prompt, full screen on a locked phone, has a task of its own: in
+record prompt's full-screen window (opened while the phone sleeps or its lock
+screen is in front, and over a locked call only where no heads-up can show:
+*Notifications off*, in
+[after the call](#after-the-call-and-when-something-is-wrong), has the
+measurement) has a task of its own: in
 JemRec's, its NEW_TASK and CLEAR_TASK cleared that task, and the window in
 it (read from the code; 0.29 did the same).
+
+The window comes back where it was left after Android ends JemRec's process
+in the background, as Android does whenever it needs the memory: the screen,
+the home tab, each list's search and chips, the recordings picked. A
+ViewModel does not outlive its process, so it keeps them in its
+`SavedStateHandle`, saved with the window's state - "Save UI states" on
+developer.android.com, for state a view model holds - and one made new takes
+them back from there (`SavedPlace`); one that lived through - the phone
+turned - has them already. Until 1.2 it came
+back on home's first tab, the search and the selection gone (the practice
+audit, 2026-11-17). An emulator check ends the process with `am kill` -
+which ends only a process it is safe to, one in the background - from
+Settings over the Calls tab, and finds both again; a Robolectric test makes
+the window again from its saved state with a view model made new
+(`ProcessDeathTest`).
 
 ## Keeping, deleting and cleaning up
 
@@ -1846,8 +2422,8 @@ it (read from the code; 0.29 did the same).
   is Android's own trash, so other apps stop seeing the file at once. In a
   folder you chose, the file is renamed the way Android's trash names it
   (`.trashed-<expiry>-<name>`, hidden from most file managers), and JemRec
-  removes it when the 30 days are up. In a name with an `@` the `@` is written
-  `%40` and the `_` `%5F`, as Honor's Phone app plays any file in its folder that
+  removes it when the 30 days are up. In a name Honor's Phone app could match
+  (`HonorNames`) the `@` is written `%40` and the `_` `%5F`, as it plays any file in its folder that
   holds the number and the time: with the `@` gone alone, a deleted recording kept
   its play button and played; with the `_` gone too, the button went (the Honor,
   2026-11-06). Recently deleted restores one at a time, or
@@ -1889,7 +2465,22 @@ it (read from the code; 0.29 did the same).
   days, 90 days, 6 months or a year, and calls shorter than 5, 10 or 30
   seconds - wrong numbers, hang-ups. A short call is caught as it is saved,
   so it never gets a notification. What auto-delete removes goes to Recently
-  deleted like anything else.
+  deleted like anything else. The pass, and Recently deleted's 30 days, run
+  once a day at most in a keep-alive run, so they wait with it: for a
+  network, which its runs ask for ([Coming back without
+  you](#coming-back-without-you)), and under the Battery setting
+  *Restricted* for JemRec to be opened - a day or more late then, and
+  nothing lost (review, 2026-11-18).
+- **Share's `.m4a` is a copy of the call** - made in the app's own folder on
+  the phone (`Android/data/…/files/shares`), handed out by the FileProvider
+  one file at a time. It goes once it is six hours old - a share in flight is
+  minutes old - swept at every share, every keep-alive run and every start of
+  the app's process, and when its recording leaves the list, the way its
+  notification does (`Trash.left`), unless it was made in the last ten
+  minutes: shared and deleted at once, an app that reads its share later - a
+  queued upload - would lose it. Until 1.2 copies were swept only at
+  the next share: a phone that never shared again kept every one, and a call
+  deleted for good went on as its copy (the practice audit, 2026-11-17).
 - **A recording not finished is not listed.** In the Recordings folder Android
   keeps it out of sight until it is finished. A folder you chose and app storage
   have nothing of the kind, and the file is there under its name while it
@@ -1932,9 +2523,12 @@ recording now carries its own marks.
   storage (not its cache, which Android empties when storage runs low), and
   the file is copied into place with that one page swapped for JemRec's:
   `JEMREC=1`, and `JEMREC_MESSAGE`, `JEMREC_DIRECTION`, `JEMREC_CALLER`,
-  `JEMREC_KEEP` as they apply. Every other page is the muxer's, byte for
-  byte, and the tests hold the checksum to the two the Honor's own file
-  carries. A copy that fails is a recording not saved: the recorder's copy
+  `JEMREC_KEEP`, and from 1.2 `JEMREC_START` (when it began, in UTC),
+  `JEMREC_PART` (one of a call's parts) and `JEMREC_CALL` (a part joined
+  mid-call: its call's start), as they apply. The OpusHead page and the first audio page
+  are the muxer's, byte for byte, and the tests hold the checksum to the two
+  the Honor's own file carries; the other audio pages are joined in the same
+  copy, every packet as it was ([quality and size](#quality-and-size)). A copy that fails is a recording not saved: the recorder's copy
   is kept for a retry, as when the muxer cannot finish. A work copy and then
   the copy into place need the recording's size free twice, so a recording
   whose save has failed once is saved the old way at the retry - straight
@@ -1976,9 +2570,9 @@ recording now carries its own marks.
   listed now stays read, the newest 2000 of them, so the record does not grow
   with every recording ever deleted; past that a name goes, and its file is read
   again if it ever returns.
-- **What holds to 2000, and what does not.** A message, a direction and a
-  messenger's caller outlive their recordings in the app's preferences, so those
-  three keep the newest 2000 names. A name the list has read stays past that, or
+- **What holds to 2000, and what does not.** A message, a part, a direction,
+  a start and a messenger's caller outlive their recordings in the app's
+  preferences, so those five keep the newest 2000 names. A name the list has read stays past that, or
   is reading, as it does all of them after a reinstall: an old message used to
   lose its mark with its file still there, and with it the short-call rule's
   exception, so auto-delete could take it for a wrong number. Keep marks have no
@@ -2006,11 +2600,14 @@ recording now carries its own marks.
 ## After the call, and when something is wrong
 
 A recorder that stops recording without saying so is worse than none: you find
-out on the day you need the call. So JemRec says so, in four notifications.
+out on the day you need the call. So JemRec says so, in notifications - and
+on its home screen, where a notification cannot.
 
 - **After each call** - who it was with and how long, with Play, Share and
   Delete. An icon in the status bar but no sound, one at a time, and it can be
-  switched off in Settings. Delete asks first, in the notification itself. It
+  switched off in Settings. Delete asks first, in the notification itself,
+  and only with the phone unlocked (1.2, `setAuthenticationRequired`: from a
+  lock screen, a recording of a call was one tap from the trash). It
   goes when its recording goes to the trash or for good, from the list, by
   auto-delete or on Android's own yes: a message's has no timeout, and one
   deleted from the list stayed, with Play, Share and Delete on nothing (the
@@ -2037,6 +2634,381 @@ out on the day you need the call. So JemRec says so, in four notifications.
   call log is held against what was recorded, and an answered call with nothing
   to show for it is reported once. Recordings you delete do not count as missed:
   the app notes each call as it saves it.
+- **Recording stopped**, during the call (1.2's reviews) - the call's own
+  silent notification says *Recording stopped* the moment the recorder says
+  so: *Trying again - this part of the call is not recorded* while its capture
+  is made anew every 10 s, or nothing has reached the recording for five
+  seconds (a stall no read fails in), back to *Recording call* once reads
+  have flowed for five seconds, or *The
+  rest of this call is not recorded* when the encoder or its file ended
+  (`CallNotice`; the recorder's `RECORDING_STOPPED` and `RECORDING_BACK`
+  wakes, dropped once the call is over). Silent, as the call's notification
+  always is: a sound mid-call is what it must not make. Produced on the
+  Android 17 emulator, the phone's storage filled mid-call (`early_end`). A
+  recorder ended mid-call cannot say it, so the call's service watches it
+  (`RecorderWatch`, 1.2's reviews): every 5 s it asks
+  whether the recorder answers - one ping, then the five a destructive step
+  asks - and gone, the notification says *Recording stopped* and the
+  recorder is revived, again 30 s after one that would not start (timed,
+  not counted in looks, which take ~2.4 s of pings each with the recorder
+  down; the looks go on meanwhile, so a call that ends then is read as
+  over). Started again while the call is up it records the rest of the
+  call, a recording of its own, the time between lost - measured on the
+  Android 17 emulator first by hand (4.2 s and 10.8 s saved, 8.8 s between
+  lost) - neither said to have stopped early. A recorder started mid-call
+  sees the call's off-hook as the first state Android tells it, no ring
+  before it - or a ring over the call already up (call waiting: the next
+  off-hook is the joined call's, unless an idle or the mode leaving the call
+  says it ended first; only a ring that sounds, or, with a Bluetooth
+  headset connected, one Do Not Disturb lets through, changes the mode - or
+  another app's call ringing through Telecom (a self-managed call: Meet's)
+  - Telecom plays no ring for it but takes the ring's mode, unless the work
+  profile is quiet - AOSP's Ringer.startRinging), or,
+  the call
+  on the SIM that is not the default, an idle with Telecom holding a phone
+  call and the audio in a call (read in AOSP's TelephonyRegistry, not
+  produced) - so it cannot tell which way the call went: it names the file
+  `_joined` and says so in the call's start, and the saver takes the call
+  that was up at the recording's start, whichever way - Telecom's call made
+  active last before it, or the call log's entry whose span holds it, waited
+  for before one held only by the slack for a ringing - so its caller, its
+  rules and its way are that call's.
+  Until round 10 of 1.2's reviews such a part was matched to no call: kept
+  as an unknown outgoing call whatever the rules (read in review, not
+  produced). In Ask first a phone call's start asks nothing again: a call answered
+  Record is recorded on, one answered Not now is left - the answer
+  forgotten once the audio mode goes back to normal, or to a ring's (the
+  call up hung up while a waiting one rings - not a ring over a call on
+  hold, which goes on, its Record with it - not a Not now; rounds 26, 27), so a call redialled quickly is
+  asked about - except a joined start that came through a ring, which may be
+  the waiting call itself, the call up having hung up while it rang
+  silently: asked again, never given the other call's answer (round 13).
+  A messenger call's revived start says no "joined" - the recorder names no
+  messenger file so - and is asked about again: one call swapped for the next
+  in the app, no mode change between, cannot be told from it, and an answer
+  carried over would record a call nobody was asked about (review round 18).
+  Its first part is kept with it: only the revived recorder's own first start
+  of the same app's call, after the loss, is taken for it (round 17 had the
+  first part dropped; round 18 any start until the call's end kept). A
+  joined start continues a phone call only: one over a messenger call whose
+  recorder was lost is a phone call rung in during it, asked about and
+  saved on its own (round 19). And with the recorder lost and not yet back
+  in the call, the call's mode left ends the call there and then: the
+  revive, tries of seconds each, can land in the next call, whose start was
+  taken for this one's (round 19). Left: normal, or for a phone call a
+  ring's mode - a waiting call ringing once the call up hung up never
+  passes normal (AOSP CallAudioModeStateMachine; round 20) - but not a ring
+  over a call on hold (below; rounds 25, 26). A phone call at
+  once: Telecom sets those only with no call active (UnfocusedState,
+  RingingFocusState), so a waiting call answered at once - End and answer -
+  is the next call whatever the mode says by then (round 21). A messenger
+  call after 1.5 s out without a break, as an app switching its route flips
+  the mode and the recorder's own watch waits as long (Voip; rounds 20,
+  21). Not when the recorder was back as the mode left - the watch's revive
+  says so, or one ping at once for one back some other way - its start
+  perhaps still on its way (a wake: up to three tries of 10 s, about 34 s at
+  most), nor once a revived recorder
+  has said the call: their own end ends it, the parts saved together (round
+  20). One back later is in no call of this one's: a ping and five more,
+  2.4 s, let a revive landing in them keep the call, and the next call's
+  start was taken for it (round 22). "Back" is the watch's revive since
+  this loss: a revived recorder lost again before the watch's next look,
+  or one whose revive began before a phone call rang over a messenger call
+  that then ends under the ring (the recorder finds a messenger call only in
+  communication mode, Voip; the watch starts none under a ring it takes for
+  the call, round 26), leaves the end to the watch's two looks - each
+  a second fault within seconds (round 23); so does a recorder revived
+  before the mode left whose call ended before it found it - a messenger
+  call from the same app within those looks is then taken for this one's,
+  as a redial was in round 18 (round 24). A phone call's mode left - normal,
+  or a ring's - ends it for the next start, of a file begun after or of
+  none, even with the loss found only after the hang-up: the redial is the
+  next call (round 24) - when the mode leaves the call; a redial within
+  the end-of-call tone (about 1.6 s after Telecom's end on the 12 AVD,
+  2026-11-19) never passes normal - AOSP OtherFocusState keeps the call's
+  mode through the tone - and with exact call tracking on, Telecom's own
+  list emptying ends the call there instead (round 29; off, such a redial
+  is taken with the call before): Telecom sends the call's DISCONNECTED to
+  the in-call services (InCallController.onCallStateChanged, updateCall),
+  and android.telecom.Call takes it out of the list on that update
+  (internalUpdate, fireCallDestroyed, Phone.internalRemoveCall,
+  onCallRemoved), while CallAudioManager starts the end-of-call tone on the
+  same DISCONNECTED (playToneForDisconnectedCall) - read in AOSP main, and
+  produced by `stopped_early`'s "telecom" redial pass on the 12 and 17
+  AVDs (2026-11-19): no normal between the calls, the redial told apart;
+  with the list's line planted out, the two were one call (12). Only the last call gone counts: one of two hanging up -
+  a held call's other - leaves a call up (CallTrackerTest, round 30); and
+  not a ring's over a call on hold, which is
+  still up (AOSP OtherFocusState: a new ringing call goes to
+  RingingFocusState unless the phone is at the ear; read in AOSP, not
+  produced), told by Telecom's own call list with exact call tracking on -
+  for the mode's end, the watch's looks (which take that ring for the call,
+  and try no revive under it: one started then sees the ring first and its
+  start is no joined one - the loss said all the same, round 27) and a
+  Record kept - not a Not now: the recorder itself asks at the call answered
+  over the held one (round 27); with it off a held
+  call can be split in two there (rounds 25, 26). A waiting call that rings
+  silently sets no mode at all: only a ring that sounds, or, with a
+  Bluetooth headset connected, one Do Not Disturb lets through, does - or
+  another app's call ringing through Telecom (a self-managed call: Meet's)
+  - Telecom plays no ring for it but takes the ring's mode, unless the work
+  profile is quiet (AOSP Ringer.startRinging, shouldAcquireAudioFocus;
+  RingingFocusState) - so its answer is not seen and it is taken with the
+  call before, as the recorder's own call waiting is (Calls.onCallStart,
+  RECORDING_ALREADY; round 21). A phone call ringing over a messenger call
+  whose recorder is lost is the messenger call still, for the watch too -
+  four minutes at most, timed, as with a recorder (round 21: it ended the
+  messenger call after two looks; round 22: counted in looks, which take
+  their pings with no recorder, it was six). What the lost recorder left of a call -
+  ended so, by a new call's start, at a message's start, or at an end with
+  no file of its own - is a part of it, one file alone too: no short call;
+  and the loss is that call's, not the next one's (round 21). Lost unseen
+  too: killed in the call's last seconds and found down only at a look
+  after its mode left (round 29), or started again by another path between
+  the watch's looks - on the 12 and 17 AVDs (2026-11-19) the Wi-Fi revive,
+  its line a quarter to half a second after the hang-up, started a recorder 5-9 s
+  later that joined the redial, no look having found the loss (on the AVDs
+  that revive fires at most dials and hang-ups; a phone on steady Wi-Fi
+  should not - inferred). A joined start (a recorder whose watch began with
+  a call up), or a recorder started since the newest file of the call
+  began (DaemonLauncher.launchedAtMs: one is started only when none
+  answers, once an out-of-date one has quit, which it does only with no
+  call, recording or fetch under way, or once a wedged one was killed) - timed by the file's own start, not
+  by when its wake came - says the recorder writing it is gone; what it
+  left is a part (round 30: saved as a whole call). Gone perhaps only after
+  the call's end, its end's wake not yet in: the part is then a whole call,
+  which errs safe - a part only escapes the short-call rule (round 31). An
+  end that names no file marks the files held only on such a sign: the end
+  of a call whose start never came - left out by the rules, or its
+  recording would not start - names none either (round 31). A message under
+  way so is still a message (LostMessages), noted before its file's hold
+  goes, and its call hung up as at a loss the watch finds (round 31; the
+  hang-up with exact call tracking on, as every message hang-up) - its
+  window ending before what the recorder after it began, which is not the
+  message (round 33). That file, begun in the message's own call while
+  nobody has it (the microphone still muted), is the caller's: a part by
+  its joined name, and a test call's noted with the lost message and
+  dropped by whichever save meets it, no second test call counted (rounds
+  32, 33); not asked about in Ask first. Its joined start ahead of the
+  message's own wake - each up to about 34 s - loses the message the same
+  way, nobody taking it up, by the joined file's own start (rounds 32, 33;
+  with exact call tracking on: the message's call is Telecom's). A
+  messenger call's recorder lost unseen and started again mid-call by
+  another path is saved as two calls - the first's file a part, the rest a
+  call of its own, each told - where a loss the watch saw keeps one call:
+  the revived recorder's first start is taken for the same call only after
+  a seen loss (round 17), and telling such a start from a redial in the
+  same app would need the messenger's confirmed time out of its mode,
+  which the service keeps only with the loss seen (round 31; read from the
+  code, not produced). The release
+  check `messenger_recorder_lost` ends the stand-in messenger's call during
+  the revive: ended from the mode, its file saved as a part (Android 16 and
+  17 AVDs, 2026-11-18).
+  Call waiting at the revive is followed: the recording's own call is the
+  one made active last before it, the other call up in the file too. The
+  part before is saved at the call's end by the call's own service, with the
+  part after, every file claimed before the first is saved, and the call is
+  told of once, by the part with the most audio - its notice, or what went
+  wrong if none saved; the others have no notice of their own, so an empty
+  end no longer says "Call not recorded" of a call with minutes saved
+  (rounds 12, 13), and a part that could not be saved says *Part of a call
+  not saved* (round 14); either failure's alert goes once every file it was
+  about is saved after all (rounds 15, 16). Where the call's end does not save them - the watch
+  ends the call with no recorder to say it, a process killed mid-save - the
+  service has noted them as one call's (`CallParts`), and a reconcile saves
+  them together and tells the call once, leaving a part alone while its
+  call's service is still saving the other. Such parts are no short calls to
+  the short-call rule (marked by name, and in the file's tags where known
+  before it is written: after a reinstall, a file known as stopped early
+  only from Telecom's end is judged by its length again). The service
+  keeps the call's file names from its starts, and a reconcile does nothing
+  while a call is up: its call is not in the log yet, and whatever it saved
+  would post a notice. One so left is owed, process-wide, and the next
+  call's end kicks for it: a kick made for what a lost recorder left, its
+  run landing in a redial, left those files to the heartbeat - the service
+  that owed it stood down in between (review round 25). A call's end kicks
+  under a work name of its own, so a run begun before the end - its
+  reconcile left for the call - never takes that kick for itself (KEEP)
+  and ends with the files uncollected (rounds 26, 27) - and one of its own
+  name still running has it queued behind it, not dropped (round 28). A
+  reconcile leaves alone any file the call's service holds - from the
+  call's start until its end's save has claimed it - so it never saves a
+  call's own file in the seconds before the end's wake, with one read of
+  a call log not written yet (round 28) - nor a message's, which the
+  recorder names only at its end: while one is under way, any file begun
+  from a minute before it started (round 29). Its end holds the file by
+  name before it lets go of the message, and the reconcile reads the two
+  the other way round, so the file is one or the other at every moment
+  (round 30). The missed-call check waits out a ring too. A part joined mid-call - the call's only
+  recording, its recorder revived minutes in - counts as that call's in the
+  missed-call check, the Calls tab and the list's labels by the call's own
+  start, which the saver found and the file keeps (its tags, and the app's
+  note of its start), the ledger too for the missed-call check; by any start in
+  a call's logged span, as round 11 had it, a redial's recording was taken for
+  the call before (review round 12). Each ledger entry accounts for one call,
+  the closest of its way, as each recording plays for one: by every call of
+  its way within three minutes, a redial's recording gave the call before
+  its status and silenced its missed-call alarm (review round 12). While
+  such a part waits on the recorder it counts for the call it began in,
+  either way. Every match of a recording to a call is by when it began in
+  UTC, noted as it is saved - by name, and in the file's tags for a
+  reinstall: its name holds only the wall clock where it was recorded, read
+  in the zone the phone is in now, and after travel every older recording
+  was matched hours off its call (round 13, read in the code); a recording
+  saved before 1.2 has only its name. And
+  "JemRec is not recording calls", due two minutes into a recorder down, is
+  posted silently while the audio mode is anything but normal: Android mutes
+  every notification while telephony is not idle, a ring included (AOSP
+  NotificationAttentionHelper.disableNotificationEffects), and in an app's
+  call outside Telecom plays it as a tone in the earpiece
+  (playInCallNotification); held to the call's end instead, it went untold
+  when no service saw the call (review rounds 10, 11). It is posted again
+  with its sound once the mode is normal - at the call's end by its service,
+  else at the next revive (rounds 12, 13: marked said, it was never heard) -
+  unless the user swiped it away or opened JemRec (round 14). The reconcile and the call's watch with no
+  recorder count a call up only in a call's mode - a phone call's or an
+  app's - not a ringtone's, which another app can leave set: they waited on
+  it for ever (read from AOSP, not produced) - but a messenger call's watch
+  counts a phone call ringing over it as the call (rounds 21, 22), and a
+  held phone call's watch a ring over it (round 26); a watch
+  whose recorder has said the call waits for normal, as the recorder
+  records on through a waiting call's ring (round 13) - a ring's mode four
+  minutes at most, timed, as a call can ring three minutes or more (3GPP TS
+  24.008 T301; rounds 14, 15, 22). The watch holds a wake lock while it runs: with the recorder gone
+  nothing else keeps the CPU up on a call with the screen off by the power
+  key (inferred, for the Honor session). The service is there
+  for every call the recorder announced, call tracking on or off. And when
+  it cannot come back - no Wi-Fi to revive over - the call's end is read
+  from the audio mode: once the loss is said, at once for a phone call and
+  after 1.5 s out for a messenger call (the revive rule, above; review
+  rounds 19 to 21),
+  and otherwise - a loss found after the call ended - two looks with no
+  recorder (six with one, which says
+  the end itself seconds after - two with one the watch brought back that
+  has not said the call's start: it never saw the call) - what it left a
+  part if the recorder was down at any of those looks, or one was started
+  since the newest file began - gone, perhaps only after the end; a part
+  errs safe (rounds 29-31): until 1.2's reviews only the recorder's end
+  took the service down, and its notification stayed up after such a call,
+  until the next call's end. The release check `stopped_early` makes six
+  passes: brought back mid-call, brought back during an incoming call (the
+  joined part saved incoming), lost unnoticed just before a hang-up and a
+  redial - two calls, each told, the first's file a part - three times,
+  each with one rule the one that decides (round 30: with tracking on, a
+  redial a second after the mode went normal was told apart by the mode
+  and by Telecom's list both, so the pass would pass with either planted
+  out - read from the code, not run; and on the 17 AVD the first's file was
+  saved whole, the revive's recorder having joined the redial unseen):
+  redialled the instant
+  the phone reads idle with exact call tracking on (Telecom's list), a
+  second after the mode went normal with it off (the mode; the check reads
+  `dumpsys telecom` to see Telecom bound no call service of JemRec's then,
+  and did with tracking on), and after a recorder started between the calls
+  (a recorder started since, which marks the part; in the other two a
+  joined start and a recorder started since both held, so the joined rule
+  alone is unit-tested only - joined means started since, but for a clock
+  set back, round 32) - PASS on 12 and 17 with no try again (2026-11-19),
+  and each rule planted out FAILs its own pass on 12 (round 30's tree):
+  Telecom's list and the mode at "each call's after-call notice - two
+  calls", the launcher's mark at "the call before's [file] to be marked a
+  part" - the last run again on round 32's and 33's trees, the same
+  (2026-11-19); and
+  with Wi-Fi off not brought back - the call's end read from the audio mode
+  within 2 s of its normal (round 25; timed from the mode since round 33:
+  on a loaded 17 AVD the mode went normal 6.2 s after Telecom's end, the
+  call ended 4 ms after it, and a 5 s wait from the hang-up failed) - in which
+  pass, until round 10, the watch slept through its 30 s wait after a failed
+  revive and kept the notification up to 40 s after the hang-up (both AVDs,
+  2026-11-18). The by-hand measurement before the watch (4.2 s and 10.8 s
+  saved, 8.8 s between) was the Android 17 emulator's, 2026-11-18.
+- **Recording stopped early** (1.2) - a recording that ended more than 5 s
+  before its call, known two ways. A phone call's last packet against the end
+  Telecom gave the call: its capture failed or stalled and never came back
+  (tried again every 10 s since round 10, so one that comes back is no early
+  end), the encoder ended, or the recorder was ended mid-call. Normally the
+  recorder runs a second or two past a call's end. And the recorder's own
+  mark in the file's name (`_early`), where the recording ended or stopped
+  for good before the call (`RecordingLoss`): what tells a messenger call, a
+  phone call with call tracking off, a message, and a recording holding two
+  calls (call waiting), which Telecom's one end does not judge - these were
+  never told until 1.2's reviews. A recorder ended mid-call leaves no mark,
+  so for those it goes unsaid. The mark runs a second or two over the loss (the recorder
+  stops after the call); where Telecom has an end, that is what is said.
+  Telecom's end is not used for a message, which a takeover in Ask first
+  ends on purpose while the call goes on; the mark is, as a takeover stops
+  the recording before its encoder can end early, so a marked message is one
+  whose capture was lost under the caller. Nor where another recording of the
+  call carries it on - a recorder
+  brought back while the call was up starts one (`SavePlan.carriedOn`). Until
+  1.2 such a recording was found out by listening.
+- **Recording saved elsewhere** (1.2) - once, at the first call saved away from
+  the folder chosen in Settings because JemRec can no longer reach it: moved,
+  deleted, its drive taken out, or its access taken back (Android lets a folder's grant go when the
+  folder moves). Home says the same while it lasts, with *Choose again*, and
+  Settings' *Saving to* with *Change* - the causes in one wording
+  (`FolderAccess.WHY_LOST`), as two of the three had lost the drive. Choosing a folder Android would not let JemRec keep is
+  refused, and said, rather than taken and fallen back from at every call; a
+  folder chosen before lets its grant go. Saved in the folder again - a drive
+  put back - what was said goes, so its next loss is said again.
+- **Battery use is Restricted** (1.2) - once, at a start of JemRec's process
+  while the user's Battery setting for it is *Restricted* and JemRec is on
+  and set up, and on home while it lasts, with *Open App info*
+  (`BatteryHealth`). Lifted, it goes at the next reading of the window or the
+  keep-alive's next run, which reads it. What it costs is under
+  [Stopped in the background](#stopped-in-the-background).
+
+**A tap, and a button.** A problem's tap opens JemRec where the problem is
+shown - home's card or header, the Calls tab narrowed to the calls not
+recorded, Settings with its row for the phone's background settings brought
+into view for a phone stopping JemRec in the background - and its one button does the
+fix: *Open App info*, *Choose again* (Android's folder picker at once),
+*Self-test*, the phone maker's screen, *Allow this Wi-Fi* or *Pair again*.
+Each tap and button names JemRec's own activity - a deep link, which then
+opens Android's screen - never an implicit intent: one in a notification's
+PendingIntent can be answered by another app's activity claiming the same
+action. *Open App info* was the one that did not, until CodeQL's
+java/android/implicit-pendingintents found it (PR #105, 2026-11-19).
+Android's guide: "Don't include text actions that duplicate the behavior of
+tapping on the notification body", and a tap "must display UI that relates
+directly to that notification" (developer.android.com, Notifications). Until
+1.2's reviews every button went where its tap did (`AfterCall.problem`, held
+by `ProblemNotificationTest` and, for its callers, `ProblemButtonsTest`).
+
+**Notifications off.** Home says what is off and what it costs: all of
+JemRec's, *Record this call?* in Ask first - then no call is recorded, and the
+header says *Cannot record* with *Tap to turn on notifications* - or *Recording
+problems*. And in Ask first, its question turned down - below *Urgent*, the
+only importance that "appears as a heads-up notification" (Android's
+Notification channels), so it waits in the shade, missed mid-call - or, from
+Android 14, its full-screen notifications turned off - given at install, an
+app op the user can turn off, and Google Play takes it from apps that are not
+calling or alarm apps (`canUseFullScreenIntent`, Android 14's behaviour
+changes; AOSP's Full-screen intent limits) - so it stays a minute
+(`sticky_heads_up_notification_time`), not until it is answered: measured on
+the Android 17 emulator in a call (2026-11-18), allowed it was up all 100 s
+watched, turned off it went between 57 and 60 s. Its full-screen window opens
+while the phone sleeps or its lock screen is in front - not over a call's own
+screen in the calls measured that day, locked and unlocked, where it came as
+a heads-up - and, from SystemUI's FullScreenIntentDecisionProvider, over a
+locked call's screen only where no heads-up can show (Do Not Disturb set not
+to pop notifications; read, not measured), so its length is all it costs. Its *Turn on* asks Android's question again, or opens
+the setting - the question's channel, or full-screen notifications' own page.
+The two that leave calls unrecorded cannot be put away with *Not now*; the
+question turned down or brief still asks, in the shade, and can. One put away
+stays away while it is off, and the next one down is shown - one hid every one
+below it until round 9 of the reviews - and once it is no longer off it is
+forgotten, so the next time it is, it is said. The battery card's *Not now*
+takes its notification down too, whose tap would open home with the card put
+away; and a change of the mode or tracking re-words that notification only
+while it is up - re-posted after the user put it away, it came back with its
+sound (`setOnlyAlertOnce` holds only for one "already showing"). Until
+1.2 notifications refused after setup - in Android's settings, or taken back
+from an app left unused - put JemRec back on setup's first screen, recordings
+and Off out of reach, while the recorder went on recording. The channels for
+after each call, recording problems, messages and *Record this call?* are
+made at the app's start, so each can be found in Android's settings before
+its first use - and the two this checks, checked; the call's own, pairing's
+and playback's are made as they are first used.
 
 None of it needs a permission the app did not already have.
 
@@ -2084,7 +3056,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | Permission | Why |
 | --- | --- |
 | `INTERNET` | Not about the internet: Android requires it for any TCP socket, including one to `127.0.0.1`. |
-| `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing. |
+| `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing - and for the background checks to ask Android for a network to run with (from Android 14 a job that asks for one needs it). |
 | `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
@@ -2092,9 +3064,9 @@ permission a call recorder does not explain is one its user has to guess at:
 | `RECEIVE_BOOT_COMPLETED` | A reboot kills the recorder; this is what arms the job that rebuilds it. |
 | `READ_MEDIA_AUDIO` | To list recordings made before a reinstall. Refusing it only hides those. |
 | `READ_EXTERNAL_STORAGE` | Android 12 only, which has no `READ_MEDIA_AUDIO`: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those. |
-| `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
-| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine's answering is the recorder's, as the shell. |
-| `USE_FULL_SCREEN_INTENT` | Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it. |
+| `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
+| `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking acts on a call in one case only: it hangs up the answering machine's call if the recorder is lost mid-message. The machine's answering is the recorder's, as the shell. |
+| `USE_FULL_SCREEN_INTENT` | Keeps Ask first's question on screen during a call until you answer it; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs. |
 | `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen at the ear ([playing at your ear](#playing-at-your-ear)); the proximity sensor it goes by needs no permission. |
 
 No request to any server either. *Newest version*, in Settings' About,

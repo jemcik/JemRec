@@ -34,8 +34,10 @@ import kotlinx.coroutines.launch
  * process at the front while a call is up, which is what lets the end of a
  * call be acted on here rather than only through the daemon's wake.
  *
- * It reads; it never answers, holds or ends a call - the answering machine is
- * the recorder's doing, on a go-ahead from here (decideAnswer). Messenger calls are not
+ * It reads; it never answers or holds a call - the answering machine is the
+ * recorder's doing, on a go-ahead from here (decideAnswer) - and ends one
+ * only for the machine whose recorder was lost mid-message, that call and no
+ * other, by the call's own service (MessageHangUp, LiveCalls). Messenger calls are not
  * here: they are self-managed, and Telecom keeps them from a service like
  * this one unless it asks, which it does not.
  */
@@ -53,6 +55,7 @@ class CallTracker : InCallService() {
 
     override fun onCallAdded(call: Call) {
         call.registerCallback(callback)
+        LiveCalls.added(call)
         // Before anything else, tracking on or not: the answering machine
         // stands down for a day after it (EmergencyPause).
         if (EmergencyPause.isEmergency(this, call)) {
@@ -81,7 +84,7 @@ class CallTracker : InCallService() {
     private fun decideAnswer(call: Call, keeps: Lazy<Boolean?>) {
         val context = applicationContext
         if (!AnsweringMachine.enabled(context)) return
-        if (call.details.callDirection != Call.Details.DIRECTION_INCOMING || call.state != Call.STATE_RINGING) return
+        if (call.details.callDirection != Call.Details.DIRECTION_INCOMING || call.details.state != Call.STATE_RINGING) return
         // Sent with the go-ahead, so one that comes too late for its own
         // ring is never taken for the next caller's. The recorder's clock:
         // since boot, the same in both processes, and a wall-clock step
@@ -152,6 +155,17 @@ class CallTracker : InCallService() {
 
     override fun onCallRemoved(call: Call) {
         call.unregisterCallback(callback)
+        LiveCalls.removed(call)
+        // Telecom's last call gone: the call up is over, whatever the audio
+        // mode says - a redial within the end-of-call tone never passes
+        // normal (AOSP CallAudioModeStateMachine.OtherFocusState keeps the
+        // call's mode through it; review round 29). Removed here at the
+        // call's DISCONNECTED (AOSP main: android.telecom.Call.internalUpdate,
+        // fireCallDestroyed, Phone.internalRemoveCall), the same state that
+        // starts the tone (CallAudioManager.playToneForDisconnectedCall) -
+        // read in AOSP. Only the last: a held call's other one hanging up
+        // leaves a call up (CallTrackerTest, round 30).
+        if (LiveCalls.none()) CallMonitorService.telecomOutAtMs = System.currentTimeMillis()
         val id = call.details.creationTimeMillis
         // The day is counted from the emergency call's end. The network can
         // mark one only once it is up: asked again here.
@@ -187,7 +201,7 @@ class CallTracker : InCallService() {
         if (!CallTracking.enabled(this)) return
         val id = call.details.creationTimeMillis
         val now = System.currentTimeMillis()
-        val change = when (call.state) {
+        val change = when (call.details.state) {
             Call.STATE_ACTIVE -> TelecomAccount.Change.ACTIVE
             Call.STATE_DISCONNECTED -> TelecomAccount.Change.DISCONNECTED
             else -> TelecomAccount.Change.OTHER
@@ -202,8 +216,8 @@ class CallTracker : InCallService() {
                 now = now,
             )
         }
-        val becameActive = call.state == Call.STATE_ACTIVE && wasActive[id] != true
-        wasActive[id] = call.state == Call.STATE_ACTIVE
+        val becameActive = call.details.state == Call.STATE_ACTIVE && wasActive[id] != true
+        wasActive[id] = call.details.state == Call.STATE_ACTIVE
         // A second call answered - a waiting one, or one the user placed -
         // while the answering machine may be taking a message on the first:
         // the user is back, and this call is theirs. Left to the machine, the
@@ -324,4 +338,43 @@ class CallTracker : InCallService() {
             }
         }
     }
+}
+
+/**
+ * The calls Telecom has given CallTracker, by id - their creation time -
+ * held while each is up: what a message's call is ended by, that one call
+ * and no other (MessageHangUp). Telecom binds the tracker only while exact
+ * call tracking is on; off, this holds nothing. The tests' own through
+ * [calls] and [end].
+ */
+internal object LiveCalls {
+    private val live = java.util.concurrent.ConcurrentHashMap<Long, Call>()
+
+    fun added(call: Call) {
+        live[call.details.creationTimeMillis] = call
+    }
+
+    fun removed(call: Call) {
+        live.remove(call.details.creationTimeMillis)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal var calls: () -> List<MessageHangUp.Up> = {
+        live.map { (id, call) -> MessageHangUp.Up(id, call.details.state == Call.STATE_ACTIVE) }
+    }
+
+    /** A call on hold: then a ring's mode is a call ringing over it, which
+     *  is still up (AOSP CallAudioModeStateMachine.OtherFocusState: a new
+     *  ringing call goes to RingingFocusState unless the phone is at the
+     *  ear; back to the held call's mode after; review round 25; read in
+     *  AOSP, not produced). */
+    @androidx.annotation.VisibleForTesting
+    internal var held: () -> Boolean = { live.values.any { it.details.state == Call.STATE_HOLDING } }
+
+    /** No call left in Telecom's list. */
+    fun none(): Boolean = live.isEmpty()
+
+    /** End the call [id]: true if it was there to end. */
+    @androidx.annotation.VisibleForTesting
+    internal var end: (Long) -> Boolean = { id -> live[id]?.let { it.disconnect(); true } ?: false }
 }

@@ -8,8 +8,10 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
 import android.util.Log
+import com.jemcik.jemrec.playback.BothEars
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * Convert a recording's Ogg/Opus to AAC in an .m4a, on demand, for sharing.
@@ -29,6 +31,10 @@ import java.nio.ByteBuffer
  * so the audio is decoded to PCM and re-encoded. One extra generation of lossy
  * compression on a phone call is inaudible, and the price of universal playback.
  *
+ * With Settings' "Both sides in both ears" on, the copy has them so, mixed as
+ * JemRec plays them (BothEars): whoever it is sent to hears the call as the
+ * user does, one earbud included. The original keeps the sides apart.
+ *
  * All of it runs through Android's own MediaCodec - no libraries, nothing
  * bundled - the same building blocks the recorder already uses.
  */
@@ -40,7 +46,8 @@ object Transcoder {
     private const val TIMEOUT_US = 10_000L
 
     /**
-     * Transcode [source] (Ogg/Opus) to AAC in [output] (.m4a).
+     * Transcode [source] (Ogg/Opus) to AAC in [output] (.m4a), both sides in
+     * both ears if [bothEars].
      *
      * Returns true on success. On failure OR cancellation it deletes the
      * half-written file and returns false, so a broken .m4a is never left to be
@@ -51,6 +58,7 @@ object Transcoder {
         context: Context,
         source: Uri,
         output: File,
+        bothEars: Boolean,
         shouldCancel: () -> Boolean = { false },
     ): Boolean {
         output.parentFile?.mkdirs()
@@ -138,7 +146,11 @@ object Transcoder {
             // Feed a block of PCM to the encoder, splitting it across as many
             // input buffers as it takes - a decoder buffer can be larger than an
             // encoder buffer - and draining the encoder whenever no input slot is
-            // free, so the two can never deadlock waiting on each other.
+            // free, so the two can never deadlock waiting on each other. Split
+            // on whole frames, so a mix never takes one frame's right for the
+            // next one's left; mixed in the encoder's buffer, as a decoder's
+            // output buffer is read-only (MediaCodec.getOutputBuffer).
+            val frameBytes = channels * 2
             fun feedEncoderPcm(pcm: ByteBuffer, size: Int, basePts: Long) {
                 var consumed = 0
                 while (consumed < size) {
@@ -146,11 +158,15 @@ object Transcoder {
                     if (idx < 0) { drainEncoder(); continue }
                     val dst = enc.getInputBuffer(idx)!!
                     dst.clear()
-                    val chunk = minOf(size - consumed, dst.remaining())
+                    val whole = dst.remaining() / frameBytes * frameBytes
+                    val chunk = minOf(size - consumed, if (whole > 0) whole else dst.remaining())
                     val savedLimit = pcm.limit()
                     pcm.limit(pcm.position() + chunk)
                     dst.put(pcm)
                     pcm.limit(savedLimit)
+                    if (bothEars) {
+                        BothEars.mix(dst.duplicate().order(ByteOrder.nativeOrder()).apply { position(0); limit(chunk) }.asShortBuffer(), channels)
+                    }
                     enc.queueInputBuffer(idx, 0, chunk, basePts + bytesToUs(consumed), 0)
                     consumed += chunk
                 }

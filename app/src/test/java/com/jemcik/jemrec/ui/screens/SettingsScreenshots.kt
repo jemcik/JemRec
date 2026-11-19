@@ -1,6 +1,10 @@
 package com.jemcik.jemrec.ui.screens
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -35,6 +39,22 @@ class SettingsScreenshots : ScreenTest() {
     private fun settings(state: UiState, fontScale: Float = 1f, look: LookChoice = LookChoice()) {
         val shown = state.copy(screen = state.screen.takeIf { it != Screen.HOME } ?: Screen.SETTINGS)
         show(fontScale, look) { AppScaffold(shown, viewModel(shown)) }
+    }
+
+    /** The background-stop warning's tap: Settings opened with "Survive a
+     *  restart" brought into view - asked once the row is laid out (review
+     *  round 10). */
+    @Test fun theBackgroundTapBringsItsRowIntoView() {
+        settings(Fixtures.ready().copy(autoStartLabel = "Auto-launch", revealBackground = true))
+        compose.waitForIdle()
+        compose.onNodeWithText("Survive a restart").assertIsDisplayed()
+    }
+
+    /** Its control: opened plainly, the row is below the screen - so the
+     *  test above can fail. */
+    @Test fun withoutTheAskItsRowIsBelowTheScreen() {
+        settings(Fixtures.ready().copy(autoStartLabel = "Auto-launch"))
+        compose.onNodeWithText("Survive a restart").assertIsNotDisplayed()
     }
 
     // Settings > Theme: the home screen in the look picked, drawn by its own
@@ -110,6 +130,36 @@ class SettingsScreenshots : ScreenTest() {
     @Test fun overviewLargeText() {
         settings(Fixtures.ready(), fontScale = 2f)
         snap("settings-large-text")
+    }
+
+    /** While the app checks, what the busy table takes at once - or only
+     *  asks, its yes waiting its turn - stays live: Settings greyed some of
+     *  these where home did not (reviews, 2026-11-18). */
+    @Test fun whatIsTakenAtOnceStaysLiveWhileBusy() {
+        settings(Fixtures.ready().copy(canReadCallLog = false, canReadContacts = false, busy = true))
+        compose.onNodeWithText("Allow").assertIsEnabled()
+        compose.onNodeWithText("Start fresh").performScrollTo().assertIsEnabled()
+    }
+
+    @Test fun whoseCallsStaysLiveWhileBusy() {
+        settings(
+            Fixtures.ready().copy(
+                screen = Screen.WHOSE_CALLS,
+                ruleContacts = Contacts.ALL_BUT,
+                ruleChosen = Fixtures.chosen("Dr. Lena Vogel"),
+                busy = true,
+            ),
+        )
+        compose.onNodeWithText("Add a contact").assertIsEnabled()
+        compose.onNodeWithContentDescription("Remove Dr. Lena Vogel").assertIsEnabled()
+    }
+
+    /** Recently deleted: Delete all for good only asks, and stays live;
+     *  Restore all would be dropped, and is greyed. */
+    @Test fun recentlyDeletedWhileBusy() {
+        settings(Fixtures.ready().copy(screen = Screen.TRASH, trashed = Fixtures.trashed(), busy = true))
+        compose.onNodeWithText("Delete all for good").assertIsEnabled()
+        compose.onNodeWithText("Restore all").assertIsNotEnabled()
     }
 
     @Test fun overviewAsksForTheCallLog() {
@@ -354,6 +404,16 @@ class SettingsScreenshots : ScreenTest() {
         snapWithDialog("dialog-folder")
     }
 
+    /** ...and in a chosen folder JemRec can no longer reach (FolderAccess):
+     *  said, with where recordings go meanwhile. */
+    @Test fun folderDialogForALostFolder() {
+        settings(Fixtures.ready().copy(folder = "Sounds/CallRecord", usingDefaultFolder = false, folderLost = true))
+        compose.onNodeWithText("Saving to").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("can no longer reach it", substring = true).assertIsDisplayed()
+        snapWithDialog("dialog-folder-lost")
+    }
+
     /** ...and in a folder the user chose: Use default beside Cancel. */
     @Test fun folderDialogForAChosenFolder() {
         settings(Fixtures.ready().copy(folder = "Documents/Calls", usingDefaultFolder = false))
@@ -361,6 +421,15 @@ class SettingsScreenshots : ScreenTest() {
         compose.waitForIdle()
         compose.onNodeWithText("Use default").assertIsDisplayed()
         snapWithDialog("dialog-folder-chosen")
+    }
+
+    /** The four rates, each with its size an hour, the smallest saying what
+     *  it gives up. */
+    @Test fun qualityDialog() {
+        settings(Fixtures.ready())
+        compose.onNodeWithText("Quality").performScrollTo().performClick()
+        compose.waitForIdle()
+        snapWithDialog("dialog-quality")
     }
 
     /** Where recordings play: the three ways, each with what holding the

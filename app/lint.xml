@@ -71,12 +71,15 @@
       LocalDark), each caller's colour on the Calls tab (LocalCallerColours),
       the side panel's rows and player (LocalRowsSelectable, LocalPlayerHere),
       a bar's insets (LocalBarSides), the screen tests' invented waveforms
-      (LocalInventedLevels) and ButtonPair's shrinking labels
-      (LocalLabelsShrink). A NEW one is still reported, so it gets the same
-      thought before it is added here.
+      (LocalInventedLevels), ButtonPair's shrinking labels
+      (LocalLabelsShrink) and turning notifications back on
+      (LocalTurnOnNotifications: one action, needing a permission launcher
+      registered once where the screen is laid out, for the header's tap
+      three looks deep and home's notice alike). A NEW one is still reported,
+      so it gets the same thought before it is added here.
     -->
     <issue id="ComposeCompositionLocalUsage">
         <option name="allowed-composition-locals"
-            value="LocalNow,LocalLook,LocalLookChoice,LocalDark,LocalCallerColours,LocalRowsSelectable,LocalPlayerHere,LocalBarSides,LocalInventedLevels,LocalLabelsShrink" />
+            value="LocalNow,LocalLook,LocalLookChoice,LocalDark,LocalCallerColours,LocalRowsSelectable,LocalPlayerHere,LocalBarSides,LocalInventedLevels,LocalLabelsShrink,LocalTurnOnNotifications" />
     </issue>
 </lint>

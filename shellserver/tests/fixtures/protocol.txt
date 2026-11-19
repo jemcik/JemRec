@@ -12,11 +12,12 @@
 # Both sides are written by hand and built apart: the app never compiles the
 # recorder's sources. ProtocolTest (app) checks that each side still has its
 # text and that the app's parsers read each example; WireTest (daemon-tests)
-# builds each example with the recorder's own Wire, except the three that
-# are not Wire's to format (L, S and C: file names and free text).
+# builds each example with the recorder's own Wire or Checks, except the
+# rows that are no format of the recorder's (a LIST's and S's file names,
+# C's free text; a LIST's end, "end N", is built).
 # An installed app talks to whatever recorder is running, possibly an older
 # one for days off Wi-Fi, so a reply changes only with both sides at once.
-P	"PONG"	"PONG "	PONG 2 1a2b3c4d
+P	"PONG"	"PONG "	PONG 2 1a2b3c4d fetch-length list-end
 Q	"BYE"	"BYE"	BYE
 Q	"BUSY"	"BUSY"	BUSY
 O	"OFF NOW"	"OFF NOW"	OFF NOW
@@ -28,6 +29,7 @@ B	"LISTENER ok"	"LISTENER "	LISTENER ok
 B	"LISTENER failed"	"LISTENER "	LISTENER failed
 J	"PAIRING ok"	"PAIRING "	PAIRING ok
 J	"PAIRING failed"	"PAIRING "	PAIRING failed
+Z	startsWith("QUALITY ")	"QUALITY "	QUALITY 32000
 K	startsWith("SKIP ")	"SKIP "	SKIP current
 V	startsWith("VOIP ")	"VOIP "	VOIP 3 armed
 W	parts[0] != "WATCH"	return "WATCH " + WATCH_FORMAT	WATCH 1 since=1761990000000 watching=1 looper=ok mode=1 call=0 events=4 lastevent=1761990100000 offhooks=1 lastoffhook=1761990050000 recording=0 voip=3 voiparmed=0 tracking=1 answer=0 greeting=0
@@ -58,5 +60,6 @@ XS	startsWith("FWD ")	Wire.fwd("error bad-seconds")	FWD error bad-seconds
 XP	startsWith("SIMS")	static final String SIMS = "SIMS"	SIMS default=1 1|SIM_1 2|SIM_2
 E	-	Wire.mode(Calls.recordingMode)	1
 L	-	os.write((name + "\n")	jemrec_rec_1761990000000_in.dat
+L	startsWith(LIST_END)	return "end " + count;	end 1
 S	-	((name != null ? name : "") + "\n")	jemrec_rec_1761990000000_out.dat
 C	-	Wire.reply(client.getOutputStream(), Reports.reportText())	Recorded by build 1a2b3c4d

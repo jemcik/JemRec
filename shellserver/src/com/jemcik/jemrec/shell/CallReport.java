@@ -54,6 +54,9 @@ final class CallReport {
     /** A few looks around are plenty; a long call must not grow this. */
     static final int MAX_SCENES = 4;
     static final int MAX_NOTES = 20;
+    /** Routes listed: a capture that reads once and dies, tried again every
+     *  10 s, made one each try - ~360 an hour, unbounded (review round 10). */
+    static final int MAX_SEGMENTS = 20;
     /** At least this share of a channel's samples exactly zero is worth
      *  saying: digital silence is "nothing reached it", not a quiet room. */
     private static final double ZEROS_WORTH_SAYING = 0.5;
@@ -76,18 +79,29 @@ final class CallReport {
     }
 
     private final String call;
+    private final String quality;
     private final LongSupplier clock;
     private final long startMs;
     private final List<Segment> segments = new ArrayList<>();
+    /** Past [MAX_SEGMENTS]: where the recording goes now, not listed. */
+    private @Nullable Segment overflow;
+    private int segmentsLeftOut;
     private final List<String> scenes = new ArrayList<>();
     private final List<String> notes = new ArrayList<>();
     private int notesLeftOut;
+    /** The last note, as said, and how many times more it came in a row:
+     *  a capture made anew every ten seconds for an hour said the same line
+     *  360 times, the notes' room gone in three minutes (review, 2026-11-18). */
+    private @Nullable String lastNote;
+    private int lastNoteRepeats;
     private long endMs = -1;
 
     /** [call]: what kind of call, in words - "a phone call, incoming".
+     *  [quality]: the rate it is recorded at, in words - "32 kbps" (Quality).
      *  [clock]: milliseconds, SystemClock.elapsedRealtime on the phone. */
-    CallReport(String call, LongSupplier clock) {
+    CallReport(String call, String quality, LongSupplier clock) {
         this.call = call;
+        this.quality = quality;
         this.clock = clock;
         this.startMs = clock.getAsLong();
     }
@@ -95,12 +109,42 @@ final class CallReport {
     /** From now on the recording comes [route]'s way; [mode] is the audio
      *  mode that decided it, -1 if none was read. */
     synchronized void route(Route route, int mode) {
-        segments.add(new Segment(at(), route, mode));
+        // A capture made anew that read nothing yet goes on the same way:
+        // one segment, not a line of "no sound" each try.
+        Segment last = current();
+        if (last != null && last.frames == 0 && last.route == route && last.mode == mode) {
+            return;
+        }
+        Segment next = new Segment(at(), route, mode);
+        if (segments.size() < MAX_SEGMENTS) {
+            segments.add(next);
+        } else {
+            overflow = next;
+            segmentsLeftOut++;
+        }
+    }
+
+    /** The route the recording comes now: listed, or past the list. */
+    private @Nullable Segment current() {
+        if (overflow != null) {
+            return overflow;
+        }
+        return segments.isEmpty() ? null : segments.get(segments.size() - 1);
     }
 
     /** Something worth knowing that the routes do not say: the mode
      *  changing, a switch Android refused, a microphone given back. */
     synchronized void note(String what) {
+        if (what.equals(lastNote) && !notes.isEmpty() && notesLeftOut == 0) {
+            lastNoteRepeats++;
+            String first = notes.get(notes.size() - 1);
+            int cut = first.indexOf(" (and ");
+            notes.set(notes.size() - 1, (cut >= 0 ? first.substring(0, cut) : first)
+                    + " (and " + lastNoteRepeats + " more, the last at " + time(at()) + ")");
+            return;
+        }
+        lastNote = what;
+        lastNoteRepeats = 0;
         if (notes.size() < MAX_NOTES) {
             notes.add(time(at()) + "  " + what);
         } else {
@@ -137,10 +181,10 @@ final class CallReport {
     /** A chunk of the recording, interleaved stereo, into the current
      *  route's levels. Before any route: nothing to put it in. */
     synchronized void chunk(short[] pcm, int frames, int channels) {
-        if (segments.isEmpty() || channels < 2) {
+        Segment seg = current();
+        if (seg == null || channels < 2) {
             return;
         }
-        Segment seg = segments.get(segments.size() - 1);
         for (int f = 0; f < frames; f++) {
             for (int c = 0; c < 2; c++) {
                 int v = pcm[f * channels + c];
@@ -167,6 +211,7 @@ final class CallReport {
         s.append("Last call: ").append(call).append(". ")
                 .append(endMs >= 0 ? "Recorded for " : "Still being recorded, ")
                 .append(String.format(Locale.US, "%.1f s", (end - startMs) / 1000.0))
+                .append(" at ").append(quality)
                 .append(endMs >= 0 ? ".\n" : " so far.\n");
         s.append("How it was recorded:\n");
         if (segments.isEmpty()) {
@@ -184,6 +229,9 @@ final class CallReport {
                 s.append(seg.route.left).append(' ').append(level(seg, 0)).append("; ")
                         .append(seg.route.right).append(' ').append(level(seg, 1)).append('\n');
             }
+        }
+        if (segmentsLeftOut > 0) {
+            s.append("         and ").append(segmentsLeftOut).append(" more ways after these, not listed\n");
         }
         if (!scenes.isEmpty()) {
             s.append("What was playing and capturing:\n");

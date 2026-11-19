@@ -303,15 +303,22 @@ object BackgroundKill {
      * two steps: the button, labelled as [screen], then what to do there.
      */
     private fun post(context: Context, screen: AutoStart.Screen, title: String, what: String) {
-        val open = PendingIntent.getActivity(
+        // The button: the phone maker's screen; the tap: JemRec's Settings,
+        // whose Troubleshooting opens the same screen and says why.
+        val fix = PendingIntent.getActivity(
             context, 3402,
             DeepLink.intent(context, DeepLink.Kind.BACKGROUND_SETTINGS),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val open = PendingIntent.getActivity(
+            context, 3403,
+            DeepLink.intent(context, DeepLink.Kind.SETTINGS),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val text = "$what Tap ${screen.label} below. ${screen.instruction}"
         // Quiet when it only updates - the held-back warning is re-posted
         // with the whole time once the recorder is back.
-        val notification = AfterCall.problem(context, title, text, open, screen.label)
+        val notification = AfterCall.problem(context, title, text, open, screen.label to fix)
             .setOnlyAlertOnce(true)
             .build()
         AfterCall.notifyProblem(context, NOTIFICATION_ID, notification, "backgroundkill")

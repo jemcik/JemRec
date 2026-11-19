@@ -205,6 +205,41 @@ class RecordingStoreTest {
         writeBytes(ByteArray(Waveforms.LEVELS))
     }
 
+    /** A folder whose grant Android will not let JemRec keep - none offered,
+     *  as for one the picker did not give - is refused, and the folder
+     *  chosen before stays, its grant with it. Robolectric took any grant
+     *  until PickerGrants, and this went untested (review, 2026-11-18). */
+    @Test fun aFolderWhoseGrantCannotBeKeptIsRefusedAndTheOneBeforeStays() {
+        FakeFolder.install(app)
+        val other = "content://${FakeFolder.AUTHORITY}/tree/primary%3AOther".toUri()
+        assertFalse(RecordingStore.setTree(app, other))
+        assertEquals(FakeFolder.tree, RecordingStore.treeUri(app))
+        assertEquals(listOf(FakeFolder.tree), app.contentResolver.persistedUriPermissions.map { it.uri })
+    }
+
+    /** Another folder chosen: the first one's grant is let go. */
+    @Test fun anotherFolderChosenLetsGoOfTheFirstsGrant() {
+        FakeFolder.install(app)
+        val other = "content://${FakeFolder.AUTHORITY}/tree/primary%3AOther".toUri()
+        PickerGrants.offer(other)
+        assertTrue(RecordingStore.setTree(app, other))
+        assertEquals(other, RecordingStore.treeUri(app))
+        assertEquals(listOf(other), app.contentResolver.persistedUriPermissions.map { it.uri })
+    }
+
+    /** The folder picker opens at the folder chosen - a document's uri, as
+     *  EXTRA_INITIAL_URI takes one - and where it would with none chosen. */
+    @Test fun thePickerOpensAtTheFolderChosen() {
+        FakeFolder.install(app)
+        val start = RecordingStore.pickerStart(app)!!
+        assertEquals(
+            android.provider.DocumentsContract.getTreeDocumentId(FakeFolder.tree),
+            android.provider.DocumentsContract.getDocumentId(start),
+        )
+        RecordingStore.clearTree(app)
+        assertEquals(null, RecordingStore.pickerStart(app))
+    }
+
     @Test fun whatTheUserIsToldOfTheFolder() {
         assertEquals("Recordings/JemRec", RecordingStore.describe(app))
         assertNull(RecordingStore.treeUri(app))
@@ -214,10 +249,17 @@ class RecordingStoreTest {
         assertEquals("Calls", RecordingStore.describe(app))
 
         // A volume's root has nothing after the colon; a tree it cannot read
-        // has no id at all.
-        RecordingStore.setTree(app, "content://${FakeFolder.AUTHORITY}/tree/primary%3A".toUri())
+        // has no id at all. Each offered, as if the picker had given it.
+        val root = "content://${FakeFolder.AUTHORITY}/tree/primary%3A".toUri()
+        PickerGrants.offer(root)
+        assertTrue(RecordingStore.setTree(app, root))
         assertEquals("the folder you chose", RecordingStore.describe(app))
-        RecordingStore.setTree(app, "content://${FakeFolder.AUTHORITY}/document/1".toUri())
+        // Said once, where a name cannot be read; else with the name.
+        assertEquals("the folder you chose", RecordingStore.chosenWords(RecordingStore.describe(app)))
+        assertEquals("Calls, the folder you chose", RecordingStore.chosenWords("Calls"))
+        val noId = "content://${FakeFolder.AUTHORITY}/document/1".toUri()
+        PickerGrants.offer(noId)
+        assertTrue(RecordingStore.setTree(app, noId))
         assertEquals("the folder you chose", RecordingStore.describe(app))
 
         RecordingStore.clearTree(app)

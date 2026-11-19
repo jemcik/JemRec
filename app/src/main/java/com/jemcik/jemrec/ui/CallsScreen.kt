@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,6 +54,14 @@ fun CallsScreen(
 ) {
     val haptics = LocalHapticFeedback.current
 
+    // Nothing read yet: the calls are not known. Whether the call log may be
+    // read is - the view model reads it as it is made - so the card asking
+    // for it shows at once where it is not allowed, and no card or list
+    // where it is (reviews, 2026-11-18).
+    if (state.listUnread && state.canReadCallLog) {
+        Box(modifier.fillMaxSize())
+        return
+    }
     // The tab is the call log; without it there is nothing to show but the
     // reason, and the way to change it.
     if (!state.canReadCallLog) {
@@ -95,7 +104,9 @@ fun CallsScreen(
     }
     val narrowed = narrowingOf(state, vm, calls = true)
     val searchFocus = rememberSearchFocus(narrowed.searchOpen, narrowingAside)
-    val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
+    // Keyed on the list's state, which is a throwaway one until the list is
+    // read (MainScreen, HomeScreen's nearEnd).
+    val scrolled by remember(listState) { derivedStateOf { listState.canScrollBackward } }
 
     // No selection here: a recorded call's row is its Recordings row in
     // every other way, Keep and Share included (see LocalRowsSelectable).
@@ -124,7 +135,7 @@ fun CallsScreen(
                     )
                 }
             }
-            if (state.calls.isEmpty()) {
+            if (state.calls.isEmpty() && !state.listUnread && !state.callsUnread) {
                 item {
                     Text(
                         "No calls in the call log yet.",

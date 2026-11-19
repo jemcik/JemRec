@@ -6,8 +6,6 @@ import android.content.Context
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Log
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -39,6 +37,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,6 +57,7 @@ import com.jemcik.jemrec.R
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.recordings.FileNames
+import com.jemcik.jemrec.recordings.RecordingQuality
 import com.jemcik.jemrec.recordings.Retention
 import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.setup.Setup
@@ -66,7 +67,7 @@ import com.jemcik.jemrec.ui.theme.LocalLookChoice
 import com.jemcik.jemrec.ui.theme.lookMono
 
 /** Which of Settings' dialogs is open. Saved by name, so a rotation keeps it. */
-private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT, TRACKING_OFF, PLAY_THROUGH }
+private enum class SettingsDialog { FOLDER, FILE_NAMES, QUALITY, OLD, SHORT, TRACKING_OFF, PLAY_THROUGH }
 
 /**
  * The things that are not the answer to "would a call be recorded right now".
@@ -87,31 +88,46 @@ private enum class SettingsDialog { FOLDER, FILE_NAMES, OLD, SHORT, TRACKING_OFF
  * to take something back - not part of the list you use every day.
  */
 @Composable
-fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    state: UiState,
+    vm: MainViewModel,
+    askForCallLog: () -> Unit,
+    pickFolder: (android.net.Uri?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
 
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
     var dialog by rememberSaveable { mutableStateOf<SettingsDialog?>(null) }
-    // Asked once: both mean resolving a dozen activities through the
-    // package manager, and Settings recomposes on every state change.
-    val autoStart = remember { if (AutoStart.available(context)) AutoStart.label(context) else null }
+    // Read with the rest of the state, on IO (Reading): both mean resolving
+    // a dozen activities through the package manager.
+    val autoStart = state.autoStartLabel
+    // The background row brought into view for the "stopped in the
+    // background" warning's tap, which opens Settings: at its top it showed
+    // nothing of it (review round 9).
+    val background = remember { BringIntoViewRequester() }
+    // Once its row is drawn - only on a phone with such a screen, its name
+    // read on IO, which may land after the tap - and laid out: asked before
+    // the first layout, the request does nothing (review round 10; the
+    // narrowing row waits a frame the same way).
+    androidx.compose.runtime.LaunchedEffect(state.revealBackground, autoStart) {
+        if (state.revealBackground && autoStart != null) {
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { background.bringIntoView() }
+            vm.backgroundRevealed()
+        }
+    }
+    // Left before then - no such screen on this phone: not revealed the
+    // next time Settings opens.
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { vm.backgroundRevealed() } }
 
-    val folderPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri -> if (uri != null) vm.onFolderChosen(uri) }
 
     if (state.confirmingReset) {
         AlertDialog(
             onDismissRequest = vm::cancelReset,
             title = { Text("Start fresh?") },
             text = {
-                Text(
-                    "JemRec will hand back the permissions you granted, turn " +
-                        "Wireless debugging off, forget its pairing and stop the " +
-                        "recorder. Setup starts again from the first step.\n\n" +
-                        "The app will close. Open it again to set it up.\n\n" +
-                        "Your recordings are NOT deleted."
-                )
+                Text(startFreshWords(handsBack = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU))
             },
             confirmButton = {
                 TextButton(onClick = { haptics.confirm(); vm.confirmReset() }) { Text("Start fresh") }
@@ -123,15 +139,26 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
     when (dialog) {
         SettingsDialog.FOLDER -> FolderDialog(
             state,
-            change = { dialog = null; folderPicker.launch(null) },
+            change = { dialog = null; pickFolder(vm.folderPickerStart()) },
             useDefault = { dialog = null; vm.useDefaultFolder() },
             dismiss = { dialog = null },
         )
         SettingsDialog.FILE_NAMES -> FileNamesDialog(
             state, vm,
             allow = askForCallLog,
-            chooseHonorFolder = { folderPicker.launch(FileNames.honorFolderUri) },
+            chooseHonorFolder = { pickFolder(FileNames.honorFolderUri) },
             dismiss = { dialog = null },
+        )
+        SettingsDialog.QUALITY -> ChoiceDialog(
+            title = "Quality",
+            intro = "For calls recorded from now on. Recordings already made keep theirs.",
+            choices = RecordingQuality.entries,
+            selected = state.quality,
+            label = ::qualityLabel,
+            detail = ::qualityDetail,
+            detailIsExample = false,
+            onChoose = vm::setQuality,
+            onDismiss = { dialog = null },
         )
         SettingsDialog.OLD -> ChoiceDialog(
             title = "Auto-delete old recordings",
@@ -215,7 +242,6 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                     )
                     FilledTonalButton(
                         onClick = { haptics.tap(); askForCallLog() },
-                        enabled = !state.busy,
                         modifier = Modifier.align(Alignment.End),
                     ) { Text("Allow") }
                 }
@@ -306,9 +332,10 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
 
         // Where recordings play (AtTheEar): only on a phone with an earpiece -
         // a tablet has none - and the earpiece at the ear only with a
-        // proximity sensor to know when it is there.
-        if (state.earpieceAvailable) {
-            SettingsGroup("Playing") {
+        // proximity sensor to know when it is there. Both sides in both ears
+        // everywhere: headphones are everywhere.
+        SettingsGroup("Playing") {
+            if (state.earpieceAvailable) {
                 row {
                     SettingsRow(
                         title = "Play recordings",
@@ -317,6 +344,19 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                         onClick = { dialog = SettingsDialog.PLAY_THROUGH },
                     )
                 }
+            }
+            row {
+                SwitchRow(
+                    title = "Both sides in both ears",
+                    summary = if (state.bothEars) {
+                        "Each ear hears the whole call"
+                    } else {
+                        "Each side of the call in its own ear, as recorded"
+                    },
+                    icon = SettingsIcons.Headset,
+                    checked = state.bothEars,
+                    onCheckedChange = vm::setBothEars,
+                )
             }
         }
 
@@ -341,6 +381,14 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                     },
                     icon = Icons.Filled.Edit,
                     onClick = { dialog = SettingsDialog.FILE_NAMES },
+                )
+            }
+            row {
+                SettingsRow(
+                    title = "Quality",
+                    summary = "${qualityLabel(state.quality)}, about ${state.quality.mbPerHour} MB an hour",
+                    icon = SettingsIcons.GraphicEq,
+                    onClick = { dialog = SettingsDialog.QUALITY },
                 )
             }
             // Both rules off until chosen. Nothing they remove is gone: it waits
@@ -503,9 +551,11 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                     SettingsRow(
                         title = "Survive a restart",
                         summary = "Allow JemRec in $autoStart, so it can " +
-                            "start again by itself after a reboot",
+                            "start again by itself after a reboot, and this " +
+                            "phone does not stop it in the background",
                         icon = Icons.Filled.Refresh,
                         onClick = { AutoStart.open(context) },
+                        modifier = Modifier.bringIntoViewRequester(background),
                     )
                 }
             }
@@ -532,8 +582,9 @@ fun SettingsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit,
                     titleColor = MaterialTheme.colorScheme.error,
                     iconTint = MaterialTheme.colorScheme.error,
                     icon = SettingsIcons.Restore,
+                    // Live while the app checks: it only asks, and the
+                    // yes waits its turn (START_FRESH, QUEUED).
                     onClick = vm::askReset,
-                    enabled = !state.busy,
                 )
             }
         }
@@ -613,6 +664,25 @@ internal fun keepPairedSummary(state: UiState): String = when {
         "Turned off, one older than Android's limit goes at once"
     else -> "Android forgets JemRec's pairing ${pairingDays(state.pairingDays)} after it is made. " +
         "Then JemRec has to pair again"
+}
+
+/** Settings' names for [RecordingQuality]: plain words, the rate in the detail. */
+internal fun qualityLabel(quality: RecordingQuality): String = when (quality) {
+    RecordingQuality.SMALLEST -> "Smallest"
+    RecordingQuality.STANDARD -> "Standard"
+    RecordingQuality.HIGH -> "High"
+    RecordingQuality.HIGHEST -> "Highest"
+}
+
+/** What each choice costs, and the one thing the smallest gives up: in a
+ *  blind test its messenger call "sounds in mono" (RecordingQuality). */
+private fun qualityDetail(quality: RecordingQuality): String {
+    val size = "${quality.bitRate / 1000} kbps, about ${quality.mbPerHour} MB an hour"
+    return when (quality) {
+        RecordingQuality.SMALLEST -> "$size. The two sides of a call may blend into one."
+        RecordingQuality.HIGHEST -> "$size, as every recording was before JemRec 1.2."
+        else -> "$size."
+    }
 }
 
 /** A format's name - the same words in the dialog and on the row, so the row
@@ -768,18 +838,25 @@ private fun FolderDialog(state: UiState, change: () -> Unit, useDefault: () -> U
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    if (state.usingDefaultFolder) {
-                        "The phone's standard Recordings folder. Any file manager " +
-                            "or music app can open these."
-                    } else {
-                        "A folder you chose."
+                    when {
+                        state.usingDefaultFolder ->
+                            "The phone's standard Recordings folder. Any file manager " +
+                                "or music app can open these."
+                        state.folderLost ->
+                            "A folder you chose - but JemRec can no longer reach it: " +
+                                "${com.jemcik.jemrec.recordings.FolderAccess.WHY_LOST}. Until you choose it again, " +
+                                "new recordings go to the standard Recordings folder, and the " +
+                                "ones in it do not show."
+                        else -> "A folder you chose."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = change, enabled = !state.busy) { Text("Change") }
+            // Live while the screen is busy: the folder picked is taken at
+            // once (FOLDER_CHOSEN bypasses it), as the busy table has it.
+            TextButton(onClick = change) { Text("Change") }
         },
         dismissButton = {
             Row {
@@ -833,7 +910,6 @@ private fun FileNamesDialog(
         onChoose = vm::setFileNames,
         onDismiss = dismiss,
         closeOnChoose = false,
-        enabled = !state.busy,
         footer = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -874,10 +950,10 @@ private fun FileNamesDialog(
         },
         action = when {
             needsCallLog -> {
-                { TextButton(onClick = allow, enabled = !state.busy) { Text("Allow") } }
+                { TextButton(onClick = allow) { Text("Allow") } }
             }
             needsHonorFolder -> {
-                { TextButton(onClick = chooseHonorFolder, enabled = !state.busy) { Text("Choose the folder") } }
+                { TextButton(onClick = chooseHonorFolder) { Text("Choose the folder") } }
             }
             else -> null
         },
@@ -892,11 +968,14 @@ private fun FileNamesDialog(
  * and offers the permission, rather than showing switches that cannot work.
  */
 @Composable
-fun WhoseCallsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Unit, modifier: Modifier = Modifier) {
+fun WhoseCallsScreen(
+    state: UiState,
+    vm: MainViewModel,
+    askForCallLog: () -> Unit,
+    pickContact: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val haptics = LocalHapticFeedback.current
-    val contactPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickContact()
-    ) { uri -> if (uri != null) vm.addRuleContact(uri) }
 
     Column(modifier) {
         if (!state.canReadCallLog || !state.canReadContacts) {
@@ -909,7 +988,6 @@ fun WhoseCallsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Uni
             )
             FilledTonalButton(
                 onClick = { haptics.tap(); askForCallLog() },
-                enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) { Text("Allow") }
             return@Column
@@ -935,7 +1013,6 @@ fun WhoseCallsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Uni
                     CallRules.Contacts.NONE -> "None"
                 }
             },
-            enabled = !state.busy,
             onChoose = vm::setRuleContacts,
         )
 
@@ -961,7 +1038,6 @@ fun WhoseCallsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Uni
                             trailing = {
                                 IconButton(
                                     onClick = { haptics.tap(); vm.removeRuleContact(chosen.key) },
-                                    enabled = !state.busy,
                                 ) {
                                     Icon(Icons.Filled.Close, contentDescription = "Remove ${chosen.name}")
                                 }
@@ -975,8 +1051,7 @@ fun WhoseCallsScreen(state: UiState, vm: MainViewModel, askForCallLog: () -> Uni
                         titleColor = MaterialTheme.colorScheme.primary,
                         iconTint = MaterialTheme.colorScheme.primary,
                         icon = Icons.Filled.Person,
-                        onClick = { contactPicker.launch(null) },
-                        enabled = !state.busy,
+                        onClick = { pickContact() },
                     )
                 }
             }
@@ -1223,4 +1298,31 @@ private fun addTile(context: Context, answered: (Int) -> Unit) {
             answered(result)
         }
     }.onFailure { Log.w("JemRec", "tile: could not ask to add it", it) }
+}
+
+/**
+ * What Start fresh does, and what it cannot: the permissions allowed are
+ * handed back where Android lets an app do that ([handsBack]: Android 13 and
+ * later), and what setup granted over debugging stays (Setup.reset says why).
+ * It used to promise the permissions back on every version, and handed back
+ * one.
+ */
+internal fun startFreshWords(handsBack: Boolean): String {
+    val permissions = if (handsBack) {
+        "JemRec will hand back the permissions you allowed, turn Wireless debugging off, "
+    } else {
+        "JemRec will turn Wireless debugging off, "
+    }
+    val stays = if (handsBack) {
+        ""
+    } else {
+        "Android 12 does not let an app hand back the permissions you allowed: take them " +
+            "back in Android's settings, App info, Permissions, if you want them gone. "
+    }
+    return permissions + "forget its pairing and stop the recorder. Setup starts again " +
+        "from the first step.\n\n" + stays +
+        "What setup granted over debugging - changing settings, and notification access - " +
+        "stays until you uninstall JemRec, which does not use it until you set it up again.\n\n" +
+        "The app will close. Open it again to set it up.\n\n" +
+        "Your recordings are NOT deleted."
 }

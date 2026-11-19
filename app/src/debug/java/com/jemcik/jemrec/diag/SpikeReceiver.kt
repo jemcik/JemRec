@@ -26,11 +26,15 @@ import com.jemcik.jemrec.diag.ops.GrantListenerOp
 import com.jemcik.jemrec.diag.ops.EarpieceOp
 import com.jemcik.jemrec.diag.ops.KeepPairedOp
 import com.jemcik.jemrec.diag.ops.HideSettingsOp
+import com.jemcik.jemrec.diag.ops.HoldSaveOp
+import com.jemcik.jemrec.diag.ops.ClearNotesOp
 import com.jemcik.jemrec.diag.ops.MonitorOp
 import com.jemcik.jemrec.diag.ops.MonitorStopOp
 import com.jemcik.jemrec.diag.ops.PairNotifOp
 import com.jemcik.jemrec.diag.ops.PairOp
+import com.jemcik.jemrec.diag.ops.OldPagesOp
 import com.jemcik.jemrec.diag.ops.PcmHashOp
+import com.jemcik.jemrec.diag.ops.RepageOp
 import com.jemcik.jemrec.diag.ops.PortOp
 import com.jemcik.jemrec.diag.ops.PrefOp
 import com.jemcik.jemrec.diag.ops.ProbeOp
@@ -157,6 +161,10 @@ class SpikeReceiver : BroadcastReceiver() {
                     "audiocheck" -> AudioCheckOp.run(appContext, intent)
                     "waveform" -> WaveformOp.run(appContext, intent)
                     "pcmhash" -> PcmHashOp.run(appContext, intent)
+                    "repage" -> RepageOp.run(appContext, intent)
+                    "oldpages" -> OldPagesOp.run(appContext, intent)
+                    "holdsave" -> HoldSaveOp.run(appContext, intent)
+                    "clearnotes" -> ClearNotesOp.run(appContext, intent)
                     else -> report(appContext, "?", "unknown op '$op'")
                 }
             } catch (t: Throwable) {

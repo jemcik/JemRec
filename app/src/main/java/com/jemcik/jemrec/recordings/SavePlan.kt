@@ -3,6 +3,7 @@ package com.jemcik.jemrec.recordings
 import android.util.Log
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.CallLogLookup
+import com.jemcik.jemrec.calls.CallMatch
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
 import com.jemcik.jemrec.calls.PhoneNumbers
@@ -129,16 +130,57 @@ internal object SavePlan {
      * Whether the call log has another answered call inside this recording -
      * call waiting, with no Telecom account to cut the file by. The file then
      * holds a call the rules may keep, so it is not left out whole: kept
-     * when unsure.
+     * when unsure. A recording [joined] mid-call holds too any other call up
+     * at its start - call waiting's held call, dated before the one taken
+     * for it (loggedDuring), whose audio after it went with the file
+     * (review round 12).
      */
-    private fun anotherCallDuring(lookups: Lookups, startedAt: Long, who: Who): Boolean {
+    private fun anotherCallDuring(lookups: Lookups, startedAt: Long, who: Who, joined: Boolean): Boolean {
         val own = who.loggedAt ?: startedAt
-        val end = startedAt + who.seconds * 1000L + WAITING_SLACK_MS
-        return lookups.loggedBetween(own, end).any { it.seconds > 0 && it.at != own }
+        // A joined recording's call ends where its own span does, not its
+        // whole length on from the revive - calls well after it counted
+        // (review round 13); a ringing's length on, the log's leaves it out.
+        val end = WAITING_SLACK_MS + if (joined) {
+            minOf(startedAt, own + CallMatch.BEFORE_MS) + who.seconds * 1000L
+        } else {
+            startedAt + who.seconds * 1000L
+        }
+        if (lookups.loggedBetween(own, end).any { it.seconds > 0 && it.at != own }) return true
+        return joined && lookups.loggedBetween(startedAt - CallTracking.LONGEST_CALL_MS, startedAt)
+            .any { it.seconds > 0 && it.at != own && startedAt <= it.at + it.seconds * 1000L + CallMatch.BEFORE_MS }
     }
 
     /** Past the end the log gives a call, where the next can still be in its file. */
     private const val WAITING_SLACK_MS = 5_000L
+
+    /**
+     * The call-log entry for the call that was up at [at], whichever way it
+     * went - a recording joined mid-call: of those dated before [at] whose
+     * span holds it - from its date to its end and [CallMatch.BEFORE_MS] on,
+     * as an incoming call's length in the log leaves its ringing out - one
+     * holding it without that slack first, then the latest. The log is given
+     * [tries] seconds to write the call down, and only the last takes one
+     * holding it by the slack alone: the call's own entry not written yet,
+     * the call before - ended up to three minutes before - was taken at once,
+     * named and ruled by it (review round 12).
+     */
+    suspend fun loggedDuring(lookups: Lookups, at: Long, tries: Int): CallLogLookup.Entry? {
+        repeat(tries) { attempt ->
+            // Begun before it, by definition - a later call (a waiting one)
+            // is never it - and one whose span holds it without the slack
+            // first: the slack only covers an incoming call's ringing, which
+            // the log's length leaves out (review round 11).
+            val last = attempt == tries - 1
+            lookups.loggedBetween(at - CallTracking.LONGEST_CALL_MS, at)
+                .filter { at <= it.at + it.seconds * 1000L + (if (last) CallMatch.BEFORE_MS else 0L) }
+                .sortedWith(compareByDescending<CallLogLookup.Entry> { at <= it.at + it.seconds * 1000L }.thenByDescending { it.at })
+                .firstOrNull()
+                ?.let { return it }
+            if (!last) lookups.pause()
+        }
+        Log.w(TAG, "save: the call log has no call up at $at")
+        return null
+    }
 
     /** The settings that bear on it. */
     class Settings(
@@ -150,8 +192,9 @@ internal object SavePlan {
         val keeps: (List<Long>) -> Boolean,
     )
 
-    /** A call the rules left out, for the ledger. */
-    data class LeftOut(val start: Long, val incoming: Boolean, val seconds: Int)
+    /** A call the rules left out, for the ledger; [callAt] as a part's
+     *  (RecordingSaver.Part.callAt). */
+    data class LeftOut(val start: Long, val incoming: Boolean, val seconds: Int, val callAt: Long = -1)
 
     /** What to do with the recording. */
     sealed interface Decision {
@@ -178,18 +221,37 @@ internal object SavePlan {
         incoming: Boolean,
         tracked: List<CallTracking.Tracked>,
         tries: Int,
+        joined: Boolean = false,
     ): Decision {
         val named = settings.format != FileNames.Format.DATE
         val wantWho = settings.ruled || named
         if (tracked.isEmpty()) {
-            val who = if (wantWho) fromCallLog(lookups, startedAt, incoming, tries) else null
-            if (settings.ruled && who != null && !settings.keeps(who.contactIds) &&
-                !anotherCallDuring(lookups, startedAt, who)
-            ) {
-                return Decision.LeaveOut(listOf(LeftOut(startedAt, incoming, who.seconds)))
+            // Joined mid-call (DaemonFile.joined): its call is the log's
+            // entry up at its start, whichever way - asked even when nothing
+            // needs who it was, as its way, in every name, is otherwise the
+            // recorder's guess (review round 10).
+            val during = if (joined && lookups.callLogAllowed) loggedDuring(lookups, startedAt, tries) else null
+            val way = during?.incoming ?: incoming
+            val who = when {
+                !wantWho -> null
+                joined -> during?.let {
+                    identified(it.number, lookups.contact(it.number), it.name, it.seconds, it.country ?: lookups.country, it.at)
+                }
+                else -> fromCallLog(lookups, startedAt, incoming, tries)
             }
-            val name = FileNames.build(settings.format, startedAt, incoming, who?.party)
-            return Decision.Save(listOf(RecordingSaver.Part.whole(name, incoming, startedAt)), emptyList())
+            // Matched to its call by the call's start, its own minutes in
+            // (CallLedger.Recorded.callAt).
+            val callAt = during?.at ?: -1
+            if (settings.ruled && who != null && !settings.keeps(who.contactIds) &&
+                !anotherCallDuring(lookups, startedAt, who, joined)
+            ) {
+                // Joined, what is left of the call from the revive: its whole
+                // length on held calls after it (review round 13).
+                val seconds = if (callAt >= 0) maxOf(0, who.seconds - ((startedAt - callAt) / 1000).toInt()) else who.seconds
+                return Decision.LeaveOut(listOf(LeftOut(startedAt, way, seconds, callAt)))
+            }
+            val name = FileNames.build(settings.format, startedAt, way, who?.party)
+            return Decision.Save(listOf(RecordingSaver.Part.whole(name, way, startedAt, callAt)), emptyList())
         }
 
         // Cut to the calls: from the answer (an outgoing call's ringing is not
@@ -200,24 +262,65 @@ internal object SavePlan {
         val parts = mutableListOf<RecordingSaver.Part>()
         val leftOut = mutableListOf<LeftOut>()
         for (call in segments.map { it.first }.distinct()) {
+            val packets = segments.filter { it.first === call }.map { it.second }
             // The recording's own call keeps the recording's start in its
             // name, as every name always has (and as Honor's dialer matches);
-            // a call that came in during it starts where it was answered.
-            val start = if (call === own) startedAt else call.answeredAt
-            val who = if (wantWho) fromTelecom(lookups, call, start, named, tries) else null
+            // a call that came in during it starts where it was answered. In
+            // a joined recording a call answered before it began starts at
+            // its first packet: dated by its answer, it took recording 1's
+            // part's name, "(1)", minutes before its audio (review round 12).
+            // A second on at least: at the file's own second, its name was the
+            // own part's, and the ledger knew one of them (review round 13).
+            val start = when {
+                call === own -> startedAt
+                joined -> maxOf(startedAt + 1_000L, startedAt + packets.first().first * CallTracking.PACKET_MS)
+                else -> call.answeredAt
+            }
+            // A joined recording's calls are looked up in the log by their own
+            // start, Telecom's id - the log's date - not the recording's or a
+            // part's, minutes into the call, where the log has nothing in its
+            // window (review rounds 11 and 13).
+            val lookupAt = if (joined) call.id else start
+            val who = if (wantWho) fromTelecom(lookups, call, lookupAt, named, tries) else null
             if (settings.ruled && who != null && !settings.keeps(who.contactIds)) {
-                leftOut += LeftOut(call.id, call.incoming, call.seconds)
+                // The own call at the file's start: what the next collection
+                // knows the file by (drop) - noted at its call's, a kept part's
+                // file outliving its save was saved again, "(1)" (review
+                // round 13).
+                // Joined, its own call's seconds from the revive, not its
+                // answer: the entry ran past the call's end and held calls
+                // after it (review round 14).
+                val seconds = if (joined && call === own && call.endedAt > 0) {
+                    ((call.endedAt - startedAt) / 1000).toInt().coerceAtLeast(0)
+                } else {
+                    call.seconds
+                }
+                leftOut += LeftOut(if (call === own) startedAt else call.id, call.incoming, seconds, if (joined) call.id else -1)
                 continue
             }
             parts += RecordingSaver.Part(
                 name = FileNames.build(settings.format, start, call.incoming, who?.party),
                 incoming = call.incoming,
                 startMillis = start,
-                packets = segments.filter { it.first === call }.map { it.second },
+                packets = packets,
+                // Joined: each part matched to its call by the call's start.
+                callAt = if (joined) call.id else -1,
             )
         }
         return if (parts.isEmpty()) Decision.LeaveOut(leftOut) else Decision.Save(parts, leftOut)
     }
+
+    /**
+     * Whether a recording is one of a call's parts, known before it is
+     * written - so its tags carry it (JEMREC_PART): one a call's service
+     * saves among others ([part]), one joined mid-call, one the recorder
+     * marked as stopped well before its call, or one noted as a call's part
+     * ([inGroup], CallParts). No short call, any of them (Retention; review
+     * rounds 13 and 14). One Telecom's end says stopped early is marked as
+     * it is published, after the tags.
+     */
+    fun isPart(part: Boolean, file: DaemonFile, inGroup: Boolean): Boolean =
+        part || file.joined || markedEarlyMs(file.missedMs) != null || inGroup
 
     /** Why a recording is dropped before it is fetched. */
     enum class Drop {
@@ -266,6 +369,57 @@ internal object SavePlan {
     fun telecomEnded(tracked: List<CallTracking.Tracked>): Long? = tracked.firstOrNull()?.endedAt?.takeIf { it > 0 }
 
     /**
+     * How much of the call a recording missed at its end - its last packet,
+     * [lastSlot] from its [start], short of when Telecom says the call ended
+     * - when that is more than STOPPED_EARLY_MS; else null. The recorder
+     * stops a second or two after a call (its hang-up check), so a recording
+     * that ends this far before one did stopped early: the capture failing
+     * more than it may be made anew (the recorder's RestartPolicy), the
+     * encoder ending, the recorder itself ended mid-call. Pure.
+     *
+     * On a clock from the first packet (Cut.fromFirst: a takeover's cut),
+     * [lastSlot] counts from that packet as if it came at [start]: it came
+     * as late as the capture took to start, which for a call the answering
+     * machine had already answered - the capture live - is milliseconds,
+     * far under STOPPED_EARLY_MS (review, 2026-11-18).
+     */
+    fun stoppedEarlyMs(start: Long, lastSlot: Long, endedAt: Long): Long? =
+        (endedAt - (start + (lastSlot + 1) * CallTracking.PACKET_MS)).takeIf { it > STOPPED_EARLY_MS }
+
+    /**
+     * Whether a recording that stopped at [lastSlot] was carried on by
+     * another of the same call: one of [others] - the starts of the other
+     * recordings known, saved or waiting on the recorder - begins after it
+     * stopped and before the call ended at [endedAt]. A recorder ended
+     * mid-call and brought back while the call is up starts a second
+     * recording of it; the first then did not lose the call's last part,
+     * only the gap, and saying so was wrong (review, 2026-11-18). Pure.
+     */
+    fun carriedOn(start: Long, lastSlot: Long, endedAt: Long, others: Collection<Long>): Boolean {
+        val stopped = start + (lastSlot + 1) * CallTracking.PACKET_MS
+        return others.any { it in stopped..endedAt }
+    }
+
+    /**
+     * The recorder's own mark - its encoder ended [missedMs] before the
+     * recording was stopped (DaemonFile.missedMs) - when that is more than
+     * STOPPED_EARLY_MS, for a call Telecom gave no end of: a messenger's, or
+     * a phone call with call tracking off. The recorder stops a second or two
+     * after a call, so the mark runs that much over the call's loss, as the
+     * reckoning from Telecom's end does not; within "about". A message's
+     * too: a takeover, which ends one on purpose, stops the recording before
+     * its encoder can end early (Calls.splitOffMessage), so a marked message
+     * is one whose capture was lost under the caller - Telecom's end, which a
+     * takeover does run past, is what leaves messages out (review,
+     * 2026-11-18). Pure.
+     */
+    fun markedEarlyMs(missedMs: Long?): Long? = missedMs?.takeIf { it > STOPPED_EARLY_MS }
+
+    /** Short of the call's end by more than this, a recording stopped early:
+     *  well past what the capture may lag at a call's end. */
+    const val STOPPED_EARLY_MS = 5_000L
+
+    /**
      * Whether recording was off at [at], by the switch's [history]. Asked
      * at the end of a recording read in full (RecordingSaver.write) where
      * Telecom gave no end: the recorder stops a second or two after the
@@ -288,6 +442,9 @@ internal object SavePlan {
         val clockOffset: Long?,
         val orWhole: RecordingSaver.Part?,
         val notKept: Int,
+        /** Packets placed by their stamps from the first packet's
+         *  (PacketClock), as a message's start is reckoned. */
+        val fromFirst: Boolean = false,
     )
 
     /**
@@ -305,9 +462,9 @@ internal object SavePlan {
      * asked for (Calls.splitOffMessage).
      *
      * Placed by the packets' own stamps, with the clocks' offset from
-     * Telecom's account (PacketClock, issue #40). A message is cut by
-     * counting from its first packet, which is where the recorder measured
-     * its start from.
+     * Telecom's account (PacketClock, issue #40). A message is cut from its
+     * first packet, which is where the recorder measured its start from, by
+     * the packets' stamps from that one's (PacketClock.fromFirst).
      */
     fun cut(decision: Decision.Save, file: DaemonFile, startedAt: Long, tracked: List<CallTracking.Tracked>): Cut {
         val messageStart = (file.message as? DaemonFile.Message.Starts)?.ms
@@ -320,6 +477,7 @@ internal object SavePlan {
             clockOffset = if (trimFrom == null) tracked.firstOrNull()?.clockOffset else null,
             orWhole = if (trimFrom == null) wholeIfNothingFits(decision, tracked) else null,
             notKept = decision.parts.size - kept.size,
+            fromFirst = trimFrom != null,
         )
     }
 
@@ -336,6 +494,6 @@ internal object SavePlan {
     fun wholeIfNothingFits(decision: Decision.Save, tracked: List<CallTracking.Tracked>): RecordingSaver.Part? {
         if (tracked.size != 1 || decision.leftOut.isNotEmpty()) return null
         val part = decision.parts.singleOrNull() ?: return null
-        return RecordingSaver.Part.whole(part.name, part.incoming, part.startMillis)
+        return RecordingSaver.Part.whole(part.name, part.incoming, part.startMillis, part.callAt)
     }
 }

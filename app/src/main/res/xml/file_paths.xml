@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <!--
-      Only the recordings directory is shared, and only as long as a grant
-      lasts. Recordings live in the app's own external files dir, which no
-      other app may read - so playing one in a music player needs a content
-      URI handed out deliberately, per file, rather than loosening storage.
+      Only these directories are shared, and only as long as a grant lasts.
+      Recordings in the app's own external files dir - where a save goes
+      only when Recordings/JemRec and a chosen folder both fail - are read by
+      no other app, so playing one elsewhere needs a content URI handed out
+      deliberately, per file, rather than loosening storage.
     -->
     <external-files-path name="recordings" path="recordings/" />
     <!--

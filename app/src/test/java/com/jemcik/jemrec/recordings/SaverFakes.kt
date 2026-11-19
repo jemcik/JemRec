@@ -1,5 +1,6 @@
 package com.jemcik.jemrec.recordings
 
+import com.jemcik.jemrec.audio.AudioStream
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
@@ -48,10 +49,26 @@ internal class SaverFakes(private val context: Context) {
 
     /** What LIST answers; null for a recorder that could not be asked. */
     @Volatile var listing: List<String>? = emptyList()
+    /** Whether the listing is known whole - false, an older recorder's,
+     *  with no end to it (DaemonClient.Listing). */
+    @Volatile var listingWhole = true
     @Volatile var listed = 0
 
     /** Called as each fetch begins, on the saving thread. */
     @Volatile var onFetch: (String) -> Unit = {}
+
+    /** Whether its fetches start with the length, as a recorder of 1.2 or
+     *  later answers; false, as one from before. */
+    @Volatile var lengthFirst = true
+
+    /** What the question before a fetch found the recorder to send: as it
+     *  does, unless set - null, the question unanswered; or wrong, the
+     *  recorder replaced between the question and the fetch. */
+    @Volatile var asked: (() -> Boolean?)? = null
+
+    /** Where a fetch's reply stops, in bytes, as if the recorder ended
+     *  then; null for the whole reply. */
+    @Volatile var cutAfter: Int? = null
 
     /** Called as each delete begins. */
     @Volatile var onDelete: (String) -> Unit = {}
@@ -72,7 +89,7 @@ internal class SaverFakes(private val context: Context) {
     }
 
     val daemon = object : RecordingSaver.DaemonFiles {
-        override suspend fun fetch(context: Context, name: String): Socket {
+        override suspend fun fetch(context: Context, name: String): AudioStream.Fetched {
             fetched += name
             onFetch(name)
             gate?.let { held ->
@@ -84,7 +101,13 @@ internal class SaverFakes(private val context: Context) {
             currentCoroutineContext().ensureActive()
             if (unreachable) throw IOException("connection refused")
             // What the recorder answers in the codec id's place for a file it no longer has.
-            return Canned(files[name] ?: "gone".toByteArray(Charsets.US_ASCII))
+            val said = asked?.invoke() ?: lengthFirst.takeIf { asked == null }
+            val file = files[name] ?: return AudioStream.Fetched(Canned("gone".toByteArray(Charsets.US_ASCII)), said)
+            // A recorder of 1.2 or later says the length first (Wire.FETCH_LENGTH);
+            // [cutAfter] ends the transfer early, as a recorder ended in the
+            // middle of it does.
+            val sent = if (lengthFirst) java.nio.ByteBuffer.allocate(8).putLong(file.size.toLong()).array() + file else file
+            return AudioStream.Fetched(Canned(cutAfter?.let { sent.copyOf(minOf(it, sent.size)) } ?: sent), said)
         }
 
         override suspend fun delete(context: Context, name: String): Boolean {
@@ -99,6 +122,9 @@ internal class SaverFakes(private val context: Context) {
             listed++
             return listing
         }
+
+        override suspend fun listing(context: Context): com.jemcik.jemrec.recorder.DaemonClient.Listing? =
+            pending(context)?.let { com.jemcik.jemrec.recorder.DaemonClient.Listing(it, listingWhole) }
     }
 
     /** An unconnected socket whose input is [bytes]: all AudioStream asks of one. */

@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import com.jemcik.jemrec.recordings.Waveforms
 import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -63,9 +62,11 @@ internal fun WaveformScrubber(
     played: Color,
     rest: Color,
     head: Color,
-    // While it plays, the playhead glides between the player's readings.
+    // While it plays, the playhead follows the sound, read every frame from
+    // [positionNow] - or [positionMs] where that has nothing to say.
     playing: Boolean,
     modifier: Modifier = Modifier,
+    positionNow: () -> Int? = { null },
 ) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val duration by rememberUpdatedState(durationMs)
@@ -74,15 +75,15 @@ internal fun WaveformScrubber(
     // Where a drag is, for its end: read by the gestures, never drawn.
     val dragged = remember { mutableIntStateOf(NOT_DRAGGING) }
     val position = positionMs.coerceIn(0, max(0, durationMs))
-    // Where the playhead is drawn: playing, PlayheadGlide's, moved on every
-    // frame between the player's readings; paused or dragged, where the
-    // player or the finger is. Read only in the drawing, so a frame redraws
-    // the bars and recomposes nothing. Infinite-animation frames, which the
-    // screen tests hold still, so their pictures do not depend on how long
-    // a test takes.
+    // Where the playhead is drawn: playing, PlayheadGlide's, where the sound
+    // is at every frame; paused or dragged, where the player or the finger
+    // is. Read only in the drawing, so a frame redraws the bars and
+    // recomposes nothing. Infinite-animation frames, which the screen tests
+    // hold still, so their pictures do not depend on how long a test takes.
     val glide = remember(durationMs) { PlayheadGlide(position) }
     val drawn = remember(durationMs) { mutableFloatStateOf(position.toFloat()) }
     val reading by rememberUpdatedState(position)
+    val now by rememberUpdatedState(positionNow)
     // Not playing, a new position is drawn at once; an unchanged one leaves
     // the head where it was drawn - a pause's last reading can be a tick
     // behind it.
@@ -100,10 +101,9 @@ internal fun WaveformScrubber(
     }
     LaunchedEffect(glide, playing) {
         if (!playing) return@LaunchedEffect
-        glide.resume()
         while (true) {
-            withInfiniteAnimationFrameMillis { now ->
-                val at = glide.frame(now, reading, durationMs)
+            withInfiniteAnimationFrameMillis { frameMs ->
+                val at = glide.frame(frameMs, now() ?: reading, durationMs)
                 // Drawn again once the head reaches another pixel, not every
                 // frame: on a phone-wide scrubber a minute-long call's moves
                 // a pixel in several frames, a half-hour one's in dozens, and
@@ -194,115 +194,120 @@ internal fun WaveformScrubber(
 private const val NOT_DRAGGING = -1
 
 /**
- * Where to draw the playhead while it plays, frame by frame, from the
- * player's readings (every 300 ms - Playback's ticker). Drawn only at
- * the readings it stepped three times a second; moved on at the player's
- * pace from the last one, it stepped back a little just after playing began
- * and after a tap (both seen by the user on the Honor, 2026-10-23). The
- * cause, read from the code rather than measured: it ran on from the first
- * reading while the player, just started or just sent elsewhere, had not
- * yet moved or got there, and the next reading pulled it back. So:
- * - it moves on only once the readings show the player moving;
- * - it never goes back, except for a seek: ahead of the player it slows,
- *   to a stop if need be, and behind it hurries; within [CATCH_UP_MS] the
- *   two are together again;
- * - a reading [JUMP_MS] or more from where the player should be is a seek
- *   made elsewhere, and the head goes there;
- * - after a seek from the scrubber ([soughtTo]) the next few readings that
- *   are not near where it was sent are from before the player got there,
- *   and are not believed.
+ * Where to draw the playhead while it plays, frame by frame, from where the
+ * sound is at that frame (SoundPosition, read from the player itself).
+ *
+ * It used to be worked out between readings of Media3's controller every
+ * 300 ms - moved on at the player's pace from the last one, slowed when
+ * ahead and hurried when behind - and every way that guess went wrong showed:
+ * stepping back after Play and after a tap (the user, the Honor, 2026-10-23),
+ * slowing every few seconds where ExoPlayer's position moved in steps
+ * (2026-11-16), and running ahead from Play while a Bluetooth earbud took
+ * 0.67 s to start the sound (2026-11-17, SoundPosition). Read every frame
+ * from the player, the position needs no guessing, but its word can still
+ * move on unevenly: on a Bluetooth earbud, before Media3 says when the sound
+ * started, it is ExoPlayer's own, in steps of about 10 to 20 ms, and then put
+ * right by 104 or 132 ms when Media3 does (the Honor, 2026-11-17); and a
+ * frame reads it a few ms early or late. So:
+ * - while the sound goes on, the head goes on too, each frame between
+ *   [SLOWER] and [FASTER] times the sound's pace, towards where the sound
+ *   is: a correction of 104 ms is taken over about a second, a tenth faster,
+ *   rather than a jump or a stop (at a quarter, as first written, it took
+ *   0.4 s on the earbud); and a word that moves on in steps is drawn in
+ *   small ones;
+ * - the word still, the head catches up with it if behind, at most a tenth
+ *   faster, and otherwise waits - never a step back;
+ * - a frame that comes more than [LONG_FRAME_MS] after the last - the screen
+ *   held up - is not paced: the head goes where the sound is, never back;
+ * - [AHEAD_SNAP_MS] or more ahead, or [BACK_MS] or more behind, the sound
+ *   was sent there - a seek made elsewhere (the system's controls) - and it
+ *   goes there;
+ * - after a seek from the scrubber ([soughtTo]), a reading away from where it
+ *   was sent is from before the player got there, and is not believed - for
+ *   [STALE_MS] at most.
  * Plain arithmetic, so the rules are tested off the screen
  * (PlayheadGlideTest).
  */
 internal class PlayheadGlide(start: Int) {
     var head: Float = start.toFloat()
         private set
-    // The last reading believed, and when it came; the last one seen at all.
-    private var last = start
-    private var lastAt = NONE
-    private var seen = start
-    private var frameAt = NONE
-    private var moving = false
     private var sought = NOT_DRAGGING
-    private var staleLeft = 0
+    private var soughtAt = NONE
+    private var frameAt = NONE
+    private var lastReading = start
 
     /** Not playing: the head is at [ms], the player's or the finger's. Away
      *  from a seek's target, the seek is over: tapped just before the end,
-     *  a recording finished before a reading came near it, the head was put
-     *  back at 0:00 - and the next play's first readings, far from the old
-     *  target, were not believed, the head waiting a second as it played. */
+     *  the recording finished and went back to 0:00 before the player said
+     *  where it was sent. */
     fun place(ms: Int) {
         head = ms.toFloat()
-        last = ms
-        seen = ms
-        moving = false
-        if (sought != NOT_DRAGGING && abs(ms - sought) > SETTLE_MS) {
-            sought = NOT_DRAGGING
-            staleLeft = 0
-        }
+        lastReading = ms
+        frameAt = NONE
+        if (sought != NOT_DRAGGING && abs(ms - sought) > LANDED_MS) sought = NOT_DRAGGING
     }
 
     /** The scrubber sent the player to [ms]. */
     fun soughtTo(ms: Int) {
-        place(ms)
-        sought = ms
-        staleLeft = STALE_READINGS
-    }
-
-    /** Playing (again): the clock starts afresh, and the head waits for the
-     *  player to be seen moving. */
-    fun resume() {
-        lastAt = NONE
+        head = ms.toFloat()
+        lastReading = ms
         frameAt = NONE
-        moving = false
+        sought = ms
+        soughtAt = NONE
     }
 
-    /** A frame at [now] (milliseconds), the player's latest reading being
-     *  [reading]: where to draw the head. */
+    /** A frame at [now] (milliseconds), the sound being at [reading]: where
+     *  to draw the head. */
     fun frame(now: Long, reading: Int, durationMs: Int): Float {
-        if (frameAt == NONE) {
-            frameAt = now
-            lastAt = now
-        }
-        // A new reading - counted once, however many frames it lasts.
-        if (reading != seen) {
-            seen = reading
-            if (sought != NOT_DRAGGING && abs(reading - sought) > SETTLE_MS && staleLeft > 0) {
-                staleLeft--
-            } else {
-                sought = NOT_DRAGGING
-                moving = reading > last
-                last = reading
-                lastAt = now
-            }
-        }
-        // Moved on from the last reading for two of the player's readings at
-        // most: a player that stalls while still playing sends the same
-        // reading again, which moves nothing here, and the head ran on ahead
-        // of the sound - then stopped, or jumped back.
-        val running = moving && now - lastAt <= AHEAD_MS
-        val player = if (moving) last + min(now - lastAt, AHEAD_MS) else last.toLong()
-        val behind = player - head
-        val elapsed = now - frameAt
+        val elapsed = if (frameAt == NONE) 0f else (now - frameAt).toFloat()
         frameAt = now
-        head = if (abs(behind) >= JUMP_MS) {
-            player.toFloat()
-        } else {
-            val pace = (if (running) 1f else 0f) + behind / CATCH_UP_MS
-            head + elapsed * pace.coerceAtLeast(0f)
+        if (sought != NOT_DRAGGING) {
+            if (soughtAt == NONE) soughtAt = now
+            if (abs(reading - sought) > LANDED_MS && now - soughtAt < STALE_MS) return head
+            sought = NOT_DRAGGING
         }
-        head = head.coerceIn(0f, max(0, durationMs).toFloat())
+        val at = reading.coerceIn(0, max(0, durationMs)).toFloat()
+        val goingOn = reading > lastReading
+        lastReading = reading
+        head = when {
+            at - head >= AHEAD_SNAP_MS || head - at >= BACK_MS -> at
+            // A frame that came late: the pace says nothing over it - where
+            // the sound is, never back.
+            elapsed > LONG_FRAME_MS -> maxOf(head, at)
+            // The sound going on: so does the head, at its pace give or take
+            // a tenth, towards where it is - never a short step on the way.
+            goingOn -> head + (at - head).coerceIn(elapsed * SLOWER, elapsed * FASTER)
+            // The word still but ahead - it moves on in steps: caught up.
+            at > head -> minOf(at, head + elapsed * FASTER)
+            // Still, and not ahead: waited for.
+            else -> head
+        }.coerceIn(0f, max(0, durationMs).toFloat())
         return head
     }
 
     companion object {
-        const val CATCH_UP_MS = 250f
-        const val JUMP_MS = 1500f
-        const val SETTLE_MS = 700
-        const val STALE_READINGS = 3
+        /** A reading this far ahead or more is a seek, gone to at once. */
+        const val AHEAD_SNAP_MS = 300f
 
-        /** Two of Playback's 300 ms readings. */
-        const val AHEAD_MS = 600L
+        /** This far behind or more, likewise; less, it is waited for. */
+        const val BACK_MS = 250f
+
+        /** The most and the least of the sound's pace the head takes while
+         *  it makes up a difference: a tenth either way. */
+        const val FASTER = 1.1f
+        const val SLOWER = 0.9f
+
+        /** A frame later than this after the last - the screen held up -
+         *  is not paced: at nine tenths of it the head could run well past
+         *  a sound whose word moved on less. */
+        const val LONG_FRAME_MS = 100f
+
+        /** A seek has landed when the player says this near where it was sent:
+         *  sent somewhere, it says that place until the sound goes on. */
+        const val LANDED_MS = 50
+
+        /** How long readings from before a seek landed are not believed. */
+        const val STALE_MS = 1_000L
         private const val NONE = Long.MIN_VALUE
     }
 }

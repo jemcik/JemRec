@@ -8,27 +8,30 @@ import com.jemcik.jemrec.calls.CallLogLookup
 
 /**
  * What the app remembers of each recording, by its file name: that it is
- * kept, that it is a message, which way the call went, who a messenger call
- * was with, and that its file has been read. Each lives in the preferences,
- * where the list reads it; the first four are in the recording's own tags as
- * well (RecordingTags), and [recover] brings them back from there. The stores
+ * kept, that it is a message, that it is one of a call's parts, which way
+ * the call went, who a messenger call was with, when it began in UTC (and a
+ * joined part's call), and that its file has been read. Each lives in the
+ * preferences, where the list reads it; all but the last are in the
+ * recording's own tags as well (RecordingTags), and [recover] brings them
+ * back from there. The stores
  * keep their keys from before they had one owner: an update reads what the
  * last version wrote.
  *
  * A name, because it is the one thing that does not change for the life of
  * the file: not through a restore from Recently deleted, and not when the
- * folder setting changes. Each store is locked on its own: reading the files
- * back can take seconds after a reinstall, and a keep mark is set from the
- * main thread.
+ * folder setting changes - but once, for a name Honor's Phone app could not
+ * read (HonorRenames), and [renamed] carries every mark to the new one. Each
+ * store is locked on its own: reading the files back can take seconds after
+ * a reinstall, and a keep mark is set from the main thread.
  */
 internal object RecordingMarks {
 
     private const val TAG = "JemRec"
 
-    /** The newest this many, in the three stores that hold a bound: a mark
-     *  outlives its recording - Recently deleted brings one back by the same
-     *  name - and a bound keeps that from adding up in a preferences file
-     *  read whole at every start. */
+    /** The newest this many, in the five stores that hold a bound, and of
+     *  the names read ([recover]): a mark outlives its recording - Recently
+     *  deleted brings one back by the same name - and a bound keeps that from
+     *  adding up in a preferences file read whole at every start. */
     private const val NEWEST = 2000
 
     /**
@@ -85,6 +88,12 @@ internal object RecordingMarks {
             if (kept) now += names else now -= names.toSet()
             Prefs.of(context).edit { putStringSet(KEY_KEPT, now) }
         }
+
+        @Synchronized
+        internal fun renamed(context: Context, from: String, to: String) {
+            val now = all(context)
+            if (from in now) Prefs.of(context).edit { putStringSet(KEY_KEPT, now - from + to) }
+        }
     }
 
     /**
@@ -107,6 +116,40 @@ internal object RecordingMarks {
         fun mark(context: Context, names: Collection<String>, listed: Set<String> = emptySet()) {
             val kept = bounded(context, all(context) + names, listed) { it }
             Prefs.of(context).edit { putStringSet(KEY_MESSAGES, kept) }
+        }
+
+        @Synchronized
+        internal fun renamed(context: Context, from: String, to: String) {
+            val now = all(context)
+            if (from in now) Prefs.of(context).edit { putStringSet(KEY_MESSAGES, now - from + to) }
+        }
+    }
+
+    /**
+     * The recordings that are one of a call's - a recorder lost mid-call
+     * having left more than one, joined mid-call, or stopped before the
+     * call ended (SavePlan.isPart): the short-call rule
+     * judges the call, not such a part (Retention) - it took a part of a
+     * ten-minute call, the 20 s before the recorder was lost, to the trash
+     * (review round 13). By name; in the file's tags too (recover).
+     */
+    object Parts {
+        private const val KEY_PARTS = "part_recordings"
+
+        fun all(context: Context): Set<String> =
+            Prefs.of(context).getStringSet(KEY_PARTS, emptySet())?.toSet() ?: emptySet()
+
+        @Synchronized
+        fun mark(context: Context, names: Collection<String>, listed: Set<String> = emptySet()) {
+            if (names.isEmpty()) return
+            val kept = bounded(context, all(context) + names, listed) { it }
+            Prefs.of(context).edit { putStringSet(KEY_PARTS, kept) }
+        }
+
+        @Synchronized
+        internal fun renamed(context: Context, from: String, to: String) {
+            val now = all(context)
+            if (from in now) Prefs.of(context).edit { putStringSet(KEY_PARTS, now - from + to) }
         }
     }
 
@@ -138,6 +181,69 @@ internal object RecordingMarks {
         fun all(context: Context): Map<String, Boolean> =
             (Prefs.of(context).getStringSet(KEY_DIRECTIONS, emptySet()) ?: emptySet())
                 .associate { it.drop(2) to it.startsWith("i:") }
+
+        @Synchronized
+        internal fun renamed(context: Context, from: String, to: String) {
+            val entries = Prefs.of(context).getStringSet(KEY_DIRECTIONS, emptySet()) ?: emptySet()
+            val moved = entries.filter { it.drop(2) == from }.map { it.take(2) + to }
+            if (moved.isNotEmpty()) {
+                Prefs.of(context).edit { putStringSet(KEY_DIRECTIONS, entries.filterNot { it.drop(2) == from }.toSet() + moved) }
+            }
+        }
+    }
+
+    /**
+     * When each recording began, in UTC, by name: its name holds only the
+     * wall clock where it was recorded, read in the zone the phone is in now,
+     * and matched by that alone after travel it was hours off its call
+     * (review round 13). Noted as it is saved, and in the file's tags, so a
+     * reinstall reads it back (recover). In a file of its own, as [READ_FILE]:
+     * one per recording, and the shared preferences are rewritten whole at
+     * every write.
+     */
+    object Starts {
+        private const val FILE = "jemrec_starts"
+        private const val KEY_STARTS = "name_starts"
+
+        private fun prefs(context: Context) = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+        /** When it began, and for a part joined mid-call its call's start
+         *  ([Recording.callAt]; review round 14). */
+        data class Start(val at: Long, val callAt: Long? = null)
+
+        /** [starts], by name: one write for many. */
+        @Synchronized
+        fun note(context: Context, starts: Map<String, Start>, listed: Set<String> = emptySet()) {
+            if (starts.isEmpty()) return
+            val entries = (prefs(context).getStringSet(KEY_STARTS, emptySet()) ?: emptySet()).toMutableSet()
+            entries.removeAll { it.substringBefore('\u0000') in starts }
+            starts.forEach { (name, s) -> entries += "$name\u0000${s.at}" + (s.callAt?.let { "\u0000$it" } ?: "") }
+            prefs(context).edit { putStringSet(KEY_STARTS, bounded(context, entries, listed) { it.substringBefore('\u0000') }) }
+        }
+
+        /** Every start noted, by name. */
+        fun all(context: Context): Map<String, Start> =
+            (prefs(context).getStringSet(KEY_STARTS, emptySet()) ?: emptySet()).mapNotNull { entry ->
+                val fields = entry.split('\u0000')
+                fields.getOrNull(1)?.toLongOrNull()?.let { at -> fields[0] to Start(at, fields.getOrNull(2)?.toLongOrNull()) }
+            }.toMap()
+
+        @Synchronized
+        internal fun renamed(context: Context, from: String, to: String) {
+            val entries = prefs(context).getStringSet(KEY_STARTS, emptySet()) ?: emptySet()
+            val moved = entries.filter { it.substringBefore('\u0000') == from }
+                .map { to + it.removePrefix(from) }
+            if (moved.isNotEmpty()) {
+                prefs(context).edit { putStringSet(KEY_STARTS, entries.filterNot { it.substringBefore('\u0000') == from }.toSet() + moved) }
+            }
+        }
+
+        /** [recordings] with their noted starts. */
+        fun onto(context: Context, recordings: List<Recording>): List<Recording> {
+            val starts = all(context)
+            if (starts.isEmpty()) return recordings
+            return recordings.map { r -> starts[r.name]?.let { r.copy(startUtc = it.at, callAt = it.callAt) } ?: r }
+        }
     }
 
     /**
@@ -182,6 +288,25 @@ internal object RecordingMarks {
         context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).getStringSet(KEY_READ, emptySet()).orEmpty()
 
     /**
+     * The file [from] is called [to] now (HonorRenames): what was remembered
+     * of it - kept, a message, a part, which way the call went, when it
+     * began, read - by its new name. A messenger call's caller is not among them: Honor's names are
+     * for phone calls alone.
+     */
+    @Synchronized
+    fun renamed(context: Context, from: String, to: String) {
+        Keep.renamed(context, from, to)
+        Messages.renamed(context, from, to)
+        Directions.renamed(context, from, to)
+        Starts.renamed(context, from, to)
+        Parts.renamed(context, from, to)
+        val read = readNames(context)
+        if (from in read) {
+            context.getSharedPreferences(READ_FILE, Context.MODE_PRIVATE).edit { putStringSet(KEY_READ, read - from + to) }
+        }
+    }
+
+    /**
      * For each of [recordings] whose file has not been read yet, what it says,
      * noted where the list looks: the preferences. After a reinstall that is
      * every recording, once; after that, only one that came from somewhere
@@ -222,6 +347,8 @@ internal object RecordingMarks {
         val keeps = found.filter { it.second.kept }.map { it.first }
         if (keeps.isNotEmpty()) Keep.set(context, keeps, kept = true)
         Directions.note(context, found.mapNotNull { (name, f) -> f.incoming?.let { name to it } }.toMap(), listed)
+        Starts.note(context, found.mapNotNull { (name, f) -> f.startedAt?.let { name to Starts.Start(it, f.callAt) } }.toMap(), listed)
+        Parts.mark(context, found.filter { it.second.part }.map { it.first }, listed)
         // Only where the name does not say who: the date and number formats'.
         Callers.note(
             context,
@@ -239,9 +366,11 @@ internal object RecordingMarks {
     fun onto(context: Context, recordings: List<Recording>): List<Recording> {
         val kept = Keep.all(context)
         val messages = Messages.all(context)
+        val parts = Parts.all(context)
         return recordings
             .map { if (it.name in kept) it.copy(kept = true) else it }
             .map { if (it.name in messages) it.copy(message = true) else it }
+            .map { if (it.name in parts) it.copy(part = true) else it }
     }
 
     /**

@@ -58,9 +58,12 @@ internal object FolderRecordings {
             val doc = DocumentsContract.createDocument(context.contentResolver, parent, RecordingStore.MIME, name)
                 ?: error("createDocument returned null")
             // "rw" and not "w": MediaMuxer seeks back to patch headers when it
-            // finalises, and a write-only descriptor cannot.
-            val pfd = context.contentResolver.openFileDescriptor(doc, "rw")
-                ?: error("openFileDescriptor returned null")
+            // finalises, and a write-only descriptor cannot. A file made and
+            // not opened is let go here: empty, under the recording's own
+            // name, it would make the retry "(1)" (review, 2026-11-18).
+            val pfd = runCatching { context.contentResolver.openFileDescriptor(doc, "rw") ?: error("openFileDescriptor returned null") }
+                .onFailure { runCatching { DocumentsContract.deleteDocument(context.contentResolver, doc) } }
+                .getOrThrow()
             val made = RecordingStore.nameOf(context, doc) ?: name
             RecordingStore.Target(made, pfd, doc, onFinish = {}, onAbandon = {
                 DocumentsContract.deleteDocument(context.contentResolver, doc)
@@ -70,8 +73,59 @@ internal object FolderRecordings {
         }.getOrNull()
     }
 
+    /**
+     * What is at [uri] of a save cut short; null where it would not say -
+     * the folder itself not answering, or its grant let go. Android's own
+     * provider tells a file gone no other way than a folder it cannot reach:
+     * its query swallows FileNotFoundException into a null cursor
+     * (DocumentsProvider.query), and a tree uri for a file gone throws
+     * IllegalArgumentException (enforceTree, FileSystemProvider
+     * .isChildDocument). So the folder is asked: answering, the file is
+     * gone. Read as "would not say", a file trashed or deleted after the
+     * save was cut short left it waiting for good (review round 10). A size
+     * not given, or 0 - COLUMN_SIZE is "null if unknown", and a provider
+     * may say 0 for one it does not know - is read, as the listing does.
+     */
+    fun leftAt(context: Context, uri: android.net.Uri): SaveJournal.Left? {
+        val size = try {
+            context.contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_SIZE), null, null, null)
+                ?.use { c -> if (!c.moveToFirst()) null else if (c.isNull(0)) 0L else c.getLong(0) }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "store: the folder of a file a save left is no longer granted", e)
+            return null
+        } catch (_: Exception) {
+            null
+        }
+        if (size == null) return if (folderAnswers(context, uri)) SaveJournal.Left.MISSING else null
+        if (size > 0L) return SaveJournal.Left.THERE
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { if (it.read() < 0) SaveJournal.Left.MISSING else SaveJournal.Left.THERE }
+        } catch (_: java.io.FileNotFoundException) {
+            if (folderAnswers(context, uri)) SaveJournal.Left.MISSING else null
+        } catch (e: Exception) {
+            Log.w(TAG, "store: could not read a file a save left", e)
+            null
+        }
+    }
+
+    /** Whether the folder [uri] was made under still answers: its tree's
+     *  own document, asked under the same grant. */
+    private fun folderAnswers(context: Context, uri: android.net.Uri): Boolean = runCatching {
+        val treeId = DocumentsContract.getTreeDocumentId(uri)
+        val tree = DocumentsContract.buildTreeDocumentUri(uri.authority, treeId)
+        context.contentResolver.query(
+            DocumentsContract.buildDocumentUriUsingTree(tree, treeId),
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null,
+        )?.use { it.moveToFirst() } == true
+    }.getOrDefault(false)
+
     /** Every recording-shaped file in the folder, trashed or not. */
-    fun documents(context: Context): List<Document> = runCatching {
+    fun documents(context: Context): List<Document> = listing(context) ?: emptyList()
+
+    /** The same, or null if the folder could not be listed - which an
+     *  empty list would hide from a pass that marks the folder gone through
+     *  (OldRecordingPages; review, 2026-11-18). Empty with none chosen. */
+    fun listing(context: Context): List<Document>? = runCatching {
         val tree = RecordingStore.treeUri(context) ?: return emptyList()
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(
             tree, DocumentsContract.getTreeDocumentId(tree),
@@ -103,9 +157,9 @@ internal object FolderRecordings {
                     TrashNames.inFolder(name, id, restorable),
                 )
             }
-        }
+        } ?: error("the folder gave no listing")
         out
-    }.onFailure { Log.w(TAG, "recordings: chosen folder query failed", it) }.getOrDefault(emptyList())
+    }.onFailure { Log.w(TAG, "recordings: chosen folder query failed", it) }.getOrNull()
 
     /**
      * The folder, less what is in the trash there, and less what is empty. A

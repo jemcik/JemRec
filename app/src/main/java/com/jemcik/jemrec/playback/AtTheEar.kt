@@ -33,9 +33,12 @@ enum class PlayThrough { LOUDSPEAKER, LOUDSPEAKER_AND_EAR, EARPIECE }
  * button or the setting chose back to the loudspeaker, and the screen still
  * goes dark at the ear. Changed in Settings, the choice moves what plays.
  *
- * Measured with a probe on the Honor (MagicOS 11), 2026-11-15: raised, the
- * recording moved to the earpiece in 69-83 ms, heard as smooth; the screen
- * went dark and JemRec stayed in front (no pause or stop of the screen).
+ * Measured with a probe on the Honor (MagicOS 11), 2026-11-15, with
+ * MediaPlayer, which played recordings until 1.2: raised, the recording
+ * moved to the earpiece in 69-83 ms, heard as smooth; the screen went dark
+ * and JemRec stayed in front (no pause or stop of the screen). With
+ * ExoPlayer the move opens the file again, as MediaPlayer's did
+ * (SessionPlayer.reopen): 117-160 ms to sound on the Android 17 AVD.
  */
 internal class AtTheEar(private val quietMs: Long = QUIET_MS) {
 

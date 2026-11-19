@@ -1,6 +1,8 @@
 package com.jemcik.jemrec.playback
 
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -28,12 +30,12 @@ internal interface FocusHolder {
  * PlaybackService shows the system's controls - and JemRec's own screen,
  * through a MediaController - and takes their play, pause and seek from.
  *
- * It plays with RecordingPlayer's MediaPlayer, not ExoPlayer: the user's
- * choice (2026-10-23), measured on the release APK as 0.56 MB added against
- * 1.54 MB, and it keeps the exact seeking measured for MediaPlayer. So what
- * ExoPlayer would do by itself is done here, by PlaybackRules: pause for a
- * call and resume after it, pause for good when another app takes the audio
- * or the headphones come out.
+ * It plays with RecordingPlayer - ExoPlayer since 1.2, cut down to a
+ * recording's needs, for both sides in both ears (BothEars); until then a
+ * MediaPlayer, the user's choice of 2026-10-23 for its size. Its rules stay
+ * here, by PlaybackRules, ExoPlayer's own switched off: pause for a call and
+ * resume after it, pause for good when another app takes the audio or the
+ * headphones come out.
  *
  * One recording at a time: setting another replaces it. Its end rewinds to
  * the start, paused, ready to play again - as the row's player did before.
@@ -48,6 +50,9 @@ internal class SessionPlayer(
     looper: Looper,
     private val engine: PlaybackEngine,
     private val focus: FocusHolder,
+    /** Settings' "Both sides in both ears" (BothEarsSetting), read at each
+     *  open: a change while one plays comes through [bothEarsChanged]. */
+    private val bothEars: () -> Boolean,
     /** False while a greeting's take may have the microphone (Greeting.takeListening).
      *  The session's Play then does nothing - the notification has no word to
      *  give; the app's own Play says why (Playback.play). */
@@ -56,6 +61,15 @@ internal class SessionPlayer(
 
     private var item: MediaItem? = null
     private var opened = false
+
+    /** The open file's length as known before a reopen of it - a move to the
+     *  earpiece, both ears switched - said until the new engine has read
+     *  its own. ExoPlayer knows a length only once ready, and until then
+     *  the session said none, so the screen folded the player away and put
+     *  it back at every move, its earpiece button gone from under the
+     *  finger (review, 2026-11-18). MediaPlayer, until 1.2, prepared before
+     *  it returned. 0 when there is none to carry. */
+    private var carriedMs = 0
     private var error: PlaybackException? = null
     private var playing = PlaybackRules.Playing(wanted = false)
     private var why = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
@@ -64,6 +78,10 @@ internal class SessionPlayer(
      *  the audio attributes it asks for - voice-call audio for the earpiece.
      *  Each recording starts on the speaker. */
     private var output = Output.SPEAKER
+
+    /** The engine's news is to reach the controllers as a jump in position:
+     *  see [changed]. */
+    private var putRight = false
 
     /** Whether the phone is locked: PlaybackService tells it. */
     var locked = false
@@ -84,7 +102,12 @@ internal class SessionPlayer(
             )
             .setPlayerError(error)
         val item = item ?: return state.setPlaybackState(Player.STATE_IDLE).build()
-        val duration = engine.durationMs.takeIf { opened && it > 0 }?.let { it * 1000L } ?: C.TIME_UNSET
+        val length = engine.durationMs.takeIf { it > 0 } ?: carriedMs
+        val duration = length.takeIf { opened && it > 0 }?.let { it * 1000L } ?: C.TIME_UNSET
+        if (putRight && opened) {
+            putRight = false
+            state.setPositionDiscontinuity(Player.DISCONTINUITY_REASON_INTERNAL, engine.positionMs.toLong())
+        }
         return state
             .setPlaylist(
                 listOf(
@@ -123,9 +146,20 @@ internal class SessionPlayer(
 
     /**
      * To the earpiece or back, where it was: playing on if it played, paused
-     * if not. The file opens again - MediaPlayer takes its attributes only
-     * before prepare() - and its audio focus is kept, as nothing else has
-     * played. Measured on the Honor, 2026-11-15: 69-83 ms, heard as smooth.
+     * if not. The file opens again with the new attributes (reopen), and its
+     * audio focus is kept, as nothing else has played. Measured on the Honor
+     * with MediaPlayer, 2026-11-15: 69-83 ms, heard as smooth.
+     *
+     * Not changed on the player as it plays: ExoPlayer's setAudioAttributes
+     * lets the audio sink's AudioTrack go, with up to 500 ms in it not yet
+     * played (DefaultAudioSink.flush), and a seek back to where the sound was
+     * is done for nothing when it is the player's own place, to the
+     * millisecond (ExoPlayerImplInternal.seekToInternal) - on the Android 17
+     * emulator a raise so skipped 390 to 460 ms (2026-11-18). Stopping the
+     * player and preparing it again first cost what opening it again does
+     * (a new decoder, the file read again), so the one way, opening again,
+     * is kept for both: a move and Both sides in both ears (review,
+     * 2026-11-18).
      */
     override fun handleSetAudioAttributes(audioAttributes: AudioAttributes, handleAudioFocus: Boolean): ListenableFuture<*> {
         val wanted = outputOf(audioAttributes)
@@ -135,10 +169,34 @@ internal class SessionPlayer(
         return done()
     }
 
+    /** Settings' "Both sides in both ears" changed: what plays is opened
+     *  again, mixed or not, and goes on from where it was - and, not being
+     *  one of the player's own handlers, says so itself: a reopen that
+     *  failed reached nobody. */
+    fun bothEarsChanged() {
+        if (!opened) return
+        reopen()
+        invalidateState()
+    }
+
+    /** Opened again - for the other output (handleSetAudioAttributes), or
+     *  the other mix of the two sides (the mix is part of how the player is
+     *  built) - going on from where the sound was: the playhead's clock
+     *  (PlayClock). The clock
+     *  follows the sound: paused, it had 227,149 ms where the player went on
+     *  from 227,159, and ExoPlayer's own word was 227,047 (the Honor,
+     *  2026-11-17). Until the review of 2026-11-18 this took ExoPlayer's
+     *  word, which trails the sound, and went back up to a quarter of a
+     *  second. */
     private fun reopen() {
         val uri = item?.localConfiguration?.uri ?: return
         val at = engine.positionMs
-        opened = engine.open(uri, output, onFinished = ::finished, onFailed = ::failed)
+        carriedMs = engine.durationMs.takeIf { it > 0 } ?: carriedMs
+        // Where it aims, and when: the release checks measure it against
+        // where the session said the sound was at that moment, apart from
+        // the gap the reopen leaves (emulator_checks.skipped_across).
+        Log.i("JemRec", "player: opened again at $at ms, elapsed ${SystemClock.elapsedRealtime()}")
+        opened = engine.open(uri, output, bothEars(), onChanged = ::changed, onFinished = ::finished, onFailed = ::failed)
         if (!opened) {
             error = PlaybackException("could not open ${item?.mediaId}", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
             playing = PlaybackRules.Playing(wanted = false)
@@ -155,7 +213,7 @@ internal class SessionPlayer(
         // error kept the state IDLE over a recording playing.
         error = null
         val uri = item.localConfiguration?.uri
-        opened = uri != null && engine.open(uri, output, onFinished = ::finished, onFailed = ::failed)
+        opened = uri != null && engine.open(uri, output, bothEars(), onChanged = ::changed, onFinished = ::finished, onFailed = ::failed)
         if (!opened) {
             error = PlaybackException("could not open ${item.mediaId}", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
             playing = PlaybackRules.Playing(wanted = false)
@@ -240,6 +298,23 @@ internal class SessionPlayer(
         if (!engine.start()) failed()
     }
 
+    /**
+     * The engine has news of its own - the recording's length, known as it
+     * opens, its sound under way, or its audio track run dry, the place it is
+     * said to be at put back. A controller works the position out from
+     * when it was told it plays, which is Play's tap: the sound comes about
+     * 0.1 s later, and the session's next word was three seconds on, when the
+     * screen's reading went back 109 ms (the Honor, 2026-11-16) and the
+     * playhead stood still. A position that only moves on is no news to the
+     * session, so it goes as a jump, from where the engine is, and the
+     * controllers take it at once. JemRec's own screen reads the engine
+     * itself since (SoundPosition); the system's controls still go by this.
+     */
+    private fun changed() {
+        putRight = true
+        invalidateState()
+    }
+
     /** The end: back to the start, paused, the recording still loaded. Its
      *  audio focus is given back - nothing is left to play. */
     private fun finished() {
@@ -262,10 +337,16 @@ internal class SessionPlayer(
     private fun close() {
         engine.close()
         opened = false
+        carriedMs = 0
         error = null
         playing = PlaybackRules.Playing(wanted = false)
         focus.abandon()
     }
+
+    /** Where the sound of recording [mediaId] is, by the engine - for the
+     *  screen (SoundPosition); null unless it is the one open. */
+    fun positionOf(mediaId: String): Int? =
+        if (opened && item?.mediaId == mediaId) engine.positionMs else null
 
     private fun done(): ListenableFuture<*> = Futures.immediateVoidFuture()
 

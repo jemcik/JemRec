@@ -9,8 +9,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.security.SecureRandom
 
 /**
- * A notification's way into a particular place in the app: play this
- * recording, share it, run the self-test, pair again, allow this Wi-Fi.
+ * A notification's way into a particular place in the app: share a
+ * recording, run the self-test, pair again, allow this Wi-Fi, the phone
+ * maker's background settings, choose the folder again - its buttons; play
+ * this recording - the after-call notification's tap, and its button; and,
+ * for a problem's tap, home, the Calls tab or Settings, where the problem is
+ * shown. Home is the plain tap too - the tile's, the recording's, the
+ * player's.
  *
  * GUARDED, BECAUSE THE DOOR IS OPEN
  *
@@ -28,7 +33,7 @@ import java.security.SecureRandom
  */
 object DeepLink {
 
-    enum class Kind { PLAY, SHARE, SELF_TEST, PAIR_AGAIN, ALLOW_WIFI, BACKGROUND_SETTINGS, HOME }
+    enum class Kind { PLAY, SHARE, SELF_TEST, PAIR_AGAIN, ALLOW_WIFI, BACKGROUND_SETTINGS, BATTERY_SETTINGS, HOME, CALLS, SETTINGS, CHOOSE_FOLDER }
 
     data class Link(val kind: Kind, val name: String?)
 
@@ -60,11 +65,19 @@ object DeepLink {
      */
     fun home(context: Context): Intent = intent(context, Kind.HOME).setIdentifier("home")
 
-    /** A link to somewhere of its own - not [home], not a plain open - which
-     *  never opened a new window (DeepLink's flags): the activity does not
-     *  do what an opening does for it. */
+    /** A link to somewhere of its own - play this call (the after-call
+     *  notification's tap and button), the self-test - which never opened a
+     *  new window (DeepLink's flags): the
+     *  activity does not do what an opening does for it. The taps that open
+     *  JemRec where a problem is shown are openings: home's until 1.2, they
+     *  went on arming the keep-alive and looking for a background stop
+     *  (review round 10). So is Choose again, a button that opens home under
+     *  the folder picker, as a cold start for it always did. */
     fun leadsElsewhere(intent: Intent?): Boolean =
-        intent?.action == ACTION && intent.getStringExtra(EXTRA_KIND) != Kind.HOME.name
+        intent?.action == ACTION &&
+            runCatching { Kind.valueOf(intent.getStringExtra(EXTRA_KIND) ?: "") }.getOrNull() !in OPENINGS
+
+    private val OPENINGS = setOf(Kind.HOME, Kind.CALLS, Kind.SETTINGS, Kind.CHOOSE_FOLDER)
 
     /** Called by the activity with every intent it is started or re-entered with. */
     fun offer(context: Context, intent: Intent?) {

@@ -200,6 +200,10 @@ object RecorderLifecycle {
             // While the key that opens it is still held.
             val portClosed = PortChange.closeForReset(context)
             StartWithoutWifi.forget(context, stillOpen = !portClosed)
+            // The switch off now: the heartbeat and the USB watch made while
+            // it was on asked for no network, and KEEP left the watch so for
+            // the next setup (review round 9).
+            com.jemcik.jemrec.capture.RecorderKeepAlive.startWithoutWifiChanged(context)
             AdbTransport.close()
             AdbIdentity.forget(context)
         }
@@ -272,8 +276,8 @@ object RecorderLifecycle {
 
     /** What [trigger] does after its revive (followUp): what it arms is
      *  armed here, the rest is the caller's. */
-    internal fun followUp(context: Context, trigger: Trigger, alive: Boolean, forWifi: Boolean = false): FollowUp =
-        followUp(trigger, alive, NetworkRevive.onWifi(context), forWifi).also { arm(context, it.arm) }
+    internal fun followUp(context: Context, trigger: Trigger, alive: Boolean, forWifi: Boolean = false, periodic: Boolean = false): FollowUp =
+        followUp(trigger, alive, NetworkRevive.onWifi(context), forWifi, periodic).also { arm(context, it.arm) }
 
     private fun arm(context: Context, keepers: List<Keeper>) = keepers.forEach {
         when (it) {

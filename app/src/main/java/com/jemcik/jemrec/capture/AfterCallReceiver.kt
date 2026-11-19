@@ -20,6 +20,10 @@ class AfterCallReceiver : BroadcastReceiver() {
             MissedCalls.markSeen(context)
             return
         }
+        if (intent.action == com.jemcik.jemrec.recorder.RecorderHealth.ACTION_DISMISSED) {
+            com.jemcik.jemrec.recorder.RecorderHealth.dismissed(context)
+            return
+        }
         val call = AfterCall.Call.from(intent) ?: return
         when (intent.action) {
             AfterCall.ACTION_DELETE_ASK -> AfterCall.askDelete(context, call)

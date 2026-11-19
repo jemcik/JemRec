@@ -10,20 +10,46 @@ import com.jemcik.jemrec.setup.SetupStep
 internal enum class RecorderStatus {
     /** Switched off: no call is recorded. */
     OFF,
-    /** Switched on and not yet finished starting. */
+    /** Switched on and not yet finished starting: the recorder being
+     *  rebuilt, a few seconds. */
     STARTING,
+    /** Switched on, and nothing read yet: the window just opened
+     *  (UiState.listUnread), its first look at the recorder out. Said as
+     *  that and drawn still, no mark lit, since nothing is starting and no
+     *  setting it marks has been read: the defaults said "Cannot record"
+     *  until the first reading landed, seconds on a phone with the recorder
+     *  down or a folder chosen, and then "Starting" with its animation, the
+     *  answering machine's and messengers' marks growing as the reading
+     *  landed (reviews, 2026-11-18). */
+    CHECKING,
     READY,
-    /** Switched on, and the recorder is down: Instruction says what brings
-     *  it back. */
+    /** Switched on, and no call can be recorded - the recorder down, or
+     *  Ask first unable to ask: Instruction says what brings it back. */
     CANNOT,
 }
 
 internal fun recorderStatus(state: UiState): RecorderStatus = when {
     !state.enabled -> RecorderStatus.OFF
     state.starting -> RecorderStatus.STARTING
-    state.daemonRunning -> RecorderStatus.READY
+    state.listUnread -> RecorderStatus.CHECKING
+    state.daemonRunning -> if (cannotAsk(state)) RecorderStatus.CANNOT else RecorderStatus.READY
     else -> RecorderStatus.CANNOT
 }
+
+/** In Ask first, its question cannot show, so no call is recorded, the
+ *  recorder up or not: JemRec's notifications off, or the question's own
+ *  (NotificationHealth) - or the Battery setting Restricted with exact call
+ *  tracking off, where Android refuses the wake that would put the question
+ *  up (BatteryHealth; with tracking on, Telecom's bind lets a phone call's
+ *  through). Said as "cannot record", not "ready": the header said ready
+ *  over a notice saying no call was being recorded. */
+internal fun cannotAsk(state: UiState): Boolean =
+    !state.automatic && (askFirstsNotificationsOff(state) || (state.batteryRestricted == true && !state.callTracking))
+
+/** Ask first's notifications off: all of JemRec's, or the question's. */
+internal fun askFirstsNotificationsOff(state: UiState): Boolean =
+    state.notificationsOff == com.jemcik.jemrec.calls.NotificationHealth.Off.ALL ||
+        state.notificationsOff == com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST
 
 /**
  * The settings a header marks, one mark each, shown only while they are on.
@@ -43,9 +69,14 @@ internal data class Marks(
 internal fun marks(state: UiState, answering: Boolean) = Marks(
     automatic = state.automatic,
     // The machine is the recorder's, and off with all debugging there is no
-    // recorder: set, but not answering, so not lit.
-    answering = answering && !state.debuggingOff,
-    messengers = state.voipSupported && state.voipInstalled.any { it.pkg in state.voipEnabled },
+    // recorder: set, but not answering, so not lit. Neither it nor the
+    // messengers before anything is read: the machine's settings and the
+    // apps installed come with the first reading, and their marks grew as
+    // it landed, in every state and in what a screen reader heard (reviews,
+    // 2026-11-18). The mode and auto-delete are the preferences', there from
+    // the first frame.
+    answering = answering && !state.debuggingOff && !state.listUnread,
+    messengers = !state.listUnread && state.voipSupported && state.voipInstalled.any { it.pkg in state.voipEnabled },
     autoDeleteDays = state.autoDeleteAfterDays,
 )
 
@@ -91,16 +122,20 @@ internal fun markFaceTag(mark: HeaderMark) = "markface-${mark.setting}-${if (mar
  * off the mode does not apply, so its mark goes out; the others stay - they
  * are still set.
  */
-internal fun headerMark(setting: Marked, marks: Marks, status: RecorderStatus): HeaderMark = when (setting) {
-    Marked.MODE -> HeaderMark(setting, if (marks.automatic) "AUTO" else "ASK", status != RecorderStatus.OFF)
-    Marked.ANSWERING -> HeaderMark(setting, "ANS", marks.answering)
-    Marked.MESSENGERS -> HeaderMark(setting, "MSG", marks.messengers)
-    Marked.AUTO_DELETE -> HeaderMark(
-        setting,
-        if (marks.autoDeleteDays > 0) "DEL ${ageMark(marks.autoDeleteDays)}" else "DEL",
-        marks.autoDeleteDays > 0,
-        marks.autoDeleteDays,
-    )
+internal fun headerMark(setting: Marked, marks: Marks, status: RecorderStatus): HeaderMark {
+    // Nothing read yet: no mark lit, as none has been read (CHECKING).
+    val read = status != RecorderStatus.CHECKING
+    return when (setting) {
+        Marked.MODE -> HeaderMark(setting, if (marks.automatic) "AUTO" else "ASK", read && status != RecorderStatus.OFF)
+        Marked.ANSWERING -> HeaderMark(setting, "ANS", read && marks.answering)
+        Marked.MESSENGERS -> HeaderMark(setting, "MSG", read && marks.messengers)
+        Marked.AUTO_DELETE -> HeaderMark(
+            setting,
+            if (marks.autoDeleteDays > 0) "DEL ${ageMark(marks.autoDeleteDays)}" else "DEL",
+            read && marks.autoDeleteDays > 0,
+            marks.autoDeleteDays,
+        )
+    }
 }
 
 /** Every setting's mark, lit or not, in order: Multitrack's LEDs. */
@@ -115,7 +150,7 @@ internal fun litMarks(marks: Marks, status: RecorderStatus): List<HeaderMark> =
 /** What the header asks of the user while nothing can be recorded; each
  *  look words it its own way. [tap], where the words are a tap: what
  *  TalkBack says the tap does (instructionTap). */
-internal enum class Instruction(val tap: String? = null) {
+internal enum class Instruction(val tap: String? = null, val cannotAsk: Boolean = false) {
     /** Recording is off: the record control turns it on. */
     SWITCH_ON,
     /** Off with all debugging (When JemRec is off): the record control turns
@@ -132,6 +167,15 @@ internal enum class Instruction(val tap: String? = null) {
     /** On Wi-Fi, and the recorder did not come back for a reason no revive
      *  has named yet: a tap tries again. */
     START_AGAIN("Start the recorder again"),
+    /** Ask first cannot ask (cannotAsk): a tap turns the notifications on
+     *  as home's notice does - Android's question first where the
+     *  permission is what is missing, else its settings for JemRec or for
+     *  the question (rememberTurnOnNotifications). */
+    TURN_ON_NOTIFICATIONS("Turn on notifications", cannotAsk = true),
+    /** Ask first cannot ask with the Battery setting Restricted and exact
+     *  call tracking off (cannotAsk): a tap opens App info, where it is
+     *  lifted (BatteryHealth). */
+    ALLOW_BACKGROUND("Open App info", cannotAsk = true),
 }
 
 /**
@@ -144,6 +188,9 @@ internal enum class Instruction(val tap: String? = null) {
 internal fun instruction(state: UiState): Instruction? = when (recorderStatus(state)) {
     RecorderStatus.OFF -> if (onNeedsWifi(state)) Instruction.SWITCH_ON_OVER_WIFI else Instruction.SWITCH_ON
     RecorderStatus.CANNOT -> when {
+        // The recorder up, and still no call recorded: Ask first cannot ask -
+        // its notifications off, or the Battery setting in the way.
+        state.daemonRunning -> if (askFirstsNotificationsOff(state)) Instruction.TURN_ON_NOTIFICATIONS else Instruction.ALLOW_BACKGROUND
         !state.onWifi -> Instruction.JOIN_WIFI
         state.networkNotAllowed -> Instruction.ALLOW_WIFI
         state.pairingRefused -> Instruction.PAIR_AGAIN
@@ -153,11 +200,13 @@ internal fun instruction(state: UiState): Instruction? = when (recorderStatus(st
 }
 
 /** Off with all debugging, and nothing but Wi-Fi to come back on over: adbd
- *  is not on Start without Wi-Fi's port. */
-internal fun onNeedsWifi(state: UiState): Boolean = state.debuggingOff && !state.portSet
+ *  is not on Start without Wi-Fi's port. Not said before anything is read:
+ *  the port is a reading's, and its default said "turn on over Wi-Fi" for a
+ *  port that was open, until the reading landed (review, 2026-11-18). */
+internal fun onNeedsWifi(state: UiState): Boolean = state.debuggingOff && !state.portSet && !state.listUnread
 
 /**
- * Whether home gives way to setup's pairing step (MainViewModel watches for
+ * Whether home gives way to setup's pairing step (RecorderAndSetup.watchPairing watches for
  * it): set up, on home, the recorder down on Wi-Fi, and Wireless debugging
  * turning JemRec away twice in a row - its pairing deleted, likeliest. Only
  * pairing again brings the recorder back, and a line in the header was a
@@ -165,7 +214,7 @@ internal fun onNeedsWifi(state: UiState): Boolean = state.debuggingOff && !state
  * is left alone: it happens once home shows again.
  */
 internal fun pairingLostOnHome(state: UiState): Boolean =
-    state.step == SetupStep.READY && state.screen == Screen.HOME &&
+    state.step == SetupStep.READY && state.screen == Screen.HOME && !state.daemonRunning &&
         recorderStatus(state) == RecorderStatus.CANNOT && state.onWifi && state.pairingRefused
 
 /**
@@ -183,11 +232,15 @@ internal fun headerSpeech(state: UiState, marks: Marks): String {
             else -> "Off. Calls are not recorded."
         }
         RecorderStatus.STARTING -> "Starting."
+        // Nothing read: nothing said of the settings either.
+        RecorderStatus.CHECKING -> return "Checking."
         RecorderStatus.READY -> if (marks.automatic) "Ready to record. Records every call." else "Ready to record. Asks before each call."
         RecorderStatus.CANNOT -> when (instruction(state)) {
             Instruction.ALLOW_WIFI -> "Cannot record. Android has not allowed this Wi-Fi."
             Instruction.PAIR_AGAIN -> "Cannot record. Wireless debugging turns JemRec away; pair again."
             Instruction.START_AGAIN -> "Cannot record. The recorder did not start; start it again."
+            Instruction.TURN_ON_NOTIFICATIONS -> "Cannot record. Ask first asks in a notification, and it is off."
+            Instruction.ALLOW_BACKGROUND -> "Cannot record. With the battery use Restricted, Ask first cannot ask."
             else -> "Cannot record. Join any Wi-Fi; it resumes on its own."
         }
     }

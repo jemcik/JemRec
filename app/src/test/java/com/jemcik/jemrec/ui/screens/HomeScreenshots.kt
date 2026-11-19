@@ -1,7 +1,11 @@
 package com.jemcik.jemrec.ui.screens
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import com.jemcik.jemrec.recordings.Waveforms
 import com.jemcik.jemrec.ui.AnswerUi
 import com.jemcik.jemrec.ui.AppScaffold
@@ -358,6 +362,118 @@ class HomeScreenshots : ScreenTest() {
         home(Fixtures.ready().copy(offerCallLog = true, canReadCallLog = false, canReadContacts = false))
         compose.onNodeWithText("Show who called").assertIsDisplayed()
         snap("home-call-log-offer")
+    }
+
+    /** Notifications refused after setup: home says what that costs, and
+     *  the recordings stay (NotificationHealth). Put off with Not now while
+     *  calls are recorded anyway. */
+    @Test fun notificationsOff() {
+        home(Fixtures.ready().copy(notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL))
+        compose.onNodeWithText("Notifications are off").assertIsDisplayed()
+        compose.onNodeWithText("Not now").assertIsDisplayed()
+        snap("home-notifications-off")
+    }
+
+    /** In Ask first, with its question off, no call is recorded: no Not now. */
+    @Test fun askFirstCannotAsk() {
+        home(
+            Fixtures.ready().copy(
+                automatic = false,
+                notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST,
+            ),
+        )
+        compose.onNodeWithText("Ask first cannot ask").assertIsDisplayed()
+        compose.onNodeWithText("Not now").assertDoesNotExist()
+        // The header says so too, with its way back.
+        compose.onNodeWithText("Tap to turn on notifications").assertIsDisplayed()
+        snap("home-ask-first-cannot-ask")
+    }
+
+    /** The same in the other two looks: their capitals on one line. */
+    @Test fun askFirstCannotAskInDeck() {
+        val state = Fixtures.ready().copy(automatic = false, notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST)
+        home(state, look = deck)
+        // The header is one sentence to TalkBack (headerSpeech), its words a picture.
+        compose.onNodeWithContentDescription("Cannot record. Ask first asks in a notification", substring = true).assertIsDisplayed()
+        snap("deck-ask-first-cannot-ask")
+    }
+
+    @Test fun askFirstCannotAskInMultitrack() {
+        val state = Fixtures.ready().copy(automatic = false, notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST)
+        home(state, look = multitrack)
+        compose.onNodeWithContentDescription("Cannot record. Ask first asks in a notification", substring = true).assertIsDisplayed()
+        snap("multitrack-ask-first-cannot-ask")
+    }
+
+    /** Selecting at 200% text: the bar's title on one line, cut with an
+     *  ellipsis rather than wrapped out of the bar. */
+    @Test fun selectingAtLargeText() {
+        val recordings = Fixtures.recordings()
+        home(Fixtures.ready().copy(recordings = recordings, selecting = true, selected = setOf(recordings.first().name)), fontScale = 2f)
+        snap("home-selecting-large-text")
+    }
+
+    /** The folder chosen lost, with Honor's file names: where calls go now,
+     *  and that the Phone app looks only in its own folder (FolderAccess). */
+    @Test fun folderLost() {
+        home(
+            Fixtures.ready().copy(
+                folder = "Sounds/CallRecord", usingDefaultFolder = false, folderLost = true,
+                fileNames = com.jemcik.jemrec.recordings.FileNames.Format.HONOR,
+            ),
+        )
+        compose.onNodeWithText("Your recordings folder cannot be reached").assertIsDisplayed()
+        compose.onNodeWithText("Honor's Phone app plays only", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Use the standard folder").assertIsDisplayed()
+        snap("home-folder-lost")
+    }
+
+    /** While the screen is busy, Use the standard folder is greyed - it is
+     *  dropped then (the busy table), as the Settings dialog's Use default
+     *  is - and Choose again is not: a folder picked is taken at once. */
+    @Test fun folderLostWhileBusyGreysOnlyWhatWouldBeDropped() {
+        home(Fixtures.ready().copy(folder = "Sounds/CallRecord", usingDefaultFolder = false, folderLost = true, busy = true))
+        compose.onNodeWithText("Use the standard folder").assertIsNotEnabled()
+        compose.onNodeWithText("Choose again").assertIsEnabled()
+    }
+
+    /** The same at 200% text: the two ways on, one under the other where
+     *  they do not fit beside each other, each whole. */
+    @Test fun folderLostAtLargeText() {
+        home(
+            Fixtures.ready().copy(folder = "Sounds/CallRecord", usingDefaultFolder = false, folderLost = true),
+            fontScale = 2f,
+        )
+        compose.onNodeWithText("Use the standard folder").performScrollTo().assertIsDisplayed()
+        snap("home-folder-lost-large-text")
+    }
+
+    /** The Battery setting Restricted: what it holds back, App info, and
+     *  Not now in Automatic. */
+    @Test fun batteryRestricted() {
+        home(Fixtures.ready().copy(batteryNotice = true))
+        compose.onNodeWithText("Battery use is Restricted").assertIsDisplayed()
+        compose.onNodeWithText("Open App info").assertIsDisplayed()
+        compose.onNodeWithText("Not now").assertIsDisplayed()
+        snap("home-battery-restricted")
+    }
+
+    /** In Ask first a call may go unasked: no Not now. With exact call
+     *  tracking off no call can be asked about, and the header says it
+     *  cannot record, with the way to App info. */
+    @Test fun batteryRestrictedInAskFirstCannotBePutOff() {
+        home(Fixtures.ready().copy(automatic = false, batteryNotice = true, batteryRestricted = true, callTracking = false))
+        compose.onNodeWithText("none is recorded", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Not now").assertDoesNotExist()
+        compose.onNodeWithText("Cannot record").assertIsDisplayed()
+        compose.onNodeWithText("Battery Restricted · tap to allow").assertIsDisplayed()
+        snap("home-ask-first-battery-restricted")
+    }
+
+    @Test fun notificationsOffInAskFirstCannotBePutOff() {
+        home(Fixtures.ready().copy(automatic = false, notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL))
+        compose.onNodeWithText("no call is recorded", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Not now").assertDoesNotExist()
     }
 
     @Test fun callsWithoutPermission() {

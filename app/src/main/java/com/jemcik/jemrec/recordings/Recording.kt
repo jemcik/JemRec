@@ -65,11 +65,32 @@ data class Recording(
      *  that came in during another's recording (call waiting) shares it, and
      *  its row read the first call's time. */
     val shownAt: Long? = null,
+    /** When the recording began, in UTC, as the saver noted it
+     *  (RecordingMarks.Starts): null where nothing was noted - saved before
+     *  1.2, or noted and lost with no tag to read back. */
+    val startUtc: Long? = null,
+    /** A part joined mid-call - the recorder started again during it: its
+     *  call's own start in UTC, noted with [startUtc] and in its tags; what
+     *  matches it to its call, its own start minutes in (CallMatch). */
+    val callAt: Long? = null,
+    /** One of a call's recordings, not the whole call: see
+     *  RecordingMarks.Parts. */
+    val part: Boolean = false,
 ) {
     /** When the call was, read from the name in any of its formats (see
      *  FileNames.parse); null if the name is not one of ours. Parsed once per
-     *  instance: the list groups and sorts every row by it. */
+     *  instance: the list groups and sorts every row by it. The wall clock
+     *  where it was recorded, read in the zone the phone is in now: right to
+     *  show, hours off to match by after travel ([matchedStart]). */
     val startedAtMillis: Long? get() = parsedName?.startedAt
+
+    /** When the recording began, to match it to a call by: the start the
+     *  saver noted, which no zone moves, else the name's. Matched by the
+     *  name's alone, after a change of time zone every older recording was
+     *  matched hours off its call - none on the Calls tab, a label from
+     *  another call - and the hour DST repeats read one way (review round
+     *  13). */
+    val matchedStart: Long? get() = startUtc ?: startedAtMillis
 
     /** Which of the three places it lives in. */
     internal val location: RecordingLocation get() = RecordingLocation.of(uri, filePath)

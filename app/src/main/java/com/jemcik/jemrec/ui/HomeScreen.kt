@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -41,6 +40,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -48,8 +48,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.jemcik.jemrec.calls.NotificationHealth
+import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.recordings.Recording
+import com.jemcik.jemrec.recordings.RecordingStore
 import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.ui.theme.JemRecColors
 import kotlinx.coroutines.flow.filterNotNull
@@ -73,6 +76,7 @@ fun HomeScreen(
     askForCallLog: () -> Unit,
     listState: LazyListState,
     modifier: Modifier = Modifier,
+    pickFolder: (android.net.Uri?) -> Unit = {},
     narrowingAside: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -120,6 +124,7 @@ fun HomeScreen(
     }
 
     val audioPermission = rememberPermissionRequest { vm.onAudioAccessResult() }
+    val turnOnNotifications = LocalTurnOnNotifications.current
 
     // Filtered, cut and grouped once per change of what they depend on - the
     // grouping also per day, which the headings read - not on every
@@ -144,7 +149,11 @@ fun HomeScreen(
     // row in view" read as row 0 of 0 - near the end - so every time the tab
     // was shown anew a page came, and select-all then took rows nobody had
     // scrolled to.
-    val nearEnd by remember {
+    // Keyed on the list's state: until the list is read it is a throwaway
+    // one (MainScreen), and a reading kept from it said "near the end" of
+    // the empty list for ever after - a page more at every turn, till the
+    // whole list was drawn and select-all took it all (review, 2026-11-18).
+    val nearEnd by remember(listState) {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf false
             last >= listState.layoutInfo.totalItemsCount - 3
@@ -153,7 +162,7 @@ fun HomeScreen(
     LaunchedEffect(nearEnd, filtered.size, state.visibleCount) {
         if (nearEnd && filtered.size > state.visibleCount) vm.showMore()
     }
-    val scrolled by remember { derivedStateOf { listState.canScrollBackward } }
+    val scrolled by remember(listState) { derivedStateOf { listState.canScrollBackward } }
 
     // A notification's Play or Share: its row brought into view, below the
     // pinned header - from a list left scrolled down, the recording played
@@ -162,8 +171,21 @@ fun HomeScreen(
     // over, the row not drawn - or it waited, and a later change to the list
     // jumped to it while the user was elsewhere.
     val offer = state.offerCallLog && state.recordings.isNotEmpty()
-    val tip = !state.selectHintSeen && !state.selecting
-    val placeOf by rememberUpdatedState { name: String -> placeInList(name, offer, tip, days) }
+    // Not over a list not read yet: it showed over nothing, at every cold
+    // open, before "No recordings yet." (review, 2026-11-18).
+    val tip = !state.selectHintSeen && !state.selecting && !state.listUnread
+    // Only while JemRec is on, as its notification (BatteryHealth.
+    // tellIfRestricted): off, nothing is held back that it records, and in
+    // Ask first the card - which cannot be put away there - told an Off
+    // JemRec it was missing calls (review, 2026-11-18).
+    val battery = state.batteryNotice && state.enabled
+    // The same for notifications off: its words say what calls it costs, and
+    // under Off it told a JemRec that records nothing "JemRec still records
+    // your calls" - or, in Ask first, that no call is recorded, not to be put
+    // away (review, 2026-11-18).
+    val notificationsOff = state.notificationsOff.takeIf { state.enabled }
+    val cards = listOf(notificationsOff != null, battery, state.folderLost, offer).count { it }
+    val placeOf by rememberUpdatedState { name: String -> placeInList(name, cards, tip, days) }
     val reveal = state.reveal
     LaunchedEffect(reveal) {
         val name = reveal ?: return@LaunchedEffect
@@ -214,40 +236,56 @@ fun HomeScreen(
         // below everything and never pins.
         contentPadding = PaddingValues(bottom = 16.dp),
     ) {
-        // Offered once, above the thing it would improve. It scrolls away (not
-        // pinned): it is a one-time suggestion, not part of the list's chrome.
+        // The notices, then the call-log offer: each scrolls away with the
+        // list (not pinned), as none is part of its chrome. What
+        // notifications are off, and what that costs: above everything, as
+        // it can mean calls going unrecorded (NotificationHealth).
+        val off = notificationsOff
+        if (off != null) {
+            item {
+                NotificationsOffCard(
+                    off,
+                    askFirst = !state.automatic,
+                    onTurnOn = turnOnNotifications,
+                    onNotNow = { vm.dismissNotificationsOff(off) },
+                )
+            }
+        }
+        // The Battery setting Restricted: what it holds back, and where to
+        // lift it (BatteryHealth).
+        if (battery) {
+            item {
+                BatteryRestrictedCard(
+                    askFirst = !state.automatic,
+                    trackingOff = !state.callTracking,
+                    onOpen = vm::openBatterySettings,
+                    onNotNow = vm::dismissBatteryNotice,
+                )
+            }
+        }
+        // The folder chosen lost: where calls go now, and the way back.
+        if (state.folderLost) {
+            item {
+                FolderLostCard(state, choose = { pickFolder(vm.folderPickerStart()) }, useStandard = vm::useDefaultFolder)
+            }
+        }
+        // Offered once, above the thing it would improve: a one-time
+        // suggestion.
         if (offer) {
             item {
-                Card(Modifier.padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 16.dp)) {
-                    Column(
-                        Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text("Show who called", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "JemRec can label each recording with the contact's name " +
-                                "and photo, or the number if they are not in your " +
-                                "contacts. That means permission to read your call log, " +
-                                "which holds the name, and your contacts, which hold " +
-                                "the photo. The call log also lets JemRec tell you if a " +
-                                "call ever goes by unrecorded.\n\nNothing else changes, " +
-                                "and you can say no to either.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(
-                                onClick = {
-                                    haptics.tap()
-                                    askForCallLog()
-                                },
-                            ) { Text("Allow") }
-                            TextButton(
-                                onClick = { haptics.tap(); vm.dismissCallLogOffer() },
-                            ) { Text("Not now") }
-                        }
-                    }
-                }
+                NoticeCard(
+                    title = "Show who called",
+                    text = "JemRec can label each recording with the contact's name " +
+                        "and photo, or the number if they are not in your " +
+                        "contacts. That means permission to read your call log, " +
+                        "which holds the name, and your contacts, which hold " +
+                        "the photo. The call log also lets JemRec tell you if a " +
+                        "call ever goes by unrecorded.\n\nNothing else changes, " +
+                        "and you can say no to either.",
+                    action = "Allow",
+                    onAction = askForCallLog,
+                    onNotNow = vm::dismissCallLogOffer,
+                )
             }
         }
 
@@ -314,6 +352,11 @@ fun HomeScreen(
                             else "${state.selected.size} selected",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
+                            // One line in the bar's fixed height, as an app
+                            // bar's title is: at 200% text it wrapped and
+                            // was cut off (Android 14's guide asks for 200%).
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
                         // Tri-state rather than a guessed "select all" glyph:
@@ -331,11 +374,17 @@ fun HomeScreen(
                                 haptics.toggle(selectingAll)
                                 if (selectingAll) vm.selectAllVisible() else vm.deselectAll()
                             },
+                            // Not before the list is read: tapped over the empty
+                            // list, it let a selection brought back after the
+                            // process ended go (review, 2026-11-18).
+                            enabled = !state.listUnread,
+                            // Its name, which a checkbox alone does not say.
+                            modifier = Modifier.semantics { contentDescription = "Select all" },
                         )
                         // Hidden with nothing picked. A delete button that
                         // deletes nothing is a question mark on a toolbar whose
                         // whole job is to be unambiguous.
-                        if (state.selected.isNotEmpty()) {
+                        if (state.selected.isNotEmpty() && !state.listUnread) {
                             // Keep marks them all, or - when every one is
                             // kept already - takes the mark off them all. The
                             // icon says which: the one tapping will leave.
@@ -368,7 +417,7 @@ fun HomeScreen(
             }
         }
 
-        if (state.recordings.isEmpty()) {
+        if (state.recordings.isEmpty() && !state.listUnread) {
             item {
                 // AN EMPTY LIST SAYS IT IS EMPTY. IT DOES NOT EXPLAIN THE APP.
                 //
@@ -429,7 +478,7 @@ fun HomeScreen(
                     }
                 }
             }
-        } else if (shown.isEmpty()) {
+        } else if (shown.isEmpty() && !state.listUnread) {
             item {
                 NoMatches(
                     if (narrowing.messages) {
@@ -455,7 +504,7 @@ fun HomeScreen(
             // part that cannot be seen, in a card that is plainly a tip and
             // plainly dismissable. The Calls tab has none: its rows show the
             // play mark too, and selection does not exist there.
-            if (!state.selectHintSeen && !state.selecting) {
+            if (tip) {
                 item(key = "tip", contentType = "tip") {
                     SelectTip(onDismiss = { haptics.tap(); vm.dismissSelectHint() })
                 }
@@ -496,11 +545,12 @@ private class Place(val target: Int, val items: Int, val header: Int)
 /**
  * Where [name]'s row is in HomeScreen's list - or, the first of its day, its
  * day's heading, so both show - counted as the LazyColumn adds its items:
- * the call-log [offer], the header, the [tip], then each day's heading and
+ * the [cards] above (the notices, the call-log offer), the
+ * header, the [tip], then each day's heading and
  * rows. Null if the row is not drawn.
  */
-private fun placeInList(name: String, offer: Boolean, tip: Boolean, days: List<Pair<Day, List<Recording>>>): Place? {
-    val header = if (offer) 1 else 0
+private fun placeInList(name: String, cards: Int, tip: Boolean, days: List<Pair<Day, List<Recording>>>): Place? {
+    val header = cards
     var at = header + 1 + (if (tip) 1 else 0)
     var place: Int? = null
     for ((_, rows) in days) {
@@ -509,4 +559,85 @@ private fun placeInList(name: String, offer: Boolean, tip: Boolean, days: List<P
         at += 1 + rows.size
     }
     return place?.let { Place(it, at, header) }
+}
+
+/** What is off, what that costs, and the way to turn it back on - or put the
+ *  notice off, where that leaves no call unrecorded (NotificationHealth). */
+@Composable
+private fun NotificationsOffCard(off: NotificationHealth.Off, askFirst: Boolean, onTurnOn: () -> Unit, onNotNow: () -> Unit) {
+    val (title, text) = when (off) {
+        NotificationHealth.Off.ALL -> "Notifications are off" to if (askFirst) {
+            "Ask first asks whether to record each call in a notification, so while " +
+                "JemRec's notifications are off, no call is recorded. Nor can it tell " +
+                "you when something stops it recording."
+        } else {
+            "JemRec still records your calls, but cannot tell you anything: not that a " +
+                "call was recorded, and not when something stops it recording."
+        }
+        NotificationHealth.Off.ASK_FIRST -> "Ask first cannot ask" to
+            "Its question, \"Record this call?\", comes as a notification, and that " +
+            "notification is off in Android's settings - so no call is being recorded."
+        NotificationHealth.Off.ASK_FIRST_QUIET -> "Ask first's question will not pop up" to
+            "\"Record this call?\" is set not to pop up in Android's settings, so during " +
+            "a call it waits in the notification shade, easy to miss - and a call it " +
+            "is not answered for is not recorded."
+        NotificationHealth.Off.ASK_FIRST_BRIEF -> "Ask first's question will not stay up" to
+            "JemRec's full-screen notifications are off in Android's settings, so " +
+            "during a call \"Record this call?\" stays on screen for a minute rather " +
+            "than until you answer it, then waits in the notification shade, easy " +
+            "to miss."
+        NotificationHealth.Off.PROBLEMS -> "Problem alerts are off" to
+            "If a call goes unrecorded, or something stops JemRec recording, it " +
+            "cannot tell you: its \"Recording problems\" notifications are off in " +
+            "Android's settings."
+    }
+    NoticeCard(
+        title = title,
+        text = text,
+        action = "Turn on",
+        onAction = onTurnOn,
+        onNotNow = if (NotificationHealth.dismissable(off, askFirst)) onNotNow else null,
+    )
+}
+
+/** JemRec's Battery setting is Restricted (BatteryHealth): what Android
+ *  holds back for it, and the way to App info, where it is changed - or put
+ *  the notice off, but not in Ask first, where calls go unasked and so
+ *  unrecorded (BatteryHealth.dismissable). Shown only while JemRec is on. */
+@Composable
+private fun BatteryRestrictedCard(askFirst: Boolean, trackingOff: Boolean, onOpen: () -> Unit, onNotNow: () -> Unit) {
+    NoticeCard(
+        title = com.jemcik.jemrec.system.BatteryHealth.TITLE,
+        // App info names its page "App battery usage" (Android 17 AVD, whose
+        // page has "Allow background usage"), "Battery" before.
+        text = com.jemcik.jemrec.system.BatteryHealth.words(askFirst, trackingOff),
+        action = "Open App info",
+        onAction = onOpen,
+        onNotNow = if (com.jemcik.jemrec.system.BatteryHealth.dismissable(askFirst)) onNotNow else null,
+    )
+}
+
+/** The folder chosen can no longer be reached (FolderAccess): where new
+ *  calls go, what is missing from the list, and the two ways on. */
+@Composable
+private fun FolderLostCard(state: UiState, choose: () -> Unit, useStandard: () -> Unit) {
+    val honor = if (state.fileNames == FileNames.Format.HONOR) {
+        " Honor's Phone app plays only recordings in Sounds/CallRecord."
+    } else {
+        ""
+    }
+    NoticeCard(
+        title = "Your recordings folder cannot be reached",
+        text = "JemRec can no longer reach ${RecordingStore.chosenWords(state.folder)} - " +
+            "${com.jemcik.jemrec.recordings.FolderAccess.WHY_LOST}. New recordings go to the standard " +
+            "Recordings folder until you choose it again, and the ones in it do not show here.$honor",
+        action = "Choose again",
+        onAction = choose,
+        onNotNow = useStandard,
+        notNow = "Use the standard folder",
+        // As the Settings folder dialog's Use default: dropped while the screen
+        // is busy, so greyed. Choose again stays live: the folder picked is
+        // taken at once (FOLDER_CHOSEN bypasses the busy screen).
+        notNowEnabled = !state.busy,
+    )
 }

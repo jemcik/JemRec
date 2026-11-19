@@ -33,7 +33,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,6 +69,7 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
     val (title, titleColor) = when (status) {
         RecorderStatus.READY -> "Ready to record" to c.ready
         RecorderStatus.STARTING -> "Starting..." to c.idle
+        RecorderStatus.CHECKING -> "Checking..." to c.idle
         RecorderStatus.OFF -> "Off" to c.idle
         RecorderStatus.CANNOT -> "Cannot record" to c.alarm
     }
@@ -95,7 +98,12 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
             // words are left out of it, as the sentence says them; the
             // instruction's tap stays a control of its own.
             Column(
-                Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = headerSpeech(state, marks) },
+                Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = headerSpeech(state, marks)
+                    // Said when it changes - Checking to Ready, say - as
+                    // Compose's semantics guide asks of content that changes
+                    // on its own (liveRegion, Polite; review, 2026-11-18).
+                    liveRegion = LiveRegionMode.Polite
+                },
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 // Each line as tall as the tallest thing it shows: at larger
@@ -108,7 +116,10 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
                         for (each in Instruction.entries) MemoSmall(memoWords(each), c.idle)
                     },
                 ) {
-                    if (instruction == null) {
+                    if (status == RecorderStatus.CHECKING) {
+                        // Nothing read yet: no mark, as Deck's and
+                        // Multitrack's have none lit (headerMark).
+                    } else if (instruction == null) {
                         MemoMarks(c, marks, Modifier.clearAndSetSemantics { })
                     } else if (instruction.tap != null) {
                         MemoSmall(
@@ -128,8 +139,7 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
     }
 }
 
-/** The button: a white disc with the record mark on it, an empty ring when
- *  recording is off. */
+/** Memo's words for what the header asks of the user. */
 private fun memoWords(instruction: Instruction): String = when (instruction) {
     Instruction.SWITCH_ON -> "Tap the button to record calls"
     Instruction.SWITCH_ON_OVER_WIFI -> "Debugging off · turn on over Wi-Fi"
@@ -139,6 +149,8 @@ private fun memoWords(instruction: Instruction): String = when (instruction) {
     Instruction.JOIN_WIFI -> "Join any Wi-Fi to resume"
     Instruction.PAIR_AGAIN -> "Tap to pair again"
     Instruction.START_AGAIN -> "Tap to start it again"
+    Instruction.TURN_ON_NOTIFICATIONS -> "Tap to turn on notifications"
+    Instruction.ALLOW_BACKGROUND -> "Battery Restricted · tap to allow"
 }
 
 /** The state: shrunk to fit one line, unless not [fitted] - the full size,
@@ -242,6 +254,8 @@ internal fun markGlyphTag(mark: HeaderMark) = "${markFaceTag(mark)}-glyph"
  *  header's size there - they are print and LEDs, not icons. */
 internal const val MEMO_MARK_IN_SETTINGS = 1.5f
 
+/** The button: a white disc with the record mark on it, an empty ring when
+ *  recording is off. */
 @Composable
 private fun MemoButton(state: UiState, vm: MainViewModel, c: MemoColors) {
     Box(

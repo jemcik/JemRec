@@ -8,6 +8,7 @@ import com.google.common.util.concurrent.Futures
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.Greeting
 import com.jemcik.jemrec.capture.FakeRecorder
+import com.jemcik.jemrec.playback.SoundPosition
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Waveforms
@@ -289,6 +290,50 @@ class PlaybackAndShareTest : ScreenTest() {
         assertEquals(0, s.positionMs)
         assertEquals(0, s.durationMs)
         assertNull(s.waveform)
+    }
+
+    /** The playhead reads where the sound is from the player itself, and
+     *  only for the recording loaded (SoundPosition). */
+    @Test fun thePlayheadReadsTheSoundOfTheRecordingLoaded() {
+        val vm = viewModel(
+            UiState(recordings = listOf(olivia), playingName = olivia.name, playing = true, positionMs = 1_000, durationMs = 60_000),
+        )
+        SoundPosition.source = { name -> if (name == olivia.name) 7_777 else null }
+        try {
+            assertEquals(7_777, vm.positionNow())
+            vm.stopPlaying()
+            assertNull(vm.positionNow())
+        } finally {
+            SoundPosition.source = null
+        }
+    }
+
+    /** Playing, the time shown is where the sound is, from the player
+     *  itself; paused, the controller's - where the player paused, and a
+     *  seek asked for before the player has it (SoundPosition). */
+    @Test fun theTimeShownIsTheSoundsWhilePlayingAndTheControllersWhilePaused() {
+        val session = org.mockito.Mockito.mock(androidx.media3.session.MediaController::class.java)
+        org.mockito.Mockito.`when`(session.audioAttributes).thenReturn(androidx.media3.common.AudioAttributes.DEFAULT)
+        org.mockito.Mockito.`when`(session.currentMediaItem)
+            .thenReturn(androidx.media3.common.MediaItem.Builder().setMediaId(olivia.name).build())
+        org.mockito.Mockito.`when`(session.currentPosition).thenReturn(5_000L)
+        org.mockito.Mockito.`when`(session.duration).thenReturn(60_000L)
+        org.mockito.Mockito.`when`(session.isPlaying).thenReturn(true)
+        SoundPosition.source = { name -> if (name == olivia.name) 7_777 else null }
+        try {
+            val vm = viewModel(UiState(recordings = listOf(olivia)), connectSession = { Futures.immediateFuture(session) })
+            vm.play(olivia)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(7_777, vm.state.value.positionMs)
+            // Paused, the session says so.
+            val events = org.mockito.ArgumentCaptor.forClass(androidx.media3.common.Player.Listener::class.java)
+            org.mockito.Mockito.verify(session).addListener(events.capture())
+            org.mockito.Mockito.`when`(session.isPlaying).thenReturn(false)
+            events.value.onEvents(session, androidx.media3.common.Player.Events(androidx.media3.common.FlagSet.Builder().build()))
+            assertEquals(5_000, vm.state.value.positionMs)
+        } finally {
+            SoundPosition.source = null
+        }
     }
 
     /** Share's Original: at once, the file as it is, to Android's chooser,

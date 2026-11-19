@@ -28,33 +28,43 @@ import com.jemcik.jemrec.ui.theme.Looks
  * IT IS MOSTLY NOT SEEN, AND THAT IS THE POINT
  *
  * This activity exists to be attached to the notification as a full-screen
- * intent, and a full-screen intent only actually opens full screen when the
- * device is locked. That case is real - a phone held to an ear has a dark,
- * locked screen, and there is no shade to pull down - so it needs an answer.
+ * intent, and SystemUI opens it while the phone is asleep or its lock
+ * screen itself is in front; anything else that can be a heads-up is one
+ * instead - and where none can show (Do Not Disturb set not to pop
+ * notifications, say) it may open over a locked call's screen
+ * (FSI_KEYGUARD_OCCLUDED; review round 11, not measured)
+ * (AOSP SystemUI, FullScreenIntentDecisionProvider: FSI_DEVICE_NOT_INTERACTIVE
+ * and FSI_KEYGUARD_SHOWING come before NO_FSI_EXPECTED_TO_HUN). During a call
+ * the call's own screen is in front, over the lock screen too, and keeps the
+ * phone awake: measured on the Android 17 emulator (2026-11-18), the question
+ * came as a heads-up and this activity never opened - unlocked, locked before
+ * the call rang, and with the proximity sensor near (wakefulness stayed
+ * Awake; whether a phone's screen goes dark at the ear is the proximity
+ * sensor's, and SystemUI asks only whether the phone is awake). It opens for
+ * a question posted while the phone sleeps - not seen in a call yet.
  *
- * The rest of the time the system demotes the full-screen intent to a banner,
- * and demoting is exactly what makes the banner STICKY: SystemUI treats a
- * heads-up backed by a full-screen intent as important enough to leave up for
- * about a minute instead of the five seconds an ordinary one gets. That is the
- * only supported way to keep the prompt on screen longer. There is no API for
- * the heads-up timeout; it belongs to SystemUI, not to the app.
- *
- * So the activity earns its place twice: it answers the locked-screen case, and
- * its mere existence is what buys the longer banner everywhere else.
+ * What it buys everywhere else is how long the banner stays. A plain heads-up
+ * goes after five seconds (SystemUI's heads_up_notification_decay); one backed
+ * by a full-screen intent stays until it is answered, or, with full-screen
+ * intents turned off for JemRec (Android 14 on: Settings, Special app access),
+ * a minute (sticky_heads_up_notification_time). Measured in the same calls:
+ * up all 100 s watched allowed, gone between 57 and 60 s turned off. That is
+ * the only supported way to keep the prompt on screen longer. There is no API
+ * for the heads-up timeout; it belongs to SystemUI, not to the app.
  */
 class RecordPromptActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Shows over the lock screen: a locked phone has no shade to pull down.
-        //
-        // It deliberately does NOT turn the screen on. During a call the phone
-        // is often against a face with the proximity sensor holding the screen
-        // dark, and waking it there puts two buttons that decide whether a
-        // private call is recorded directly under someone's cheek. The
-        // vibration already says something is waiting, and the prompt is still
-        // there when they look.
+        // Over the lock screen: SystemUI opens this while the phone sleeps or
+        // its lock screen is in front (the class's KDoc), and it
+        // wakes the phone for it itself (StatusBarNotificationActivityStarter,
+        // wakeUpForFullScreenIntent) - so it does not ask to turn the screen
+        // on (setTurnScreenOn) as well. In the calls measured it was not opened:
+        // the call's own screen is in front, and the question is a heads-up
+        // (measured on the Android 17 emulator, 2026-11-18) - unless no
+        // heads-up can show, when it may open over it (the class's KDoc).
         setShowWhenLocked(true)
 
         val incoming = intent?.getBooleanExtra(CallMonitorService.EXTRA_INCOMING, false) == true

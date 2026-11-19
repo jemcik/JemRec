@@ -143,4 +143,20 @@ class PacketClockTest {
         val placed = slots(stamps, PacketClock(start, offset)).map { slot -> segments.indexOfFirst { slot in it.second } }
         assertEquals(counted, placed)
     }
+
+    /** A message's cut, reckoned from the first packet as the recorder
+     *  reckoned the message's start: counted, but a gap in the capture -
+     *  1.1 s, an audio server's restart - puts what follows that much later,
+     *  where counting put the cut into the caller's first words (review,
+     *  2026-11-18). */
+    @Test fun fromTheFirstPacketAGapIsKept() {
+        val clock = PacketClock(t, null, fromFirst = true)
+        val first = 5_000_000_000L
+        val before = (0 until 10).map { first + it * 20_000L }
+        val after = (0 until 5).map { first + 10 * 20_000L + 1_100_000L + it * 20_000L }
+        val slots = (before + after).map(clock::next)
+        assertEquals((0L until 10L).toList(), slots.take(10))
+        assertEquals(10L + 55L, slots[10])
+        assertEquals(1, clock.gaps)
+    }
 }

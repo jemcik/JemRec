@@ -56,7 +56,7 @@ public class WireTest {
     /** Each example as Wire builds it, keyed "command example". */
     private static Map<String, Supplier<String>> built() {
         Map<String, Supplier<String>> b = new HashMap<>();
-        b.put("P PONG 2 1a2b3c4d", () -> Wire.pong("1a2b3c4d"));
+        b.put("P PONG 2 1a2b3c4d fetch-length list-end", () -> Wire.pong("1a2b3c4d"));
         b.put("Q BYE", () -> Wire.BYE);
         b.put("Q BUSY", () -> Wire.BUSY);
         b.put("O OFF NOW", () -> Wire.OFF_NOW);
@@ -68,6 +68,7 @@ public class WireTest {
         b.put("B LISTENER failed", () -> Wire.listener(false));
         b.put("J PAIRING ok", () -> Wire.pairing(true));
         b.put("J PAIRING failed", () -> Wire.pairing(false));
+        b.put("Z QUALITY 32000", () -> Wire.quality(32_000));
         b.put("K SKIP current", () -> Wire.skip("current"));
         b.put("V VOIP 3 armed", () -> Wire.voip(3, true));
         b.put("W WATCH 1 since=1761990000000 watching=1 looper=ok mode=1 call=0 events=4 lastevent=1761990100000"
@@ -102,16 +103,19 @@ public class WireTest {
         b.put("XP SIMS default=1 1|SIM_1 2|SIM_2",
                 () -> Wire.SIMS + Wire.simsDefault(Wire.word("1")) + Wire.sim("1", "SIM 1") + Wire.sim("2", "SIM 2"));
         b.put("E 1", () -> Wire.mode(1));
+        b.put("L end 1", () -> Checks.listEnd(1));
         return b;
     }
 
-    /** Rows whose line is not a format of Wire's: a name, or free text. */
+    /** Rows whose line is not a format of the recorder's, by command and
+     *  example: a name, or free text. Per row, so a LIST's end - a format,
+     *  Checks.listEnd - is built (review round 12). */
     private static final Map<String, String> NOT_BUILT = new HashMap<>();
 
     static {
-        NOT_BUILT.put("L", "a recording's file name as it is on disk, one per line");
-        NOT_BUILT.put("S", "the name of the recording started, or nothing");
-        NOT_BUILT.put("C", "the last call's report, free text (CallReport)");
+        NOT_BUILT.put("L jemrec_rec_1761990000000_in.dat", "a recording's file name as it is on disk, one per line");
+        NOT_BUILT.put("S jemrec_rec_1761990000000_out.dat", "the name of the recording started, or nothing");
+        NOT_BUILT.put("C Recorded by build 1a2b3c4d", "the last call's report, free text (CallReport)");
     }
 
     @Test
@@ -119,7 +123,7 @@ public class WireTest {
         Map<String, Supplier<String>> built = built();
         List<String> missing = new ArrayList<>();
         for (Row row : rows()) {
-            if (NOT_BUILT.containsKey(row.command)) {
+            if (NOT_BUILT.containsKey(row.command + " " + row.example)) {
                 continue;
             }
             Supplier<String> line = built.remove(row.command + " " + row.example);
@@ -236,6 +240,7 @@ public class WireTest {
         assertEquals('C', Wire.COMMAND_REPORT);
         assertEquals('B', Wire.COMMAND_ALLOW_LISTENER);
         assertEquals('J', Wire.COMMAND_KEEP_PAIRED);
+        assertEquals('Z', Wire.COMMAND_SET_QUALITY);
         assertEquals(2, Wire.PROTOCOL_VERSION);
     }
 }

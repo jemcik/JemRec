@@ -57,9 +57,10 @@ import java.time.Duration
  * was back at 37 s. The 15-minute job sits under the same hold, and after it
  * waits for its slot too.
  *
- * Off Wi-Fi this cannot bring the recorder back, because starting it needs
- * Wireless debugging and that needs Wi-Fi. The keep-alive arms the Wi-Fi watch
- * for that case, as it does whenever it runs off Wi-Fi.
+ * Off Wi-Fi this brings the recorder back only over Start without Wi-Fi's
+ * port: starting it otherwise needs Wireless debugging, and that needs Wi-Fi.
+ * The keep-alive arms the Wi-Fi watch for that case, as it does whenever it
+ * runs off Wi-Fi.
  */
 class UsbDebuggingWatch(
     context: Context,
@@ -100,18 +101,30 @@ class UsbDebuggingWatch(
         internal val UPDATE_DELAY: Duration = Duration.ofMillis(500)
         internal val MAX_DELAY: Duration = Duration.ofSeconds(1)
 
-        /** What wakes the watch: a change to USB debugging, and nothing else. */
-        internal fun constraints(): Constraints = Constraints.Builder()
-            .addContentUriTrigger(Settings.Global.getUriFor(GlobalSettings.ADB_ENABLED), false)
-            .setTriggerContentUpdateDelay(UPDATE_DELAY)
-            .setTriggerContentMaxDelay(MAX_DELAY)
-            .build()
+        /** What wakes the watch: a change to USB debugging, and nothing else.
+         *  A network asked too, as the keep-alive's and on its rule
+         *  (RecorderKeepAlive.constraints): the run's revive reaches adbd over
+         *  127.0.0.1, which Android takes from an app idle in the rare
+         *  standby bucket or below unless its job asks for a network - any,
+         *  not one proved to reach the internet - and none at all with Start
+         *  without Wi-Fi on, whose port needs none. */
+        internal fun constraints(context: Context): Constraints {
+            val builder = Constraints.Builder()
+            if (!com.jemcik.jemrec.recorder.StartWithoutWifi.enabled(context)) {
+                builder.setRequiredNetworkRequest(RecorderKeepAlive.anyNetwork(), androidx.work.NetworkType.CONNECTED)
+            }
+            return builder
+                .addContentUriTrigger(Settings.Global.getUriFor(GlobalSettings.ADB_ENABLED), false)
+                .setTriggerContentUpdateDelay(UPDATE_DELAY)
+                .setTriggerContentMaxDelay(MAX_DELAY)
+                .build()
+        }
 
         /** Idempotent with the default KEEP: safe on every app open and every
          *  keep-alive run. */
         fun arm(context: Context, policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP) {
             val work = OneTimeWorkRequestBuilder<UsbDebuggingWatch>()
-                .setConstraints(constraints())
+                .setConstraints(constraints(context))
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(NAME, policy, work)
         }

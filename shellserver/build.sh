@@ -6,10 +6,14 @@
 # own entry point. This is the same two steps without the parts that no longer
 # apply.
 #
-# ANDROID_PLATFORM must match the platform the DEVICE runs, not the app's
-# minSdk. This code links @hide framework internals, so it has to be compiled
-# against the same API level it will execute on. The app's minSdk 31 is a
-# separate decision that happens to be a different number on purpose.
+# ANDROID_PLATFORM is the android.jar this compiles against, not the platform
+# a phone runs: one jar runs on every Android from 12 (d8 --min-api 31). The
+# framework's hidden parts are reached by reflection or through the stubs
+# compiled with it (src/android/...), and :daemon-lint checks each call
+# against Android 12 (shellserver/lint). It stays pinned because the jar's
+# bytes depend on it - constants are compiled in from it - and F-Droid's
+# rebuild must make the same bytes. (Until 1.2 this said it had to match the
+# device; it never did.)
 set -euo pipefail
 
 SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"

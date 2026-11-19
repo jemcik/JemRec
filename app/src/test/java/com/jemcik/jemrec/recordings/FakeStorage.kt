@@ -306,9 +306,12 @@ internal class FakeFolder : ContentProvider() {
 
     companion object {
         const val AUTHORITY = "com.jemcik.jemrec.test.documents"
-        private const val TREE_ID = "primary:Calls"
-        val tree: Uri = DocumentsContract.buildTreeDocumentUri(AUTHORITY, TREE_ID)
-        private val ordinary: (File) -> Shown = { Shown(it.name, "$TREE_ID/${it.name}") }
+        private const val CALLS = "primary:Calls"
+
+        /** The folder's ID: "primary:Calls" unless [install] says another. */
+        private var treeId = CALLS
+        val tree: Uri get() = DocumentsContract.buildTreeDocumentUri(AUTHORITY, treeId)
+        private val ordinary: (File) -> Shown = { Shown(it.name, "$treeId/${it.name}") }
 
         lateinit var dir: File
         var shows: (File) -> Shown = ordinary
@@ -317,8 +320,13 @@ internal class FakeFolder : ContentProvider() {
         /** Each thing asked of a document fails, with this. */
         var refuses: Exception? = null
 
-        /** Listing the folder fails, with this. */
+        /** Listing the folder fails, with this - every query, the folder's
+         *  own document too, as a provider gone wrong. */
         var listing: Exception? = null
+
+        /** Listing the folder's children fails, with this, while the folder
+         *  itself answers: a listing that failed of a folder still there. */
+        var children: Exception? = null
 
         /** A new document, what createDocument makes of its [String] name:
          *  null makes none, and the provider says so with no uri. */
@@ -327,16 +335,21 @@ internal class FakeFolder : ContentProvider() {
         /** How many times the folder has been listed. */
         var listed = 0
 
-        /** The folder, made the one recordings go to. */
-        fun install(context: Context): File {
+        /** The folder, made the one recordings go to - [id] the one it has
+         *  on the phone, as the picker gives it. */
+        fun install(context: Context, id: String = CALLS): File {
+            treeId = id
             dir = File(context.cacheDir, "picked").apply { deleteRecursively(); mkdirs() }
             shows = ordinary
             refuses = null
             listing = null
+            children = null
             creates = { it }
             listed = 0
             byId.clear()
             Robolectric.setupContentProvider(FakeFolder::class.java, AUTHORITY)
+            // Chosen in the picker, which offers its grant (PickerGrants).
+            PickerGrants.offer(tree)
             RecordingStore.setTree(context, tree)
             return dir
         }
@@ -356,10 +369,18 @@ internal class FakeFolder : ContentProvider() {
         selectionArgs: Array<out String>?,
         sortOrder: String?,
     ): Cursor {
+        granted()
         listing?.let { throw it }
+        if (uri.lastPathSegment == "children") children?.let { throw it }
         listed++
         val columns = projection ?: arrayOf(Document.COLUMN_DOCUMENT_ID)
         val cursor = MatrixCursor(columns)
+        // The folder's own document - asked whether it is there - one row,
+        // while the folder is.
+        if (uri.lastPathSegment != "children" && DocumentsContract.getDocumentId(uri) == treeId) {
+            if (dir.isDirectory) cursor.addRow(columns.map { if (it == Document.COLUMN_DOCUMENT_ID) treeId else null }.toTypedArray<Any?>())
+            return cursor
+        }
         // A document's own uri asks for that one: its file, by the ID it was given.
         val only = uri.takeIf { it.lastPathSegment != "children" }?.let { byId[DocumentsContract.getDocumentId(it)] }
         (only?.let(::listOf) ?: dir.listFiles().orEmpty().sortedBy { it.name }).forEach { file ->
@@ -385,6 +406,7 @@ internal class FakeFolder : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         val uri = extras?.let { BundleCompat.getParcelable(it, "uri", Uri::class.java) }
             ?: return super.call(method, arg, extras)
+        granted()
         refuses?.let { throw it }
         if (method == "android:createDocument") {
             val name = creates(extras.getString(Document.COLUMN_DISPLAY_NAME)!!) ?: return Bundle()
@@ -398,17 +420,40 @@ internal class FakeFolder : ContentProvider() {
         val file = byId[DocumentsContract.getDocumentId(uri)] ?: throw FileNotFoundException("$uri")
         return when (method) {
             "android:deleteDocument" -> Bundle().also { if (!file.delete()) throw FileNotFoundException("$uri") }
+            // As Android's folder provider does: the ID is the path, so the
+            // renamed document has a new one, and its uri is the answer.
+            // A name taken is not replaced: the provider makes one of its own,
+            // "name (1).ext", as FileSystemProvider.renameDocument does
+            // (FileUtils.buildUniqueFile) - File.renameTo replaced the file
+            // there, which Android never does (review, 2026-11-18).
             "android:renameDocument" -> Bundle().also {
-                val to = File(dir, extras.getString(Document.COLUMN_DISPLAY_NAME)!!)
+                val wanted = extras.getString(Document.COLUMN_DISPLAY_NAME)!!
+                var to = File(dir, wanted)
+                var n = 1
+                while (to.exists()) to = File(dir, "${wanted.substringBeforeLast('.')} (${n++}).${wanted.substringAfterLast('.')}")
                 if (!file.renameTo(to)) throw FileNotFoundException("$uri")
+                val id = shows(to).id
+                byId[id] = to
+                it.putParcelable("uri", DocumentsContract.buildDocumentUriUsingTree(tree, id))
             }
             else -> super.call(method, arg, extras)
         }
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        granted()
         val file = byId[DocumentsContract.getDocumentId(uri)] ?: throw FileNotFoundException("$uri")
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.parseMode(mode))
+    }
+
+    /** As Android refuses an app whose grant on the folder has gone: no
+     *  persisted grant, no answer. A fake that let it in anyway hid that a
+     *  lost folder fell back without a word (FolderAccess). */
+    private fun granted() {
+        val tree = DocumentsContract.buildTreeDocumentUri(AUTHORITY, treeId)
+        if (context!!.contentResolver.persistedUriPermissions.none { it.uri == tree }) {
+            throw SecurityException("No persisted grant on $tree")
+        }
     }
 
     override fun getType(uri: Uri): String? = null

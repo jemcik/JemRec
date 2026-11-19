@@ -53,6 +53,17 @@ final class Calls {
     static volatile long callSeq;
     static volatile long endedSeq;
     static volatile boolean callIncoming;
+    /** The phone call in progress was up already when this recorder began
+     *  to watch (CallStates: its first state was off-hook, a ring over a
+     *  call already up, or an idle with a phone call in Telecom and the
+     *  audio in a call): which way it went is not known, and the app matches its recording to the call up
+     *  at its start (the "_joined" tag, Checks.recfileTag). */
+    static volatile boolean callJoined;
+
+    /** The wake extras that say a call was joined mid-call, or none. */
+    static String[] joinedExtra() {
+        return callJoined ? new String[] {"--ez", "joined", "true"} : new String[0];
+    }
 
     /** The messenger app of the call in progress; null for a phone call or none. */
     static volatile @Nullable String callVoipApp;
@@ -67,7 +78,11 @@ final class Calls {
 
     /** When the recording in progress captured its first sample, on the
      *  answering machine's clock (SystemClock.elapsedRealtime): the
-     *  message's start is counted from here, as the app counts packets. */
+     *  message's start is counted from here, as the app places it - by the
+     *  packets' own stamps, from the first (PacketClock's fromFirst). Those
+     *  run on the monotonic clock (System.nanoTime), this on elapsedRealtime:
+     *  the two keep the same pace while the phone is awake, as it is in a
+     *  call, and part only over a sleep (Voip). */
     static volatile long captureStartedAt;
 
     /** Start capturing the current call to a file. Returns its name, or null if
@@ -81,7 +96,7 @@ final class Calls {
             }
             try {
                 captureStartedAt = 0;
-                activeRecording = RecordingSession.start(incoming, app, appIncoming);
+                activeRecording = RecordingSession.start(incoming, app, appIncoming, callJoined && app == null);
             } catch (Throwable t) {
                 Ln.e("recording: could not start", t);
                 activeRecording = null;
@@ -93,8 +108,8 @@ final class Calls {
 
     /** Off-hook handling, by mode: automatic records at once; on-demand asks
      *  first and records nothing until the yes comes back as Wire.COMMAND_START. */
-    static void onCallStart(boolean incoming) {
-        onCallStart(incoming, null, null);
+    static void onCallStart(boolean incoming, boolean joined) {
+        onCallStart(incoming, joined, null, null);
     }
 
     /**
@@ -104,7 +119,7 @@ final class Calls {
      * itself, and neither one's end can stop the other's recording.
      * [appIncoming]: which way an app's call went, where Telecom said.
      */
-    static void onCallStart(boolean incoming, @Nullable String app, @Nullable Boolean appIncoming) {
+    static void onCallStart(boolean incoming, boolean joined, @Nullable String app, @Nullable Boolean appIncoming) {
         synchronized (LOCK) {
             AnswerMachine machine = Answering.answerMachine;
             CallDecisions.Start start = CallDecisions.start(callActive, app != null, callVoipApp != null,
@@ -120,6 +135,7 @@ final class Calls {
             }
             callActive = true;
             callIncoming = incoming;
+            callJoined = joined && app == null;
             callVoipApp = app;
             callAppIncoming = app != null ? appIncoming : null;
             if (start == CallDecisions.Start.MESSAGE) {
@@ -144,7 +160,7 @@ final class Calls {
                 String name = beginRecording(incoming, app, appIncoming);
                 if (name != null) {
                     // The app shows a "recording" notification; no audio needed.
-                    Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, name, app);
+                    Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, name, app, joinedExtra());
                 }
                 break;
             case RECORDING_ALREADY:
@@ -153,13 +169,13 @@ final class Calls {
                 // asked again, "Not now" would stop nothing. (It runs: the
                 // decision is this only while one does.)
                 if (running != null) {
-                    Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, running.name, app);
+                    Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, running.name, app, joinedExtra());
                 }
                 break;
             case ASK:
                 // Nothing is captured yet. Ask; an empty rec-file says "prompt".
                 Ln.i("recording: on-demand, asking before recording");
-                Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, "", app);
+                Wakes.wake(Wakes.ACTION_CALL_STARTED, incoming, "", app, joinedExtra());
                 break;
             default:
                 Ln.i("recording: switched off, not recording this call");
@@ -194,7 +210,10 @@ final class Calls {
                     Ln.i("answer: the call was taken before a word was left; " + rec.name + " dropped -> "
                             + file.delete());
                 } else {
-                    String renamed = Checks.messageRecfile(rec.name, part.messageStart(), captureStartedAt, false,
+                    // Lost under the caller before the takeover, the message
+                    // is named so too (Checks.earlyRecfile), first.
+                    String base = rec.missedMs > 0 ? Checks.earlyRecfile(rec.name, rec.missedMs) : rec.name;
+                    String renamed = Checks.messageRecfile(base, part.messageStart(), captureStartedAt, false,
                             false);
                     if (file.renameTo(new File(Paths.REC_DIR, renamed))) {
                         Ln.i("answer: the call was taken; the message so far -> " + renamed);
@@ -220,6 +239,17 @@ final class Calls {
             String name = rec.name;
             CallDecisions.Ending ending = CallDecisions.ending(outcome != null, outcome != null && outcome.test,
                     outcome != null && outcome.isMessage());
+            // Ended before the call did: said in the name, which every
+            // collector reads - the hang-up's, or a reconcile days later -
+            // for the app to say it stopped early (RecordingSession.Ending).
+            if (rec.missedMs > 0 && ending != CallDecisions.Ending.TEST) {
+                String early = Checks.earlyRecfile(name, rec.missedMs);
+                if (new File(Paths.REC_DIR, name).renameTo(new File(Paths.REC_DIR, early))) {
+                    name = early;
+                } else {
+                    Ln.w("recording: could not name " + name + " as stopped early");
+                }
+            }
             if (ending == CallDecisions.Ending.TEST) {
                 // A diagnostics test: what it showed is kept for 'X' 'R'; the
                 // recording is not the user's, and goes. The app is told when the
@@ -287,7 +317,7 @@ final class Calls {
     static void onAppCallStart(String app) {
         CallWatch watch = CallWatch.callWatch;
         Boolean incoming = watch != null ? watch.appCallIncoming() : null;
-        onCallStart(Boolean.TRUE.equals(incoming), app, incoming);
+        onCallStart(Boolean.TRUE.equals(incoming), false, app, incoming);
     }
 
     /** A messenger call's end. Only ends a messenger call. */
@@ -301,7 +331,7 @@ final class Calls {
         CallWatch watch = CallWatch.callWatch;
         if (watch != null && watch.phoneCallUp()) {
             Ln.i("recording: the messenger call gave way to a phone call; recording that");
-            onCallStart(watch.phoneCallRang(), null, null);
+            onCallStart(watch.phoneCallRang(), false, null, null);
         }
     }
 

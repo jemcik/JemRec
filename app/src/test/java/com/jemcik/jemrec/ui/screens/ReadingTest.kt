@@ -148,6 +148,8 @@ class ReadingTest : ScreenTest() {
         com.jemcik.jemrec.calls.CallRules.setOtherNumbers(app, false)
         com.jemcik.jemrec.calls.CallTracking.setEnabled(app, false)
         com.jemcik.jemrec.recordings.Retention.setMaxAgeDays(app, 30)
+        com.jemcik.jemrec.recordings.QualitySetting.set(app, com.jemcik.jemrec.recordings.RecordingQuality.SMALLEST)
+        com.jemcik.jemrec.playback.BothEarsSetting.set(app, false)
         val stale = UiState()
         val landed = com.jemcik.jemrec.ui.asSaved(app, stale)
         assertEquals(com.jemcik.jemrec.playback.PlayThrough.EARPIECE, landed.playThrough)
@@ -156,6 +158,8 @@ class ReadingTest : ScreenTest() {
         assertFalse(landed.ruleOtherNumbers)
         assertFalse(landed.callTracking)
         assertEquals(30, landed.autoDeleteAfterDays)
+        assertEquals(com.jemcik.jemrec.recordings.RecordingQuality.SMALLEST, landed.quality)
+        assertFalse(landed.bothEars)
     }
 
     /** The tile's answer, the tip seen and the call-log offer dismissed are
@@ -381,6 +385,127 @@ class ReadingTest : ScreenTest() {
         assertEquals(setOf(olivia.name, marcus.name), asked.toSet())
     }
 
+    /** Switched to Ask first with its question's channel off, home says so
+     *  at once - no reading comes for a mode - and back in Automatic, it
+     *  goes. */
+    @Test fun switchingToAskFirstSaysAtOnceThatItsQuestionIsOff() {
+        com.jemcik.jemrec.calls.RecordPrompt.ensureChannel(app)
+        val manager = app.getSystemService(android.app.NotificationManager::class.java)
+        manager.getNotificationChannel(com.jemcik.jemrec.calls.RecordPrompt.CHANNEL_ID).importance =
+            android.app.NotificationManager.IMPORTANCE_NONE
+        Recordings.override = { emptyList() }
+        // What a reading found Android saying: Ask first's question off.
+        val switches = com.jemcik.jemrec.calls.NotificationHealth.switches(app)
+        val vm = viewModel(UiState(automatic = true, notificationSwitches = switches))
+        vm.setAutomatic(false)
+        assertEquals(com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST, vm.state.value.notificationsOff)
+        vm.setAutomatic(true)
+        assertEquals(null, vm.state.value.notificationsOff)
+        settle(vm)
+    }
+
+    /** A reading asks Android itself, off the main thread, what the notices
+     *  are made of: the Battery setting and the notifications' switches.
+     *  Taken out of the reading, every test of the notices passed - they
+     *  were all given a state by hand (review, 2026-11-18). */
+    @Test fun aReadingAsksAndroidForTheBatteryAndTheNotifications() {
+        Recordings.override = { listOf(olivia) }
+        org.robolectric.Shadows.shadowOf(app.getSystemService(android.app.ActivityManager::class.java))
+            .setBackgroundRestricted(true)
+        org.robolectric.Shadows.shadowOf(app.getSystemService(android.app.NotificationManager::class.java))
+            .setNotificationsEnabled(false)
+        val vm = viewModel(UiState())
+        refreshed(vm)
+        assertEquals(true, vm.state.value.batteryRestricted)
+        assertEquals(true, vm.state.value.batteryNotice)
+        assertEquals(com.jemcik.jemrec.calls.NotificationHealth.Off.ALL, vm.state.value.notificationsOff)
+    }
+
+    /** Not now on a notice shows the next one down at once, not at the
+     *  next reading (review round 11). */
+    @Test fun notNowShowsTheNextNoticeDownAtOnce() {
+        Recordings.override = { emptyList() }
+        com.jemcik.jemrec.capture.RecordingMode.set(app, com.jemcik.jemrec.capture.RecordingMode.ON_DEMAND)
+        val switches = com.jemcik.jemrec.calls.NotificationHealth.Switches(all = false, askFirst = false, problems = true, askFirstQuiet = true)
+        val quiet = com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST_QUIET
+        val vm = viewModel(UiState(automatic = false, notificationSwitches = switches, notificationsOff = quiet))
+        vm.dismissNotificationsOff(quiet)
+        assertEquals(com.jemcik.jemrec.calls.NotificationHealth.Off.PROBLEMS, vm.state.value.notificationsOff)
+        settle(vm)
+        com.jemcik.jemrec.capture.RecordingMode.set(app, com.jemcik.jemrec.capture.RecordingMode.AUTOMATIC)
+    }
+
+    /** The battery card put away in Automatic comes back at once in Ask
+     *  first, where it cannot be put away. */
+    @Test fun switchingToAskFirstBringsTheBatteryCardBack() {
+        Recordings.override = { emptyList() }
+        com.jemcik.jemrec.system.BatteryHealth.dismiss(app)
+        val vm = viewModel(UiState(automatic = true, batteryRestricted = true, batteryNotice = false))
+        vm.setAutomatic(false)
+        assertEquals(true, vm.state.value.batteryNotice)
+        vm.setAutomatic(true)
+        assertEquals(false, vm.state.value.batteryNotice)
+        settle(vm)
+    }
+
+    /** What the notice says is decided as a reading lands, from what the
+     *  reading found Android saying and the mode then: a mode switched while
+     *  a reading was out is not undone by its landing (review, 2026-11-18). */
+    @Test fun theNoticeIsDecidedAsTheReadingLands() {
+        val switches = com.jemcik.jemrec.calls.NotificationHealth.Switches(all = false, askFirst = true, problems = false)
+        val read = UiState(notificationSwitches = switches)
+        com.jemcik.jemrec.capture.RecordingMode.set(app, com.jemcik.jemrec.capture.RecordingMode.ON_DEMAND)
+        assertEquals(com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST, com.jemcik.jemrec.ui.asSaved(app, read).notificationsOff)
+        com.jemcik.jemrec.capture.RecordingMode.set(app, com.jemcik.jemrec.capture.RecordingMode.AUTOMATIC)
+        assertEquals(null, com.jemcik.jemrec.ui.asSaved(app, read).notificationsOff)
+    }
+
+    /** Granted while the log is being read: the list read before it says
+     *  nothing of the calls - the permission is asked before the load, so
+     *  the tab stays unread for the next reading (review, 2026-11-18). */
+    @Test fun aGrantDuringTheLoadIsNotTakenForTheLog() {
+        Recordings.override = { listOf(olivia) }
+        val shadow = org.robolectric.Shadows.shadowOf(app)
+        shadow.denyPermissions(android.Manifest.permission.READ_CALL_LOG)
+        CallHistory.override = {
+            shadow.grantPermissions(android.Manifest.permission.READ_CALL_LOG)
+            emptyList()
+        }
+        val vm = viewModel(UiState(homeTab = HomeTab.CALLS, callsUnread = true))
+        refreshed(vm)
+        assertEquals(true, vm.state.value.callsUnread)
+    }
+
+    /** The Calls tab is unread until a reading reads the call log itself:
+     *  without the permission its list is an empty one that says nothing of
+     *  the calls, and taken as read, a grant from the tab said "No calls in
+     *  the call log yet." for as long as the next reading took (review,
+     *  2026-11-18). */
+    @Test fun theCallsAreReadOnlyFromTheCallLogItself() {
+        Recordings.override = { listOf(olivia) }
+        CallHistory.override = { emptyList() }
+        val shadow = org.robolectric.Shadows.shadowOf(app)
+        shadow.denyPermissions(android.Manifest.permission.READ_CALL_LOG)
+        val vm = viewModel(UiState(homeTab = HomeTab.CALLS, callsUnread = true))
+        refreshed(vm)
+        assertEquals("no call log, still unread", true, vm.state.value.callsUnread)
+        shadow.grantPermissions(android.Manifest.permission.READ_CALL_LOG)
+        refreshed(vm)
+        assertEquals("read from the call log", false, vm.state.value.callsUnread)
+    }
+
+    /** The Battery setting Restricted, the same: from what the reading
+     *  found and the mode as it lands, and asked of Android with the rest. */
+    @Test fun theBatteryNoticeIsDecidedAsTheReadingLands() {
+        val read = UiState(batteryRestricted = true)
+        com.jemcik.jemrec.system.BatteryHealth.dismiss(app)
+        com.jemcik.jemrec.capture.RecordingMode.set(app, com.jemcik.jemrec.capture.RecordingMode.AUTOMATIC)
+        assertEquals(false, com.jemcik.jemrec.ui.asSaved(app, read).batteryNotice)
+        com.jemcik.jemrec.capture.RecordingMode.set(app, com.jemcik.jemrec.capture.RecordingMode.ON_DEMAND)
+        assertEquals(true, com.jemcik.jemrec.ui.asSaved(app, read).batteryNotice)
+        assertEquals(false, com.jemcik.jemrec.ui.asSaved(app, UiState()).batteryNotice)
+    }
+
     /**
      * What asks for a fresh reading of everything, and what does not. Each
      * of these reads the list once: the Calls tab coming up, Multitrack
@@ -415,7 +540,9 @@ class ReadingTest : ScreenTest() {
             vm.onDeleteConsentResult(false)
             vm.addRuleContact(Uri.parse("content://com.android.contacts/contacts/404"))
             vm.removeRuleContact("nobody")
-            vm.onFolderChosen(Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ACalls"))
+            val picked = Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ACalls")
+            com.jemcik.jemrec.recordings.PickerGrants.offer(picked)
+            vm.onFolderChosen(picked)
             settle(vm)
             assertEquals(11, reads.get())
         } finally {

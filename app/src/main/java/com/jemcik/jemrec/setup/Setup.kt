@@ -496,8 +496,13 @@ object Setup {
     internal suspend fun decide(world: Probe): SetupStep {
         // Asked first. The rest of setup is pointless without these, and
         // finding out at the end would mean pairing before discovering the app
-        // cannot see calls.
-        if (world.missingPermissions()) {
+        // cannot see calls. Only until setup is done: refused after it - in
+        // Android's settings, or taken back by Android from an app left
+        // unused - they put JemRec back here until 1.2, recordings, Settings
+        // and Off out of reach while the recorder went on recording. Now home
+        // says what is off and how to turn it back on (NotificationHealth),
+        // as Android's guide asks: "gracefully degrade your app".
+        if (world.missingPermissions() && !world.isComplete()) {
             return SetupStep.NEEDS_PERMISSIONS
         }
 
@@ -821,7 +826,7 @@ object Setup {
      * runs again from its FIRST step. Setup asks for three things, so a reset
      * that deserves the name has to undo all three:
      *
-     *   1. the two runtime permissions      -> revoked here
+     *   1. every runtime permission it asks -> revoked here (HANDED_BACK)
      *   2. Wireless debugging being on      -> turned off here
      *   3. the pairing                      -> keypair discarded here
      *
@@ -886,6 +891,10 @@ object Setup {
         DebugNotificationCleaner.forget(context)
         // Setup asks the background question again, so no old warning about it.
         BackgroundKill.forget(context)
+        // Nor what was said, or put away, of the Battery setting and of
+        // notifications: set up again, they are said again (review, 2026-11-18).
+        com.jemcik.jemrec.system.BatteryHealth.forgetAll(context)
+        com.jemcik.jemrec.calls.NotificationHealth.forget(context)
         // When JemRec is off back to its default, and Developer options back
         // if it hid them: setup's second step goes there.
         RecorderLifecycle.forgetDebugging(context)
@@ -917,6 +926,20 @@ object Setup {
     }
 
     /**
+     * Every runtime permission JemRec asks for, wherever it asks: setup's
+     * notifications and audio files, and the call log and contacts asked for
+     * from home, Settings and Whose calls. Start fresh hands back all of them
+     * - it said it did, and until 1.2 handed back the notifications alone,
+     * the list it read having been setup's (RUNTIME_PERMISSIONS) since
+     * READ_PHONE_STATE went from it.
+     */
+    internal val HANDED_BACK: List<String> =
+        (RUNTIME_PERMISSIONS.toList() + com.jemcik.jemrec.calls.CallLogLookup.PERMISSIONS + com.jemcik.jemrec.capture.AudioAccess.PERMISSIONS).distinct()
+
+    /** Of [HANDED_BACK], those [granted] says the app holds. Pure. */
+    internal fun toHandBack(granted: (String) -> Boolean): List<String> = HANDED_BACK.filter(granted)
+
+    /**
      * Hand back the permissions the user granted, so setup asks for them again.
      *
      * This kills the app, which is the documented behaviour and not a side
@@ -924,9 +947,9 @@ object Setup {
      * has just given up. The system does it "once it is safe", meaning once the
      * app is no longer in front of the user - which is why the caller closes
      * the activity rather than leaving it sitting there looking unchanged.
+     * Whether the process will be ended for it (permissions handed back on
+     * its end).
      */
-    /** Whether the process will be ended for it (permissions handed back on
-     *  its end). */
     private fun revokeRuntimePermissions(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             // Below Android 13 there is no way for an app to hand a runtime
@@ -934,9 +957,7 @@ object Setup {
             Log.w(TAG, "reset: cannot revoke permissions before Android 13")
             return false
         }
-        val granted = RUNTIME_PERMISSIONS.filter {
-            context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
-        }
+        val granted = toHandBack { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
         if (granted.isEmpty()) return false
         return runCatching { context.revokeSelfPermissionsOnKill(granted) }
             .onFailure { Log.w(TAG, "reset: could not revoke permissions", it) }

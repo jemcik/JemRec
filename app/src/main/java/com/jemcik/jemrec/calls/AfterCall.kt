@@ -186,7 +186,12 @@ internal object AfterCall {
     /** Who, the way the list would say it: the call log for a phone call,
      *  the name or the notes for a messenger call ("Viber call" at least). */
     private fun callerFor(context: Context, saved: RecordingSaver.Outcome.Saved, incoming: Boolean): String? {
-        val probe = Recording(saved.name, saved.uri, "", incoming, "", "")
+        // Matched by its start, which no zone moves, and a joined part by
+        // its call's (review round 14), as the list matches it.
+        val probe = Recording(
+            saved.name, saved.uri, "", incoming, "", "",
+            startUtc = saved.startMillis, callAt = saved.callAt.takeIf { it >= 0 },
+        )
         return RecordingMarks.withCallers(context, listOf(probe)).firstOrNull()?.caller
     }
 
@@ -242,7 +247,7 @@ internal object AfterCall {
                     .setTimeoutAfter(0)
                     .addAction(action("Play", open(context, DeepLink.Kind.PLAY, call.name, request = 1)))
                     .addAction(action("Share", open(context, DeepLink.Kind.SHARE, call.name, request = 2)))
-                    .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call)))
+                    .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call), unlocked = true))
             }
             problem -> {
                 val text = "$who, $length. No sound came through. This happens on calls over " +
@@ -252,14 +257,14 @@ internal object AfterCall {
                     .setStyle(Notification.BigTextStyle().bigText(text))
                     .addAction(action("Play", open(context, DeepLink.Kind.PLAY, call.name, request = 1)))
                     .addAction(action("Self-test", open(context, DeepLink.Kind.SELF_TEST, null, request = 3)))
-                    .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call)))
+                    .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call), unlocked = true))
             }
             else -> {
                 builder.setContentTitle(who)
                     .setContentText("Recorded, $length")
                     .addAction(action("Play", open(context, DeepLink.Kind.PLAY, call.name, request = 1)))
                     .addAction(action("Share", open(context, DeepLink.Kind.SHARE, call.name, request = 2)))
-                    .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call)))
+                    .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call), unlocked = true))
             }
         }
         post(context, builder.build(), idFor(call))
@@ -334,7 +339,11 @@ internal object AfterCall {
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             // A message's question stays as long as the message would have.
             .setTimeoutAfter(if (call.message) 0 else TIMEOUT_MS)
-            .addAction(action("Delete", receiver(context, ACTION_DELETE_CONFIRM, call)))
+            // Delete only on a phone unlocked (Notification.Action's
+            // setAuthenticationRequired, Android 12): a broadcast runs from the
+            // lock screen otherwise, and two taps there - by whoever holds the
+            // locked phone - put the call in the trash.
+            .addAction(action("Delete", receiver(context, ACTION_DELETE_CONFIRM, call), unlocked = true))
             .addAction(action("Keep", receiver(context, ACTION_DELETE_CANCEL, call)))
             .build()
         post(context, notification, idFor(call))
@@ -394,47 +403,66 @@ internal object AfterCall {
         return if (total < 60) "$total s" else minutesSeconds(total)
     }
 
-    private fun action(label: String, intent: PendingIntent): Notification.Action =
-        Notification.Action.Builder(null as Icon?, label, intent).build()
+    private fun action(label: String, intent: PendingIntent, unlocked: Boolean = false): Notification.Action =
+        Notification.Action.Builder(null as Icon?, label, intent).setAuthenticationRequired(unlocked).build()
 
     /**
      * A notification on the "Recording problems" channel, in the shape every
      * one of them shares - the recorder down (RecorderHealth), a call not
-     * recorded (CallMonitorService), calls missed (MissedCalls), the phone
-     * stopping JemRec (BackgroundKill): the error icon, [title], [text] shown
-     * whole when expanded, a tap that opens [open] and clears it, and at most
-     * one button, [button], that goes where the tap does. [collapsed] is the
+     * recorded (postNotRecorded), calls missed (MissedCalls), the phone
+     * stopping JemRec (BackgroundKill), a recording that stopped early
+     * (StoppedEarly), one saved elsewhere (FolderAccess), Battery Restricted
+     * (BatteryHealth) - ProblemButtonsTest reads them all: the error icon, [title], [text] shown
+     * whole when expanded, a tap that opens [open] - JemRec, where the
+     * problem is shown - and clears it, and at most one button, [button]: its
+     * label and the fix itself, somewhere the tap does not go. Android's
+     * guide: "Don't include text actions that duplicate the behavior of
+     * tapping on the notification body", and a tap "must display UI that
+     * relates directly to that notification" (developer.android.com,
+     * Notifications); until 1.2's reviews every button went where the tap
+     * did. [collapsed] is the
      * one folded line when that is not simply the start of [text], as for a
      * list of missed calls. Callers add only what is theirs - quiet updates, a
      * delete intent, a lock-screen version - and post with [notifyProblem].
      *
      * One recipe, so a change to how problems look is made once: four copies
-     * of it had grown, the same in all but the details.
+     * of it had grown by 0.9, the same in all but the details.
      */
     internal fun problem(
         context: Context,
         title: String,
         text: String,
         open: PendingIntent,
-        button: String? = null,
+        button: Pair<String, PendingIntent>? = null,
         collapsed: String = text,
     ): Notification.Builder {
         ensureChannels(context)
         val builder = Notification.Builder(context, PROBLEM_CHANNEL_ID)
+            // What it is, for Do Not Disturb and the shade's order: "an error
+            // in background operation" (Notification.CATEGORY_ERROR).
+            .setCategory(Notification.CATEGORY_ERROR)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentTitle(title)
             .setContentText(collapsed)
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .setAutoCancel(true)
-        if (button != null) builder.addAction(action(button, open))
+        if (button != null) builder.addAction(action(button.first, button.second))
         return builder
     }
 
-    /** Posts a [problem] notification as [id], logging as [what] if it cannot. */
-    internal fun notifyProblem(context: Context, id: Int, notification: Notification, what: String) {
-        runCatching { context.getSystemService(NotificationManager::class.java).notify(id, notification) }
+    /** Posts a [problem] notification as [id], logging as [what] if it
+     *  cannot. True if it can be seen: Android drops a post without a word
+     *  while JemRec's notifications, or the problems' channel, are off - and
+     *  one said "once" was then never said (review, 2026-11-18). */
+    internal fun notifyProblem(context: Context, id: Int, notification: Notification, what: String): Boolean {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val posted = runCatching { manager.notify(id, notification) }
             .onFailure { Log.w(TAG, "$what: could not post", it) }
+            .isSuccess
+        val shown = manager.areNotificationsEnabled() &&
+            manager.getNotificationChannel(PROBLEM_CHANNEL_ID)?.importance != NotificationManager.IMPORTANCE_NONE
+        return posted && shown
     }
 
     /** "Call not recorded" - the hang-up's save, or a collection that found
@@ -448,9 +476,64 @@ internal object AfterCall {
     /** Why a saved call kept nothing: no call audio in it. */
     const val NO_AUDIO = "No call audio came through. Some phones do not allow calls to be recorded."
 
+    /** The title of a part's failure, told at the call's end
+     *  (CallMonitorService.saveCall; AfterSave.Collector.PART). */
+    const val PART_NOT_SAVED = "Part of a call not saved"
+
+    /** The recorder's files the failure up is about (postNotRecorded). */
+    private const val KEY_NOT_RECORDED_FOR = "not_recorded_for"
+
+    /** A failure about to be told is about [recfile] (AfterSave.react; a
+     *  row that tells): [retried], one kept to try again, joins the files
+     *  the alert up is about - a fresh list once the alert is gone, swiped
+     *  or tapped; one never to be saved (no audio, a greeting that failed)
+     *  empties it, as the alert now says what no save will mend. The list
+     *  kept every file and never shrank but by a save: one empty call
+     *  swiped away held every later alert up (review round 17). [upAlready]:
+     *  posted a moment ago by the same call's reaction, which Android may
+     *  not list yet - NMS enqueues a post on its own handler
+     *  (enqueueNotificationInternal; read, not produced: review round 18). */
+    @Synchronized
+    fun notRecordedAbout(context: Context, recfile: String, retried: Boolean, upAlready: Boolean = false) {
+        val prefs = com.jemcik.jemrec.Prefs.of(context)
+        val up = upAlready || runCatching {
+            context.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == NOT_RECORDED_ID }
+        }.getOrDefault(false)
+        val now = if (up) prefs.getStringSet(KEY_NOT_RECORDED_FOR, emptySet()).orEmpty() else emptySet()
+        prefs.edit { putStringSet(KEY_NOT_RECORDED_FOR, if (retried) now + recfile else emptySet()) }
+    }
+
+    /** [recfile] saved after all: once every file the failure up is about
+     *  is, it goes - a later collection saved it, and "Call not recorded"
+     *  stayed up (review round 15); one file of several saved left the
+     *  others' alert up (round 16). */
+    @Synchronized
+    fun savedAfterAll(context: Context, recfile: String) {
+        val prefs = com.jemcik.jemrec.Prefs.of(context)
+        val now = prefs.getStringSet(KEY_NOT_RECORDED_FOR, emptySet()).orEmpty()
+        if (recfile !in now) return
+        val left = now - recfile
+        prefs.edit { if (left.isEmpty()) remove(KEY_NOT_RECORDED_FOR) else putStringSet(KEY_NOT_RECORDED_FOR, left) }
+        if (left.isEmpty()) cancelProblem(context, NOT_RECORDED_ID)
+    }
+
+    /** [recfile] will never be saved: given up after a week of failing
+     *  (RecordingSaver.failedAgain, review round 18), or dropped - empty,
+     *  left out, never answered, hung up during the greeting (AfterSave.react,
+     *  round 19). No save would take it out of the files the alert is about,
+     *  which then stayed up after the one it shows was saved. It leaves them;
+     *  the alert stays - still true of it. */
+    @Synchronized
+    fun neverSaved(context: Context, recfile: String) {
+        val prefs = com.jemcik.jemrec.Prefs.of(context)
+        val now = prefs.getStringSet(KEY_NOT_RECORDED_FOR, emptySet()).orEmpty()
+        if (recfile in now) prefs.edit { putStringSet(KEY_NOT_RECORDED_FOR, now - recfile) }
+    }
+
     /** "Call not recorded", with [reason]: from the call service at a hang-up,
-     *  or from a collection that found out later (RecordingSaver.reconcile). */
-    fun postNotRecorded(context: Context, reason: String) {
+     *  or from a collection that found out later (RecordingSaver.reconcile);
+     *  [title] another, a part's (PART_NOT_SAVED). */
+    fun postNotRecorded(context: Context, reason: String, title: String = "Call not recorded") {
         runCatching {
             // A collection can get here before the call service ever ran:
             // problem makes sure the channel exists.
@@ -458,7 +541,7 @@ internal object AfterCall {
                 context, 0, DeepLink.home(context),
                 PendingIntent.FLAG_IMMUTABLE,
             )
-            notifyProblem(context, NOT_RECORDED_ID, problem(context, "Call not recorded", reason, tap).build(), "monitor")
+            notifyProblem(context, NOT_RECORDED_ID, problem(context, title, reason, tap).build(), "monitor")
         }.onFailure { Log.w(TAG, "monitor: could not report the failure", it) }
     }
 
@@ -513,7 +596,9 @@ internal object AfterCall {
         // The same channel CallMonitorService creates for "Call not recorded":
         // one place in Android's settings for everything that went wrong.
         manager.createNotificationChannel(
-            NotificationChannel(PROBLEM_CHANNEL_ID, "Recording problems", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(PROBLEM_CHANNEL_ID, "Recording problems", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "When a call goes unrecorded, or something stops JemRec recording"
+            },
         )
     }
 }

@@ -94,6 +94,80 @@ class HeaderFactsTest {
         assertTrue(headerSpeech(down, none).startsWith("Cannot record. The recorder did not start"))
     }
 
+    /** Nothing read yet is said as that: not "Cannot record" from the
+     *  defaults, not "Starting" with nothing starting, and no mark lit or
+     *  spoken, as no setting has been read. */
+    @Test fun nothingReadYetIsCheckingNotCannotNorStarting() {
+        val unread = ready.copy(daemonRunning = false, listUnread = true, autoDeleteAfterDays = 90)
+        assertEquals(RecorderStatus.CHECKING, recorderStatus(unread))
+        assertEquals(null, instruction(unread))
+        assertEquals(RecorderStatus.OFF, recorderStatus(unread.copy(enabled = false)))
+        assertEquals(RecorderStatus.STARTING, recorderStatus(unread.copy(starting = true)))
+        val marks = marks(unread, answering = true)
+        assertEquals(emptyList<HeaderMark>(), litMarks(marks, RecorderStatus.CHECKING))
+        assertEquals("Checking.", headerSpeech(unread, marks))
+    }
+
+    /** Nothing read yet, in any state: the answering machine's and the
+     *  messengers' marks are not spoken from defaults, and Off does not say
+     *  turning on needs Wi-Fi before the port is read (reviews, 2026-11-18). */
+    @Test fun nothingReadYetClaimsNothingInAnyState() {
+        val unread = ready.copy(listUnread = true, enabled = false, debuggingOff = true, portSet = false)
+        val marks = marks(unread, answering = true)
+        assertFalse(marks.answering)
+        assertFalse(marks.messengers)
+        assertFalse(headerSpeech(unread, marks).contains("answering machine"))
+        assertEquals(Instruction.SWITCH_ON, instruction(unread))
+        assertEquals(Instruction.SWITCH_ON_OVER_WIFI, instruction(unread.copy(listUnread = false)))
+    }
+
+    @Test fun askFirstUnableToAskCannotRecord() {
+        // Its question is a notification; off, no call is recorded, the
+        // recorder up or not - never "ready" over the notice that says so.
+        val off = com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST
+        val all = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL
+        val asking = ready.copy(automatic = false)
+        for (what in listOf(off, all)) {
+            val state = asking.copy(notificationsOff = what)
+            assertEquals(RecorderStatus.CANNOT, recorderStatus(state))
+            assertEquals(Instruction.TURN_ON_NOTIFICATIONS, instruction(state))
+            assertTrue(headerSpeech(state, Marks(false, false, false, 0)).startsWith("Cannot record. Ask first asks in a notification"))
+        }
+        // Recorded without asking, notifications off are not "cannot record";
+        // nor are problem alerts off, in Ask first.
+        assertEquals(RecorderStatus.READY, recorderStatus(ready.copy(notificationsOff = all)))
+        assertEquals(
+            RecorderStatus.READY,
+            recorderStatus(asking.copy(notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.PROBLEMS)),
+        )
+        // The recorder down as well: that comes first, as it says what brings it back.
+        val downToo = asking.copy(notificationsOff = off, daemonRunning = false, onWifi = false)
+        assertEquals(Instruction.JOIN_WIFI, instruction(downToo))
+        // And Multitrack's word with it: the link is lost, not the question.
+        assertEquals("NO LINK", multitrackWord(recorderStatus(downToo), instruction(downToo)))
+        assertEquals("CAN'T ASK", multitrackWord(recorderStatus(asking.copy(notificationsOff = off)), instruction(asking.copy(notificationsOff = off))))
+    }
+
+    /** Ask first with the Battery setting Restricted and exact call tracking
+     *  off: Android refuses the wake that would put the question up, so no
+     *  call is recorded - said as that, with the way to App info; with
+     *  tracking on, Telecom's bind lets a phone call's question through
+     *  (BatteryHealth; reviews, 2026-11-18). */
+    @Test fun askFirstHeldBackByTheBatteryCannotRecord() {
+        val asking = ready.copy(automatic = false, batteryRestricted = true, callTracking = false)
+        assertEquals(RecorderStatus.CANNOT, recorderStatus(asking))
+        assertEquals(Instruction.ALLOW_BACKGROUND, instruction(asking))
+        assertEquals("CAN'T ASK", multitrackWord(RecorderStatus.CANNOT, instruction(asking)))
+        assertTrue(headerSpeech(asking, marks(asking, answering = false)).startsWith("Cannot record. With the battery use Restricted"))
+        // Tracking on, or Automatic, or not restricted: ready.
+        assertEquals(RecorderStatus.READY, recorderStatus(asking.copy(callTracking = true)))
+        assertEquals(RecorderStatus.READY, recorderStatus(asking.copy(automatic = true)))
+        assertEquals(RecorderStatus.READY, recorderStatus(asking.copy(batteryRestricted = false)))
+        // Its notifications off too: those first, as a tap there helps alone.
+        val both = asking.copy(notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL)
+        assertEquals(Instruction.TURN_ON_NOTIFICATIONS, instruction(both))
+    }
+
     @Test fun onWifiTheRecorderDownIsNeverToldToJoinOne() {
         // The Honor, 2026-10-24: on Wi-Fi, its pairing deleted, the header
         // said "Join any Wi-Fi to resume".
@@ -122,7 +196,13 @@ class HeaderFactsTest {
     }
 
     @Test fun everyInstructionThatIsATapSaysWhatItDoes() {
-        assertEquals(setOf(Instruction.ALLOW_WIFI, Instruction.PAIR_AGAIN, Instruction.START_AGAIN), Instruction.entries.filter { it.tap != null }.toSet())
+        assertEquals(
+            setOf(
+                Instruction.ALLOW_WIFI, Instruction.PAIR_AGAIN, Instruction.START_AGAIN,
+                Instruction.TURN_ON_NOTIFICATIONS, Instruction.ALLOW_BACKGROUND,
+            ),
+            Instruction.entries.filter { it.tap != null }.toSet(),
+        )
     }
 
     @Test fun homeGivesWayToPairingOnlyWhenThePairingIsRefusedOnWifi() {

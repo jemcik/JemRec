@@ -28,7 +28,8 @@ import kotlin.math.abs
  *   - The end of a call reaches the app directly, a second way to save it.
  *
  * A SWITCH, ON UNLESS TURNED OFF. The permission would let an app see every
- * call and control it; JemRec only reads. Off is exactly how JemRec worked
+ * call and control it; JemRec reads, and ends one call only - the answering
+ * machine's, its recorder lost mid-message (MessageHangUp). Off is exactly how JemRec worked
  * before this: nothing is bound and nothing here is used.
  *
  * Kept in the app's preferences, the last [KEEP] calls, numbers only with the
@@ -42,6 +43,9 @@ object CallTracking {
 
     /** One packet of a recording: Opus frames are 20 ms (OpusOggWriter). */
     internal const val PACKET_MS = 20L
+
+    /** How far back a call joined mid-call is looked for: none lasts longer. */
+    internal const val LONGEST_CALL_MS = 24 * 60 * 60 * 1000L
 
     fun enabled(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_ON, true)
 
@@ -171,39 +175,76 @@ object CallTracking {
      * its account is incomplete - a missed callback, or the end not noted yet
      * - and a recording is deleted as unanswered only on Telecom's word. A
      * lost recording cannot be made again.
+     *
+     * A recording [joined] mid-call - the recorder started again during it
+     * (DaemonFile.joined) - starts long after its call's off-hook, and its
+     * way is the recorder's guess: its own call is the one made active last
+     * before it began - answered, or taken off hold - whichever way, of
+     * those not ended and begun within a day; every other answered call up
+     * at its start with audio in it - call waiting's - is in it too (review
+     * rounds 10 to 12). Matched as any other, it was no call - kept as an
+     * unknown caller's whatever the rules.
      */
-    internal fun callsIn(all: List<Tracked>, start: Long, incoming: Boolean): List<Tracked> {
+    internal fun callsIn(all: List<Tracked>, start: Long, incoming: Boolean, joined: Boolean = false): List<Tracked> {
         // Not one that had ended before the recording began: that is the
         // call before, and taking it for this one deletes this one as
-        // unanswered when the call before was never answered.
-        val candidates = all.filter { it.endedAt == 0L || it.endedAt >= start }
+        // unanswered when the call before was never answered. Joined, none
+        // begun longer ago than a call lasts: one whose end Telecom never
+        // said (a reboot mid-call) is no call up (review round 12).
+        val candidates = all.filter {
+            (it.endedAt == 0L || it.endedAt >= start) && (!joined || it.id >= start - LONGEST_CALL_MS)
+        }
         val closest = compareBy<Tracked>({ offHookAt(it)?.let { at -> abs(at - start) } ?: Long.MAX_VALUE }, { -it.id })
-        val own = candidates
-            .filter { it.incoming == incoming && it.id in (start - BEFORE_MS)..(start + SLACK_MS) }
-            .minWithOrNull(closest)
-            ?: candidates
-                .filter { it.incoming != incoming && offHookAt(it)?.let { at -> abs(at - start) <= OFF_HOOK_MS } == true }
+        // Joined: the call made active last before the recording began - an
+        // answer or a call taken off hold - not the latest first off-hook,
+        // which in call waiting gave the whole file to the call put on hold
+        // (review round 11).
+        fun lastActive(call: Tracked): Long? = call.activations.filter { it <= start + SLACK_MS }.maxOrNull()
+        val own = if (joined) {
+            candidates
+                .filter { lastActive(it) != null }
+                .maxByOrNull { lastActive(it) ?: Long.MIN_VALUE }
+                ?: return emptyList()
+        } else {
+            candidates
+                .filter { it.incoming == incoming && it.id in (start - BEFORE_MS)..(start + SLACK_MS) }
                 .minWithOrNull(closest)
-            ?: return emptyList()
+                ?: candidates
+                    .filter { it.incoming != incoming && offHookAt(it)?.let { at -> abs(at - start) <= OFF_HOOK_MS } == true }
+                    .minWithOrNull(closest)
+                ?: return emptyList()
+        }
         if (!own.answered && own.endedAt == 0L) return emptyList()
 
-        val joined = mutableListOf(own)
-        var end = endOf(own)
+        val chain = mutableListOf(own)
+        // Joined, every other call answered and still up at the start is in
+        // the file too: call waiting's, taken off hold later (review round
+        // 11: left out, its audio went to no part, dropped unsaid).
+        // Only those with audio in it: one ended on hold just after the
+        // start, or never ended, took no packet, and counted as a call of the
+        // file's - StoppedEarly's and the whole-file fallback's one-call
+        // checks skipped, every later call chained (review round 12).
+        if (joined) {
+            val up = candidates.filter { it !== own && it.answered && lastActive(it) != null }
+            val heard = segments(start, listOf(own) + up).mapTo(HashSet()) { it.first }
+            chain += up.filter { it in heard }
+        }
+        var end = chain.maxOf { endOf(it) }
         while (true) {
             val next = all.filter { call ->
-                call !in joined && call.answered && call.answeredAt >= start && (
+                call !in chain && call.answered && call.answeredAt >= start && (
                     call.answeredAt <= end ||
                         call.id <= end ||
                         offHookAt(call)?.let { it <= end + JOIN_MS } == true
                     )
             }
             if (next.isEmpty()) break
-            joined += next
+            chain += next
             end = maxOf(end, next.maxOf { endOf(it) })
         }
         // Own first, whatever the ids: a call created earlier can still be
         // answered later, during this one.
-        return listOf(own) + (joined - own).sortedBy { it.id }
+        return listOf(own) + (chain - own).sortedBy { it.id }
     }
 
     /** When a call ended, or never (still up, as far as anyone said). */

@@ -55,7 +55,7 @@ class UsbDebuggingWatchTest {
     @After fun closeWorkManager() = work.close()
 
     @Test fun itWatchesUsbDebuggingAndNothingElse() {
-        val triggers = UsbDebuggingWatch.constraints().contentUriTriggers
+        val triggers = UsbDebuggingWatch.constraints(context).contentUriTriggers
         assertEquals(1, triggers.size)
         val trigger = triggers.single()
         assertEquals(Uri.parse("content://settings/global/adb_enabled"), trigger.uri)
@@ -65,7 +65,7 @@ class UsbDebuggingWatchTest {
     }
 
     @Test fun itRunsAsSoonAsJobSchedulerAllows() {
-        val c = UsbDebuggingWatch.constraints()
+        val c = UsbDebuggingWatch.constraints(context)
         // JobScheduler's floors (JobStatus.MIN_TRIGGER_UPDATE_DELAY and
         // MIN_TRIGGER_MAX_DELAY): anything lower is raised to them.
         assertEquals(500L, c.contentTriggerUpdateDelayMillis)
@@ -94,7 +94,7 @@ class UsbDebuggingWatchTest {
         assertEquals(WorkInfo.State.ENQUEUED, now.single { it.id == waiting.id }.state)
         val next = now.single { it.id != waiting.id }
         assertEquals(WorkInfo.State.BLOCKED, next.state)
-        assertEquals(UsbDebuggingWatch.constraints(), next.constraints)
+        assertEquals(UsbDebuggingWatch.constraints(context), next.constraints)
     }
 
     private fun noOtherWork(vararg names: String) =

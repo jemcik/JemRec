@@ -182,10 +182,42 @@ final class Wire {
      */
     static final int COMMAND_KEEP_PAIRED = 'J';
 
-    /** The answer to a ping, bare or proved: the protocol and this jar's
-     *  build. */
+    /**
+     * THE QUALITY - Settings' choice of how many bits a second a recording is
+     * given (Quality): a name frame holding the rate in bits a second, "32000".
+     * It arrives in the environment at spawn too, and an unusable one keeps
+     * the rate there was. Replies QUALITY and the rate the next recording
+     * starts with; a recording under way keeps its own. An older recorder
+     * hangs up on it, records at 128 kbps, and is replaced at the next revive.
+     */
+    static final int COMMAND_SET_QUALITY = 'Z';
+
+    /**
+     * What this recorder does that an older one does not, said after its
+     * build in the answer to a ping - words an older app skips. Two so far:
+     * a LIST ends with how many it sent (LIST_END, Checks.listEnd); and
+     * a fetch's reply starts with the file's length (COMMAND_FETCH), so a
+     * transfer cut short - the recorder ended in the middle of it, as an
+     * Honor's unplug or Android's memory reaper does - is told from a
+     * finished one. Without it the app took the bytes it got for the whole
+     * recording, saved that, and at the next collection dropped the
+     * recorder's whole copy as one saved already. The protocol's version
+     * stays 2: an app speaks to an older recorder for days after an update,
+     * off Wi-Fi, and reads its fetches as before.
+     */
+    static final String FETCH_LENGTH = "fetch-length";
+
+    /** Its LIST ends with how many it sent (Checks.listEnd): said, as
+     *  FETCH_LENGTH is, so an app reads a reply without it from an older
+     *  recorder as before - one it speaks to for days after an update, off
+     *  Wi-Fi - and takes one cut short from this one for no answer (review
+     *  round 11: an older recorder's every list was no answer). */
+    static final String LIST_END = "list-end";
+
+    /** The answer to a ping, bare or proved: the protocol, this jar's
+     *  build, and what it does besides (FETCH_LENGTH, LIST_END). */
     static String pong(String build) {
-        return "PONG " + PROTOCOL_VERSION + " " + build;
+        return "PONG " + PROTOCOL_VERSION + " " + build + " " + FETCH_LENGTH + " " + LIST_END;
     }
 
     /** QUIT: going, or not while a call or a fetch is in progress. */
@@ -216,6 +248,11 @@ final class Wire {
     /** COMMAND_KEEP_PAIRED's answer: whether the timeout reads as asked. */
     static String pairing(boolean ok) {
         return "PAIRING " + (ok ? "ok" : "failed");
+    }
+
+    /** COMMAND_SET_QUALITY's answer: the rate the next recording starts with. */
+    static String quality(int bps) {
+        return "QUALITY " + bps;
     }
 
     /** SKIP: "current", "next" or "cancelled". */

@@ -115,10 +115,9 @@ internal object RecorderHealth {
         // shows it straight away, where the alert waits out the grace.
         prefs.edit { putString(KEY_CAUSE, problem.name) }
         val alerted = prefs.getString(KEY_ALERTED, null)
-        if (shouldAlert(now, since, alerted, problem)) {
-            Log.w(TAG, "health: recorder down since $since, telling the user ($problem)")
-            post(context, problem)
-            prefs.edit { putString(KEY_ALERTED, problem.name) }
+        alert(now, since, alerted, problem, CaptureDaemon.callInProgress(context))?.let { alert ->
+            Log.w(TAG, "health: recorder down since $since, telling the user ($problem${if (alert.silent) ", silently: a call is up" else ""})")
+            say(context, problem, alert)
         }
     }.onFailure { Log.w(TAG, "health: could not judge the recorder", it) }
 
@@ -209,10 +208,89 @@ internal object RecorderHealth {
         return prefs.getString(KEY_CAUSE, null)?.let { name -> Problem.entries.firstOrNull { it.name == name } }
     }
 
-    internal fun shouldAlert(now: Long, downSince: Long, alerted: String?, problem: Problem): Boolean =
-        now - downSince >= GRACE_MS && alerted != problem.name
+    /** Post [alert] for [problem], and mark it said. */
+    private fun say(context: Context, problem: Problem, alert: Alert) {
+        if (alert.again) context.getSystemService(android.app.NotificationManager::class.java).cancel(NOTIFICATION_ID)
+        post(context, problem, alert.silent)
+        Prefs.of(context).edit { putString(KEY_ALERTED, problem.name + if (alert.silent) SILENT_MARK else "") }
+    }
 
-    private fun post(context: Context, problem: Problem) {
+    /**
+     * A call is over (CallMonitorService): an alert posted silent in it is
+     * posted again with its sound now, not at the next revive - a run that
+     * may wait for a network the phone does not have (RecorderKeepAlive), the
+     * alert silent all that time (review round 13). Nothing with the mode
+     * still not normal: a ring next, which would mute it. Cheap; never throws.
+     */
+    fun callOver(context: Context) = runCatching {
+        val alerted = Prefs.of(context).getString(KEY_ALERTED, null) ?: return@runCatching
+        if (!alerted.endsWith(SILENT_MARK) || CaptureDaemon.callInProgress(context)) return@runCatching
+        val problem = Problem.entries.firstOrNull { it.name == alerted.removeSuffix(SILENT_MARK) } ?: return@runCatching
+        Log.w(TAG, "health: the call is over; telling the user again, with its sound ($problem)")
+        say(context, problem, Alert(silent = false, again = true))
+    }.onFailure { Log.w(TAG, "health: could not tell the alert again", it) }
+
+    /** The alert put away by the user: said, silent or not - not posted
+     *  again with its sound after a call they swiped it away in (review
+     *  round 13). */
+    fun dismissed(context: Context) = seen(context)
+
+    /** The alert seen: swiped away ([dismissed]), or JemRec opened - its tap
+     *  among the ways, which sends no delete intent (AOSP NMS: a click is
+     *  REASON_CLICK, sendDelete false), and the header says what it says
+     *  (review round 14). Not posted again with its sound. */
+    fun seen(context: Context) {
+        val prefs = Prefs.of(context)
+        val alerted = prefs.getString(KEY_ALERTED, null) ?: return
+        if (alerted.endsWith(SILENT_MARK)) prefs.edit { putString(KEY_ALERTED, alerted.removeSuffix(SILENT_MARK)) }
+    }
+
+    const val ACTION_DISMISSED = "com.jemcik.jemrec.health.DISMISSED"
+
+    /** What the alert does at a revive: post, [silent] or not; [again]: the
+     *  same alert, posted silent in a call, posted anew - cancelled first, as
+     *  a notification still up is updated without a sound under
+     *  setOnlyAlertOnce (AOSP NotificationAttentionHelper) - so it is heard
+     *  once the call is over. Marked as said, it was never heard: the
+     *  recorder lost mid-call and never back, the case the call watch is
+     *  there for (review round 12). */
+    internal data class Alert(val silent: Boolean, val again: Boolean = false)
+
+    /** Whether to alert, once past the grace: a cause not said yet, or said
+     *  silent in a call that is over now ([alerted]: the cause said, and
+     *  [SILENT_MARK] if silently). Null for nothing to do. */
+    internal fun alert(now: Long, downSince: Long, alerted: String?, problem: Problem, callUp: Boolean): Alert? {
+        if (now - downSince < GRACE_MS) return null
+        val saidSilent = alerted?.endsWith(SILENT_MARK) == true
+        return when {
+            alerted?.removeSuffix(SILENT_MARK) != problem.name -> Alert(silentNow(callUp), again = saidSilent && !callUp)
+            saidSilent && !callUp -> Alert(silent = false, again = true)
+            else -> null
+        }
+    }
+
+    /** After a cause in KEY_ALERTED: said silently, a call up. */
+    private const val SILENT_MARK = "|silent"
+
+    /** Posted silent while a call is up or rings ([callUp]: any mode but
+     *  normal): Android mutes every notification while telephony is not
+     *  idle (AOSP NotificationAttentionHelper.disableNotificationEffects),
+     *  and in an app's call outside Telecom plays it as a tone in the
+     *  earpiece (playInCallNotification) - posted to sound, it was marked
+     *  said and never heard (review round 13). Silent, not held: held to a
+     *  call's end it went untold when no service watched the call - a
+     *  recorder down before it starts none - until a heartbeat, up to a day
+     *  in the restricted bucket (review rounds 10 and 11). Posted again with
+     *  its sound once the mode is normal: the call's end ([callOver]), or
+     *  the next revive (alert). A mode another app leaves set keeps it
+     *  silent, and shown. */
+    internal fun silentNow(callUp: Boolean): Boolean = callUp
+
+    /** The group a silent alert is put in (post). */
+    private const val SILENT_GROUP = "jemrec.health.silent"
+
+    @androidx.annotation.VisibleForTesting
+    internal fun post(context: Context, problem: Problem, silent: Boolean = false) {
         val (text, button) = when (problem) {
             Problem.NEEDS_WIFI ->
                 "Calls are not being recorded until the phone is on Wi-Fi for a few seconds. " +
@@ -230,13 +308,26 @@ internal object RecorderHealth {
                 "JemRec could not restart the recorder on this network. Open JemRec, or try " +
                     "another Wi-Fi network." to null
         }
-        val open = PendingIntent.getActivity(
-            context, 3401,
-            button?.second ?: DeepLink.home(context),
+        // The tap: home, whose header says why; the button: the fix.
+        val open = PendingIntent.getActivity(context, 0, DeepLink.home(context), PendingIntent.FLAG_IMMUTABLE)
+        val fix = button?.let { (_, intent) ->
+            PendingIntent.getActivity(context, 3401, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        }
+        // Swiped away: said, silent or not (dismissed).
+        val gone = PendingIntent.getBroadcast(
+            context, 3402,
+            android.content.Intent(context, com.jemcik.jemrec.capture.AfterCallReceiver::class.java).setAction(ACTION_DISMISSED),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = AfterCall.problem(context, "JemRec is not recording calls", text, open, button?.first)
+        val notification = AfterCall.problem(context, "JemRec is not recording calls", text, open, button?.first?.let { it to fix!! })
             .setOnlyAlertOnce(true)
+            .setDeleteIntent(gone)
+            .apply {
+                // Silent as AndroidX's NotificationCompat.setSilent makes one:
+                // in a group whose summary alone may alert (there is none),
+                // as the platform builder has no such switch.
+                if (silent) setGroup(SILENT_GROUP).setGroupAlertBehavior(android.app.Notification.GROUP_ALERT_SUMMARY)
+            }
             .build()
         AfterCall.notifyProblem(context, NOTIFICATION_ID, notification, "health")
     }

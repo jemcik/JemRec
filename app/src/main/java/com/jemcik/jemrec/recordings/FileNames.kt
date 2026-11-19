@@ -27,7 +27,8 @@ import java.util.Locale
  *     holds a number or nothing, never a name. Written with its country
  *     code ([international]), so one person's calls carry one number.
  *   - HONOR: Priya Shah@+447700900123_20261020165705.ogg, the name Honor's
- *     own call recorder uses. Honor's Phone app shows a play button on a call
+ *     own call recorder uses - and +447700900123_20261020165705.ogg for a
+ *     caller with no name. Honor's Phone app shows a play button on a call
  *     in its history when a file named like that is in Sounds/CallRecord.
  *     Tested on an Honor (see the note in [build]); offered only on a phone
  *     that has that app.
@@ -107,6 +108,19 @@ object FileNames {
      *   - the number has to be the call's: "477@478_..." lost the button;
      *   - the part before the @ is not read at all: "Zed@477_..." kept it.
      * Both Opus in Ogg and AAC play from it.
+     *
+     * BUT IT IS READ AS A REGULAR EXPRESSION. To take the _ out of a name
+     * before the @, the Phone app runs String.replaceAll with that part, @
+     * and all, as the pattern (CallRecordUtils.getRecordPhoneNumber, read in
+     * HnContacts 19.0.8.606 on the Honor, 2026-11-17). A pattern that does
+     * not compile - "+380954388250@", the number JemRec put there for a
+     * caller with no name, starts with a dangling + - throws, the name reads
+     * as having no number, and the call gets no play button: a real call on
+     * the Honor that day, and copies of two older recordings, showed none;
+     * the same recording named "+380954388250_20261117155459.ogg" got one
+     * at once. So a caller with no name gets "<number>_<time>", which the
+     * Phone app reads too, and a name loses what a pattern or its
+     * replacement could choke on ([honorWho]).
      */
     internal fun build(format: Format, startedAt: Long, incoming: Boolean, party: Party?): String {
         val standard = RecordingStore.nameFor(Date(startedAt), incoming)
@@ -124,10 +138,50 @@ object FileNames {
                 // Phone app wanted the call's own number (above), and
                 // CallMatch.withNumber reads the name back digit for digit.
                 val number = digits(party?.number) ?: return standard
-                val who = clean(party?.name) ?: number
-                "$who@${number}_${honorStamp().format(Date(startedAt))}.${RecordingStore.EXTENSION}"
+                "${honorStem(party?.name, number, honorStamp().format(Date(startedAt)))}.${RecordingStore.EXTENSION}"
             }
         }
+    }
+
+    /** Honor's name for a call with [number] at [stamp] (yyyyMMddHHmmss),
+     *  with no extension: "<who>@<number>_<time>", or "<number>_<time>" for
+     *  a caller with no name the Phone app can take ([honorWho]) - or whose
+     *  name is the number itself, as a contact saved by its digits is: written
+     *  "<number>@<number>", the name was one [honorRenamed] renamed at the
+     *  next reading, under its own notification (review, 2026-11-18). */
+    private fun honorStem(who: String?, number: String, stamp: String): String =
+        honorWho(who?.takeUnless { isTheNumber(it, number) })?.let { "$it@${number}_$stamp" } ?: "${number}_$stamp"
+
+    /** Whether a caller's name is only [number] written out: no letters, and
+     *  its digits the number's - "+38 050 123 45 67" for +380501234567. */
+    private fun isTheNumber(who: String, number: String): Boolean =
+        who.none { it.isLetter() } && who.filter { it.isDigit() } == number.filter { it.isDigit() }
+
+    /**
+     * The name this version gives the call an Honor-format [name] stands for,
+     * where the Phone app cannot read the number in [name] (HonorPhoneApp):
+     * the files saved before 1.2 with a "+" before the @ - a caller with no
+     * name, written with the number there, or a name that starts with one -
+     * or a bracket left open there (see [build]). Null for any other name,
+     * one the app reads included, and for one already right. A provider's
+     * " (1)" stays where it was. Pure.
+     */
+    internal fun honorRenamed(name: String): String? {
+        val stem = name.substringBeforeLast('.', "")
+        if (stem.isEmpty()) return null
+        val ext = name.substringAfterLast('.')
+        val taken = TAKEN.find(stem)?.value.orEmpty()
+        val m = HonorNames.WITH_NAME.matchEntire("${stem.removeSuffix(taken)}.$ext") ?: return null
+        val (who, number, stamp) = m.destructured
+        // A name the Phone app reads its number in is left as it is: "Dr.
+        // Who" or "Mom (work)" compile as its pattern and match nothing, so
+        // their names read; only one the app throws on, or reads another
+        // number in, is renamed (HonorPhoneApp, its own code transcribed).
+        if (HonorPhoneApp.number(name) == number) return null
+        // Before 1.2 a caller with no name had the number written as the
+        // name; honorStem writes that as no name.
+        val renamed = "${honorStem(who, number, stamp)}$taken.$ext"
+        return renamed.takeIf { it != name }
     }
 
     /**
@@ -151,6 +205,15 @@ object FileNames {
 
     private const val FORBIDDEN = "/\\:*?\"<>|@%_"
     private const val LONGEST = 60
+
+    /** A caller's name for Honor's format: [clean], and without the
+     *  characters a regular expression or its replacement gives a meaning
+     *  to, which Honor's Phone app would read it with (see [build]); null
+     *  when nothing is left, for "<number>_<time>". */
+    internal fun honorWho(name: String?): String? =
+        clean(name)?.filterNot { it in REGEX_MEANT }?.replace(Regex("\\s+"), " ")?.trim()?.ifEmpty { null }
+
+    private const val REGEX_MEANT = "\\^$.|?*+()[]{}"
 
     /** At most [longest] characters, never cutting an emoji's surrogate pair
      *  in two: half of one is not a character any file system will take, nor
@@ -205,7 +268,6 @@ object FileNames {
         return "$stamp${direction}_$tag${who?.let { "_$it" } ?: ""}.${RecordingStore.EXTENSION}"
     }
 
-    private val HONOR_NAME = Regex("""^(.*)@(\+?\d+)_(\d{14})\.\w+$""")
 
     /** What a provider adds to a name that is taken (RecordingStore.Target.name). */
     private val TAKEN = Regex(""" \(\d+\)$""")
@@ -215,9 +277,14 @@ object FileNames {
         // A name its place had to change says the same of its call. Honor's
         // has its time last, so the addition is cut first.
         val stem = name.substringBeforeLast('.')
-        HONOR_NAME.matchEntire(TAKEN.replace(stem, "") + name.removePrefix(stem))?.let { m ->
+        val untaken = TAKEN.replace(stem, "") + name.removePrefix(stem)
+        HonorNames.WITH_NAME.matchEntire(untaken)?.let { m ->
             val at = runCatching { honorStamp().parse(m.groupValues[3])?.time }.getOrNull() ?: return null
             return Parsed(at, null, m.groupValues[1].trim().ifEmpty { null }, m.groupValues[2])
+        }
+        HonorNames.NUMBER_ONLY.matchEntire(untaken)?.let { m ->
+            val at = runCatching { honorStamp().parse(m.groupValues[2])?.time }.getOrNull() ?: return null
+            return Parsed(at, null, null, m.groupValues[1])
         }
         // Exactly as the list always read it, so no name it read differently
         // before reads differently now.

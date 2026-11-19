@@ -147,6 +147,16 @@
      leaving it stopped &mdash; a notification says so. Android&rsquo;s routine
      clean-up of an idle app is not counted: on an Honor, 2,015 of 2,062 such
      records were that, and none had left the app stopped.</p>
+  <p>Android&rsquo;s own Battery setting for an app can hold JemRec back on any
+     phone. Set to <em>Restricted</em>, Android lets nothing of JemRec&rsquo;s run
+     in the background: none of its jobs runs there, so a recorder that stops
+     may stay stopped until something starts JemRec &mdash; you opening it, or
+     Android for a reason of its own. With exact call tracking off, a call is saved only when
+     you next open JemRec &mdash; a messenger call most likely too, though that
+     is not measured &mdash; and in Ask first it is not recorded at all.
+     Auto-delete and the trash&rsquo;s 30 days wait for it as well. JemRec says so, on its home screen and
+     once in a notification, with a button to App info, where it is
+     changed.</p>
 
   <h2 id="what-it-does">What it does</h2>
 
@@ -174,8 +184,16 @@
      out silent is reported; a recorder that is down says why, with
      <strong>Pair again</strong> when the pairing is gone and
      <strong>Allow this Wi-Fi</strong> when Android has not allowed the network;
-     and with call log
-     access, an answered call that has no recording is reported once.</p>
+     a recording that stops before its call ends says so during the call and
+     goes on once it can, a gap in it; a recorder that was itself ended is
+     started again, and the call then has two recordings; one that never came
+     back is said after the call, with how much was missed, where JemRec can
+     tell; a call, or a part of one, that could not be saved says
+     why; a folder you chose that can no longer be reached is said, and the
+     call saved in the standard one; cards above the recordings say what
+     stands in the way - notifications off, battery use Restricted; and with
+     call log access, an answered call that has no recording is reported
+     once.</p>
 
   <h3>Every call, recorded or not</h3>
   <p>A Calls tab shows the phone's call log with a play mark on each recorded
@@ -241,16 +259,17 @@
   <table>
     <tr><th>Permission</th><th>Why</th></tr>
     <tr><td><code>INTERNET</code></td><td>Not about the internet: Android requires it for any TCP socket, including one to <code>127.0.0.1</code>.</td></tr>
-    <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing.</td></tr>
+    <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing - and for the background checks to ask Android for a network to run with (from Android 14 a job that asks for one needs it).</td></tr>
     <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to.</td></tr>
     <tr><td><code>POST_NOTIFICATIONS</code></td><td>The recording notice, the ask-first prompt, the pairing code box.</td></tr>
     <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
+    <tr><td><code>FOREGROUND_SERVICE_MEDIA_PLAYBACK</code></td><td>To play a recording on with the screen off, under the phone's media controls. It plays; it never records.</td></tr>
     <tr><td><code>RECEIVE_BOOT_COMPLETED</code></td><td>A reboot kills the recorder; this is what arms the job that rebuilds it.</td></tr>
     <tr><td><code>READ_MEDIA_AUDIO</code></td><td>To list recordings made before a reinstall. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_EXTERNAL_STORAGE</code></td><td>Android 12 only, which has no <code>READ_MEDIA_AUDIO</code>: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those.</td></tr>
-    <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
-    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking never acts on a call; the answering machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
-    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Lets the ask-first prompt last a minute instead of five seconds. Not auto-granted, and nothing is gated on it.</td></tr>
+    <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
+    <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking acts on a call in one case only: it hangs up the answering machine&rsquo;s call if the recorder is lost mid-message. The machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
+    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Keeps Ask first's question on screen during a call until you answer it; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs.</td></tr>
     <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down.</td></tr>
   </table>
 

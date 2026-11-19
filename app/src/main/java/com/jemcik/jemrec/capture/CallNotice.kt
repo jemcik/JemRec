@@ -13,6 +13,8 @@ internal object CallNotice {
         val recording: Boolean,
         /** A save failed: the user is told why, by tapping. */
         val notRecording: Boolean,
+        /** The recording stopped mid-call, and whether it is tried again. */
+        val stopped: Stopped? = null,
         /** The ticket of the message the answering machine is taking, if one is. */
         val messageTicket: String?,
         /** That message is a test call of the answering machine. */
@@ -32,6 +34,17 @@ internal object CallNotice {
         val buttonTicket: String?,
     )
 
+    enum class Stopped {
+        /** Being tried again: the recorder's capture, failed too often,
+         *  every 10 s (RestartPolicy), or stalled - nothing reached the
+         *  recording for 5 s, no read failing (StallWatch) - or the recorder
+         *  itself, found gone mid-call, every 30 s (RecorderWatch). */
+        TRYING,
+
+        /** The encoder or its file ended: nothing more of this call. */
+        FOR_GOOD,
+    }
+
     fun of(s: State): Notice {
         val ticket = s.messageTicket
         // Only the cable watch, no call: a check that ends in seconds when the
@@ -49,6 +62,10 @@ internal object CallNotice {
             cableOnly -> "Checking the recorder" to "A USB cable went in or came out"
             ticket != null && s.testing -> "Testing the answering machine" to "Your greeting is playing to the caller"
             ticket != null -> "Taking a message" to "Your greeting is playing; your microphone is muted"
+            s.recording && s.stopped == Stopped.TRYING ->
+                "Recording stopped" to "Trying again - this part of the call is not recorded"
+            s.recording && s.stopped == Stopped.FOR_GOOD ->
+                "Recording stopped" to "The rest of this call is not recorded"
             s.recording -> "Recording call" to "Saving this call"
             s.notRecording -> "Not recording this call" to "Tap to see why"
             else -> "Call in progress" to "JemRec is handling this call"

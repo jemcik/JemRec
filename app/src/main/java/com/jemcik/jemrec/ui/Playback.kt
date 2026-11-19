@@ -17,6 +17,7 @@ import com.jemcik.jemrec.playback.Output
 import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.playback.PlaybackRules
 import com.jemcik.jemrec.playback.SessionPlayer
+import com.jemcik.jemrec.playback.SoundPosition
 import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.Waveforms
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +43,9 @@ internal class Playback(
     private val log: ActionLog,
     /** How it reaches PlaybackService's session (MainViewModel's). */
     private val connectSession: (Application) -> ListenableFuture<MediaController>,
+    /** Where the sound of a recording is, from the player itself; null when
+     *  it is not the one open (SoundPosition). */
+    private val soundAt: (name: String) -> Int? = SoundPosition::of,
 ) {
     /**
      * The media session's player, in PlaybackService, reached as the
@@ -202,7 +206,7 @@ internal class Playback(
                 it.copy(
                     playingName = name,
                     playing = c.isPlaying,
-                    positionMs = c.currentPosition.toInt(),
+                    positionMs = positionOf(name, c),
                     durationMs = c.duration.takeIf { d -> d != C.TIME_UNSET }?.toInt() ?: 0,
                     earpiece = output == Output.EARPIECE,
                 )
@@ -236,6 +240,17 @@ internal class Playback(
         state.update { it.copy(positionMs = ms) }
     }
 
+    /** Where the sound of the recording loaded is now, for the playhead's
+     *  every frame; null when the player cannot say (SoundPosition). */
+    fun positionNow(): Int? = state.value.playingName?.let(soundAt)
+
+    /** Where recording [name] is. Playing, the player's own word
+     *  (SoundPosition), or the controller's until the player has opened it.
+     *  Not playing, the controller's: it says where the player paused, and a
+     *  seek asked for at once - the player has it a moment later. */
+    private fun positionOf(name: String, c: MediaController): Int =
+        (if (c.isPlaying) soundAt(name) else null) ?: c.currentPosition.toInt()
+
     /** A recording playing, paused: before a greeting take or its preview
      *  (AnswerController's quiet), so the call does not go into the
      *  greeting. */
@@ -244,8 +259,10 @@ internal class Playback(
     }
 
     /**
-     * Drives the progress bar: the session's position every 300 ms, while
-     * it plays and the screen is up. The end of the recording rewinds it to
+     * Drives the time shown, and the plain slider before the waveform is
+     * there: where the sound is every 300 ms, while it plays and the screen
+     * is up; the waveform's playhead reads it every frame ([positionNow]).
+     * The end of the recording rewinds it to
      * the start, paused (SessionPlayer); it does not close the row. It used to
      * vanish the moment playback ended - a player that disappears under your
      * thumb as you go to seek back is a small ambush. The chevron is the way
@@ -257,10 +274,11 @@ internal class Playback(
             while (true) {
                 val c = controller ?: break
                 if (!c.isPlaying) break
+                val name = c.currentMediaItem?.mediaId
                 state.update {
                     it.copy(
                         playing = true,
-                        positionMs = c.currentPosition.toInt(),
+                        positionMs = name?.let { n -> positionOf(n, c) } ?: c.currentPosition.toInt(),
                         durationMs = c.duration.takeIf { d -> d != C.TIME_UNSET }?.toInt() ?: it.durationMs,
                     )
                 }
