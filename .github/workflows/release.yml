@@ -69,7 +69,7 @@ jobs:
     steps:
       # Full history and every tag. merge-base and reading gradle.properties
       # at a tag both need more than the single commit fetched by default.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -165,7 +165,7 @@ jobs:
       TAG: ${{ needs.decide.outputs.tag }}
       SHA: ${{ needs.decide.outputs.sha }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.decide.outputs.sha }}
           # Not left in .git/config for the build: this job holds the signing
@@ -177,7 +177,7 @@ jobs:
       # other. F-Droid's build server is Debian trixie with default-jdk, which
       # is 21; a release built with a different major cannot be reproduced
       # there, and F-Droid would have to sign it with its own key instead.
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '21'
@@ -201,7 +201,7 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/d8" \
             || { echo "::error::build-tools 36.0.0 d8 is missing"; ls "$ANDROID_HOME/build-tools"; exit 1; }
 
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       # The version is READ from gradle.properties and CHECKED against the tag,
       # not derived from the tag. F-Droid's update checker reads
