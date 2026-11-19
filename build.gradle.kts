@@ -7,5 +7,5 @@ plugins {
     // compiled with no Android at all. The Compose plugin's version: AGP asks
     // for Kotlin 2.2.10 and gets this one (./gradlew buildEnvironment,
     // 2026-11-01), so the app and that module compile with one Kotlin.
-    id("org.jetbrains.kotlin.jvm") version "2.3.21" apply false
+    id("org.jetbrains.kotlin.jvm") version "2.4.21" apply false
 }
