@@ -1,0 +1,1 @@
+1.2.1: the libraries JemRec pairs and connects with are updated - BouncyCastle 1.87 and Conscrypt 2.9 - with the security fixes published for them since the last versions.

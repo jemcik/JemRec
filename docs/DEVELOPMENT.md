@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2608 JVM tests, no device needed - 2203 for the app and 405 for the daemon:
+2611 JVM tests, no device needed - 2206 for the app and 405 for the daemon:
 
     ./gradlew test
 
@@ -298,6 +298,30 @@ failure - name the Mac's crash report and what it says.
 Booting the AVDs without sound (`-audio none`) avoids that, but the Android
 17 AVD then played too slowly for `answering`, `background_playback` and
 `both_ears` (2026-11-18): the sound stays.
+The sound has a cost of its own: an emulator's speaker builds a backlog of
+audio written and not yet played, which nothing drains until the audio
+server restarts - AudioFlinger's "Threadloop write latency" of the speaker's
+thread (`dumpsys media.audio_flinger`). On the Android 13 AVD alone it was
+1510 ms after the 24 checks before the playback ones, about 0.35 ms a second
+from ringing alone; it grows in jumps when the Mac's audio stalls under load
+(inferred - the stutter heard from the emulators). A player started behind
+it is heard that late, and `background_playback`, `both_ears` and
+`raise_to_listen` read that as JemRec's playhead running ahead: they failed
+first and passed on their retry in two runs of three on 12 and 13 (2026-11-19,
+"chronic"). Restarted, the same checks passed on the same boot, so each of the
+three now starts the audio server afresh and says the backlog it cleared. A
+phone's audio hardware keeps its own clock: this is the emulator's.
+Two more "chronic" ones that day were the emulator's too. `succession` on 17:
+the contact's call answered, Telecom put the phone in call mode 2.5 s later
+and told the recorder its off-hook as late, and JemRec recorded the moment it
+was told (on the Honor the same day, 24 ms after the answer); a call's late
+start is now counted from the call's audio, Telecom's own "Mode MODE_IN_CALL"
+(`dumpsys telecom`), and Android's part is said beside it. `wifi_back`: since
+1.2 the keep-alive's runs ask for a network, and on mobile data JobScheduler
+may hold such a job until three are ready or for 31 minutes
+(`conn_transport_batch_threshold`, `conn_max_connectivity_job_batch_delay_ms`)
+- the retry it waits for sat ready for its five minutes; it now runs that retry
+at once with `cmd jobscheduler run -f`, Android's own tool for testing jobs.
 
 It installs the shrunk build (see above), sets JemRec up from nothing and
 places simulated calls: the ringing cut, the same cut with nothing captured

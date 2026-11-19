@@ -248,8 +248,8 @@ dependencies {
     // sun-security-android shim, which drags android.sun.* repackaged JDK
     // internals in. BouncyCastle is a real, auditable, Maven Central artifact
     // and one of the two is already in the graph regardless.
-    implementation("org.bouncycastle:bcprov-jdk15to18:1.81")
-    implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.87")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.87")
 
     // REQUIRED FOR PAIRING, and not obvious why.
     //
@@ -287,7 +287,11 @@ dependencies {
     // both keep RELRO in a segment of their own, which the check accepts,
     // and with this alone the app was no longer put in compat mode
     // (pageSizeCompat 256 before, 0 after, in `dumpsys package`).
-    implementation("org.conscrypt:conscrypt-android:2.7.0")
+    // 2.9.0 since 1.2.1 (2026-11-19), the same check made again: the 17 AVD
+    // reads 16384-byte pages and pageSizeCompat=0 with it, and
+    // tools/check_16k_pages.py passes its libconscrypt_jni.so; paired and
+    // connected through it on the Honor from a fresh setup.
+    implementation("org.conscrypt:conscrypt-android:2.9.0")
 
     implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     implementation("androidx.compose.material3:material3")
