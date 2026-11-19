@@ -179,6 +179,13 @@ on, and what follows its revive are tables (`Triggers.kt`, tested in the pure
 module below); `SwitchWritersTest` holds that only `RecorderLifecycle`
 writes the debugging switches.
 
+**Under the plain Application** (from 2026-11-20,
+`app/src/test/resources/robolectric.properties`): Robolectric starts the app
+afresh for each test, and the thread `JemRecApp` starts, which nothing waits
+for, could outlive its test and hand the next test the ended one's files
+folder - main's build failed twice so. A test of what the app does at its
+start calls that work itself.
+
 **Each of the three places** (from 0.29): Robolectric has no MediaStore and no
 folder provider, so `FakeMediaStore` and `FakeFolder` stand in for them, far
 enough to take what JemRec writes as well as what it reads. Over them, what a
