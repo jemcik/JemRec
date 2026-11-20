@@ -207,6 +207,29 @@ final class Wire {
      */
     static final String FETCH_LENGTH = "fetch-length";
 
+    /**
+     * A fetch's length, the one FETCH_LENGTH announces: eight bytes,
+     * big-endian, before the file - so the first four are 0 for any file
+     * under 4 GiB, which is how the app tells a length from an older reply
+     * (AudioStream). Bytes the session writes itself, with no stream around
+     * the socket's: one there could not be closed - closing it closes the
+     * socket's - and CodeQL counted it a leak (alert 132, 2026-11-19).
+     */
+    static byte[] fetchLength(long length) {
+        return java.nio.ByteBuffer.allocate(Long.BYTES).putLong(length).array();
+    }
+
+    /**
+     * The greeting's take sent whole ('G' then 'T'): its length first, in
+     * four bytes, big-endian, 0 for none - as the app reads it
+     * (DaemonClient.fetchTake, DataInputStream.readInt). Written as
+     * fetchLength is, with no stream around the socket's (CodeQL alert 106,
+     * the same as 132).
+     */
+    static byte[] takeLength(int length) {
+        return java.nio.ByteBuffer.allocate(Integer.BYTES).putInt(length).array();
+    }
+
     /** Its LIST ends with how many it sent (Checks.listEnd): said, as
      *  FETCH_LENGTH is, so an app reads a reply without it from an older
      *  recorder as before - one it speaks to for days after an update, off

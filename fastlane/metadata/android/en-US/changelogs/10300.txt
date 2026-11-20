@@ -1,0 +1,1 @@
+1.3: up-to-date libraries and build tools, and a tidier hand-over of each recording from the recorder to the app. Nothing changes in how JemRec looks or works.

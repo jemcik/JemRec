@@ -15,7 +15,7 @@ import java.net.Socket
  *       n bytes payload
  *
  * A fetch from a recorder of 1.2 or later starts with the file's length, 8
- * bytes big-endian (the recorder's Wire.FETCH_LENGTH), so a transfer cut
+ * bytes big-endian (the recorder's Wire.fetchLength), so a transfer cut
  * short - the recorder ended in the middle of it - says so ([cutShort])
  * instead of reading as a whole, shorter recording. A length's first four
  * bytes are 0 for any file under 4 GiB. An older reply's are a codec id, or

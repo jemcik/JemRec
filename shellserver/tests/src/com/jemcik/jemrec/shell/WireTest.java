@@ -1,11 +1,13 @@
 package com.jemcik.jemrec.shell;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -242,5 +244,43 @@ public class WireTest {
         assertEquals('J', Wire.COMMAND_KEEP_PAIRED);
         assertEquals('Z', Wire.COMMAND_SET_QUALITY);
         assertEquals(2, Wire.PROTOCOL_VERSION);
+    }
+
+    /**
+     * A fetch's length (Wire.fetchLength): eight bytes, big-endian - the
+     * bytes the recorder wrote through DataOutputStream.writeLong until 1.3,
+     * so an app of any version reads them as before - and the first four 0
+     * for a file under 4 GiB, which is how the app tells a length from an
+     * older recorder's reply (AudioStream).
+     */
+    @Test
+    public void aFetchLengthIsEightBytesBigEndianAsBefore() throws IOException {
+        assertArrayEquals(new byte[8], Wire.fetchLength(0));
+        assertArrayEquals(new byte[] {0, 0, 0, 0, 0, 0, 0, 1}, Wire.fetchLength(1));
+        assertArrayEquals(new byte[] {0, 0, 0, 1, 0, 0, 0, 5}, Wire.fetchLength((1L << 32) + 5));
+        assertArrayEquals(new byte[] {0x7f, -1, -1, -1, -1, -1, -1, -1}, Wire.fetchLength(Long.MAX_VALUE));
+        for (long length : new long[] {0, 1, 255, 256, 65_536, 1_234_567_890L, (1L << 32) - 1, 1L << 32, Long.MAX_VALUE}) {
+            ByteArrayOutputStream before = new ByteArrayOutputStream();
+            new DataOutputStream(before).writeLong(length);
+            assertArrayEquals("length " + length, before.toByteArray(), Wire.fetchLength(length));
+        }
+        byte[] under4GiB = Wire.fetchLength((1L << 32) - 1);
+        assertArrayEquals(new byte[4], java.util.Arrays.copyOf(under4GiB, 4));
+    }
+
+    /**
+     * The greeting take's length (Wire.takeLength): four bytes, big-endian -
+     * the bytes DataOutputStream.writeInt wrote until 1.3, which the app reads
+     * with DataInputStream.readInt (DaemonClient.fetchTake).
+     */
+    @Test
+    public void aTakeLengthIsFourBytesBigEndianAsBefore() throws IOException {
+        assertArrayEquals(new byte[4], Wire.takeLength(0));
+        assertArrayEquals(new byte[] {0, 1, 0, 2}, Wire.takeLength(65_538));
+        for (int length : new int[] {0, 1, 255, 256, 65_536, 4_000_000, Integer.MAX_VALUE}) {
+            ByteArrayOutputStream before = new ByteArrayOutputStream();
+            new DataOutputStream(before).writeInt(length);
+            assertArrayEquals("length " + length, before.toByteArray(), Wire.takeLength(length));
+        }
     }
 }

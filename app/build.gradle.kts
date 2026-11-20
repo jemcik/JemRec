@@ -304,7 +304,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
-    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.core:core-ktx:1.19.1")
 
     // Playing a recording with the screen off: a media session in a service,
     // Android's documented route, under the system's media controls.
@@ -343,7 +343,7 @@ dependencies {
     // CallTrackerTest). The inline mock maker in Mockito 5 mocks abstract and
     // final classes without extra setup. Nothing else in the tests needs a
     // framework.
-    testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.mockito:mockito-core:5.24.0")
 
     // The screen tests: Robolectric runs the real Compose UI on the JVM, and
     // Roborazzi turns what it draws into a PNG to compare. Test-only, so the

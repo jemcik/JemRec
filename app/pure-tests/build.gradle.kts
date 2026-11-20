@@ -98,7 +98,7 @@ dependencies {
 val pitest: Configuration = configurations.create("pitest")
 
 dependencies {
-    pitest("org.pitest:pitest-command-line:1.30.1")
+    pitest("org.pitest:pitest-command-line:1.30.2")
 }
 
 tasks.register<JavaExec>("pitest") {
