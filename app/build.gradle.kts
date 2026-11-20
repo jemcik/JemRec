@@ -376,6 +376,58 @@ kotlin {
     compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
+// Robolectric's Android jars - android-all-instrumented, one for each Android
+// the tests run on: 16 (SDK 36: targetSdk and @Config(sdk = [36])) and 13
+// (one test's @Config(sdk = [33])). Left to itself, Robolectric downloads
+// them from Maven Central while the tests run, one attempt per file, and
+// checks each only against a .sha512 from the same server. CI keeps no
+// ~/.m2, so every run fetched their 383 MB, and a 404 there failed five test
+// classes at their start (PR #123's first run, 2026-11-19). Resolved by
+// Gradle instead, they are checked against gradle/verification-metadata.xml,
+// kept on CI by setup-gradle with the other dependencies, and fetched, when
+// they are not there, before any test runs - retried on timeouts and server
+// errors, though not on a 404: the cache is what keeps a run from asking.
+// Robolectric then runs offline and reads them from a folder
+// (robolectric.offline, robolectric.dependency.dir:
+// robolectric.org/configuring).
+//
+// The versions are the ones Robolectric 4.18 asks for (its
+// DefaultSdkProvider). Another Robolectric may ask for others, and its tests
+// then fail with IllegalArgumentException at LocalDependencyResolver, "Path
+// is not a file: .../android-all-instrumented-<the version it wants>.jar" in
+// the test report: change the line here and write the checksums again
+// (docs/DEVELOPMENT.md). A test on another Android fails the same way,
+// naming the jar to add.
+//
+// One configuration each: in one, Gradle keeps a single version of a module,
+// the newest, and Android 13's jar was left out - the SDK 33 test failed
+// so (2026-11-20).
+val robolectricAndroid16: Configuration = configurations.create("robolectricAndroid16")
+val robolectricAndroid13: Configuration = configurations.create("robolectricAndroid13")
+
+dependencies {
+    robolectricAndroid16("org.robolectric:android-all-instrumented:16-robolectric-13921718-2-i7")
+    robolectricAndroid13("org.robolectric:android-all-instrumented:13-robolectric-9030017-i7")
+}
+
+val robolectricJarsDir = layout.buildDirectory.dir("robolectric-jars")
+val robolectricJars = tasks.register<Sync>("robolectricJars") {
+    description = "Copies Robolectric's Android jars to where the unit tests read them"
+    from(robolectricAndroid16, robolectricAndroid13)
+    into(robolectricJarsDir)
+}
+
+// The unit tests' task: AGP makes testDebugUnitTest alone here (`./gradlew
+// test --dry-run`). Here, not in unitTests.all above, because that comes
+// before the jars are declared.
+tasks.withType<Test>().configureEach {
+    // A changed jar runs the tests again.
+    inputs.files(robolectricJars).withPropertyName("robolectricJars")
+        .withPathSensitivity(PathSensitivity.NAME_ONLY)
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", robolectricJarsDir.get().asFile.absolutePath)
+}
+
 // The shell-side capture daemon ships INSIDE the APK as an asset.
 //
 // That is the "single APK, nothing else installed" requirement, and it is also

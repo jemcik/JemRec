@@ -186,6 +186,19 @@ for, could outlive its test and hand the next test the ended one's files
 folder - main's build failed twice so. A test of what the app does at its
 start calls that work itself.
 
+**Robolectric's Android jars** (from 2026-11-20, `app/build.gradle.kts`): the
+Android the tests run in - 16's and 13's jars, 383 MB - comes as Gradle
+dependencies, checked against `gradle/verification-metadata.xml` and kept on
+CI with the rest; Robolectric runs offline and reads them from
+`app/build/robolectric-jars`. Left to fetch them itself, it did so on every
+CI run, and a 404 failed five test classes (PR #123, 2026-11-19). The first
+local run fetches them once into Gradle's cache; copies Robolectric kept in
+`~/.m2` before are no longer read. A new Robolectric may ask for other
+versions: its tests then fail with `IllegalArgumentException` at
+`LocalDependencyResolver`, and the test report names the jar ("Path is not a
+file: …") - change the version in `app/build.gradle.kts` and write the
+checksums again (Dependency verification, above).
+
 **Each of the three places** (from 0.29): Robolectric has no MediaStore and no
 folder provider, so `FakeMediaStore` and `FakeFolder` stand in for them, far
 enough to take what JemRec writes as well as what it reads. Over them, what a
