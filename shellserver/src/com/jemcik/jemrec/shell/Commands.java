@@ -388,10 +388,9 @@ final class Commands {
         Ln.i("session: fetching " + name + " (" + length + " bytes)");
         try (FileInputStream in = new FileInputStream(file)) {
             OutputStream os = client.getOutputStream();
-            // Its length first (Wire.FETCH_LENGTH): eight bytes, big-endian,
-            // whose first four are never GONE's. The file is finished - not
+            // Its length first (Wire.fetchLength). The file is finished - not
             // the one being written (above) - so it no longer grows.
-            new java.io.DataOutputStream(os).writeLong(length);
+            os.write(Wire.fetchLength(length));
             byte[] buf = new byte[64 * 1024];
             int n;
             while ((n = in.read(buf)) > 0) {
@@ -442,13 +441,13 @@ final class Commands {
     }
 
     private static void sendFile(Socket client, File file) throws IOException {
-        java.io.DataOutputStream out = new java.io.DataOutputStream(client.getOutputStream());
+        OutputStream out = client.getOutputStream();
         if (!file.isFile()) {
-            out.writeInt(0);
+            out.write(Wire.takeLength(0));
             out.flush();
             return;
         }
-        out.writeInt((int) file.length());
+        out.write(Wire.takeLength((int) file.length()));
         try (FileInputStream in = new FileInputStream(file)) {
             byte[] buf = new byte[64 * 1024];
             int n;

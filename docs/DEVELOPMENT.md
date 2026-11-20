@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2611 JVM tests, no device needed - 2206 for the app and 405 for the daemon:
+2613 JVM tests, no device needed - 2206 for the app and 407 for the daemon:
 
     ./gradlew test
 
@@ -302,9 +302,14 @@ which the AVDs are now booted without (`-no-window`) - stops the pass: the check
 are run on the fresh boot, kept in the history as LOST rather than as their
 failures; the lines where the emulator ended - GONE, or the check's own
 failure - name the Mac's crash report and what it says.
-Booting the AVDs without sound (`-audio none`) avoids that, but the Android
-17 AVD then played too slowly for `answering`, `background_playback` and
-`both_ears` (2026-11-18): the sound stays.
+Since 1.3 the AVDs boot without sound (`-no-audio`), which avoids that, and
+a run is no longer heard on the Mac: a call's own sound - a tone the
+emulator's audio HAL makes - played in full whatever the volumes, Android's
+master mute, or `QEMU_AUDIO_OUT_DRV=none`, which this emulator ignores
+(2026-11-20). Without sound the Android 17 AVD once played too slowly for
+`answering`, `background_playback` and `both_ears` (2026-11-18); measured
+again, with the audio server started afresh before the playback checks, the
+three playback checks passed, 5030 ms played in 5 s (2026-11-20).
 The sound has a cost of its own: an emulator's speaker builds a backlog of
 audio written and not yet played, which nothing drains until the audio
 server restarts - AudioFlinger's "Threadloop write latency" of the speaker's
@@ -323,12 +328,22 @@ the contact's call answered, Telecom put the phone in call mode 2.5 s later
 and told the recorder its off-hook as late, and JemRec recorded the moment it
 was told (on the Honor the same day, 24 ms after the answer); a call's late
 start is now counted from the call's audio, Telecom's own "Mode MODE_IN_CALL"
-(`dumpsys telecom`), and Android's part is said beside it. `wifi_back`: since
-1.2 the keep-alive's runs ask for a network, and on mobile data JobScheduler
-may hold such a job until three are ready or for 31 minutes
-(`conn_transport_batch_threshold`, `conn_max_connectivity_job_batch_delay_ms`)
-- the retry it waits for sat ready for its five minutes; it now runs that retry
-at once with `cmd jobscheduler run -f`, Android's own tool for testing jobs.
+(`dumpsys telecom`), and Android's part is said beside it. `wifi_back`: in
+1.2 it waited five minutes for a retry that did not come, and the job list read
+after that said "Ready: true". That was put down to JobScheduler's connectivity
+batching, whose flag (`batch_connectivity_jobs_per_network`) is off on these
+AVDs and the Honor - with JemRec in the ACTIVE bucket there (EXEMPTED on the
+Honor), which JobScheduler's other batching leaves alone. Measured again
+(1.3): a retry's delay ends with an alarm that is inexact (up to 75% of the
+wait late) and does not wake the device; one retry in six, nothing reading it
+and the screen on, ran 299 s into a 60 s wait, which that does not explain -
+nor what 1.2 waited for. And a read of JobScheduler's state once a job's delay
+is over, before that alarm, marks the job ready without telling the scheduler
+and, from Android 14, stops tracking it, so the alarm reports nothing. The "Ready: true"
+was that read's own, and 1.2.1's version of the check, reading every 2 s, lost
+its retry the same way before it forced it. The check now reads the retry
+once, while its delay still runs, waits the delay out by the clock, and runs it
+with `cmd jobscheduler run -f`, Android's own tool for testing jobs.
 
 It installs the shrunk build (see above), sets JemRec up from nothing and
 places simulated calls: the ringing cut, the same cut with nothing captured

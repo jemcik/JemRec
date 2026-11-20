@@ -499,12 +499,26 @@ def as_root(command):
 
 
 # Each stream's volume for a run, of Android's own stream numbers: system,
-# ring, music, alarm and notification turned down a little - about half of
-# the AVDs' own 5 of 7 (music 5 of 15) - as they play on the Mac's speakers
-# through a whole run (the user's ask, 2026-10-28: "quite loud", but "do not
-# mute them"). The voice call stream is left as it is: checks measure what
-# the recorder captures of a call.
-QUIET = {1: 3, 2: 3, 3: 4, 4: 3, 5: 3}
+# ring, music, alarm and notification at their lowest step, 1 - they play on
+# the Mac's speakers through a whole run, over the user's meetings (the
+# user's ask, 2026-11-20: "turn down the volume to minimum"; 2026-10-28 it
+# was half, "do not mute them"). Not 0: the emulator's sound must keep
+# playing - without it, -audio none, the Android 17 AVD played too slowly to
+# check (EMULATOR_FLAGS) - and a ring volume of 0 changes Android's ringer
+# mode. No check reads these volumes. The voice call stream too, at its own
+# lowest, 1 (it has no 0): left at Android's own until 2026-11-20, as the
+# checks measure what the recorder captures of a call - with the other five
+# at 1 the user still heard the run loudly through a meeting, and stopped it.
+# That the call checks pass with it is the next full run's to show.
+# Music - the recordings played and the greeting - muted outright, 0 (the
+# user, 2026-11-20): a muted stream still plays, its position moving, so the
+# playback checks time it as before. None of this reaches a call's own
+# sound - a tone the emulator's audio HAL makes, played at full volume
+# whatever the volumes, Android's master mute, or QEMU_AUDIO_OUT_DRV=none
+# (each tried, the run still heard in full, 2026-11-20) - so the emulators
+# run with no audio at all (-no-audio, EMULATOR_FLAGS), and these volumes
+# matter for an emulator started by hand with its sound.
+QUIET = {0: 1, 1: 1, 2: 1, 3: 0, 4: 1, 5: 1}
 
 
 def quieten():
@@ -513,8 +527,11 @@ def quieten():
     Android 17's audio hardening ignores the shell's `cmd media_session
     volume`, though 12, 13 and 16 take it."""
     said = diag("volume", "--es", "set", ",".join(f"{s}:{i}" for s, i in QUIET.items()))
-    if "failed" in said:
-        print(f"     (sounds not turned down: {said.strip()})")
+    got = {int(k): int(v) for k, v in re.findall(r"\b(\d+)=(\d+)\b", said)}
+    loud = {s: got.get(s) for s, i in QUIET.items() if got.get(s) != i}
+    # Said either way, in the run's log: the user hears these through meetings.
+    print(f"     sounds: {', '.join(f'{s}={v}' for s, v in sorted(got.items()))}"
+          + (f" - NOT turned down: {loud}" if loud else ""))
 
 
 def set_up(apk):
@@ -4882,31 +4899,62 @@ def uid_idle(uid):
     return record is None or re.search(r"\bidle\b", record.split(" change:")[0]) is not None
 
 
-def keepalive_retry_job(due=False):
-    """The keep-alive's retry waiting in JobScheduler: (its namespace, or None
-    before Android 14, and its job id) - WorkManager's job for
-    RecorderKeepAlive with the shortest minimum latency, two minutes at most
-    (a retry's backoff: 30 s, 60, 120), so never the periodic heartbeat's,
-    which waits most of its 15 minutes. With [due], only once JobScheduler
-    reads it ready - its backoff over: WorkManager puts off a backed-off
-    work started before its next run time ("Delaying execution ... because
-    it is being executed before schedule", WorkerWrapper), and a run forced
-    any sooner did nothing on the 16 and 17 AVDs (2026-11-19). None if there
-    is none."""
+# WorkManager's first backoff for the keep-alive's retry (RecorderKeepAlive,
+# the default exponential 30 s).
+RETRY_BACKOFF_S = 30
+
+
+def dump_seconds(text):
+    """A duration as `dumpsys jobscheduler` prints it (Android's
+    TimeUtils.formatDuration): "+1d2h3m4s5ms" or "-32s12ms", leading parts
+    left out when 0, "0" for none at all. None for anything else ("none")."""
+    m = re.match(r"([+-]?)(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(\d+)ms$", text)
+    if text in ("0", "+0", "-0"):
+        return 0.0
+    if not m:
+        return None
+    d, h, mi, sec, ms = (int(x or 0) for x in m.groups()[1:])
+    value = ((d * 24 + h) * 60 + mi) * 60 + sec + ms / 1000
+    return -value if m[1] == "-" else value
+
+
+def keepalive_retry_job(within_s):
+    """The keep-alive's first retry, just queued in JobScheduler: (its
+    namespace, or None before Android 14, its job id, and the seconds until
+    it is due by JobScheduler's "Run time: earliest", or None if it does not
+    say) - WorkManager's job
+    for RecorderKeepAlive with a minimum latency of the first backoff
+    (RETRY_BACKOFF_S) and queued in the last [within_s] seconds. Both, as
+    neither alone is the retry's: the heartbeat, put anew with a latency of
+    whatever is left of its 15 minutes when wifi_back force-stops the app
+    (SystemJobInfoConverter), can be queued as recently, or have the latency.
+    None if there is none.
+
+    Read it only while the retry's delay still runs. A read of JobScheduler's
+    state once a delay is over, before the delay's own alarm has fired - an
+    inexact one that does not wake the device - marks the job ready without
+    telling the scheduler and, from Android 14, stops tracking it, so the
+    alarm finds nothing to report (TimeController.evaluateStateLocked): on the
+    16 and 17 AVDs, 2026-11-19, read every 10 s, both retries sat "Ready:
+    true" for 4 minutes and more; read not at all, five of six ran within
+    their alarm's window."""
     dump = sh(f"dumpsys jobscheduler {PKG}")
     found = []
     # Android 14 and later name the worker in the job's line; before, every
-    # WorkManager job is the same service, and the latency picks the retry
-    # (the USB watch has none, the heartbeat minutes): the Android 13 AVD's
-    # "JOB #u0a223/186: 40a91fa com.jemcik.jemrec/androidx.work...".
+    # WorkManager job is the same service, and the latency and the time it
+    # was queued pick the retry (the USB watch has no latency): the Android
+    # 13 AVD's "JOB #u0a223/186: 40a91fa com.jemcik.jemrec/androidx.work...".
     for m in re.finditer(r"JOB (?:([\w.]+):)?#?u\d+a\d+/(\d+): \S+ (?:#RecorderKeepAlive#|"
                          r"com\.jemcik\.jemrec/androidx\.work\.impl\.background\.systemjob\.SystemJobService)", dump):
         block = re.split(r"\n\s+JOB ", dump[m.end():m.end() + 3000])[0]
-        latency = re.search(r"Minimum latency: \+(?:(\d+)m)?(\d+)s(\d+)ms", block)
-        if latency and (not due or "Ready: true" in block):
-            seconds = int(latency[1] or 0) * 60 + int(latency[2]) + int(latency[3]) / 1000
-            if seconds <= 120:
-                found.append((seconds, m[1], int(m[2])))
+        latency = re.search(r"Minimum latency: (\S+)", block)
+        queued = re.search(r"Enqueue time: (\S+)", block)
+        due = re.search(r"Run time: earliest=([^,\s]+)", block)
+        latency_s = dump_seconds(latency[1]) if latency else None
+        queued_s = dump_seconds(queued[1]) if queued else None
+        if latency_s is not None and queued_s is not None and RETRY_BACKOFF_S - 5 <= latency_s <= RETRY_BACKOFF_S + 1 \
+                and -queued_s <= within_s:
+            found.append((-queued_s, m[1], int(m[2]), dump_seconds(due[1]) if due else None))
     return min(found)[1:] if found else None
 
 
@@ -4938,14 +4986,21 @@ def wifi_back():
     with one left by an earlier check the first try seen here was number 3
     (Android 12 AVD, the same day).
 
-    Since 1.2 the keep-alive's runs ask for a network, and on mobile data
-    JobScheduler may hold such a job until three are ready or for 31 minutes
-    (conn_transport_batch_threshold, conn_max_connectivity_job_batch_delay_ms;
-    JobSchedulerService.shouldForceBatchJob) - WorkManager never expedites a
-    retry: on the Android 17 AVD, 2026-11-19, the retry sat ready, every
-    constraint met, for the whole five minutes this waited, twice. So once a
-    try has failed, the retry waiting is run at once with Android's own tool
-    for testing jobs (`cmd jobscheduler run -f`, keepalive_retry_job)."""
+    The retry's 30 s end loosely: JobScheduler's alarm for them is inexact
+    (up to 75% of the wait late) and does not wake the device, and
+    WorkManager's own timer runs only while JemRec's process is up and not
+    frozen (GreedyScheduler) - and on the 17 AVD, 2026-11-19, the screen on, a
+    60 s wait once ran after 299 s, which neither explains. And a read of JobScheduler's
+    state once the delay is over can lose the job for minutes
+    (keepalive_retry_job), as this check's own reads did in 1.2.1: it was
+    written down then as JobScheduler's connectivity batching, whose flag is
+    off on these AVDs and the Honor, with JemRec in the ACTIVE bucket there
+    (EXEMPTED on the Honor), which the other batching path leaves alone. So the retry is read once, while its
+    delay still runs, the delay waited out by the clock, and the retry run
+    with Android's own tool for testing jobs (`cmd jobscheduler run -f`) -
+    not sooner: WorkManager puts off a retry started before its time
+    ("Delaying execution ... because it is being executed before schedule",
+    WorkerWrapper)."""
     set_prefs(start_without_wifi=False)
     log_before = revive_log()
     try:
@@ -4969,15 +5024,27 @@ def wifi_back():
             return tried is not None and "recorder down" in since[tried.end():]
 
         wait_for(failed_try, 120, "the kick to fail off Wi-Fi", step=2)
-        # Its retry: tried already by JobScheduler, or waiting there - the
-        # job queued a moment after the try that failed.
-        found = wait_for(lambda: failed_retry() or keepalive_retry_job(due=True), 150,
-                         "the kick's retry, tried or due in JobScheduler", step=2)
-        failed = found if isinstance(found, int) else None
+        failed_at = time.time()
+        # A retry that failed already - the first try seen here a later one:
+        # a kick joins one already waiting (KEEP) - is all this waits for.
+        failed = failed_retry()
         if failed is None:
-            namespace, job_id = found
-            sh(f"cmd jobscheduler run -f {f'-n {namespace} ' if namespace else ''}{PKG} {job_id}")
-            failed = wait_for(failed_retry, 60, "the kick's retry, run at once, to fail off Wi-Fi", step=2)
+            # Its retry, read now - queued a moment after the try that failed,
+            # its delay still running - and not again (keepalive_retry_job).
+            namespace, job_id, due_in = wait_for(lambda: keepalive_retry_job(time.time() - failed_at + 10), 15,
+                                                 "the kick's retry queued in JobScheduler", step=1)
+            read_at = time.time()
+            # Until it is due, by JobScheduler's own word, and a little more:
+            # WorkManager puts off a retry started before its time.
+            due_at = read_at + due_in if due_in is not None else failed_at + RETRY_BACKOFF_S
+            time.sleep(max(0.0, due_at + 3 - time.time()))
+            failed = failed_retry()
+        if failed is None:
+            # Its answer kept for a failure's message only: a retry that ran
+            # on its own meanwhile is what failed_retry finds either way.
+            said = sh(f"cmd jobscheduler run -f {f'-n {namespace} ' if namespace else ''}{PKG} {job_id}").strip()
+            failed = wait_for(failed_retry, 60, f"the kick's retry, run once it was due, to fail off "
+                              f"Wi-Fi (run -f said: {said[:80] or 'nothing'})", step=2)
         wifi_on(True)
         on_at = time.time()
         wait_wifi_connected()
@@ -5210,11 +5277,13 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           # a simulated Wi-Fi that does not come back would fail every check
           # after them - so the three after them start the recorder themselves.
           stopped_early, wifi_back, start_without_wifi,
-          # And after them, this one: Android's job scheduler stays slow for
-          # JemRec a while after the restricted standby bucket, even put back
-          # to active - wifi_back, two checks after it, saw a kick's 30 s
-          # retry come after 5 minutes on the Android 16 and 17 AVDs
-          # (2026-11-17), and passed run alone. It needs only the recorder up.
+          # And after them, this one. Put here when wifi_back, two checks
+          # after it, saw a kick's 30 s retry come after 5 minutes on the
+          # Android 16 and 17 AVDs (2026-11-17) and passed run alone - put
+          # down then to the restricted standby bucket's aftermath, not shown.
+          # Since 1.2.1 wifi_back runs that retry itself (Android's own
+          # timing measured loose), so the order no longer guards it; kept,
+          # as it costs nothing. It needs only the recorder up.
           battery_restricted,
           # The audio server ended mid-call: last, as the server it brings
           # back is a new one for every check after it - and held down.
@@ -5428,21 +5497,30 @@ SETTLE_TIMEOUT_S = 3 * 60
 #                 2026-11-12 and 2026-11-18 were that window's own (Qt's
 #                 menu bar and timers; two at once as the windows were
 #                 brought to the front, 2026-11-15).
-# Its sound stays, on the Mac's CoreAudio, though that output deadlocks now
-# and then and the emulator's hang detector ends it (four of the ten crash
-# reports: why_emulator_ended; three more were its GPU renderer freeing what
-# a process that ended had drawn with, gfxstream's cleanupProcGLObjects). Without it,
-# -audio none, the Android 17 AVD played too slowly to check - answering
-# (the greeting never played), background_playback (2.9 s in 5 s) and
-# both_ears failed, twice each; the Android 12 AVD passed (2026-11-18). A
-# run instead stops at an emulator that ended, and its retry boots it again.
+# -no-audio: no sound on the Mac at all. A run is two hours of calls,
+# ringing and recordings on the Mac's speakers, through the user's meetings,
+# and a call's own sound - a tone the emulator's audio HAL makes - played in
+# full whatever the volumes (QUIET), Android's master mute, or
+# QEMU_AUDIO_OUT_DRV=none, which this emulator ignores (each tried, the run
+# still heard, 2026-11-20). Without its sound the Android 17 AVD once played
+# too slowly to check - answering (the greeting never played),
+# background_playback (2.9 s in 5 s) and both_ears failed twice each,
+# 2026-11-18 - but measured again, the audio server started afresh before the
+# playback checks (fresh_audio_server, since 1.2.1), background_playback
+# played 5030 ms in 5 s and the three playback checks passed, the emulator
+# holding none of the Mac's audio (2026-11-20). Its CoreAudio output also
+# deadlocked now and then, the emulator's hang detector ending it (four of
+# the ten crash reports to 2026-11-18: why_emulator_ended) - none left to
+# deadlock; three more were its GPU renderer freeing what a process that
+# ended had drawn with (gfxstream's cleanupProcGLObjects). A run stops at an
+# emulator that ended, and its retry boots it again.
 # -crash-report-mode never: an emulator that crashed or hung before leaves a
 # report, and the next to start waits on a dialog on the Mac's screen asking
 # whether to send it - every boot, until it is answered (both AVDs waited out
 # the boot timeout so on 2026-11-18). Never sent, never asked (the
 # emulator's own -help); boot() still says so at once if one asks anyway.
 EMULATOR_FLAGS = ["-no-snapshot", "-memory", "4096", "-no-boot-anim", "-camera-back", "none", "-camera-front", "none",
-                  "-no-window", "-crash-report-mode", "never"]
+                  "-no-window", "-crash-report-mode", "never", "-no-audio"]
 
 
 def emulator_binary():

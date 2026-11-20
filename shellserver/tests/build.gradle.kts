@@ -77,7 +77,7 @@ dependencies {
 val errorprone: Configuration = configurations.create("errorprone")
 
 dependencies {
-    errorprone("com.google.errorprone:error_prone_core:2.51.0")
+    errorprone("com.google.errorprone:error_prone_core:2.52.0")
     errorprone("com.uber.nullaway:nullaway:0.14.3")
 }
 
@@ -170,7 +170,7 @@ if (providers.gradleProperty("coverage").isPresent) {
 val pitest: Configuration = configurations.create("pitest")
 
 dependencies {
-    pitest("org.pitest:pitest-command-line:1.30.1")
+    pitest("org.pitest:pitest-command-line:1.30.2")
 }
 
 tasks.register<JavaExec>("pitest") {
