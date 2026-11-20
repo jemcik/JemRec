@@ -68,6 +68,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
+      # Robolectric runs offline: its Android jars are Gradle dependencies,
+      # pinned, and kept by setup-gradle with the rest (app/build.gradle.kts).
       - name: Tests
         run: ./gradlew test
 

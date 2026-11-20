@@ -58,3 +58,7 @@ updates:
       # Kept at the coroutines the app itself resolves to, so the tests run
       # what ships (app/build.gradle.kts); it moves with them, by hand.
       - dependency-name: "org.jetbrains.kotlinx:kotlinx-coroutines-test"
+      # Robolectric's Android jars: the versions Robolectric itself asks for,
+      # not the newest published; they move with Robolectric, by hand
+      # (app/build.gradle.kts).
+      - dependency-name: "org.robolectric:android-all-instrumented"
