@@ -78,7 +78,7 @@ val errorprone: Configuration = configurations.create("errorprone")
 
 dependencies {
     errorprone("com.google.errorprone:error_prone_core:2.52.0")
-    errorprone("com.uber.nullaway:nullaway:0.14.3")
+    errorprone("com.uber.nullaway:nullaway:0.14.4")
 }
 
 // Where shellserver/build.sh looks, in the same order.
