@@ -109,6 +109,68 @@ class PlayClockTest {
         assertEquals(40_000, clock.position(40_000, playing = false, nowMs = 6_000, durationMs = 60_000))
     }
 
+    /** Sent somewhere while paused, it is there, though the player - sent
+     *  80 ms early for the decoder's pre-roll (OpusPreRoll) - says less. */
+    @Test fun sentToAPlaceWhilePausedItIsThere() {
+        clock.startsFrom(10_000)
+        clock.underWay(atMs = 5_000)
+        clock.pausedAt(reportedMs = 10_000, nowMs = 5_200, durationMs = 60_000)
+        clock.sentTo(40_000)
+        assertEquals(40_000, clock.position(39_920, playing = false, nowMs = 6_000, durationMs = 60_000))
+        // Further on by the player's word, the word.
+        assertEquals(40_050, clock.position(40_050, playing = false, nowMs = 6_000, durationMs = 60_000))
+    }
+
+    /** Playing, the seek under way: Media3 says it is not playing while it
+     *  seeks, and the clock is stopped - the place sent to stands. */
+    @Test fun sentToAPlaceItStaysThereThroughTheSeeksOwnStop() {
+        clock.startsFrom(10_000)
+        clock.underWay(atMs = 5_000)
+        clock.sentTo(40_000)
+        clock.stopped()
+        assertEquals(40_000, clock.position(39_920, playing = false, nowMs = 5_100, durationMs = 60_000))
+        assertEquals(40_000, clock.position(39_920, playing = true, nowMs = 5_150, durationMs = 60_000))
+        // Under way: the clock from there, past the player's first word.
+        clock.underWay(atMs = 5_200)
+        assertEquals(40_100, clock.position(39_990, playing = true, nowMs = 5_300, durationMs = 60_000))
+    }
+
+    /** Played after a seek made while paused, it goes on from the place sent
+     *  to, not from the player's word 80 ms short of it. */
+    @Test fun playedAfterASeekWhilePausedItGoesOnFromThePlaceSent() {
+        clock.startsFrom(10_000)
+        clock.underWay(atMs = 5_000)
+        clock.pausedAt(reportedMs = 10_000, nowMs = 5_200, durationMs = 60_000)
+        clock.sentTo(40_000)
+        clock.resumes(reportedMs = 39_920)
+        assertEquals(40_000, clock.position(39_920, playing = true, nowMs = 6_000, durationMs = 60_000))
+        // And paused again at once, before the sound: still there.
+        clock.pausedAt(reportedMs = 39_920, nowMs = 6_010, durationMs = 60_000)
+        assertEquals(40_000, clock.position(39_920, playing = false, nowMs = 6_100, durationMs = 60_000))
+    }
+
+    /** Sent somewhere and paused before the sound got under way there, a
+     *  late word that the track ran dry - the sound before the seek - does
+     *  not pull the paused place back to the player's word, 80 ms short. */
+    @Test fun aLateUnderrunLeavesThePlaceSentTo() {
+        clock.startsFrom(10_000)
+        clock.underWay(atMs = 5_000)
+        clock.sentTo(40_000)
+        clock.pausedAt(reportedMs = 39_920, nowMs = 5_050, durationMs = 60_000)
+        assertFalse(clock.underrun(reportedMs = 39_920))
+        assertEquals(40_000, clock.position(39_920, playing = false, nowMs = 5_100, durationMs = 60_000))
+    }
+
+    /** Sent past the end while paused - a controller can ask - it is shown
+     *  at the end, as every other place is capped. */
+    @Test fun aPlaceSentPastTheEndIsShownAtTheEnd() {
+        clock.startsFrom(10_000)
+        clock.underWay(atMs = 5_000)
+        clock.pausedAt(reportedMs = 10_000, nowMs = 5_200, durationMs = 60_000)
+        clock.sentTo(70_000)
+        assertEquals(60_000, clock.position(59_920, playing = false, nowMs = 6_000, durationMs = 60_000))
+    }
+
     @Test fun aPausedPlaceIsNeverPastTheEnd() {
         clock.startsFrom(59_900)
         clock.underWay(atMs = 5_000)

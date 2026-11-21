@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasNoClickAction
@@ -162,7 +163,7 @@ class BehaviourTest : ScreenTest() {
         }
         back()
         assertEquals(Screen.HOME, vm.state.value.screen)
-        compose.onNodeWithText("Ready to record").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Ready to record.", substring = true).assertIsDisplayed()
     }
 
     /** About, at Settings' foot: the version this is, and a tap that opens
@@ -1501,12 +1502,67 @@ class BehaviourTest : ScreenTest() {
 
     /** Memo's state and marks are heard as the sentence the other two looks
      *  say (headerSpeech), and only it: merged, its drawn words and the
-     *  marks' own names were read, "Every call" and "Answering machine on". */
+     *  marks' own names were read, "Every call" and "Answering machine on";
+     *  and its title, merged but left a node of its own, was said again after
+     *  the sentence - "... Messenger calls is on. Ready to record." (TalkBack
+     *  on the Honor, 2026-11-20). */
     @Test fun memosHeaderIsOneSentenceToAScreenReader() {
         val vm = homeIn(Look.MEMO)
-        val said = compose.onNodeWithContentDescription("Ready to record. Records every call.", substring = true)
-            .fetchSemanticsNode().config[SemanticsProperties.ContentDescription]
-        assertEquals(listOf(headerSpeech(vm.state.value, marks(vm.state.value, answering = false))), said)
+        val header = compose.onNodeWithContentDescription("Ready to record. Records every call.", substring = true)
+            .fetchSemanticsNode()
+        assertEquals(
+            listOf(headerSpeech(vm.state.value, marks(vm.state.value, answering = false))),
+            header.config[SemanticsProperties.ContentDescription],
+        )
+        assertNull("words merged in beside the sentence", header.config.getOrNull(SemanticsProperties.Text))
+        // Nor a node of its own in what accessibility gets.
+        assertFalse(accessibilityTexts().toString(), "Ready to record" in accessibilityTexts())
+    }
+
+    /** The words of every node accessibility gets, walked as Compose hands
+     *  its tree over: the unmerged tree - a merged node's children too - but
+     *  nothing under a node that clears its descendants
+     *  (SemanticsNode.getChildren with includeReplacedSemantics = false,
+     *  Compose UI 1.12). The test tree's own unmerged view keeps those, by
+     *  design. */
+    private fun accessibilityTexts(): List<String> {
+        val words = mutableListOf<String>()
+        fun walk(node: SemanticsNode) {
+            node.config.getOrNull(SemanticsProperties.Text)?.forEach { words += it.text }
+            if (!node.config.isClearingSemantics) node.children.forEach(::walk)
+        }
+        walk(compose.onRoot(useUnmergedTree = true).fetchSemanticsNode())
+        return words
+    }
+
+    /** Off, Memo's plain instruction ("Tap the button to record calls") is
+     *  no node of its own either: the sentence says the state, and the
+     *  button is its own control, as in Deck and Multitrack. */
+    @Test fun memosPlainInstructionIsNotSaidApart() {
+        val vm = viewModel(Fixtures.ready().copy(enabled = false))
+        showApp(vm, look = LookChoice(Look.MEMO))
+        // Drawn, and in the test tree.
+        compose.onNode(
+            androidx.compose.ui.test.hasText("Tap the button to record calls") and
+                androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag(STEADY_SHOWN)),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Off. Calls are not recorded.", substring = true).assertExists()
+        val said = accessibilityTexts()
+        assertFalse(said.toString(), said.any { it.startsWith("Tap the button") || it == "Off" })
+    }
+
+    /** An instruction with a tap stays a control of its own, said and
+     *  pressed apart from the sentence. */
+    @Test fun memosInstructionTapStaysAControl() {
+        val vm = viewModel(Fixtures.ready().copy(daemonRunning = false, networkNotAllowed = true))
+        showApp(vm, look = LookChoice(Look.MEMO))
+        compose.onNodeWithContentDescription("Cannot record. Android has not allowed this Wi-Fi.", substring = true)
+            .assertExists()
+        compose.onNodeWithText("Tap to allow this Wi-Fi").assertHasClickAction()
+        val said = accessibilityTexts()
+        assertTrue(said.toString(), "Tap to allow this Wi-Fi" in said)
+        assertFalse(said.toString(), "Cannot record" in said)
     }
 
     @Test fun decksLcdIsOneSentenceToAScreenReader() {
@@ -1600,7 +1656,7 @@ class BehaviourTest : ScreenTest() {
         repeat(3) { compose.onRoot().performTouchInput { swipeUp(startY = bottom - 10f, endY = centerY - 100f) } }
         compose.waitForIdle()
         compose.onNodeWithText("Olivia Bennett").assertIsNotDisplayed()
-        compose.onNodeWithText("Ready to record").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Ready to record.", substring = true).assertIsDisplayed()
         compose.onAllNodesWithContentDescription("Record calls").assertCountEquals(1)
         repeat(8) { compose.onRoot().performTouchInput { swipeDown(startY = centerY, endY = bottom - 10f) } }
         compose.waitForIdle()
@@ -1621,7 +1677,7 @@ class BehaviourTest : ScreenTest() {
         compose.runOnUiThread { state = state.copy(starting = true) }
         compose.waitForIdle()
         compose.onAllNodes(ring).assertCountEquals(1)
-        compose.onNodeWithText("Starting...").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Starting.", substring = true).assertIsDisplayed()
     }
 }
 

@@ -1,0 +1,1 @@
+1.4: one notification for each call. A call recorded in parts says so, and its Delete takes every part; a recording that stopped early no longer brings a second notice; a recording under ten seconds is no longer called silent. A seek starts where you sent it, not 50 to 90 ms after it. TalkBack reads Memo's header once.

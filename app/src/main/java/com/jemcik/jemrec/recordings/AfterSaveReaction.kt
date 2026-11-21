@@ -14,6 +14,8 @@ import com.jemcik.jemrec.rethrowingCancellation
  * call went unrecorded - the hang-up's own notification says so as well
  * (CallMonitorService). Blocking: the after-call notice decodes the file.
  * [alertUp]: "Call not recorded" posted already by this call's reaction.
+ * [call]: every recording of the call saved, this one among them - its
+ * notice is the call's (reactToCall); null, this one alone.
  * True when this row told.
  */
 internal suspend fun AfterSave.react(
@@ -23,6 +25,7 @@ internal suspend fun AfterSave.react(
     incoming: Boolean,
     by: AfterSave.Collector,
     alertUp: Boolean = false,
+    call: List<Outcome.Saved>? = null,
     tell: (String) -> Unit,
 ): Boolean {
     val row = row(kindOf(outcome), by)
@@ -38,7 +41,7 @@ internal suspend fun AfterSave.react(
     if (row.notice && outcome is Outcome.Saved) {
         // The saved part's own call - with call waiting, the last of them -
         // not the recording's.
-        runCatching { AfterCall.saved(context, outcome, outcome.incoming, outcome.startMillis) }
+        runCatching { AfterCall.saved(context, outcome, outcome.incoming, outcome.startMillis, call ?: listOf(outcome)) }
             .onFailure { Log.w(TAG, "${by.tag}: after-call notice failed", it) }
     }
     if (row.missedCheck) {
@@ -82,13 +85,16 @@ internal suspend fun AfterSave.reactToCall(
         outcomes.map { (file, _, outcome) -> Triple(file, kindOf(outcome), (outcome as? Outcome.Saved)?.seconds ?: 0.0) },
         own,
     )
+    // Its notice speaks for every part saved (1.4): the one told by - the
+    // most audio - had its length alone, and Play and Delete on itself.
+    val saved = outcomes.mapNotNull { it.third as? Outcome.Saved }
     // After a tell the alert is up, listed by Android or not yet (react).
     var posted = false
     outcomes.sortedBy { it.first == told }.forEach { (file, way, outcome) ->
         val said = if (file == told) {
-            react(context, outcome, file, way, by, posted, tell)
+            react(context, outcome, file, way, by, posted, saved, tell)
         } else {
-            react(context, outcome, file, way, partBy, posted, partTell)
+            react(context, outcome, file, way, partBy, posted, tell = partTell)
         }
         posted = posted || said
     }

@@ -28,6 +28,7 @@ import com.jemcik.jemrec.diag.ops.KeepPairedOp
 import com.jemcik.jemrec.diag.ops.HideSettingsOp
 import com.jemcik.jemrec.diag.ops.HoldSaveOp
 import com.jemcik.jemrec.diag.ops.ClearNotesOp
+import com.jemcik.jemrec.diag.ops.SeekCheckOp
 import com.jemcik.jemrec.diag.ops.MonitorOp
 import com.jemcik.jemrec.diag.ops.MonitorStopOp
 import com.jemcik.jemrec.diag.ops.PairNotifOp
@@ -165,6 +166,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     "oldpages" -> OldPagesOp.run(appContext, intent)
                     "holdsave" -> HoldSaveOp.run(appContext, intent)
                     "clearnotes" -> ClearNotesOp.run(appContext, intent)
+                    "seekcheck" -> SeekCheckOp.run(appContext, intent)
                     else -> report(appContext, "?", "unknown op '$op'")
                 }
             } catch (t: Throwable) {

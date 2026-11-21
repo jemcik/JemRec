@@ -37,7 +37,20 @@ import kotlin.math.sqrt
  *     Honor's capture can put the whole call in one channel. So a dead
  *     channel is logged, for the day the two sides are split on purpose,
  *     and the user is told only about a recording with no sound at all.
- *   - FINE, or UNKNOWN for a call too short to judge.
+ *   - FINE, or UNKNOWN for a recording too short to judge: under ten
+ *     seconds, unless a channel has already had three seconds of sound
+ *     (then judged - never silent). The first seconds after an answer often
+ *     hold no voice, and
+ *     half a second of it - the floor below - is easily not there yet: a
+ *     5.5 s part a lost recorder left of a WhatsApp call held 4.5 s of live
+ *     line (-62 to -73 dB) and then about a second of voice, and was told
+ *     "silent" (the Honor, 2026-11-19). A capture muted on every call is said
+ *     at the next call of ten seconds or more; one muted only on some calls -
+ *     Wi-Fi calling, on some phones - goes unsaid on a call under ten.
+ *
+ * A call recorded in parts (a recorder lost and brought back mid-call) is
+ * judged as one: silent only if every part long enough to judge is
+ * ([ofCall]).
  *
  * It stops as soon as every channel has had a few seconds of sound, which for
  * an ordinary call is within its first minute, and never reads more than
@@ -57,8 +70,10 @@ internal object AudioCheck {
     /** Three seconds of sound on every channel and the call is plainly fine. */
     internal const val ENOUGH_ACTIVE = 150
 
-    /** Shorter than this and there is too little to judge. */
-    internal const val MIN_FRAMES = 150
+    /** Shorter than this - ten seconds - and there is too little to judge:
+     *  three seconds until 1.4, and a part with a second of voice at its end
+     *  was called silent (see above). */
+    internal const val MIN_FRAMES = 500
 
     /** Ten minutes. A file still silent after that is silent. */
     internal const val MAX_FRAMES = 30_000
@@ -103,8 +118,27 @@ internal object AudioCheck {
         }
     }
 
+    /** A call's verdict from its parts' (each [check]ed): silent only if every
+     *  part that could be judged is; nothing judged, unknown. */
+    internal fun ofCall(parts: List<Verdict>): Verdict {
+        val judged = parts.filter { it != Verdict.UNKNOWN }
+        return when {
+            judged.isEmpty() -> Verdict.UNKNOWN
+            judged.all { it == Verdict.SILENT } -> Verdict.SILENT
+            Verdict.FINE in judged -> Verdict.FINE
+            else -> Verdict.ONE_SIDE
+        }
+    }
+
     internal fun classify(levels: Levels): Verdict {
-        if (levels.frames < MIN_FRAMES) return Verdict.UNKNOWN
+        // Short, but with sound enough on its loudest channel: judged - it
+        // cannot come out silent. The meter stops as soon as each channel has
+        // had ENOUGH_ACTIVE, often within the first ten seconds, and the
+        // Honor puts a whole call in one channel; either way such a part came
+        // out UNKNOWN once MIN_FRAMES went to ten seconds, was left out of
+        // the call's verdict, and a silent part made the call "silent"
+        // (review rounds 2 and 3 of 1.4).
+        if (levels.frames < MIN_FRAMES && (levels.active.maxOrNull() ?: 0) < ENOUGH_ACTIVE) return Verdict.UNKNOWN
         val most = levels.active.maxOrNull() ?: 0
         if (most < maxOf(SILENT_FLOOR, levels.frames / 200)) return Verdict.SILENT
         if (levels.active.size == 2 && levels.separate) {

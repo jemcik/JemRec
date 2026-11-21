@@ -124,6 +124,12 @@ object RecordingSaver {
             val part: Boolean = false,
             /** A part joined mid-call: its call's start; -1 for none. */
             val callAt: Long = -1,
+            /** It stopped early, this many ms before its call ended, and that
+             *  was just told (StoppedEarly.tell): the call's after-call notice
+             *  says it in that notice's place, so the call has one (AfterCall,
+             *  1.4). Null if it did not, or another recording carries the call
+             *  on. */
+            val earlyMissedMs: Long? = null,
         ) : Outcome
 
         /** The file was read in full but held no audio; deleted rather than kept. */
@@ -599,9 +605,13 @@ object RecordingSaver {
         // would have (SaveJournal.Skip).
         noteSkips(context, cut.skips)
         Log.i(TAG, "save: $recfile was cut short while publishing; ${noted.size} file(s) finished")
-        if (noted.isNotEmpty()) cut.early?.let {
-            StoppedEarly.tell(context, it, clock())
-            SaveJournal.told(context, recfile)
+        val told = if (noted.isNotEmpty()) {
+            cut.early?.also {
+                StoppedEarly.tell(context, it, clock())
+                SaveJournal.told(context, recfile)
+            }
+        } else {
+            null
         }
         // Noted in the ledger first: a delete that does not get through
         // leaves the copy to the next collection, which only deletes it.
@@ -624,6 +634,7 @@ object RecordingSaver {
                 message = part.message,
                 part = part.part,
                 callAt = part.callAt,
+                earlyMissedMs = told?.takeUnless { it.carried }?.missed,
             )
         })
     }
@@ -1027,10 +1038,15 @@ object RecordingSaver {
                 // Decided now, said once published - and written down with
                 // the rest, for a save cut short there (SaveJournal).
                 val early = lastPacket?.invoke(transfer.lastSlot)
-                publish(context, recfile, counts, phoneCall, message, early, part, skips).also {
+                publish(context, recfile, counts, phoneCall, message, early, part, skips).let {
                     if (it is Outcome.Saved && early != null) {
                         StoppedEarly.tell(context, early, clock())
                         SaveJournal.told(context, recfile)
+                        // Said now, kept through a process killed before the
+                        // call's notice; that notice then takes its place.
+                        it.copy(earlyMissedMs = early.takeUnless { e -> e.carried }?.missed)
+                    } else {
+                        it
                     }
                 }
             }

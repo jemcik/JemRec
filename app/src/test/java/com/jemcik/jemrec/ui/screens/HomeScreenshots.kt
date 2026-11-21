@@ -465,7 +465,7 @@ class HomeScreenshots : ScreenTest() {
         home(Fixtures.ready().copy(automatic = false, batteryNotice = true, batteryRestricted = true, callTracking = false))
         compose.onNodeWithText("none is recorded", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Not now").assertDoesNotExist()
-        compose.onNodeWithText("Cannot record").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Cannot record.", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Battery Restricted · tap to allow").assertIsDisplayed()
         snap("home-ask-first-battery-restricted")
     }

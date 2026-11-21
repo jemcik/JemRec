@@ -28,12 +28,15 @@ import androidx.media3.extractor.ogg.OggExtractor
  *  a stand-in in the tests. */
 internal interface PlaybackEngine {
     /** Opens [uri] for [output], with both sides in both ears or not
-     *  ([bothEars]), ready to start from the beginning; false if it will not
+     *  ([bothEars]), ready to start from [fromMs]; false if it will not
      *  open. [onChanged] when what it says changes by itself - its length
      *  known, its sound under way after a start or a seek, its audio track
      *  run dry (PlayClock.underrun), playing or paused - [onFinished] at
      *  its end, [onFailed] on an error, opening included, which may come
-     *  after this returns. */
+     *  after this returns. Opened there, not opened and then sent: a seek
+     *  that met a decoder already up flushed it, and Android's Opus decoder
+     *  dropped the first 80 ms after it - on the Android 17 emulator one
+     *  reopen of three in a run lost 74 ms so (2026-11-20; OpusPreRoll). */
     fun open(
         uri: Uri,
         output: Output,
@@ -41,6 +44,7 @@ internal interface PlaybackEngine {
         onChanged: () -> Unit,
         onFinished: () -> Unit,
         onFailed: () -> Unit,
+        fromMs: Int = 0,
     ): Boolean
 
     /** False if it would not start: after an error the player stays down. */
@@ -104,6 +108,10 @@ internal interface PlaybackEngine {
  *   SeekParameters.EXACT, as SEEK_CLOSEST was (MediaPlayer's plain seekTo
  *   was SEEK_PREVIOUS_SYNC). Measured on the Honor, 2026-11-16: ExoPlayer and
  *   MediaPlayer landed on the same millisecond at five seeks in a 542.7 s call.
+ *   That was the position; the sound after a seek began 54-93 ms past it,
+ *   Android's Opus decoder dropping its pre-roll from the target (measured
+ *   on the 12 and 17 emulators, 2026-11-20) - so once the decoder is up the
+ *   player is sent 80 ms early (OpusPreRoll).
  * - At its end it stops and says so once ([onFinished]); a later start plays
  *   it again. ExoPlayer would stay set to play at its end - a seek back to
  *   the start would then play it again by itself - so it is paused first.
@@ -128,6 +136,12 @@ internal class RecordingPlayer(private val context: Context) : PlaybackEngine {
 
     private var player: ExoPlayer? = null
     private val clock = PlayClock()
+
+    /** Whether the open player's audio decoder is up - has been made and not
+     *  let go: a seek then flushes it, and Android's Opus decoder drops its
+     *  80 ms pre-roll after a flush (OpusPreRoll). Before, a seek starts a
+     *  fresh one, which does not. */
+    private var decoderUp = false
 
     /** The ExoPlayer open, for the JVM tests to run Media3's own way
      *  (TestPlayerRunHelper). */
@@ -172,14 +186,29 @@ internal class RecordingPlayer(private val context: Context) : PlaybackEngine {
         onChanged: () -> Unit,
         onFinished: () -> Unit,
         onFailed: () -> Unit,
+        fromMs: Int,
     ): Boolean {
         close()
         return runCatching {
             context.contentResolver.openInputStream(uri).use { check(it != null && it.read() >= 0) { "nothing to read" } }
             val made = build(output, bothEars)
             player = made
-            clock.startsFrom(0)
+            decoderUp = false
+            clock.startsFrom(fromMs.toLong())
             made.addAnalyticsListener(object : AnalyticsListener {
+                override fun onAudioDecoderInitialized(
+                    eventTime: AnalyticsListener.EventTime,
+                    decoderName: String,
+                    initializedTimestampMs: Long,
+                    initializationDurationMs: Long,
+                ) {
+                    if (player === made) decoderUp = true
+                }
+
+                override fun onAudioDecoderReleased(eventTime: AnalyticsListener.EventTime, decoderName: String) {
+                    if (player === made) decoderUp = false
+                }
+
                 override fun onAudioPositionAdvancing(eventTime: AnalyticsListener.EventTime, playoutStartSystemTimeMs: Long) {
                     // Not one sent before a pause or a seek that has landed
                     // since: it would set the clock going over a sound that
@@ -243,7 +272,7 @@ internal class RecordingPlayer(private val context: Context) : PlaybackEngine {
                     onFailed()
                 }
             })
-            made.setMediaItem(MediaItem.fromUri(uri))
+            made.setMediaItem(MediaItem.fromUri(uri), fromMs.toLong())
             made.prepare()
             Log.i(TAG, if (bothEars) "player: open, both sides in both ears" else "player: open, each side in its own ear")
             true
@@ -274,8 +303,11 @@ internal class RecordingPlayer(private val context: Context) : PlaybackEngine {
 
     override fun seekTo(ms: Int) {
         val made = player ?: return
-        clock.startsFrom(ms.toLong())
-        made.seekTo(ms.toLong())
+        // Shown where it was sent, the player itself sent up to 80 ms before
+        // it once its decoder is up, so the decoder's own pre-roll drop ends
+        // there (OpusPreRoll).
+        clock.sentTo(ms.toLong())
+        made.seekTo(OpusPreRoll.seekFrom(ms.toLong(), decoderUp))
     }
 
     override fun close() {

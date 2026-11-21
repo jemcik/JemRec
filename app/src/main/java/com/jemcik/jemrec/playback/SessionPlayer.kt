@@ -196,14 +196,15 @@ internal class SessionPlayer(
         // where the session said the sound was at that moment, apart from
         // the gap the reopen leaves (emulator_checks.skipped_across).
         Log.i("JemRec", "player: opened again at $at ms, elapsed ${SystemClock.elapsedRealtime()}")
-        opened = engine.open(uri, output, bothEars(), onChanged = ::changed, onFinished = ::finished, onFailed = ::failed)
+        // Opened there, not opened and then sent: a seek meeting a decoder
+        // already up dropped 80 ms after it (RecordingPlayer.open).
+        opened = engine.open(uri, output, bothEars(), onChanged = ::changed, onFinished = ::finished, onFailed = ::failed, fromMs = at)
         if (!opened) {
             error = PlaybackException("could not open ${item?.mediaId}", null, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
             playing = PlaybackRules.Playing(wanted = false)
             focus.abandon()
             return
         }
-        if (at > 0) engine.seekTo(at)
         if (playing.sounding) sound()
     }
 

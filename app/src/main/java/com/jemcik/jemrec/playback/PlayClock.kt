@@ -70,6 +70,11 @@ internal class PlayClock {
      *  yet under way: an underrun now puts it back to the word ([underrun]). */
     private var resumedAhead = false
 
+    /** Where the sound was sent ([sentTo]), held until it is under way from
+     *  there; -1 when none. The player may be sent ahead of it (OpusPreRoll)
+     *  and say so until then. */
+    private var soughtMs = -1L
+
     /** Started, or sent to [positionMs]: the sound goes from there, and until
      *  it does, it is there - or where the player says, if that is further
      *  on. */
@@ -79,6 +84,18 @@ internal class PlayClock {
         heldMs = -1
         dryAtMs = -1
         resumedAhead = false
+        soughtMs = -1
+    }
+
+    /** Sent to [positionMs] - a seek: as [startsFrom], and that is where it
+     *  is, playing or paused, until the sound is under way from there. The
+     *  player itself may be sent up to OpusPreRoll.MS before it, and says so
+     *  until then: paused after a seek, the player's word read 80 ms short
+     *  of where it was sent (1.4). A stop meanwhile ([stopped]) keeps it -
+     *  Media3 says it is not playing while a seek is under way. */
+    fun sentTo(positionMs: Long) {
+        startsFrom(positionMs)
+        soughtMs = positionMs
     }
 
     /** The sound got under way at [atMs], elapsedRealtime. */
@@ -87,6 +104,7 @@ internal class PlayClock {
         heldMs = -1
         dryAtMs = -1
         resumedAhead = false
+        soughtMs = -1
     }
 
     /** Paused at [nowMs], the player saying [reportedMs]: where it was the
@@ -102,6 +120,12 @@ internal class PlayClock {
      *  where a pause left it, or from the player's word if that is further
      *  on - read just after the pause, it may still be its last step. */
     fun resumes(reportedMs: Long) {
+        // Sent somewhere while paused, not yet under way from there: there
+        // still - the player's word may be short of it (sentTo).
+        if (soughtMs >= 0) {
+            sentTo(maxOf(soughtMs, reportedMs))
+            return
+        }
         val from = if (heldMs >= 0) maxOf(heldMs, reportedMs) else reportedMs
         startsFrom(from)
         resumedAhead = from > reportedMs
@@ -134,6 +158,10 @@ internal class PlayClock {
      * 2026-11-18). True if this changed where the sound is said to be.
      */
     fun underrun(reportedMs: Long): Boolean {
+        // Sent somewhere and not yet under way from there: no sound since
+        // to have run ahead of, and the player's word is short of the place
+        // on purpose (sentTo).
+        if (soughtMs >= 0) return false
         if (atMs >= 0) {
             fromMs = reportedMs
             atMs = -1
@@ -161,11 +189,18 @@ internal class PlayClock {
      * and under way, and in step with the player's [reportedMs] - else that,
      * and the clock goes on from there. Paused, where [pausedAt] had it;
      * playing but not yet under way, where it starts from, or the player's
-     * word if that is further on. Never past [durationMs], when that is known
-     * (above 0).
+     * word if that is further on; sent somewhere ([sentTo]) and not yet under
+     * way from there, playing or not, there - or the player's word if that is
+     * further on. Never past [durationMs], when that is known (above 0).
      */
     fun position(reportedMs: Long, playing: Boolean, nowMs: Long, durationMs: Long): Long {
-        if (!playing) return if (heldMs >= 0) heldMs else reportedMs
+        if (!playing) {
+            return when {
+                heldMs >= 0 -> heldMs
+                soughtMs >= 0 -> maxOf(soughtMs, reportedMs).let { if (durationMs > 0) minOf(it, durationMs) else it }
+                else -> reportedMs
+            }
+        }
         if (atMs < 0 && dryAtMs >= 0 && reportedMs > dryAtMs) {
             // On again after running dry: the clock from the word, as it moves.
             fromMs = reportedMs

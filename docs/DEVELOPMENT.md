@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2613 JVM tests, no device needed - 2206 for the app and 407 for the daemon:
+2646 JVM tests, no device needed - 2239 for the app and 407 for the daemon:
 
     ./gradlew test
 
@@ -429,7 +429,16 @@ across the move, against the device's clock, no more than 100 ms ahead - a
 move done right reads 117 to 160 ms behind, for its gap, so a skip of about
 a quarter second is the most this lets through (on the 1.2 branch, before
 its release, a move dropped what Android's audio track held, 390 ms on the
-Android 17 AVD);
+Android 17 AVD); a seek's sound beginning where the seek was sent - 20 s of
+noise encoded by Android's own Opus encoder and written by the app's Ogg
+writer, played by an ExoPlayer built as the app's own with a tee taking what
+its sink is given, sent as `OpusPreRoll` says: six seeks while it plays,
+three while it is paused and then played, three files opened at a place as a
+reopen opens them, each one's sound matched against a straight decode from
+20 ms in, between 40 ms before its place and 30 ms after (a build without
+`OpusPreRoll` measured 48 to 82 ms after on the Android 12 and 17 AVDs,
+2026-11-20, Android's decoder dropping its 80 ms pre-roll from the place;
+`seek_preroll`);
 JemRec
 as one window -
 begun by its own way in, as from a notification, the same way in again and
@@ -554,10 +563,11 @@ Android 13 and later); a picked folder
 deleted, the next call saved in the standard folder with a notification and
 home's notice saying so (`folder_lost`); and the recorder ended mid-call,
 brought back while the call is up by the call's own watch, said in the call's
-notification, both parts saved and neither said to have stopped early -
+notification, both parts saved and neither said to have stopped early, the
+call's one notification saying it is in two parts -
 brought back during an incoming call, the new recorder joining it, both parts
 saved incoming and none said to have stopped early - lost unnoticed just before a hang-up and a redial, two calls, the first's file a part, three times: redialled at once with exact call tracking on, a second after the call's mode went normal with it off, and after a recorder started between the calls - and, Wi-Fi off, not brought back, the call's end read from the audio mode at once, its notification gone after the call and
-its recording collected and said to have stopped early (`stopped_early`); the
+its recording collected and said to have stopped early, the call's notice in the early one's place and no other beside it (`stopped_early`); the
 app's process killed (SIGKILL as root, as the low-memory killer sends) while it
 saves a call - a second into the transfer, written but not published, and
 published with the recorder's copy not yet deleted, the debug build holding
@@ -568,7 +578,8 @@ saved whole and once at the next open, nothing left pending
 (`killed_mid_save`); the
 recorder's encoder ended mid-call by a full phone, with exact call tracking
 off, the call's notification saying so during the call, its file named with
-what it missed and the app saying it stopped early from that alone, and a
+what it missed and the app saying it stopped early from that alone, in one
+notification for the call, and a
 message's recording ended the same way hung up on at once, what was kept
 saved (`early_end`); the phone put in Doze by Android's own test
 command, a call recorded and saved at once and an ended recorder brought back

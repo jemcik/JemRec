@@ -1923,6 +1923,33 @@ packet at a time with one decoder, 6.9 s joined, and 2.5 s joined four at
 once; a 58-second call, 1.0 s and then 0.14 s. Drawn, the bars match the one
 decoder's within 10%.
 
+**A seek lands where it is sent** (1.4). Opus is decoded from at least 80 ms
+before a seek's place, and what comes before the place dropped (RFC 7845,
+4.6). Android's Opus decoder drops those 80 ms itself after every flush - at
+every seek once it has decoded (AOSP `C2SoftOpusDec`) - but Media3's Ogg
+reader feeds it from the packet that holds the place, none before (Media3
+1.11.1 `StreamReader`): the 80 ms dropped were the place's own. Measured by
+the sound itself - what the player's sink was given after each of 20 seeks,
+matched against a straight decode - it began 53.5 to 73.5 ms past the place
+on the Android 12 emulator and 73.5 to 92.5 ms past it on 17 (2026-11-20);
+the player's own position, which an earlier probe read, did not show it.
+So once its decoder is up the player is sent 80 ms early (`OpusPreRoll`), and
+the decoder's own drop ends at the place: measured from 32 ms before it to 2
+ms after it, a little repeated, never lost. The playhead shows the place meanwhile,
+playing or paused: the player's own word reads 80 ms short until the sound
+is under way (`PlayClock.sentTo`). A seek before the decoder is up starts a
+fresh one, which drops only the stream's pre-skip, and is sent where asked.
+A file opened again where it was - a move to the earpiece, Both sides in
+both ears - is opened there, not opened and then sent: on the 17 emulator,
+one reopen of three in a run lost 74 ms so, its decoder up before the seek came;
+opened there, its sound began 8 to 28 ms past the place on 12 and 17.
+The first 80 ms of a file have nothing before them to send the player to: a
+replay from the start begins 73.5 ms in - the decoder's own rule for a seek to
+zero, dropping only the pre-skip, is keyed on a timestamp of 0, and ExoPlayer
+stamps every sample past its renderer offset of 1e12 us (Media3 1.11.1
+`MediaPeriodQueue`). The release check `seek_preroll`
+holds it on Android's own decoder.
+
 ## Playing in the background
 
 A recording plays on with the screen off and the app out of sight, under the
@@ -2007,7 +2034,9 @@ voice notes with (`VoiceNoteProximityWakeLockManager` and
   400 to 460 ms with that seek. Stopping the player and preparing it again
   first lost nothing, and cost what opening it again does - a new decoder,
   the file read again - so a move opens it again, as Both sides in both ears
-  does (`SessionPlayer.reopen`): one way. The release check
+  does (`SessionPlayer.reopen`): one way. Opened at its place, not opened and
+  then sent there: a seek meeting a decoder already up lost 74 ms (1.4; see
+  [Playing a recording](#playing-a-recording)). The release check
   `raise_to_listen` holds it: each move opens the file again within 50 ms of
   where the playhead's clock had the sound (`SessionPlayer.reopen` logs
   where and when it aims), and its sound runs on no more than about a
@@ -2241,7 +2270,13 @@ every state and at every text size, and each setting the header marks -
 AUTO or ASK, ANS, MSG, DEL - carries the same mark in Settings, from one
 function. To a screen reader each header is one sentence, the same in all
 three: the state, then what is on (Memo's read its marks' own names until
-0.30). A look draws nothing that is not data: no meter moves between calls,
+0.30). And only it: Compose hands accessibility a merged node's children as
+well, all but those under a node that clears them, and Memo's title, merged
+under the sentence but not cleared, was said after it - *Ready to record.
+Records every call. Messenger calls is on. Ready to record.* (TalkBack 17.1
+on the Honor, 2026-11-20) - so Memo's words sit in a cleared box, as Deck's
+and Multitrack's do (1.4), and one setting on takes its own verb. A look
+draws nothing that is not data: no meter moves between calls,
 no LED is lit for show. Opened, until its first look at the recorder lands,
 the header says *Checking* and draws it still, no mark lit and none spoken:
 nothing is starting, and nothing it marks has been read. Until 1.2 it showed
@@ -2613,12 +2648,29 @@ on its home screen, where a notification cannot.
   deleted from the list stayed, with Play, Share and Delete on nothing (the
   Honor, 2026-11-06).
   One a file manager deleted goes at the Play or Share that finds it gone.
+  One notice for a call, whatever it is in (1.4). A call a lost recorder left
+  in parts says so - *Recorded in 2 parts, 1:49; about 13 s between them not
+  recorded* - with Play on its first part, as the Calls tab plays it, and
+  Delete on every part, asked about as *both parts*; no Share, one part being
+  half the call. Until 1.4 it was told by its part with the most audio alone,
+  with that part's length and Play, Share and Delete on that part: *Recorded,
+  1:13* and *Recorded, 1:41* for calls of about 1:50 in two parts (the Honor,
+  2026-11-19). A call whose recording stopped early has its notice in the
+  early notice's place (below), and a message cut short says so in its own.
 - **The recording came out silent** - every recording is decoded and measured
   once it is saved. A muted capture still produces a file of the right length;
   this is what catches it. A recording with only one side is NOT reported,
   because it cannot be told reliably: on the phone this was built on, a call
   with both voices audible had one channel all but silent - the other carried
-  the whole call.
+  the whole call. Nor one under ten seconds (1.4): the first seconds after an
+  answer often hold no voice yet, and a 5.5 s part a lost recorder left of a
+  WhatsApp call - 4.5 s of live line, -62 to -73 dB, then about a second of
+  voice - was told
+  silent (the Honor, 2026-11-19), the floor being half a second of sound. A
+  capture muted on every call is said at the next call of ten seconds or
+  more; one muted only on some - Wi-Fi calling, on some phones - goes unsaid
+  on a call under ten. A call in parts is silent only if every part long
+  enough to judge is.
 - **The recorder is down** - after two minutes, with the reason: it needs a few
   seconds of Wi-Fi, or Android has not allowed Wireless debugging on this Wi-Fi
   (with *Allow this Wi-Fi*), or it cannot connect and the pairing is probably
@@ -2808,7 +2860,8 @@ on its home screen, where a notification cannot.
   one made active last before it, the other call up in the file too. The
   part before is saved at the call's end by the call's own service, with the
   part after, every file claimed before the first is saved, and the call is
-  told of once, by the part with the most audio - its notice, or what went
+  told of once, by the part with the most audio - its notice, which since 1.4
+  speaks for every part saved (above), or what went
   wrong if none saved; the others have no notice of their own, so an empty
   end no longer says "Call not recorded" of a call with minutes saved
   (rounds 12, 13), and a part that could not be saved says *Part of a call
@@ -2941,6 +2994,14 @@ on its home screen, where a notification cannot.
   call carries it on - a recorder
   brought back while the call was up starts one (`SavePlan.carriedOn`). Until
   1.2 such a recording was found out by listening.
+  Said the moment its save finds it, kept in the save's journal until said -
+  so a process killed before the call's own notice still leaves it (review
+  round 9) - and then replaced in place by that notice, which says it: one
+  notice for the call, on *Recording problems*, kept until dismissed, its
+  sound made once (1.4). Until then the two came together: after a recorder
+  lost with Wi-Fi off came back, *Recording stopped early* and *Last call
+  recorded, but silent* at once (the Honor, 2026-11-19). A message cut short
+  says so in the message's own notice, and the early one goes.
 - **Recording saved elsewhere** (1.2) - once, at the first call saved away from
   the folder chosen in Settings because JemRec can no longer reach it: moved,
   deleted, its drive taken out, or its access taken back (Android lets a folder's grant go when the

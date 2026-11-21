@@ -95,8 +95,20 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
             }
             // Heard as one sentence, the one Deck's and Multitrack's headers
             // say (headerSpeech): the state, then what is on. The marks' own
-            // words are left out of it, as the sentence says them; the
-            // instruction's tap stays a control of its own.
+            // words, the title and a plain instruction are left out of it, as
+            // the sentence says them; the instruction's tap stays a control of
+            // its own. Merged but not cleared, the title stayed a node of its
+            // own, and TalkBack said it after the sentence: "Ready to record.
+            // Records every call. Messenger calls is on. Ready to record." (the
+            // Honor, TalkBack 17.1, 2026-11-20): Compose hands accessibility
+            // a merged node's children too, all but those under a node that
+            // clears them (SemanticsNode.getChildren, Compose UI 1.12). So each
+            // is wrapped in a cleared Box, as Deck's and Multitrack's words
+            // are: out of what accessibility gets, still in the unmerged test
+            // tree, where the tests find them.
+            // Compose's advice for words a parent already says is
+            // clearAndSetSemantics (SemanticsProperties.hideFromAccessibility's
+            // KDoc).
             Column(
                 Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = headerSpeech(state, marks)
                     // Said when it changes - Checking to Ready, say - as
@@ -108,7 +120,9 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
             ) {
                 // Each line as tall as the tallest thing it shows: at larger
                 // text the notes wrap where the marks do not.
-                SteadyLine(sizes = { MemoTitle(title, titleColor, fitted = false) }) { MemoTitle(title, titleColor) }
+                SteadyLine(sizes = { MemoTitle(title, titleColor, fitted = false) }) {
+                    Box(Modifier.clearAndSetSemantics { }) { MemoTitle(title, titleColor) }
+                }
                 val instruction = instruction(state)
                 SteadyLine(
                     sizes = {
@@ -128,7 +142,7 @@ internal fun MemoHeader(state: UiState, vm: MainViewModel, answering: Boolean, p
                             Modifier.instructionTap(vm, instruction),
                         )
                     } else {
-                        MemoSmall(memoWords(instruction), c.idle)
+                        Box(Modifier.clearAndSetSemantics { }) { MemoSmall(memoWords(instruction), c.idle) }
                     }
                 }
             }
