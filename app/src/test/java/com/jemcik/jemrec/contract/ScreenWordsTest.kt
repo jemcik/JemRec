@@ -21,26 +21,35 @@ class ScreenWordsTest {
         "Wait",
     )
 
-    private fun waitedFor(): Set<String> {
+    /** How the checks find words whole: a node of a screen's dump, its text
+     *  or content description, or a notification's. */
+    private val asANode = listOf(
+        Regex("""on_screen\("([^"]+)"\)"""),
+        Regex("""tap_until\("([^"]+)""""),
+        Regex(""""([^"]+)" in sh\("dumpsys notification"""),
+        Regex(""""([^"]+)" in notes"""),
+        // The buttons the checks tap, and the Settings rows they open and
+        // what each shows once open (review, 2026-11-18).
+        Regex("""\btap\("([^"]+)""""),
+        Regex("""open_settings_row\("([^"]+)""""),
+        Regex("""open_settings_row\("[^"]+",\s*"([^"]+)""""),
+        // And what the checks scroll to, find in a screen's dump
+        // (`text="..."`), keep in a variable, or name by package.
+        Regex("""scroll_to\("([^"]+)""""),
+        // (A capture of a regex's own group starts with no letter.)
+        Regex("""text="([A-Za-z][^"]*)""""),
+        Regex("""\blabel = "([^"]+)""""),
+        Regex(""""org\.telegram[^"]*": "([^"]+)""""),
+    )
+
+    /** And how they find them at the start of the header's one sentence,
+     *  the content description each look's header is (headerSpeech). */
+    private val inTheHeader = Regex("""header_says\("([^"]+)"""")
+
+    private fun waitedFor(): Set<String> = found(asANode + inTheHeader)
+
+    private fun found(patterns: List<Regex>): Set<String> {
         val checks = Repo.text("tools/emulator_checks.py")
-        val patterns = listOf(
-            Regex("""on_screen\("([^"]+)"\)"""),
-            Regex("""tap_until\("([^"]+)""""),
-            Regex(""""([^"]+)" in sh\("dumpsys notification"""),
-            Regex(""""([^"]+)" in notes"""),
-            // The buttons the checks tap, and the Settings rows they open and
-            // what each shows once open (review, 2026-11-18).
-            Regex("""\btap\("([^"]+)""""),
-            Regex("""open_settings_row\("([^"]+)""""),
-            Regex("""open_settings_row\("[^"]+",\s*"([^"]+)""""),
-            // And what the checks scroll to, find in a screen's dump
-            // (`text="..."`), keep in a variable, or name by package.
-            Regex("""scroll_to\("([^"]+)""""),
-            // (A capture of a regex's own group starts with no letter.)
-            Regex("""text="([A-Za-z][^"]*)""""),
-            Regex("""\blabel = "([^"]+)""""),
-            Regex(""""org\.telegram[^"]*": "([^"]+)""""),
-        )
         // An f-string's field is the check's own, and a regex's any-letter
         // stands for a letter the app writes (" . " for its " · "): the
         // words around them, each held - after a field too (review round 9).
@@ -49,6 +58,30 @@ class ScreenWordsTest {
             .map { it.trim() }
             .filter { it.length >= 4 }
             .toSet()
+    }
+
+    /** Words Memo's header draws but keeps from accessibility: its title,
+     *  and an instruction with no tap. Its sentence says them
+     *  (BehaviourTest.memosHeaderIsOneSentenceToAScreenReader,
+     *  memosPlainInstructionIsNotSaidApart), and a dump of the screen is
+     *  what accessibility gets. Waited for as a node of their own, the
+     *  1.4 run's `looks` timed out on all four AVDs, and
+     *  `notifications_off` on the 16 and 17 ones (2026-11-21). */
+    private val saidOnlyInTheSentence = setOf(
+        "Ready to record",
+        "Starting...",
+        "Checking...",
+        "Cannot record",
+        "Tap the button to record calls",
+        "Debugging off · turn on over Wi-Fi",
+        "Join any Wi-Fi to resume",
+    )
+
+    @Test fun theHeadersOwnWordsAreFoundInItsSentence() {
+        val asNodes = found(asANode) intersect saidOnlyInTheSentence
+        assertTrue("Waited for as a node, which the dump does not have: $asNodes - use header_says", asNodes.isEmpty())
+        val stale = saidOnlyInTheSentence.filterNot { it in written }
+        assertTrue("No longer written by the app: $stale", stale.isEmpty())
     }
 
     /** What the app writes: its string literals, those joined by `+` as one

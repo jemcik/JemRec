@@ -2068,7 +2068,9 @@ SETUP = [
     ("p", "The notification after each call has the same three buttons. Play and "
           "Share open JemRec at that recording; Delete asks first, in the "
           "notification itself - with the phone unlocked, so a locked phone "
-          "asks for that first - and **Keep** puts it back."),
+          "asks for that first - and **Keep** puts it back. A call recorded in "
+          "parts has one notification: Play opens its first part, Delete asks "
+          "about every part, and there is no Share - one part is half the call."),
     ("p", "If a recording was made before JemRec was reinstalled, Android asks "
           "before JemRec may move it to the trash, in a dialog of its own. That "
           "is Android checking who owns the file, not JemRec asking twice."),
@@ -2361,11 +2363,14 @@ SETUP = [
           "does the fix:"),
     ("table", (["It says", "Meaning"], [
         ["The caller's name, **Recorded**", "After every recorded call, silently, "
-         "with Play, Share and Delete. Can be switched off in Settings."],
+         "with Play, Share and Delete. Can be switched off in Settings. A call "
+         "the recorder was started again in says it was recorded in parts, and "
+         "how long went unrecorded between them."],
         ["**Last call recorded, but silent**", "The file has the right length and "
          "no sound in it. Usually Wi-Fi calling, or a phone that does not hand "
          "calls over at all. Run the self-test, or copy a report for GitHub "
-         "(Settings → Diagnostics)."],
+         "(Settings → Diagnostics). A recording under ten seconds is never "
+         "called silent: its first seconds often hold no voice yet."],
         ["**JemRec is not recording calls**", "The recorder has been down for two "
          "minutes. The notification says why: it needs a few seconds of Wi-Fi, "
          "or this Wi-Fi is not allowed for Wireless debugging (with **Allow "
@@ -2409,7 +2414,10 @@ SETUP = [
          "phone full - or the recorder itself was ended. Phone "
          "and messenger calls alike; a recorder ended during a messenger call, "
          "a call waiting, or with call tracking off, cannot be told. One saved long after its "
-         "call says which call, by its time."],
+         "call says which call, by its time. It is that call's one notification: "
+         "it takes the place of the one after the call, with the same buttons, "
+         "and stays until you clear it. A message cut short says so in the "
+         "message's own notification."],
         ["**Recording saved elsewhere**", "JemRec can no longer reach the folder "
          "you chose, so a call was saved in the standard Recordings folder. "
          "Once; **Choose again** opens Android's folder picker."],
@@ -3370,8 +3378,9 @@ FEATURES = [
      "ones.",
      "playing-sharing-and-deleting"),
     ("Hear about problems",
-     "A notification after each call, and one when a recording is silent or "
-     "stopped early, the recorder is down, a call went unrecorded or was saved "
+     "A notification after each call, which also says when its recording came "
+     "out silent, stopped early or is in parts; and one when the recorder is "
+     "down, a call went unrecorded or was saved "
      "away from your folder, or the phone stopped JemRec or held it back in the "
      "background. The home screen says so while JemRec's notifications are off, "
      "its battery use is Restricted or its folder is out of reach. A call that "
@@ -3959,7 +3968,7 @@ HOW_BODY = f"""
   <p>A recorder that fails quietly is found out on the day a call was needed. So
      after each call a silent notification shows the recording, with Play, Share
      and Delete; every recording is measured once it is saved, and one that came
-     out silent is reported; a recorder that is down says why, with
+     out silent is reported, if it is long enough to tell; a recorder that is down says why, with
      <strong>Pair again</strong> when the pairing is gone and
      <strong>Allow this Wi-Fi</strong> when Android has not allowed the network;
      a recording that stops before its call ends says so during the call and

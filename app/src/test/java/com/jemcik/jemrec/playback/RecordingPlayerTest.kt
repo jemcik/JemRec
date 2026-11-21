@@ -77,9 +77,9 @@ class RecordingPlayerTest {
         return Uri.fromFile(file)
     }
 
-    private fun open(uri: Uri, bothEars: Boolean = true) = player.open(
+    private fun open(uri: Uri, bothEars: Boolean = true, fromMs: Int = 0) = player.open(
         uri, Output.SPEAKER, bothEars,
-        onChanged = { changed++ }, onFinished = { finished++ }, onFailed = { failed++ },
+        onChanged = { changed++ }, onFinished = { finished++ }, onFailed = { failed++ }, fromMs = fromMs,
     )
 
     private fun exo() = checkNotNull(player.exoPlayer)
@@ -112,8 +112,10 @@ class RecordingPlayerTest {
         assertEquals(1, finished)
     }
 
-    /** Paused, its place stays where the pause left it; a seek lands where
-     *  it is asked (SeekParameters.EXACT). */
+    /** Paused, its place stays where the pause left it; a seek is shown
+     *  where it is asked, the player itself sent 80 ms before it - its
+     *  decoder up - so the decoder's own pre-roll drop ends there
+     *  (OpusPreRoll; SeekParameters.EXACT lands it on the millisecond). */
     @Test fun aPauseHoldsItsPlaceAndASeekLandsWhereAsked() {
         assertTrue(open(recording(5)))
         assertTrue(player.start())
@@ -127,7 +129,29 @@ class RecordingPlayerTest {
         player.seekTo(3_000)
         assertEquals(3_000, player.positionMs)
         TestPlayerRunHelper.run(exo()).untilState(Player.STATE_READY)
-        assertEquals(3_000L, exo().currentPosition)
+        assertEquals(2_920L, exo().currentPosition)
+        assertEquals("shown where it was sent", 3_000, player.positionMs)
+    }
+
+    /** Sent somewhere before its decoder is up - at once after opening - it
+     *  is sent where asked: a fresh decoder drops only the pre-skip. */
+    @Test fun aSeekBeforeTheDecoderIsUpIsSentWhereAsked() {
+        assertTrue(open(recording(5)))
+        player.seekTo(2_000)
+        TestPlayerRunHelper.run(exo()).untilState(Player.STATE_READY)
+        assertEquals(2_000L, exo().currentPosition)
+        assertEquals(2_000, player.positionMs)
+    }
+
+    /** Opened at a place - a move to the earpiece, the both-ears switch
+     *  (SessionPlayer.reopen) - it starts there, sent nowhere: a seek that
+     *  met a decoder already up dropped 80 ms after it. */
+    @Test fun openedAtAPlaceItStartsThere() {
+        assertTrue(open(recording(5), fromMs = 2_500))
+        assertEquals(2_500, player.positionMs)
+        TestPlayerRunHelper.run(exo()).untilState(Player.STATE_READY)
+        assertEquals(2_500L, exo().currentPosition)
+        assertEquals(2_500, player.positionMs)
     }
 
     /** A file with nothing in it is refused from open() itself, before

@@ -2229,6 +2229,50 @@ def proximity(cm):
     adb("emu", "sensor", "set", "proximity", str(cm))
 
 
+def seek_preroll():
+    """Where the sound after a seek begins, against where it was sent (1.4).
+    Android's Opus decoder drops its 80 ms pre-roll after every flush, and
+    Media3 feeds it from the target's own packet: until 1.4 the sound after a
+    seek began 53.5-73.5 ms after the target on the Android 12 AVD and
+    73.5-92.5 ms after it on 17 (2026-11-20, 20 seeks each, a probe matching
+    the sink's input against a straight decode). OpusPreRoll sends the player
+    80 ms early once its decoder is up, so the decoder's own drop ends there;
+    a seek before the decoder is up (a reopen) goes where it is sent. The diag
+    op SeekCheckOp encodes 20 s of noise with Android's own Opus encoder,
+    writes it with the app's Ogg writer, decodes it straight for the
+    reference, and plays it through an ExoPlayer built as RecordingPlayer
+    builds its own, sent as OpusPreRoll says: six seeks while it plays, three
+    while paused and then played, and three files opened at a place, as a
+    reopen is (opened and then sent there, as reopens were, one of three in a
+    run lost 74 ms on the 17 AVD, 2026-11-20). Each seek's sound, matched against the
+    reference from 20 ms in, begins between 40 ms before its target and 30 ms
+    after it. Before, as the early send can leave it: the decoder's drop ends
+    at a packet's start, up to a packet and the stream's 6.5 ms pre-skip
+    short of the target - measured -13 to -32 ms on 12 (2026-11-20), a
+    repeat, not a loss. From 20 ms in: a fresh decoder decodes its first
+    packet with no pre-roll, not quite as a straight decode does - matched
+    0.85-0.87 from its first sample on a packet's start, 12 and 17 - said as
+    r0, not judged. RecordingPlayer's own use of the rule is unit-tested;
+    this is Android's decoder doing what the rule counts on."""
+    fresh = fresh_audio_server()
+    said = diag("seekcheck", wait=300)
+    assert "seekcheck: done" in said, f"the seek check did not finish: {said[-400:]}"
+    rows = [(way, int(target), float(skip), float(r), float(r0))
+            for way, target, skip, r, r0 in
+            re.findall(r"seek (\w+) (\d+) skip (-?[\d.]+) r ([\d.]+) r0 ([\d.]+)", said)]
+    assert len(rows) == 12, f"12 seeks measured, not {len(rows)}: {said[-600:]}"
+    every = "every seek (way, target ms, skip ms, r, r0): " + ", ".join(str(row) for row in rows)
+    unmatched = [row for row in rows if row[3] < 0.9]
+    assert not unmatched, f"seeks whose sound matched no place near their target: {unmatched}; {every}"
+    off = [row for row in rows if not -40 <= row[2] <= 30]
+    assert not off, f"seeks whose sound began more than 40 ms before or 30 ms after their target: {off}; {every}"
+    by_way = {}
+    for way, _, skip, _, _ in rows:
+        by_way.setdefault(way, []).append(skip)
+    return (f"{fresh}; " + ", ".join(f"{way} {min(s):+.1f} to {max(s):+.1f} ms" for way, s in by_way.items())
+            + f"; lowest r0 {min(row[4] for row in rows):.3f}")
+
+
 def raise_to_listen():
     """Raised to the ear - the proximity sensor set near through the
     emulator's console - a recording playing from its row moves to the
@@ -2512,6 +2556,14 @@ def tap_id(resource_id):
 
 def on_screen(label):
     return f'"{label}"' in ui()
+
+
+def header_says(words, dump=None):
+    """Whether home's header says [words] first. Each look's header is one
+    node to accessibility, the sentence TalkBack hears (headerSpeech), and a
+    dump is what accessibility gets: since 1.4 Memo's title is no node of its
+    own either - TalkBack said it twice (the Honor, 2026-11-20)."""
+    return f'content-desc="{words}' in (dump if dump is not None else ui())
 
 
 def tap_until(label, shown, timeout, what):
@@ -2806,17 +2858,27 @@ def name_taken():
 # What each look's header shows uiautomator, with the recorder ready. Deck's
 # and Multitrack's headers are one sentence to a screen reader (headerSpeech),
 # Memo's its own words; Multitrack's tabs are in capitals.
+# What tells the looks apart in a dump of home: not the header, one
+# sentence in each (header_says), but the list's day heading - "Today" in
+# Memo, "TODAY" in Deck and Multitrack - and Multitrack's tabs, "CALLS"
+# (the 16 AVD, 2026-11-21). Deck is a heading neither Memo's nor
+# Multitrack's: its "TODAY" is "Today" put in capitals as it is drawn, no
+# word the app writes for ScreenWordsTest to hold.
 LOOK_SIGNS = {
-    "DECK": lambda x: 'content-desc="Ready to record' in x and 'text="Ready to record"' not in x
-    and 'text="CALLS"' not in x,
+    "DECK": lambda x: header_says("Ready to record", x) and 'content-desc="Today, ' in x
+    and 'text="Today"' not in x and 'text="CALLS"' not in x,
     "MULTITRACK": lambda x: 'text="CALLS"' in x,
-    "MEMO": lambda x: 'text="Ready to record"' in x,
+    "MEMO": lambda x: header_says("Ready to record", x) and 'text="Today"' in x,
 }
 
 
 def looks():
     """Each look picked and the app started again: it opens in it - four
-    fonts and a light or dark of its own, on this Android."""
+    fonts and a light or dark of its own, on this Android. A recording of
+    today's first, by the emulator's clock, so the list has the heading the
+    looks are told apart by (LOOK_SIGNS)."""
+    today = sh("date +%Y%m%d_%H%M%S").strip() + "_in.ogg"
+    store(today, recordings=True)
     try:
         for look, sign in LOOK_SIGNS.items():
             set_prefs(look=look, light_dark="DARK" if look == "DECK" else "PHONE")
@@ -2827,6 +2889,9 @@ def looks():
     finally:
         quietly(set_prefs, look="MEMO", light_dark="PHONE")
         sh(f"am force-stop {PKG}")
+        # For good, as opus_valid's: not left for a later check's list.
+        quietly(sh, "content delete --uri content://media/external/audio/media "
+                    f"--where \"_display_name='{today}'\"")
     return "it opened in Deck (dark), Multitrack and Memo"
 
 
@@ -3851,7 +3916,7 @@ def notifications_off():
             # settings; "Recordings", the tab, is there from the first frame
             # and would pass the absence before anything was read (review
             # round 10).
-            wait_for(lambda: on_screen("Ready to record"), 20, "home in Ask first, its settings read")
+            wait_for(lambda: header_says("Ready to record"), 20, "home in Ask first, its settings read")
             time.sleep(2)
             assert not on_screen("Ask first's question will not stay up"), f"said with full-screen allowed ({given})"
             sh(f"appops set {PKG} USE_FULL_SCREEN_INTENT deny")
@@ -3868,7 +3933,7 @@ def notifications_off():
             sh(f"appops set {PKG} USE_FULL_SCREEN_INTENT allow")
             sh(f"am force-stop {PKG}")
             sh(f"am start -n {PKG}/.MainActivity")
-            wait_for(lambda: on_screen("Ready to record"), 20, "home again, its settings read")
+            wait_for(lambda: header_says("Ready to record"), 20, "home again, its settings read")
             time.sleep(2)
             assert not on_screen("Ask first's question will not stay up"), "still said once allowed again"
             said += f"; full-screen notifications off said in Ask first, Turn on on their page, gone once allowed (given: {given})"
@@ -4125,6 +4190,11 @@ def stopped_early():
         # once the call's notice is posted, the last of its saves' work, or
         # a broken run passes whenever the read wins (review round 13).
         wait_log(r"aftercall: posted for", 60, "the call's after-call notice")
+        # One notice for the call, of both its parts (1.4: until then the
+        # longest part's length alone, Play and Delete on that part).
+        told = re.search(r"aftercall: posted for \S+ \([^)]*, (\d+) parts", log())
+        assert told and told.group(1) == "2", "the call's notice not told of its two parts"
+        assert f"in {told.group(1)} parts" in notes(), "the call's notice does not say the call is in two parts"
         # Anchored: the line a part carried on by the next says ends
         # "; another recording carries it on" and is no telling (review
         # round 9).
@@ -4214,6 +4284,11 @@ def stopped_early():
             start_recorder()
             m = wait_for(early, 120, "the early stop to be said", step=2)
         seconds = int(m.group(1))
+        # One notice for the call: its after-call notice in the early one's
+        # place, not beside it (1.4: the Honor, 2026-11-19, gave "Recording
+        # stopped early" and "Last call recorded, but silent" at once).
+        wait_log(r"aftercall: posted for \S+ \([^)]*, stopped early", 60, "the call's notice, in the early one's place")
+        assert not after_call_up(), "an after-call notice beside the early one: two notices for one call"
         line = re.search(r"save: the recording stopped (\d+) ms before the call ended(?!;)", log())
         # Said by Wi-Fi's own run, nothing cleared the log since: its line is
         # there (review round 11: skipped unseen when absent).
@@ -4445,6 +4520,9 @@ def early_end():
         seconds = (int(m.group(1)) + 500) // 1000
         assert f"stopped about {seconds} s before" in sh("dumpsys notification --noredact"), \
             f"no notification that it stopped about {seconds} s early"
+        # Said once, the call's notice in the early one's place (1.4).
+        wait_log(r"aftercall: posted for \S+ \([^)]*, stopped early", 30, "the call's notice, in the early one's place")
+        assert not after_call_up(), "an after-call notice beside the early one: two notices for one call"
         said = (f"said during the call; the file named _early{named.group(1)}; said "
                 f"{int(m.group(1)) / 1000:.1f} s early, tracking off")
         # A message whose recording ends the same way: hung up on at once.
@@ -5267,7 +5345,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           answering, greeting_hangup, message_recorder_lost, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, test_call_wifi, greeting_moves, app_call, mode_switch, app_call_in_front,
           messenger_recorder_lost, waveform, quality,
-          background_playback, both_ears, raise_to_listen, one_window, process_death,
+          background_playback, both_ears, raise_to_listen, seek_preroll, one_window, process_death,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
           debugging_off, off_just_left, background, allow_this_wifi, refused_grant, listener_grant, keep_paired,

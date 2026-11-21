@@ -217,6 +217,9 @@ internal fun pairingLostOnHome(state: UiState): Boolean =
     state.step == SetupStep.READY && state.screen == Screen.HOME && !state.daemonRunning &&
         recorderStatus(state) == RecorderStatus.CANNOT && state.onWifi && state.pairingRefused
 
+/** The messenger calls setting, as the header's sentence names it. */
+private const val MESSENGER_CALLS = "messenger calls"
+
 /**
  * All of it as one sentence, for TalkBack: a screen reader hears the state,
  * then what is on - the order a sighted glance takes. Not the last call: the
@@ -246,12 +249,14 @@ internal fun headerSpeech(state: UiState, marks: Marks): String {
     }
     val on = buildList {
         if (marks.answering) add("answering machine")
-        if (marks.messengers) add("messenger calls")
+        if (marks.messengers) add(MESSENGER_CALLS)
         if (marks.autoDeleteDays > 0) add("auto-delete after ${ageWords(marks.autoDeleteDays)}")
     }
     val onPart = when (on.size) {
         0 -> ""
-        1 -> " ${on[0].replaceFirstChar { it.uppercase() }} is on."
+        // "Messenger calls" is plural: "Messenger calls is on" was what
+        // TalkBack said on the Honor (2026-11-20).
+        1 -> " ${on[0].replaceFirstChar { it.uppercase() }} ${if (on[0] == MESSENGER_CALLS) "are" else "is"} on."
         else -> " " + (on.dropLast(1).joinToString(", ") + " and " + on.last())
             .replaceFirstChar { it.uppercase() } + " are on."
     }

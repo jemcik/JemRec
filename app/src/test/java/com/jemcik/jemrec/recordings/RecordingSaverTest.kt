@@ -995,6 +995,50 @@ class RecordingSaverTest {
         assertFalse(text, "Copy a report" in text)
     }
 
+    /** Told at the save - kept through a process killed before the call's
+     *  notice - and carried on to that notice, which takes its place
+     *  (AfterCall, 1.4). */
+    @Test fun aRecordingThatStoppedEarlyCarriesWhatItMissedToItsNotice() {
+        val file = recfile(incoming = false)
+        fakes.files[file] = stream(50)
+        track(CallTracking.Tracked(t, false, null, listOf(t), t + 20_000))
+        val saved = save(file, incoming = false) as Outcome.Saved
+        assertEquals(1, stoppedEarlyNotices())
+        assertTrue("${saved.earlyMissedMs}", saved.earlyMissedMs in 18_500L..19_500L)
+    }
+
+    /** A save killed between publishing and telling: the next one, finishing
+     *  it from the journal, tells the early stop and carries it on to the
+     *  call's notice all the same. */
+    @Test fun aSaveFinishedFromItsJournalCarriesItsEarlyStop() {
+        val file = recfile(incoming = false)
+        fakes.files[file] = stream(50)
+        track(CallTracking.Tracked(t, false, null, listOf(t), t + 20_000))
+        val holding = SaveHold.hold
+        SaveHold.at = SaveHold.At.PUBLISHED
+        SaveHold.hold = { throw kotlinx.coroutines.CancellationException("the app's process killed") }
+        try {
+            save(file, incoming = false)
+            org.junit.Assert.fail("not killed")
+        } catch (_: kotlinx.coroutines.CancellationException) {
+        } finally {
+            SaveHold.at = null
+            SaveHold.hold = holding
+        }
+        assertEquals("not told before the kill", 0, stoppedEarlyNotices())
+        val saved = save(file, incoming = false) as Outcome.Saved
+        assertEquals(1, stoppedEarlyNotices())
+        assertTrue("${saved.earlyMissedMs}", saved.earlyMissedMs in 18_500L..19_500L)
+    }
+
+    /** A recording that did not stop early carries nothing. */
+    @Test fun aRecordingThatRanToTheEndCarriesNoEarlyStop() {
+        val file = recfile(incoming = false)
+        fakes.files[file] = stream(50)
+        track(CallTracking.Tracked(t, false, null, listOf(t), t + 1_500))
+        assertNull((save(file, incoming = false) as Outcome.Saved).earlyMissedMs)
+    }
+
     /** Collected long after its call - days on, once the recorder was back:
      *  named by its time, not called the last call. */
     @Test fun aStoppedEarlyNoticeLongAfterNamesTheCallByItsTime() {

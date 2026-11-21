@@ -117,6 +117,71 @@ class NoticeOfAGoneRecordingTest {
         assertEquals(0, shown())
     }
 
+    /** Delete on a call in parts takes every part: its notice spoke for
+     *  them all, and the rest stayed in the list, unsaid (1.4). */
+    @Test fun deleteOnACallInPartsTakesEveryPart() {
+        val names = listOf(
+            RecordingStore.nameFor(Date(System.currentTimeMillis() - 2 * 60_000), incoming = true),
+            RecordingStore.nameFor(Date(System.currentTimeMillis() - 60_000), incoming = true),
+        )
+        val parts = names.map { name ->
+            val file = FakeStorage.appFile(app, name)
+            AfterCall.Call.Part(name, FakeStorage.appUri(app, file), file.absolutePath)
+        }
+        val call = AfterCall.Call(
+            parts[0].name, parts[0].uri, parts[0].filePath, 24.0, true, 0L, "Priya Shah", AudioCheck.Verdict.FINE,
+            parts = parts, between = 30.0,
+        )
+        assertEquals(true, AfterCall.show(app, call))
+        assertEquals(2, Recordings.list(app).count { it.name in names })
+        AfterCall.delete(app, call)
+        assertEquals(0, Recordings.list(app).count { it.name in names })
+        assertEquals(0, shown())
+    }
+
+    /** ...one of them trashed from the list first, in a picked folder: the
+     *  notice's Delete takes the rest and says nothing went wrong. A folder
+     *  renames by document, and one renamed into the trash already threw -
+     *  "Could not delete the recording." for a call now wholly in the trash.
+     *  (App storage counts a file gone as trashed; MediaStore reaches its
+     *  trashed rows.) */
+    @Test fun deleteOnACallInPartsOneAlreadyTrashedSaysNothingWrong() {
+        com.jemcik.jemrec.recordings.FakeFolder.install(app)
+        val names = listOf(
+            RecordingStore.nameFor(Date(System.currentTimeMillis() - 2 * 60_000), incoming = true),
+            RecordingStore.nameFor(Date(System.currentTimeMillis() - 60_000), incoming = true),
+        )
+        names.forEach { com.jemcik.jemrec.recordings.FakeFolder.file(it) }
+        val rows = names.map { name -> Recordings.list(app).single { it.name == name } }
+        val parts = rows.map { AfterCall.Call.Part(it.name, it.uri, null) }
+        val call = AfterCall.Call(
+            parts[0].name, parts[0].uri, null, 24.0, true, 0L, "Priya Shah", AudioCheck.Verdict.FINE,
+            parts = parts, between = 30.0,
+        )
+        assertEquals(true, AfterCall.show(app, call))
+        Trash.trashAll(app, listOf(rows[1]))
+        AfterCall.delete(app, call)
+        assertEquals(0, Recordings.list(app).count { it.name in names })
+        assertEquals(0, shown())
+    }
+
+    /** A call that stopped early, its Delete failing: the note takes its
+     *  notice's place and is kept as long, until dismissed. */
+    @Test fun anEarlyCallsNoteIsKeptAsLongAsItsNotice() {
+        val call = recorded().copy(missedMs = 30_000)
+        assertEquals(true, AfterCall.show(app, call))
+        val folder = FakeStorage.appFolder(app).apply { setWritable(false) }
+        try {
+            assumeFalse("the tests run as root", folder.canWrite())
+            AfterCall.delete(app, call)
+            val note = manager.activeNotifications.single { it.id == 37 }.notification
+            assertEquals("Could not delete the recording.", note.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+            assertEquals(0L, note.timeoutAfter)
+        } finally {
+            folder.setWritable(true)
+        }
+    }
+
     @Test fun aNoteThatItCouldNotBeDeletedGoesWithTheRecordingToo() {
         val call = recorded()
         val gone = java.io.File(call.filePath!!)

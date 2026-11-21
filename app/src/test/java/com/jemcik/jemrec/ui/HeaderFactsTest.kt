@@ -82,6 +82,19 @@ class HeaderFactsTest {
         )
     }
 
+    /** One setting on: its own verb. "Messenger calls is on" was what
+     *  TalkBack said on the Honor (2026-11-20). */
+    @Test fun oneSettingOnTakesItsOwnVerb() {
+        assertEquals(
+            "Ready to record. Records every call. Messenger calls are on.",
+            headerSpeech(ready, Marks(true, answering = false, messengers = true, autoDeleteDays = 0)),
+        )
+        assertEquals(
+            "Ready to record. Records every call. Auto-delete after 30 days is on.",
+            headerSpeech(ready, Marks(true, answering = false, messengers = false, autoDeleteDays = 30)),
+        )
+    }
+
     @Test fun theRecorderDownSaysWhatToDo() {
         val none = Marks(true, false, false, 0)
         val down = ready.copy(daemonRunning = false)

@@ -32,6 +32,10 @@ class SessionPlayerTest {
         var opened: Uri? = null
         var output: Output? = null
         var opens = 0
+
+        /** Where the last open was to start: a reopen opens where the sound
+         *  was, rather than opening and then seeking there. */
+        var openedFrom = -1
         var sounding = false
         val seeks = mutableListOf<Int>()
         var finish: () -> Unit = {}
@@ -59,12 +63,14 @@ class SessionPlayerTest {
             onChanged: () -> Unit,
             onFinished: () -> Unit,
             onFailed: () -> Unit,
+            fromMs: Int,
         ): Boolean {
             // As RecordingPlayer's: a new open lets the last one go.
             close()
             if (opensFail) return false
             opens++
             opened = uri
+            openedFrom = fromMs
             this.output = output
             this.bothEars = bothEars
             this.onChanged = onChanged
@@ -74,7 +80,7 @@ class SessionPlayerTest {
             ahead = 0
             finish = onFinished
             fail = onFailed
-            position = 0
+            position = fromMs
             return true
         }
 
@@ -331,7 +337,7 @@ class SessionPlayerTest {
         moveTo(Output.EARPIECE)
         assertEquals(Output.EARPIECE, engine.output)
         assertEquals(2, engine.opens)
-        assertEquals(12_120, engine.seeks.last())
+        assertEquals(12_120, engine.openedFrom)
         assertTrue(engine.sounding)
         assertTrue(player.isPlaying)
         assertTrue(focus.held)
@@ -353,7 +359,7 @@ class SessionPlayerTest {
         moveTo(Output.EARPIECE)
         assertEquals(Output.EARPIECE, engine.output)
         assertEquals(2, engine.opens)
-        assertEquals(12_120, engine.seeks.last())
+        assertEquals(12_120, engine.openedFrom)
         assertFalse(engine.sounding)
         assertFalse(player.playWhenReady)
         player.play()
@@ -422,7 +428,7 @@ class SessionPlayerTest {
         idle()
         assertEquals(2, engine.opens)
         assertEquals(false, engine.bothEars)
-        assertEquals(12_120, engine.seeks.last())
+        assertEquals(12_120, engine.openedFrom)
         assertTrue(engine.sounding)
     }
 
@@ -487,7 +493,7 @@ class SessionPlayerTest {
         idle()
         assertEquals(2, engine.opens)
         assertEquals(false, engine.bothEars)
-        assertEquals(12_000, engine.seeks.last())
+        assertEquals(12_000, engine.openedFrom)
         assertTrue(engine.sounding)
         assertTrue(player.isPlaying)
         assertTrue(focus.held)

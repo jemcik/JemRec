@@ -23,7 +23,9 @@ import com.jemcik.jemrec.recordings.Recording
 import com.jemcik.jemrec.recordings.RecordingLibrary
 import com.jemcik.jemrec.recordings.RecordingMarks
 import com.jemcik.jemrec.recordings.RecordingSaver
+import com.jemcik.jemrec.recordings.Recordings
 import com.jemcik.jemrec.recordings.Retention
+import com.jemcik.jemrec.recordings.StoppedEarly
 import com.jemcik.jemrec.recordings.Trash
 import com.jemcik.jemrec.recordings.WaveformCache
 import com.jemcik.jemrec.recordings.Waveforms
@@ -123,7 +125,21 @@ internal object AfterCall {
         val verdict: AudioCheck.Verdict,
         /** A message the answering machine took. */
         val message: Boolean = false,
+        /** The call's recordings, by when each began, when a recorder lost
+         *  mid-call left it in parts - the first of them [name], [uri] and
+         *  [filePath]; empty for a call in one. Play opens the first, as the
+         *  Calls tab does; Delete takes them all; and there is no Share - one
+         *  part shared is half the call (1.4: the longest part was told
+         *  alone, its length the call's, Play, Share and Delete on it). */
+        val parts: List<Part> = emptyList(),
+        /** Seconds between the parts, not recorded. */
+        val between: Double = 0.0,
+        /** How much of the call's end was not recorded, in ms - its recording
+         *  stopped early (StoppedEarly) - or null. */
+        val missedMs: Long? = null,
     ) {
+        data class Part(val name: String, val uri: Uri, val filePath: String?)
+
         fun into(intent: Intent): Intent = intent.putExtras(
             Bundle().apply {
                 putString("name", name)
@@ -135,6 +151,11 @@ internal object AfterCall {
                 putString("caller", caller)
                 putString("verdict", verdict.name)
                 putBoolean("message", message)
+                putStringArrayList("partNames", ArrayList(parts.map { it.name }))
+                putStringArrayList("partUris", ArrayList(parts.map { it.uri.toString() }))
+                putStringArrayList("partPaths", ArrayList(parts.map { it.filePath.orEmpty() }))
+                putDouble("between", between)
+                putLong("missed", missedMs ?: -1L)
             },
         )
 
@@ -150,38 +171,86 @@ internal object AfterCall {
                     caller = intent.getStringExtra("caller"),
                     verdict = AudioCheck.Verdict.valueOf(intent.getStringExtra("verdict")!!),
                     message = intent.getBooleanExtra("message", false),
+                    parts = partsOf(intent),
+                    between = intent.getDoubleExtra("between", 0.0),
+                    missedMs = intent.getLongExtra("missed", -1L).takeIf { it >= 0 },
                 )
             }.getOrNull()
+
+            private fun partsOf(intent: Intent): List<Part> {
+                val names = intent.getStringArrayListExtra("partNames").orEmpty()
+                val uris = intent.getStringArrayListExtra("partUris").orEmpty()
+                val paths = intent.getStringArrayListExtra("partPaths").orEmpty()
+                return names.indices.map { i -> Part(names[i], uris[i].toUri(), paths[i].ifEmpty { null }) }
+            }
         }
     }
 
     /**
      * A call has just been saved: check what is in it and say so. Blocking -
-     * it decodes the file - so callers are on a background thread.
+     * it decodes the file - so callers are on a background thread. [call]:
+     * every recording of the call saved, [saved] - the one it is told by -
+     * among them; more than one when a recorder lost mid-call left it in
+     * parts, all said in one notice (Call.parts).
      */
-    fun saved(context: Context, saved: RecordingSaver.Outcome.Saved, incoming: Boolean, startMillis: Long) {
+    fun saved(
+        context: Context,
+        saved: RecordingSaver.Outcome.Saved,
+        incoming: Boolean,
+        startMillis: Long,
+        call: List<RecordingSaver.Outcome.Saved> = listOf(saved),
+    ) {
         // Both save paths come through here, so this is where a call under
         // the user's short-call rule is caught: to the trash, and not a word.
         if (Retention.dropIfTooShort(context, saved)) return
+        val parts = call.sortedBy { it.startMillis }
+        val endedAt = parts.maxOf { it.startMillis + (it.seconds * 1000).toLong() }
         // A message is news whenever it turns up: the user did not hear it.
-        if (!saved.message && System.currentTimeMillis() - startMillis - (saved.seconds * 1000).toLong() > FRESH_MS) {
+        if (!saved.message && System.currentTimeMillis() - endedAt > FRESH_MS) {
             Log.i(TAG, "aftercall: ${FileNames.forLog(saved.name)} is from a while ago, not announcing it")
             // Not announced, but drawn: its waveform as any saved call's, or
             // it waited for the list's fill-in - the app open, its turn come.
-            Waveforms.levels(context, saved.name, saved.uri)
+            parts.forEach { Waveforms.levels(context, it.name, it.uri) }
             return
         }
-        val verdict = AudioCheck.check(context, saved.uri)
+        // Silent only if every part long enough to judge is (AudioCheck).
+        val verdict = AudioCheck.ofCall(parts.map { AudioCheck.check(context, it.uri) })
         val caller = runCatching { callerFor(context, saved, incoming) }.getOrNull()
-        show(
-            context,
-            Call(saved.name, saved.uri, saved.filePath, saved.seconds, incoming, startMillis, caller, verdict, saved.message),
+        val first = parts.first()
+        val told = Call(
+            first.name, first.uri, first.filePath, parts.sumOf { it.seconds }, incoming,
+            if (parts.size > 1) first.startMillis else startMillis, caller, verdict, saved.message,
+            parts = if (parts.size > 1) parts.map { Call.Part(it.name, it.uri, it.filePath) } else emptyList(),
+            between = between(parts),
+            // The last part's: an earlier one that stopped is carried on.
+            missedMs = parts.lastOrNull { it.earlyMissedMs != null }?.earlyMissedMs,
         )
+        if (show(context, told)) tookThePlaceOfOthers(context, told)
         // Its waveform worked out now, the notification up and nobody waiting:
         // the player then draws it at once. A 30-minute call's takes about
         // 2.5 s (the Honor, 2026-10-23, Waveforms).
-        Waveforms.levels(context, saved.name, saved.uri)
+        parts.forEach { Waveforms.levels(context, it.name, it.uri) }
     }
+
+    /**
+     * What this call's notice, just posted for the first time, makes old:
+     * a message cut short says so itself, and the early notice its save
+     * posted goes; a call that stopped early has its notice at the early
+     * id, and the last call's everyday notice goes, as a newer call's always
+     * replaces it (not a silent recording's warning, a problem kept). Here,
+     * not in [show]: Keep shows a notice again, and a newer call's notice by
+     * then would have gone with it (review round 2 of 1.4).
+     */
+    private fun tookThePlaceOfOthers(context: Context, call: Call) {
+        when {
+            call.message && call.missedMs != null -> cancelProblem(context, StoppedEarly.NOTIFICATION_ID)
+            early(call) -> cancel(context)
+        }
+    }
+
+    /** Seconds between a call's parts ([parts] by start) not recorded. */
+    internal fun between(parts: List<RecordingSaver.Outcome.Saved>): Double =
+        parts.zipWithNext { a, b -> (b.startMillis - a.startMillis) / 1000.0 - a.seconds }.sumOf { maxOf(0.0, it) }
 
     /** Who, the way the list would say it: the call log for a phone call,
      *  the name or the notes for a messenger call ("Viber call" at least). */
@@ -203,7 +272,7 @@ internal object AfterCall {
         // people to ignore the true one. Nor in a message: the user's side is
         // muted, and a caller who says nothing after the beep is a silent
         // message, not a recording gone wrong.
-        val problem = silent(call)
+        val problem = silent(call) || early(call)
         // A message is something the user did not hear: posted whether or not
         // they want the everyday after-call notice.
         if (!problem && !call.message && !enabled(context)) return false
@@ -211,6 +280,7 @@ internal object AfterCall {
 
         val who = call.caller ?: if (call.incoming) "Incoming call" else "Outgoing call"
         val length = length(call.seconds)
+        val inParts = if (call.parts.size > 1) " in ${call.parts.size} parts" else ""
         val channel = channelFor(call)
         val builder = Notification.Builder(context, channel)
             .setSmallIcon(if (problem) android.R.drawable.stat_notify_error else android.R.drawable.ic_btn_speak_now)
@@ -218,8 +288,10 @@ internal object AfterCall {
             .setShowWhen(true)
             .setContentIntent(open(context, DeepLink.Kind.PLAY, call.name, request = 0))
             .setAutoCancel(true)
+            // Also what keeps a call that stopped early to the one sound: its
+            // notice replaces the early one posted at its save (idFor).
             .setOnlyAlertOnce(true)
-            .setTimeoutAfter(TIMEOUT_MS)
+            .setTimeoutAfter(timeoutOf(call))
             .addExtras(recordingOf(call))
             // A caller's name is not for the lock screen. The public version
             // says only that a call was recorded.
@@ -237,20 +309,41 @@ internal object AfterCall {
                     .build(),
             )
 
+        // What it is, for Do Not Disturb and the shade's order, as every other
+        // problem says it (problem()): "an error in background operation".
+        if (problem) builder.setCategory(Notification.CATEGORY_ERROR)
+
         // The message first: one the caller left in silence is a message
         // still, not a recording gone wrong (see problem).
         when {
             call.message -> {
                 // Kept until dismissed: a message is not stale after half a day.
+                val text = call.missedMs?.let {
+                    "$length message, cut short: the recording stopped about ${StoppedEarly.seconds(it)} s " +
+                        "before the caller hung up"
+                } ?: "$length message"
                 builder.setContentTitle(call.caller?.let { "Message from $it" } ?: "New message")
-                    .setContentText("$length message")
-                    .setTimeoutAfter(0)
+                    .setContentText(text)
+                    .setStyle(Notification.BigTextStyle().bigText(text))
                     .addAction(action("Play", open(context, DeepLink.Kind.PLAY, call.name, request = 1)))
                     .addAction(action("Share", open(context, DeepLink.Kind.SHARE, call.name, request = 2)))
                     .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call), unlocked = true))
             }
+            // The early end first: what went wrong, and the one to act on -
+            // a short remnant's silence is no sign of a muted phone.
+            early(call) -> {
+                val text = "$who, $length recorded$inParts. It stopped about " +
+                    "${StoppedEarly.seconds(call.missedMs!!)} s before the call ended: the recorder was ended, or the " +
+                    "call's sound could not be taken." + if (silent(call)) " No sound came through in what was recorded." else ""
+                builder.setContentTitle("Recording stopped early")
+                    .setContentText(text)
+                    .setStyle(Notification.BigTextStyle().bigText(text))
+                    .addAction(action("Play", open(context, DeepLink.Kind.PLAY, call.name, request = 1)))
+                if (call.parts.isEmpty()) builder.addAction(action("Share", open(context, DeepLink.Kind.SHARE, call.name, request = 2)))
+                builder.addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call), unlocked = true))
+            }
             problem -> {
-                val text = "$who, $length. No sound came through. This happens on calls over " +
+                val text = "$who, $length$inParts. No sound came through. This happens on calls over " +
                     "Wi-Fi calling, and on some phones always. Run the self-test to check this phone."
                 builder.setContentTitle("Last call recorded, but silent")
                     .setContentText(text)
@@ -260,32 +353,58 @@ internal object AfterCall {
                     .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call), unlocked = true))
             }
             else -> {
-                builder.setContentTitle(who)
-                    .setContentText("Recorded, $length")
-                    .addAction(action("Play", open(context, DeepLink.Kind.PLAY, call.name, request = 1)))
-                    .addAction(action("Share", open(context, DeepLink.Kind.SHARE, call.name, request = 2)))
-                    .addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call), unlocked = true))
+                val gap = Math.round(call.between)
+                val text = when {
+                    call.parts.isEmpty() -> "Recorded, $length"
+                    gap > 0 -> "Recorded$inParts, $length; about $gap s between them not recorded"
+                    else -> "Recorded$inParts, $length"
+                }
+                builder.setContentTitle(who).setContentText(text)
+                // Whole when expanded: Android cuts the text to one line, and
+                // the parts' clause was past it (review round 2 of 1.4).
+                if (call.parts.isNotEmpty()) builder.setStyle(Notification.BigTextStyle().bigText(text))
+                builder.addAction(action("Play", open(context, DeepLink.Kind.PLAY, call.name, request = 1)))
+                if (call.parts.isEmpty()) builder.addAction(action("Share", open(context, DeepLink.Kind.SHARE, call.name, request = 2)))
+                builder.addAction(action("Delete", receiver(context, ACTION_DELETE_ASK, call), unlocked = true))
             }
         }
         post(context, builder.build(), idFor(call))
-        Log.i(TAG, "aftercall: posted for ${FileNames.forLog(call.name)} (${call.verdict}${if (call.message) ", message" else ""})")
+        Log.i(
+            TAG,
+            "aftercall: posted for ${FileNames.forLog(call.name)} (${call.verdict}${if (call.message) ", message" else ""}" +
+                (if (call.parts.size > 1) ", ${call.parts.size} parts" else "") +
+                (if (call.missedMs != null) ", stopped early" else "") + ")",
+        )
         return true
     }
 
     private fun silent(call: Call) = call.verdict == AudioCheck.Verdict.SILENT && !call.message
 
+    /** A call - not a message - whose recording stopped early: told in the
+     *  early notice's place (StoppedEarly.NOTIFICATION_ID). */
+    private fun early(call: Call) = call.missedMs != null && !call.message
+
+    /** Kept until dismissed: a message, and a call that stopped early, as
+     *  StoppedEarly's own notice was; the everyday one, half a day. */
+    private fun timeoutOf(call: Call) = if (call.message || early(call)) 0L else TIMEOUT_MS
+
     /** A call's channel, for the notification and for all that takes its
      *  place: with one channel switched off in Android, a question or a note
      *  on it would not be shown, and its button would seem to do nothing. */
     private fun channelFor(call: Call) = when {
-        silent(call) -> PROBLEM_CHANNEL_ID
+        silent(call) || early(call) -> PROBLEM_CHANNEL_ID
         call.message -> MESSAGE_CHANNEL_ID
         else -> CHANNEL_ID
     }
 
-    /** One notification for the last call; one for each message. */
-    private fun idFor(call: Call): Int =
-        if (call.message) messageId(call.name) else NOTIFICATION_ID
+    /** One notification for the last call; one for each message; and for a
+     *  call that stopped early, the early notice's own, replaced in place -
+     *  posted at its save, it stays if the process dies before this one. */
+    private fun idFor(call: Call): Int = when {
+        call.message -> messageId(call.name)
+        early(call) -> StoppedEarly.NOTIFICATION_ID
+        else -> NOTIFICATION_ID
+    }
 
     private fun messageId(name: String) = MESSAGE_ID_BASE + (name.hashCode() and 0xffff)
 
@@ -325,8 +444,14 @@ internal object AfterCall {
     /** The second tap: the notification turns into the question. */
     fun askDelete(context: Context, call: Call) {
         ensureChannels(context)
-        val text = "Delete the recording of this call? It goes to Recently deleted, where it " +
-            "can be restored for ${Trash.DAYS} days."
+        val text = when (call.parts.size) {
+            0, 1 -> "Delete the recording of this call? It goes to Recently deleted, where it " +
+                "can be restored for ${Trash.DAYS} days."
+            2 -> "Delete both parts of this call's recording? They go to Recently deleted, where they " +
+                "can be restored for ${Trash.DAYS} days."
+            else -> "Delete all ${call.parts.size} parts of this call's recording? They go to Recently deleted, " +
+                "where they can be restored for ${Trash.DAYS} days."
+        }
         val notification = Notification.Builder(context, channelFor(call))
             .setSmallIcon(android.R.drawable.ic_menu_delete)
             .setContentTitle(call.caller ?: if (call.incoming) "Incoming call" else "Outgoing call")
@@ -338,7 +463,7 @@ internal object AfterCall {
             .addExtras(recordingOf(call))
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             // A message's question stays as long as the message would have.
-            .setTimeoutAfter(if (call.message) 0 else TIMEOUT_MS)
+            .setTimeoutAfter(timeoutOf(call))
             // Delete only on a phone unlocked (Notification.Action's
             // setAuthenticationRequired, Android 12): a broadcast runs from the
             // lock screen otherwise, and two taps there - by whoever holds the
@@ -350,16 +475,27 @@ internal object AfterCall {
     }
 
     fun delete(context: Context, call: Call) {
-        val result = Trash.trash(context, call.uri, call.filePath, call.name)
-        Log.i(TAG, "aftercall: delete ${FileNames.forLog(call.name)} -> ${result.javaClass.simpleName}")
-        when (result) {
-            // Its notification has gone with it (Trash.trash): by id here would
-            // take a newer call's.
-            is DeleteResult.Deleted -> RecordingLibrary.announce(call.name)
+        // Every part of a call in parts: its notice spoke for them all - but
+        // one already trashed from the list is done, not a failure to say.
+        val each = if (call.parts.isEmpty()) {
+            listOf(Call.Part(call.name, call.uri, call.filePath))
+        } else {
+            val listed = Recordings.list(context, withCallers = false).mapTo(HashSet()) { it.name }
+            call.parts.filter { it.name in listed }
+        }
+        val results = each.map { part ->
+            Trash.trash(context, part.uri, part.filePath, part.name).also { result ->
+                Log.i(TAG, "aftercall: delete ${FileNames.forLog(part.name)} -> ${result.javaClass.simpleName}")
+                // Its notification has gone with it (Trash.trash): by id here
+                // would take a newer call's.
+                if (result is DeleteResult.Deleted) RecordingLibrary.announce(part.name)
+            }
+        }
+        when {
             // MediaStore wants the user to confirm in a system dialog, which
             // only an activity can show. The list can.
-            is DeleteResult.NeedsConsent -> note(context, "Open JemRec to delete this recording.", call)
-            is DeleteResult.Failed -> note(context, "Could not delete the recording.", call)
+            results.any { it is DeleteResult.NeedsConsent } -> note(context, "Open JemRec to delete this recording.", call)
+            results.any { it is DeleteResult.Failed } -> note(context, "Could not delete the recording.", call)
         }
     }
 
@@ -378,7 +514,7 @@ internal object AfterCall {
                 .setContentText(text)
                 .addExtras(recordingOf(call))
                 .setOnlyAlertOnce(true)
-                .setTimeoutAfter(TIMEOUT_MS)
+                .setTimeoutAfter(timeoutOf(call))
                 .setContentIntent(
                     PendingIntent.getActivity(
                         context, 0, DeepLink.home(context),

@@ -28,8 +28,12 @@ internal object StoppedEarly {
 
     private const val TAG = "JemRec"
 
-    /** Among the problems' ids (FolderAccess' 36 and those before it). */
-    private const val NOTIFICATION_ID = 37
+    /** Among the problems' ids (FolderAccess' 36 and those before it). The
+     *  call's after-call notice takes this id when its call stopped early,
+     *  replacing this one in place - one notice for the call, and this one
+     *  still up if the app's process dies before that notice (AfterCall,
+     *  1.4: until then the two came together, "two notices at once"). */
+    internal const val NOTIFICATION_ID = 37
 
     /** Past this since the call ended, it is named by its time. As
      *  AfterCall's own notice's (a while ago, history, not news). */
@@ -73,8 +77,11 @@ internal object StoppedEarly {
      *  ([Early.carried]). */
     fun tell(context: Context, early: Early, now: Long) = if (early.carried) Unit else say(context, early.start, early.missed, early.endedAt, now)
 
+    /** [missedMs] in whole seconds, as both notices say it ("about N s"). */
+    fun seconds(missedMs: Long): Long = (missedMs + 500) / 1000
+
     private fun say(context: Context, start: Long, missed: Long, endedAt: Long, now: Long) {
-        val seconds = (missed + 500) / 1000
+        val seconds = seconds(missed)
         Log.w(TAG, "save: the recording stopped ${missed} ms before the call ended")
         runCatching {
             val tap = PendingIntent.getActivity(context, 0, DeepLink.home(context), PendingIntent.FLAG_IMMUTABLE)
