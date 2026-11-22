@@ -450,24 +450,7 @@ class RecorderKeepAlive(
             under.addListener({
                 val asked = runConstraints(app, forWifi, front())
                 val work = work(asked)
-                val waiting = runCatching { under.get() }.getOrNull().orEmpty().filter { it.state == WorkInfo.State.ENQUEUED }
-                // Replaced: one waiting out a retry, and one never run whose
-                // network ask no longer fits - asking for a network that
-                // went, it absorbed every kick after it (review round 9).
-                val replace = waiting.any {
-                    it.runAttemptCount > 0 || asksNetwork(it.constraints) != asksNetwork(asked)
-                }
-                // Appended only behind one running with none behind it yet:
-                // one waiting does the job itself, and a chain is no queue
-                // of redundant runs (review round 29).
-                val all = runCatching { under.get() }.getOrNull().orEmpty()
-                val behindRunning = all.any { it.state == WorkInfo.State.RUNNING } &&
-                    all.none { it.state == WorkInfo.State.BLOCKED || it.state == WorkInfo.State.ENQUEUED }
-                val policy = when {
-                    replace -> ExistingWorkPolicy.REPLACE
-                    behindRunning -> notReplaced
-                    else -> ExistingWorkPolicy.KEEP
-                }
+                val policy = queuePolicy(runCatching { under.get() }.getOrNull().orEmpty(), asked, notReplaced)
                 val queued = runCatching {
                     manager.enqueueUniqueWork(name, policy, work)
                 }.getOrNull()
@@ -478,6 +461,41 @@ class RecorderKeepAlive(
                 }
             }, looks)
         }
+
+        /**
+         * How a one-time run asking for [asked] is queued under a name whose
+         * work is [under] ([runOnce], UsbStateWatch). Replaced: one waiting
+         * out a retry, and one never run whose network ask no longer fits -
+         * asking for a network that went, it absorbed every kick after it
+         * (review round 9). Put in [behind] - appended, for a call's end's
+         * kick and a USB state's run - only behind one running with none
+         * behind it yet: one waiting does the job itself, and a chain is no
+         * queue of redundant runs (review round 29). Else kept.
+         */
+        internal fun queuePolicy(under: List<WorkInfo>, asked: Constraints, behind: ExistingWorkPolicy): ExistingWorkPolicy {
+            val replace = under.any {
+                it.state == WorkInfo.State.ENQUEUED &&
+                    (it.runAttemptCount > 0 || asksNetwork(it.constraints) != asksNetwork(asked))
+            }
+            val states = under.map { it.state }
+            val goesBehind = WorkInfo.State.RUNNING in states &&
+                states.none { it == WorkInfo.State.BLOCKED || it == WorkInfo.State.ENQUEUED }
+            return when {
+                replace -> ExistingWorkPolicy.REPLACE
+                goesBehind -> behind
+                else -> ExistingWorkPolicy.KEEP
+            }
+        }
+
+        /** A one-time run's network ask as a kick's is decided ([runConstraints]),
+         *  JemRec in front or not read now - for a USB state's run (UsbStateWatch).
+         *  Reads Android: not on the main thread. */
+        internal fun kickConstraints(context: Context): Constraints =
+            runConstraints(context, forWifi = false, inFront = inFrontNow(context))
+
+        /** [block] on [looks], where kicks are decided one at a time - a USB
+         *  state's run too (UsbStateWatch). */
+        internal fun onLooks(block: () -> Unit) = looks.execute(block)
 
         /** Whether [c] asks for a network: from Android 9 WorkManager keeps
          *  a request of its own, its type then NOT_REQUIRED

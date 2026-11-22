@@ -2269,6 +2269,16 @@ SETUP = [
           "(the setting just above): measured on that Honor, 13 seconds with "
           "it; without it, the phone's battery manager froze JemRec until the "
           "phone was woken or charged, about four minutes."),
+    ("p", "Choosing a USB mode with the cable in can stop it the same way, "
+          "after JemRec's own watch on the cable has ended: file transfer did "
+          "on a Galaxy S23, chosen 22 seconds after the plug-in, and charging "
+          "only does on an Honor, which takes USB debugging off the cable. "
+          "Android tells JemRec of the change, and JemRec starts the recorder "
+          "again by itself, as after an unplug, without the *Checking the "
+          "recorder* notification an unplug shows. And leave Developer options' "
+          "**Default USB configuration** at *No data transfer*: set to anything "
+          "else, Android switches to it by itself when you unlock the phone "
+          "with the cable in."),
 
     ("h2", "Stopped in the background"),
     ("p", "Some phones stop apps in the background to save power. The recorder "
@@ -3500,8 +3510,10 @@ FAQ = [
      "(see <a href=\"#get-started\">Get started</a>, step 3), once Android "
      "gets round to starting JemRec: five minutes after the unlock on a Galaxy "
      "S20 locked again at once. Unplugging the phone from a computer can stop "
-     "it too, or on a Galaxy S20 plugging it in (a charger does not); on Wi-Fi "
-     "it is back within seconds, by itself. With the screen off, step 3 matters "
+     "it too, or on a Galaxy S20 plugging it in (a charger does not), and so "
+     "can choosing a USB mode with the cable in &mdash; file transfer on a "
+     "Galaxy S23, charging only on an Honor; on Wi-Fi it is back within "
+     "seconds, by itself. With the screen off, step 3 matters "
      "here as well: without it, an Honor&rsquo;s battery manager kept the "
      "recorder down for about four minutes in two tests of three, and 8.5 "
      "minutes in another. Until then nothing is recorded &mdash; the header says "
@@ -3949,7 +3961,11 @@ HOW_BODY = f"""
      Honor froze it until it was woken &mdash; about four minutes, once 8.5
      &mdash; and JemRec says so the moment it may run again, with a button to
      the setting. On a Galaxy S20 it is plugging in that restarts the ADB
-     daemon, and the same watch has the recorder back 15 to 20 seconds later. A
+     daemon, and the same watch has the recorder back 15 to 20 seconds later.
+     Choosing a USB mode with the cable in can stop it too, after that watch
+     has ended &mdash; file transfer on a Galaxy S23, charging only on an Honor
+     &mdash; and there Android&rsquo;s own USB broadcast wakes the app, which
+     runs the same watch as a background job. A
      charger stops nothing.</p>
   {timeline("unplug")}
   <p>Some phones also stop apps in the background to save power, and a stopped

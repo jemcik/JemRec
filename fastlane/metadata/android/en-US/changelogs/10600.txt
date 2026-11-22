@@ -1,0 +1,1 @@
+1.6: Choosing a USB mode with a computer's cable in - file transfer on a Galaxy S23, charging only on an Honor - could stop the recorder after JemRec's watch on the cable had ended, and nothing brought it back until JemRec's next check, up to 15 minutes later, or more. Android's own USB broadcast now wakes JemRec, which starts the recorder again by itself, as after an unplug.

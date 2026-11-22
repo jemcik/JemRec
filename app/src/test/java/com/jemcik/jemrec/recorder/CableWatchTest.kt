@@ -3,6 +3,7 @@ package com.jemcik.jemrec.recorder
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.CaptureDaemon.WirelessStep
 import com.jemcik.jemrec.recorder.CableWatch.Step
+import com.jemcik.jemrec.system.AdbdState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,6 +11,29 @@ import org.junit.Test
 
 /** What the app does after the daemon says a USB cable went in or came out. */
 class CableWatchTest {
+
+    @Test fun aCableNotesAStoppedAdbdAlwaysAUsbStateOnlyWhereItReadsStopped() {
+        // The cable's own watch, as before 1.6, without reading adbd at all.
+        assertTrue(CableWatch.notesStoppedAdbd(Trigger.CABLE) { error("not read for a cable") })
+        // A USB state's run: the Honor's charging only, adbd stopped for good.
+        assertTrue(CableWatch.notesStoppedAdbd(Trigger.USB_STATE) { AdbdState.State.STOPPED })
+        // Restarted by init (the S23, the emulators), or unreadable: no note,
+        // and no note at a boot's USB_STATE where adbd runs.
+        assertFalse(CableWatch.notesStoppedAdbd(Trigger.USB_STATE) { AdbdState.State.RUNNING })
+        assertFalse(CableWatch.notesStoppedAdbd(Trigger.USB_STATE) { AdbdState.State.UNKNOWN })
+    }
+
+    @Test fun aUsbStatesRunWatchesThreeSecondsACablesEight() {
+        assertEquals(CableWatch.WATCH_MS, CableWatch.windowFor(Trigger.CABLE))
+        assertEquals(CableWatch.STATE_WATCH_MS, CableWatch.windowFor(Trigger.USB_STATE))
+        assertEquals(Step.WAIT, CableWatch.next(sinceMs = 2_999, recorderUp = true, windowMs = CableWatch.STATE_WATCH_MS))
+        assertEquals(Step.DONE, CableWatch.next(sinceMs = 3_000, recorderUp = true, windowMs = CableWatch.STATE_WATCH_MS))
+        // Long enough for the emulators' second kill, the old configuration
+        // set again 1.1 s after the first, with room; the run's quota spent
+        // where nothing died is the rest (review round 1, L5).
+        assertTrue(CableWatch.STATE_WATCH_MS >= 2 * 1_100)
+        assertTrue(CableWatch.STATE_WATCH_MS < CableWatch.WATCH_MS)
+    }
 
     @Test fun aRecorderThatGoesIsBroughtBackAtOnce() {
         assertEquals(Step.REVIVE, CableWatch.next(sinceMs = 0, recorderUp = false))

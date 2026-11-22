@@ -345,6 +345,24 @@
         </receiver>
 
         <!--
+          Android's USB state: a USB mode chosen with a computer's cable in
+          can stop adbd, and the recorder with it, after the recorder's own
+          cable watch has ended (UsbStateReceiver). Not exported, as the boot
+          receiver: USB_STATE is a protected broadcast only the system sends,
+          and the system reaches a receiver that is not exported. Its action is
+          @SystemApi, so it is written out; Android sends it with
+          FLAG_RECEIVER_INCLUDE_BACKGROUND, which lets it reach this one with
+          JemRec not running.
+        -->
+        <receiver
+            android:name=".capture.UsbStateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_STATE" />
+            </intent-filter>
+        </receiver>
+
+        <!--
           Plays a recording on with the screen off, under the system's media
           controls. Exported, with Media3's intent filter, because those
           controls - the notification, the lock screen, a headset - bind to

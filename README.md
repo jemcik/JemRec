@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-2692-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2705-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -391,9 +391,10 @@ seconds of Wi-Fi bring it back by themselves (see
 [Get started](#get-started), step 3), once Android gets round to starting
 JemRec: five minutes after the unlock on a Galaxy S20 locked again at once.
 Unplugging the phone from a computer can stop it too, or on a Galaxy S20
-plugging it in (a charger does not); on Wi-Fi it is back within seconds, by
-itself. With the screen off, step 3 matters here as well: without it, an
-Honor's battery manager kept the recorder down for about four minutes in two
+plugging it in (a charger does not), and so can choosing a USB mode with the
+cable in - file transfer on a Galaxy S23, charging only on an Honor; on Wi-Fi
+it is back within seconds, by itself. With the screen off, step 3 matters
+here as well: without it, an Honor's battery manager kept the recorder down for about four minutes in two
 tests of three, and 8.5 minutes in another. Until then nothing is recorded -
 the header says so, a notification says the phone held JemRec back the moment
 it lets JemRec run again, and one says the recorder is down if it stays down
@@ -584,7 +585,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 2692 tests, screenshots of the screens included
+    ./gradlew test              # 2705 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

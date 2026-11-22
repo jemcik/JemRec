@@ -16,8 +16,8 @@ import org.junit.Test
  * after its revive (followUp). The entry points' own tests hold each row on
  * Android - ReviveTriggersTest (boot, Wi-Fi, opening the app),
  * MainViewModelRecorderTest (the home screen's check), RecorderSwitchTest
- * (On, Off), RecorderKeepAliveWorkTest and UsbDebuggingWatchTest (the
- * runs), CableWakeTest (the cable), DebugSwitchesOffStateTest and
+ * (On, Off), RecorderKeepAliveWorkTest, UsbDebuggingWatchTest and
+ * UsbStateWatchTest (the runs), CableWakeTest (the cable), DebugSwitchesOffStateTest and
  * ReviveTest (a revive's own gate).
  */
 class TriggersTest {
@@ -35,6 +35,7 @@ class TriggersTest {
                 Trigger.KEEP_ALIVE to listOf(USB_WATCH),
                 Trigger.USB_CHANGED to emptyList(),
                 Trigger.CABLE to emptyList(),
+                Trigger.USB_STATE to emptyList(),
                 Trigger.SELF_TEST to listOf(KICK),
                 Trigger.REVIVE to emptyList(),
             ),
@@ -70,7 +71,9 @@ class TriggersTest {
     }
 
     @Test fun theRunsAskSetupThenWhetherJemRecStandsDown() {
-        for (trigger in listOf(Trigger.KEEP_ALIVE, Trigger.USB_CHANGED)) {
+        // A USB state's run too: the cable's watch, but woken by Android on
+        // any phone, set up or not, where the cable's is woken by a recorder.
+        for (trigger in listOf(Trigger.KEEP_ALIVE, Trigger.USB_CHANGED, Trigger.USB_STATE)) {
             // Setup first: standing down unset up is still nothing at all.
             assertEquals(Admit.Skip, admit(trigger, offWithAll.copy(setUp = false)))
             assertEquals(Admit.StandDown, admit(trigger, offWithAll))
@@ -126,7 +129,7 @@ class TriggersTest {
     }
 
     @Test fun theWatchesHandOverOnlyARecorderStillDown() {
-        for (trigger in listOf(Trigger.USB_CHANGED, Trigger.CABLE)) {
+        for (trigger in listOf(Trigger.USB_CHANGED, Trigger.CABLE, Trigger.USB_STATE)) {
             assertEquals(FollowUp(), followUp(trigger, alive = true, onWifi = false))
             assertEquals(FollowUp(arm = listOf(WIFI_WATCH, KICK)), followUp(trigger, alive = false, onWifi = false))
             assertEquals(FollowUp(arm = listOf(KICK)), followUp(trigger, alive = false, onWifi = true))
@@ -148,7 +151,7 @@ class TriggersTest {
     }
 
     @Test fun theRestDoNothingAfter() {
-        val rest = Trigger.entries - setOf(Trigger.KEEP_ALIVE, Trigger.USB_CHANGED, Trigger.CABLE)
+        val rest = Trigger.entries - setOf(Trigger.KEEP_ALIVE, Trigger.USB_CHANGED, Trigger.CABLE, Trigger.USB_STATE)
         for (trigger in rest) {
             assertEquals(trigger.name, FollowUp(), followUp(trigger, alive = false, onWifi = false))
         }

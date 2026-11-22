@@ -3849,6 +3849,94 @@ def wireless_between_starts():
         start_recorder_after()
 
 
+def _last_usb_state():
+    """The extras of the newest USB_STATE in Android's broadcast history, by
+    its enqueue time - a dump may list a queue's records apart from another's
+    (review round 1) - or "" where it has none left (the boot's, long gone:
+    no data function in it)."""
+    records = re.findall(r"act=android\.hardware\.usb\.action\.USB_STATE[^\n]*\n\s*extras: Bundle\[\{([^}]*)\}\]"
+                         r"(?:(?!act=)[\s\S])*?enqueueClockTime=(\S+ \S+)",
+                         sh("dumpsys activity broadcasts history"))
+    return max(records, key=lambda r: r[1])[0] if records else ""
+
+
+def usb_mode():
+    """A USB mode chosen with the cable in, after the recorder's own cable
+    watch (1.6, tmp/usb-mode-change/PLAN.md): Android's UsbDeviceManager sets
+    the USB configuration to none first, init stops adbd, and the recorder,
+    in adbd's cgroup, goes with it - the platform's own kill, made by `svc usb
+    setFunctions` as Settings' chooser makes it (setCurrentFunctions), not
+    by pkill as in cable. The emulator has no port for the recorder to see, so
+    nothing but Android's USB_STATE tells JemRec. JemRec's process ended first
+    (`am kill`), as Android ends one for memory: the broadcast starts it, its
+    run watches and brings the recorder back over Wireless debugging - port
+    5555 shut to the app, as in wireless_between_starts - and the recorder
+    switches Wireless debugging off again after. The function is one the
+    last USB_STATE did not name: Android sends none whose extras match the
+    last (UsbDeviceManager.isUsbStateChanged), and the emulator's own reset
+    back to adb is not broadcast (tmp/usb-mode-change/0a). Up to 1.5 nothing
+    brought the recorder back here in 40 s on all four AVDs (2026-11-22).
+
+    On Android 12 and 13 port 5555 stays open, and the run's revive comes
+    over it: there the emulator's adbd, which always listens on 5555, starts
+    mdnsd itself as it starts ("Setup mdns on port= 5555"), netd's mDNS side
+    then finds it running when NsdService starts it ("Failed to start:
+    Service already running"), and every app's search fails after
+    (DNSServiceBrowse -65540) - Wireless debugging's announcement is found by
+    no one (the 13 AVD, 2026-11-22). A phone's adbd listens on no port but
+    with Start without Wi-Fi, whose port the revive then uses; and the S20
+    (Android 13) was found again after its adbd restarted (ARCHITECTURE,
+    "Unplugged from a computer")."""
+    assert _wifi_allowed(), "the AVD's Wi-Fi is not allowed for Wireless debugging (set_up's allow_wifi)"
+    shut = int(sh("getprop ro.build.version.sdk").strip()) > 33
+    start_recorder()
+    uid = re.search(r"(?:userId|appId)=(\d+)", sh(f"dumpsys package {PKG}")).group(1)
+    rule = f"OUTPUT -p tcp --dport 5555 -m owner --uid-owner {uid} -j REJECT"
+    if shut:
+        su(f"iptables -I {rule}")
+    try:
+        sh("settings put global adb_wifi_enabled 0")
+        wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 10, "Wireless debugging off")
+        diag("disconnect")
+        before = daemon_pid()
+        log_before = revive_log()
+        sh("input keyevent KEYCODE_HOME")
+        time.sleep(2)
+        app = sh(f"pidof {PKG}").strip()
+        sh(f"am kill {PKG}")
+        wait_for(lambda: sh(f"pidof {PKG}").strip() != app, 10, "JemRec's process ended")
+        function = "ptp" if "mtp=true" in _last_usb_state() else "mtp"
+        try:
+            adb("shell", f"svc usb setFunctions {function}", timeout=20)
+        except subprocess.TimeoutExpired:
+            pass  # adbd going away under the command is the point
+        adb("wait-for-device", timeout=60)
+        wait_for(adb_ready, 60, "adb back after the change")
+        assert daemon_pid() != before, f"setFunctions {function} left the recorder up: nothing was tested"
+        began = time.time()
+        wait_for(lambda: daemon_pid() not in (None, before) and recorder_answers(), 40,
+                 "the recorder back after the USB mode change")
+        took = time.time() - began
+        text = revive_since(log_before)
+        assert "cable: USB state changed; watching" in text, "the change did not wake JemRec's run"
+        # The run notes it once the recorder's off is asked, a moment after
+        # the recorder answers (the 16 and 17 AVDs, 2026-11-22: 0.3 s).
+        wait_for(lambda: "cable: back (attempt" in revive_since(log_before), 15, "the run's own revive")
+        text = revive_since(log_before)
+        if shut:
+            assert "revive: recorder up (connect CONNECTED)" in text, "the recorder did not come back over Wireless debugging"
+        wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 15, "Wireless debugging off again after the start")
+        assert "revive: Wireless debugging off - the recorder says SWITCHED_OFF" in revive_since(log_before), \
+            "the recorder was not the one to switch it off"
+        return (f"setFunctions {function}: the recorder killed with adbd, back {took:.0f} s after adb was, "
+                f"{'over Wireless debugging' if shut else 'over port 5555'}, Wireless debugging off again after")
+    finally:
+        if shut:
+            quietly(su, f"iptables -D {rule}")
+        quietly(sh, "settings put global adb_wifi_enabled 0")
+        start_recorder_after()
+
+
 def wifi_on(on):
     sh(f"cmd wifi set-wifi-enabled {'enabled' if on else 'disabled'}")
 
@@ -5513,7 +5601,8 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           background_playback, both_ears, raise_to_listen, seek_preroll, one_window, process_death,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
-          debugging_off, off_just_left, background, allow_this_wifi, wireless_between_starts, refused_grant,
+          debugging_off, off_just_left, background, allow_this_wifi, wireless_between_starts, usb_mode,
+          refused_grant,
           listener_grant, keep_paired,
           telegram_builds, newest_version, opus_valid, notifications_off, folder_lost,
           killed_mid_save, early_end, doze,

@@ -213,7 +213,8 @@ instead of planning it:
   format, or a fix that touches more than one piece of logic: write
   `tmp/<task>/PLAN.md` and show it to the user before any code. It covers the
   problem, the goal the user sees, and what is out of scope. It says how it
-  works today: our code and AOSP, measured where it matters. Its state table
+  works today: our code and AOSP, measured where it matters; and how others
+  solved it (prior art, below), before its options. Its state table
   lists every situation the feature meets (call types, the recorder up, lost
   or revived, modes, settings, tracking on or off, messages, the failure
   modes above) and what must happen in each. It weighs two options or more,
@@ -235,3 +236,13 @@ instead of planning it:
 - "Fix the whole class" and "no known gap" apply at or above that bar. One
   branch per release covers fixes to the release's own code, not new
   features or audits.
+
+Agreed 2026-11-22, after the USB mode plan was approved before anyone looked
+at how Shizuku copes:
+
+- Prior art first: before a feature or a fix of any size, look up how
+  similar software solved it - Shizuku and its forks, other tools started
+  over adb, other call recorders: their issues, their code (shallow clones,
+  only read), AOSP. A plan gets a section on it with sources (repo and date,
+  issue numbers): what they do, what it costs them, what fails for them.
+  Their way is evidence, weighed against our own rules, not a recipe.

@@ -18,7 +18,8 @@ import java.util.concurrent.TimeoutException
 
 /**
  * WorkManager's test driver, for what the recorder's lifecycle enqueues
- * (RecorderKeepAlive, UsbDebuggingWatch, and the triggers that arm them).
+ * (RecorderKeepAlive, UsbDebuggingWatch, UsbStateWatch, and the triggers
+ * that arm them).
  *
  * The driver starts a work the moment nothing holds it back - a kick, the
  * heartbeat's first period - and a real keep-alive run would revive the
@@ -132,9 +133,11 @@ internal class HeldWork(private val context: Context) {
         const val WIFI = "jemrec.keepalive.wifi"
         const val AFTER_CALL = "jemrec.keepalive.aftercall"
         const val USB_WATCH = "jemrec.usbdebugging.watch"
-        val ALL = listOf(PERIODIC, NOW, WIFI, AFTER_CALL, USB_WATCH)
+        const val USB_STATE = "jemrec.usbstate.watch"
+        val ALL = listOf(PERIODIC, NOW, WIFI, AFTER_CALL, USB_WATCH, USB_STATE)
 
         const val KEEP_ALIVE = "com.jemcik.jemrec.capture.RecorderKeepAlive"
         const val WATCH = "com.jemcik.jemrec.capture.UsbDebuggingWatch"
+        const val STATE_WATCH = "com.jemcik.jemrec.capture.UsbStateWatch"
     }
 }
