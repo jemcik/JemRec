@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2692 JVM tests, no device needed - 2279 for the app and 413 for the daemon:
+2705 JVM tests, no device needed - 2292 for the app and 413 for the daemon:
 
     ./gradlew test
 
@@ -490,7 +490,13 @@ the revive switches it on, the recorder is back and switches it off within
 15 s, and keeps its process 10 s after; on Android 12 and 13 after 15 s with
 nobody browsing mDNS, past NsdService's stop of `mdnsd`. Then switched on
 from the shell, as a user's for a computer: a revive uses it and leaves it
-on.
+on. Then a USB mode changed (1.6): JemRec's process ended, `svc usb
+setFunctions` to a function the last USB_STATE did not name - Android's own
+kill, adbd and the recorder with it - and the recorder back within 40 s by
+JemRec's run of the cable's watch, woken by the broadcast, and Wireless
+debugging off again after: over Wireless debugging with port 5555 shut on
+Android 16 and 17, over port 5555 on 12 and 13, where the emulator's adbd
+leaves NsdService unable to find anything after its restart.
 Then setup's last step on a phone that refuses its grant, as an OPPO, OnePlus
 or realme does until *Disable system optimization* is on (issues #61, #64;
 the debug build answers with #64's refusal, as an emulator grants): told that

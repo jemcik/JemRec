@@ -708,6 +708,15 @@ out, only if JemRec may start automatically (the setting just above): measured
 on that Honor, 13 seconds with it; without it, the phone's battery manager
 froze JemRec until the phone was woken or charged, about four minutes.
 
+Choosing a USB mode with the cable in can stop it the same way, after JemRec's
+own watch on the cable has ended: file transfer did on a Galaxy S23, chosen 22
+seconds after the plug-in, and charging only does on an Honor, which takes USB
+debugging off the cable. Android tells JemRec of the change, and JemRec starts
+the recorder again by itself, as after an unplug, without the *Checking the
+recorder* notification an unplug shows. And leave Developer options' **Default
+USB configuration** at *No data transfer*: set to anything else, Android
+switches to it by itself when you unlock the phone with the cable in.
+
 ## Stopped in the background
 
 Some phones stop apps in the background to save power. The recorder runs on,

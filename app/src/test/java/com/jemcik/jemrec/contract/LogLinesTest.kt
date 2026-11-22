@@ -306,6 +306,11 @@ class LogLinesTest {
                 ),
                 // The call report's timeline (CallReport), as Copy a report gives it.
                 "audio mode 3" to listOf("report.note(\"audio mode \" + mode)", ".append(\"  audio mode \").append(mode)"),
+                // A USB state's run (1.6) of the cable's watch.
+                "cable: USB state changed; watching" to listOf(
+                    "ReviveLog.note(context, \"cable: \${what ?: \"changed\"}; watching\")",
+                    "CableWatch.watch(applicationContext, \"USB state changed\", Trigger.USB_STATE)",
+                ),
                 "cable: unplugged; watching the recorder" to cable,
                 "cable: plugged in; watching the recorder" to cable,
                 // The recorder's list of port IDs, written by List.toString:

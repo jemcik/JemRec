@@ -39,6 +39,10 @@ internal enum class Trigger {
     /** A cable went in or came out (CableWatch, woken by the recorder). */
     CABLE,
 
+    /** Android said the USB state changed - a mode chosen with a cable in,
+     *  most of all (UsbStateReceiver): the cable's watch, run as a job. */
+    USB_STATE,
+
     /** The self-test found a recorder too old to say whether it hears
      *  calls (SelfTest): a revive replaces it. */
     SELF_TEST,
@@ -86,14 +90,14 @@ internal fun armedBy(trigger: Trigger): List<Keeper> = when (trigger) {
     Trigger.KEEP_ALIVE -> listOf(Keeper.USB_WATCH)
     Trigger.WIFI_BACK -> listOf(Keeper.WIFI_RUN)
     Trigger.SELF_TEST -> listOf(Keeper.KICK)
-    Trigger.TURN_OFF, Trigger.USB_CHANGED, Trigger.CABLE, Trigger.REVIVE -> emptyList()
+    Trigger.TURN_OFF, Trigger.USB_CHANGED, Trigger.CABLE, Trigger.USB_STATE, Trigger.REVIVE -> emptyList()
 }
 
 /**
  * After a watch's revive that left the recorder down - the USB watch's, or
- * the cable's last try: the Wi-Fi watch where there is no Wi-Fi, then a
- * kick. The keep-alive owns the retrying, and off Wi-Fi the Wi-Fi watch
- * brings it back the moment there is some.
+ * the cable watch's last try, after a cable or a USB state: the Wi-Fi watch
+ * where there is no Wi-Fi, then a kick. The keep-alive owns the retrying,
+ * and off Wi-Fi the Wi-Fi watch brings it back the moment there is some.
  */
 internal fun afterFailedRevive(onWifi: Boolean): List<Keeper> =
     listOfNotNull(Keeper.WIFI_WATCH.takeUnless { onWifi }, Keeper.KICK)
@@ -138,18 +142,20 @@ internal sealed interface Admit {
  * reason: boot and Wi-Fi coming back ask setup and not the switch - the
  * recorder is kept for an On anywhere, with no Wi-Fi to start it then; the
  * app's own (opening, the screen's check) ask the switch and not setup;
- * the keep-alive and the USB watch ask setup, then whether JemRec is
- * standing down; every revive asks that first, whoever asked for it, and
- * with JemRec on puts back what an On cut short left switched off; a turn
- * goes only if the switch still says what it was turned to; the cable's
- * watch, woken with the token, always.
+ * the keep-alive, the USB watch and a USB state's run ask setup, then
+ * whether JemRec is standing down - the USB state's run is the cable's
+ * watch, but woken by Android for any phone, set up or not, where the
+ * cable's is woken by a recorder; every revive asks that first, whoever
+ * asked for it, and with JemRec on puts back what an On cut short left
+ * switched off; a turn goes only if the switch still says what it was turned
+ * to; the cable's watch, woken with the token, always.
  */
 internal fun admit(trigger: Trigger, gates: Gates): Admit {
     val standingDown = standingDown(gates.recorderGone, gates.switchOn)
     return when (trigger) {
         Trigger.BOOT, Trigger.WIFI_BACK -> if (gates.setUp) Admit.Go() else Admit.Skip
         Trigger.APP_OPEN, Trigger.SETUP_CHECK -> if (gates.switchOn) Admit.Go() else Admit.Skip
-        Trigger.KEEP_ALIVE, Trigger.USB_CHANGED -> when {
+        Trigger.KEEP_ALIVE, Trigger.USB_CHANGED, Trigger.USB_STATE -> when {
             !gates.setUp -> Admit.Skip
             standingDown -> Admit.StandDown
             else -> Admit.Go()
@@ -190,7 +196,7 @@ internal fun followUp(trigger: Trigger, alive: Boolean, onWifi: Boolean, forWifi
             collect = alive,
             retry = triesAgain(alive, forWifi, onWifi, periodic),
         )
-        Trigger.USB_CHANGED, Trigger.CABLE -> FollowUp(arm = if (alive) emptyList() else afterFailedRevive(onWifi))
+        Trigger.USB_CHANGED, Trigger.CABLE, Trigger.USB_STATE -> FollowUp(arm = if (alive) emptyList() else afterFailedRevive(onWifi))
         else -> FollowUp()
     }
 

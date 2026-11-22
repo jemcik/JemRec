@@ -158,9 +158,9 @@ object DebugSwitchesOff {
     /**
      * JemRec is off with the recorder gone by choice: nothing may start it
      * again until On. Every revive asks this first (CaptureDaemon.revive) -
-     * the keep-alive, the Wi-Fi and cable watches, boot, opening the app, and
-     * UsbDebuggingWatch, which would otherwise have USB debugging back on
-     * within seconds.
+     * the keep-alive, the Wi-Fi and cable watches (a cable's, and a USB
+     * state's run of it), boot, opening the app, and UsbDebuggingWatch, which
+     * would otherwise have USB debugging back on within seconds.
      */
     fun recorderGone(context: Context): Boolean = switchedOff(context).takesTheRecorder()
 

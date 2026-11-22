@@ -146,6 +146,7 @@ class FrozenNamesTest {
             ".capture.DebugNotificationCleaner",
             ".capture.NetworkReviveReceiver",
             ".capture.PlaybackService",
+            ".capture.UsbStateReceiver",
             ".ui.PairingService",
             ".ui.RecorderTile",
             ".recordings.RecordingsFileProvider",
@@ -160,6 +161,7 @@ class FrozenNamesTest {
         val WORKERS = listOf(
             "com.jemcik.jemrec.capture.RecorderKeepAlive",
             "com.jemcik.jemrec.capture.UsbDebuggingWatch",
+            "com.jemcik.jemrec.capture.UsbStateWatch",
         )
     }
 }

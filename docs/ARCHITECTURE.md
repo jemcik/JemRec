@@ -16,6 +16,7 @@ this one is - or to check that it does what it says.
   [staying alive without Wi-Fi](#staying-alive-without-wi-fi) ·
   [starting without Wi-Fi](#starting-without-wi-fi) ·
   [unplugged from a computer](#unplugged-from-a-computer) ·
+  [a USB mode changed](#a-usb-mode-changed-with-the-cable-in) ·
   [after a restart](#after-a-restart) ·
   [coming back without you](#coming-back-without-you) ·
   [Wireless debugging, only to start](#wireless-debugging-only-to-start) ·
@@ -607,6 +608,128 @@ the Android 17 emulator), as it refuses it a settings observer. The shell may
 read the USB port's status, a binder call of about 0.2 ms, and that changes
 the moment the cable does.
 
+## A USB mode changed with the cable in
+
+**Since 1.6, a USB mode chosen with a computer's cable in no longer leaves the
+recorder down.** On a phone whose `UsbDeviceManager` uses AOSP's legacy
+handler - there is no USB gadget HAL - any change of the USB functions first
+sets `sys.usb.config` to none (`UsbHandlerLegacy.trySetEnabledFunctions`:
+"Kick the USB stack to close existing connections"), and init's rule for none
+is `stop adbd` (`init.usb.rc`, read 2026-11-21). The recorder lives in
+`adbd`'s cgroup and goes with it. Measured on a Galaxy S23 (One UI 9,
+Android 17), 2026-11-21, on 1.4: file transfer chosen in Settings 22 s after
+the plug-in, after the cable's watch had ended, and `adbd` stopped and started
+again; the recorder died, and nothing noticed it in the 109 s before the
+test's next step started it again. The same on the four emulators, 2026-11-22:
+`svc usb setFunctions mtp`, the call Settings makes, killed the recorder every
+time, and on 1.5 nothing brought it back within 40 s.
+
+**Phones differ.** On the Honor (MagicOS 11, Android 17), 2026-11-22, changes
+between file transfer, PTP and MTP kept `adbd`: only its USB link was cut and
+opened again, and the recorder kept its process. Charging only did not: the
+Honor's charging functions leave `adb` out ("Setting USB config to mtp"),
+`adbd` stopped at once and stayed stopped, as at an unplug, and 1.5 left the
+recorder down until its next heartbeat - 2 min 25 s that time, 15 minutes
+or more where Android holds the job back. That Honor's `allow_charging_adb`
+read 0. A phone with a USB gadget HAL takes another path in AOSP, which
+starts `adbd` for USB and leaves a running one alone (`UsbHandlerHal`,
+`AdbService.startAdbd`) - read, not measured.
+
+**The recorder cannot see it coming.** Its poll reads the cable's port, which
+a mode change leaves as it is, and where a change kills, the kill is its first
+step. Android tells apps instead: `UsbManager.ACTION_USB_STATE`
+(`android.hardware.usb.action.USB_STATE`, `@SystemApi`, a protected
+broadcast), sent with `FLAG_RECEIVER_INCLUDE_BACKGROUND`, which lets it reach
+the manifest receiver of an app that is not running (AOSP main and the 12, 13,
+14 and 16 tags). Measured with JemRec's process killed: delivered on the four
+emulators - also in the restricted standby bucket and with Battery set to
+Restricted - the receiver running 86 to 143 ms after the kill; and on the
+Honor, Android starting JemRec "for broadcast", 337 ms after the change -
+with App launch on Manage manually, as *Survive a restart* asks (read that
+evening; Manage automatically not measured); a phone that holds
+JemRec back holds this too ([Stopped in the
+background](#stopped-in-the-background)). Delivery rests on that flag, not on
+Android's list of implicit broadcasts a manifest may still receive, which
+does not name `USB_STATE` - as AOSP's own `MtpReceiver` receives it, from
+its manifest. A
+real gadget sends three to a change (configured, not configured, configured
+again), the first 61 ms after the Honor's charging only; an emulator sends
+one. None is sent whose extras match the last one sent
+(`isUsbStateChanged`): on the Honor that was a change to the same functions,
+which killed nothing either.
+
+**What JemRec does with it** (`UsbStateReceiver`, `UsbStateWatch`): on a
+phone set up, the receiver queues an expedited job, which asks, as the USB
+debugging watch does, whether JemRec stands down, and then runs the cable's
+own watch ([Unplugged from a computer](#unplugged-from-a-computer)) - three
+seconds of looks, not the cable's eight, a revive if the recorder went,
+three tries, then the keep-alive. The cable's note - which has the next revive switch Wireless
+debugging off and on whatever it did on this Wi-Fi before - only where
+`adbd` reads stopped when the recorder is found gone: the Honor's charging
+only leaves it stopped, also with Wireless debugging on, as an unplug does.
+Not otherwise: a running `adbd` needs no switching, one off between starts
+is started by the revive's switch-on (the Honor, the heartbeat's, 2026-11-22),
+and USB_STATE also comes as a boot completes (`finishBoot`), where no cable
+stopped anything (review rounds 1 and 2). A job, not the cable's
+foreground service: a broadcast is not among the exemptions that let an app
+in the background start one (developer.android.com, "Restrictions on starting
+a foreground service from the background"), so this shows no *Checking the
+recorder*. Three broadcasts would have queued three watches; they are queued
+by the keep-alive's own rule instead (`RecorderKeepAlive.queuePolicy`): one
+waiting takes the next, one running gets one behind it. Three seconds, as
+where a change kills the kill comes with the broadcast or before it - the
+emulators' second, their old configuration set again, 1.1 s after the first
+- and each run is an expedited job, whose time comes out of the expedited
+quota JemRec's kicks share: five minutes a day in the restricted standby
+bucket (developer.android.com, "Power management resource limits"). Two runs
+to a change, six seconds where nothing died; out of quota, a run waits as a
+regular job, and the heartbeat is still there. Measured with the
+emulator check `usb_mode`, 2026-11-22, shrunk build: on the Android 16 and 17
+emulators recording again 12 s after the change's adb came back, over Wireless
+debugging; on 12 and 13 17 to 18 s, over port 5555. On the Honor, the same
+day, debug build: charging only chosen in its USB chooser, and the run the
+broadcast woke had the recorder back 15.8 s after it began, still on
+charging only, at its first try (Wireless debugging switched off and on, as
+for a cable); a real call was recorded after. Each change between data
+modes cost two runs of 3.3 s that found the recorder up. On the Galaxy S23,
+the same day, debug build: file transfer chosen in Settings minutes after
+the plug-in, the recorder back 15.1 s after the run began (charging chosen:
+15.3 s), `adbd` already running again, so Wireless debugging was only
+switched on. An unplug from file transfer while locked killed it, as on
+1.5; the cable's watch and the run looked at once, one revive had it back
+in 17 s, the phone still locked, and the other found it answering. Locks
+and unlocks with the cable in killed nothing: a lock left a connected
+cable as it was (Samsung's USB restriction read off), a plug-in while
+locked had the restriction on until the unlock, and the unlock changed no
+function.
+
+**Not over Wireless debugging on the Android 12 and 13 emulators.** There an
+emulator's `adbd`, which always listens on 5555, starts `mdnsd` itself as it
+starts ("Setup mdns on port= 5555"), netd's mDNS side then finds it running
+when NsdService starts it ("Failed to start: Service already running"), and
+every app's search fails after (`DNSServiceBrowse -65540`); the run's three
+revives over Wireless debugging found nothing (the 13 emulator, 2026-11-22).
+A phone's `adbd` announces itself as it starts only with a port to announce:
+Start without Wi-Fi's 5555, which a revive then uses, or Wireless debugging
+already on - and the S20 (Android 13), on 1.4 with Wireless debugging on, was
+found again after its `adbd` restarted ([Unplugged from a
+computer](#unplugged-from-a-computer)). Not measured: an Android 12 or 13
+phone after an `adbd` restart with Wireless debugging off between starts.
+
+**What keeps it from happening at all.** Shizuku's server is started the way
+the recorder is and dies the same way; its author calls it intended, with no
+solution (Shizuku #366, 2023), and the forks restart it with a foreground
+service always on, listening for the server's binder to die (Shizuku-Next,
+thedjchi's, Shizuku+; their code, read 2026-11-22) - JemRec keeps nothing
+running between calls and uses Android's own broadcast instead. Shizuku's
+guide gives the advice that applies here too: Developer options' *Default USB
+configuration* left at *No data transfer*. Set to anything else, Android
+switches to it at an unlock with the cable in and charging
+(`MSG_UPDATE_SCREEN_LOCK`) - on the emulators that unlock killed the recorder.
+And Android Auto over a car's cable killed Shizuku at the car's start and at
+its stop on a Galaxy S26 Ultra (thedjchi #173, 2026). Not measured here:
+cars.
+
 ## After a restart
 
 **A reboot kills the recorder, and building it again takes a few seconds of
@@ -679,15 +802,18 @@ recording carries on with Wi-Fi off, on mobile data, anywhere.
 
 ## Coming back without you
 
-Five things bring a stopped recorder back with nobody touching the phone: a
+Six things bring a stopped recorder back with nobody touching the phone: a
 heartbeat every 15 minutes (`RecorderKeepAlive`; since 1.2 it never asks to be
 retried, as WorkManager runs periodic work that does by its backoff - 30 s
 doubling up to five hours - not its period, and a day off Wi-Fi had put the
-next heartbeat hours away), and four that cut it short -
+next heartbeat hours away), and five that cut it short -
 a one-time run at a restart, another when Wi-Fi returns (`NetworkRevive`), the
-watch on USB debugging (`UsbDebuggingWatch`, a one-time run itself), and after
+watch on USB debugging (`UsbDebuggingWatch`, a one-time run itself), after
 a cable is pulled the app's own revive (`CableWatch`), which falls back to a
-one-time run. Opening JemRec starts it too, on the app's own. Each of these
+one-time run, and since 1.6 that same watch run as a job when Android says
+the USB state changed (`UsbStateWatch`, [A USB mode
+changed](#a-usb-mode-changed-with-the-cable-in)). Opening JemRec starts it
+too, on the app's own. Each of these
 jobs asks for a network, and the one-time runs but the USB watch are
 expedited - its content trigger keeps it a regular job ("Expedited jobs may
 only set network, storage-not-low, and persistence constraints",
@@ -949,8 +1075,9 @@ Not measured: a phone where Wireless debugging off with USB debugging on stops
 USB debugging on, as a Lenovo tablet and an Oppo phone did for a Shizuku fork
 (thedjchi #108), where Wireless debugging on kept it - the S23's locks killed
 nothing either way, and its USB mode change killed the recorder with Wireless
-debugging on too; and whether a banking app that looks at Wireless debugging
-alone now opens.
+debugging on too, which 1.6 brings back ([A USB mode
+changed](#a-usb-mode-changed-with-the-cable-in)); and whether a banking app
+that looks at Wireless debugging alone now opens.
 
 ## Stopped in the background
 
