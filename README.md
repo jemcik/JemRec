@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-2646-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2692-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -136,10 +136,13 @@ the phone declined to start the app at boot and nothing came back by itself -
 **opening JemRec once** had it recording sixteen seconds later. That is the
 fallback, and it always works.
 
-On MagicOS 11 a restart also leaves Wireless debugging switched on without
+On MagicOS 11 a restart can leave Wireless debugging switched on without
 starting it. Since 0.25.1 JemRec sees that and switches it off and on itself:
 recording again **eleven seconds** after its first try, which came as the
-phone was unlocked, with the app never opened.
+phone was unlocked, with the app never opened. Since 1.5 Wireless debugging is
+off before a restart, unless you had it on, and switching it on starts it: on
+the same phone, restarted with it off, the recorder was up 10.4 seconds after
+JemRec's Wi-Fi try, about 13 after its first, nothing tapped.
 
 Wi-Fi is needed to *rebuild* the recorder, never to use it. Once it is up,
 recording carries on with Wi-Fi off, on mobile data, anywhere. The measurements
@@ -213,7 +216,8 @@ flowchart LR
 1. **The app pairs with the phone's own Wireless debugging** - the same pairing
    a laptop does, with both ends on the same handset.
 2. **For a few seconds, it uses that session to start a small recorder** that
-   runs as the shell, then closes it. The recorder outlives the session.
+   runs as the shell, then closes it, and the recorder switches Wireless
+   debugging off again. The recorder outlives both.
 3. **The recorder watches the calls and writes each one to a file** itself, so
    a phone that freezes background apps cannot cut a recording short.
 4. **The app collects the finished file** over a socket on which the recorder
@@ -274,10 +278,13 @@ Honor - so the answering machine's settings hold its own checks and a test call.
 - **No caller on the lock screen.** While a recording plays, the phone's media
   controls name the caller only once it is unlocked; locked, they say *Call
   recording*.
-- **Debugging stays on while JemRec is on**, because the recorder needs
-  it; while it is off, it can go too (Settings → When JemRec is off). A computer you have paired with the phone can connect to it over the
-  same Wi-Fi, and one you have authorised before over a cable; an unpaired one
-  cannot. Now and then, check *Wireless debugging →
+- **USB debugging stays on while JemRec is on**, because the recorder needs
+  it; **Wireless debugging only for the seconds JemRec takes to start the
+  recorder**, unless you switch it on yourself. While JemRec is off, they can
+  go too (Settings → When JemRec is off). While USB debugging is on, a computer
+  you have authorised before can connect over a cable; while Wireless debugging
+  is on, one you have paired with the phone can connect over the same Wi-Fi;
+  an unpaired one cannot. Now and then, check *Wireless debugging →
   Paired devices* and remove anything you do not recognise. With *Keep JemRec
   paired*, which setup asks about, Android forgets no pairing - a computer's
   you allowed over a cable neither - until you turn it off in Settings; Start
@@ -301,7 +308,7 @@ recorder does not explain is one its user has to guess at:
 | --- | --- |
 | `INTERNET` | Not about the internet: Android requires it for any TCP socket, including one to `127.0.0.1`. |
 | `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing - and for the background checks to ask Android for a network to run with (from Android 14 a job that asks for one needs it). |
-| `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to. |
+| `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch Wireless debugging on for each start of the recorder, USB debugging back on when the phone turns it off, and debugging off with JemRec when you ask it to. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | To play a recording on with the screen off, under the phone's media controls. It plays; it never records. |
@@ -486,9 +493,10 @@ says just *Permission monitoring*, turn that off instead); some show it only
 in English, so if it is not there, set the phone's language to English, turn
 it on and set the language back. On a Xiaomi it is *USB
 debugging (Security settings)*. Then tap **Try again**. Setup does not finish
-without that setting: it is what lets JemRec turn Wireless debugging back on
-after a restart. Leave it that way afterwards: the recorder needs it too, to
-turn debugging off when JemRec is uninstalled. Reported from two OnePlus phones
+without that setting: it is what lets JemRec turn Wireless debugging on to
+start its recorder, after a restart say. Leave it that way afterwards: the
+recorder needs it too, to switch Wireless debugging off again after each
+start, and to turn debugging off when JemRec is uninstalled. Reported from two OnePlus phones
 (issues #61 and #64); we have none to try it on.
 
 </details>
@@ -502,16 +510,18 @@ Choose in Settings → **When JemRec is off** what goes off with JemRec, then
 turn JemRec off - with the record button or the Quick Settings tile - before
 you open the bank:
 
-- **Hide Developer options**: Developer options and Wireless debugging go off.
-  USB debugging stays on, so JemRec keeps its recorder and turns back on
-  instantly, anywhere.
+- **Hide Developer options**: Developer options go off. USB debugging stays on,
+  so JemRec keeps its recorder and turns back on instantly, anywhere.
 - **Turn all debugging off**: USB debugging goes off too, and the recorder with
   it. Turning JemRec back on then needs Wi-Fi and takes about 15 seconds, and
   the answering machine is off until then. Away from Wi-Fi, JemRec asks first -
   unless **Start without Wi-Fi** is on (Settings → Debugging): then it comes
   back anywhere, on mobile data or none, until the phone restarts.
 
-Try the first; if your bank still refuses, the second. With **Start without
+Try the first; if your bank still refuses, the second. Wireless debugging is
+off already while JemRec runs - JemRec switches it on only for the seconds it
+takes to start the recorder - and if you switched it on yourself, either
+choice switches it off too. With **Start without
 Wi-Fi** on, the first leaves debugging port 5555 open while JemRec is off, which
 a bank may look for too; the second closes it. Turning JemRec back on puts back
 what it switched off. Measured on an Honor (Android 17): with
@@ -574,7 +584,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 2646 tests, screenshots of the screens included
+    ./gradlew test              # 2692 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

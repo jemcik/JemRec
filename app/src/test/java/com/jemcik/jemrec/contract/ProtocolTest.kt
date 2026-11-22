@@ -81,6 +81,16 @@ class ProtocolTest {
         assertEquals(true, CaptureDaemon.parsePairingReply(example("J", "PAIRING ok")))
         assertEquals(false, CaptureDaemon.parsePairingReply(example("J", "PAIRING failed")))
         assertNull(CaptureDaemon.parsePairingReply("PAIRING maybe"))
+        assertEquals(
+            listOf(
+                com.jemcik.jemrec.recorder.DaemonClient.WirelessOff.SWITCHED_OFF,
+                com.jemcik.jemrec.recorder.DaemonClient.WirelessOff.ALREADY_OFF,
+                com.jemcik.jemrec.recorder.DaemonClient.WirelessOff.USB_OFF,
+                com.jemcik.jemrec.recorder.DaemonClient.WirelessOff.REFUSED,
+            ),
+            replies.filter { it.command == "I" }.map { CaptureDaemon.parseWirelessOffReply(it.example) },
+        )
+        assertNull(CaptureDaemon.parseWirelessOffReply("WIRELESS maybe"))
 
         val sims = CaptureDaemon.parseSims(example("XP", "SIMS"))
         assertEquals("1", sims!!.defaultId)

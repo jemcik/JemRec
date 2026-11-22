@@ -18,10 +18,16 @@ import com.jemcik.jemrec.calls.VoipCallNotes
  *
  * WHY IT HAS TO EXIST
  *
- * While JemRec is on, Wireless debugging stays on - it is how the recorder is
- * started again (see ARCHITECTURE, "What stays switched on") - and Android
- * shows its own permanent "Wireless debugging connected" notification for as
- * long as it is on. No setting unpicks the two. What can be unpicked is the
+ * JemRec starts its recorder over Wireless debugging, and Android shows
+ * "Wireless debugging connected" while that session is open - a few seconds
+ * at each start, since JemRec closes the session once the recorder is up
+ * and switches Wireless debugging off again (Revive.askWirelessOff; see
+ * ARCHITECTURE, "Wireless debugging, only to start"). Measured on the Honor
+ * (MagicOS 11, Android 17), 2026-11-21, with a computer's cable in: posted
+ * for each start's session and taken down when it closed, and nothing
+ * posted for Wireless debugging being on - off the cable not read - as in AOSP (showAdbConnectedNotification: "Show when at least one
+ * device is connected"). Its USB twin shows while a computer's cable is in.
+ * No setting unpicks those from debugging. What can be unpicked is the
  * notification.
  *
  * WHY IT ASKS FIRST
@@ -41,7 +47,7 @@ import com.jemcik.jemrec.calls.VoipCallNotes
  * notifications - measured, it returns without error and the banner stays.
  * snoozeNotification() is not ignored: it takes the banner off the shade for
  * the duration given. Snoozed for a week; if it ever comes back - the snooze
- * expiring, or Wireless debugging being re-armed after a revive - onNotification
+ * expiring, or the next start's session posting it anew - onNotification
  * Posted fires and it is snoozed again. The keys snoozed are remembered, so a
  * change of mind can bring the banner back at once rather than in a week.
  *

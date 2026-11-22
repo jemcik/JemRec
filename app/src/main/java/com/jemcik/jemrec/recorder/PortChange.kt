@@ -87,7 +87,9 @@ object PortChange {
         // Back over Wireless debugging, which adbd's restart can leave off:
         // on the Honor, 2026-10-28, it read 0 after one open of the port and
         // 1 after another. Switched on as a revive does - not where Android
-        // refused it on this Wi-Fi, which would only ask.
+        // refused it on this Wi-Fi, which would only ask. No note of whose it
+        // is: on before the restart, by the revive's own switch-on (noted
+        // then) or the user's, it stays whose it was (Revive.askWirelessOff).
         if (!Revive.wirelessDebuggingOn(w) && !w.refusedHere() &&
             w.write(GlobalSettings.ADB_WIFI_ENABLED, true)
         ) {

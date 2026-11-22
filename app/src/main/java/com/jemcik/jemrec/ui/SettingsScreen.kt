@@ -502,17 +502,18 @@ fun SettingsScreen(
                     onCheckedChange = vm::setStartWithoutWifi,
                 )
             }
-            // Setup's debugging question, answerable again. Debugging itself is
+            // Setup's debugging question, answerable again. USB debugging is
             // not a choice while JemRec is on - the recorder needs it - so the
             // summary says what stays on whichever way the switch is set, and
-            // the switch is only about Android's reminder of it. See
-            // DebugNotificationCleaner.
+            // the switch is only about Android's reminder of it. Wireless
+            // debugging is on only while a start needs it (Revive.askWirelessOff).
+            // See DebugNotificationCleaner.
             row {
                 SwitchRow(
                     title = "Hide the debugging notification",
                     summary = state.debugNotificationProblem?.let(::grantProblem)
-                        ?: ("Debugging stays on for recording, so a paired computer can " +
-                            "still connect on Wi-Fi"),
+                        ?: ("USB debugging stays on for recording, so a computer you " +
+                            "allowed can connect by cable"),
                     summaryColor = if (state.debugNotificationProblem != null) {
                         MaterialTheme.colorScheme.error
                     } else {
@@ -775,7 +776,7 @@ internal fun rulesSentence(state: UiState): RulesSummary {
  * stands while on - the port open, or waiting for the Wi-Fi it is opened over
  * - and, open or waiting, that the port is open to every network the phone
  * joins (StartWithoutWifi). Switched off with the port it opened still open
- * - the close waits for a Wi-Fi with Wireless debugging, a call's end, and
+ * - the close waits for a Wi-Fi that allows Wireless debugging, a call's end, and
  * JemRec back on if its off switched debugging off (CaptureDaemon
  * .portChangeDue, portChangeOver) - it says that, not
  * the off text. An ask that left the port unopened is said too, unless the port is
@@ -794,9 +795,9 @@ internal fun startWithoutWifiSummary(state: UiState): String = when {
             "This phone would not close debugging port 5555. It stays open until the phone restarts"
         }
     !state.startWithoutWifi && state.portSet && state.portOurs && state.debuggingOff ->
-        "Debugging port 5555 is closed while debugging is off. It opens with debugging, then closes once JemRec is on a Wi-Fi with Wireless debugging"
+        "Debugging port 5555 is closed while debugging is off. It opens with debugging, then closes once JemRec is on a Wi-Fi that allows Wireless debugging"
     !state.startWithoutWifi && state.portSet && state.portOurs ->
-        "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi with Wireless debugging, or the phone restarts"
+        "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts"
     !state.startWithoutWifi ->
         "Turn JemRec back on with no Wi-Fi. Opens debugging port 5555 to any network the phone joins"
     state.portSet && state.debuggingOff ->

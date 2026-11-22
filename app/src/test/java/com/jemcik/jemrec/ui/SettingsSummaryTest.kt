@@ -103,13 +103,13 @@ class SettingsSummaryTest {
     }
 
     @Test fun switchedOffThePortItOpenedIsStillSaid() {
-        // The close waits for a Wi-Fi with Wireless debugging - not one
+        // The close waits for a Wi-Fi that allows Wireless debugging - not one
         // Android refuses it on, where the revive comes over the port itself -
         // and for JemRec back on if its off took debugging; until then the
         // port is open.
         val closing = UiState(startWithoutWifi = false, portSet = true, portOurs = true)
         assertEquals(
-            "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi with Wireless debugging, or the phone restarts",
+            "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts",
             startWithoutWifiSummary(closing),
         )
         // A computer's port is not JemRec's to close, nor to speak for.
@@ -167,12 +167,27 @@ class SettingsSummaryTest {
             assertFalse(startWithoutWifiFailed(it))
         }
         assertTrue("with or without Wi-Fi" in startWithoutWifiSummary(on))
-        assertTrue("closes once JemRec is on a Wi-Fi with Wireless debugging" in startWithoutWifiSummary(closing))
+        assertTrue("closes once JemRec is on a Wi-Fi that allows Wireless debugging" in startWithoutWifiSummary(closing))
         // Not set, the off text is the same with debugging off or on.
         assertEquals(
             startWithoutWifiSummary(UiState(startWithoutWifi = false)),
             startWithoutWifiSummary(UiState(startWithoutWifi = false, debuggingOff = true)),
         )
+    }
+
+    /** Since 1.5 Wireless debugging is off while JemRec runs, so no choice
+     *  names it among what it switches off (the user's pick, 2026-11-21);
+     *  the footer says why, and the case left - one switched on by hand. */
+    @Test fun noChoiceNamesWirelessDebuggingAndTheFooterSaysWhy() {
+        OffMode.entries.forEach { mode ->
+            listOf(false, true).forEach { portSet ->
+                assertTrue("$mode", offModeLines(mode, portSet).none { "Wireless" in it.second })
+            }
+        }
+        assertEquals("Developer options", offModeLines(OffMode.HIDE_DEVELOPER_OPTIONS, false).toMap().getValue("Switches off:"))
+        assertEquals("Developer options, USB debugging", offModeLines(OffMode.ALL_DEBUGGING_OFF, false).toMap().getValue("Switches off:"))
+        val footer = whenOffFooter(UiState())
+        assertTrue(footer.any { "Wireless debugging is off while JemRec runs" in it && "switch it on yourself" in it })
     }
 
     @Test fun backOnAfterAllDebuggingOffIsAnywhereWithThePort() {

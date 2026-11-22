@@ -229,27 +229,29 @@ private fun DebuggingChoiceCard(state: UiState, vm: MainViewModel) {
             Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Debugging stays on",
+            Text("USB debugging stays on",
                 style = MaterialTheme.typography.titleMedium)
             Text(
                 "JemRec records through Android's debugging tools, so USB " +
-                    "debugging and Wireless debugging stay on for as long as " +
-                    "it is installed. If either is turned off, JemRec turns " +
-                    "it back on.",
+                    "debugging stays on for as long as it is installed. If it " +
+                    "is turned off, JemRec turns it back on. Wireless debugging " +
+                    "is on only for the few seconds JemRec takes to start its " +
+                    "recorder; if you switch it on yourself, JemRec leaves it on.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                "While they are on, a computer paired with this phone can " +
-                    "connect to it on the same Wi-Fi, and one you have allowed " +
-                    "before can connect over a cable. To switch debugging off " +
-                    "for good, uninstall JemRec first.",
+                "While USB debugging is on, a computer you have allowed before " +
+                    "can connect over a cable; while Wireless debugging is on, a " +
+                    "computer paired with this phone can connect on the same " +
+                    "Wi-Fi. To switch debugging off for good, uninstall JemRec first.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             HorizontalDivider()
             Text(
-                "Android shows a notification for as long as debugging is " +
-                    "on. Should JemRec hide it?",
+                "Android shows a notification each time JemRec connects to " +
+                    "start its recorder, and while a computer's cable is in. " +
+                    "Should JemRec hide it?",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(

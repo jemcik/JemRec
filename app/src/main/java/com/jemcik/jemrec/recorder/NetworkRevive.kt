@@ -157,6 +157,88 @@ object NetworkRevive {
 
     fun switchedOnHere(context: Context): Boolean = notedHere(context, KEY_SWITCHED_ON)
 
+    /**
+     * WHOSE WIRELESS DEBUGGING IT IS. JemRec's: switched on by a revive from
+     * off, or by the user for setup - and so JemRec's to switch off again
+     * once the recorder is up (Revive.askWirelessOff). Not a Wireless
+     * debugging found on: that is the user's, for a computer or another app,
+     * and stays on, a revive's off and on included. Forgotten once the
+     * recorder says it is off, or off already, and at Start fresh.
+     *
+     * One note, not one per Wi-Fi connection or boot (the user's choice,
+     * 2026-11-21, after review round 1). Android 17 keeps the switch on
+     * across Wi-Fi changes and restarts - its AdbDebuggingManager writes it
+     * off on a Wi-Fi change only without the allow_adb_wifi_reconnect flag
+     * (android17-release), whose AdbWifiNetworkMonitor the S23 logged
+     * ("Received the same Wi-Fi SSID. Ignoring.", 2026-11-21), and the 17
+     * AVD kept it on across a restart - so a note per connection went void
+     * while JemRec's switch stayed on, and an off missed before a Wi-Fi
+     * change was missed for good. What one note leaves: an off by someone
+     * else - Android's, at a Wi-Fi change before 17 - and the user switching
+     * it on before JemRec's next look, after an off of JemRec's was missed;
+     * that switch then goes off once.
+     *
+     * Noted when it is switched on, from the app's own reading that it was
+     * off - the only reading there is while the recorder is down. Where
+     * Android hides the switch from apps (Android 17 QPR3, Shizuku-Next #224,
+     * not seen on a phone here) that reads off for a user's too, which is
+     * then taken for JemRec's. Whether it is off after the start is the
+     * recorder's reading, as the shell, when asked.
+     */
+    fun noteJemRecs(context: Context) {
+        Prefs.of(context).edit { putBoolean(KEY_JEMRECS, true) }
+    }
+
+    fun forgetJemRecs(context: Context) {
+        Prefs.of(context).edit { remove(KEY_JEMRECS) }
+    }
+
+    fun jemRecs(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_JEMRECS, false)
+
+    /**
+     * Installs from before 1.5 left Wireless debugging on with no note of
+     * whose it is: the first revive after the update counts it as JemRec's,
+     * once, and it goes off with the recorder up (the user's pick,
+     * 2026-11-21). Unread on purpose: the recorder reads it, and answers
+     * "already off" where it was. Setup's end marks it done
+     * ([markTakenOver], RecorderLifecycle.afterSetup), so a phone set up
+     * with 1.5 never takes over a Wireless debugging the user switched on
+     * later. And 1.4's When JemRec is off record, which may hold Wireless
+     * debugging for On to put back - kept on by 1.4, JemRec's now - is
+     * taken over too (DebugSwitchesOff.takeOverWireless): put back without
+     * a note, it would stay on for good (review round 2).
+     */
+    fun takeOverOnce(context: Context) {
+        val prefs = Prefs.of(context)
+        if (prefs.getBoolean(KEY_TAKEN_OVER, false)) return
+        noteJemRecs(context)
+        DebugSwitchesOff.takeOverWireless(context)
+        markTakenOver(context)
+    }
+
+    fun markTakenOver(context: Context) {
+        Prefs.of(context).edit { putBoolean(KEY_TAKEN_OVER, true) }
+    }
+
+    /**
+     * Switching Wireless debugging off took the recorder with it on this
+     * phone: adbd stopped though USB debugging was on (Revive.askWirelessOff's
+     * guard). Never seen - not on the Honor, the S23, the AVDs, in AOSP 12 to
+     * 17, nor by the titles of the issues of thedjchi's Shizuku fork, which
+     * ships the off - but where
+     * it happens, every start would end with the recorder gone. Noted for
+     * good: no off is asked on this phone again, until Start fresh.
+     */
+    fun noteWirelessKeepsAdbd(context: Context) {
+        Prefs.of(context).edit { putBoolean(KEY_KEEPS_ADBD, true) }
+    }
+
+    fun wirelessKeepsAdbd(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_KEEPS_ADBD, false)
+
+    fun forgetWirelessKeepsAdbd(context: Context) {
+        Prefs.of(context).edit { remove(KEY_KEEPS_ADBD) }
+    }
+
     /** A note under [key] for the Wi-Fi connection the phone is on now
      *  ([connection]); none off Wi-Fi. */
     private fun noteHere(context: Context, key: String) {
@@ -187,6 +269,9 @@ object NetworkRevive {
 
     private const val KEY_REFUSED_ON = "wireless_debugging_refused_on"
     private const val KEY_SWITCHED_ON = "wireless_debugging_switched_on"
+    private const val KEY_JEMRECS = "wireless_debugging_jemrecs"
+    private const val KEY_TAKEN_OVER = "wireless_debugging_taken_over"
+    private const val KEY_KEEPS_ADBD = "wireless_debugging_keeps_adbd"
 
     private fun pendingIntent(context: Context): PendingIntent {
         val intent = Intent(context, NetworkReviveReceiver::class.java)

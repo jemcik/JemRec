@@ -27,6 +27,18 @@ internal interface ReviveWorld {
     suspend fun standDown()
     fun afterRecorderStarted()
 
+    /** The recorder's answer to Wireless debugging off (DaemonClient.wirelessOff). */
+    suspend fun wirelessOff(): DaemonClient.WirelessOff?
+
+    /** The app's own mDNS look, held open across a switch-on on Android 12
+     *  and 13 (AdbTransport.holdMdns); null on other versions. */
+    fun holdMdns(): AutoCloseable?
+
+    /** Android 12 or 13, where NsdService stops mdnsd, and adbd's
+     *  announcement with it, 10 s after the last app's request
+     *  (AdbTransport.holdsMdns). */
+    fun mdnsStops(): Boolean
+
     /** A line in revive.log (ReviveLog). */
     fun note(line: String)
     fun onWifi(): Boolean
@@ -37,12 +49,30 @@ internal interface ReviveWorld {
     fun write(setting: String, on: Boolean): Boolean
     fun adbd(): AdbdState.State
 
-    // What a revive keeps per Wi-Fi connection (NetworkRevive, CableWatch),
+    // What a revive keeps - per Wi-Fi connection, but for whose Wireless
+    // debugging it is and the guard's note (NetworkRevive, CableWatch) -
     // and what When JemRec is off switched off (DebugSwitchesOff).
     fun cableStopped(): Boolean
     fun forgetCable()
     fun switchedOnHere(): Boolean
     fun noteSwitchedOn()
+    fun jemRecs(): Boolean
+    fun noteJemRecs()
+    fun forgetJemRecs()
+    fun takeOverOnce()
+
+    /** Switching Wireless debugging off took the recorder on this phone
+     *  (NetworkRevive.noteWirelessKeepsAdbd). */
+    fun keepsAdbd(): Boolean
+    fun noteKeepsAdbd()
+
+    /** This process can write the debugging switches (Setup.hasSecureSettings):
+     *  not setup's own, whose permission is live only from the next. */
+    fun canSwitchOn(): Boolean
+
+    /** The recorder still answers, asked the confirmed way
+     *  (DaemonLauncher.probeConfirmed): the guard after an off. */
+    suspend fun recorderStillUp(): Boolean
     fun refusedHere(): Boolean
     fun stillRefusedHere(on: Boolean): Boolean
     fun noteRefused()
@@ -77,6 +107,9 @@ internal interface ReviveWorld {
         override suspend fun pushMode() = DaemonClient.pushMode(context)
         override suspend fun standDown() = DaemonLauncher.standDown(context)
         override fun afterRecorderStarted() = DebugSwitchesOff.afterRecorderStarted(context)
+        override suspend fun wirelessOff() = DaemonClient.wirelessOff(context)
+        override fun holdMdns() = AdbTransport.holdMdns(context)
+        override fun mdnsStops() = AdbTransport.holdsMdns(android.os.Build.VERSION.SDK_INT)
         override fun note(line: String) = ReviveLog.note(context, line)
         override fun onWifi() = NetworkRevive.onWifi(context)
         override fun inCall() = DaemonLauncher.callInProgress(context)
@@ -87,6 +120,14 @@ internal interface ReviveWorld {
         override fun forgetCable() = CableWatch.forget(context)
         override fun switchedOnHere() = NetworkRevive.switchedOnHere(context)
         override fun noteSwitchedOn() = NetworkRevive.noteSwitchedOn(context)
+        override fun jemRecs() = NetworkRevive.jemRecs(context)
+        override fun keepsAdbd() = NetworkRevive.wirelessKeepsAdbd(context)
+        override fun noteKeepsAdbd() = NetworkRevive.noteWirelessKeepsAdbd(context)
+        override fun canSwitchOn() = com.jemcik.jemrec.setup.Setup.hasSecureSettings(context)
+        override suspend fun recorderStillUp() = DaemonLauncher.probeConfirmed(context) != null
+        override fun noteJemRecs() = NetworkRevive.noteJemRecs(context)
+        override fun forgetJemRecs() = NetworkRevive.forgetJemRecs(context)
+        override fun takeOverOnce() = NetworkRevive.takeOverOnce(context)
         override fun refusedHere() = NetworkRevive.wirelessRefusedHere(context)
         override fun stillRefusedHere(on: Boolean) = NetworkRevive.stillRefusedHere(context, on)
         override fun noteRefused() = NetworkRevive.noteWirelessRefused(context)

@@ -14,7 +14,9 @@ import java.io.IOException
  * lines to [log]. It behaves as the phones measured do, where the revive
  * relies on it: a write of Wireless debugging Android refuses on this Wi-Fi
  * reads off again (the Android 12 AVD); switched off and on, a stopped adbd
- * starts (the Honor, a cable); notes are kept only on Wi-Fi (NetworkRevive).
+ * starts (the Honor, a cable); notes are kept only on Wi-Fi (NetworkRevive);
+ * asked for Wireless debugging off, the recorder writes it off only while
+ * USB debugging is on, and says what it found (WirelessOff).
  */
 internal class FakePhone : ReviveWorld {
 
@@ -45,6 +47,22 @@ internal class FakePhone : ReviveWorld {
 
     var cable = false
     var switchedOn = false
+
+    /** Wireless debugging is JemRec's (NetworkRevive.noteJemRecs). */
+    var jemRecs = false
+
+    /** Installs from before 1.5 have not been taken over yet; a phone set
+     *  up with 1.5 has (NetworkRevive.takeOverOnce). */
+    var takenOver = true
+
+    /** The recorder's answer to Wireless debugging off, where a test gives
+     *  one - none from a recorder before 1.5, say; null, it answers as the
+     *  recorder does: off only with USB debugging on. */
+    var wirelessOffAnswer: (() -> DaemonClient.WirelessOff?)? = null
+
+    /** Android 12 or 13, where the revive holds an mDNS look open
+     *  (AdbTransport.holdMdns): its hold and its end go to [did]. */
+    var holdsMdns = false
     var refused = false
     var switchedOff = false
 
@@ -76,11 +94,55 @@ internal class FakePhone : ReviveWorld {
     override suspend fun pushMode() {
         did += "push"
     }
+    /** The stand-down's one ping misses a recorder that is up, and the
+     *  session stays open (DaemonLauncher.standDown). */
+    var standDownMisses = false
+
     override suspend fun standDown() {
         did += "stand down"
+        // The session that started it, closed (DaemonLauncher.standDown).
+        if (!standDownMisses) connected = false
     }
     override fun afterRecorderStarted() {
         did += "after start"
+    }
+    override suspend fun wirelessOff(): DaemonClient.WirelessOff? {
+        did += "wireless off"
+        wirelessOffAnswer?.let { return it() }
+        return when {
+            usb != GlobalSettings.Reading.ON -> DaemonClient.WirelessOff.USB_OFF
+            !wireless -> DaemonClient.WirelessOff.ALREADY_OFF
+            else -> {
+                wireless = false
+                wirelessWentOff = true
+                DaemonClient.WirelessOff.SWITCHED_OFF
+            }
+        }
+    }
+    /** Switching Wireless debugging off takes the recorder with it here:
+     *  row 18, never seen. Noted by the guard into [keepsAdbd]. */
+    var offKillsRecorder = false
+    var keepsAdbd = false
+
+    /** This process holds WRITE_SECURE_SETTINGS: not setup's own. */
+    var canSwitchOn = true
+
+    override fun keepsAdbd() = keepsAdbd
+    override fun noteKeepsAdbd() {
+        did += "note keeps adbd"
+        keepsAdbd = true
+    }
+    override fun canSwitchOn() = canSwitchOn
+    override suspend fun recorderStillUp(): Boolean {
+        did += "still up?"
+        return !offKillsRecorder || wireless
+    }
+
+    override fun mdnsStops() = holdsMdns
+    override fun holdMdns(): AutoCloseable? {
+        if (!holdsMdns) return null
+        did += "hold mdns"
+        return AutoCloseable { did += "release mdns" }
     }
     override fun note(line: String) {
         log += line
@@ -121,6 +183,21 @@ internal class FakePhone : ReviveWorld {
     override fun noteSwitchedOn() {
         did += "note switched on"
         if (wifi) switchedOn = true
+    }
+    override fun jemRecs() = jemRecs
+    override fun noteJemRecs() {
+        did += "note jemrecs"
+        jemRecs = true
+    }
+    override fun forgetJemRecs() {
+        did += "forget jemrecs"
+        jemRecs = false
+    }
+    override fun takeOverOnce() {
+        if (takenOver) return
+        did += "take over"
+        jemRecs = true
+        takenOver = true
     }
     override fun refusedHere() = refused && wifi
     override fun stillRefusedHere(on: Boolean): Boolean {

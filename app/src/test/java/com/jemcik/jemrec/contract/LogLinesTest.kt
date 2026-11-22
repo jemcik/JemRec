@@ -322,6 +322,20 @@ class LogLinesTest {
                 ),
                 "revive: adbd STOPPED" to listOf("\"revive: adbd \$adbd\"", "AdbdState.State.STOPPED"),
                 "revive: Wireless debugging CYCLE" to listOf("\"revive: Wireless debugging \$step\"", "WirelessStep.CYCLE"),
+                // Wireless debugging only to start (1.5): the step, the
+                // recorder's answer, and the grant that starts the recorder.
+                "revive: Wireless debugging TURN_ON" to listOf("\"revive: Wireless debugging \$step\"", "WirelessStep.TURN_ON"),
+                "revive: Wireless debugging LEAVE" to listOf("\"revive: Wireless debugging \$step\"", "WirelessStep.LEAVE"),
+                "revive: recorder up (connect CONNECTED)" to listOf(
+                    "\"revive: \${if (alive) \"recorder up\" else \"recorder down\"} (connect \${found.connect})\"",
+                    "ConnectOutcome.CONNECTED",
+                ),
+                "revive: Wireless debugging off - the recorder says SWITCHED_OFF" to listOf(
+                    "\"revive: Wireless debugging off - the recorder says \${answer ?: \"nothing\"}\"",
+                    "WirelessOff.SWITCHED_OFF",
+                ),
+                "settings: notif listener -> no recorder answered; started: true" to
+                    listOf("\"settings: notif listener -> no recorder answered; started: \$up\""),
                 "setup: grant -> REFUSED" to listOf(grant, "Outcome.REFUSED"),
                 "setup: grant -> GRANTED" to listOf(grant, "Outcome.GRANTED"),
                 "keepalive: Wi-Fi run" to keepalive,

@@ -29,6 +29,10 @@ B	"LISTENER ok"	"LISTENER "	LISTENER ok
 B	"LISTENER failed"	"LISTENER "	LISTENER failed
 J	"PAIRING ok"	"PAIRING "	PAIRING ok
 J	"PAIRING failed"	"PAIRING "	PAIRING failed
+I	"WIRELESS off"	"WIRELESS off"	WIRELESS off
+I	"WIRELESS already-off"	"WIRELESS already-off"	WIRELESS already-off
+I	"WIRELESS usb-off"	"WIRELESS usb-off"	WIRELESS usb-off
+I	"WIRELESS refused"	"WIRELESS refused"	WIRELESS refused
 Z	startsWith("QUALITY ")	"QUALITY "	QUALITY 32000
 K	startsWith("SKIP ")	"SKIP "	SKIP current
 V	startsWith("VOIP ")	"VOIP "	VOIP 3 armed

@@ -38,6 +38,9 @@ internal object TestPhone {
     /** Setup finished: the flag and an identity on disk (CaptureDaemon.isSetUp). */
     fun setUp(context: Context) {
         Setup.markComplete(context)
+        // Set up with 1.5, as setup's end marks it (RecorderLifecycle.afterSetup):
+        // not an older install's Wireless debugging to take over.
+        com.jemcik.jemrec.recorder.NetworkRevive.markTakenOver(context)
         identity.forEach { File(context.filesDir, it).writeText("set up") }
     }
 

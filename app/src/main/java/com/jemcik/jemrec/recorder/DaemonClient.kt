@@ -116,6 +116,10 @@ object DaemonClient {
      *  A recorder before 1.1 hangs up on it. */
     private const val COMMAND_KEEP_PAIRED = 'J'.code.toByte()
 
+    /** Wireless debugging off after a start, by the recorder
+     *  (Revive.askWirelessOff). A recorder before 1.5 hangs up on it. */
+    private const val COMMAND_WIRELESS_OFF = 'I'.code.toByte()
+
     private const val NONCE_BYTES = 16
     private const val MAC_BYTES = 32
     private const val MAC_ALGORITHM = "HmacSHA256"
@@ -608,6 +612,46 @@ object DaemonClient {
     internal fun parsePairingReply(line: String?): Boolean? = when (line?.trim()) {
         "PAIRING ok" -> true
         "PAIRING failed" -> false
+        else -> null
+    }
+
+    /** What the recorder found and did when asked for Wireless debugging
+     *  off (wirelessOff). */
+    enum class WirelessOff {
+        /** Written off, and read back off. */
+        SWITCHED_OFF,
+
+        /** Off already: nothing written. */
+        ALREADY_OFF,
+
+        /** USB debugging did not read on, so nothing was written: off then
+         *  could stop adbd, and the recorder with it. */
+        USB_OFF,
+
+        /** Written, and it did not read back off: the shell refused. */
+        REFUSED,
+    }
+
+    /**
+     * Have the recorder switch Wireless debugging off, once a start no
+     * longer needs it (Revive.askWirelessOff). The recorder reads both
+     * switches as the shell, true where Android hides them from this app,
+     * and writes it off only while USB debugging reads on. Its answer, or
+     * null with none: no recorder, one before 1.5, which hangs up on the
+     * command, or one that took longer than the wait.
+     */
+    suspend fun wirelessOff(context: Context): WirelessOff? =
+        // Ten seconds: two reads, a write and its read-back, each a
+        // `settings` run of its own, on a phone that may be slow.
+        parseWirelessOffReply(ask(context, COMMAND_WIRELESS_OFF, EMPTY, readMs = 10_000))
+
+    /** The recorder's answer to COMMAND_WIRELESS_OFF (protocol.txt, I):
+     *  null for anything else, as no answer. */
+    internal fun parseWirelessOffReply(line: String?): WirelessOff? = when (line?.trim()) {
+        "WIRELESS off" -> WirelessOff.SWITCHED_OFF
+        "WIRELESS already-off" -> WirelessOff.ALREADY_OFF
+        "WIRELESS usb-off" -> WirelessOff.USB_OFF
+        "WIRELESS refused" -> WirelessOff.REFUSED
         else -> null
     }
 

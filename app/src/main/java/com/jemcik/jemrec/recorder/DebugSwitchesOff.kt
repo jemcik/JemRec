@@ -37,8 +37,10 @@ enum class OffMode {
     /** Recording stops; the recorder stays up and debugging stays on. */
     KEEP_DEBUGGING,
 
-    /** Developer options and Wireless debugging go off; USB debugging keeps
-     *  the recorder up. */
+    /** Developer options go off, and Wireless debugging if it is on: the
+     *  user's, recorded so On puts it back, or JemRec's still on after an
+     *  off that was missed, not recorded - JemRec's is off between starts
+     *  since 1.5 (toRecord). USB debugging keeps the recorder up. */
     HIDE_DEVELOPER_OPTIONS,
 
     /** All three go off, and the recorder with them. */
@@ -68,6 +70,16 @@ internal inline fun OffMode.asksFirst(onWifi: Boolean, portSet: () -> Boolean): 
 
 /** Whether the recorder goes with the switches. */
 internal fun Set<DebugSwitch>.takesTheRecorder(): Boolean = DebugSwitch.USB_DEBUGGING in this
+
+/**
+ * Of the switches an Off finds on, what it records for On to put back: all
+ * but a Wireless debugging JemRec switched on ([jemRecsWireless],
+ * NetworkRevive.noteJemRecs). On would switch that one on for nothing: the
+ * next start switches it on, and off again once the recorder is up
+ * (Revive.askWirelessOff).
+ */
+internal fun Set<DebugSwitch>.toRecord(jemRecsWireless: Boolean): Set<DebugSwitch> =
+    if (jemRecsWireless) this - DebugSwitch.WIRELESS_DEBUGGING else this
 
 /**
  * The order to put switches back on in: USB debugging before Wireless
@@ -110,6 +122,17 @@ object DebugSwitchesOff {
 
     fun setMode(context: Context, mode: OffMode) {
         Prefs.of(context).edit { putString(KEY_MODE, mode.name) }
+    }
+
+    /**
+     * Installs from before 1.5 (NetworkRevive.takeOverOnce): a Wireless
+     * debugging in the record was 1.4's, kept on between starts, and is
+     * JemRec's to switch on for each start now, not On's to put back. Under
+     * the recorder's lock, as the revive that calls it holds it.
+     */
+    internal fun takeOverWireless(context: Context) {
+        val off = switchedOff(context)
+        if (DebugSwitch.WIRELESS_DEBUGGING in off) record(context, off - DebugSwitch.WIRELESS_DEBUGGING)
     }
 
     /** What the last Off switched off and On has not yet put back. */
@@ -181,10 +204,13 @@ object DebugSwitchesOff {
         // and switching it on for nothing has Android ask about the network.
         // A switch Android 17 hides from apps (UNKNOWN) counts as on. USB
         // debugging always goes in: it is what says the recorder is gone.
-        val off = mode(context).switchesOff().filter {
+        // A Wireless debugging JemRec switched on goes off and is not
+        // recorded (toRecord): JemRec switches it on, and off, itself.
+        val switching = mode(context).switchesOff().filter {
             it == DebugSwitch.USB_DEBUGGING || GlobalSettings.read(context, it.setting) != GlobalSettings.Reading.OFF
         }.toSet()
-        if (off.isEmpty()) return
+        if (switching.isEmpty()) return
+        val off = switching.toRecord(jemRecsWireless = NetworkRevive.jemRecs(context))
         record(context, switchedOff(context) + off)
         // Pending until the recorder's answer says how this off goes: gone
         // before it - the process killed while the recorder was asked - the
@@ -225,7 +251,7 @@ object DebugSwitchesOff {
                 }
             }
             if (reply == null) writeDebuggingOff(context)
-        } else if (DebugSwitch.WIRELESS_DEBUGGING in off) {
+        } else if (DebugSwitch.WIRELESS_DEBUGGING in switching) {
             RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
         }
     }
@@ -330,19 +356,24 @@ object DebugSwitchesOff {
 
     /**
      * A revive while JemRec is off with Developer options hidden - after a
-     * reboot, or a cable from a computer - turns Wireless debugging on to
-     * start the recorder. Once it is up, it goes off again, and into the
-     * record if it was not there - off away from Wi-Fi, it was already off at
-     * the time - so On puts it back. Only that off is recorded without USB
-     * debugging; an empty record (both already off then) cannot be told from
-     * no off at all, and is left alone. With JemRec on, a record is an On cut
-     * short, which the revive has just put back (CaptureDaemon.revive).
+     * reboot, or a cable from a computer - that finds Wireless debugging on
+     * and not JemRec's: the user's, switched on since the Off. Once the
+     * recorder is up, it goes off, and into the record if it was not there,
+     * so On puts it back. One JemRec switched on to start the recorder is
+     * not this one's: the recorder has switched it off already
+     * (Revive.askWirelessOff), or is asked again at the next look - and it
+     * is not recorded, or On would switch it on for nothing (toRecord). Only
+     * that off is recorded without USB debugging; an empty record (both
+     * already off then) cannot be told from no off at all, and is left
+     * alone. With JemRec on, a record is an On cut short, which the revive
+     * has just put back (CaptureDaemon.revive).
      */
     fun afterRecorderStarted(context: Context) {
         if (RecorderSwitch.isOn(context)) return
         val off = switchedOff(context)
         if (off.isEmpty() || off.takesTheRecorder()) return
         if (!GlobalSettings.isOn(context, GlobalSettings.ADB_WIFI_ENABLED)) return
+        if (NetworkRevive.jemRecs(context)) return
         record(context, off + DebugSwitch.WIRELESS_DEBUGGING)
         RecorderLifecycle.write(context, GlobalSettings.ADB_WIFI_ENABLED, false)
     }

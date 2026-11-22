@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2646 JVM tests, no device needed - 2239 for the app and 407 for the daemon:
+2692 JVM tests, no device needed - 2279 for the app and 413 for the daemon:
 
     ./gradlew test
 
@@ -469,17 +469,28 @@ on MagicOS 11 leaves it after a restart (stopped here as root, the recorder
 killed): the app's revive reads adbd stopped, switches Wireless debugging off
 and on, and has the recorder back, running as shell. Then When JemRec is
 off: set to Hide Developer options, off
-takes Developer options and Wireless debugging off and the recorder keeps its
-process, and on puts them back; set to Turn all debugging off, the recorder
-switches Wireless and USB debugging off and goes, adbd with it, and on - sent
-by the debug build after a delay, since adb is gone - puts it all back and
-starts the recorder. Then an Off from the background, JemRec 20 s off the
+takes Developer options and a Wireless debugging switched on by hand off and
+the recorder keeps its process, and on puts them back - and with Wireless
+debugging off, as JemRec leaves it, on does not switch it on; set to Turn all
+debugging off, the recorder switches Wireless and USB debugging off and goes,
+adbd with it, and on - sent by the debug build after a delay, since adb is
+gone - puts it all back and starts the recorder, switching Wireless debugging
+on for the start and the recorder off after it. Then an Off from the background, JemRec 20 s off the
 screen: the app's process lives, where the call service asking for the
 foreground, which Android refuses there, took it on all four AVDs
 (2026-11-05). Then the header's *Tap to allow this Wi-Fi*: on a Wi-Fi
 Android has not allowed (its allowance taken back first), with the recorder
 down and port 5555 shut to the app, the header asks; the tap puts Android's
-question up, and after Allow the tap's own revive has the recorder back.
+question up, and after Allow the tap's own revive has the recorder back, and
+the recorder switches Wireless debugging off after it. Then Wireless
+debugging only to start (1.5), with port 5555 shut to the app and the AVD's
+Wi-Fi allowed - set up allows it for the whole run, as at each switch-on an
+unallowed Wi-Fi asks again: the recorder killed with Wireless debugging off,
+the revive switches it on, the recorder is back and switches it off within
+15 s, and keeps its process 10 s after; on Android 12 and 13 after 15 s with
+nobody browsing mDNS, past NsdService's stop of `mdnsd`. Then switched on
+from the shell, as a user's for a computer: a revive uses it and leaves it
+on.
 Then setup's last step on a phone that refuses its grant, as an OPPO, OnePlus
 or realme does until *Disable system optimization* is on (issues #61, #64;
 the debug build answers with #64's refusal, as an emulator grants): told that
@@ -488,7 +499,9 @@ sent to a switch; Try again, without the fake, grants for real, read back
 from the package's own record. Then notification access for the app's
 listener, taken away, and granted again by the recorder with the app's ADB
 session closed, as Settings' Show who called and Hide the debugging
-notification ask for it (the debug op grantlistener), and in Android's list.
+notification ask for it (the debug op grantlistener), and in Android's list;
+then again with the recorder killed first, the grant starting it and the new
+recorder granting it.
 Then Keep JemRec paired (the debug op keeppaired): Android's pairing timeout
 turned off by the recorder, with its old value in the recorder's own file,
 and put back from it; then a timeout off by hand, neither recorded nor put

@@ -70,7 +70,7 @@
   </svg>
     <ol class="numbered">
         <li data-step="1"><strong>The app pairs with the phone&rsquo;s own Wireless debugging</strong> &mdash; the same pairing a laptop does, with both ends on the same handset.</li>
-        <li data-step="2"><strong>For a few seconds, it uses that session to start a small recorder</strong> that runs as the shell, then closes it. The recorder outlives the session.</li>
+        <li data-step="2"><strong>For a few seconds, it uses that session to start a small recorder</strong> that runs as the shell, then closes it, and the recorder switches Wireless debugging off again. The recorder outlives both.</li>
         <li data-step="3"><strong>The recorder watches the calls and writes each one to a file</strong> itself, so a phone that freezes background apps cannot cut a recording short.</li>
         <li data-step="4"><strong>The app collects the finished file</strong> over a socket on which the recorder and the app each prove who they are.</li>
       </ol>
@@ -88,7 +88,8 @@
   <h3>ADB is a bootstrap, not a transport</h3>
   <p>That session lasts seconds. In it the app grants itself one settings
      permission and launches a small daemon from a jar it carries inside the APK,
-     then closes the session. A process started from an ADB shell outlives the
+     then closes the session, and the daemon switches Wireless debugging off
+     again until the next start. A process started from an ADB shell outlives the
      connection, which is the whole trick: with Wi-Fi off there is no ADB at all,
      so anything that needed it when a call arrived would simply not record.</p>
 
@@ -226,8 +227,10 @@
 
   <h3>Off, and debugging with it, for banking apps</h3>
   <p>Some banking apps won&rsquo;t open while Developer options or debugging is
-     on. Turning JemRec off can hide Developer options and Wireless debugging
-     too &mdash; the recorder keeps running on USB debugging, so it is back
+     on. Wireless debugging is off already, but for the seconds a start takes.
+     Turning JemRec off can hide Developer options too, and a Wireless debugging
+     you switched on yourself &mdash; the recorder keeps running on USB
+     debugging, so it is back
      the moment JemRec is on &mdash; or switch all debugging off, the recorder
      with it, so that turning it on needs Wi-Fi. Turning it on puts back what it
      switched off. Settings &rarr; When JemRec is off.</p>
@@ -260,7 +263,7 @@
     <tr><th>Permission</th><th>Why</th></tr>
     <tr><td><code>INTERNET</code></td><td>Not about the internet: Android requires it for any TCP socket, including one to <code>127.0.0.1</code>.</td></tr>
     <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing - and for the background checks to ask Android for a network to run with (from Android 14 a job that asks for one needs it).</td></tr>
-    <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to.</td></tr>
+    <tr><td><code>WRITE_SECURE_SETTINGS</code></td><td>Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch Wireless debugging on for each start of the recorder, USB debugging back on when the phone turns it off, and debugging off with JemRec when you ask it to.</td></tr>
     <tr><td><code>POST_NOTIFICATIONS</code></td><td>The recording notice, the ask-first prompt, the pairing code box.</td></tr>
     <tr><td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_SPECIAL_USE</code></td><td>To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. <code>SPECIAL_USE</code> is the honest type: the microphone type would need a microphone permission this app does not hold.</td></tr>
     <tr><td><code>FOREGROUND_SERVICE_MEDIA_PLAYBACK</code></td><td>To play a recording on with the screen off, under the phone's media controls. It plays; it never records.</td></tr>

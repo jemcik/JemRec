@@ -176,8 +176,9 @@ object DaemonLauncher {
      *
      * ADB is a bootstrap here, not a transport: it exists to start this daemon,
      * and once the daemon is up it serves loopback and needs no ADB session, no
-     * mDNS and no Wi-Fi. Wireless debugging itself stays on: switching it off
-     * here killed the recorder just started, as below.
+     * mDNS and no Wi-Fi. Wireless debugging is switched off after this, by
+     * the recorder, where JemRec switched it on (Revive.askWirelessOff) - not
+     * here, by the app, as below.
      *
      * Deliberately does nothing when the daemon is NOT running: that is exactly
      * when the way back in still has to be there.
@@ -185,33 +186,33 @@ object DaemonLauncher {
     suspend fun standDown(context: Context) {
         if (!isRunning(context)) return
 
-        // IT USED TO TURN WIRELESS DEBUGGING OFF HERE. THAT KILLED THE DAEMON.
+        // IT USED TO TURN WIRELESS DEBUGGING OFF HERE. THAT KILLED THE DAEMON
+        // - BEFORE USB DEBUGGING KEPT ADBD UP.
         //
-        // Writing adb_wifi_enabled=0 restarts adbd, and this ROM kills
+        // Writing adb_wifi_enabled=0 restarted adbd, and this ROM kills
         // everything adbd spawned when it does - so the tidying-up destroyed
         // the recorder it had just started, seconds after starting it. Then the
         // keep-alive noticed the recorder was gone, re-armed Wireless debugging
-        // to fix it (Android posting its notification each time), started a new
-        // daemon, tidied up again, and killed that one too. Several times a
-        // minute, forever, and only ever off USB.
+        // to fix it, started a new daemon, tidied up again, and killed that one
+        // too. Several times a minute, forever, and only ever off USB. Measured,
+        // not deduced: a daemon, a shell script and a bare `sleep`, all
+        // setsid-detached, died at the same instant adb_wifi_enabled went to 0.
+        // The kill is by cgroup, and shell cannot leave its cgroup.
         //
-        // Measured, not deduced. A daemon, a shell script and a bare `sleep`,
-        // all setsid-detached and all reparented to init, died at the same
-        // instant adb_wifi_enabled went to 0; the log of the watcher stops mid
-        // second. The comment above the setsid call says adbd "tears down the
-        // whole process GROUP" and that a new session escapes it. A new session
-        // does not: the kill is by cgroup, and shell cannot leave its cgroup.
-        // /sys/fs/cgroup/cgroup.procs is system:system, shell is uid 2000 and
-        // not in that group, and every tasks file on the device is read-only to
-        // us. There is nowhere to escape to.
-        //
-        // So the session is closed and the setting is left alone. The cost is
-        // real and worth stating: Wireless debugging stays on, which means
-        // adbd keeps listening on whatever network the phone joins, and
-        // Android keeps its own notification up. That is the exposure this
-        // function was written to remove - but it was removing it by breaking
-        // the recorder, and a call recorder that does not record is not a
-        // safer call recorder.
+        // That held with Wireless debugging the only transport enabled. AOSP's
+        // AdbService.stopAdbd stops adbd only once neither USB nor Wireless
+        // debugging is enabled, and since the off-Wi-Fi shield every revive
+        // switches USB debugging on first (Revive.armShield): written off then,
+        // Wireless debugging left adbd and the recorder as they were - on the
+        // Honor, 2026-10-26 with no cable, the recorder's process kept through
+        // Wi-Fi off and on, a lock and a call; 2026-11-21, a computer's cable
+        // in, the same process IDs 8 s after. So since 1.5 it goes off again
+        // after every start that switched it on, but by the recorder: it reads
+        // USB debugging as the shell, true where Android 17 hides it from
+        // apps, and leaves Wireless debugging on where USB debugging is off -
+        // the one case the loop above could come back in - and the app checks
+        // the recorder after the off, and leaves it on for good on a phone
+        // where it took the recorder anyway (Revive.askWirelessOff).
         AdbTransport.close()
         Log.i(TAG, "daemon: up and serving loopback, ADB session closed")
     }

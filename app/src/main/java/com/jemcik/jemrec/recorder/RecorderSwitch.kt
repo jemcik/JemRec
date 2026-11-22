@@ -31,7 +31,8 @@ import kotlinx.coroutines.sync.withLock
  * CaptureDaemon.isSetUp), and on is instant anywhere.
  *
  * Unless the user chose otherwise. Settings' When JemRec is off can also take
- * Developer options and Wireless debugging off with it, the recorder kept, or
+ * Developer options off with it - and a Wireless debugging the user switched
+ * on - the recorder kept, or
  * all debugging, the recorder with it - for apps that will not open with
  * debugging on (DebugSwitchesOff). That last one is the old field trap again,
  * so it is the user's to choose, says so, and asks first when there is no

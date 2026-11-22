@@ -29,12 +29,14 @@ import org.robolectric.annotation.GraphicsMode
  * Notification access for the app's listener, after setup: what Show who
  * called and Hide the debugging notification need
  * (Setup.grantNotificationAccess).
- * The recorder grants it - the shell, with no ADB session - and a session's
- * way is left for no answer. On the OnePlus, on Wi-Fi, Show who called said
+ * The recorder grants it - the shell, with no ADB session - and where none
+ * answers, one is started and asked (1.5). Until then a session's way was
+ * left for no answer, and on the OnePlus, on Wi-Fi, Show who called said
  * "it needs Wi-Fi": the grant opened a session, which needs Wireless
- * debugging, and LineageOS had switched that off by itself (2026-11-12).
- * The recorder is a FakeRecorder, and the session a stand-in
- * (Setup.grantOverSession): no adbd is reached.
+ * debugging, and LineageOS had switched that off by itself (2026-11-12);
+ * since 1.5 JemRec switches it off between starts itself. The recorder is
+ * a FakeRecorder, and the start a stand-in (Setup.reviveForGrant), except
+ * where a test says: no adbd is reached.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -44,26 +46,23 @@ class NotificationAccessTest : ScreenTest() {
 
     private val app = RuntimeEnvironment.getApplication()
     private var recorder: FakeRecorder? = null
-    private val realSession = Setup.grantOverSession
+    private val realRevive = Setup.reviveForGrant
 
-    /** What the stand-in session's shell prints; null, no session. */
-    private var sessionSays: String? = null
+    /** What the stand-in start does - brings a recorder up, replaces one -
+     *  and whether a recorder is up after it; by default none can be started. */
+    private var start: () -> Boolean = { false }
+    private val starts = java.util.concurrent.atomic.AtomicInteger()
 
-    /** Whether the stand-in session's grant reaches Android. */
-    private var sessionGrants = false
-    private val sessionAsked = java.util.concurrent.atomic.AtomicInteger()
-
-    @Before fun aSessionStandIn() {
-        Setup.grantOverSession = {
-            sessionAsked.incrementAndGet()
-            if (sessionGrants) grantAndroidsSide()
-            sessionSays
+    @Before fun aStartStandIn() {
+        Setup.reviveForGrant = {
+            starts.incrementAndGet()
+            start()
         }
     }
 
     @After fun recorderGone() {
         recorder?.close()
-        Setup.grantOverSession = realSession
+        Setup.reviveForGrant = realRevive
     }
 
     private fun grantAndroidsSide() {
@@ -86,7 +85,7 @@ class NotificationAccessTest : ScreenTest() {
 
         assertEquals(listOf("B"), fake.heard.map { it.key })
         assertTrue(DebugNotificationCleaner.accessGranted(app))
-        assertEquals("a session asked", 0, sessionAsked.get())
+        assertEquals("a start made", 0, starts.get())
     }
 
     /** The recorder read Android's list before Android wrote it - the list
@@ -99,202 +98,138 @@ class NotificationAccessTest : ScreenTest() {
         }
 
         assertNull(Setup.grantNotificationAccess(app))
-        assertEquals("a session asked", 0, sessionAsked.get())
+        assertEquals("a start made", 0, starts.get())
     }
 
     /** The recorder said ok, and this process's read says Android has not
      *  allowed it - another user or profile than the one the shell granted
-     *  it for, say: refused, and no session tried. */
+     *  it for, say: refused, and no start made. */
     @Test fun aRecordersOkIsNotTakenWithoutAndroidsWord() = runBlocking {
         recorder = FakeRecorder(app).also { it.replies["B"] = "LISTENER ok" }
-        sessionSays = "granted"
-        sessionGrants = true
 
         assertEquals(Setup.GrantProblem.REFUSED, Setup.grantNotificationAccess(app))
-        assertEquals("a session asked", 0, sessionAsked.get())
+        assertEquals("a start made", 0, starts.get())
     }
 
     /** Asked, and Android said no to the recorder: that is the answer. A
-     *  session's shell would be told the same, so none is tried. */
+     *  session's shell would be told the same, so nothing more is tried. */
     @Test fun aRecorderTurnedDownIsTheAnswer() = runBlocking {
         recorder = FakeRecorder(app).also { it.replies["B"] = "LISTENER failed" }
-        sessionSays = "granted"
 
         assertEquals(Setup.GrantProblem.REFUSED, Setup.grantNotificationAccess(app))
-        assertEquals("a session asked", 0, sessionAsked.get())
+        assertEquals("a start made", 0, starts.get())
     }
 
-    /** No recorder: the session's way, as before 0.31 - granted where it
-     *  can be had. */
-    @Test fun noRecorderTakesTheSession() = runBlocking {
-        sessionSays = "granted"
-        sessionGrants = true
-
-        assertNull(Setup.grantNotificationAccess(app))
-        assertEquals(1, sessionAsked.get())
-    }
-
-    /** ...whose shell said granted - `cmd` ends well after an exception too -
-     *  where Android has not allowed it: this process's read decides. */
-    @Test fun aSessionsGrantedIsNotTakenWithoutAndroidsWord() = runBlocking {
-        sessionSays = "granted"
-
-        assertEquals(Setup.GrantProblem.REFUSED, Setup.grantNotificationAccess(app))
-    }
-
-    /** The recorder granted it and its reply was lost, and no session could
-     *  be had: Android has allowed it, so it is granted, not "did not
-     *  answer". */
-    @Test fun aLostReplyAfterTheGrantIsGranted() = runBlocking {
-        recorder = FakeRecorder(app).also { fake ->
-            fake.replies.remove("B")
-            fake.stall = { key -> if (key == "B") grantAndroidsSide() }
+    /** No recorder: one is started, as Tap to start again starts it, and
+     *  the recorder then up grants it. */
+    @Test fun noRecorderIsStartedAndThenAsked() = runBlocking {
+        start = {
+            grantingRecorder()
+            true
         }
 
         assertNull(Setup.grantNotificationAccess(app))
+        assertEquals(1, starts.get())
+        assertEquals(listOf("B"), recorder!!.heard.map { it.key })
     }
 
-    /** ...a session whose shell did not grant it: refused. */
-    @Test fun aSessionThatDidNotGrantItIsARefusal() = runBlocking {
-        sessionSays = "Error: java.lang.SecurityException"
+    /** ...whose ok, where Android has not allowed it, is refused: this
+     *  process's read decides. */
+    @Test fun aStartedRecordersOkIsNotTakenWithoutAndroidsWord() = runBlocking {
+        start = {
+            recorder = FakeRecorder(app).also { it.replies["B"] = "LISTENER ok" }
+            true
+        }
 
         assertEquals(Setup.GrantProblem.REFUSED, Setup.grantNotificationAccess(app))
     }
 
-    /** No recorder, and no session to be had: no answer. */
-    @Test fun noRecorderAndNoSessionIsNoAnswer() = runBlocking {
-        assertEquals(Setup.GrantProblem.NO_ANSWER, Setup.grantNotificationAccess(app))
-        assertEquals(1, sessionAsked.get())
+    /** ...and whose failed is a refusal. */
+    @Test fun aStartedRecorderTurnedDownIsARefusal() = runBlocking {
+        start = {
+            recorder = FakeRecorder(app).also { it.replies["B"] = "LISTENER failed" }
+            true
+        }
+
+        assertEquals(Setup.GrantProblem.REFUSED, Setup.grantNotificationAccess(app))
     }
 
-    /** A recorder before 0.31 - up, recording - hangs up on the command: no
-     *  answer, and the session's way is taken (none here). Not "the
-     *  recorder is not running": it is. */
-    @Test fun anOlderRecorderThatHangsUpIsNoAnswer() = runBlocking {
+    /** The recorder granted it and its reply was lost - one slow to answer,
+     *  say: the start finds it up, it is asked again, and Android has
+     *  allowed it, so it is granted, not "did not answer". */
+    @Test fun aLostReplyAfterTheGrantIsGranted() = runBlocking {
+        val fake = FakeRecorder(app).also { fake ->
+            recorder = fake
+            fake.replies.remove("B")
+            fake.stall = { key -> if (key == "B") grantAndroidsSide() }
+        }
+        start = { true }
+
+        assertNull(Setup.grantNotificationAccess(app))
+        assertEquals(listOf("B", "B"), fake.heard.map { it.key })
+    }
+
+    /** No recorder, and none could be started - no Wi-Fi and no port, JemRec
+     *  off with all debugging: no answer. */
+    @Test fun noRecorderAndNoStartIsNoAnswer() = runBlocking {
+        assertEquals(Setup.GrantProblem.NO_ANSWER, Setup.grantNotificationAccess(app))
+        assertEquals(1, starts.get())
+    }
+
+    /** A recorder before 0.31 - up, recording - hangs up on the command: the
+     *  start replaces it, and the new one grants it. */
+    @Test fun anOlderRecorderIsReplacedAndTheNewOneAsked() = runBlocking {
+        val fake = FakeRecorder(app).also { recorder = it }
+        fake.replies.remove("B")
+        start = {
+            fake.replies["B"] = "LISTENER ok"
+            fake.stall = { key -> if (key == "B") grantAndroidsSide() }
+            true
+        }
+
+        assertNull(Setup.grantNotificationAccess(app))
+        assertEquals(listOf("B", "B"), fake.heard.map { it.key })
+    }
+
+    /** ...and where it cannot be replaced, no answer. Not "the recorder is
+     *  not running": it is. */
+    @Test fun anOlderRecorderThatCannotBeReplacedIsNoAnswer() = runBlocking {
         val fake = FakeRecorder(app).also { recorder = it }
         fake.replies.remove("B")
 
         assertEquals(Setup.GrantProblem.NO_ANSWER, Setup.grantNotificationAccess(app))
         assertEquals(listOf("B"), fake.heard.map { it.key })
-        assertEquals(1, sessionAsked.get())
+        assertEquals(1, starts.get())
     }
 
-    /** The session's steps (Setup.grantOver), as AdbTransport takes them. */
-    private class Session(override var open: Boolean, val connects: Boolean, val result: Result<String>) : Setup.GrantSession {
-        val ran = mutableListOf<String>()
-        var connected = 0
-        var closed = 0
-        override suspend fun connect(): Boolean = connects.also { connected++ }
-        override suspend fun exec(command: String): Result<String> = result.also { ran += command }
-        override suspend fun close() {
-            closed++
-        }
+    /** The real start, on a phone set up and off Wi-Fi with no port: it
+     *  cannot start one, and says no answer. */
+    @Test fun offWifiWithNoPortTheRealStartCannotAndItIsNoAnswer() = runBlocking {
+        Setup.reviveForGrant = realRevive
+        com.jemcik.jemrec.capture.TestPhone.switchesOn(app)
+        com.jemcik.jemrec.capture.TestPhone.setUp(app)
+        com.jemcik.jemrec.capture.TestPhone.offWifi(app)
+
+        assertEquals(Setup.GrantProblem.NO_ANSWER, Setup.grantNotificationAccess(app))
     }
 
-    @Test fun aSessionOpenedForTheGrantIsClosedAfter() = runBlocking {
-        val session = Session(open = false, connects = true, result = Result.success("granted"))
+    /** The real start, JemRec off with all debugging: it stands down, and
+     *  it is no answer, as with adbd stopped before 1.5. */
+    @Test fun withAllDebuggingOffTheRealStartStandsDownAndItIsNoAnswer() = runBlocking {
+        Setup.reviveForGrant = realRevive
+        com.jemcik.jemrec.capture.TestPhone.switchesOn(app)
+        com.jemcik.jemrec.capture.TestPhone.setUp(app)
+        com.jemcik.jemrec.recorder.DebugSwitchesOff.setMode(app, com.jemcik.jemrec.recorder.OffMode.ALL_DEBUGGING_OFF)
+        com.jemcik.jemrec.recorder.RecorderSwitch.set(app, false)
+        com.jemcik.jemrec.recorder.DebugSwitchesOff.switchOff(app)
+        assertTrue(com.jemcik.jemrec.recorder.DebugSwitchesOff.standingDown(app))
 
-        assertEquals("granted", Setup.grantOver(session, "cmd notification allow_listener x"))
-
-        assertEquals(listOf("cmd notification allow_listener x && echo granted"), session.ran)
-        assertEquals(1, session.connected)
-        assertEquals(1, session.closed)
-    }
-
-    @Test fun aSessionOpenAlreadyIsLeftOpen() = runBlocking {
-        val session = Session(open = true, connects = true, result = Result.success("granted"))
-
-        assertEquals("granted", Setup.grantOver(session, "x"))
-
-        assertEquals(0, session.connected)
-        assertEquals(0, session.closed)
-    }
-
-    /** No session to be had: no answer, and nothing to close. */
-    @Test fun noSessionIsNoAnswer() = runBlocking {
-        val session = Session(open = false, connects = false, result = Result.success("granted"))
-
-        assertNull(Setup.grantOver(session, "x"))
-
-        assertTrue(session.ran.isEmpty())
-        assertEquals(0, session.closed)
-    }
-
-    /** A session whose connect and command each wait for the test, and whose
-     *  close switches thread, as AdbTransport's does - which a cancelled
-     *  coroutine is not let do unless the grant is shielded from the cancel. */
-    private class HeldSession : Setup.GrantSession {
-        val inConnect = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val connectGoes = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val inCommand = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val commandGoes = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val ran = java.util.concurrent.CopyOnWriteArrayList<String>()
-        val closed = java.util.concurrent.atomic.AtomicInteger()
-
-        @Volatile override var open = false
-        override suspend fun connect(): Boolean {
-            inConnect.complete(Unit)
-            connectGoes.await()
-            open = true
-            return true
-        }
-        override suspend fun exec(command: String): Result<String> {
-            ran += command
-            inCommand.complete(Unit)
-            commandGoes.await()
-            return Result.success("granted")
-        }
-        override suspend fun close() {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                open = false
-                closed.incrementAndGet()
-            }
-        }
-    }
-
-    /** The screen that asked closed from Recents in the command: the grant
-     *  runs to its end, and closes the session it opened. */
-    @Test fun aGrantCancelledInTheCommandRunsToItsEndAndCloses() = runBlocking {
-        val session = HeldSession()
-        session.connectGoes.complete(Unit)
-        val said = java.util.concurrent.atomic.AtomicReference<String?>()
-        val grant = launch(kotlinx.coroutines.Dispatchers.Default) { said.set(Setup.grantOver(session, "x")) }
-        session.inCommand.await()
-
-        grant.cancel()
-        session.commandGoes.complete(Unit)
-        grant.join()
-
-        assertEquals("the command cut", "granted", said.get())
-        assertEquals(1, session.closed.get())
-        assertFalse(session.open)
-    }
-
-    /** ...closed in the connect, as it came up: the grant goes on, and the
-     *  session is closed, not left open. */
-    @Test fun aGrantCancelledInTheConnectRunsToItsEndAndCloses() = runBlocking {
-        val session = HeldSession()
-        session.commandGoes.complete(Unit)
-        val grant = launch(kotlinx.coroutines.Dispatchers.Default) { Setup.grantOver(session, "x") }
-        session.inConnect.await()
-
-        grant.cancel()
-        session.connectGoes.complete(Unit)
-        grant.join()
-
-        assertEquals(listOf("x && echo granted"), session.ran.toList())
-        assertEquals(1, session.closed.get())
-        assertFalse(session.open)
-    }
-
-    /** A session that broke - Wireless debugging going off mid-command - is
-     *  no word from Android: no answer, not a refusal. */
-    @Test fun aSessionThatBrokeIsNoAnswer() = runBlocking {
-        val session = Session(open = false, connects = true, result = Result.failure(java.io.IOException("Stream closed")))
-
-        assertNull(Setup.grantOver(session, "x"))
-
-        assertEquals(1, session.closed)
+        assertEquals(Setup.GrantProblem.NO_ANSWER, Setup.grantNotificationAccess(app))
+        assertTrue(
+            "the revive did not stand down",
+            "revive: debugging is off with JemRec; nothing to do until it is on" in
+                java.io.File(app.filesDir, "revive.log").readText(),
+        )
     }
 
     /** The screen closed from Recents while the recorder grants it: Android

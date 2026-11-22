@@ -1,6 +1,8 @@
 package com.jemcik.jemrec.adb
 
 import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.util.Log
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
@@ -311,6 +313,67 @@ object AdbTransport {
         }
         port.get().takeIf { it > 0 }
     }
+
+    /**
+     * ANDROID 12 AND 13: AN mDNS REQUEST OF THE APP'S OWN, HELD OPEN ACROSS A
+     * SWITCH-ON (Revive). There adbd announces itself through the native
+     * mdnsd, and NsdService stops mdnsd 10 s after the last app's request
+     * ends (CLEANUP_DELAY_MS, removeRequestMap -> maybeScheduleStop ->
+     * DAEMON_CLEANUP -> maybeStop; AOSP android12-release and
+     * android13-release, read 2026-11-21): adbd's announcement goes with it,
+     * and is not made again until the next switch-on. A stop still pending
+     * from a look that ended a moment before could land just after the
+     * switch-on's announcement - one NOT_FOUND after a switch-on on the
+     * Android 12 AVD, 2026-11-21, read as that race, not proven. A request
+     * active cancels a pending stop and keeps any new one from being
+     * scheduled (storeRequestMap -> cancelStop), so one started before the
+     * switch-on and closed after the connect keeps mdnsd up for all of it.
+     *
+     * A discovery that resolves nothing ([MdnsHold]): NsdService takes one
+     * resolve at a time from an app and turns a second away
+     * (FAILURE_ALREADY_ACTIVE, android12-release), and the connect's own look
+     * (AdbMdns) resolves what it finds - a hold that resolved too could take
+     * the connect's resolve from it (review round 1). Android 14 moved
+     * NsdService to an mDNS stack of its own, and the 16 and 17 AVDs kept
+     * finding adbd with nobody browsing: null there, as on the versions
+     * before 12, which JemRec does not run on.
+     */
+    fun holdMdns(context: Context): AutoCloseable? {
+        if (!holdsMdns(Build.VERSION.SDK_INT)) return null
+        val nsd = context.applicationContext.getSystemService(NsdManager::class.java) ?: return null
+        val hold = MdnsHold(nsd)
+        return runCatching {
+            nsd.discoverServices(AdbMdns.SERVICE_TYPE_TLS_CONNECT, NsdManager.PROTOCOL_DNS_SD, hold)
+            hold
+        }.onFailure { Log.w(TAG, "mdns: could not hold a request open - ${it.message}") }.getOrNull()
+    }
+
+    /**
+     * An mDNS discovery whose only use is to be active: it resolves nothing
+     * it finds. Closed at once after it was opened, it is stopped all the
+     * same: NsdManager keeps the listener from discoverServices on and sends
+     * its requests in order (android12-release), so a stop is not lost
+     * before the discovery has started - unlike AdbMdns.stop, which stops
+     * only after its started callback (libadb 3.1.1). One that failed to
+     * start has nothing to stop, and the stop's refusal is let go.
+     */
+    private class MdnsHold(private val nsd: NsdManager) : NsdManager.DiscoveryListener, AutoCloseable {
+        override fun close() {
+            runCatching { nsd.stopServiceDiscovery(this) }
+        }
+
+        override fun onDiscoveryStarted(serviceType: String) = Unit
+        override fun onDiscoveryStopped(serviceType: String) = Unit
+        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+            Log.w(TAG, "mdns: the held request did not start ($errorCode)")
+        }
+        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
+        override fun onServiceFound(serviceInfo: NsdServiceInfo) = Unit
+        override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
+    }
+
+    /** Whether Android [sdk] needs the look held (holdMdns): 12, 12L and 13. */
+    internal fun holdsMdns(sdk: Int): Boolean = sdk in Build.VERSION_CODES.S..Build.VERSION_CODES.TIRAMISU
 
     /**
      * Run one command and return everything it wrote.

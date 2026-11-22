@@ -195,6 +195,22 @@ final class Commands {
             Wire.reply(client.getOutputStream(), Wire.pairing(ok));
             return;
         }
+        if (command == Wire.COMMAND_WIRELESS_OFF) {
+            String answer = WirelessOff.off(new WirelessOff.Globals() {
+                @Override
+                public @Nullable String read(String name) {
+                    return Shield.readGlobal(name);
+                }
+
+                @Override
+                public boolean put(String name, String value) {
+                    return Shield.putGlobal(name, value);
+                }
+            });
+            Ln.i("session: Wireless debugging off after a start - " + answer);
+            Wire.reply(client.getOutputStream(), answer);
+            return;
+        }
         if (command == Wire.COMMAND_SET_QUALITY) {
             Quality.bitRate = Quality.from(Wire.readName(client.getInputStream()), Quality.bitRate);
             Ln.i("recording: quality " + Quality.words(Quality.bitRate) + " from the app");

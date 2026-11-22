@@ -582,7 +582,7 @@ internal class RecorderAndSetup(
      * A revive for Start without Wi-Fi's switch: Starting once the change
      * begins - the restart of adbd and the recorder - not for one that ends
      * up changing nothing, as most find: one that connects over the port
-     * itself leaves a close for a Wi-Fi with Wireless debugging
+     * itself leaves a close for a Wi-Fi that allows Wireless debugging
      * (portChangeOver).
      */
     private suspend fun reviveForThePort() {

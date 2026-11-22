@@ -95,7 +95,8 @@ object CaptureDaemon {
         onWifi: Boolean,
         switchedOnHere: Boolean,
         request: Request,
-    ): Boolean = Revive.cycleAfterNotFound(adbd, step, on, onWifi, switchedOnHere, request)
+        mdnsStops: Boolean = false,
+    ): Boolean = Revive.cycleAfterNotFound(adbd, step, on, onWifi, switchedOnHere, request, mdnsStops)
 
     // The protocol (DaemonClient).
     fun token(context: Context): String = DaemonClient.token(context)
@@ -105,6 +106,7 @@ object CaptureDaemon {
     internal fun parseSims(line: String?): Sims? = DaemonClient.parseSims(line)
     internal fun parseListenerReply(line: String?): Boolean? = DaemonClient.parseListenerReply(line)
     internal fun parsePairingReply(line: String?): Boolean? = DaemonClient.parsePairingReply(line)
+    internal fun parseWirelessOffReply(line: String?): DaemonClient.WirelessOff? = DaemonClient.parseWirelessOffReply(line)
     internal fun fields(line: String?, head: String): Map<String, String>? = DaemonClient.fields(line, head)
     internal fun currentMode(context: Context): Int = DaemonClient.currentMode(context)
     suspend fun quit(context: Context): Boolean = DaemonClient.quit(context)
