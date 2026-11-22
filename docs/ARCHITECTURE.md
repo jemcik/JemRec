@@ -18,6 +18,7 @@ this one is - or to check that it does what it says.
   [unplugged from a computer](#unplugged-from-a-computer) ·
   [after a restart](#after-a-restart) ·
   [coming back without you](#coming-back-without-you) ·
+  [Wireless debugging, only to start](#wireless-debugging-only-to-start) ·
   [stopped in the background](#stopped-in-the-background)
 - The features: [recording and being asked](#recording-and-being-asked) ·
   [quality and size](#quality-and-size) ·
@@ -71,8 +72,10 @@ The session exists for a few seconds. In it the app runs `pm grant` to give
 *itself* `WRITE_SECURE_SETTINGS`, allow-lists a notification listener if you
 asked it to hide Android's debugging notification, and launches a small Java
 daemon with `app_process` from a jar it carries as an asset. Then it closes the
-session. The *session* is short; the debugging switches stay on — see
-[What stays switched on](#what-stays-switched-on).
+session. The *session* is short, and so is Wireless debugging: since 1.5 it is
+on only for a start, and USB debugging stays on — see [Wireless debugging,
+only to start](#wireless-debugging-only-to-start) and [What stays switched
+on](#what-stays-switched-on).
 
 That matters because ADB is not there when you need it. With Wi-Fi off, `adbd`
 tears its listener down completely, and the shell UID may not pin a port — so
@@ -561,7 +564,9 @@ lives through it. The app watches for eight seconds. If the recorder goes, it
 switches Wireless debugging off and on - the one thing that had Android start
 `adbd` again - and starts the recorder. Measured on the same phone with the
 screen on: recording again 12 and 16 seconds after the cable came out in the
-two runs that were timed, nothing tapped, and back by itself in a third. Off
+two runs that were timed, nothing tapped, and back by itself in a third.
+With Wireless debugging off between starts (1.5), about the same: recording
+16 seconds after the recorder's wake, 2026-11-22. Off
 Wi-Fi, the next revive on Wi-Fi does the same.
 
 **With the screen off it needs JemRec allowed to run on its own** - the
@@ -641,6 +646,16 @@ a Wi-Fi Android has not allowed it asks once (`cycleAfterNotFound`). *Tap to
 allow this Wi-Fi* is now said only with adbd running, or after that once
 (`RecorderHealth.notAllowed`), and the tap starts the recorder itself, waiting
 for a start under way instead of cutting it off.
+
+**Since 1.5 Wireless debugging is off before a restart**, unless the user had
+it on, and switching it on is what starts `adbd`. Measured on the same phone,
+2026-11-21, on the 1.4 debug build with the switch written off before the
+restart and the cable out before the boot, nothing tapped: the run Wi-Fi
+started at 19:39:28.5 read `adbd` stopped and the switch off, switched it on,
+which alone started `adbd`, and had the recorder up at 19:39:38.9 - 10.4 s
+after that run began, about 13 s after JemRec's first try, about 38 s after
+the boot. The off and on above stays, for a Wireless
+debugging the user had on.
 
 **Android decides when the boot reaches JemRec.** Nothing of JemRec's runs
 until Android hands it `BOOT_COMPLETED`, which it gives apps one after another,
@@ -732,7 +747,8 @@ holds the recorder's lock, and is the one place in the app that writes the
 debugging switches. A revive that has the lock runs to its end, as Start
 fresh does: its changes come in pairs - Wireless debugging off and on, adbd
 on the port and the port noted as JemRec's, an old recorder retired and the
-new one started, Wireless debugging on and off again - and one cut between
+new one started, Wireless debugging on and, once the recorder is up, off
+again - and one cut between
 the two, by a worker stopped or a screen closed from Recents, left the first
 half alone (shown in the unit tests on a stand-in phone; what that left behind
 is read from the code). Closing from Recents is what ends the screen: Back
@@ -777,6 +793,164 @@ armed again and starts a new one. Measured on the Android 17 emulator,
 no recorder 45 s after Wi-Fi; with this, it was back in 10 s (`wifi_back`). On
 the Honor the same day, the kick 58 s from its next try: Wi-Fi's run began 3 s
 after Wi-Fi, and the recorder answered at 9 s.
+
+## Wireless debugging, only to start
+
+**Since 1.5, Wireless debugging is on only while JemRec starts its recorder.**
+A start switches it on where it is off, gives `adbd` four seconds to
+advertise, connects, starts the recorder and closes the session; then the
+recorder switches Wireless debugging off again (`Revive.askWirelessOff`). Until
+1.5 it stayed on from setup on, though nothing needed it between starts - and
+while it is on, on that Wi-Fi, any computer ever paired with the phone can open
+a shell on it with no question on the phone (a paired key is let in without
+asking, AOSP `AdbDebuggingManager`; with *Keep JemRec paired* no pairing ever
+expires), the phone announces itself over mDNS as `_adb-tls-connect._tcp`,
+named after its serial number (`adb-<serial>-<six random characters>`, adbd's
+`daemon/mdns.cpp`, read 2026-11-21), and `adbd`'s TLS port is open to the
+network. Raised in discussion #124, which asked for Shizuku.
+
+**Why off keeps the recorder.** The recorder lives in `adbd`'s cgroup, and
+USB debugging is what keeps `adbd` up: AOSP's `AdbService.stopAdbd` stops it
+only once neither transport is enabled, and every start switches USB
+debugging on first (see [Staying alive without
+Wi-Fi](#staying-alive-without-wi-fi)). Measured on the Honor (MagicOS 11,
+Android 17): on 2026-10-26, Wireless debugging written off with USB debugging
+on and no cable, the recorder kept its process from 20:51 to 21:01 through
+Wi-Fi off and on, almost six minutes locked and a real call, recorded both
+sides; on 2026-11-21, with a computer's cable in, `adbd` and the recorder
+had the same process IDs 8 s after the off, and `adbd` kept its ID through six
+starts after. On a Galaxy S23 (One UI 9, Android 17), 2026-11-21, with no
+cable, five locks of about a minute with Wireless debugging on killed
+nothing, and neither did the locks after with it off: the recorder kept its
+process from 20:05:46 to 20:43:00. LineageOS switches it
+off by itself a second after a start (the OnePlus 13, 2026-11-12, [What stays
+switched on](#what-stays-switched-on)), and two Shizuku forks, which start
+their service the same way, ship the off: thedjchi's after every start,
+Stellar's after a start it has confirmed (their code, read 2026-11-21).
+
+**The recorder switches it off, not the app** (`COMMAND_WIRELESS_OFF`,
+`WirelessOff`). It is the shell, so it reads both switches' true values:
+Android 17 hides USB debugging from apps on Pixels, and Android 17 QPR3 may
+hide Wireless debugging too (Shizuku-Next #224: a test app read 0 where the
+shell read 1). It writes the switch off only while USB debugging reads on -
+off with USB debugging off would stop `adbd`, and itself - and answers what it
+found: off, off already, USB debugging off (nothing written), or refused (an
+OPPO, OnePlus or realme phone with *Disable system optimization* off refuses
+the shell's writes). The app asks once the recorder is up and current and the
+session that started it is closed - a session left open, by a missed ping, is
+closed first; only for a Wireless debugging JemRec switched on; not during a
+call - it is not switched off mid-call, as the port is not changed mid-call,
+and the call's end has the keep-alive look again; and only in a process that
+can switch it on again for the next start. Setup's own process cannot: the
+app's `WRITE_SECURE_SETTINGS` is live only from the next one, so a start
+there - the recorder dying, *Start without Wi-Fi* flipped right after setup -
+would find nothing to connect to, where 1.4 found it on. So setup's end notes
+it as JemRec's, and the first look in a later process switches it off; the
+same keeps it on where the permission was taken back.
+
+**A guard after the off.** A phone where the off stops `adbd` though USB
+debugging is on has not been seen - not on the Honor, the S23 or the four
+emulators, not in AOSP's `AdbService` 12 to 17, which stops `adbd` only once
+neither transport is enabled, and not by the titles of thedjchi's Shizuku
+fork's issues, which ships the off - but on one, every start would end with the recorder gone
+and nothing would say so. So after an answer of off, or none (a recorder
+taken with `adbd` can go before it answers), the app waits 2 s and asks the
+recorder the confirmed way. Gone, it notes for good that Wireless debugging
+keeps `adbd` up on this phone, goes round once more - switched on, recorder
+started - and never asks for the off there again, until Start fresh
+(`NetworkRevive.noteWirelessKeepsAdbd`). The user's choice, 2026-11-21: the
+plan had dropped any check, as nothing showed the case.
+
+**Whose it is.** The app notes that JemRec switched Wireless debugging on
+(`NetworkRevive.noteJemRecs`): a start's switch-on from off, a switch off and
+on from off (after a cable, or Allow this Wi-Fi's), and setup's end, where the user switched it on to
+pair. One found on is the user's - for a computer, or another app - and stays
+on, a start's off and on included. The note goes when the recorder answers
+off or off already, and at Start fresh. Where it did not go off - USB
+debugging read off, a refusal, no answer, a call - the next look that finds
+the recorder up asks again: the heartbeat, opening JemRec, Wi-Fi coming back,
+a call's end. One note, not one per Wi-Fi connection or boot: Android 17
+keeps the switch on across Wi-Fi changes and restarts - its
+`AdbDebuggingManager` writes it off on a Wi-Fi change only without the
+`allow_adb_wifi_reconnect` flag (android17-release), whose
+`AdbWifiNetworkMonitor` the S23 logged ("Received the same Wi-Fi SSID.
+Ignoring."), and the 17 emulator kept it on across a restart - and a note per
+connection, as first built, went void while JemRec's switch stayed on. What
+one note leaves: an off by someone else - Android's, at a Wi-Fi change before
+17 - and the user switching it on before JemRec's next look, after an off of
+JemRec's was missed; that switch then goes off once. Found on or off is the
+app's own reading of the switch at the start, the only one there is with the
+recorder down; where Android hides the switch from apps - Android 17 QPR3, by
+Shizuku-Next #224, not seen on a phone here - a user's would read off, be
+switched on as JemRec's, and go off after the start. The off itself is decided
+by the recorder's reading, which Android does not hide. Installs from before
+1.5 had it on with no note: the first start after the update takes it over,
+once (the user's choice, 2026-11-21), and with it any When JemRec is off
+record of it, which On would otherwise put back as the user's for good; an
+open of JemRec before that start does not use the once up. With JemRec off and Developer options
+hidden, a Wireless debugging JemRec switched on is not written down for On to
+put back ([Off, and debugging with it](#off-and-debugging-with-it)).
+
+**What it costs: four seconds a start.** From a revive's start to the
+recorder up, measured 2026-11-21 (the AVDs on the shrunk build; the Honor on
+the debug build, with a computer's cable in and JemRec brought to the front):
+with Wireless debugging on, 5.94-6.03 s on the Android 16 emulator, 5.88-5.99
+s on 17, 6.27-6.31 s on the Honor; switched on by the
+revive, 9.95-10.03, 9.92-10.01 and 10.28-10.33 s. The four seconds a revive
+gives `adbd` after a switch-on (`ADBD_SETTLE_MS`) stay: without them mDNS
+hands out the port of the last switch-on - a new one each time - and on the
+Android 16 emulator two of five connects got nowhere in 25 s; after them,
+all fifteen switch-ons on 16 and 17 connected at once. Nothing else changed
+that was measured. No notification is posted for Wireless debugging being on:
+on the Honor, with a computer's cable in (off the cable not read), "Wireless
+debugging connected" only while a start's session is open, as in AOSP (`showAdbConnectedNotification`: "Show when at least one
+device is connected"). With USB debugging on, switching Wireless debugging on
+or off never writes Android's list of keys ([Keeping the
+pairing](#keeping-the-pairing)). After a restart it depends on the phone: the
+Android 16 emulator switched it off across a restart even when it was on, 17
+kept it; the Honor with it off is in [After a restart](#after-a-restart).
+
+**Android 12 and 13: found again.** There `adbd` announces itself through
+the native `mdnsd`, and NsdService stops `mdnsd` 10 s after the last app's
+request ends (`CLEANUP_DELAY_MS`, AOSP android12-release and
+android13-release); the announcement goes with it, and is not made again
+until the next switch-on. Measured on the Android 12 emulator, 2026-11-21:
+found right after setup; after 15 and 30 s with nobody browsing, `mdnsd`
+stopped and nothing found; switched off and on, found in 0.3 s. The emulator
+checks do it on the 12 and 13 emulators (`wireless_between_starts`,
+2026-11-22): the recorder killed 15 s after the last look, the start switched
+Wireless debugging on and found `adbd`. Before 1.5 a
+revive there that found Wireless debugging on and `adbd` running - a recorder
+dead alone, or an older one an update was to replace, which was then kept -
+found nothing, and the header
+said *Tap to allow this Wi-Fi* for a Wi-Fi allowed long before; the emulator
+checks never saw it, their revives falling back on port 5555. Every start
+from off now switches it on afresh; one that finds it on - the user's, or
+JemRec's whose off was missed - and nothing advertised switches it off and on
+once per Wi-Fi connection, which announces it afresh, as a revive does where
+`adbd` cannot be read (`cycleAfterNotFound`). And on 12 and 13 the app holds
+an mDNS request of its own open from before the switch-on to the connect
+(`AdbTransport.holdMdns`): a request active cancels a stop pending from an
+earlier look (`storeRequestMap`), which could otherwise land just after the
+new announcement - one NOT_FOUND after a switch-on on the 12 emulator, read
+as that race, not proven. The request resolves nothing: NsdService takes one
+resolve at a time from an app and turns a second away
+(`FAILURE_ALREADY_ACTIVE`), so one that resolved could take the connect's. Android 14 moved
+NsdService to an mDNS stack of its own, and the 16 and 17 emulators kept
+finding `adbd` with nobody browsing.
+
+**A Wi-Fi allowed once asks at every start.** Android keeps a Wi-Fi's
+allowance only for *Always allow* (`MSG_ADBWIFI_ALLOW`); allowed once, it
+asks again at the next switch-on, which since 1.5 is every start. An *Always
+allow*-ed access point never asks.
+
+Not measured: a phone where Wireless debugging off with USB debugging on stops
+`adbd` - none seen; phones that lose the recorder at a screen lock with only
+USB debugging on, as a Lenovo tablet and an Oppo phone did for a Shizuku fork
+(thedjchi #108), where Wireless debugging on kept it - the S23's locks killed
+nothing either way, and its USB mode change killed the recorder with Wireless
+debugging on too; and whether a banking app that looks at Wireless debugging
+alone now opens.
 
 ## Stopped in the background
 
@@ -3118,7 +3292,7 @@ permission a call recorder does not explain is one its user has to guess at:
 | --- | --- |
 | `INTERNET` | Not about the internet: Android requires it for any TCP socket, including one to `127.0.0.1`. |
 | `ACCESS_NETWORK_STATE` | To tell whether there is Wi-Fi to rebuild the recorder over, instead of trying and failing - and for the background checks to ask Android for a network to run with (from Android 14 a job that asks for one needs it). |
-| `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch debugging back on when the phone turns it off, and off with JemRec when you ask it to. |
+| `WRITE_SECURE_SETTINGS` | Granted by the app to itself over its own ADB session. Nothing but a shell can grant it, so no user can be talked into it. It lets JemRec switch Wireless debugging on for each start of the recorder, USB debugging back on when the phone turns it off, and debugging off with JemRec when you ask it to. |
 | `POST_NOTIFICATIONS` | The recording notice, the ask-first prompt, the pairing code box. |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | To stay alive while a call is being recorded and while the finished file is collected; while the recorder is restarted after a computer's cable comes out; and for the seconds it takes to warn that the phone stopped JemRec in the background. `SPECIAL_USE` is the honest type: the microphone type would need a microphone permission this app does not hold. |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | To play a recording on with the screen off, in `PlaybackService` ([playing in the background](#playing-in-the-background)). It plays; it never records. |
@@ -3195,36 +3369,46 @@ build answers with #64's refusal and Try again then grants for real.
 
 ## What stays switched on
 
-**USB debugging and Wireless debugging stay on while JemRec is on** - and
-while it is off too, unless you choose otherwise (see [Off, and debugging with
-it](#off-and-debugging-with-it)). USB debugging is what keeps `adbd` alive
-when Wi-Fi drops or Wireless debugging goes off; with both off, `adbd` stops and
-the recorder with it. (Measured on the Honor, 2026-10-26: Wireless debugging switched off with USB
-debugging on left `adbd` and the recorder running, the same process IDs two and
-a half minutes later.) So the daemon puts USB debugging back on within ten
-seconds if it goes off while `adbd` lives, the app does when the switch-off took
-`adbd` with it (see [Staying alive without Wi-Fi](#staying-alive-without-wi-fi)),
-and the app turns Wireless debugging back on the next time it rebuilds the
-recorder.
+**USB debugging stays on while JemRec is on; Wireless debugging only while it
+starts its recorder** - and while JemRec is off too, unless you choose
+otherwise (see [Off, and debugging with it](#off-and-debugging-with-it)). USB
+debugging is what keeps `adbd` alive when Wi-Fi drops or Wireless debugging
+goes off; with both off, `adbd` stops and the recorder with it. (Measured on
+the Honor, 2026-10-26: Wireless debugging switched off with USB debugging on
+and no cable, the recorder kept its process for ten minutes through Wi-Fi off
+and on, a lock and a call; with a computer's cable in, the same process IDs
+two and a half minutes later.) So the daemon puts USB debugging back on within ten seconds if
+it goes off while `adbd` lives, the app does when the switch-off took `adbd`
+with it (see [Staying alive without Wi-Fi](#staying-alive-without-wi-fi)), and
+the app switches Wireless debugging on for each start, the recorder off again
+once it is up ([Wireless debugging, only to start](#wireless-debugging-only-to-start)).
+One you switch on yourself stays on.
 
-What that means for the phone: while debugging is on, a computer that has been
-paired with it can open an ADB shell on it from the same Wi-Fi, and one you have
-authorised before can do the same over a cable. An unpaired computer cannot.
-Check *Wireless debugging → Paired devices* now and then and remove anything you
-do not recognise. With *Start without Wi-Fi* on, port 5555 is open too, on
-every network the phone joins; a computer that reaches it, or an app on the
-phone, can ask to debug the phone, and only a yes on the phone lets it (see [Starting without
-Wi-Fi](#starting-without-wi-fi)).
+What that means for the phone: while USB debugging is on, a computer you have
+authorised before can open an ADB shell on it over a cable; while Wireless
+debugging is on - a start's seconds, or while you have it on - a computer that
+has been paired with it can do the same from the same Wi-Fi. An unpaired
+computer cannot. Check *Wireless debugging → Paired devices* now and then and
+remove anything you do not recognise. With *Start without Wi-Fi* on, port 5555
+is open too, on every network the phone joins; a computer that reaches it, or
+an app on the phone, can ask to debug the phone, and only a yes on the phone
+lets it (see [Starting without Wi-Fi](#starting-without-wi-fi)).
 
-Android shows a notification for as long as debugging is on. Setup says all of
-the above before you switch anything on, then asks whether JemRec should hide
-that notification. Only on a yes does it get notification access, and it then
-snoozes nothing but Android's own debugging notifications, matched by their
-system ID, or by the word "debugging" on a ROM that numbers them differently.
-Settings can change the answer at any time. The same access serves one other,
-separate choice: *Show who called* for messenger calls (see Messenger calls),
-which notes the caller's name from the switched-on messengers' call
-notifications and reads nothing else.
+Android shows a notification while something is connected to debugging:
+"Wireless debugging connected" for the seconds a start's session is open, and
+its USB twin while a computer's cable is in - on the Honor, 2026-11-21, with
+the cable in (off the cable not read), the first posted for each start and
+taken down as its session closed, nothing for Wireless debugging merely being
+on, as AOSP has it
+(`showAdbConnectedNotification`). Setup says all of the above before you
+switch anything on, then asks whether JemRec should hide that notification.
+Only on a yes does it get notification access, and it then snoozes nothing
+but Android's own debugging notifications, matched by their system ID, or by
+the word "debugging" on a ROM that numbers them differently. Settings can
+change the answer at any time. The same access serves one other, separate
+choice: *Show who called* for messenger calls (see Messenger calls), which
+notes the caller's name from the switched-on messengers' call notifications
+and reads nothing else.
 
 Setup grants that access over its own ADB session. From Settings, since 0.31,
 the recorder grants it: it is the shell, as a session is, and allows only
@@ -3236,7 +3420,12 @@ Wireless debugging on - and LineageOS switches that off by itself a second
 after a revive's session has started the recorder, so on the OnePlus, on
 Wi-Fi, Show who called said "it needs Wi-Fi" and could not be turned on
 (2026-11-12; Hide the debugging notification goes the same way, read from
-the code). A session is still the way where no recorder answers.
+the code). Where no recorder answers - none up, one from before 0.31, one
+slow to answer - a session was still the way until 1.5; since then JemRec
+starts the recorder, as *Tap to start again* does, and asks the one then up:
+the start replaces an older one and finds a slow one up. Where none can be
+started - no Wi-Fi and no port, JemRec off with all debugging - it is no
+answer, as no session could be had either.
 
 Either grant runs to its end once begun, and only then saves its switch on.
 Since 1.0 Settings follows both switches as saved, as it follows the record
@@ -3264,7 +3453,13 @@ time Android writes its list of keys: when a computer's cable goes in or out,
 at its daily check, or as debugging starts - the phone's start, or a switch-on
 with the other debugging switch off, which a revive's Wireless debugging off
 and on can be (`AdbDebuggingManager`, read in AOSP, android11-release and main,
-2026-11-15; `adbd_notify_framework_connected_key` in adbd's `adb.cpp`).
+2026-11-15; `adbd_notify_framework_connected_key` in adbd's `adb.cpp`). With
+USB debugging on, as JemRec keeps it, switching Wireless debugging on or off -
+each start's, since 1.5 - writes nothing: the thread that keeps the list
+counts its users, and writes the list only as the first starts
+(`startAdbDebuggingThread`, read 2026-11-21). USB debugging switched back on
+with Wireless debugging off - after the Honor's Developer options, say - is
+debugging starting, which does; the daily check would within the day anyway.
 JemRec connects over Wireless debugging - to port 5555 only with Start
 without Wi-Fi, whose revives would renew it (read, not measured) - so its
 pairing ends a week after setup, however often it connects. The recorder runs
@@ -3314,8 +3509,13 @@ by the record button or the Quick Settings tile (`DebugSwitchesOff`):
 | Choice | Switches off | Back on |
 | --- | --- | --- |
 | Keep debugging on (the default) | nothing else | instantly, anywhere |
-| Hide Developer options | Developer options, Wireless debugging | instantly, anywhere |
-| Turn all debugging off | Developer options, Wireless debugging, USB debugging | needs Wi-Fi - or *Start without Wi-Fi* - about 15 s; no answering machine until then |
+| Hide Developer options | Developer options | instantly, anywhere |
+| Turn all debugging off | Developer options, USB debugging | needs Wi-Fi - or *Start without Wi-Fi* - about 15 s; no answering machine until then |
+
+Wireless debugging is in neither since 1.5: it is off already while JemRec
+runs ([Wireless debugging, only to start](#wireless-debugging-only-to-start)),
+and the screen says so under the choices. One you switched on yourself goes
+off with the last two, and On puts it back.
 
 The three are what each switch costs, measured on the Honor (Android 17),
 2026-10-26:
@@ -3338,7 +3538,9 @@ The three are what each switch costs, measured on the Honor (Android 17),
 So the first two keep the recorder and are instant both ways; the third takes
 the recorder with it, which is the one an off in the field used to cost before
 the switch was made soft. On then took 6 seconds to have it recording again,
-twice, on the Honor (2026-10-26); the app's "about 15 s" is the slow end, a
+twice, on the Honor (2026-10-26), with Wireless debugging put back by On.
+Since 1.5 the start switches it on itself, 4 seconds more: 10 seconds from On
+to recording on the Honor (2026-11-22). The app's "about 15 s" is the slow end, a
 revive that has to switch Wireless debugging off and on having taken 12 to 16
 seconds. That is why the third says what it costs on its own line, and why,
 away from Wi-Fi, turning off with it asks first - the only off that does
@@ -3355,8 +3557,11 @@ waits out a call or a fetch in progress, gives the microphone back if a message
 left it muted, and stops its own shield from putting USB debugging back. The
 second write stops `adbd`, and the recorder goes with it. JemRec writes down
 what it switched off - only what was on, so Wireless debugging already off away
-from Wi-Fi is not switched on for nothing later - and On puts back exactly
-that, USB debugging before Wireless debugging, then starts the recorder. A new
+from Wi-Fi is not switched on for nothing later, and not one JemRec switched
+on itself, still on in a start's seconds or after an off that could not be
+made: the next start switches that on, and off again - and On puts back
+exactly that, USB debugging before Wireless debugging, then starts the
+recorder. A new
 choice made while JemRec is off applies from the next off.
 
 **Nothing brings debugging back behind the user's back.** Every way the
@@ -3371,7 +3576,10 @@ while it waited writes nothing. Until 0.28 a revive asked before the lock and no
 queued as Off came had USB debugging back on - reproduced in the unit tests,
 two revives queued and an Off between them. While JemRec is off with
 Developer options hidden, a revive (after a reboot, or a cable from a computer)
-turns Wireless debugging on to start the recorder and off again once it is up.
+turns Wireless debugging on to start the recorder and off again once it is up
+- since 1.5 by the recorder, as after any start, and no longer written down:
+until then On switched it on again for nothing. One found on that JemRec did
+not switch on goes off and is written down, as before.
 A recorder that dies while it waits out a call - a computer's cable pulled -
 leaves its off unfinished; the next revive or keep-alive run that finds no
 recorder finishes it, once; one still up whose Off was cut short before it

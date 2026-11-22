@@ -20,8 +20,11 @@ internal fun offModeTitle(mode: OffMode): String = when (mode) {
  * user read an earlier draft three times and could not tell the second choice
  * from the third (2026-10-26) - one said "Wireless debugging goes off too",
  * the other "All of it" - and the difference is exactly these two lines.
- * [portSet]: adbd is on Start without Wi-Fi's port, so the third comes back
- * with no Wi-Fi too.
+ * Wireless debugging is named in none of them since 1.5: it is off already
+ * while JemRec runs (Revive.askWirelessOff), and the footer says so - with
+ * the one case left, a Wireless debugging the user switched on, which the
+ * last two still switch off (DebugSwitchesOff.switchOff). [portSet]: adbd is
+ * on Start without Wi-Fi's port, so the third comes back with no Wi-Fi too.
  */
 internal fun offModeLines(mode: OffMode, portSet: Boolean): List<Pair<String, String>> = when (mode) {
     OffMode.KEEP_DEBUGGING -> listOf(
@@ -29,11 +32,11 @@ internal fun offModeLines(mode: OffMode, portSet: Boolean): List<Pair<String, St
         "Back on:" to "instantly, anywhere",
     )
     OffMode.HIDE_DEVELOPER_OPTIONS -> listOf(
-        "Switches off:" to "Developer options, Wireless debugging",
+        "Switches off:" to "Developer options",
         "Back on:" to "instantly, anywhere",
     )
     OffMode.ALL_DEBUGGING_OFF -> listOf(
-        "Switches off:" to "Developer options, Wireless debugging, USB debugging",
+        "Switches off:" to "Developer options, USB debugging",
         "Back on:" to "${if (portSet) "anywhere" else "needs Wi-Fi"}, about 15 s. No answering machine until then",
     )
 }
@@ -81,6 +84,9 @@ internal fun whenOffFooter(state: UiState): List<String> = listOfNotNull(
     "Some banking apps won't open while Developer options or debugging is on. Try " +
         "Hide Developer options first; if your bank still refuses, Turn all " +
         "debugging off. Turning JemRec back on switches back on what it switched off.",
+    "Wireless debugging is off while JemRec runs: JemRec switches it on only for " +
+        "the few seconds it takes to start its recorder. If you switch it on " +
+        "yourself, the last two choices switch it off too.",
     when {
         state.startWithoutWifi ->
             "With Start without Wi-Fi on, debugging port 5555 stays open while " +

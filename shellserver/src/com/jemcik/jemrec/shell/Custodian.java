@@ -126,9 +126,11 @@ final class Custodian {
      * /data/local/tmp - the jar, the logs, recordings never collected, the
      * greeting and its take.
      *
-     * Wireless debugging was turned on for setup and is a secure setting only
-     * something with shell rights can write - which this is, and the app no
-     * longer exists to do it. The jar and the log sit in /data/local/tmp, which
+     * Wireless debugging is a secure setting only something with shell rights
+     * can write - which this is, and the app no longer exists to do it. It
+     * is off between JemRec's starts since 1.5 (WirelessOff), but an
+     * uninstall can come in a start's seconds, or after an off that could
+     * not be made. The jar and the log sit in /data/local/tmp, which
      * belongs to shell rather than to the package, so an uninstall does not
      * touch them either.
      *
@@ -170,10 +172,11 @@ final class Custodian {
                 Ln.w("custodian: could not remove " + file.getName());
             }
         }
-        // Both debugging switches. Wireless was turned on for setup; USB is the
-        // off-Wi-Fi shield this daemon keeps up (see Shield.keepShieldUp) - and
-        // with the app gone, nothing else will ever turn either of them back
-        // off. Refused where an OPPO, OnePlus or realme phone's switch is off
+        // Both debugging switches. Wireless, which JemRec switches on for
+        // each start and off after it, and may have left on; USB is the
+        // off-Wi-Fi shield this daemon keeps up (see Shield.keepShieldUp) -
+        // and with the app gone, nothing else will ever turn either of them
+        // back off. Refused where an OPPO, OnePlus or realme phone's switch is off
         // (Shield.putGlobal), and then nothing is left to do it: the app is gone.
         // The shield stands down first, as for debugging off: its ten-second
         // check, landing between USB debugging written off and this process

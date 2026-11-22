@@ -32,6 +32,7 @@ sourceSets {
             include("com/jemcik/jemrec/shell/RestartPolicy.java")
             include("com/jemcik/jemrec/shell/StallWatch.java")
             include("com/jemcik/jemrec/shell/Wire.java")
+            include("com/jemcik/jemrec/shell/WirelessOff.java")
             // The daemon's own @Nullable, which these classes use (NullAway).
             include("com/jemcik/jemrec/shell/Nullable.java")
         }

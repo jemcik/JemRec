@@ -620,6 +620,7 @@ def set_up(apk):
     # other than Memo, whose words the checks read (review, 2026-11-18).
     set_prefs(off_mode=None, look="MEMO", light_dark="PHONE")
     su("rm -f /data/local/tmp/jemrec-fill")
+    allow_wifi()
     start_recorder()
 
 
@@ -3153,37 +3154,50 @@ def _adbd_stopped_and_started(before):
 
 def hide_developer_options():
     """When JemRec is off, Hide Developer options: off switches Developer
-    options and Wireless debugging off and leaves USB debugging - so adbd and
-    the recorder - alone; on puts back what it switched off. On the Honor
-    (2026-10-26) the recorder lived through that off the cable, through Wi-Fi
-    off and on, a locked phone and a real call; here, that the switches go and
-    come back and the recorder keeps its process."""
+    options off - and Wireless debugging, where the user had it on - and
+    leaves USB debugging, so adbd and the recorder, alone; on puts back what
+    it switched off. On the Honor (2026-10-26) the recorder lived through that
+    off the cable, through Wi-Fi off and on, a locked phone and a real call;
+    here, that the switches go and come back and the recorder keeps its
+    process. Twice: with Wireless debugging on from the shell - the user's,
+    switched off and put back - and with it off, as JemRec leaves it between
+    starts since 1.5, which On must not switch on."""
     set_prefs(off_mode="HIDE_DEVELOPER_OPTIONS")
     try:
         start_recorder()
-        sh("settings put global development_settings_enabled 1")  # as on any phone set up
         before = daemon_pid()
-        wireless = global_setting("adb_wifi_enabled") == "1"
-        diag("switch", "--ez", "on", "false")
-        wait_for(lambda: global_setting("development_settings_enabled") == "0", 15, "Developer options off")
-        if wireless:
-            wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 15, "Wireless debugging off")
-        assert global_setting("adb_enabled") == "1", "USB debugging went off too"
-        time.sleep(3)
-        assert daemon_pid() == before, "the recorder went with them"
-        assert recorder_answers(), "the recorder stopped answering"
-        diag("switch", "--ez", "on", "true")
-        wait_for(lambda: global_setting("development_settings_enabled") == "1", 15, "Developer options back")
-        if wireless:
-            wait_for(lambda: global_setting("adb_wifi_enabled") == "1", 15, "Wireless debugging back")
-        assert daemon_pid() == before, "the recorder was restarted for nothing"
-        return (f"Developer options{' and Wireless debugging' if wireless else ''} off and back on, "
-                f"the recorder kept (pid {before})")
+        said = []
+        for users in (True, False):
+            sh("settings put global development_settings_enabled 1")  # as on any phone set up
+            sh(f"settings put global adb_wifi_enabled {1 if users else 0}")
+            wait_for(lambda: global_setting("adb_wifi_enabled") == ("1" if users else "0"), 10, "")
+            if users:
+                _answer_questions(allow=True)
+            diag("switch", "--ez", "on", "false")
+            wait_for(lambda: global_setting("development_settings_enabled") == "0", 15, "Developer options off")
+            if users:
+                wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 15, "Wireless debugging off")
+            assert global_setting("adb_enabled") == "1", "USB debugging went off too"
+            time.sleep(3)
+            assert daemon_pid() == before, "the recorder went with them"
+            assert recorder_answers(), "the recorder stopped answering"
+            diag("switch", "--ez", "on", "true")
+            wait_for(lambda: global_setting("development_settings_enabled") == "1", 15, "Developer options back")
+            if users:
+                wait_for(lambda: global_setting("adb_wifi_enabled") == "1", 15, "Wireless debugging back")
+            else:
+                time.sleep(3)
+                assert global_setting("adb_wifi_enabled") == "0", "On switched Wireless debugging on for nothing"
+            assert daemon_pid() == before, "the recorder was restarted for nothing"
+            said.append("Developer options and the user's Wireless debugging off and back on" if users else
+                        "with Wireless debugging off, Developer options off and back on, Wireless debugging left off")
+        return "; ".join(said) + f"; the recorder kept (pid {before})"
     finally:
         # On again whatever failed, or every check after this one runs with
         # recording off. A second on puts back nothing and finds the recorder up.
         quietly(diag, "switch", "--ez", "on", "true")
         quietly(set_prefs, off_mode=None)
+        quietly(sh, "settings put global adb_wifi_enabled 0")
 
 
 def debugging_off():
@@ -3193,10 +3207,15 @@ def debugging_off():
     that would send it is gone, puts all of it back and starts the recorder.
     Guarded as usb_debugging is: a snapshot the console loads if adb never
     comes back."""
-    log_before = revive_log()
     set_prefs(off_mode="ALL_DEBUGGING_OFF")
     start_recorder()
     sh("settings put global development_settings_enabled 1")
+    # Off, as JemRec leaves it between starts (1.5): On's revive switches it
+    # on to start the recorder, and the recorder off again after.
+    sh("settings put global adb_wifi_enabled 0")
+    # From here: what came before - a revive of the keep-alive's, say - is
+    # not On's (review round 1).
+    log_before = revive_log()
     before = daemon_pid()
     adbd_before = sh("pidof adbd").strip()
     if "OK" not in adb("emu", "avd", "snapshot", "save", USB_GUARD):
@@ -3232,7 +3251,13 @@ def debugging_off():
     assert sh("pidof adbd").strip() != adbd_before, "adbd never stopped: USB debugging did not go off"
     assert "debugging back on: USB_DEBUGGING" in log_text, "On did not put USB debugging back"
     assert after != before, "the same recorder: it never went"
-    return "adbd stopped with USB debugging, all of it back on, recorder started again"
+    wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 15, "Wireless debugging off again after the start")
+    log_text = revive_since(log_before)
+    assert "revive: Wireless debugging TURN_ON" in log_text, "On's revive did not switch Wireless debugging on"
+    assert "revive: Wireless debugging off - the recorder says SWITCHED_OFF" in log_text, \
+        "the recorder did not switch Wireless debugging off after On's start"
+    return ("adbd stopped with USB debugging, all of it back on, recorder started again; Wireless debugging "
+            "on for the start and off after")
 
 
 def _quietly(attempt):
@@ -3297,6 +3322,48 @@ def _refused_wifi_left_alone(port):
     wait_for(lambda: global_setting("adb_wifi_enabled") == "1", 10, "Wireless debugging allowed")
 
 
+ADB_KEYS = "/data/misc/adb/adb_temp_keys.xml"
+
+
+def _adb_keys():
+    """Android's list of computers' keys and allowed Wi-Fi networks, as text:
+    binary XML ("ABX" first) where persist.sys.binary_xml has it, text
+    otherwise. Empty where there is none yet."""
+    binary = su(f"head -c 3 {ADB_KEYS} 2>/dev/null").startswith("ABX")
+    return su(f"abx2xml {ADB_KEYS} - 2>/dev/null" if binary else f"cat {ADB_KEYS} 2>/dev/null")
+
+
+def _wifi_allowed():
+    """Whether Android lists a Wi-Fi as allowed for Wireless debugging - by
+    Always allow on this network (AdbDebuggingManager keeps it as wifiAP)."""
+    return "<wifiAP" in _adb_keys()
+
+
+def allow_wifi():
+    """The AVD's Wi-Fi allowed for Wireless debugging - Always allow, as a
+    phone's user does at setup - and read back from Android's list; then
+    Wireless debugging off, as JemRec leaves it between starts. Since 1.5
+    every start switches it on, and on a Wi-Fi not allowed each switch-on
+    asks again: on the Android 12 and 13 AVDs, 2026-11-21, nineteen
+    questions had stacked up from repeated switch-ons
+    (tmp/wd-off-between-starts, 0a). allow_this_wifi and start_without_wifi
+    take the allowance back for their own part, and give it again."""
+    wait_wifi_connected(what="Wi-Fi connected, to allow it")
+    if not _wifi_allowed():
+        sh("settings put global adb_wifi_enabled 1")
+
+        def allowed():
+            _answer_questions(allow=True)
+            return _wifi_allowed()
+
+        wait_for(allowed, 45, "the AVD's Wi-Fi allowed for Wireless debugging")
+        for _ in range(4):  # a question that comes after the list says so
+            time.sleep(0.5)
+            _answer_questions(allow=True)
+    sh("settings put global adb_wifi_enabled 0")
+    wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 10, "Wireless debugging off")
+
+
 def _forget_wifi_allowed():
     """The AVD Wi-Fi's "Always allow on this network" taken back, for a Wi-Fi
     Android has not allowed at every run: allow_this_wifi's, on every Android
@@ -3309,10 +3376,9 @@ def _forget_wifi_allowed():
     which stay - and in system_server's memory, which writes them back at any
     change, so system_server is stopped while the line goes. True if there
     was one to take back."""
-    keys = "/data/misc/adb/adb_temp_keys.xml"
-    # Binary XML ("ABX" first) where persist.sys.binary_xml has it, text otherwise.
+    keys = ADB_KEYS
     binary = su(f"head -c 3 {keys}").startswith("ABX")
-    read_keys = lambda: su(f"abx2xml {keys} -" if binary else f"cat {keys}")
+    read_keys = _adb_keys
     if "<wifiAP" not in read_keys():
         return False
     tmp = "/data/local/tmp/jemrec-keys"
@@ -3443,7 +3509,11 @@ def listener_grant():
     needs Wireless debugging, and on the OnePlus, 2026-11-12, LineageOS had
     switched that off by itself: Show who called said "it needs Wi-Fi", on
     Wi-Fi. Android writes its list a moment after a grant or a withdrawal,
-    so it is waited for. What it was before is put back."""
+    so it is waited for. Then again with the recorder killed first: no
+    recorder answers, so the grant starts one, as Tap to start again does,
+    and the recorder then up grants it (1.5; until then a session of its
+    own granted it, which needs Wireless debugging - off between starts
+    now). What it was before is put back."""
     component = f"{PKG}/{PKG}.capture.DebugNotificationCleaner"
 
     def listed():
@@ -3460,9 +3530,24 @@ def listener_grant():
         assert "listener: notification access allowed for the app" in log(), "the recorder did not say it allowed it"
         assert "settings: notif listener -> the recorder said ok" in log(), "the app did not take the recorder's answer"
         wait_for(listed, 5, "Android listing it")
+
+        # No recorder: started by the grant, and asked.
+        sh(f"cmd notification disallow_listener {component}")
+        wait_for(lambda: not listed(), 5, "the access taken away again")
+        sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
+        wait_for(lambda: daemon_pid() is None, 10, "the recorder gone")
+        said = diag("grantlistener", wait=120)
+        assert "granted" in said and "not granted" not in said, said
+        assert "settings: notif listener -> no recorder answered; started: true" in log(), \
+            "the grant did not start the recorder"
+        assert "settings: notif listener -> the recorder said ok" in log(), "the started recorder did not grant it"
+        wait_for(listed, 5, "Android listing it")
+        assert recorder_answers(), "no recorder after the grant"
     finally:
         sh(f"cmd notification {'allow' if before else 'disallow'}_listener {component}")
-    return "taken away, then allowed by the recorder with no ADB session, and in Android's list"
+        start_recorder_after()
+    return ("taken away, then allowed by the recorder with no ADB session, and in Android's list; with the "
+            "recorder killed, the grant started it, and it allowed it")
 
 
 # Telegram's other builds (issue #93): Telegram's source builds them as
@@ -3685,7 +3770,11 @@ def allow_this_wifi():
             end_line = None
         assert end_line, "the tap's revive never switched Wireless debugging off and on, or never ended"
         assert end_line == "revive: recorder up (connect CONNECTED)", f"the tap's revive ended {end_line}"
-        return "asked on a Wi-Fi not allowed; the tap put the question up, Allow had the recorder back by the tap's revive"
+        # Switched on by JemRec - a revive's from off, or the tap's - and off
+        # again by the recorder once it is up (1.5).
+        wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 15, "Wireless debugging off again after the start")
+        return ("asked on a Wi-Fi not allowed; the tap put the question up, Allow had the recorder back by the "
+                "tap's revive, and Wireless debugging off again after it")
     finally:
         quietly(su, f"iptables -D {rule}")
         try:
@@ -3693,6 +3782,71 @@ def allow_this_wifi():
             start_recorder()
         except Exception as e:  # not in place of whatever failed the check
             print(f"     (the recorder could not be started again afterwards: {e})")
+
+
+def wireless_between_starts():
+    """Wireless debugging on only while JemRec starts its recorder (1.5,
+    tmp/wd-off-between-starts/PLAN.md): port 5555 shut to the app, so that
+    only Wireless debugging can start the recorder, on the AVD's Wi-Fi
+    allowed (set_up's allow_wifi, read back here). The recorder killed with
+    Wireless debugging off, as JemRec leaves it: the revive switches it on
+    (TURN_ON), starts the recorder, and the recorder switches it off again -
+    it reads 0 within 15 s, and the recorder keeps its process 10 s after,
+    USB debugging keeping adbd up. On Android 12 and 13 the kill comes after
+    15 s with nobody browsing mDNS, past NsdService's 10 s stop of mdnsd:
+    the start's switch-on must announce adbd afresh and the app's held look
+    find it (AdbTransport.holdMdns). Then Wireless debugging switched on from
+    the shell - the user's, for a computer - and the recorder killed again:
+    back, and the switch still on."""
+    assert _wifi_allowed(), "the AVD's Wi-Fi is not allowed for Wireless debugging (set_up's allow_wifi)"
+    sdk = int(sh("getprop ro.build.version.sdk").strip())
+    start_recorder()
+    uid = re.search(r"(?:userId|appId)=(\d+)", sh(f"dumpsys package {PKG}")).group(1)
+    rule = f"OUTPUT -p tcp --dport 5555 -m owner --uid-owner {uid} -j REJECT"
+    su(f"iptables -I {rule}")
+    try:
+        sh("settings put global adb_wifi_enabled 0")
+        wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 10, "Wireless debugging off")
+        diag("disconnect")
+        if sdk <= 33:
+            time.sleep(15)  # past NsdService's CLEANUP_DELAY_MS, nobody browsing
+        log_before = revive_log()
+        sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
+        wait_for(lambda: daemon_pid() is None, 10, "the recorder gone")
+        diag("check", wait=120)
+        text = revive_since(log_before)
+        assert "revive: Wireless debugging TURN_ON" in text, "the revive did not switch Wireless debugging on"
+        assert "revive: recorder up (connect CONNECTED)" in text, "the recorder did not come back over Wireless debugging"
+        wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 15, "Wireless debugging off again after the start")
+        assert "revive: Wireless debugging off - the recorder says SWITCHED_OFF" in revive_since(log_before), \
+            "the recorder was not the one to switch it off"
+        assert "session: Wireless debugging off after a start - WIRELESS off" in \
+            sh("cat /data/local/tmp/jemrec-capture.out"), "the recorder's own log does not say it"
+        pid = daemon_pid()
+        assert global_setting("adb_enabled") == "1", "USB debugging is off"
+        time.sleep(10)
+        assert daemon_pid() == pid and recorder_answers(), "the recorder went after Wireless debugging went off"
+
+        # The user's: switched on by hand, and left on by the next start.
+        sh("settings put global adb_wifi_enabled 1")
+        wait_for(lambda: global_setting("adb_wifi_enabled") == "1", 10, "Wireless debugging on")
+        _answer_questions(allow=True)
+        log_user = revive_log()
+        sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
+        wait_for(lambda: daemon_pid() is None, 10, "the recorder gone")
+        diag("check", wait=120)
+        text = revive_since(log_user)
+        assert "revive: recorder up (connect CONNECTED)" in text, "the recorder did not come back with the user's on"
+        assert "revive: Wireless debugging LEAVE" in text, "the user's Wireless debugging was switched"
+        assert "the recorder says" not in text, "the recorder was asked to switch the user's off"
+        time.sleep(5)
+        assert global_setting("adb_wifi_enabled") == "1", "the user's Wireless debugging went off"
+        return (f"switched on for the start{' after 15 s with nobody browsing' if sdk <= 33 else ''}, "
+                f"off again by the recorder, which kept its process (pid {pid}); the user's left on")
+    finally:
+        quietly(su, f"iptables -D {rule}")
+        quietly(sh, "settings put global adb_wifi_enabled 0")
+        start_recorder_after()
 
 
 def wifi_on(on):
@@ -5178,10 +5332,15 @@ def start_without_wifi():
         adb("usb", timeout=30)
         adb("wait-for-device", timeout=60)
         wait_for(lambda: adb_ready() and port() != "5555", 30, "an earlier run's port closed")
-        start_recorder()  # adbd's restart took it
+    # Started before the switch goes on, and after any close above (adbd's
+    # restart took the recorder). Opened with the switch on, JemRec has its
+    # keep-alive open the port, restarting adbd under start_recorder's own
+    # commands: since 1.5 that comes once Wireless debugging is switched on,
+    # 4 s in, and took the bootstrap's broadcast with it (the 13, 16 and 17
+    # AVDs, 2026-11-22). The port is opened below, by a revive asked for.
+    start_recorder()
     set_prefs(off_mode="ALL_DEBUGGING_OFF", start_without_wifi=True)
     try:
-        start_recorder()
         sh("settings put global development_settings_enabled 1")
         # A revive on Wi-Fi opens the port - once Wi-Fi is joined, so one is
         # asked for until it has, as for the close below. On a freshly booted
@@ -5190,7 +5349,9 @@ def start_without_wifi():
         # network, and the app then took the joined Wi-Fi for none - fixed
         # since (NetworkRevive.onWifi); the retries stay for a slow revive.
         wait_wifi_connected()
-        refused = global_setting("adb_wifi_enabled") != "1"
+        # Asked of Android's list, not the switch: since 1.5 Wireless
+        # debugging is off between starts on an allowed Wi-Fi too.
+        refused = not _wifi_allowed()
         if refused:
             _refused_wifi_left_alone(port)
 
@@ -5256,6 +5417,10 @@ def start_without_wifi():
 
     outcome = wait_for(lambda: _quietly(settled), 90, "the port closed, or left over its own connection", step=0)
     wait_for(recorder_answers, 60, "the recorder up after the switch went off")
+    # That revive switched Wireless debugging on, on the Wi-Fi joined again,
+    # and the recorder off once it was up (1.5).
+    wait_for(lambda: adb_ready() and global_setting("adb_wifi_enabled") == "0", 30,
+             "Wireless debugging off again after the last start")
     first = ("on a Wi-Fi not allowed, asked no more after Cancel and left the port; allowed, "
              if refused else "")
     if outcome == "left":
@@ -5348,7 +5513,8 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           background_playback, both_ears, raise_to_listen, seek_preroll, one_window, process_death,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
-          debugging_off, off_just_left, background, allow_this_wifi, refused_grant, listener_grant, keep_paired,
+          debugging_off, off_just_left, background, allow_this_wifi, wireless_between_starts, refused_grant,
+          listener_grant, keep_paired,
           telegram_builds, newest_version, opus_valid, notifications_off, folder_lost,
           killed_mid_save, early_end, doze,
           # Late, these three: they turn the emulator's Wi-Fi off and on, and

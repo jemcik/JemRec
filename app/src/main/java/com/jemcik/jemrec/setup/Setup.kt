@@ -17,6 +17,7 @@ import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.recorder.BackgroundKill
 import com.jemcik.jemrec.recorder.KeepPaired
+import com.jemcik.jemrec.recorder.NetworkRevive
 import com.jemcik.jemrec.recorder.RecorderLifecycle
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import com.jemcik.jemrec.recordings.RecordingStore
@@ -55,8 +56,9 @@ enum class SetupStep {
      * whether to hide Android's debugging notification.
      *
      * Asked BEFORE anything is turned on, so nobody flips a switch without
-     * knowing it stays flipped: USB and Wireless debugging stay on for as long
-     * as JemRec is installed, and JemRec turns them back on. That was nowhere
+     * knowing it stays flipped: USB debugging stays on for as long as JemRec
+     * is installed, and JemRec turns it back on; Wireless debugging is on
+     * while JemRec starts its recorder (Revive.askWirelessOff). That was nowhere
      * in the app until a private security report pointed it out
      * (GHSA-hf4v-7hwh-hx7w), along with the notification being hidden without
      * asking.
@@ -717,103 +719,74 @@ object Setup {
         markComplete(context)
         // Through the door; put it back.
         CaptureDaemon.standDown(context)
+        // And Wireless debugging, switched on for setup, noted as JemRec's, to
+        // go off once the recorder is up in a process that can switch it on
+        // again - not this one, whose WRITE_SECURE_SETTINGS is not live yet
+        // (RecorderLifecycle.afterSetup).
+        RecorderLifecycle.afterSetup(context)
     }.rethrowingCancellation()
 
     /** Why grantNotificationAccess could not grant it. */
     enum class GrantProblem {
         /** No recorder answered - none up, one before 0.31, one that took too
-         *  long - and no ADB session could do it either. */
+         *  long - and none could be started to ask. */
         NO_ANSWER,
 
         /** Asked, as the shell, and Android did not allow it. */
         REFUSED,
     }
 
-    /** An ADB session's steps, for the grant over one (grantOver):
-     *  AdbTransport's, or a test's. */
-    internal interface GrantSession {
-        val open: Boolean
-        suspend fun connect(): Boolean
-        suspend fun exec(command: String): Result<String>
-        suspend fun close()
-    }
-
     /**
-     * [command] run over a session: what its shell printed, or null with no
-     * session or one that broke - an exec that failed is no word from
-     * Android. Opened and closed here unless one was open already; a
-     * connect that failed leaves nothing to close, as before 0.31. Once
-     * begun it runs to its end, as a revive does: Show who called runs in
-     * the screen's scope, and the screen closed from Recents meanwhile
-     * would cut it between a connect that came up and the close, and leave
-     * the session open. Its steps are bounded - the connect's own limits
-     * (mDNS's five seconds, libadb's ten a try), the command's watchdog
-     * (watched).
+     * A start of the recorder for the grant, where none answered
+     * (grantNotificationAccess): the revive the header's Tap to start again
+     * makes. A seam: the tests' reaches no adbd - one on 127.0.0.1:5555 is
+     * an emulator's during the release's checks.
      */
-    internal suspend fun grantOver(session: GrantSession, command: String): String? = withContext(NonCancellable) {
-        val opened = !session.open
-        if (opened && !session.connect()) return@withContext null
-        try {
-            session.exec("$command && echo granted")
-                .onFailure { Log.w(TAG, "settings: notif listener over the session failed: ${it.message}") }
-                .getOrNull()
-        } finally {
-            if (opened) session.close()
-        }
-    }
-
-    /**
-     * The grant over an ADB session, where no recorder answers (grantOver
-     * over AdbTransport). A seam: the tests' reaches no adbd - one on
-     * 127.0.0.1:5555 is an emulator's during the release's checks.
-     */
-    internal var grantOverSession: suspend (Context) -> String? = { context ->
-        grantOver(
-            object : GrantSession {
-                override val open get() = AdbTransport.isConnected
-                override suspend fun connect() = AdbTransport.autoConnect(context, timeoutMs = 5_000).isSuccess
-                override suspend fun exec(command: String) = AdbTransport.exec(command)
-                override suspend fun close() {
-                    AdbTransport.close()
-                }
-            },
-            DebugNotificationCleaner.accessCommand(context, allow = true),
-        )
+    internal var reviveForGrant: suspend (Context) -> Boolean = { context ->
+        CaptureDaemon.revive(context, request = CaptureDaemon.Request.USER)
     }
 
     /**
      * Grant notification access after setup, for a yes given in Settings:
      * null once granted, or why not. finish() does it during setup, over its
      * own session. Afterwards the recorder does it - the shell, as a session
-     * is - with no session at all. This opened one, which needs Wireless
-     * debugging on, and LineageOS switches that off by itself a second after
-     * a revive's session has started the recorder: on the OnePlus, on Wi-Fi,
-     * Show who called said "it needs Wi-Fi" (2026-11-12; Hide the debugging
-     * notification goes the same way, read from the code). A session's is
-     * still the way where no recorder answers (grantOverSession); not after
-     * the recorder said no: a session's shell would be told the same.
-     * Whatever either said, this process's own word decides, read from
-     * Android at the end: the list the recorder reads is written a moment
-     * after the grant, a reply can be lost after the grant was made, and
-     * `cmd` ends well after an exception too. Once begun it runs to its end:
-     * Show who called runs in the screen's scope, and the screen closed from
-     * Recents meanwhile would drop the answer of a grant Android made, and
-     * leave the switch off over it.
+     * is - with no session at all. Where no recorder answers - none up, one
+     * before 0.31, one slow to answer - it is started, as the header's Tap
+     * to start again starts it, and the recorder then up is asked: the
+     * revive replaces an older one, and finds a slow one up. Until 1.5 that
+     * case opened an ADB session for the grant, which needs Wireless
+     * debugging on, and Wireless debugging is now off between starts (and
+     * LineageOS switched it off by itself a second after a start already:
+     * on the OnePlus, on Wi-Fi, Show who called said "it needs Wi-Fi",
+     * 2026-11-12). Where no start can be made - no Wi-Fi and no port, JemRec
+     * off with all debugging - there is no answer, as there was no session.
+     * The one difference: the grant can start the recorder, which JemRec
+     * wants up anyway. Not asked again after the recorder said no: a
+     * session's shell would be told the same. Whatever it said, this
+     * process's own word decides, read from Android at the end: the list
+     * the recorder reads is written a moment after the grant, a reply can be
+     * lost after the grant was made, and `cmd` ends well after an exception
+     * too. Once begun it runs to its end: Show who called runs in the
+     * screen's scope, and the screen closed from Recents meanwhile would
+     * drop the answer of a grant Android made, and leave the switch off over
+     * it.
      */
     suspend fun grantNotificationAccess(context: Context): GrantProblem? = withContext(NonCancellable) {
-        val recorderSaid = CaptureDaemon.allowListener(context)
-        val tried = if (recorderSaid != null) {
-            Log.i(
-                TAG,
-                if (recorderSaid) "settings: notif listener -> the recorder said ok"
-                else "settings: notif listener -> the recorder said failed",
-            )
-            GrantProblem.REFUSED
-        } else {
-            val out = grantOverSession(context)
-            Log.i(TAG, "settings: notif listener over a session -> ${out ?: "no session, or it broke"}")
-            if (out == null) GrantProblem.NO_ANSWER else GrantProblem.REFUSED
+        var recorderSaid = CaptureDaemon.allowListener(context)
+        if (recorderSaid == null) {
+            val up = reviveForGrant(context)
+            Log.i(TAG, "settings: notif listener -> no recorder answered; started: $up")
+            if (up) recorderSaid = CaptureDaemon.allowListener(context)
         }
+        Log.i(
+            TAG,
+            when (recorderSaid) {
+                true -> "settings: notif listener -> the recorder said ok"
+                false -> "settings: notif listener -> the recorder said failed"
+                null -> "settings: notif listener -> no answer"
+            },
+        )
+        val tried = if (recorderSaid == null) GrantProblem.NO_ANSWER else GrantProblem.REFUSED
         val granted = DebugNotificationCleaner.accessGranted(context)
         Log.i(TAG, "settings: notif listener granted: $granted")
         if (granted) null else tried
@@ -911,6 +884,11 @@ object Setup {
         ) {
             Log.i(TAG, "reset: Wireless debugging turned off")
         }
+        // Off, so no longer JemRec's to switch off: setup notes it again. And
+        // what the guard learned of this phone, which the next setup learns
+        // again if it is so (Revive.askWirelessOff).
+        NetworkRevive.forgetJemRecs(context)
+        NetworkRevive.forgetWirelessKeepsAdbd(context)
 
         // Ends this process: the permissions are handed back on its end. Where
         // nothing is handed back, it is ended all the same - the ADB library

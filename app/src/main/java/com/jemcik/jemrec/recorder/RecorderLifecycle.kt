@@ -90,8 +90,8 @@ object RecorderLifecycle {
             // With JemRec on, any record is an On cut short - the switch saved,
             // the process gone before the switches came back - finished here.
             // Any, not only one that took the recorder: Developer options would
-            // otherwise stay hidden, and Wireless debugging go off after this
-            // revive, with JemRec on.
+            // otherwise stay hidden, and a Wireless debugging the user had on
+            // stay off, with JemRec on.
             if (admitted.putBack) {
                 ReviveLog.note(context, "revive: JemRec is on with debugging still recorded off; putting it back")
                 DebugSwitchesOff.switchBackOn(context)
@@ -260,6 +260,39 @@ object RecorderLifecycle {
      *  on once the lock is had, for the same reason as [switchOff]. */
     internal suspend fun switchBackOn(context: Context) = lifecycle.withLock {
         if (admit(Trigger.TURN_ON, gates(context)) is Admit.Go) DebugSwitchesOff.switchBackOn(context)
+    }
+
+    /**
+     * Setup's end (Setup.finish), with the recorder up and setup's session
+     * closed: Wireless debugging, which the user switched on to pair, is
+     * JemRec's, to switch off once the recorder is up (Revive.askWirelessOff).
+     * Not in setup's own process, whose WRITE_SECURE_SETTINGS is not live
+     * until it restarts: a start there could not switch it on again
+     * (wirelessOffHeld), so the first look in a later process switches it
+     * off. Where setup runs again in a process that holds the permission -
+     * pair again - it goes off here. A phone set up now is never taken over
+     * as an install from before 1.5 (NetworkRevive.takeOverOnce): marked
+     * here, at setup's own end, not with Setup.markComplete, which every
+     * open with the recorder answering calls again (Setup.decide) - an
+     * update from 1.4 opened before its first revive would lose its
+     * takeover so (review round 2). Taken over, not only marked: a 1.4
+     * install paired again before its first 1.5 revive keeps its When JemRec
+     * is off record of Wireless debugging otherwise, for On to put back for
+     * good (review round 3). Under the lock, as a revive's off is: one
+     * queued behind it finds the recorder up. To its end once begun, as a
+     * revive is: cancelled while it waited for the lock - the pairing
+     * service stopped at its cap, the screen closed - setup's Wireless
+     * debugging was never noted as JemRec's, and stayed on as the user's.
+     */
+    internal suspend fun afterSetup(context: Context) = withContext(Dispatchers.IO + NonCancellable) {
+        lifecycle.withLock {
+            NetworkRevive.takeOverOnce(context)
+            NetworkRevive.noteJemRecs(context)
+            ReviveLog.note(context, "setup: done; Wireless debugging was switched on for it")
+            val w = ReviveWorld.Live(context)
+            // The off took the recorder (the guard): started again.
+            if (!Revive.askWirelessOff(w)) Revive.reviveLocked(w, null, Revive.Request.ROUTINE, Revive.Found())
+        }
     }
 
     /** Start fresh: When JemRec is off forgotten, and Developer options back

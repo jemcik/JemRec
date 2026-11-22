@@ -40,6 +40,10 @@ class ReviveSequenceTest {
 
     private val started = listOf("start", "push", "stand down", "after start")
 
+    /** A start where Wireless debugging is JemRec's: the recorder asked
+     *  for it off once the session is closed, and the note gone with it. */
+    private val startedAndOff = listOf("start", "push", "stand down", "wireless off", "still up?", "forget jemrecs", "after start")
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun TestScope.ms() = testScheduler.currentTime
 
@@ -62,7 +66,7 @@ class ReviveSequenceTest {
         assertEquals(true to ConnectOutcome.NONE, revive(phone))
 
         // On, the four seconds adbd gets, then twenty for Allow; refused.
-        assertEquals(listOf("probe", wifiOn, "note switched on", "note refused"), phone.did)
+        assertEquals(listOf("probe", wifiOn, "note switched on", "note jemrecs", "note refused"), phone.did)
         assertEquals(24_000L, ms())
         assertTrue("revive: Wireless debugging TURN_ON" in phone.log)
         assertEquals("revive: Android refused Wireless debugging on this Wi-Fi", phone.log.last())
@@ -93,9 +97,9 @@ class ReviveSequenceTest {
         assertEquals(1, portChange)
         assertEquals(
             listOf(
-                "probe", wifiOn, "note switched on", "autoConnect 5000",
+                "probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000",
                 "restart tcpip:5555", "close", "note opened true", "connect 5555",
-            ) + started,
+            ) + startedAndOff,
             phone.did,
         )
         assertTrue("revive: port 5555 opened" in phone.log)
@@ -122,11 +126,15 @@ class ReviveSequenceTest {
         val (up, _) = revive(phone, onPortChange = { portChange++ })
 
         // Connected, and adbd left alone: its restart would take the recorder
-        // from the call. The change is the next revive's.
+        // from the call. The change is the next revive's, and so is
+        // Wireless debugging's off.
         assertTrue(up)
         assertEquals(0, portChange)
-        assertEquals(listOf("probe", wifiOn, "note switched on", "autoConnect 5000") + started, phone.did)
+        assertEquals(listOf("probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000") + started, phone.did)
         assertTrue("revive: port 5555 left as it is: a call came" in phone.log)
+        assertTrue("revive: Wireless debugging left on: a call is up; asked at the next look" in phone.log)
+        assertTrue(phone.wireless)
+        assertTrue(phone.jemRecs)
     }
 
     @Test fun aSwitchFlippedBackWhileItWaitsForAnAllowLeavesThePortAlone() = runTest {
@@ -153,7 +161,7 @@ class ReviveSequenceTest {
         // Connected, and adbd left alone: the switch no longer asks for the port.
         assertTrue(up)
         assertEquals(0, portChange)
-        assertEquals(listOf("probe", wifiOn, "note switched on", "autoConnect 5000") + started, phone.did)
+        assertEquals(listOf("probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000") + startedAndOff, phone.did)
         assertTrue("revive: port 5555 left as it is: the switch moved" in phone.log)
     }
 

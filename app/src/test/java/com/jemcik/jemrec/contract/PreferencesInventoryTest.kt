@@ -165,6 +165,7 @@ class PreferencesInventoryTest {
             "select_hint_seen", "setup_background_asked", "setup_complete", "setup_dev_options_confirmed", "setup_paired",
             "start_without_wifi", "tracked_calls", "voip_apps", "voip_call_notes", "voip_names",
             "wireless_debugging_refused_on", "wireless_debugging_switched_on",
+            "wireless_debugging_jemrecs", "wireless_debugging_keeps_adbd", "wireless_debugging_taken_over",
         )
     }
 }

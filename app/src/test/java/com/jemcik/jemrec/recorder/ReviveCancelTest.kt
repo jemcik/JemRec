@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -85,12 +86,17 @@ class ReviveCancelTest {
         val revive = revive(phone)
         // Switched on, four seconds for adbd, connected: starting.
         advanceTimeBy(5_000)
-        assertEquals(listOf("probe", wifiOn, "note switched on", "autoConnect 5000"), phone.did)
+        assertEquals(listOf("probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000"), phone.did)
 
         revive.cancel()
         revive.join()
 
-        // Started, and then what follows a start, its off again included.
-        assertEquals(started, phone.did.takeLast(4))
+        // Started, and then what follows a start, the recorder's off of the
+        // Wireless debugging JemRec switched on included.
+        assertEquals(
+            listOf("start", "push", "stand down", "wireless off", "still up?", "forget jemrecs", "after start"),
+            phone.did.takeLast(7),
+        )
+        assertFalse(phone.wireless)
     }
 }

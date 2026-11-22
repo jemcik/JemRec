@@ -70,6 +70,10 @@ public class WireTest {
         b.put("B LISTENER failed", () -> Wire.listener(false));
         b.put("J PAIRING ok", () -> Wire.pairing(true));
         b.put("J PAIRING failed", () -> Wire.pairing(false));
+        b.put("I WIRELESS off", () -> Wire.WIRELESS_SWITCHED_OFF);
+        b.put("I WIRELESS already-off", () -> Wire.WIRELESS_ALREADY_OFF);
+        b.put("I WIRELESS usb-off", () -> Wire.WIRELESS_USB_OFF);
+        b.put("I WIRELESS refused", () -> Wire.WIRELESS_REFUSED);
         b.put("Z QUALITY 32000", () -> Wire.quality(32_000));
         b.put("K SKIP current", () -> Wire.skip("current"));
         b.put("V VOIP 3 armed", () -> Wire.voip(3, true));
@@ -242,6 +246,7 @@ public class WireTest {
         assertEquals('C', Wire.COMMAND_REPORT);
         assertEquals('B', Wire.COMMAND_ALLOW_LISTENER);
         assertEquals('J', Wire.COMMAND_KEEP_PAIRED);
+        assertEquals('I', Wire.COMMAND_WIRELESS_OFF);
         assertEquals('Z', Wire.COMMAND_SET_QUALITY);
         assertEquals(2, Wire.PROTOCOL_VERSION);
     }

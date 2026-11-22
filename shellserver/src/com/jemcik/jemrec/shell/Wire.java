@@ -167,7 +167,8 @@ final class Wire {
      * whenever recording works: it grants the one component it names,
      * nothing the app could choose, and reads Android's list back for up to
      * two seconds (Listener). Replies LISTENER ok, or LISTENER failed; an
-     * older recorder hangs up on it, and the app takes its session then.
+     * older recorder hangs up on it, and the app starts this one in its
+     * place and asks again (Setup.grantNotificationAccess, since 1.5).
      */
     static final int COMMAND_ALLOW_LISTENER = 'B';
 
@@ -181,6 +182,18 @@ final class Wire {
      * one is up.
      */
     static final int COMMAND_KEEP_PAIRED = 'J';
+
+    /**
+     * Wireless debugging off, after a start (WirelessOff): the app asks once
+     * its ADB session is closed and this process is up, and only for a
+     * Wireless debugging JemRec switched on. Written off only while USB
+     * debugging reads on, as this process reads both. Replies WIRELESS off,
+     * WIRELESS already-off, WIRELESS usb-off (nothing written) or WIRELESS
+     * refused (written, and it did not read back off); a recorder before 1.5
+     * hangs up on it, and the app leaves the switch as it is until a newer
+     * one is up.
+     */
+    static final int COMMAND_WIRELESS_OFF = 'I';
 
     /**
      * THE QUALITY - Settings' choice of how many bits a second a recording is
@@ -272,6 +285,12 @@ final class Wire {
     static String pairing(boolean ok) {
         return "PAIRING " + (ok ? "ok" : "failed");
     }
+
+    /** COMMAND_WIRELESS_OFF's answers (WirelessOff.off). */
+    static final String WIRELESS_SWITCHED_OFF = "WIRELESS off";
+    static final String WIRELESS_ALREADY_OFF = "WIRELESS already-off";
+    static final String WIRELESS_USB_OFF = "WIRELESS usb-off";
+    static final String WIRELESS_REFUSED = "WIRELESS refused";
 
     /** COMMAND_SET_QUALITY's answer: the rate the next recording starts with. */
     static String quality(int bps) {

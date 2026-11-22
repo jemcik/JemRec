@@ -256,6 +256,9 @@ class SettingsScreenshots : ScreenTest() {
         snap("when-off-multitrack")
     }
 
+    // Taller than a phone: the footer's last line, which this one is for,
+    // is below a phone's height since 1.5's line on Wireless debugging.
+    @Config(qualifiers = "+h900dp")
     @Test fun whenOffWhileOff() {
         settings(
             Fixtures.ready().copy(

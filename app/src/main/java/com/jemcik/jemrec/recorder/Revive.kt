@@ -49,8 +49,8 @@ object Revive {
      * Its changes come in pairs whose second half comes later: Wireless
      * debugging off, then on; adbd restarted on the port, then the port
      * noted as JemRec's; an old recorder retired, then the new one started;
-     * Wireless debugging on to start it, then off again where JemRec is off
-     * with Developer options hidden. A revive cancelled in between - a
+     * Wireless debugging on to start it, then off again once it is up
+     * (askWirelessOff). A revive cancelled in between - a
      * worker WorkManager stops, a screen closed from Recents - left the
      * first half alone: Wireless debugging off, a port open that JemRec would
      * never close, no recorder, Wireless debugging on for good. The first
@@ -81,7 +81,12 @@ object Revive {
         // health-check return just below would then skip re-arming it, and the
         // keep-alive that calls this every so often would never restore it.
         // Cheap: a read, and a write only when it has drifted.
-        if (w.setUp()) armShield(w)
+        if (w.setUp()) {
+            armShield(w)
+            // Installs from before 1.5: a Wireless debugging found on is
+            // JemRec's, once (NetworkRevive.takeOverOnce).
+            w.takeOverOnce()
+        }
 
         val running = w.recorder()
         w.note("revive: recorder ${running?.let { "answers, build ${it.build}" } ?: "does not answer"}")
@@ -90,7 +95,14 @@ object Revive {
         // done now (portChangeDue).
         val portChange = PortChange.portChangeDue(w, onWifi)
         val current = running != null && w.current(running)
-        if (current && portChange == null) return true
+        if (current && portChange == null) {
+            // Up, and Wireless debugging JemRec switched on may still be on:
+            // the app stopped between a start and its off, or a call then.
+            // This look switches it off (askWirelessOff) - and where the off
+            // took the recorder with it, starts it again.
+            if (w.setUp() && !askWirelessOff(w)) return steps(w, onPortChange, request, found)
+            return true
+        }
         if (running != null) {
             // Alive, but running the jar an earlier APK staged. Carry on down
             // the same path a dead daemon takes; ensureRunning() does the
@@ -168,81 +180,97 @@ object Revive {
             request = request,
         )
         w.note("revive: Wireless debugging $step")
-        when (step) {
-            WirelessStep.CYCLE -> {
-                // Asked again, by the one who will answer.
-                if (request == Request.ALLOW_WIFI) w.forgetRefused()
-                switchOffAndOn(w, onWifi, answerAwaited = request == Request.ALLOW_WIFI)
+        // Android 12 and 13: the app's own mDNS look, held from before the
+        // switch-on until the connect and any port change are done, so that
+        // no stop of mdnsd lands between adbd's announcement and the look
+        // that finds it (AdbTransport.holdMdns). Null on other versions.
+        val held = if (onWifi) w.holdMdns() else null
+        try {
+            when (step) {
+                WirelessStep.CYCLE -> {
+                    // Asked again, by the one who will answer.
+                    if (request == Request.ALLOW_WIFI) w.forgetRefused()
+                    switchOffAndOn(w, onWifi, answerAwaited = request == Request.ALLOW_WIFI, wasOn = wirelessOn)
+                }
+                WirelessStep.TURN_ON -> if (w.write(GlobalSettings.ADB_WIFI_ENABLED, true)) {
+                    Log.i(TAG, "daemon: re-armed Wireless debugging")
+                    w.noteSwitchedOn()
+                    // Off before, on now: JemRec's, to switch off again once the
+                    // recorder is up (askWirelessOff).
+                    w.noteJemRecs()
+                    delay(ADBD_SETTLE_MS)
+                    // Off again: Android refused it on this Wi-Fi and is asking
+                    // (NetworkRevive.noteWirelessRefused). With the recorder up,
+                    // only the port is at stake: a moment for Allow - the one who
+                    // has just flipped Start without Wi-Fi is there to answer -
+                    // then no more asking on this Wi-Fi (portChangeDue).
+                    if (!wirelessDebuggingOn(w) &&
+                        !(current && withTimeoutOrNull(ALLOW_WAIT_MS) { while (!wirelessDebuggingOn(w)) delay(500) } != null)
+                    ) {
+                        noteRefusal(w)
+                        if (current) return true
+                    }
+                }
+                WirelessStep.LEAVE -> Unit
             }
-            WirelessStep.TURN_ON -> if (w.write(GlobalSettings.ADB_WIFI_ENABLED, true)) {
-                Log.i(TAG, "daemon: re-armed Wireless debugging")
-                w.noteSwitchedOn()
-                delay(ADBD_SETTLE_MS)
-                // Off again: Android refused it on this Wi-Fi and is asking
-                // (NetworkRevive.noteWirelessRefused). With the recorder up,
-                // only the port is at stake: a moment for Allow - the one who
-                // has just flipped Start without Wi-Fi is there to answer -
-                // then no more asking on this Wi-Fi (portChangeDue).
-                if (!wirelessDebuggingOn(w) &&
-                    !(current && withTimeoutOrNull(ALLOW_WAIT_MS) { while (!wirelessDebuggingOn(w)) delay(500) } != null)
+
+            if (!w.connected) {
+                w.note(if (overPort) "revive: connecting on port ${StartWithoutWifi.PORT}, no Wi-Fi" else "revive: connecting")
+                // Asked to allow this Wi-Fi: Android's question is on screen, and
+                // the connect waits for the answer.
+                val lookMs = if (request == Request.ALLOW_WIFI) ALLOW_WAIT_MS else CONNECT_MS
+                var connected = if (overPort) PortChange.connectOnPort(w) else w.autoConnect(lookMs)
+                found.connect = w.lastConnect
+                if (connected.isFailure && found.connect == AdbTransport.ConnectOutcome.NOT_FOUND &&
+                    cycleAfterNotFound(adbd, step, wirelessOn, onWifi, switchedOnHere, request, w.mdnsStops())
                 ) {
-                    noteRefusal(w)
-                    if (current) return true
+                    w.note(
+                        "revive: nothing advertised, " +
+                            "${if (adbd == AdbdState.State.UNKNOWN) "adbd unreadable" else "mDNS may have stopped"}; " +
+                            "switching off and on once on this Wi-Fi",
+                    )
+                    if (switchOffAndOn(w, onWifi, answerAwaited = false, wasOn = wirelessOn)) {
+                        connected = w.autoConnect(CONNECT_MS)
+                        found.connect = w.lastConnect
+                    }
+                }
+                connected.onFailure {
+                    Log.w(TAG, "daemon: no ADB session - ${it.javaClass.simpleName}: ${it.message ?: "no detail"}")
+                    w.note("revive: no ADB session (${found.connect}): ${it.message}")
+                    // Cancelled: Android 12 leaves the switch off (noteWirelessRefused).
+                    if (request == Request.ALLOW_WIFI && onWifi && !wirelessDebuggingOn(w)) noteRefusal(w)
+                    // An older build that is up is still a recorder. Only a daemon
+                    // that is down is a failure here - reporting the other as one
+                    // would have the keep-alive retrying with backoff all day.
+                    return running != null
                 }
             }
-            WirelessStep.LEAVE -> Unit
-        }
-
-        if (!w.connected) {
-            w.note(if (overPort) "revive: connecting on port ${StartWithoutWifi.PORT}, no Wi-Fi" else "revive: connecting")
-            // Asked to allow this Wi-Fi: Android's question is on screen, and
-            // the connect waits for the answer.
-            val lookMs = if (request == Request.ALLOW_WIFI) ALLOW_WAIT_MS else CONNECT_MS
-            var connected = if (overPort) PortChange.connectOnPort(w) else w.autoConnect(lookMs)
-            found.connect = w.lastConnect
-            if (connected.isFailure && found.connect == AdbTransport.ConnectOutcome.NOT_FOUND &&
-                cycleAfterNotFound(adbd, step, wirelessOn, onWifi, switchedOnHere, request)
-            ) {
-                w.note("revive: nothing advertised, adbd unreadable; switching off and on once on this Wi-Fi")
-                if (switchOffAndOn(w, onWifi, answerAwaited = false)) {
-                    connected = w.autoConnect(CONNECT_MS)
+            val change = PortChange.portChangeOver(portChange, w.connectedPort)
+            when {
+                // Asked again: a connect can be half a minute after portChangeDue
+                // asked - adbd's four seconds, Allow's twenty, the look for adbd -
+                // and adbd's restart would take the recorder from a call that came
+                // meanwhile. The change is left for the next revive.
+                change != null && w.inCall() ->
+                    w.note("revive: port ${StartWithoutWifi.PORT} left as it is: a call came")
+                // Nor a change the switch no longer asks for. Flipped back before
+                // the port moved, nothing is due, and the flip's own revive, queued
+                // behind this one, would only undo it, the recorder restarted
+                // twice for nothing.
+                change != null && w.portStep() != change ->
+                    w.note("revive: port ${StartWithoutWifi.PORT} left as it is: the switch moved")
+                change != null -> {
+                    onPortChange?.invoke()
+                    PortChange.changePort(w, open = change == StartWithoutWifi.PortStep.OPEN)
+                    // It connects again after adbd's restart: that connect is this
+                    // revive's reading now, as it was when read at the end.
                     found.connect = w.lastConnect
                 }
+                portChange != null ->
+                    w.note("revive: port ${StartWithoutWifi.PORT} left open: connected over it, no Wireless debugging here")
             }
-            connected.onFailure {
-                Log.w(TAG, "daemon: no ADB session - ${it.javaClass.simpleName}: ${it.message ?: "no detail"}")
-                w.note("revive: no ADB session (${found.connect}): ${it.message}")
-                // Cancelled: Android 12 leaves the switch off (noteWirelessRefused).
-                if (request == Request.ALLOW_WIFI && onWifi && !wirelessDebuggingOn(w)) noteRefusal(w)
-                // An older build that is up is still a recorder. Only a daemon
-                // that is down is a failure here - reporting the other as one
-                // would have the keep-alive retrying with backoff all day.
-                return running != null
-            }
-        }
-        val change = PortChange.portChangeOver(portChange, w.connectedPort)
-        when {
-            // Asked again: a connect can be half a minute after portChangeDue
-            // asked - adbd's four seconds, Allow's twenty, the look for adbd -
-            // and adbd's restart would take the recorder from a call that came
-            // meanwhile. The change is left for the next revive.
-            change != null && w.inCall() ->
-                w.note("revive: port ${StartWithoutWifi.PORT} left as it is: a call came")
-            // Nor a change the switch no longer asks for. Flipped back before
-            // the port moved, nothing is due, and the flip's own revive, queued
-            // behind this one, would only undo it, the recorder restarted
-            // twice for nothing.
-            change != null && w.portStep() != change ->
-                w.note("revive: port ${StartWithoutWifi.PORT} left as it is: the switch moved")
-            change != null -> {
-                onPortChange?.invoke()
-                PortChange.changePort(w, open = change == StartWithoutWifi.PortStep.OPEN)
-                // It connects again after adbd's restart: that connect is this
-                // revive's reading now, as it was when read at the end.
-                found.connect = w.lastConnect
-            }
-            portChange != null ->
-                w.note("revive: port ${StartWithoutWifi.PORT} left open: connected over it, no Wireless debugging here")
+        } finally {
+            held?.close()
         }
 
         w.note("revive: connected, starting the recorder")
@@ -254,10 +282,16 @@ object Revive {
             // for the other case - one that was already running - and it is
             // one round trip. Best-effort.
             w.pushMode()
-            // Wireless debugging was turned on a moment ago to make this
-            // possible. It is not needed again until the next revive.
+            // The session that started it, closed: it is not needed again
+            // until the next start.
             w.standDown()
-            // And off again, if JemRec is off with Developer options hidden.
+            // Wireless debugging off again, if JemRec switched it on: it was
+            // needed only to start the recorder (askWirelessOff). Where the
+            // off took the recorder with it, round once more: switched on,
+            // started, and no off asked on this phone again.
+            if (!askWirelessOff(w)) return steps(w, onPortChange, request, found)
+            // And one that is not JemRec's, where JemRec is off with
+            // Developer options hidden (DebugSwitchesOff.afterRecorderStarted).
             w.afterRecorderStarted()
         }
         return ok
@@ -271,7 +305,7 @@ object Revive {
      * where the user was asked and may still be answering, which the
      * connect's long look waits out. True if both writes landed.
      */
-    private suspend fun switchOffAndOn(w: ReviveWorld, onWifi: Boolean, answerAwaited: Boolean): Boolean {
+    private suspend fun switchOffAndOn(w: ReviveWorld, onWifi: Boolean, answerAwaited: Boolean, wasOn: Boolean): Boolean {
         Log.i(TAG, "daemon: switching Wireless debugging off and on")
         val cycled = cycleWirelessDebugging(w)
         w.note("revive: switched off and on: $cycled")
@@ -279,7 +313,13 @@ object Revive {
         // Once: that starts adbd, and a revive that fails after it fails for
         // some other reason, which cycling again would only hide.
         w.forgetCable()
-        if (onWifi) w.noteSwitchedOn()
+        if (onWifi) {
+            w.noteSwitchedOn()
+            // Off before the revive - a cable's stop with the switch off -
+            // and on now: JemRec's. On before, it stays whose it was: the
+            // user's stays on, JemRec's goes off (askWirelessOff).
+            if (!wasOn) w.noteJemRecs()
+        }
         delay(ADBD_SETTLE_MS)
         if (onWifi && !answerAwaited && !wirelessDebuggingOn(w)) noteRefusal(w)
         return true
@@ -303,6 +343,118 @@ object Revive {
     }
 
     internal fun wirelessDebuggingOn(w: ReviveWorld) = w.read(GlobalSettings.ADB_WIFI_ENABLED) == GlobalSettings.Reading.ON
+
+    /**
+     * WIRELESS DEBUGGING OFF AGAIN, ONCE THE RECORDER IS UP.
+     *
+     * Wireless debugging is needed only to start the recorder: once it is
+     * up, it serves loopback, and USB debugging - the setting, no cable -
+     * keeps adbd, and so the recorder, alive (armShield). On, it leaves any
+     * computer ever paired with this phone able to open a shell on it with
+     * no question asked, the phone announcing itself on the Wi-Fi with its
+     * serial number, and adbd's TLS port open to the network (plan 1.5).
+     * Written off with USB debugging on, the recorder kept its process: on
+     * the Honor (MagicOS 11, Android 17), 2026-10-26, with no cable, through
+     * Wi-Fi off and on, six minutes locked and a call recorded, and
+     * 2026-11-21, a computer's cable in, adbd and the recorder with the same
+     * process IDs 8 s after; LineageOS does it
+     * by itself a second after a start (the OnePlus, 2026-11-12); and two
+     * Shizuku forks ship it, thedjchi's after every start and Stellar's
+     * after a start it has confirmed.
+     *
+     * The recorder writes it, not the app (DaemonClient.wirelessOff): it
+     * reads both switches as the shell, true where Android hides them from
+     * apps, and writes it off only while USB debugging reads on - off with
+     * USB debugging off would stop adbd, and the recorder with it. Asked
+     * only for a Wireless debugging JemRec switched on (NetworkRevive.
+     * noteJemRecs): one the user switched on for a computer stays on. And
+     * only where [wirelessOffHeld] holds nothing back: called where the
+     * recorder is up and current - a revive's early return and its start,
+     * setup's end. Each answer is a line in revive.log; off, or off already,
+     * the note goes. Not off, it is asked again at the next look that finds
+     * the recorder up.
+     *
+     * THE GUARD (the user's choice, 2026-11-21, reversing the plan's pick
+     * 7). A phone where the off stops adbd though USB debugging is on has
+     * not been seen - not on the Honor, the S23, the AVDs, in AOSP's
+     * AdbService 12 to 17 (stopAdbd only once neither transport is enabled),
+     * nor by the titles of the issues of thedjchi's Shizuku fork, which
+     * ships the off - but
+     * on one, every start would end with the recorder gone, and nothing
+     * would say so. So after an answer of off, or none - a recorder taken
+     * with adbd may go before it answers - 2 s, and the recorder asked the
+     * confirmed way. Gone: noted for good (NetworkRevive.noteWirelessKeepsAdbd)
+     * and false, and the caller goes round once more, which switches it on
+     * and starts the recorder, with no off asked on this phone again. True
+     * otherwise.
+     */
+    internal suspend fun askWirelessOff(w: ReviveWorld): Boolean {
+        val held = wirelessOffHeld(
+            jemRecs = w.jemRecs(),
+            keepsAdbd = w.keepsAdbd(),
+            inCall = w.inCall(),
+            canSwitchOn = w.canSwitchOn(),
+        )
+        if (held != null) {
+            if (held != OffHeld.NOT_JEMRECS) w.note("revive: Wireless debugging left on: ${held.why}")
+            return true
+        }
+        // A session still open - the stand-down's one ping missed a recorder
+        // that is up - would be cut by the off; kept, every look after would
+        // find it open. Closed: the recorder is up, and needs it no more
+        // (review round 1).
+        if (w.connected) {
+            w.note("revive: an ADB session was left open; closed before the off")
+            w.close()
+        }
+        val answer = w.wirelessOff()
+        w.note("revive: Wireless debugging off - the recorder says ${answer ?: "nothing"}")
+        if (answer == DaemonClient.WirelessOff.SWITCHED_OFF || answer == null) {
+            delay(OFF_GUARD_MS)
+            if (!w.recorderStillUp()) {
+                w.noteKeepsAdbd()
+                w.note("revive: the recorder went with Wireless debugging; it stays on on this phone from now")
+                return false
+            }
+        }
+        if (answer == DaemonClient.WirelessOff.SWITCHED_OFF || answer == DaemonClient.WirelessOff.ALREADY_OFF) {
+            w.forgetJemRecs()
+        }
+        return true
+    }
+
+    /** How long the guard waits after an off before it asks for the
+     *  recorder (askWirelessOff). */
+    internal const val OFF_GUARD_MS = 2_000L
+
+    /** Why Wireless debugging is not switched off now (wirelessOffHeld). */
+    internal enum class OffHeld(val why: String) {
+        NOT_JEMRECS("not JemRec's"),
+        KEEPS_ADBD("on this phone it keeps adbd up"),
+        IN_CALL("a call is up; asked at the next look"),
+        CANNOT_SWITCH_ON("this process could not switch it on again; asked at a later look"),
+    }
+
+    /**
+     * Whether the recorder is asked for Wireless debugging off now
+     * ([askWirelessOff]): null to ask, or why not. Only JemRec's. Never on a
+     * phone where an off took the recorder (the guard). Not mid-call, as the
+     * port is not changed mid-call (portChangeDue); the call's end has the
+     * keep-alive look again (kickAfterCall). And only where this process can
+     * switch it on again for the next start: setup's own process, whose
+     * WRITE_SECURE_SETTINGS is live only from the next one, or one whose
+     * permission was taken back, would leave the next start nothing to
+     * connect to, where 1.4 found it on (review round 1; the user's choice,
+     * 2026-11-21).
+     */
+    internal fun wirelessOffHeld(jemRecs: Boolean, keepsAdbd: Boolean, inCall: Boolean, canSwitchOn: Boolean): OffHeld? =
+        when {
+            !jemRecs -> OffHeld.NOT_JEMRECS
+            keepsAdbd -> OffHeld.KEEPS_ADBD
+            inCall -> OffHeld.IN_CALL
+            !canSwitchOn -> OffHeld.CANNOT_SWITCH_ON
+            else -> null
+        }
 
     internal enum class WirelessStep { CYCLE, TURN_ON, LEAVE }
 
@@ -354,7 +506,14 @@ object Revive {
      * advertised with the switch on is adbd not running or a Wi-Fi Android
      * has not allowed, which a revive cannot tell apart: one off and on per
      * Wi-Fi connection starts the first, and asks once about the second.
-     * Only after a revive that left the switch as it was.
+     * And on Android 12 and 13 ([mdnsStops]) with adbd running: NsdService
+     * stops mdnsd 10 s after the last app's request, and adbd's announcement
+     * goes with it until the next switch-on (AdbTransport.holdMdns) - on the
+     * Android 12 AVD, 2026-11-21, nothing was found 15 s after setup, and
+     * all of it after a switch off and on. A Wireless debugging found on -
+     * the user's, or JemRec's whose off was missed - is announced afresh by
+     * one off and on (review round 1). Only after a revive that left the
+     * switch as it was.
      */
     internal fun cycleAfterNotFound(
         adbd: AdbdState.State,
@@ -363,7 +522,8 @@ object Revive {
         onWifi: Boolean,
         switchedOnHere: Boolean,
         request: Request,
-    ): Boolean = adbd == AdbdState.State.UNKNOWN && step == WirelessStep.LEAVE && on && onWifi &&
+        mdnsStops: Boolean = false,
+    ): Boolean = (adbd == AdbdState.State.UNKNOWN || mdnsStops) && step == WirelessStep.LEAVE && on && onWifi &&
         mayCycleAgain(switchedOnHere, request)
 
     private fun mayCycleAgain(switchedOnHere: Boolean, request: Request) =
