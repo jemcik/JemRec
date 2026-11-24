@@ -867,6 +867,7 @@ object Setup {
         // Nor what was said, or put away, of the Battery setting and of
         // notifications: set up again, they are said again (review, 2026-11-18).
         com.jemcik.jemrec.system.BatteryHealth.forgetAll(context)
+        com.jemcik.jemrec.system.UsbDefault.forgetAll(context)
         com.jemcik.jemrec.calls.NotificationHealth.forget(context)
         // When JemRec is off back to its default, and Developer options back
         // if it hid them: setup's second step goes there.
@@ -888,7 +889,7 @@ object Setup {
         // what the guard learned of this phone, which the next setup learns
         // again if it is so (Revive.askWirelessOff).
         NetworkRevive.forgetJemRecs(context)
-        NetworkRevive.forgetWirelessKeepsAdbd(context)
+        NetworkRevive.forgetOffLosses(context)
 
         // Ends this process: the permissions are handed back on its end. Where
         // nothing is handed back, it is ended all the same - the ADB library

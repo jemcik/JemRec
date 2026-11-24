@@ -470,6 +470,23 @@ class HomeScreenshots : ScreenTest() {
         snap("home-ask-first-battery-restricted")
     }
 
+    /** The Default USB configuration that stops the recorder at every lock
+     *  (UsbDefault): what it costs, Set to No data transfer, and Not now. */
+    @Test fun usbDefaultStopsTheRecorder() {
+        home(Fixtures.ready().copy(usbDefaultNotice = true, usbDefaultFunctions = com.jemcik.jemrec.system.UsbDefault.FUNCTION_MTP))
+        compose.onNodeWithText(com.jemcik.jemrec.system.UsbDefault.TITLE).assertIsDisplayed()
+        compose.onNodeWithText("Developer options' Default USB configuration is File transfer", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Set to No data transfer").assertIsDisplayed()
+        compose.onNodeWithText("Not now").assertIsDisplayed()
+        snap("home-usb-default")
+    }
+
+    /** Switched off, nothing it records is lost: no card. */
+    @Test fun usbDefaultIsNotSaidWhileOff() {
+        home(Fixtures.ready().copy(enabled = false, usbDefaultNotice = true, usbDefaultFunctions = com.jemcik.jemrec.system.UsbDefault.FUNCTION_MTP))
+        compose.onNodeWithText(com.jemcik.jemrec.system.UsbDefault.TITLE).assertDoesNotExist()
+    }
+
     @Test fun notificationsOffInAskFirstCannotBePutOff() {
         home(Fixtures.ready().copy(automatic = false, notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL))
         compose.onNodeWithText("no call is recorded", substring = true).assertIsDisplayed()

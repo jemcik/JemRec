@@ -288,7 +288,7 @@ object Revive {
             // Wireless debugging off again, if JemRec switched it on: it was
             // needed only to start the recorder (askWirelessOff). Where the
             // off took the recorder with it, round once more: switched on,
-            // started, and no off asked on this phone again.
+            // started, and no off asked again in this revive.
             if (!askWirelessOff(w)) return steps(w, onPortChange, request, found)
             // And one that is not JemRec's, where JemRec is off with
             // Developer options hidden (DebugSwitchesOff.afterRecorderStarted).
@@ -383,15 +383,25 @@ object Revive {
      * on one, every start would end with the recorder gone, and nothing
      * would say so. So after an answer of off, or none - a recorder taken
      * with adbd may go before it answers - 2 s, and the recorder asked the
-     * confirmed way. Gone: noted for good (NetworkRevive.noteWirelessKeepsAdbd)
-     * and false, and the caller goes round once more, which switches it on
-     * and starts the recorder, with no off asked on this phone again. True
-     * otherwise.
+     * confirmed way. Gone, it is the off's doing only if nothing else explains
+     * it (lostAfterOff): no off seen to happen; adbd running, as a USB change -
+     * a lock, an unlock, the Default USB configuration set - restarts it and
+     * the recorder in its cgroup goes (measured 2026-11-23, the Android 12 and
+     * 16 AVDs: adbd down 0.05 s); or a USB change that stopped it, noted by
+     * the cable's watch (the Honor's lock, 2026-11-24: adbd read STOPPED).
+     * What is left counts, stopped or unreadable: twice in a row it stays on
+     * from then on this phone, until Start fresh (NetworkRevive.noteOffLoss);
+     * an off the recorder answered and survived clears the count. A loss that
+     * does not count is asked about again at the next look. Either way false,
+     * and the caller goes round once more, which switches it on and starts the
+     * recorder, with no off asked again in this revive (offLost): a phone that
+     * loses it every time is not left looping in one. True otherwise.
      */
     internal suspend fun askWirelessOff(w: ReviveWorld): Boolean {
         val held = wirelessOffHeld(
             jemRecs = w.jemRecs(),
             keepsAdbd = w.keepsAdbd(),
+            lost = w.offLost,
             inCall = w.inCall(),
             canSwitchOn = w.canSwitchOn(),
         )
@@ -411,9 +421,13 @@ object Revive {
         w.note("revive: Wireless debugging off - the recorder says ${answer ?: "nothing"}")
         if (answer == DaemonClient.WirelessOff.SWITCHED_OFF || answer == null) {
             delay(OFF_GUARD_MS)
-            if (!w.recorderStillUp()) {
-                w.noteKeepsAdbd()
-                w.note("revive: the recorder went with Wireless debugging; it stays on on this phone from now")
+            if (w.recorderStillUp()) {
+                // Survived an off it answered; no answer, and the recorder up,
+                // is no off seen - it is asked again at the next look.
+                if (answer == DaemonClient.WirelessOff.SWITCHED_OFF) w.forgetOffLosses()
+            } else {
+                w.offLost = true
+                lostAfterOff(w, answer)
                 return false
             }
         }
@@ -423,6 +437,52 @@ object Revive {
         return true
     }
 
+    /** The recorder gone [OFF_GUARD_MS] after an off: the off's doing only if
+     *  adbd is stopped, or cannot be read, and nothing else explains it
+     *  (askWirelessOff's guard): no off seen to happen - the recorder gone
+     *  before it could answer, Wireless debugging still on; or a USB change
+     *  that stopped adbd, noted by the cable's watch (CableWatch) - the
+     *  Honor's lock stops it, 2026-11-24. */
+    private suspend fun lostAfterOff(w: ReviveWorld, answer: DaemonClient.WirelessOff?) {
+        if (answer == null && wirelessDebuggingOn(w)) {
+            w.note("revive: the recorder went before Wireless debugging's off, which it never answered: not its doing; asked off at the next look")
+            return
+        }
+        val adbd = adbdOnceSettled(w)
+        when {
+            adbd == AdbdState.State.RUNNING -> w.note(
+                "revive: the recorder went within 2 s of Wireless debugging's off, but adbd runs: not its doing; asked off at the next look",
+            )
+            w.cableStopped() -> w.note(
+                "revive: the recorder went within 2 s of Wireless debugging's off, a USB change having stopped adbd: not its doing; asked off at the next look",
+            )
+            w.noteOffLoss() -> w.note("revive: the recorder went with Wireless debugging; it stays on on this phone from now")
+            else -> w.note("revive: the recorder went with Wireless debugging's off, adbd $adbd; a second in a row keeps it on here")
+        }
+    }
+
+    /** adbd's state, given [OFF_ADBD_SETTLE_MS] to run: a stop and a start are
+     *  passed through - "restarting" and "stopping" read as UNKNOWN, as does a
+     *  property that cannot be read - and where it lands is what counts. Read
+     *  again every quarter second. */
+    private suspend fun adbdOnceSettled(w: ReviveWorld): AdbdState.State {
+        var now = w.adbd()
+        withTimeoutOrNull(OFF_ADBD_SETTLE_MS) {
+            while (now != AdbdState.State.RUNNING) {
+                delay(250)
+                now = w.adbd()
+            }
+        }
+        return now
+    }
+
+    /** How long the guard waits for adbd to run again before it counts the
+     *  recorder's loss as the off's. A restart after a USB change took 0.05 s
+     *  on the Android 12 and 16 AVDs (2026-11-23); the Honor's lock left it
+     *  stopped (2026-11-24: read STOPPED 4 s after one), until a revive
+     *  switched Wireless debugging off and on. */
+    internal const val OFF_ADBD_SETTLE_MS = 2_000L
+
     /** How long the guard waits after an off before it asks for the
      *  recorder (askWirelessOff). */
     internal const val OFF_GUARD_MS = 2_000L
@@ -431,6 +491,7 @@ object Revive {
     internal enum class OffHeld(val why: String) {
         NOT_JEMRECS("not JemRec's"),
         KEEPS_ADBD("on this phone it keeps adbd up"),
+        LOST_THIS_REVIVE("the recorder went after an off in this revive; asked at the next look"),
         IN_CALL("a call is up; asked at the next look"),
         CANNOT_SWITCH_ON("this process could not switch it on again; asked at a later look"),
     }
@@ -438,7 +499,8 @@ object Revive {
     /**
      * Whether the recorder is asked for Wireless debugging off now
      * ([askWirelessOff]): null to ask, or why not. Only JemRec's. Never on a
-     * phone where an off took the recorder (the guard). Not mid-call, as the
+     * phone where two offs in a row took the recorder, nor again in a revive
+     * whose off did (the guard). Not mid-call, as the
      * port is not changed mid-call (portChangeDue); the call's end has the
      * keep-alive look again (kickAfterCall). And only where this process can
      * switch it on again for the next start: setup's own process, whose
@@ -447,10 +509,17 @@ object Revive {
      * connect to, where 1.4 found it on (review round 1; the user's choice,
      * 2026-11-21).
      */
-    internal fun wirelessOffHeld(jemRecs: Boolean, keepsAdbd: Boolean, inCall: Boolean, canSwitchOn: Boolean): OffHeld? =
+    internal fun wirelessOffHeld(
+        jemRecs: Boolean,
+        keepsAdbd: Boolean,
+        lost: Boolean,
+        inCall: Boolean,
+        canSwitchOn: Boolean,
+    ): OffHeld? =
         when {
             !jemRecs -> OffHeld.NOT_JEMRECS
             keepsAdbd -> OffHeld.KEEPS_ADBD
+            lost -> OffHeld.LOST_THIS_REVIVE
             inCall -> OffHeld.IN_CALL
             !canSwitchOn -> OffHeld.CANNOT_SWITCH_ON
             else -> null

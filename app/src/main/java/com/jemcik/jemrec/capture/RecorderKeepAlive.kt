@@ -96,6 +96,13 @@ class RecorderKeepAlive(
         // waiting is left alone.
         RecorderLifecycle.arm(applicationContext, Trigger.KEEP_ALIVE)
         val alive = CaptureDaemon.revive(applicationContext)
+        // The Default USB configuration asked of the recorder, up, and said
+        // once if it stops the recorder at every lock: the run is where
+        // JemRec learns of it while nobody opens it (UsbDefault).
+        if (alive) {
+            runCatching { com.jemcik.jemrec.system.UsbDefault.check(applicationContext) }.rethrowingCancellation()
+                .onFailure { Log.w(TAG, "keepalive: the USB default not read", it) }
+        }
         // Off Wi-Fi is exactly when the Wi-Fi watch must be armed, and the
         // one place it reliably can be: armed on Wi-Fi it fires at once and
         // the system drops it. See NetworkRevive.

@@ -46,6 +46,10 @@ internal fun notStarted(cause: RecorderHealth.Problem?): String = when (cause) {
     null -> "JemRec is off, or setup has not finished"
 }
 
+/** A start that failed, and why: Start recorder's line, and Set to No data
+ *  transfer's when the recorder it needs would not start. */
+internal fun couldNotStart(cause: RecorderHealth.Problem?): String = "could not start the recorder: ${notStarted(cause)}"
+
 /**
  * Setup's steps and the recorder's state, from the screen: the setup check
  * at every return to the app, the record control, the tile watched while
@@ -488,7 +492,7 @@ internal class RecorderAndSetup(
         if (CaptureDaemon.revive(app, request = CaptureDaemon.Request.USER)) {
             log.say("recorder running on 127.0.0.1:${CaptureDaemon.PORT}")
         } else {
-            log.say("could not start the recorder: ${notStarted(RecorderHealth.cause(app))}")
+            log.say(couldNotStart(RecorderHealth.cause(app)))
         }
         reading.refresh()
     }
@@ -687,6 +691,17 @@ internal class RecorderAndSetup(
         KeepPaired.choose(app, keep)
         // From the setup step, move on to the next one.
         if (state.value.step != SetupStep.READY) recheckSetup() else reading.now()
+    }
+
+    /**
+     * Set to No data transfer: the USB default card's button, and its
+     * notification's (UsbDefault.setNone). What came of it in a snackbar,
+     * then a reading: the card goes once the recorder's answer is none.
+     */
+    fun setUsbDefaultNone() = actions.run(Action.USB_DEFAULT_NONE) {
+        val outcome = com.jemcik.jemrec.system.UsbDefault.setNone(app)
+        log.tell(com.jemcik.jemrec.system.UsbDefault.said(outcome, RecorderHealth.cause(app)))
+        reading.now()
     }
 
     /** Guards against two bring-ups racing when the screen is reopened. */

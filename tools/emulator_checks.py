@@ -2718,6 +2718,31 @@ def press(label):
     return False
 
 
+def settings_written(what):
+    """The app's settings file written for good: its old copy
+    (jemrec.xml.bak) gone and the file the same a second apart.
+
+    Android moves the old file aside, writes the new one, and deletes the old
+    last; a process killed in that gap gets the old one back
+    (SharedPreferencesImpl). Choosing a folder writes it twice - the folder,
+    then the flag "said" taken back - and folder_lost force-stopped the app
+    some 60 ms after the new file could be read: the folder, or the flag's
+    taking back, was lost, so nothing was said of it - in 18 of 27 tries on
+    the 13 and 16 AVDs, with the app from before 1.7's change too
+    (2026-11-23); waiting for the .bak alone left 2 of 12."""
+    def snap():
+        if ".bak" in su(f"ls {APP_DIR}/shared_prefs/"):
+            return None
+        return su(f"md5sum {APP_DIR}/{PREFS}")
+
+    def quiet():
+        one = snap()
+        time.sleep(1)
+        return one and one == snap()
+
+    wait_for(quiet, 20, what, step=0.2)
+
+
 def pick_folder(name):
     """Settings' Saving to, Change, and /sdcard/[name] chosen in Android's own
     folder picker, as a person chooses it: from the phone's storage, which the
@@ -2735,6 +2760,7 @@ def pick_folder(name):
     press("Allow")
     wait_for(lambda: f"tree/primary%3A{name}<" in app_file(PREFS), 15,
              f"{name} kept as the folder to save to")
+    settings_written(f"{name} kept as the folder to save to")
 
 
 def recently_deleted_folder():
@@ -3936,6 +3962,196 @@ def usb_mode():
         quietly(sh, "settings put global adb_wifi_enabled 0")
         start_recorder_after()
 
+
+
+LOCK_PIN = "1234"
+
+
+def usb_default(functions=""):
+    """Developer options' Default USB configuration set as Settings sets it
+    (`svc usb setScreenUnlockedFunctions`, empty for No data transfer), in an
+    adb call of its own: the change can restart adbd under the shell that
+    runs it, which cut the commands after it in one call (2026-11-23)."""
+    try:
+        adb("shell", f"svc usb setScreenUnlockedFunctions {functions}".strip(), timeout=15)
+    except subprocess.TimeoutExpired:
+        pass  # adbd going away under the command is the point
+    adb("wait-for-device", timeout=60)
+    wait_for(adb_ready, 60, "adb back after the USB default's change")
+
+
+def usb_default_now():
+    """The Default USB configuration as Android dumps it - no line for none."""
+    m = re.search(r"screen_unlocked_functions=([A-Z_,]+)", sh("dumpsys usb"))
+    return m.group(1) if m else "none"
+
+
+def usb_locked(locked=True):
+    """Whether Android's USB service takes the phone for locked - only with a
+    secure lock (UsbDeviceManager.onKeyguardStateChanged) - and so switches
+    the USB functions."""
+    return f"screen_locked={'true' if locked else 'false'}" in sh("dumpsys usb")
+
+
+def lock_now():
+    """The power key, as a person locks the phone - only with the screen on,
+    where it puts it off - and the PIN lock screen up."""
+    if "mWakefulness=Awake" in sh("dumpsys power | grep -m1 mWakefulness="):
+        sh("input keyevent KEYCODE_POWER")
+    adb("wait-for-device", timeout=60)
+    wait_for(adb_ready, 60, "adb back after the lock")
+    wait_for(usb_locked, 15, "Android to take the phone for locked")
+
+
+def unlock_now():
+    """The phone woken and the PIN typed, as a person unlocks it."""
+    sh("input keyevent KEYCODE_WAKEUP")
+    time.sleep(1)
+    sh("wm dismiss-keyguard")
+    time.sleep(1)
+    sh(f"input text {LOCK_PIN}")
+    sh("input keyevent KEYCODE_ENTER")
+    adb("wait-for-device", timeout=60)
+    wait_for(adb_ready, 60, "adb back after the unlock")
+    wait_for(lambda: usb_locked(False), 15, "Android to take the phone for unlocked")
+
+
+def usb_default_lock():
+    """A screen lock with a data mode as the Default USB configuration (1.7,
+    #131, tmp/issue-131/PLAN.md). With a PIN and no cable, AOSP's
+    UsbDeviceManager switches the USB functions to charging at every lock and
+    back to the default at every unlock ("We are unlocked when the keyguard
+    is down or non-secure", MSG_UPDATE_SCREEN_LOCK); with File transfer as
+    the default each switch restarts adbd, and the recorder, in adbd's
+    cgroup, goes with it - and Android sends no USB_STATE for either, so
+    1.6's watch never runs. On the Android 12, 16 and 17 AVDs, 2026-11-23,
+    on 1.6: the recorder gone 5 s after the lock and still down 60 s on; a
+    lock 5 s into a call saved 5.64 s of a 15.80 s call.
+
+    Here: the kill made first, so the check is seen to see it; then home's
+    card (UsbDefault, the recorder's answer and a secure lock); its Set to No
+    data transfer, which has the recorder write none and queues the
+    USB-state watch, as the write itself restarts adbd here; and then what
+    the card is for - locks that keep the recorder, a call while locked and
+    a lock during a call recorded whole (exact). The PIN, the lock screen's
+    switch and the default put back after, each in an adb call of its own."""
+    lock_was_off = sh("locksettings get-disabled").strip() == "true"
+    said = []
+    start_recorder()
+    log_start = revive_log()
+    try:
+        sh("locksettings set-disabled false")
+        assert "Pin set" in sh(f"locksettings set-pin {LOCK_PIN}"), "the PIN was not set"
+        usb_default("mtp")
+        assert usb_default_now() == "MTP", f"the default reads {usb_default_now()}, not MTP"
+        # The change itself can end the recorder (a mode change, 1.6's watch
+        # brings it back); opened, JemRec starts it in any case.
+        sh(f"am start -n {PKG}/.MainActivity")
+        wait_for(recorder_answers, 60, "the recorder up with File transfer as the default", step=1)
+
+        # The kill the card is about, first: no check can pass that does not
+        # see it.
+        before = daemon_pid()
+        sh("input keyevent KEYCODE_HOME")
+        lock_now()
+        wait_for(lambda: daemon_pid() != before or not recorder_answers(), 15, "the lock to end the recorder")
+        said.append("the lock ended the recorder")
+        unlock_now()
+
+        # Home's card, once a reading has the recorder's answer: opened again
+        # until it lands (the open starts the recorder, the reading asks it).
+        def card(shown):
+            if on_screen("Locking your phone stops the recorder") == shown:
+                return True
+            sh(f"am start -n {PKG}/.MainActivity")
+            return False
+
+        wait_for(lambda: card(True), 60, "home's card about the USB default", step=3)
+        assert on_screen("Not now"), "the card has no Not now"
+        wait_for(recorder_answers, 30, "the recorder up under the card", step=1)
+
+        # Its button: the recorder writes none after it answers, and is
+        # brought back by the watch the tap queues.
+        before = daemon_pid()
+        sh("logcat -c")
+        log_before = revive_log()
+        tapped = time.time()
+        assert tap("Set to No data transfer"), "the card's button is not on screen"
+        wait_for(lambda: usb_default_now() == "none", 20, "the default none after the tap", step=1)
+        wait_for(lambda: daemon_pid() not in (None, before) and recorder_answers(), 40,
+                 "the recorder back after the tap", step=1)
+        took = time.time() - tapped
+        assert "cable: USB state changed; watching" in revive_since(log_before), "the tap queued no USB-state watch"
+        # Logged before the write: the write can end the recorder at once.
+        assert "usb: Default USB configuration asked (1) - USB setting" in log(), "the recorder did not take the set"
+        wait_for(lambda: card(False), 30, "the card gone once the default is none", step=3)
+        said.append(f"the tap: none, the recorder back {took:.0f} s after")
+
+        # What it is for.
+        kept = daemon_pid()
+        for _ in range(2):
+            lock_now()
+            unlock_now()
+        assert daemon_pid() == kept and recorder_answers(), f"a lock ended the recorder ({kept} -> {daemon_pid()})"
+        said.append("two locks and unlocks kept it")
+        sh("input keyevent KEYCODE_HOME")
+        lock_now()
+
+        def call(lock_during):
+            """An incoming call answered, [lock_during] it locked 3 s in,
+            and ended by the caller - the network's end, as a key may do
+            nothing on a locked phone."""
+            sh("logcat -c")
+            rings, answers = count(r"callwatch: ringing"), count(r"off-hook \(")
+            adb("emu", "gsm", "call", STRANGER_IN)
+            wait_more(r"callwatch: ringing", rings, 15, "the call to ring")
+            time.sleep(2)
+            sh("input keyevent KEYCODE_CALL")
+            wait_more(r"off-hook \(", answers, 15, "the call to be answered")
+            time.sleep(3)
+            if lock_during:
+                lock_now()
+            time.sleep(5)
+            adb("emu", "gsm", "cancel", STRANGER_IN)
+            wait_for(phone_idle, 15, "the call to end")
+            return exact("_in_")
+
+        said.append(f"a call while locked: {call(lock_during=False)}")
+        unlock_now()
+        time.sleep(10)  # no early skip within 10 s of the last call's end (rules)
+        said.append(f"a lock during a call: {call(lock_during=True)}")
+        assert daemon_pid() == kept, f"the lock during the call ended the recorder ({kept} -> {daemon_pid()})"
+        # The guard after an off must not blame the off for a USB change: a
+        # lock, an unlock and the default set restart adbd. Before 1.7 one
+        # loss was noted for good, and it tripped on all four AVDs in this
+        # check's lock and unlock (2026-11-23). Now none is counted here -
+        # adbd runs again - and none is kept.
+        guard = [l for l in revive_since(log_start).splitlines()
+                 if any(said_ in l for said_ in ("it stays on on this phone from now",
+                                                 "a second in a row keeps it on here",
+                                                 "on this phone it keeps adbd up"))]
+        assert not guard, f"the guard blamed the off: {guard[0]}"
+        spared = revive_since(log_start).count("not its doing")
+        said.append(f"{spared} losses not blamed on the off")
+        return "; ".join(said)
+    finally:
+        quietly(no_call_left)
+        # Unlocked with the PIN, not the PIN cleared under a locked phone: on
+        # Android 12 that left the keyguard up for good, `wm dismiss-keyguard`
+        # and all, with Android's USB service still taking the phone for
+        # locked - and the checks after it, newest_version, folder_lost and
+        # killed_mid_save, found the lock screen where Settings' gear should
+        # be (2026-11-23). On 13, 16 and 17 the same cleared without it.
+        if quietly(usb_locked):
+            quietly(unlock_now)
+        quietly(sh, "input keyevent KEYCODE_WAKEUP")
+        quietly(sh, f"locksettings clear --old {LOCK_PIN}")
+        if lock_was_off:
+            quietly(sh, "locksettings set-disabled true")
+        quietly(sh, "wm dismiss-keyguard")
+        if quietly(usb_default_now) != "none":
+            quietly(usb_default)
+        start_recorder_after()
 
 def wifi_on(on):
     sh(f"cmd wifi set-wifi-enabled {'enabled' if on else 'disabled'}")
@@ -5602,6 +5818,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
           debugging_off, off_just_left, background, allow_this_wifi, wireless_between_starts, usb_mode,
+          usb_default_lock,
           refused_grant,
           listener_grant, keep_paired,
           telegram_builds, newest_version, opus_valid, notifications_off, folder_lost,

@@ -221,23 +221,36 @@ object NetworkRevive {
     }
 
     /**
-     * Switching Wireless debugging off took the recorder with it on this
-     * phone: adbd stopped though USB debugging was on (Revive.askWirelessOff's
-     * guard). Never seen - not on the Honor, the S23, the AVDs, in AOSP 12 to
-     * 17, nor by the titles of the issues of thedjchi's Shizuku fork, which
-     * ships the off - but where
-     * it happens, every start would end with the recorder gone. Noted for
-     * good: no off is asked on this phone again, until Start fresh.
+     * Switching Wireless debugging off took the recorder, with adbd stopped or
+     * not readable: counted, and true when it is the second in a row
+     * ([OFF_LOSSES_KEPT]) - Wireless debugging then stays on this phone, until
+     * Start fresh (Revive.askWirelessOff's guard). A phone where the off stops
+     * adbd has not been seen - not on the Honor, the S23, the AVDs, in AOSP 12
+     * to 17, nor by the titles of the issues of thedjchi's Shizuku fork, which
+     * ships the off - but on one every start would end with the recorder gone.
+     * One loss is not enough: until 1.7 one was noted for good. Where a USB
+     * change leaves adbd running, the loss is not counted at all (measured
+     * 2026-11-23, Android 12 and 16); a phone that leaves it stopped with no
+     * note of why would otherwise be blamed for one coincidence. Kept in
+     * preferences, so the count outlives the process and the revive.
      */
-    fun noteWirelessKeepsAdbd(context: Context) {
-        Prefs.of(context).edit { putBoolean(KEY_KEEPS_ADBD, true) }
+    fun noteOffLoss(context: Context): Boolean {
+        val losses = offLosses(context) + 1
+        Prefs.of(context).edit { putInt(KEY_OFF_LOSSES, losses) }
+        return losses >= OFF_LOSSES_KEPT
     }
 
-    fun wirelessKeepsAdbd(context: Context): Boolean = Prefs.of(context).getBoolean(KEY_KEEPS_ADBD, false)
-
-    fun forgetWirelessKeepsAdbd(context: Context) {
-        Prefs.of(context).edit { remove(KEY_KEEPS_ADBD) }
+    /** An off the recorder survived: the count starts over. */
+    fun forgetOffLosses(context: Context) {
+        val prefs = Prefs.of(context)
+        if (prefs.contains(KEY_OFF_LOSSES)) prefs.edit { remove(KEY_OFF_LOSSES) }
     }
+
+    /** Wireless debugging stays on this phone: two offs in a row took the
+     *  recorder (noteOffLoss). */
+    fun wirelessKeepsAdbd(context: Context): Boolean = offLosses(context) >= OFF_LOSSES_KEPT
+
+    private fun offLosses(context: Context): Int = Prefs.of(context).getInt(KEY_OFF_LOSSES, 0)
 
     /** A note under [key] for the Wi-Fi connection the phone is on now
      *  ([connection]); none off Wi-Fi. */
@@ -271,7 +284,12 @@ object NetworkRevive {
     private const val KEY_SWITCHED_ON = "wireless_debugging_switched_on"
     private const val KEY_JEMRECS = "wireless_debugging_jemrecs"
     private const val KEY_TAKEN_OVER = "wireless_debugging_taken_over"
-    private const val KEY_KEEPS_ADBD = "wireless_debugging_keeps_adbd"
+    /** Counts offs that took the recorder in a row; 1.5's and 1.6's one-loss
+     *  note was `wireless_debugging_keeps_adbd`, not read any more. */
+    private const val KEY_OFF_LOSSES = "wireless_debugging_off_losses"
+
+    /** How many in a row keep Wireless debugging on. */
+    internal const val OFF_LOSSES_KEPT = 2
 
     private fun pendingIntent(context: Context): PendingIntent {
         val intent = Intent(context, NetworkReviveReceiver::class.java)

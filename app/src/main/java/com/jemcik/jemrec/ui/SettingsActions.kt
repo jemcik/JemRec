@@ -99,6 +99,13 @@ internal class SettingsActions(
         state.update { it.copy(batteryNotice = false) }
     }
 
+    /** The USB default card's Not now: put away for the functions it names. */
+    fun dismissUsbDefaultNotice() {
+        val functions = state.value.usbDefaultFunctions ?: return
+        com.jemcik.jemrec.system.UsbDefault.dismiss(app, functions)
+        state.update { it.copy(usbDefaultNotice = false) }
+    }
+
     /** Never offered again once waved away. An optional feature that keeps
      *  asking is not optional. */
     fun dismissCallLogOffer() {

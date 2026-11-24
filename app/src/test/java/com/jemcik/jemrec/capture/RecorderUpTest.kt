@@ -246,9 +246,11 @@ class RecorderUpTest {
         // The missed-call check reads the call log, and asks nothing without it.
         shadowOf(context).grantPermissions(Manifest.permission.READ_CALL_LOG)
         assertEquals(Result.success(), keepAlive())
-        // The revive's ping, then the reconcile's list, then the missed-call
-        // check's (MissedCalls.check asks what the recorder still holds).
-        assertEquals(listOf("P", "L", "L"), heard())
+        // The revive's ping, the Default USB configuration asked of the
+        // recorder up (UsbDefault.check), then the reconcile's list, then the
+        // missed-call check's (MissedCalls.check asks what the recorder
+        // still holds).
+        assertEquals(listOf("P", "U", "L", "L"), heard())
         val log = TestPhone.reviveLog(context)
         assertEquals(listOf("keepalive: run (attempt 1)", "revive: start"), log.take(2))
         assertEquals("revive: recorder up (connect NONE)", log.last())

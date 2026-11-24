@@ -421,6 +421,41 @@ class ReadingTest : ScreenTest() {
         assertEquals(com.jemcik.jemrec.calls.NotificationHealth.Off.ALL, vm.state.value.notificationsOff)
     }
 
+    /** A reading asks for the Default USB configuration - the recorder's
+     *  last answer kept, none answering here - and the lock, and lands the
+     *  card from both; Not now puts it away at once (UsbDefault). */
+    @Test fun aReadingLandsTheUsbDefaultCard() {
+        Recordings.override = { emptyList() }
+        com.jemcik.jemrec.system.UsbDefault.keep(app, com.jemcik.jemrec.system.UsbDefault.FUNCTION_MTP)
+        org.robolectric.Shadows.shadowOf(app.getSystemService(android.app.KeyguardManager::class.java)).setIsDeviceSecure(true)
+        val vm = viewModel(UiState())
+        refreshed(vm)
+        assertEquals(com.jemcik.jemrec.system.UsbDefault.FUNCTION_MTP, vm.state.value.usbDefaultFunctions)
+        assertEquals(true, vm.state.value.secureLock)
+        assertEquals(true, vm.state.value.usbDefaultNotice)
+        vm.dismissUsbDefaultNotice()
+        assertEquals(false, vm.state.value.usbDefaultNotice)
+        refreshed(vm)
+        assertEquals("put away for File transfer", false, vm.state.value.usbDefaultNotice)
+        settle(vm)
+    }
+
+    /** A view model made as Android makes it - nothing read yet - keeps the
+     *  USB card's Not now: its first look at the saved settings forgot it,
+     *  and the card was back at every open after the process ended (review
+     *  round 2). */
+    @Test fun aNewViewModelKeepsTheUsbCardPutAway() {
+        Recordings.override = { emptyList() }
+        com.jemcik.jemrec.system.UsbDefault.keep(app, com.jemcik.jemrec.system.UsbDefault.FUNCTION_MTP)
+        com.jemcik.jemrec.system.UsbDefault.dismiss(app, com.jemcik.jemrec.system.UsbDefault.FUNCTION_MTP)
+        org.robolectric.Shadows.shadowOf(app.getSystemService(android.app.KeyguardManager::class.java)).setIsDeviceSecure(true)
+        val vm = viewModel(UiState(listUnread = true))
+        refreshed(vm)
+        assertEquals(com.jemcik.jemrec.system.UsbDefault.FUNCTION_MTP, vm.state.value.usbDefaultFunctions)
+        assertEquals(false, vm.state.value.usbDefaultNotice)
+        settle(vm)
+    }
+
     /** Not now on a notice shows the next one down at once, not at the
      *  next reading (review round 11). */
     @Test fun notNowShowsTheNextNoticeDownAtOnce() {

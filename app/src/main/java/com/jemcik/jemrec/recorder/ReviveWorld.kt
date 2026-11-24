@@ -61,10 +61,16 @@ internal interface ReviveWorld {
     fun forgetJemRecs()
     fun takeOverOnce()
 
-    /** Switching Wireless debugging off took the recorder on this phone
-     *  (NetworkRevive.noteWirelessKeepsAdbd). */
+    /** The guard after an off (Revive.askWirelessOff): Wireless debugging is
+     *  kept on this phone, as two offs in a row took the recorder; an off
+     *  that did counted, true when it was the second; and the count cleared
+     *  by one the recorder survived (NetworkRevive.noteOffLoss). */
     fun keepsAdbd(): Boolean
-    fun noteKeepsAdbd()
+    fun noteOffLoss(): Boolean
+    fun forgetOffLosses()
+
+    /** An off in this revive took the recorder: none is asked in it again. */
+    var offLost: Boolean
 
     /** This process can write the debugging switches (Setup.hasSecureSettings):
      *  not setup's own, whose permission is live only from the next. */
@@ -122,7 +128,9 @@ internal interface ReviveWorld {
         override fun noteSwitchedOn() = NetworkRevive.noteSwitchedOn(context)
         override fun jemRecs() = NetworkRevive.jemRecs(context)
         override fun keepsAdbd() = NetworkRevive.wirelessKeepsAdbd(context)
-        override fun noteKeepsAdbd() = NetworkRevive.noteWirelessKeepsAdbd(context)
+        override fun noteOffLoss() = NetworkRevive.noteOffLoss(context)
+        override fun forgetOffLosses() = NetworkRevive.forgetOffLosses(context)
+        override var offLost = false
         override fun canSwitchOn() = com.jemcik.jemrec.setup.Setup.hasSecureSettings(context)
         override suspend fun recorderStillUp() = DaemonLauncher.probeConfirmed(context) != null
         override fun noteJemRecs() = NetworkRevive.noteJemRecs(context)

@@ -68,8 +68,9 @@ class OneWindowTest {
         assertTrue(DeepLink.leadsElsewhere(DeepLink.intent(app, DeepLink.Kind.PLAY, "a.ogg")))
         // The taps that open JemRec where a problem is shown are openings,
         // as home's were until 1.2 (review round 10) - and Choose again, a
-        // button that opens home under the folder picker.
-        for (kind in listOf(DeepLink.Kind.CALLS, DeepLink.Kind.SETTINGS, DeepLink.Kind.CHOOSE_FOLDER)) {
+        // button that opens home under the folder picker, and Set to No data
+        // transfer, which opens home with its card as it sets it.
+        for (kind in listOf(DeepLink.Kind.CALLS, DeepLink.Kind.SETTINGS, DeepLink.Kind.CHOOSE_FOLDER, DeepLink.Kind.USB_DEFAULT_NONE)) {
             assertFalse("$kind", DeepLink.leadsElsewhere(DeepLink.intent(app, kind)))
         }
     }

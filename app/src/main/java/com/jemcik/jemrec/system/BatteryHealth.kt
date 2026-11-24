@@ -102,6 +102,7 @@ object BatteryHealth {
 
     /** What the notification said, taken back: cancelled, and to be said
      *  again the next time it is due. */
+    @Synchronized
     private fun takeBack(context: Context) {
         val prefs = Prefs.of(context)
         if (prefs.getBoolean(KEY_TOLD, false)) {
@@ -154,25 +155,51 @@ object BatteryHealth {
      * manager.
      */
     fun tellIfRestricted(context: Context) {
-        val prefs = Prefs.of(context)
         if (!restricted(context)) {
             forget(context)
             return
         }
-        if (!com.jemcik.jemrec.recorder.RecorderSwitch.isOn(context) ||
-            !com.jemcik.jemrec.setup.Setup.isComplete(context)
-        ) {
+        if (!onAndSetUp(context)) {
             takeBack(context)
             return
         }
-        if (prefs.getBoolean(KEY_TOLD, false)) return
-        // Put away with "Not now" for the words it would say: switched off,
-        // what was told is taken back and forgotten, the dismissal kept - so
-        // switched on again it was posted anew, with its sound, its tap
-        // opening home with the card still put away (review round 10).
+        val words = currentWords(context)
+        if (toldOrPutAway(context, words)) return
+        // Built before the lock - its PendingIntents ask Android's activity
+        // manager - so Not now, on the main thread, waits on a notify at
+        // most (review round 3: lock contention is an ANR cause,
+        // developer.android.com).
+        postOnce(context, build(context, words, quietly = false), words)
+    }
+
+    /** Told already, or put away with "Not now" for the [words] it would
+     *  say: switched off, what was told is taken back and forgotten, the
+     *  dismissal kept - so switched on again it was posted anew, with its
+     *  sound, its tap opening home with the card still put away (review
+     *  round 10). */
+    private fun toldOrPutAway(context: Context, words: String): Boolean {
+        val prefs = Prefs.of(context)
+        if (prefs.getBoolean(KEY_TOLD, false)) return true
         val askFirst = RecordingMode.of(context) == RecordingMode.ON_DEMAND
-        if (dismissable(askFirst) && prefs.getString(KEY_DISMISSED, null) == currentWords(context)) return
-        post(context, quietly = false)
+        return dismissable(askFirst) && prefs.getString(KEY_DISMISSED, null) == words
+    }
+
+    /** JemRec on and set up: only then is it said. */
+    private fun onAndSetUp(context: Context): Boolean =
+        com.jemcik.jemrec.recorder.RecorderSwitch.isOn(context) && com.jemcik.jemrec.setup.Setup.isComplete(context)
+
+    /** Said, under the lock the taking back holds: each preference the
+     *  decision read is read again there, as since then another thread may
+     *  have said it, Not now put it away, JemRec been switched off or the
+     *  mode changed (review round 4); Battery Restricted, a question to
+     *  Android, is left to the next look. */
+    @androidx.annotation.VisibleForTesting
+    @Synchronized
+    internal fun postOnce(context: Context, notification: android.app.Notification, words: String) {
+        if (toldOrPutAway(context, words) || !onAndSetUp(context) || currentWords(context) != words) return
+        val seen = com.jemcik.jemrec.calls.AfterCall.notifyProblem(context, NOTIFICATION_ID, notification, "battery")
+        // Told once - if it could be seen; else at the next start.
+        if (seen) Prefs.of(context).edit { putBoolean(KEY_TOLD, true) }
     }
 
     /** The mode or call tracking changed: what the notification says, if it
@@ -188,17 +215,40 @@ object BatteryHealth {
             forget(context)
             return
         }
-        if (!com.jemcik.jemrec.recorder.RecorderSwitch.isOn(context) || !com.jemcik.jemrec.setup.Setup.isComplete(context)) {
+        if (!onAndSetUp(context)) {
             takeBack(context)
             return
         }
         val showing = runCatching {
             context.getSystemService(android.app.NotificationManager::class.java).activeNotifications.any { it.id == NOTIFICATION_ID }
         }.getOrDefault(false)
-        if (showing) post(context, quietly = true)
+        if (!showing) return
+        val words = currentWords(context)
+        repost(context, build(context, words, quietly = true), words)
     }
 
-    private fun post(context: Context, quietly: Boolean) {
+    /** Said again in place, quietly - unless taken back, or put away with
+     *  Not now, since refresh looked: Not now keeps it told and cancels it,
+     *  and a repost after that brought it back, with its sound (review
+     *  round 4). A swipe in that same moment, milliseconds, still brings it
+     *  back with its sound: setOnlyAlertOnce holds only while it shows, and
+     *  the platform builder has no setSilent (RecorderHealth's silent group
+     *  is not used here for a race that narrow). */
+    @androidx.annotation.VisibleForTesting
+    @Synchronized
+    internal fun repost(context: Context, notification: android.app.Notification, words: String) {
+        val prefs = Prefs.of(context)
+        if (!prefs.getBoolean(KEY_TOLD, false)) return
+        val askFirst = RecordingMode.of(context) == RecordingMode.ON_DEMAND
+        if (dismissable(askFirst) && prefs.getString(KEY_DISMISSED, null) == words) return
+        // The words again, as postOnce: a mode changed twice in between left
+        // the older words over the newer (review round 5).
+        if (currentWords(context) != words) return
+        com.jemcik.jemrec.calls.AfterCall.notifyProblem(context, NOTIFICATION_ID, notification, "battery")
+    }
+
+    /** The notification, built with no lock held. */
+    private fun build(context: Context, words: String, quietly: Boolean): android.app.Notification {
         // The tap: home, whose card says it too; the button: App info.
         val home = android.app.PendingIntent.getActivity(
             context, 0, com.jemcik.jemrec.DeepLink.home(context), android.app.PendingIntent.FLAG_IMMUTABLE,
@@ -214,16 +264,15 @@ object BatteryHealth {
             com.jemcik.jemrec.DeepLink.intent(context, com.jemcik.jemrec.DeepLink.Kind.BATTERY_SETTINGS),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val built = com.jemcik.jemrec.calls.AfterCall.problem(context, TITLE, currentWords(context), home, "Open App info" to appInfo)
+        return com.jemcik.jemrec.calls.AfterCall.problem(context, TITLE, words, home, "Open App info" to appInfo)
             .setOnlyAlertOnce(quietly)
-        val seen = com.jemcik.jemrec.calls.AfterCall.notifyProblem(context, NOTIFICATION_ID, built.build(), "battery")
-        // Told once - if it could be seen; else at the next start.
-        if (seen) Prefs.of(context).edit { putBoolean(KEY_TOLD, true) }
+            .build()
     }
 
     /** "Not now": the notice put away for the words it says now - and the
      *  notification with it, still told: its tap opened home, where the card
      *  it pointed to was put away (review round 9). */
+    @Synchronized
     fun dismiss(context: Context) {
         Prefs.of(context).edit { putString(KEY_DISMISSED, currentWords(context)) }
         com.jemcik.jemrec.calls.AfterCall.cancelProblem(context, NOTIFICATION_ID)

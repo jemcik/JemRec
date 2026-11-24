@@ -99,6 +99,11 @@ internal enum class Action(val label: String, val whenBusy: WhenBusy, val outliv
      *  switch, which is not greyed, as the one above. */
     KEEP_PAIRED("keep paired", WhenBusy.QUEUED, outlivesTheScreen = true),
 
+    /** Set to No data transfer, the USB default card's button and its
+     *  notification's (UsbDefault.setNone): the card's button is never
+     *  greyed, so a tap during an opening's check waits its turn. */
+    USB_DEFAULT_NONE("set the USB default", WhenBusy.QUEUED, outlivesTheScreen = true),
+
     /** Delete all for good, said yes to in its dialog. */
     DELETE_FOR_GOOD("delete for good", WhenBusy.QUEUED, outlivesTheScreen = true),
 

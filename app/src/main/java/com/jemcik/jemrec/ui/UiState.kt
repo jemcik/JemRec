@@ -141,6 +141,19 @@ data class UiState(
      *  reading found it - null before any: what [batteryNotice] is decided
      *  from, with the mode and a dismissal, as the reading lands. */
     val batteryRestricted: Boolean? = null,
+    /** The Default USB configuration stops the recorder at every lock, to be
+     *  said on home (UsbDefault.notice). */
+    val usbDefaultNotice: Boolean = false,
+    /** The Default USB configuration as the recorder last said it,
+     *  UsbManager's bits - null before any: what [usbDefaultNotice] is
+     *  decided from, with [secureLock] and a dismissal. */
+    val usbDefaultFunctions: Long? = null,
+    /** A tap tried to set it to none - asked, or refused as unreadable -
+     *  and it reads a data mode still (UsbDefault.didNotStay). */
+    val usbDefaultDidNotStay: Boolean = false,
+    /** Whether the lock is a PIN, pattern or password, as the last reading
+     *  found it - null before any. */
+    val secureLock: Boolean? = null,
     /** The folder chosen for recordings can no longer be reached
      *  (FolderAccess): saves go elsewhere, and its recordings do not show. */
     val folderLost: Boolean = false,

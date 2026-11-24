@@ -201,6 +201,77 @@ class BatteryHealthTest {
         assertTrue("put away, left away", told() == 0)
     }
 
+    private fun aBuilt() = com.jemcik.jemrec.calls.AfterCall.problem(
+        app, BatteryHealth.TITLE, "built before the lock",
+        android.app.PendingIntent.getActivity(app, 0, android.content.Intent(), android.app.PendingIntent.FLAG_IMMUTABLE),
+    ).build()
+
+    /** Review round 4: a telling past its look posts nothing where, since,
+     *  JemRec was switched off or the mode changed its words: each
+     *  preference it decided on is read again under the lock. With nothing
+     *  changed, it posts. */
+    @Test fun aTellingPastItsLookReadsItsPreferencesAgain() {
+        setUpAndOn()
+        val words = BatteryHealth.words(askFirst = false, trackingOff = false)
+        com.jemcik.jemrec.recorder.RecorderSwitch.set(app, false)
+        BatteryHealth.postOnce(app, aBuilt(), words)
+        assertEquals("switched off since", 0, told())
+        com.jemcik.jemrec.recorder.RecorderSwitch.set(app, true)
+        RecordingMode.set(app, RecordingMode.ON_DEMAND)
+        BatteryHealth.postOnce(app, aBuilt(), words)
+        assertEquals("other words since", 0, told())
+        RecordingMode.set(app, RecordingMode.AUTOMATIC)
+        BatteryHealth.postOnce(app, aBuilt(), words)
+        assertEquals("nothing changed since: said", 1, told())
+    }
+
+    /** Review round 4: Not now between refresh's look and its repost - it
+     *  keeps the notification told, and cancels it - is not undone. */
+    @Test fun aRepostAfterNotNowPostsNothing() {
+        setUpAndOn()
+        shadowOf(app.getSystemService(ActivityManager::class.java)).setBackgroundRestricted(true)
+        BatteryHealth.tellIfRestricted(app)
+        assertEquals(1, told())
+        BatteryHealth.dismiss(app)
+        BatteryHealth.repost(app, aBuilt(), BatteryHealth.words(askFirst = false, trackingOff = false))
+        assertEquals("put away, left away", 0, told())
+    }
+
+    /** Review round 5: a telling is posted once - the flag read again under
+     *  the lock, as another thread may have told it - and not where Not now
+     *  put it away. */
+    @Test fun aTellingIsPostedOnce() {
+        setUpAndOn()
+        val words = BatteryHealth.words(askFirst = false, trackingOff = false)
+        val notifications = app.getSystemService(android.app.NotificationManager::class.java)
+        BatteryHealth.postOnce(app, aBuilt(), words)
+        assertEquals(1, told())
+        notifications.cancelAll()
+        BatteryHealth.postOnce(app, aBuilt(), words)
+        assertEquals("told already", 0, told())
+        Prefs.of(app).edit().clear().commit()
+        setUpAndOn()
+        BatteryHealth.dismiss(app)
+        BatteryHealth.postOnce(app, aBuilt(), words)
+        assertEquals("put away", 0, told())
+    }
+
+    /** Review round 5: a mode changed twice between refresh's look and its
+     *  repost - the words it was built for are no longer the words. */
+    @Test fun aRepostWithOtherWordsPostsNothing() {
+        setUpAndOn()
+        val notifications = app.getSystemService(android.app.NotificationManager::class.java)
+        shadowOf(app.getSystemService(ActivityManager::class.java)).setBackgroundRestricted(true)
+        BatteryHealth.tellIfRestricted(app)
+        assertEquals(1, told())
+        notifications.cancelAll()
+        RecordingMode.set(app, RecordingMode.ON_DEMAND)
+        BatteryHealth.repost(app, aBuilt(), BatteryHealth.words(askFirst = false, trackingOff = false))
+        assertEquals("other words", 0, told())
+        BatteryHealth.repost(app, aBuilt(), BatteryHealth.words(askFirst = true, trackingOff = false))
+        assertEquals("its words now", 1, told())
+    }
+
     /** "Not now" on home's card takes the notification down too, still
      *  told: its tap opened home, where the card had been put away. */
     @Test fun notNowTakesTheNotificationDownStillTold() {

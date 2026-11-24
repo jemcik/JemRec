@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2705 JVM tests, no device needed - 2292 for the app and 413 for the daemon:
+2776 JVM tests, no device needed - 2354 for the app and 422 for the daemon:
 
     ./gradlew test
 
@@ -496,7 +496,15 @@ kill, adbd and the recorder with it - and the recorder back within 40 s by
 JemRec's run of the cable's watch, woken by the broadcast, and Wireless
 debugging off again after: over Wireless debugging with port 5555 shut on
 Android 16 and 17, over port 5555 on 12 and 13, where the emulator's adbd
-leaves NsdService unable to find anything after its restart.
+leaves NsdService unable to find anything after its restart. Then a screen
+lock with *File transfer* as the Default USB configuration (1.7, #131): a PIN
+set, the default set with `svc usb setScreenUnlockedFunctions`, the lock seen
+to end the recorder first; home's card, and its *Set to No data transfer*
+setting none and the recorder brought back by the USB-state watch the tap
+queues; then two locks and unlocks that keep it, a call while locked and one
+locked 3 s in, each saved whole (`exact`); the PIN, the lock screen's switch
+and the default put back after, each in an adb call of its own, as a USB
+change can end the shell that runs it.
 Then setup's last step on a phone that refuses its grant, as an OPPO, OnePlus
 or realme does until *Disable system optimization* is on (issues #61, #64;
 the debug build answers with #64's refusal, as an emulator grants): told that

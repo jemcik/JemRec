@@ -122,6 +122,8 @@ object RecorderSwitch {
             // while JemRec is on (BatteryHealth.tellIfRestricted).
             runCatching { com.jemcik.jemrec.system.BatteryHealth.tellIfRestricted(app) }
                 .onFailure { Log.w("JemRec", "battery: not looked at as the switch turned", it) }
+            runCatching { com.jemcik.jemrec.system.UsbDefault.tellIfAtRisk(app) }
+                .onFailure { Log.w("JemRec", "usb default: not looked at as the switch turned", it) }
         }
     }
 

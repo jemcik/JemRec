@@ -2277,8 +2277,34 @@ SETUP = [
           "again by itself, as after an unplug, without the *Checking the "
           "recorder* notification an unplug shows. And leave Developer options' "
           "**Default USB configuration** at *No data transfer*: set to anything "
-          "else, Android switches to it by itself when you unlock the phone "
-          "with the cable in."),
+          "else, Android switches to it by itself at every unlock - with a "
+          "screen lock, the next section."),
+
+    ("h2", "A screen lock and the USB default"),
+    ("p", "With a PIN, pattern or password, Android switches USB to charging "
+          "at every lock and back to Developer options' **Default USB "
+          "configuration** at every unlock. Where that is a data mode, such as "
+          "*File transfer*, each switch stops the recorder, and on some phones "
+          "it stays down until you open JemRec, or for 15 minutes or more, "
+          "until its next check: calls while the phone is locked go "
+          "unrecorded, and locking it during a call cuts the recording. A swipe "
+          "lock, or no lock, does not do it. Measured on the Android 12, 16 and "
+          "17 emulators and an Honor, where JemRec had the recorder back 16 "
+          "seconds after each lock and unlock; reported on a Redmi Note 9S."),
+    ("p", "So while it is set that way, a card on the home screen says so - "
+          "*Locking your phone stops the recorder* - and a notification once. "
+          "**Set to No data transfer** sets it for you; the recorder is back "
+          "by itself 10 to 16 seconds later on the emulators, and locks no "
+          "longer stop it. While a call rings or is up, or a recording is being "
+          "saved, it asks you to try again in a moment; with the recorder "
+          "down and unable to start, it says why - such as no Wi-Fi, or "
+          "Wireless debugging not allowed on this network. "
+          "With *No data "
+          "transfer*, a phone plugged into a computer only charges until you "
+          "choose *File transfer* in its USB notification. **Not now** puts the "
+          "card away until the setting or the lock changes. If JemRec cannot "
+          "set it, or it does not stay, the card says how to set it by hand: "
+          "Developer options, *Default USB configuration*, *No data transfer*."),
 
     ("h2", "Stopped in the background"),
     ("p", "Some phones stop apps in the background to save power. The recorder "
@@ -2374,10 +2400,12 @@ SETUP = [
           "turned off so it stays on screen for a minute only - either way it "
           "waits in the notification shade, easy to miss mid-call; or when the folder "
           "you chose for recordings can no longer be reached - moved, deleted, "
-          "its drive taken out, or its access taken back - "
-          "with the way to put it right: **Turn on**, **Open App info**, or "
-          "**Choose again**. **Not now** puts the notifications and battery "
-          "cards away until what they say changes - never one where no call "
+          "its drive taken out, or its access taken back; or when a screen "
+          "lock would stop the recorder (*A screen lock and the USB default*) - "
+          "with the way to put it right: **Turn on**, **Open App info**, "
+          "**Choose again**, or **Set to No data transfer**. **Not now** puts "
+          "the notifications, battery and USB cards away until what they say "
+          "changes - never one where no call "
           "is recorded: Ask first's question off, or the battery card in Ask "
           "first."),
     ("p", "And when the app is closed, in notifications. Tapping one that "
@@ -2449,6 +2477,12 @@ SETUP = [
          "JemRec is on, its words kept to what it costs now; gone once it is "
          "lifted or JemRec is turned off. Tapped, JemRec's card says the same; "
          "**Open App info** and allow its background use on its battery page."],
+        ["**Locking your phone stops the recorder**", "Developer options' "
+         "Default USB configuration is a data mode and your lock is a PIN, "
+         "pattern or password, so each lock and unlock stops the recorder. "
+         "Once, while it lasts and JemRec is on; gone once it is set, or the "
+         "lock is no longer one of those. **Set to No data transfer** sets it, "
+         "as the card on the home screen does."],
         ["**Checking the recorder**", "A USB cable went in or came out, and "
          "the recorder went with it: JemRec is starting it again. A few "
          "seconds; a cable that changed nothing shows nothing. Minutes on a "
@@ -3411,7 +3445,8 @@ FEATURES = [
      "down, a call went unrecorded or was saved "
      "away from your folder, or the phone stopped JemRec or held it back in the "
      "background. The home screen says so while JemRec's notifications are off, "
-     "its battery use is Restricted or its folder is out of reach. A call that "
+     "its battery use is Restricted, its folder is out of reach, or a screen "
+     "lock would stop the recorder &mdash; that one fixed with a tap. A call that "
      "came out wrong? <em>Copy a "
      "report</em> in Diagnostics says how it was recorded, for an issue on "
      "GitHub.",
@@ -3465,6 +3500,10 @@ PRIVACY_POINTS = [
      "none by itself. With <em>Start without Wi-Fi</em> on, port 5555 is open "
      "too, to every network the phone joins, and announced there by the "
      "phone&rsquo;s serial number."),
+    ("adb", "Your Default USB configuration only at your tap",
+     "Developer options&rsquo; <em>Default USB configuration</em> changes only "
+     "when you tap <em>Set to No data transfer</em>, and JemRec never sets it "
+     "back."),
 ]
 
 FAQ = [
@@ -3530,6 +3569,21 @@ FAQ = [
      "needs Wi-Fi once, as before. The cost is the open port, on every network "
      "the phone joins whenever USB debugging is on &mdash; unless <em>Turn all "
      "debugging off</em> goes with JemRec."),
+    ("Why aren&rsquo;t calls recorded while my phone is locked?",
+     "Most often, Developer options&rsquo; <strong>Default USB "
+     "configuration</strong>. With a PIN, pattern or password, Android switches "
+     "USB to charging at every lock and back to that setting at every unlock; "
+     "where it is a data mode, such as <em>File transfer</em>, each switch "
+     "stops the debugging service the recorder runs under, and the recorder "
+     "with it &mdash; on some phones until you open JemRec, or for 15 minutes "
+     "or more, until its next check (<a href=\"https://github.com/jemcik/JemRec/issues/131\">issue "
+     "#131</a>). Since 1.7 the home screen says so, with <strong>Set to No data "
+     "transfer</strong>: one tap, and a lock no longer stops it. A phone "
+     "plugged into a computer then only charges until you choose <em>File "
+     "transfer</em> in its USB notification. A swipe lock, or no lock, does "
+     "not do it: Android counts the phone as unlocked. Set to <em>No data "
+     "transfer</em> already? Then the phone may be stopping JemRec in the "
+     "background: see <a href=\"#get-started\">Get started</a>, step 3."),
     ("Why isn&rsquo;t it on Google Play?",
      "Play removed call recorders in 2022 by forbidding the Accessibility API "
      "for recording, and no policy change since has re-opened the door. That is "
@@ -3966,7 +4020,10 @@ HOW_BODY = f"""
      has ended &mdash; file transfer on a Galaxy S23, charging only on an Honor
      &mdash; and there Android&rsquo;s own USB broadcast wakes the app, which
      runs the same watch as a background job. A
-     charger stops nothing.</p>
+     charger stops nothing. With a PIN, pattern or password, a lock and an
+     unlock can stop it too, where Developer options&rsquo; <em>Default USB
+     configuration</em> is a data mode; JemRec says so on the home screen and
+     sets it to <em>No data transfer</em> with one tap.</p>
   {timeline("unplug")}
   <p>Some phones also stop apps in the background to save power, and a stopped
      JemRec cannot start the recorder again once it goes. JemRec cannot change

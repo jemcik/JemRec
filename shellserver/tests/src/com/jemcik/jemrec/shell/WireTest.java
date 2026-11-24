@@ -75,6 +75,10 @@ public class WireTest {
         b.put("I WIRELESS usb-off", () -> Wire.WIRELESS_USB_OFF);
         b.put("I WIRELESS refused", () -> Wire.WIRELESS_REFUSED);
         b.put("Z QUALITY 32000", () -> Wire.quality(32_000));
+        b.put("U USB default 4", () -> Wire.usbDefault(4));
+        b.put("U USB setting", () -> Wire.USB_SETTING);
+        b.put("U USB busy", () -> Wire.USB_BUSY);
+        b.put("U USB unreadable", () -> Wire.USB_UNREADABLE);
         b.put("K SKIP current", () -> Wire.skip("current"));
         b.put("V VOIP 3 armed", () -> Wire.voip(3, true));
         b.put("W WATCH 1 since=1761990000000 watching=1 looper=ok mode=1 call=0 events=4 lastevent=1761990100000"
@@ -248,6 +252,7 @@ public class WireTest {
         assertEquals('J', Wire.COMMAND_KEEP_PAIRED);
         assertEquals('I', Wire.COMMAND_WIRELESS_OFF);
         assertEquals('Z', Wire.COMMAND_SET_QUALITY);
+        assertEquals('U', Wire.COMMAND_USB_DEFAULT);
         assertEquals(2, Wire.PROTOCOL_VERSION);
     }
 

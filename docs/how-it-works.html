@@ -143,7 +143,10 @@
      has ended &mdash; file transfer on a Galaxy S23, charging only on an Honor
      &mdash; and there Android&rsquo;s own USB broadcast wakes the app, which
      runs the same watch as a background job. A
-     charger stops nothing.</p>
+     charger stops nothing. With a PIN, pattern or password, a lock and an
+     unlock can stop it too, where Developer options&rsquo; <em>Default USB
+     configuration</em> is a data mode; JemRec says so on the home screen and
+     sets it to <em>No data transfer</em> with one tap.</p>
   <figure class="chart"><p class="chart-title">Unplugged from a computer, back by itself</p><div class="tl-row"><span class="tl-label">Screen on</span><div class="tl-track"><span class="seg ok" style="left: 0.00%; width: 15.00%"></span><span class="seg down" style="left: 15.00%; width: 45.00%">not recording</span><span class="seg ok" style="left: 60.00%; width: 40.00%">12 s</span></div></div><div class="tl-row"><span class="tl-label">Screen on, again</span><div class="tl-track"><span class="seg ok" style="left: 0.00%; width: 15.00%"></span><span class="seg down" style="left: 15.00%; width: 65.00%">not recording</span><span class="seg ok" style="left: 80.00%; width: 20.00%">16 s</span></div></div><div class="tl-row"><span class="tl-label">Screen off, on Manage manually</span><div class="tl-track"><span class="seg ok" style="left: 0.00%; width: 15.00%"></span><span class="seg down" style="left: 15.00%; width: 50.00%">not recording</span><span class="seg ok" style="left: 65.00%; width: 35.00%">13 s</span></div></div><div class="tl-axis" aria-hidden="true"><span style="left: 0.00%">0</span><span style="left: 15.00%">3</span><span style="left: 50.00%">10</span><span style="left: 100.00%">20 s</span></div><figcaption>Three seconds after the cable comes out Android stops its ADB daemon, and the recorder goes with it. JemRec, woken in those seconds, starts it again over Wi-Fi with nothing tapped.<span class="src">Honor Magic 8 Pro, Android 17, October 2026 &middot; ARCHITECTURE.md, Unplugged from a computer</span></figcaption></figure>
   <p>Some phones also stop apps in the background to save power, and a stopped
      JemRec cannot start the recorder again once it goes. JemRec cannot change

@@ -135,6 +135,63 @@ final class Platform {
         }
     }
 
+    /** Android's USB service, the hidden IUsbManager; throws where there is
+     *  none to ask yet. */
+    private static Object usbService() throws ReflectiveOperationException {
+        Object binder = Class.forName("android.os.ServiceManager")
+                .getMethod("getService", String.class).invoke(null, "usb");
+        if (binder == null) {
+            throw new ReflectiveOperationException("no usb service");
+        }
+        return Class.forName("android.hardware.usb.IUsbManager$Stub")
+                .getMethod("asInterface", android.os.IBinder.class).invoke(null, binder);
+    }
+
+    /**
+     * Developer options' Default USB configuration - the functions Android
+     * switches to at an unlock (IUsbManager.getScreenUnlockedFunctions, under
+     * MANAGE_USB, which Shell's manifest holds; the same on Android 12, 16 and
+     * main) - as UsbManager's bits: 0 for No data transfer, 4 for File
+     * transfer (MTP). Null where it cannot be asked (UsbDefault).
+     */
+    static @Nullable Long usbDefault() {
+        try {
+            Object usb = usbService();
+            Long functions = (Long) usb.getClass().getMethod("getScreenUnlockedFunctions").invoke(usb);
+            usbDefaultUnreadable = false;
+            return functions;
+        } catch (Throwable t) {
+            // Once until it reads again: the app asks at each of home's
+            // readings, and a ROM that refuses the shell would fill the log.
+            if (!usbDefaultUnreadable) {
+                Ln.w("usb: cannot read the Default USB configuration: " + Shell.rootCause(t));
+                usbDefaultUnreadable = true;
+            }
+            return null;
+        }
+    }
+
+    /** Whether the last read of the Default USB configuration failed (said once). */
+    private static volatile boolean usbDefaultUnreadable;
+
+    /**
+     * The Default USB configuration set to none, No data transfer
+     * (IUsbManager.setScreenUnlockedFunctions(0)): whether the service took
+     * it. Android stores it and applies it on its own handler, after this
+     * returns - and where the current functions change, that can restart
+     * adbd and end this process (UsbDefault).
+     */
+    static boolean usbDefaultNone() {
+        try {
+            Object usb = usbService();
+            usb.getClass().getMethod("setScreenUnlockedFunctions", long.class).invoke(usb, 0L);
+            return true;
+        } catch (Throwable t) {
+            Ln.w("usb: cannot set the Default USB configuration to none: " + Shell.rootCause(t));
+            return false;
+        }
+    }
+
     /**
      * The USB service and its ports, read through the hidden IUsbManager:
      * shell's MANAGE_USB reads a port's status, which flips the moment the
@@ -157,10 +214,7 @@ final class Platform {
 
         /** The service and its ports now; throws if it cannot be asked yet. */
         static Usb find() throws ReflectiveOperationException {
-            Object binder = Class.forName("android.os.ServiceManager")
-                    .getMethod("getService", String.class).invoke(null, "usb");
-            Object usb = Class.forName("android.hardware.usb.IUsbManager$Stub")
-                    .getMethod("asInterface", android.os.IBinder.class).invoke(null, binder);
+            Object usb = usbService();
             java.util.List<?> found = (java.util.List<?>) usb.getClass().getMethod("getPorts").invoke(usb);
             java.lang.reflect.Method status = usb.getClass().getMethod("getPortStatus", String.class);
             java.lang.reflect.Method mode = Class.forName("android.hardware.usb.UsbPortStatus").getMethod("getCurrentMode");
@@ -248,6 +302,23 @@ final class Platform {
             Throwable why = e instanceof java.lang.reflect.InvocationTargetException && e.getCause() != null
                     ? e.getCause() : e;
             Ln.w("recording: could not tell whether another app's call is up: " + why);
+            return null;
+        }
+    }
+
+    /** Whether Telecom holds any call - "an ongoing phone call (can be in
+     *  dialing, ringing, active or holding states) originating from either a
+     *  manager or self-managed ConnectionService" (TelecomManager.isInCall,
+     *  public, READ_PHONE_STATE, the shell's); null if it cannot be asked. */
+    static @Nullable Boolean callInTelecom() {
+        TelecomManager t = telecom;
+        if (t == null) {
+            return null;
+        }
+        try {
+            return t.isInCall();
+        } catch (Throwable e) {
+            Ln.w("usb: could not ask Telecom whether a call is up: " + e);
             return null;
         }
     }

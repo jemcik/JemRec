@@ -211,6 +211,30 @@ final class Commands {
             Wire.reply(client.getOutputStream(), answer);
             return;
         }
+        if (command == Wire.COMMAND_USB_DEFAULT) {
+            int value = client.getInputStream().read();
+            // Asked outside the call's lock: a binder call to the system
+            // server, which a call's start must not wait on. A call that
+            // starts between the lock and the write could still be cut;
+            // the app asks only at a tap on its home screen.
+            Long functions = Platform.usbDefault();
+            boolean telecomCall = value == UsbDefault.SET_NONE && Boolean.TRUE.equals(Platform.callInTelecom());
+            String answer;
+            synchronized (Calls.LOCK) {
+                answer = UsbDefault.decide(value, functions, Calls.busyLocked(), telecomCall);
+            }
+            Wire.reply(client.getOutputStream(), answer);
+            if (UsbDefault.logOnce(value, answer)) {
+                Ln.i("usb: Default USB configuration asked (" + value + ") - " + answer);
+            }
+            if (Wire.USB_SETTING.equals(answer)) {
+                // After the answer, flushed: Android may restart adbd for it,
+                // and this process goes with adbd (UsbDefault).
+                boolean taken = Platform.usbDefaultNone();
+                Ln.i("usb: Default USB configuration set to none - " + (taken ? "taken" : "refused"));
+            }
+            return;
+        }
         if (command == Wire.COMMAND_SET_QUALITY) {
             Quality.bitRate = Quality.from(Wire.readName(client.getInputStream()), Quality.bitRate);
             Ln.i("recording: quality " + Quality.words(Quality.bitRate) + " from the app");

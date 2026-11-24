@@ -33,7 +33,7 @@ import java.security.SecureRandom
  */
 object DeepLink {
 
-    enum class Kind { PLAY, SHARE, SELF_TEST, PAIR_AGAIN, ALLOW_WIFI, BACKGROUND_SETTINGS, BATTERY_SETTINGS, HOME, CALLS, SETTINGS, CHOOSE_FOLDER }
+    enum class Kind { PLAY, SHARE, SELF_TEST, PAIR_AGAIN, ALLOW_WIFI, BACKGROUND_SETTINGS, BATTERY_SETTINGS, HOME, CALLS, SETTINGS, CHOOSE_FOLDER, USB_DEFAULT_NONE }
 
     data class Link(val kind: Kind, val name: String?)
 
@@ -72,12 +72,13 @@ object DeepLink {
      *  JemRec where a problem is shown are openings: home's until 1.2, they
      *  went on arming the keep-alive and looking for a background stop
      *  (review round 10). So is Choose again, a button that opens home under
-     *  the folder picker, as a cold start for it always did. */
+     *  the folder picker, as a cold start for it always did, and Set to No
+     *  data transfer, which opens home with its card as it sets it. */
     fun leadsElsewhere(intent: Intent?): Boolean =
         intent?.action == ACTION &&
             runCatching { Kind.valueOf(intent.getStringExtra(EXTRA_KIND) ?: "") }.getOrNull() !in OPENINGS
 
-    private val OPENINGS = setOf(Kind.HOME, Kind.CALLS, Kind.SETTINGS, Kind.CHOOSE_FOLDER)
+    private val OPENINGS = setOf(Kind.HOME, Kind.CALLS, Kind.SETTINGS, Kind.CHOOSE_FOLDER, Kind.USB_DEFAULT_NONE)
 
     /** Called by the activity with every intent it is started or re-entered with. */
     fun offer(context: Context, intent: Intent?) {

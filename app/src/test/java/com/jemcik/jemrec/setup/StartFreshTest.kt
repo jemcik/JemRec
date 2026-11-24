@@ -3,9 +3,11 @@ package com.jemcik.jemrec.setup
 import com.jemcik.jemrec.adb.AdbIdentity
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.FakeRecorder
+import com.jemcik.jemrec.capture.HeldWork
 import com.jemcik.jemrec.capture.TestPhone
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
 import com.jemcik.jemrec.recorder.OffMode
+import com.jemcik.jemrec.recorder.NetworkRevive
 import com.jemcik.jemrec.recorder.RecorderSwitch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -15,7 +17,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -39,6 +43,15 @@ import java.util.concurrent.atomic.AtomicLong
 class StartFreshTest {
 
     private val context = RuntimeEnvironment.getApplication()
+    private lateinit var work: HeldWork
+
+    /** Start fresh asks WorkManager to end the keep-alive: a test of its own
+     *  has none, and the class passed only where an earlier one had set it up. */
+    @Before fun workManager() {
+        work = HeldWork(context)
+    }
+
+    @After fun closeWork() = work.close()
 
     @Test fun aStartFreshCancelledWhileItWaitsForTheLockStillFinishes() = runBlocking {
         TestPhone.switchesOn(context)
@@ -80,6 +93,11 @@ class StartFreshTest {
         TestPhone.clearReviveLog(context)
         DebugSwitchesOff.forget(context)
         RecorderSwitch.set(context, true)
+        // Two offs that took the recorder, the guard's note: Start fresh
+        // forgets it (row 29).
+        NetworkRevive.noteOffLoss(context)
+        NetworkRevive.noteOffLoss(context)
+        assertTrue(NetworkRevive.wirelessKeepsAdbd(context))
         // A recorder slow to answer the revive's first ping: the revive holds
         // the lock meanwhile, as one starting a recorder does.
         val recorder = FakeRecorder(context)
@@ -114,6 +132,7 @@ class StartFreshTest {
             assertTrue("put back at $putBackAt, answered at $answeredAt", putBackAt.get() > answeredAt.get())
             assertTrue("put back at $putBackAt, quit at $quitAt", putBackAt.get() < quitAt.get())
             assertFalse(AdbIdentity.exists(context))
+            assertFalse("the guard's count forgotten", NetworkRevive.wirelessKeepsAdbd(context))
         } finally {
             recorder.close()
         }

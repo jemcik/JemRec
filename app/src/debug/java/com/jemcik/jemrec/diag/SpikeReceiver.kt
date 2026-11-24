@@ -49,6 +49,7 @@ import com.jemcik.jemrec.diag.ops.SwitchOp
 import com.jemcik.jemrec.diag.ops.TalkOp
 import com.jemcik.jemrec.diag.ops.TestResultOp
 import com.jemcik.jemrec.diag.ops.TrashOp
+import com.jemcik.jemrec.diag.ops.UsbDefaultOp
 import com.jemcik.jemrec.diag.ops.VoipAnswerOp
 import com.jemcik.jemrec.diag.ops.VolumeOp
 import com.jemcik.jemrec.diag.ops.WaveformOp
@@ -141,6 +142,7 @@ class SpikeReceiver : BroadcastReceiver() {
                     "hidesettings" -> HideSettingsOp.run(appContext, intent)
                     "earpiece" -> EarpieceOp.run(appContext, intent)
                     "keeppaired" -> KeepPairedOp.run(appContext, intent)
+                    "usbdefault" -> UsbDefaultOp.run(appContext, intent)
                     "refusegrant" -> RefuseGrantOp.run(appContext, intent)
                     "disconnect" -> DisconnectOp.run(appContext, intent)
                     "grantlistener" -> GrantListenerOp.run(appContext, intent)

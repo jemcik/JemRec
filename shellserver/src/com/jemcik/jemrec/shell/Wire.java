@@ -206,6 +206,21 @@ final class Wire {
     static final int COMMAND_SET_QUALITY = 'Z';
 
     /**
+     * Developer options' Default USB configuration (UsbDefault): one byte, 0
+     * to read it, 1 to set it to none - No data transfer - which a data mode
+     * there, with a secure lock, has Android stop adbd, and this process, at
+     * every lock and unlock (#131). Replies USB default and the functions as
+     * UsbManager's bits ("USB default 4" is File transfer, 0 none; set to
+     * none already, nothing is written), USB setting (none is written after
+     * this answer, which the write may outlast), USB busy (a call up or
+     * ringing, or a fetch under way: nothing written) or USB unreadable (the
+     * USB service could
+     * not be asked). An older recorder hangs up on it, and the app asks again
+     * once a newer one is up.
+     */
+    static final int COMMAND_USB_DEFAULT = 'U';
+
+    /**
      * What this recorder does that an older one does not, said after its
      * build in the answer to a ping - words an older app skips. Two so far:
      * a LIST ends with how many it sent (LIST_END, Checks.listEnd); and
@@ -291,6 +306,15 @@ final class Wire {
     static final String WIRELESS_ALREADY_OFF = "WIRELESS already-off";
     static final String WIRELESS_USB_OFF = "WIRELESS usb-off";
     static final String WIRELESS_REFUSED = "WIRELESS refused";
+
+    /** COMMAND_USB_DEFAULT's answers (UsbDefault.decide). */
+    static String usbDefault(long functions) {
+        return "USB default " + functions;
+    }
+
+    static final String USB_SETTING = "USB setting";
+    static final String USB_BUSY = "USB busy";
+    static final String USB_UNREADABLE = "USB unreadable";
 
     /** COMMAND_SET_QUALITY's answer: the rate the next recording starts with. */
     static String quality(int bps) {
