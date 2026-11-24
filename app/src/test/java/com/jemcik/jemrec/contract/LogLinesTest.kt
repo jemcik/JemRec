@@ -311,6 +311,12 @@ class LogLinesTest {
                     "ReviveLog.note(context, \"cable: \${what ?: \"changed\"}; watching\")",
                     "CableWatch.watch(applicationContext, \"USB state changed\", Trigger.USB_STATE)",
                 ),
+                // The Default USB configuration's set taken by the recorder
+                // (1.7), logged before it writes.
+                "usb: Default USB configuration asked (1) - USB setting" to listOf(
+                    "Ln.i(\"usb: Default USB configuration asked (\" + value + \") - \" + answer)",
+                    "static final String USB_SETTING = \"USB setting\"",
+                ),
                 "cable: unplugged; watching the recorder" to cable,
                 "cable: plugged in; watching the recorder" to cable,
                 // The recorder's list of port IDs, written by List.toString:

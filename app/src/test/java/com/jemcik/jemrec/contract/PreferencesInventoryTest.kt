@@ -145,7 +145,9 @@ class PreferencesInventoryTest {
          *  battery_restricted_dismissed_words, battery_restricted_told, save_write_failed,
          *  folder_lost_told, heartbeat_version, heartbeat_port, save_journal,
          *  call_parts, lost_messages, name_starts, not_recorded_for and
-         *  part_recordings (1.2):
+         *  part_recordings (1.2), usb_default_functions,
+         *  usb_default_dismissed, usb_default_told_words and usb_default_set_from
+         *  (1.7):
          *  preference keys, plus the few key-named constants that are file
          *  and extra names, which a rename breaks just the same. */
         val KEYS = listOf(
@@ -163,9 +165,10 @@ class PreferencesInventoryTest {
             "recorder_down_cause", "recorder_down_since", "recorder_enabled", "recording_mode", "recording_quality",
             "recordings_tree_uri", "rules_chosen", "rules_contacts", "rules_other_numbers", "save_failing", "save_journal", "save_write_failed",
             "select_hint_seen", "setup_background_asked", "setup_complete", "setup_dev_options_confirmed", "setup_paired",
-            "start_without_wifi", "tracked_calls", "voip_apps", "voip_call_notes", "voip_names",
+            "start_without_wifi", "tracked_calls", "usb_default_dismissed", "usb_default_functions", "usb_default_set_from",
+            "usb_default_told_words", "voip_apps", "voip_call_notes", "voip_names",
             "wireless_debugging_refused_on", "wireless_debugging_switched_on",
-            "wireless_debugging_jemrecs", "wireless_debugging_keeps_adbd", "wireless_debugging_taken_over",
+            "wireless_debugging_jemrecs", "wireless_debugging_off_losses", "wireless_debugging_taken_over",
         )
     }
 }

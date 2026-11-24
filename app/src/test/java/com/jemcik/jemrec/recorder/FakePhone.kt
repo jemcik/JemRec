@@ -119,23 +119,57 @@ internal class FakePhone : ReviveWorld {
             }
         }
     }
-    /** Switching Wireless debugging off takes the recorder with it here:
-     *  row 18, never seen. Noted by the guard into [keepsAdbd]. */
+    /** Switching Wireless debugging off takes the recorder with it here, and
+     *  leaves adbd stopped until it is switched on again: row 18, never seen.
+     *  Counted by the guard into [offLosses]. */
     var offKillsRecorder = false
-    var keepsAdbd = false
+
+    /** A loss of the recorder in the guard's window comes with the cable's
+     *  watch having noted a stopped adbd (CableWatch.stoppedAdbd). */
+    var cableStoppedAtLoss = false
+
+    /** Each loss of the recorder to come in the guard's 2 s after an off, with
+     *  what adbd reads from there on, in order - RUNNING for a USB change,
+     *  which restarts it. [offKillsRecorder] is the off's own. */
+    val offLossAdbd = ArrayDeque<List<AdbdState.State>>()
+
+    /** The guard's count of offs that took the recorder in a row, two of
+     *  which keep Wireless debugging on (NetworkRevive). */
+    var offLosses = 0
+    override var offLost = false
 
     /** This process holds WRITE_SECURE_SETTINGS: not setup's own. */
     var canSwitchOn = true
 
-    override fun keepsAdbd() = keepsAdbd
-    override fun noteKeepsAdbd() {
-        did += "note keeps adbd"
-        keepsAdbd = true
+    override fun keepsAdbd() = offLosses >= NetworkRevive.OFF_LOSSES_KEPT
+    override fun noteOffLoss(): Boolean {
+        did += "note off loss"
+        offLosses++
+        return keepsAdbd()
+    }
+    override fun forgetOffLosses() {
+        if (offLosses == 0) return
+        did += "forget off losses"
+        offLosses = 0
     }
     override fun canSwitchOn() = canSwitchOn
     override suspend fun recorderStillUp(): Boolean {
         did += "still up?"
-        return !offKillsRecorder || wireless
+        val lost = offLossAdbd.removeFirstOrNull()
+        if (lost != null) {
+            adbd.clear()
+            adbd += lost
+            if (cableStoppedAtLoss) cable = true
+            recorder = null
+            return false
+        }
+        if (offKillsRecorder && !wireless) {
+            adbd.clear()
+            adbd += AdbdState.State.STOPPED
+            recorder = null
+            return false
+        }
+        return true
     }
 
     override fun mdnsStops() = holdsMdns

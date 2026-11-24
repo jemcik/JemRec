@@ -444,37 +444,193 @@ class WirelessBetweenStartsTest {
         assertFalse("hold mdns" in phone.did)
     }
 
-    /** Row 18, the guard: on a phone where the off takes the recorder with
-     *  it, the revive goes round once more - Wireless debugging on, the
-     *  recorder started - and no off is asked on this phone again. */
-    @Test fun anOffThatTakesTheRecorderIsNotMadeAgain() = runTest {
+    private val offAgain = listOf("probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000", "start", "push", "stand down")
+    private val offAsked = "wireless off"
+
+    /** One revive of an off that takes the recorder with it, adbd stopped -
+     *  started again, Wireless debugging on, no off asked again in it. */
+    private fun lostRound() = offAgain + listOf(offAsked, "still up?", "note off loss", "probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000") +
+        listOf("start", "push", "stand down", "after start")
+
+    /** Rows 18, 25 and 26, the guard (C, 1.7): on a phone where the off takes
+     *  the recorder with it and adbd stays stopped, one loss is counted, and
+     *  the revive goes round once more, Wireless debugging on, the recorder
+     *  started, with no off asked again in it; the second in a row, at the
+     *  next revive, is noted for good. */
+    @Test fun twoOffsInARowThatTakeTheRecorderKeepItOn() = runTest {
         val phone = FakePhone().apply {
             wireless = false
             offKillsRecorder = true
-            connects += listOf(ConnectOutcome.CONNECTED, ConnectOutcome.CONNECTED)
+            connects += List(4) { ConnectOutcome.CONNECTED }
+        }
+
+        assertTrue(revive(phone))
+
+        assertEquals(lostRound(), phone.did)
+        assertTrue("on again, as the recorder was started", phone.wireless)
+        assertFalse("once is not noted", phone.keepsAdbd())
+        assertEquals(1, phone.offLosses)
+        assertTrue("revive: the recorder went with Wireless debugging's off, adbd STOPPED; a second in a row keeps it on here" in phone.log)
+        assertTrue("revive: Wireless debugging left on: the recorder went after an off in this revive; asked at the next look" in phone.log)
+
+        // The next revive's off: the second in a row.
+        phone.recorder = up
+        phone.offLost = false
+        phone.did.clear()
+        assertTrue(revive(phone))
+        assertEquals(listOf("probe", offAsked, "still up?", "note off loss", "probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000", "start", "push", "stand down", "after start"), phone.did)
+        assertTrue(phone.keepsAdbd())
+        assertTrue("revive: the recorder went with Wireless debugging; it stays on on this phone from now" in phone.log)
+
+        // And at the look after that: left on.
+        phone.recorder = up
+        phone.offLost = false
+        phone.did.clear()
+        assertTrue(revive(phone))
+        assertEquals(listOf("probe"), phone.did)
+        assertEquals("revive: Wireless debugging left on: on this phone it keeps adbd up", phone.log.last())
+    }
+
+    /** Row 25b: a USB change in the guard's 2 s restarted adbd and took the
+     *  recorder: not the off's, so nothing is counted - the recorder started
+     *  again, no off asked in this revive, one at the next look - and not
+     *  noted, however often it happens. */
+    @Test fun aLossWithAdbdRunningIsNotTheOffs() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            offLossAdbd += listOf(State.RUNNING)
+            connects += List(2) { ConnectOutcome.CONNECTED }
         }
 
         assertTrue(revive(phone))
 
         assertEquals(
-            listOf(
-                "probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000",
-                "start", "push", "stand down", "wireless off", "still up?", "note keeps adbd",
-                "probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000",
-                "start", "push", "stand down", "after start",
-            ),
+            offAgain + listOf(offAsked, "still up?", "probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000", "start", "push", "stand down", "after start"),
             phone.did,
         )
+        assertEquals(0, phone.offLosses)
+        assertFalse(phone.keepsAdbd())
+        assertTrue(phone.log.any { it.contains("but adbd runs: not its doing") })
         assertTrue(phone.wireless)
-        assertTrue(phone.keepsAdbd)
-        assertTrue("revive: the recorder went with Wireless debugging; it stays on on this phone from now" in phone.log)
 
-        // And at the next look: left on.
+        // The next look: the off is asked again, and the recorder survives it.
         phone.recorder = up
+        phone.offLost = false
         phone.did.clear()
         assertTrue(revive(phone))
-        assertEquals(listOf("probe"), phone.did)
-        assertEquals("revive: Wireless debugging left on: on this phone it keeps adbd up", phone.log.last())
+        assertEquals(listOf("probe", offAsked, "still up?", "forget jemrecs"), phone.did)
+        assertFalse(phone.wireless)
+    }
+
+    /** Rows 24 and 27: an off the recorder survives clears the count - lost,
+     *  kept, lost is one, and not noted. */
+    @Test fun anOffTheRecorderSurvivesClearsTheCount() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            offLossAdbd += listOf(State.STOPPED)
+            connects += List(4) { ConnectOutcome.CONNECTED }
+        }
+        assertTrue(revive(phone))
+        assertEquals(1, phone.offLosses)
+
+        phone.recorder = up
+        phone.offLost = false
+        phone.did.clear()
+        assertTrue(revive(phone))
+        assertEquals(listOf("probe", offAsked, "still up?", "forget off losses", "forget jemrecs"), phone.did)
+        assertEquals(0, phone.offLosses)
+
+        // Lost again, but not a second in a row.
+        phone.offLossAdbd += listOf(State.STOPPED)
+        phone.wireless = true
+        phone.jemRecs = true
+        phone.offLost = false
+        phone.did.clear()
+        assertTrue(revive(phone))
+        assertEquals(1, phone.offLosses)
+        assertFalse(phone.keepsAdbd())
+    }
+
+    /** Review round 5: adbd on its way - "restarting" or "stopping" read as
+     *  UNKNOWN - is waited for; running where it lands, the loss is not the
+     *  off's. */
+    @Test fun aLossWithAdbdOnItsWayIsNotTheOffs() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            offLossAdbd += listOf(State.UNKNOWN, State.STOPPED, State.RUNNING)
+            connects += List(2) { ConnectOutcome.CONNECTED }
+        }
+        assertTrue(revive(phone))
+        assertEquals(0, phone.offLosses)
+        assertTrue(phone.log.any { it.contains("but adbd runs: not its doing") })
+    }
+
+    /** Review round 5, the Honor: its lock leaves adbd stopped, and the
+     *  cable's watch, woken by USB_STATE, notes it: the loss is a USB change's
+     *  doing, not the off's - not counted, and the next revive starts adbd by
+     *  cycling Wireless debugging. */
+    @Test fun aLossWithAdbdStoppedByAUsbChangeIsNotTheOffs() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            offLossAdbd += listOf(State.STOPPED)
+            cableStoppedAtLoss = true
+            connects += List(3) { ConnectOutcome.CONNECTED }
+        }
+        assertTrue(revive(phone))
+        assertEquals(0, phone.offLosses)
+        assertFalse(phone.keepsAdbd())
+        assertTrue(phone.log.any { it.contains("a USB change having stopped adbd: not its doing") })
+    }
+
+    /** Review round 5: the recorder gone before it could answer, Wireless
+     *  debugging still on - no off was seen: the loss is not the off's. */
+    @Test fun aLossBeforeAnyOffIsNotCounted() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            offLossAdbd += listOf(State.STOPPED)
+            wirelessOffAnswer = { null }
+            connects += List(2) { ConnectOutcome.CONNECTED }
+        }
+        assertTrue(revive(phone))
+        assertEquals(0, phone.offLosses)
+        assertTrue(phone.log.any { it.contains("which it never answered: not its doing") })
+    }
+
+    /** Where Android does not tell adbd's state, the loss counts as the off's:
+     *  there is nothing to tell it from. */
+    @Test fun aLossWithAdbdUnreadableCounts() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            offLossAdbd += listOf(State.UNKNOWN)
+            connects += List(2) { ConnectOutcome.CONNECTED }
+        }
+        assertTrue(revive(phone))
+        assertEquals(1, phone.offLosses)
+        assertTrue(phone.log.any { it.contains("adbd UNKNOWN") })
+    }
+
+    /** A stopped adbd gets 2 s more to come back, as a restart after a USB
+     *  change does: back within them, the loss is not the off's. */
+    @Test fun aStoppedAdbdThatComesBackIsNotTheOffs() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            connects += List(2) { ConnectOutcome.CONNECTED }
+            offLossAdbd += listOf(State.STOPPED, State.STOPPED, State.RUNNING)
+        }
+        assertTrue(revive(phone))
+        assertEquals(0, phone.offLosses)
+        assertTrue(phone.log.any { it.contains("but adbd runs: not its doing") })
+    }
+
+    /** ...and one that does not come back in 2 s is the off's. */
+    @Test fun aStoppedAdbdThatStaysStoppedIsTheOffs() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            connects += List(2) { ConnectOutcome.CONNECTED }
+            offLossAdbd += listOf(State.STOPPED)
+        }
+        assertTrue(revive(phone))
+        assertEquals(1, phone.offLosses)
     }
 
     /** ...and a recorder that went before it could answer - no answer - is
@@ -494,9 +650,38 @@ class WirelessBetweenStartsTest {
 
         assertTrue(revive(phone))
 
-        assertTrue(phone.keepsAdbd)
-        assertEquals(listOf("probe", "wireless off", "still up?", "note keeps adbd", "probe"), phone.did.take(5))
+        assertEquals(1, phone.offLosses)
+        assertEquals(listOf("probe", "wireless off", "still up?", "note off loss", "probe"), phone.did.take(5))
         assertEquals("after start", phone.did.last())
+    }
+
+    /** No answer, and the recorder still up: no off was seen to happen, so it
+     *  clears no count. */
+    @Test fun noAnswerWithTheRecorderUpClearsNoCount() = runTest {
+        val phone = FakePhone().apply {
+            recorder = up
+            jemRecs = true
+            offLosses = 1
+            wirelessOffAnswer = { null }
+        }
+
+        assertTrue(revive(phone))
+
+        assertEquals(listOf("probe", "wireless off", "still up?"), phone.did)
+        assertEquals(1, phone.offLosses)
+        assertTrue("still JemRec's, asked again", phone.jemRecs)
+    }
+
+    /** One off in a revive, whatever it took: a phone that loses the recorder
+     *  each time is not left looping (row 25). */
+    @Test fun noSecondOffIsAskedInARevive() = runTest {
+        val phone = FakePhone().apply {
+            wireless = false
+            offKillsRecorder = true
+            connects += List(4) { ConnectOutcome.CONNECTED }
+        }
+        assertTrue(revive(phone))
+        assertEquals(1, phone.did.count { it == "wireless off" })
     }
 
     /** Rows 30 and 37: a process that cannot switch it on again - setup's
@@ -528,16 +713,17 @@ class WirelessBetweenStartsTest {
     }
 
     @Test fun whatHoldsTheOffBack() {
-        for (jemRecs in listOf(true, false)) for (keeps in listOf(true, false))
+        for (jemRecs in listOf(true, false)) for (keeps in listOf(true, false)) for (lost in listOf(true, false))
             for (inCall in listOf(true, false)) for (can in listOf(true, false)) {
                 val expected = when {
                     !jemRecs -> Revive.OffHeld.NOT_JEMRECS
                     keeps -> Revive.OffHeld.KEEPS_ADBD
+                    lost -> Revive.OffHeld.LOST_THIS_REVIVE
                     inCall -> Revive.OffHeld.IN_CALL
                     !can -> Revive.OffHeld.CANNOT_SWITCH_ON
                     else -> null
                 }
-                assertEquals("$jemRecs $keeps $inCall $can", expected, Revive.wirelessOffHeld(jemRecs, keeps, inCall, can))
+                assertEquals("$jemRecs $keeps $lost $inCall $can", expected, Revive.wirelessOffHeld(jemRecs, keeps, lost, inCall, can))
             }
     }
 }

@@ -17,6 +17,7 @@ this one is - or to check that it does what it says.
   [starting without Wi-Fi](#starting-without-wi-fi) ·
   [unplugged from a computer](#unplugged-from-a-computer) ·
   [a USB mode changed](#a-usb-mode-changed-with-the-cable-in) ·
+  [a screen lock and the USB default](#a-screen-lock-and-the-usb-default) ·
   [after a restart](#after-a-restart) ·
   [coming back without you](#coming-back-without-you) ·
   [Wireless debugging, only to start](#wireless-debugging-only-to-start) ·
@@ -724,11 +725,132 @@ thedjchi's, Shizuku+; their code, read 2026-11-22) - JemRec keeps nothing
 running between calls and uses Android's own broadcast instead. Shizuku's
 guide gives the advice that applies here too: Developer options' *Default USB
 configuration* left at *No data transfer*. Set to anything else, Android
-switches to it at an unlock with the cable in and charging
-(`MSG_UPDATE_SCREEN_LOCK`) - on the emulators that unlock killed the recorder.
+switches to it at every unlock, and to charging at every lock with no cable
+in, where the lock is a PIN, pattern or password (`MSG_UPDATE_SCREEN_LOCK`) -
+on the emulators, which have no cable, both killed the recorder: [the next
+section](#a-screen-lock-and-the-usb-default).
 And Android Auto over a car's cable killed Shizuku at the car's start and at
 its stop on a Galaxy S26 Ultra (thedjchi #173, 2026). Not measured here:
 cars.
+
+## A screen lock and the USB default
+
+**With a PIN, pattern or password, and a data mode as Developer options'
+*Default USB configuration*, every lock and every unlock can stop the
+recorder. Since 1.7 JemRec says so, and sets it to *No data transfer* with one
+tap.** [Issue #131](https://github.com/jemcik/JemRec/issues/131), a Redmi
+Note 9S (MIUI 14, Android 12) on 1.2.1: calls while the phone was locked went
+unrecorded; with no screen lock, or with MacroDroid opening JemRec at each
+incoming call, they were recorded. Not measured on a Xiaomi; what follows
+fits all three.
+
+**Why.** AOSP's `UsbDeviceManager` takes the phone for unlocked "when the
+keyguard is down or non-secure" (`onKeyguardStateChanged`): a swipe lock never
+counts as locked. Locked with no cable in, it sets the USB functions to none -
+charging; unlocked, it sets the default again, with no cable check
+(`MSG_UPDATE_SCREEN_LOCK`; the Android 12 and 16 sources, read 2026-11-23).
+Where the default is a data mode those are changes, and with the legacy
+handler each one sets `sys.usb.config` to none first, which init answers with
+`stop adbd` ([the section above](#a-usb-mode-changed-with-the-cable-in)): the
+recorder goes with adbd. Android sends no `USB_STATE` for it - nothing at the
+lock, and at the unlock only extras it has sent before (`isUsbStateChanged`) -
+so 1.6's watch does not run: the recorder stays down until something else
+starts it - JemRec opened, a call's end (8 s after one, on the Android 12
+emulator), the keep-alive's next run - and the next lock or unlock ends it
+again.
+
+**Measured**, 2026-11-23, on 1.6 (`tmp/issue-131/FINDINGS.md`):
+
+- The Android 12, 16 and 17 emulators, no cable, a PIN and *File transfer*,
+  shrunk build: the recorder gone 5 s after the lock and still down 45 to
+  60 s on; the unlock restarted adbd again, the recorder still down 40 s and
+  more after it; no `USB_STATE` at either. A lock 5 s into a call saved
+  5.64 s of a 15.80 s call, said to have stopped early. With a swipe lock,
+  adbd kept its process through two locks and unlocks (Android 12); with *No
+  data transfer* and the PIN, so did the recorder, a lock in the middle of a
+  call too, the call saved whole.
+- The Honor (MagicOS 11, Android 17), debug build, a PIN, no cable: at the
+  lock its charging functions (`hisuite,mtp,mass_storage`, no adb), at the
+  unlock `mtp` - adbd ended both times, from its own log. It does send
+  `USB_STATE` for both, so 1.6 had the recorder back 16 s later each time,
+  the first while still locked. After that unlock adb stayed off the cable
+  once one was plugged in, until the USB mode was chosen again.
+
+**What JemRec does** (`UsbDefault`). The recorder reads the default as the
+shell (`IUsbManager.getScreenUnlockedFunctions`, under `MANAGE_USB`, which the
+shell holds and an app cannot), at each of home's readings and each
+keep-alive run; the app keeps the last answer for while the recorder is
+down - which is when it matters, a lock having just ended it. With a data mode
+there, a PIN, pattern or password (`KeyguardManager.isDeviceSecure`), and
+JemRec on and set up, home shows a card, *Locking your phone stops the
+recorder*, and a notification says it once - new words, another data mode or
+the way by hand, said again in place and quietly while it is up, never posted
+anew by a reading; *Not now* puts the card away until the setting or the lock
+changes, and a reading that finds it no longer so takes the notification back.
+*Set to No data transfer*, the card's button and the notification's, starts
+the recorder first if it is down (where that fails, it says why, in the words
+of Diagnostics' *Start recorder*); the recorder
+answers, then writes none (`setScreenUnlockedFunctions(0)`) - never while a
+call rings or is up, or a fetch is under way (any call Telecom holds -
+ringing, dialled, held, an app's own - `TelecomManager.isInCall`: the
+recorder's own busy rule, shared with a quit, leaves a ring out), and not
+where it is none already, as setting none again
+switches the current functions to charging and would cut a computer's file
+transfer for nothing. The write itself can restart adbd - the Android 12
+emulator's did - so the tap queues 1.6's USB-state watch, which brings the
+recorder back. On the Honor, the cable in and *File transfer* chosen, setting
+none ended nothing: the transfer, adbd and the recorder all kept. Read as a
+data mode after a tap - the recorder unable to ask Android, Android refusing
+the write after the recorder had answered, a phone that did not keep it, or
+the user's choice since - the card adds the way by hand: Developer options,
+*Default USB configuration*, *No data transfer*; a snackbar's words go in
+seconds.
+
+The cost: with *No data transfer*, a phone plugged into a computer only
+charges until *File transfer* is chosen in the USB notification.
+
+**How others handle it.** CallVault 1.4.5 (2026-07-24) found the same on
+OnePlus, Xiaomi and Samsung phones - locking the screen during a call
+restarted the USB connection and the recorder with it - and sets *Charging
+only* from the app: a setup step, a setting, and a prompt while a data mode is
+set. Shizuku's thedjchi fork has its users set it by hand (its wiki, "Shizuku
+keeps stopping randomly"). JemRec asks the USB service directly rather than
+reading `dumpsys usb`, whose lines vary by phone (CallVault's notes), and says
+nothing where the lock is not secure.
+
+**The emulator check** `usb_default_lock` (2026-11-23, shrunk build): the
+lock ends the recorder; home's card; its tap - the default none, the
+recorder back 16, 16, 11 and 10 s later on Android 12, 13, 16 and 17; two
+locks and unlocks keep it; a call while locked, and a lock 3 s into a call,
+saved whole. On 16 the first run's call was dropped by the emulator's modem as
+it was answered (`INCOMING_MISSED`, from Telephony's own log); on a cold
+boot, it passed.
+
+Not measured: a Xiaomi; a phone with a USB gadget HAL, where AOSP starts adbd
+for USB and leaves a running one alone (`UsbHandlerHal`, read).
+
+The Honor's sessions (debug build, 2026-11-24): the card and the
+notification's button set the default and took the card and notification
+away; with no cable the write stopped `adbd` and the recorder, which the watch
+had back 16 s later. With *No data transfer* the recorder kept the same
+process through a lock and a call while locked, and a lock during one, both
+saved whole; through a restart the default stayed none, the recorder was back
+by itself 14 s after the boot's first look, and a lock kept it. With *File
+transfer* a lock 1.4 s into a 42 s call ended the recorder: 1.4 s and 26.6 s
+saved, as two parts, the 14 s between lost - back 14 s after the lock, by the
+USB-state watch. Asked while a call rang and while one was up, the button set
+nothing and said why; with the recorder down it started it first, and off
+Wi-Fi said what it needs and set nothing. JemRec's process ended, one
+keep-alive run said it once, the next not again; switched off, card and
+notification went.
+
+Two things of this phone's own. With *No data transfer* as the default,
+MagicOS still offered a computer File transfer
+(`hisuite,mtp,mass_storage,adb`), so "a computer only charges" is AOSP's
+behaviour, not this phone's. And with *File transfer* as the default, after a
+lock, two plug-ins gave the computer the phone with no USB debugging on it
+(on the Mac's USB, not in `adb devices`), until the default was none and the
+cable plugged in again.
 
 ## After a restart
 
@@ -976,16 +1098,50 @@ same keeps it on where the permission was taken back.
 
 **A guard after the off.** A phone where the off stops `adbd` though USB
 debugging is on has not been seen - not on the Honor, the S23 or the four
-emulators, not in AOSP's `AdbService` 12 to 17, which stops `adbd` only once
-neither transport is enabled, and not by the titles of thedjchi's Shizuku
-fork's issues, which ships the off - but on one, every start would end with the recorder gone
-and nothing would say so. So after an answer of off, or none (a recorder
-taken with `adbd` can go before it answers), the app waits 2 s and asks the
-recorder the confirmed way. Gone, it notes for good that Wireless debugging
-keeps `adbd` up on this phone, goes round once more - switched on, recorder
-started - and never asks for the off there again, until Start fresh
-(`NetworkRevive.noteWirelessKeepsAdbd`). The user's choice, 2026-11-21: the
-plan had dropped any check, as nothing showed the case.
+emulators, and not by the titles of thedjchi's Shizuku fork's issues, which
+ships the off - but on one, every start would end with the recorder gone
+and nothing would say so. (`AdbService` 12 to 17 stops `adbd` once neither
+transport is enabled, and `UsbDeviceManager` takes the USB one off for
+functions that hold no adb (read in Android 12 and 16) - which stock Android
+adds whenever USB debugging is on, but a vendor's may not: the Honor's lock
+leaves `hisuite,mtp,mass_storage`, and with Wireless debugging off nothing
+would then keep `adbd`, inferred from that and not measured.) So after an answer of off, or none (a recorder taken with
+`adbd` can go before it answers), the app waits 2 s and asks the recorder the
+confirmed way. Gone, it is the off's doing **only if nothing else explains
+it**: the recorder gone before it answered, with Wireless debugging still on;
+`adbd` running (given 2 s to land, as it reads unknown while it restarts); or
+a USB change that stopped it, which the cable's watch notes
+(`CableWatch.stoppedAdbd`). A loss left counts. Two in a row keep Wireless
+debugging on there, until Start fresh (`NetworkRevive.noteOffLoss`); an off
+the recorder answered and survived clears the count. Either way the revive
+goes round once more - switched on, recorder started - asking no second off
+in it; after a first counted loss the next look asks again. The guard itself
+was the user's choice, 2026-11-21: the plan had dropped any check, as nothing
+showed the case.
+
+Until 1.7 a single loss was noted for good, and it misfired: a USB change in
+the 2 s after the off - a lock, an unlock, the Default USB configuration set -
+restarts `adbd`, and the recorder in its cgroup goes with it. Measured
+2026-11-23 on the Android 12 and 16 emulators (shrunk build, cold): of 12
+locks and default changes inside the 2 s, 11 tripped it (the twelfth lock
+changed nothing), `adbd` down 0.05 s and running again before the check each
+time, from init's own lines - what the app itself reads of it there is
+inferred; with nothing in the 2 s, or a lock with *No data transfer*, none of 6
+did (on 16). The old note (`wireless_debugging_keeps_adbd`) is not read any
+more. On the Honor (debug build, 2026-11-24) `adbd` reads STOPPED 4 s after a
+lock and after an unlock, where the emulators had it running: there a loss in
+the window counts unless the cable's watch has noted the USB change. Three
+offs in that minute were each survived. Produced there the same day (debug
+build of the final tree, the cable in): charging only, set by a script on the
+phone 0.4 s after an off, stopped `adbd` and took the recorder. The watch
+noted it 2.8 s after the off, the guard decided 6.4 s after it and counted
+nothing, the recorder was back 17 s after the change, and the next off was
+survived. An unlock did it by itself that afternoon, with *File transfer* as
+the default: the off held back by a call came after it, the unlock's USB change
+0.2 s after the off, and the loss was not counted either. The recorder killed
+0.04 s after an off, `adbd` running, and killed before it answered one, were
+not counted too. With the screen off, or JemRec held back by the phone, the
+note's time was not measured.
 
 **Whose it is.** The app notes that JemRec switched Wireless debugging on
 (`NetworkRevive.noteJemRecs`): a start's switch-on from off, a switch off and
@@ -3318,12 +3474,20 @@ on its home screen, where a notification cannot.
   (`BatteryHealth`). Lifted, it goes at the next reading of the window or the
   keep-alive's next run, which reads it. What it costs is under
   [Stopped in the background](#stopped-in-the-background).
+- **Locking your phone stops the recorder** (1.7) - once, at a start of
+  JemRec's process, as JemRec is switched on, or at a keep-alive run, while
+  the Default USB configuration is a data mode, the lock is a PIN, pattern or
+  password, and JemRec is on and set up; and on home while it lasts, the card
+  and the notification with *Set to No data transfer* (`UsbDefault`). Set,
+  set by hand, or the lock no longer secure, it goes at the tap or the next
+  reading; *Not now* on home takes it away too. See [A screen lock and the
+  USB default](#a-screen-lock-and-the-usb-default).
 
 **A tap, and a button.** A problem's tap opens JemRec where the problem is
 shown - home's card or header, the Calls tab narrowed to the calls not
 recorded, Settings with its row for the phone's background settings brought
 into view for a phone stopping JemRec in the background - and its one button does the
-fix: *Open App info*, *Choose again* (Android's folder picker at once),
+fix: *Open App info*, *Set to No data transfer*, *Choose again* (Android's folder picker at once),
 *Self-test*, the phone maker's screen, *Allow this Wi-Fi* or *Pair again*.
 Each tap and button names JemRec's own activity - a deep link, which then
 opens Android's screen - never an implicit intent: one in a notification's
@@ -3510,6 +3674,13 @@ with it (see [Staying alive without Wi-Fi](#staying-alive-without-wi-fi)), and
 the app switches Wireless debugging on for each start, the recorder off again
 once it is up ([Wireless debugging, only to start](#wireless-debugging-only-to-start)).
 One you switch on yourself stays on.
+
+**One more of the phone's settings, only at your tap** (1.7): Developer
+options' *Default USB configuration*, set to *No data transfer* by *Set to No
+data transfer* on home's card or its notification ([A screen lock and the USB
+default](#a-screen-lock-and-the-usb-default)). JemRec never sets it back - not
+at Start fresh, nor when it is uninstalled; it is yours to change again in
+Developer options.
 
 What that means for the phone: while USB debugging is on, a computer you have
 authorised before can open an ADB shell on it over a cable; while Wireless

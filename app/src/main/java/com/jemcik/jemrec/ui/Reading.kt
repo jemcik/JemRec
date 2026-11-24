@@ -113,6 +113,8 @@ internal fun asSaved(app: Application, state: UiState): UiState = state.copy(
     // the reading found Android saying, and preferences.
     notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.notice(app, state.notificationSwitches),
     batteryNotice = com.jemcik.jemrec.system.BatteryHealth.notice(app, state.batteryRestricted),
+    usbDefaultNotice = com.jemcik.jemrec.system.UsbDefault.notice(app, state.usbDefaultFunctions, state.secureLock),
+    usbDefaultDidNotStay = com.jemcik.jemrec.system.UsbDefault.didNotStay(app, state.usbDefaultFunctions),
 )
 
 /**
@@ -154,6 +156,11 @@ private val SETTINGS: List<Read> = listOf(
     // The Battery setting Restricted: a question to Android's activity
     // manager, so here; the notice is decided as the reading lands.
     read(com.jemcik.jemrec.system.BatteryHealth::read) { copy(batteryRestricted = it) },
+    // The Default USB configuration, asked of the recorder (the last answer
+    // kept where none comes), and whether the lock is secure: together they
+    // decide whether a lock stops the recorder (UsbDefault), as it lands.
+    read(com.jemcik.jemrec.system.UsbDefault::read) { copy(usbDefaultFunctions = it) },
+    read(com.jemcik.jemrec.system.UsbDefault::secureLock) { copy(secureLock = it) },
     // Only until setup is done: a getprop, on the phones that may have the
     // switch.
     read({ !Setup.isComplete(it) && ShellGrant.switchMayBeOff() }) { copy(systemOptimizationSwitch = it) },

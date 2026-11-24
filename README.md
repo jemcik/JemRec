@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-2705-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2776-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -183,7 +183,7 @@ screens.
 | **See every call** | The Calls tab is your call log, each call with its recording - or, if there is none, why. Search either list, or narrow it with a tap. → [more](docs/ARCHITECTURE.md#the-calls-tab) |
 | **Name files your way** | By date and time, with the caller, with the phone number for a program that sorts them, or the way Honor's Phone app plays them from its call history. → [more](docs/ARCHITECTURE.md#file-names) |
 | **Play, keep, clean up** | A call plays as its waveform, to see where people talk, with both sides in both ears - one earbud is enough - and plays on with the screen off, under the phone's media controls; held to your ear, it moves to the earpiece and the screen goes dark, as in a call. A keep mark, a 30-day Recently deleted, and auto-delete for old or very short ones. → [more](docs/ARCHITECTURE.md#playing-in-the-background) |
-| **Hear about problems** | A notification after each call, which also says when its recording came out silent, stopped early or is in parts; and one when the recorder is down, a call went unrecorded or was saved away from your folder, or the phone stopped JemRec or held it back in the background. The home screen says so while JemRec's notifications are off, its battery use is Restricted or its folder is out of reach. A call that came out wrong? *Copy a report* in Diagnostics says how it was recorded, for an issue on GitHub. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
+| **Hear about problems** | A notification after each call, which also says when its recording came out silent, stopped early or is in parts; and one when the recorder is down, a call went unrecorded or was saved away from your folder, or the phone stopped JemRec or held it back in the background. The home screen says so while JemRec's notifications are off, its battery use is Restricted, its folder is out of reach, or a screen lock would stop the recorder - that one fixed with a tap. A call that came out wrong? *Copy a report* in Diagnostics says how it was recorded, for an issue on GitHub. → [more](docs/ARCHITECTURE.md#after-the-call-and-when-something-is-wrong) |
 | **Answering machine** | Off until you switch it on. Answers a phone call you have not taken after 5 to 30 seconds - after two rings when Do Not Disturb would silence the caller - plays the greeting you recorded and keeps the message, by the same rules as recording. Take the call or hang up from its notification while they speak. It stands down for a day after you call an emergency number. A test call tells you whether it works on your phone. → [more](docs/ARCHITECTURE.md#the-answering-machine) |
 | **Open your banking app** | Some banking apps won't open while Developer options or debugging is on. Turning JemRec off can hide Developer options too, or switch all debugging off; turning it on puts back what it switched off - away from Wi-Fi too, with *Start without Wi-Fi*. Settings → When JemRec is off. → [more](docs/ARCHITECTURE.md#off-and-debugging-with-it) |
 | **Three looks** | Memo, calm and simple; Deck, a pocket recorder with an LCD and a REC key; Multitrack, a sound editor with a colour for each caller. Each light, dark or as the phone, in Settings → Theme. → [more](docs/ARCHITECTURE.md#three-looks) |
@@ -295,6 +295,8 @@ Honor - so the answering machine's settings hold its own checks and a test call.
   that reaches it, or an app on the phone, can ask to debug the phone, and the
   phone asks you - allow only one you expect.
   → [What stays switched on](docs/ARCHITECTURE.md#what-stays-switched-on)
+- **Developer options' Default USB configuration** changes only when you tap
+  *Set to No data transfer*, and JemRec never sets it back.
 
 <details>
 <summary><b>Every permission, and why</b></summary>
@@ -411,6 +413,30 @@ needs Wi-Fi once, as before. The cost is the open port, on every network the
 phone joins whenever USB debugging is on - unless *Turn all debugging off*
 goes with JemRec; see [Starting without
 Wi-Fi](docs/ARCHITECTURE.md#starting-without-wi-fi).
+
+</details>
+
+<details>
+<summary><b>Why aren't calls recorded while my phone is locked?</b></summary>
+
+<br>
+
+Most often, Developer options' **Default USB configuration**. With a PIN,
+pattern or password, Android switches USB to charging at every lock and back
+to that setting at every unlock; where it is a data mode, such as *File
+transfer*, each switch stops the debugging service the recorder runs under,
+and the recorder with it - on some phones until you open JemRec, or for 15
+minutes or more, until its next check
+([issue #131](https://github.com/jemcik/JemRec/issues/131)). Since 1.7 the
+home screen says so, with **Set to No data transfer**: one tap, and a lock no
+longer stops it. A phone plugged into a computer then only charges until you
+choose *File transfer* in its USB notification. A swipe lock, or no lock,
+does not do it: Android counts the phone as unlocked.
+
+Set to *No data transfer* already? Then the phone may be stopping JemRec in
+the background: see [Get started](#get-started), step 3.
+→ [A screen lock and the USB
+default](docs/ARCHITECTURE.md#a-screen-lock-and-the-usb-default)
 
 </details>
 
@@ -585,7 +611,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 2705 tests, screenshots of the screens included
+    ./gradlew test              # 2776 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

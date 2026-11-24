@@ -120,6 +120,10 @@ object DaemonClient {
      *  (Revive.askWirelessOff). A recorder before 1.5 hangs up on it. */
     private const val COMMAND_WIRELESS_OFF = 'I'.code.toByte()
 
+    /** Developer options' Default USB configuration, read or set to none by
+     *  the recorder (protocol.txt, U). A recorder before 1.7 hangs up on it. */
+    private const val COMMAND_USB_DEFAULT = 'U'.code.toByte()
+
     private const val NONCE_BYTES = 16
     private const val MAC_BYTES = 32
     private const val MAC_ALGORITHM = "HmacSHA256"
@@ -653,6 +657,58 @@ object DaemonClient {
         "WIRELESS usb-off" -> WirelessOff.USB_OFF
         "WIRELESS refused" -> WirelessOff.REFUSED
         else -> null
+    }
+
+    /** What the recorder said about Developer options' Default USB
+     *  configuration (usbDefault, usbDefaultNone). */
+    sealed interface UsbDefaultReply {
+        /** The default, as UsbManager's bits: 0 for No data transfer, 4 for
+         *  File transfer (MTP). Set to none already, nothing was written. */
+        data class Default(val functions: Long) : UsbDefaultReply
+
+        /** None is being written, after this answer: Android may restart
+         *  adbd for it, and the recorder with it. */
+        data object Setting : UsbDefaultReply
+
+        /** A call up, a fetch under way, or any call Telecom holds - one
+         *  ringing among them: nothing written. */
+        data object Busy : UsbDefaultReply
+
+        /** The recorder could not ask Android's USB service. */
+        data object Unreadable : UsbDefaultReply
+    }
+
+    /**
+     * The Default USB configuration, read by the recorder as the shell
+     * (MANAGE_USB): an app cannot read it. Null with no answer - no
+     * recorder, or one before 1.7, which hangs up on the command.
+     */
+    suspend fun usbDefault(context: Context): UsbDefaultReply? =
+        parseUsbDefaultReply(ask(context, COMMAND_USB_DEFAULT, byteArrayOf(0)))
+
+    /**
+     * The Default USB configuration set to No data transfer by the recorder,
+     * unless a call is up or ringing, a fetch is under way, or it is none
+     * already. Setting
+     * means the recorder writes it after answering, and may be ended by
+     * Android for it a moment later (the recorder's UsbDefault). Null with
+     * no answer, as usbDefault.
+     */
+    suspend fun usbDefaultNone(context: Context): UsbDefaultReply? =
+        parseUsbDefaultReply(ask(context, COMMAND_USB_DEFAULT, byteArrayOf(1)))
+
+    /** The recorder's answer to COMMAND_USB_DEFAULT (protocol.txt, U): null
+     *  for anything else, as no answer. */
+    internal fun parseUsbDefaultReply(line: String?): UsbDefaultReply? {
+        val reply = line?.trim() ?: return null
+        return when {
+            reply == "USB setting" -> UsbDefaultReply.Setting
+            reply == "USB busy" -> UsbDefaultReply.Busy
+            reply == "USB unreadable" -> UsbDefaultReply.Unreadable
+            reply.startsWith("USB default ") ->
+                reply.removePrefix("USB default ").toLongOrNull()?.takeIf { it >= 0 }?.let { UsbDefaultReply.Default(it) }
+            else -> null
+        }
     }
 
     /**

@@ -179,12 +179,15 @@ fun HomeScreen(
     // Ask first the card - which cannot be put away there - told an Off
     // JemRec it was missing calls (review, 2026-11-18).
     val battery = state.batteryNotice && state.enabled
+    // The same for the Default USB configuration that stops the recorder at
+    // every lock: off, nothing it records is lost (UsbDefault.tellIfAtRisk).
+    val usbDefault = state.usbDefaultFunctions.takeIf { state.usbDefaultNotice && state.enabled }
     // The same for notifications off: its words say what calls it costs, and
     // under Off it told a JemRec that records nothing "JemRec still records
     // your calls" - or, in Ask first, that no call is recorded, not to be put
     // away (review, 2026-11-18).
     val notificationsOff = state.notificationsOff.takeIf { state.enabled }
-    val cards = listOf(notificationsOff != null, battery, state.folderLost, offer).count { it }
+    val cards = listOf(notificationsOff != null, battery, usbDefault != null, state.folderLost, offer).count { it }
     val placeOf by rememberUpdatedState { name: String -> placeInList(name, cards, tip, days) }
     val reveal = state.reveal
     LaunchedEffect(reveal) {
@@ -260,6 +263,18 @@ fun HomeScreen(
                     trackingOff = !state.callTracking,
                     onOpen = vm::openBatterySettings,
                     onNotNow = vm::dismissBatteryNotice,
+                )
+            }
+        }
+        // The Default USB configuration that stops the recorder at every
+        // lock: what it costs, and one tap to No data transfer (UsbDefault).
+        if (usbDefault != null) {
+            item {
+                UsbDefaultCard(
+                    functions = usbDefault,
+                    didNotStay = state.usbDefaultDidNotStay,
+                    onSet = vm::setUsbDefaultNone,
+                    onNotNow = vm::dismissUsbDefaultNotice,
                 )
             }
         }
@@ -614,6 +629,20 @@ private fun BatteryRestrictedCard(askFirst: Boolean, trackingOff: Boolean, onOpe
         action = "Open App info",
         onAction = onOpen,
         onNotNow = if (com.jemcik.jemrec.system.BatteryHealth.dismissable(askFirst)) onNotNow else null,
+    )
+}
+
+/** The Default USB configuration is a data mode and the lock is secure
+ *  (UsbDefault): what that costs, Set to No data transfer, or Not now -
+ *  put away until the setting or the lock changes. Shown only while JemRec is on. */
+@Composable
+internal fun UsbDefaultCard(functions: Long, didNotStay: Boolean, onSet: () -> Unit, onNotNow: () -> Unit) {
+    NoticeCard(
+        title = com.jemcik.jemrec.system.UsbDefault.TITLE,
+        text = com.jemcik.jemrec.system.UsbDefault.words(functions, didNotStay),
+        action = com.jemcik.jemrec.system.UsbDefault.ACTION,
+        onAction = onSet,
+        onNotNow = onNotNow,
     )
 }
 

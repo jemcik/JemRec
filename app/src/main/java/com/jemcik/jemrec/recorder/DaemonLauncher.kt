@@ -211,8 +211,9 @@ object DaemonLauncher {
         // USB debugging as the shell, true where Android 17 hides it from
         // apps, and leaves Wireless debugging on where USB debugging is off -
         // the one case the loop above could come back in - and the app checks
-        // the recorder after the off, and leaves it on for good on a phone
-        // where it took the recorder anyway (Revive.askWirelessOff).
+        // the recorder after the off, and keeps it on where two offs in a row
+        // took the recorder with nothing else to explain it
+        // (Revive.askWirelessOff).
         AdbTransport.close()
         Log.i(TAG, "daemon: up and serving loopback, ADB session closed")
     }

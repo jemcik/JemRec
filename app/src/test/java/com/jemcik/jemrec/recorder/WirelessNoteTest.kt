@@ -147,14 +147,41 @@ class WirelessNoteTest {
         assertTrue(NetworkRevive.jemRecs(context))
     }
 
-    /** The guard's note: for good, until Start fresh forgets it. */
-    @Test fun theGuardsNoteStaysUntilForgotten() {
+    /** The guard's count: two offs in a row that took the recorder keep
+     *  Wireless debugging on this phone, across a restart of it and off
+     *  Wi-Fi - the first alone does not - until an off it survives or Start
+     *  fresh forgets it. */
+    @Test fun twoLossesInARowKeepItOnUntilForgotten() {
         assertFalse(NetworkRevive.wirelessKeepsAdbd(context))
-        NetworkRevive.noteWirelessKeepsAdbd(context)
+        assertFalse("one is not enough", NetworkRevive.noteOffLoss(context))
+        assertFalse(NetworkRevive.wirelessKeepsAdbd(context))
         Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 42)
         onWifi(false)
+        assertTrue("the second in a row", NetworkRevive.noteOffLoss(context))
         assertTrue(NetworkRevive.wirelessKeepsAdbd(context))
-        NetworkRevive.forgetWirelessKeepsAdbd(context)
+        NetworkRevive.forgetOffLosses(context)
+        assertFalse(NetworkRevive.wirelessKeepsAdbd(context))
+        assertFalse("from the start", NetworkRevive.noteOffLoss(context))
+    }
+
+    /** The real phone's world keeps the guard's count in NetworkRevive: the
+     *  stand-in's own copy of the count would not show a world miswired. */
+    @Test fun theRealWorldKeepsTheGuardsCount() {
+        val w = ReviveWorld.Live(context)
+        assertFalse(w.keepsAdbd())
+        assertFalse("once", w.noteOffLoss())
+        assertFalse(w.keepsAdbd())
+        assertTrue("twice", w.noteOffLoss())
+        assertTrue(w.keepsAdbd())
+        assertTrue("another revive's world reads the same", ReviveWorld.Live(context).keepsAdbd())
+        w.forgetOffLosses()
+        assertFalse(w.keepsAdbd())
+    }
+
+    /** Row 28: 1.5's and 1.6's note of one loss, for good, is not read: a
+     *  phone it was set on gets the off back with 1.7. */
+    @Test fun theOneLossNoteOf15IsNotRead() {
+        com.jemcik.jemrec.Prefs.of(context).edit().putBoolean("wireless_debugging_keeps_adbd", true).commit()
         assertFalse(NetworkRevive.wirelessKeepsAdbd(context))
     }
 

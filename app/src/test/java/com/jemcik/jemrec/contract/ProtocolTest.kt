@@ -91,6 +91,20 @@ class ProtocolTest {
             replies.filter { it.command == "I" }.map { CaptureDaemon.parseWirelessOffReply(it.example) },
         )
         assertNull(CaptureDaemon.parseWirelessOffReply("WIRELESS maybe"))
+        assertEquals(
+            listOf(
+                com.jemcik.jemrec.recorder.DaemonClient.UsbDefaultReply.Default(4),
+                com.jemcik.jemrec.recorder.DaemonClient.UsbDefaultReply.Setting,
+                com.jemcik.jemrec.recorder.DaemonClient.UsbDefaultReply.Busy,
+                com.jemcik.jemrec.recorder.DaemonClient.UsbDefaultReply.Unreadable,
+            ),
+            replies.filter { it.command == "U" }.map { CaptureDaemon.parseUsbDefaultReply(it.example) },
+        )
+        assertNull(CaptureDaemon.parseUsbDefaultReply("USB maybe"))
+        assertNull(CaptureDaemon.parseUsbDefaultReply("USB default"))
+        assertNull(CaptureDaemon.parseUsbDefaultReply("USB default -4"))
+        assertNull(CaptureDaemon.parseUsbDefaultReply("USB default MTP"))
+        assertNull(CaptureDaemon.parseUsbDefaultReply(null))
 
         val sims = CaptureDaemon.parseSims(example("XP", "SIMS"))
         assertEquals("1", sims!!.defaultId)

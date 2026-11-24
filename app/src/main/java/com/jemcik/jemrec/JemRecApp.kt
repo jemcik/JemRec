@@ -53,6 +53,10 @@ class JemRecApp : Application() {
             // between calls (BatteryHealth).
             runCatching { com.jemcik.jemrec.system.BatteryHealth.tellIfRestricted(app) }
                 .onFailure { Log.w("JemRec", "battery: Restricted not said at start", it) }
+            // The Default USB configuration that stops the recorder at every
+            // lock, the same way, from the recorder's last answer (UsbDefault).
+            runCatching { com.jemcik.jemrec.system.UsbDefault.tellIfAtRisk(app) }
+                .onFailure { Log.w("JemRec", "usb default: not said at start", it) }
         }, "jemrec-startcheck").start()
     }
 }

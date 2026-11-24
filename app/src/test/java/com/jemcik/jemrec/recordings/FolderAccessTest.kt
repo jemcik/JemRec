@@ -59,6 +59,37 @@ class FolderAccessTest {
         assertTrue(FolderAccess.lost(app))
     }
 
+    /** Review round 5: a loss is said once - the flag read again under the
+     *  lock. */
+    @Test fun aTellingIsPostedOnce() {
+        val built = com.jemcik.jemrec.calls.AfterCall.problem(
+            app, "Recording saved elsewhere", "built before the lock",
+            android.app.PendingIntent.getActivity(app, 0, Intent(), android.app.PendingIntent.FLAG_IMMUTABLE),
+        ).build()
+        val tree = RecordingStore.treeUri(app)
+        FolderAccess.tellOnce(app, built, tree)
+        assertEquals(1, told())
+        notifications.cancelAll()
+        FolderAccess.tellOnce(app, built, tree)
+        assertEquals("said already", 0, told())
+    }
+
+    /** Review round 4: the folder let go of, or another chosen, between a
+     *  save's look and its telling: nothing said. With the same folder
+     *  still chosen, it is. */
+    @Test fun aTellingAfterTheFolderChangedSaysNothing() {
+        val built = com.jemcik.jemrec.calls.AfterCall.problem(
+            app, "Recording saved elsewhere", "built before the lock",
+            android.app.PendingIntent.getActivity(app, 0, Intent(), android.app.PendingIntent.FLAG_IMMUTABLE),
+        ).build()
+        val looked = RecordingStore.treeUri(app)
+        RecordingStore.clearTree(app)
+        FolderAccess.tellOnce(app, built, looked)
+        assertEquals("let go of since", 0, told())
+        FolderAccess.tellOnce(app, built, RecordingStore.treeUri(app))
+        assertEquals("unchanged since: said", 1, told())
+    }
+
     @Test fun aSaveSentElsewhereIsSaidOnce() {
         lettingGo()
         val first = RecordingStore.open(app, "20261020_170000_in_+447700900123.ogg")!!

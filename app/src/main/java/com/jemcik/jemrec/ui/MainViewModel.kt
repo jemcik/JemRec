@@ -370,6 +370,12 @@ class MainViewModel @JvmOverloads constructor(
                     _state.update { it.revealed() }
                     folderPicks.trySend(folderPickerStart())
                 }
+                // The USB default notification's Set to No data transfer:
+                // home, where its card is, and the card's own tap.
+                DeepLink.Kind.USB_DEFAULT_NONE -> {
+                    _state.update { it.revealed() }
+                    recorder.setUsbDefaultNone()
+                }
             }
         }
     }
@@ -487,6 +493,8 @@ class MainViewModel @JvmOverloads constructor(
     fun dismissCallLogOffer() = settings.dismissCallLogOffer()
     fun dismissNotificationsOff(off: com.jemcik.jemrec.calls.NotificationHealth.Off) = settings.dismissNotificationsOff(off)
     fun dismissBatteryNotice() = settings.dismissBatteryNotice()
+    fun dismissUsbDefaultNotice() = settings.dismissUsbDefaultNotice()
+    fun setUsbDefaultNone() = recorder.setUsbDefaultNone()
     fun openBatterySettings() = com.jemcik.jemrec.system.BatteryHealth.openSettings(getApplication())
     fun openNotificationSettings(off: com.jemcik.jemrec.calls.NotificationHealth.Off) =
         com.jemcik.jemrec.calls.NotificationHealth.openSettings(getApplication(), off)

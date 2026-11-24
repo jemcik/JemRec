@@ -77,13 +77,62 @@ internal object RecorderHealth {
 
     enum class Problem { NEEDS_WIFI, NETWORK_NOT_ALLOWED, CANNOT_CONNECT, CANNOT_START }
 
+    /** What Android said around a revive that failed, read before the
+     *  alert's lock (onRevive). */
+    internal class Down(
+        val onWifi: Boolean,
+        val unadvertised: Boolean,
+        val inCall: Boolean,
+    )
+
+    /** Set up and on: only then is a recorder down a problem to tell. */
+    private fun watching(context: Context) = CaptureDaemon.isSetUp(context) && RecorderSwitch.isOn(context)
+
     /** Called with the outcome of every revive - [connect], what its own
-     *  connect found (CaptureDaemon.revive). Cheap; never throws. */
+     *  connect found (CaptureDaemon.revive). Cheap; never throws. Android is
+     *  asked first - a setting, the network, adbd's state, the audio mode -
+     *  and the flags are judged under the alert's lock after, so a resume's
+     *  [seen], on the main thread, waits on the flags, and on Android only
+     *  where an alert is said or taken back under the lock - its channels and
+     *  PendingIntents, a notify, a cancel: rare, the recorder down past its
+     *  grace (review rounds 3 to 5: lock contention is an ANR cause,
+     *  developer.android.com). */
     fun onRevive(context: Context, alive: Boolean, connect: AdbTransport.ConnectOutcome) = runCatching {
-        val prefs = Prefs.of(context)
         val wireless = GlobalSettings.read(context, GlobalSettings.ADB_WIFI_ENABLED)
-        // What the connect found, as it can be meant (meant).
         val seen = meant(connect, wireless)
+        val down = if (alive || !watching(context)) {
+            null
+        } else {
+            Down(
+                onWifi = NetworkRevive.onWifi(context),
+                // Asked only when the connect found no service, as before
+                // round 3: adbd's state is a getprop, up to 2 s, twice
+                // (review round 4).
+                unadvertised = seen == AdbTransport.ConnectOutcome.NOT_FOUND &&
+                    notAllowed(
+                        refusedHere = NetworkRevive.wirelessRefusedHere(context),
+                        switchOn = wireless == GlobalSettings.Reading.ON,
+                        adbd = AdbdState.read(),
+                        switchedOnHere = NetworkRevive.switchedOnHere(context),
+                    ),
+                inCall = CaptureDaemon.callInProgress(context),
+            )
+        }
+        judge(context, alive, seen, down)
+    }.onFailure { Log.w(TAG, "health: could not judge the recorder", it) }
+
+    /** [onRevive]'s judging, under the alert's lock: the flags only - and,
+     *  when an alert is said, its posting (rare: the recorder down past the
+     *  grace). [down] is null with the recorder up, or not watched. */
+    @androidx.annotation.VisibleForTesting
+    @Synchronized
+    internal fun judge(
+        context: Context,
+        alive: Boolean,
+        seen: AdbTransport.ConnectOutcome,
+        down: Down?,
+    ) {
+        val prefs = Prefs.of(context)
         // Refusals count only in a row: a recorder that came up, or an adbd
         // that let us in, starts the count again.
         val refused = when {
@@ -94,32 +143,28 @@ internal object RecorderHealth {
         }
         prefs.edit { putInt(KEY_REFUSED, refused) }
 
-        val watching = CaptureDaemon.isSetUp(context) && RecorderSwitch.isOn(context)
-        if (alive || !watching) {
+        // Watching read again under the lock: JemRec switched off while
+        // Android was asked, its standingDown would be undone - the recorder
+        // down kept while off, and alerted at once when on again, with no
+        // grace (review round 4). Preferences and a file.
+        if (down == null || !watching(context)) {
             forgetDown(context, back = alive)
-            return@runCatching
+            return
         }
 
         val now = System.currentTimeMillis()
         val since = prefs.getLong(KEY_DOWN_SINCE, 0L).takeIf { it > 0 }
             ?: now.also { prefs.edit { putLong(KEY_DOWN_SINCE, it) } }
-        val unadvertised = seen == AdbTransport.ConnectOutcome.NOT_FOUND &&
-            notAllowed(
-                refusedHere = NetworkRevive.wirelessRefusedHere(context),
-                switchOn = wireless == GlobalSettings.Reading.ON,
-                adbd = AdbdState.read(),
-                switchedOnHere = NetworkRevive.switchedOnHere(context),
-            )
-        val problem = diagnose(NetworkRevive.onWifi(context), refused, unadvertised)
+        val problem = diagnose(down.onWifi, refused, down.unadvertised)
         // Kept at every failed revive, not only once alerted: the home screen
         // shows it straight away, where the alert waits out the grace.
         prefs.edit { putString(KEY_CAUSE, problem.name) }
         val alerted = prefs.getString(KEY_ALERTED, null)
-        alert(now, since, alerted, problem, CaptureDaemon.callInProgress(context))?.let { alert ->
+        alert(now, since, alerted, problem, down.inCall)?.let { alert ->
             Log.w(TAG, "health: recorder down since $since, telling the user ($problem${if (alert.silent) ", silently: a call is up" else ""})")
             say(context, problem, alert)
         }
-    }.onFailure { Log.w(TAG, "health: could not judge the recorder", it) }
+    }
 
     /**
      * JemRec is off, so a recorder down is no problem: switched off
@@ -130,6 +175,7 @@ internal object RecorderHealth {
      * stayed until the next revive, up to 15 minutes later. They go now, as
      * they do at a revive while JemRec is off.
      */
+    @Synchronized
     fun standingDown(context: Context) = runCatching { forgetDown(context, back = false) }
         .onFailure { Log.w(TAG, "health: could not forget the recorder down", it) }
 
@@ -223,12 +269,23 @@ internal object RecorderHealth {
      * still not normal: a ring next, which would mute it. Cheap; never throws.
      */
     fun callOver(context: Context) = runCatching {
+        // The flag first: the audio mode is asked only with a silent alert
+        // standing, as before round 3 - not at every call's end (review
+        // round 4) - and before the lock, as onRevive asks its own; the
+        // flag is read again under it.
         val alerted = Prefs.of(context).getString(KEY_ALERTED, null) ?: return@runCatching
-        if (!alerted.endsWith(SILENT_MARK) || CaptureDaemon.callInProgress(context)) return@runCatching
-        val problem = Problem.entries.firstOrNull { it.name == alerted.removeSuffix(SILENT_MARK) } ?: return@runCatching
+        if (!alerted.endsWith(SILENT_MARK)) return@runCatching
+        callOverLocked(context, CaptureDaemon.callInProgress(context))
+    }.onFailure { Log.w(TAG, "health: could not tell the alert again", it) }
+
+    @Synchronized
+    private fun callOverLocked(context: Context, inCall: Boolean) {
+        val alerted = Prefs.of(context).getString(KEY_ALERTED, null) ?: return
+        if (!alerted.endsWith(SILENT_MARK) || inCall) return
+        val problem = Problem.entries.firstOrNull { it.name == alerted.removeSuffix(SILENT_MARK) } ?: return
         Log.w(TAG, "health: the call is over; telling the user again, with its sound ($problem)")
         say(context, problem, Alert(silent = false, again = true))
-    }.onFailure { Log.w(TAG, "health: could not tell the alert again", it) }
+    }
 
     /** The alert put away by the user: said, silent or not - not posted
      *  again with its sound after a call they swiped it away in (review
@@ -239,6 +296,7 @@ internal object RecorderHealth {
      *  among the ways, which sends no delete intent (AOSP NMS: a click is
      *  REASON_CLICK, sendDelete false), and the header says what it says
      *  (review round 14). Not posted again with its sound. */
+    @Synchronized
     fun seen(context: Context) {
         val prefs = Prefs.of(context)
         val alerted = prefs.getString(KEY_ALERTED, null) ?: return
@@ -339,6 +397,7 @@ internal object RecorderHealth {
      * no alerts; left, the old cause sent home straight back to the pairing
      * step once setup was done, before any revive had read the new state.
      */
+    @Synchronized
     fun pairingAgain(context: Context) {
         Prefs.of(context).edit {
             remove(KEY_REFUSED)

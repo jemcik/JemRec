@@ -715,7 +715,33 @@ debugging off the cable. Android tells JemRec of the change, and JemRec starts
 the recorder again by itself, as after an unplug, without the *Checking the
 recorder* notification an unplug shows. And leave Developer options' **Default
 USB configuration** at *No data transfer*: set to anything else, Android
-switches to it by itself when you unlock the phone with the cable in.
+switches to it by itself at every unlock - with a screen lock, the next
+section.
+
+## A screen lock and the USB default
+
+With a PIN, pattern or password, Android switches USB to charging at every lock
+and back to Developer options' **Default USB configuration** at every unlock.
+Where that is a data mode, such as *File transfer*, each switch stops the
+recorder, and on some phones it stays down until you open JemRec, or for 15
+minutes or more, until its next check: calls while the phone is locked go
+unrecorded, and locking it during a call cuts the recording. A swipe lock, or
+no lock, does not do it. Measured on the Android 12, 16 and 17 emulators and an
+Honor, where JemRec had the recorder back 16 seconds after each lock and
+unlock; reported on a Redmi Note 9S.
+
+So while it is set that way, a card on the home screen says so - *Locking your
+phone stops the recorder* - and a notification once. **Set to No data
+transfer** sets it for you; the recorder is back by itself 10 to 16 seconds
+later on the emulators, and locks no longer stop it. While a call rings or is
+up, or a recording is being saved, it asks you to try again in a moment; with
+the recorder down and unable to start, it says why - such as no Wi-Fi, or
+Wireless debugging not allowed on this network. With *No data transfer*, a
+phone plugged into a computer only charges until you choose *File transfer* in
+its USB notification. **Not now** puts the card away until the setting or the
+lock changes. If JemRec cannot set it, or it does not stay, the card says how
+to set it by hand: Developer options, *Default USB configuration*, *No data
+transfer*.
 
 ## Stopped in the background
 
@@ -794,11 +820,12 @@ on; in Ask first, when its question is set not to pop up, or its full-screen
 notifications are turned off so it stays on screen for a minute only - either
 way it waits in the notification shade, easy to miss mid-call; or when the
 folder you chose for recordings can no longer be reached - moved, deleted, its
-drive taken out, or its access taken back - with the way to put it right:
-**Turn on**, **Open App info**, or **Choose again**. **Not now** puts the
-notifications and battery cards away until what they say changes - never one
-where no call is recorded: Ask first's question off, or the battery card in Ask
-first.
+drive taken out, or its access taken back; or when a screen lock would stop the
+recorder (*A screen lock and the USB default*) - with the way to put it right:
+**Turn on**, **Open App info**, **Choose again**, or **Set to No data
+transfer**. **Not now** puts the notifications, battery and USB cards away
+until what they say changes - never one where no call is recorded: Ask first's
+question off, or the battery card in Ask first.
 
 And when the app is closed, in notifications. Tapping one that reports a
 problem opens JemRec where the problem is shown; its button does the fix:
@@ -815,6 +842,7 @@ problem opens JemRec where the problem is shown; its button does the fix:
 | **Recording stopped early** | The recording of your last call ended well before the call did: its capture failed, or nothing reached it, and it never came back, its file could not be written - the phone full - or the recorder itself was ended. Phone and messenger calls alike; a recorder ended during a messenger call, a call waiting, or with call tracking off, cannot be told. One saved long after its call says which call, by its time. It is that call's one notification: it takes the place of the one after the call, with the same buttons, and stays until you clear it. A message cut short says so in the message's own notification. |
 | **Recording saved elsewhere** | JemRec can no longer reach the folder you chose, so a call was saved in the standard Recordings folder. Once; **Choose again** opens Android's folder picker. |
 | **Battery use is Restricted** | JemRec's battery use is set to Restricted, so Android lets nothing of it run in the background; the notification says what that costs. Once, while it lasts and JemRec is on, its words kept to what it costs now; gone once it is lifted or JemRec is turned off. Tapped, JemRec's card says the same; **Open App info** and allow its background use on its battery page. |
+| **Locking your phone stops the recorder** | Developer options' Default USB configuration is a data mode and your lock is a PIN, pattern or password, so each lock and unlock stops the recorder. Once, while it lasts and JemRec is on; gone once it is set, or the lock is no longer one of those. **Set to No data transfer** sets it, as the card on the home screen does. |
 | **Checking the recorder** | A USB cable went in or came out, and the recorder went with it: JemRec is starting it again. A few seconds; a cable that changed nothing shows nothing. Minutes on a phone that holds JemRec back with the screen off - see *Unplugging from a computer*. |
 | **Taking a message** | The answering machine has a caller. **Talk to them** takes the call; **Hang up** ends it. |
 | **Message from** the caller | A message, with a sound, Play, Share and Delete. It stays until you dismiss it, whether or not each call is shown when it ends. |
