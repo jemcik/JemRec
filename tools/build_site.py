@@ -1811,14 +1811,41 @@ SETUP = [
     ("ul", [
         "**On**, the default: every call is recorded and you are not asked.",
         "**Off**: when a call starts a notification appears with **Record** and "
-        "**Not now**. Nothing is captured until you tap Record, so the opening "
+        "**Not now**, and the phone vibrates, twice, shortly - unless that "
+        "notification's vibration is off in Android's settings. Nothing is captured until you tap Record, so the opening "
         "seconds of that call are not saved. That is the honest cost of being "
         "asked, and it is why the switch is on by default.",
     ]),
-    ("p", "The prompt stays on screen until you answer it, rather than the five "
-          "seconds an ordinary notification gets - a minute, if JemRec's full-screen "
-          "notifications are turned off in Android's settings - and if you miss it, "
-          "it waits in the shade for the rest of the call."),
+    ("p", "Android keeps the prompt on screen until you answer it, rather than "
+          "the five seconds an ordinary notification gets - a minute, if JemRec's "
+          "full-screen notifications are turned off in Android's settings - and "
+          "if you miss it, it waits in the shade for the rest of the call; a tap "
+          "on it opens it as a small window over the call. Some phones show pop-ups in a way of their own: One UI's *Brief* pop-up "
+          "style may take it away in seconds. **Not now** answers the prompt, "
+          "not the call: until the call ends, JemRec's own notification, "
+          "**Not recording this call**, has **Record** - open it out in the "
+          "shade, if it is folded. From Android 14 you can swipe that one away "
+          "too, on an unlocked phone, and Record with it."),
+    ("p", "**Record button over calls**, under Record every call while that is "
+          "off, is a button on the call's screen, on a locked phone too, that "
+          "stays until you answer it or the call ends: **Record**, or the cross "
+          "for Not now. Drag it up or down to where it is not in the way; it is "
+          "there at the next call. Tapped, it says **Starting**, then "
+          "**Recording** once the recorder has answered, and goes. The prompt "
+          "does not pop up then, and waits in the shade - but on a phone asleep "
+          "as it asks, where it still opens. Off until you "
+          "switch it on: it needs Android's *Display over other apps*, which the "
+          "recorder allows for JemRec - or Android's own page opens, for you to "
+          "choose JemRec in its list and allow it (greyed out there, from "
+          "Android 15: allow restricted settings first, in JemRec's App info, "
+          "the three-dot menu). Switched off, the recorder "
+          "takes it back; with none running, JemRec says it is still allowed. "
+          "Android may show a small note of its "
+          "own, that JemRec is displaying over other apps, while the button is "
+          "up. A Xiaomi has permissions of its own for this, under Other "
+          "permissions in JemRec's App info - *Display pop-up windows while "
+          "running in the background* and *Show on Lock screen* - which may "
+          "hold the button back; not tried on one."),
 
     ("h2", "Exact call tracking"),
     ("p", "**Exact call tracking**, in Settings, is on unless you turn it off. "
@@ -2379,7 +2406,8 @@ SETUP = [
         ("CANNOT", "TURN_ON_NOTIFICATIONS", "Ask first asks in a notification, and "
          "JemRec's notifications - or that one, Record this call? - are off in "
          "Android's settings, so no call is being recorded. Tap the line to turn "
-         "them on."),
+         "them on - or switch on Record button over calls, which asks without "
+         "them."),
         ("STARTING", None, "Rebuilding the recorder. A few seconds."),
         ("CHECKING", None, "JemRec has just opened and is looking at the recorder "
          "and your recordings. No mark is lit until it knows: a moment, or a few "
@@ -2398,7 +2426,8 @@ SETUP = [
           "first not recorded - these two while JemRec is on; in Ask first, when "
           "its question is set not to pop up, or its full-screen notifications are "
           "turned off so it stays on screen for a minute only - either way it "
-          "waits in the notification shade, easy to miss mid-call; or when the folder "
+          "waits in the notification shade, easy to miss mid-call - but not "
+          "while Record button over calls asks in its place; or when the folder "
           "you chose for recordings can no longer be reached - moved, deleted, "
           "its drive taken out, or its access taken back; or when a screen "
           "lock would stop the recorder (*A screen lock and the USB default*) - "
@@ -2443,6 +2472,9 @@ SETUP = [
          "not play your greeting, so it hung up. The notification says which; "
          "for the greeting, run the answering machine's test call. One that could "
          "not be saved is tried again, and the notification goes once it is."],
+        ["**Not recording this call**, during a call", "Ask first: the call's own "
+         "notification, until you tap **Record** on it, on the prompt or on the "
+         "button over the call. It stays there after Not now."],
         ["**Recording stopped**, during a call", "The call's own notification, "
          "silently: the recording stopped. *Trying again* - its capture failed "
          "more often than the recorder may start it again at once, so it tries "
@@ -2519,6 +2551,9 @@ SETUP = [
     ("p", "**Recording**"),
     ("ul", [
         "**Record every call** — record everything, or be asked each time.",
+        "**Record button over calls** — while Record every call is off: a "
+        "button on the call's screen to be asked with; see Choosing when to "
+        "record.",
         "**Whose calls to keep** — your contacts (all, all but some, only some, "
         "or none) and numbers not in your contacts. Needs Show who called.",
         "**Answering machine** — off until you turn it on; see The answering "
@@ -3405,7 +3440,9 @@ SCREENS = [
 FEATURES = [
     ("Record every call, or be asked",
      "Automatic mode records every call; ask-first records nothing until you "
-     "tap Record. About 12&nbsp;MB an hour, or smaller or larger in Settings "
+     "tap Record &mdash; in a notification, or on a button over the call&rsquo;s "
+     "screen that stays until you answer it or the call ends. About 12&nbsp;MB "
+     "an hour, or smaller or larger in Settings "
      "&rarr; Saving &rarr; Quality. A Quick Settings tile turns recording on "
      "and off, and a long press on it opens JemRec.",
      "choosing-when-to-record"),
@@ -3541,6 +3578,16 @@ FAQ = [
      "2G, VoLTE and Wi-Fi Calling differ. Your microphone is muted while the "
      "greeting plays and the message is left, so the caller hears your greeting "
      "and nothing of your room."),
+    ("Ask first&rsquo;s question goes before I can tap it",
+     "How long a pop-up stays is the phone&rsquo;s: Android itself keeps this one "
+     "until you answer it, but some phones show pop-ups in a way of their own "
+     "&mdash; a Galaxy on One UI&rsquo;s <em>Brief</em> pop-up style may take it "
+     "away in seconds. Switch on Settings &rarr; Recording &rarr; <em>Record "
+     "button over calls</em>: a button on the call&rsquo;s screen, locked phone "
+     "or not, that stays until you answer it or the call ends, in place of the "
+     "pop-up. Drag it up or down to where it is not in the way. And until the call ends, "
+     "JemRec&rsquo;s own notification in the shade has <em>Record</em> too "
+     "&mdash; after <em>Not now</em> as well."),
     ("Why does it need Wi-Fi?",
      "Only to <em>start</em> the recorder: that is the one step that needs "
      "Wireless debugging, which Android runs over Wi-Fi. Once started, the "
@@ -3860,7 +3907,7 @@ INDEX_BODY = f"""
      that too.</p>
   <div class="works">
     <h3 class="versions">What it records, by Android version</h3>
-    <h3 class="tested">Both sides recorded on five phones</h3>
+    <h3 class="tested">Both sides recorded on six phones</h3>
     <div class="table-card versions">
       <table class="strip">
         <tr><th>Android</th>{"".join(f"<th>{v}</th>" for v in range(12, 18))}</tr>
@@ -3876,6 +3923,7 @@ INDEX_BODY = f"""
       <li>Samsung Galaxy S20<span>One UI</span></li>
       <li>Samsung Galaxy S23<span>One UI, Android 16 and 17 &mdash; over Wi-Fi Calling too</span></li>
       <li>Samsung Galaxy M34<span>One UI 8.5, Android 16 &mdash; over Wi-Fi Calling too, as its owner reported</span></li>
+      <li>Samsung Galaxy A17<span>One UI 8.5, Android 16 &mdash; as its owner reported</span></li>
       <li>OnePlus<span>LineageOS 23</span></li>
     </ul>
   </div>
@@ -3883,7 +3931,7 @@ INDEX_BODY = f"""
      and a meeting. Signal takes the same path as the other messengers and has
      not been tested yet.</p>
   <div class="note info">
-    <p><strong>Five is not a compatibility list.</strong> The one thing nobody
+    <p><strong>Six is not a compatibility list.</strong> The one thing nobody
        can promise for a phone they have not held is its audio hardware: some
        hand over both sides of the call, some one, some silence. The
        <strong>Self-test</strong> answers it on yours in about a second.</p>
@@ -4139,7 +4187,9 @@ HOW_BODY = f"""
      a call that went unrecorded. Knowing when a call is answered takes one more
      permission, one Android does not let apps ask for: JemRec&rsquo;s recorder
      allows it, and turning off Exact call tracking in Settings takes it
-     back.</p>
+     back. And <em>Record button over calls</em>, off until you switch it on,
+     needs Android&rsquo;s <em>Display over other apps</em>, for its button
+     alone.</p>
   <p>Every permission, in the order F-Droid&rsquo;s listing page shows them,
      because a permission a call recorder does not explain is one its user has
      to guess at:</p>
@@ -4156,7 +4206,9 @@ HOW_BODY = f"""
     <tr><td><code>READ_EXTERNAL_STORAGE</code></td><td>Android 12 only, which has no <code>READ_MEDIA_AUDIO</code>: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
     <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking acts on a call in one case only: it hangs up the answering machine&rsquo;s call if the recorder is lost mid-message. The machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
-    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Keeps Ask first's question on screen during a call until you answer it; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs.</td></tr>
+    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Keeps Ask first's question on screen during a call until you answer it, on phones that show pop-ups as Android does; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs. Not used while the button over calls asks.</td></tr>
+    <tr><td><code>SYSTEM_ALERT_WINDOW</code></td><td>For Ask first's <em>Record button over calls</em>, and nothing else is drawn with it. Not held until you switch the button on: the recorder then allows it, as the shell, or Android's own page does (<em>Display over other apps</em>); switched off, the recorder takes it back, and where none is running JemRec says it is still allowed.</td></tr>
+    <tr><td><code>VIBRATE</code></td><td>So Ask first's question can be felt in a phone call, where Android drops every notification's own vibration - only if its notification vibrates in Android's settings. Given at install.</td></tr>
     <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down.</td></tr>
   </table>
 
@@ -4173,12 +4225,12 @@ HOW_BODY = f"""
      silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
      <strong>Self-test</strong> &mdash; by opening a real capture down the same
      path a call takes and telling you what came out.</p>
-  <p class="muted">Both sides of the call have been recorded on five phones,
+  <p class="muted">Both sides of the call have been recorded on six phones,
      across three very different Android builds: an Honor Magic&nbsp;8 Pro on
-     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20, a Galaxy&nbsp;S23 and a
-     Galaxy&nbsp;M34 on One&nbsp;UI &mdash; the S23 and the M34 over Wi-Fi
-     Calling too &mdash; and a OnePlus on LineageOS&nbsp;23. Five is not a
-     compatibility list, which is what the self-test is for.</p>
+     MagicOS&nbsp;10 and 11, a Samsung Galaxy&nbsp;S20, a Galaxy&nbsp;S23, a
+     Galaxy&nbsp;M34 and a Galaxy&nbsp;A17 on One&nbsp;UI &mdash; the S23 and
+     the M34 over Wi-Fi Calling too &mdash; and a OnePlus on LineageOS&nbsp;23.
+     Six is not a compatibility list, which is what the self-test is for.</p>
   <p class="muted">OPPO, OnePlus and realme phones on their own systems
      (ColorOS, OxygenOS, realme UI) refuse JemRec the setting setup grants it
      until a switch of their own is set: <em>Disable system

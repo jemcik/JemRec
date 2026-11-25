@@ -140,7 +140,7 @@ class NotificationHealthTest {
     }
 
     /** What home would say, Android asked now. */
-    private fun notice() = NotificationHealth.notice(app, NotificationHealth.switches(app))
+    private fun notice() = NotificationHealth.notice(app, NotificationHealth.switches(app), overlayAllowed = false)
 
     private fun turnOff(channel: String) {
         manager.createNotificationChannel(NotificationChannel(channel, channel, NotificationManager.IMPORTANCE_NONE))
@@ -206,10 +206,30 @@ class NotificationHealthTest {
     @Test fun theNoticeIsDecidedFromWhatAndroidSaidAndTheMode() {
         val askOff = NotificationHealth.Switches(all = false, askFirst = true, problems = false)
         RecordingMode.set(app, RecordingMode.ON_DEMAND)
-        assertEquals(NotificationHealth.Off.ASK_FIRST, NotificationHealth.notice(app, askOff))
+        assertEquals(NotificationHealth.Off.ASK_FIRST, NotificationHealth.notice(app, askOff, overlayAllowed = false))
         RecordingMode.set(app, RecordingMode.AUTOMATIC)
-        assertNull(NotificationHealth.notice(app, askOff))
-        assertNull(NotificationHealth.notice(app, null))
+        assertNull(NotificationHealth.notice(app, askOff, overlayAllowed = false))
+        assertNull(NotificationHealth.notice(app, null, overlayAllowed = false))
+    }
+
+    /** With Ask first's button over calls working, the question's
+     *  notification off, quiet or brief leaves no call unasked: not said, and
+     *  all of them off can be put away as in Record every call. */
+    @Test fun withItsButtonOverCallsAskFirstNeedsNoNotification() {
+        RecordingMode.set(app, RecordingMode.ON_DEMAND)
+        CallButton.setEnabled(app, true)
+        val off = NotificationHealth.Switches(all = false, askFirst = true, problems = false)
+        val quiet = NotificationHealth.Switches(all = false, askFirst = false, problems = false, askFirstQuiet = true)
+        val brief = NotificationHealth.Switches(all = false, askFirst = false, problems = false, askFirstBrief = true)
+        listOf(off, quiet, brief).forEach { assertNull("$it", NotificationHealth.notice(app, it, overlayAllowed = true)) }
+        val all = NotificationHealth.Switches(all = true, askFirst = false, problems = false)
+        assertEquals(NotificationHealth.Off.ALL, NotificationHealth.notice(app, all, overlayAllowed = true))
+        NotificationHealth.dismiss(app, NotificationHealth.Off.ALL)
+        assertNull(NotificationHealth.notice(app, all, overlayAllowed = true))
+        // The permission taken back, or the button off: no button to ask with.
+        assertEquals(NotificationHealth.Off.ASK_FIRST, NotificationHealth.notice(app, off, overlayAllowed = false))
+        CallButton.setEnabled(app, false)
+        assertEquals(NotificationHealth.Off.ASK_FIRST, NotificationHealth.notice(app, off, overlayAllowed = true))
     }
 
     /** Put away while all were off; then only the problems' off; then all

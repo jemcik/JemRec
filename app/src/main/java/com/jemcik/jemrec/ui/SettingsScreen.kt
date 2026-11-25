@@ -268,6 +268,34 @@ fun SettingsScreen(
                     onCheckedChange = vm::setAutomatic,
                 )
             }
+            // Ask first's, under what turns it on (CallButton). With Android's
+            // permission gone it reads on, and says it is not shown: off puts
+            // the words away, and on again asks for it. On, it is here in
+            // Record every call too: its permission is, until it is off.
+            if (!state.automatic || state.callButton) {
+                val refused = state.callButton && !state.automatic && state.overlayAllowed == false
+                row {
+                    SwitchRow(
+                        title = "Record button over calls",
+                        summary = when {
+                            !state.callButton -> "Asks with a button on the call screen instead of a pop-up"
+                            state.automatic -> "Only while Record every call is off"
+                            refused ->
+                                "Not shown: Display over other apps is off for JemRec in Android's settings. " +
+                                    "Switch this off and on to allow it"
+                            else -> "Stays on the call screen until you answer it or the call ends"
+                        },
+                        summaryColor = if (refused) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        icon = SettingsIcons.RecordButton,
+                        checked = state.callButton,
+                        onCheckedChange = vm::setCallButton,
+                    )
+                }
+            }
             row {
                 val rules = rulesSummary(state)
                 SettingsRow(

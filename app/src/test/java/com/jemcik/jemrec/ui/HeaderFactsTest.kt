@@ -181,6 +181,22 @@ class HeaderFactsTest {
         assertEquals(Instruction.TURN_ON_NOTIFICATIONS, instruction(both))
     }
 
+    /** Ask first with its button over calls working asks with its
+     *  notifications off too: ready, and the battery's card its own. */
+    @Test fun askFirstsButtonOverCallsAsksWithNotificationsOff() {
+        val off = ready.copy(automatic = false, notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL)
+        assertEquals(RecorderStatus.CANNOT, recorderStatus(off))
+        val button = off.copy(callButton = true, overlayAllowed = true)
+        assertEquals(RecorderStatus.READY, recorderStatus(button))
+        // Switched on and not let show, or allowed and not switched on: no.
+        assertEquals(RecorderStatus.CANNOT, recorderStatus(button.copy(overlayAllowed = false)))
+        assertEquals(RecorderStatus.CANNOT, recorderStatus(button.copy(callButton = false)))
+        // The battery's reason stands, and is what is said.
+        val held = button.copy(batteryRestricted = true, callTracking = false)
+        assertEquals(RecorderStatus.CANNOT, recorderStatus(held))
+        assertEquals(Instruction.ALLOW_BACKGROUND, instruction(held))
+    }
+
     @Test fun onWifiTheRecorderDownIsNeverToldToJoinOne() {
         // The Honor, 2026-10-24: on Wi-Fi, its pairing deleted, the header
         // said "Join any Wi-Fi to resume".

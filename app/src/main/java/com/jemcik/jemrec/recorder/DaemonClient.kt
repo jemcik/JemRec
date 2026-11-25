@@ -124,6 +124,10 @@ object DaemonClient {
      *  the recorder (protocol.txt, U). A recorder before 1.7 hangs up on it. */
     private const val COMMAND_USB_DEFAULT = 'U'.code.toByte()
 
+    /** "Display over other apps", allowed or taken back by the recorder
+     *  (protocol.txt, M). A recorder before 1.8 hangs up on it. */
+    private const val COMMAND_SET_OVERLAY = 'M'.code.toByte()
+
     private const val NONCE_BYTES = 16
     private const val MAC_BYTES = 32
     private const val MAC_ALGORITHM = "HmacSHA256"
@@ -709,6 +713,25 @@ object DaemonClient {
                 reply.removePrefix("USB default ").toLongOrNull()?.takeIf { it >= 0 }?.let { UsbDefaultReply.Default(it) }
             else -> null
         }
+    }
+
+    /**
+     * "Display over other apps" allowed for JemRec, or taken back, by the
+     * recorder, as the shell: true or false as it read Android's app op
+     * afterwards; null with no answer - no recorder, or one before 1.8, which
+     * hangs up on the command.
+     */
+    suspend fun setOverlay(context: Context, allow: Boolean): Boolean? =
+        // Ten seconds: a write and its read-back, each an `appops` run of its
+        // own, on a phone that may be slow.
+        parseOverlayReply(ask(context, COMMAND_SET_OVERLAY, byteArrayOf(if (allow) 1 else 0), readMs = 10_000))
+
+    /** The recorder's answer to COMMAND_SET_OVERLAY (protocol.txt, M): null
+     *  for anything else, as no answer. */
+    internal fun parseOverlayReply(line: String?): Boolean? = when (line?.trim()) {
+        "OVERLAY ok" -> true
+        "OVERLAY failed" -> false
+        else -> null
     }
 
     /**

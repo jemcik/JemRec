@@ -12,6 +12,7 @@ import com.jemcik.jemrec.calls.VoipCallNotes
 import com.jemcik.jemrec.capture.AudioAccess
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
+import com.jemcik.jemrec.calls.CallButton
 import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.playback.BothEarsSetting
 import com.jemcik.jemrec.playback.PlayThroughSetting
@@ -87,6 +88,7 @@ internal fun asSaved(app: Application, state: UiState): UiState = state.copy(
     keepPairedWaiting = KeepPaired.waiting(app),
     keepPairedRefused = KeepPaired.refused(app),
     automatic = RecordingMode.of(app) == RecordingMode.AUTOMATIC,
+    callButton = CallButton.enabled(app),
     afterCallNotice = AfterCall.enabled(app),
     playThrough = PlayThroughSetting.of(app),
     bothEars = BothEarsSetting.of(app),
@@ -111,7 +113,7 @@ internal fun asSaved(app: Application, state: UiState): UiState = state.copy(
     // put away, while a reading was out came back as before - the header
     // Ready over Ask first's question off (review, 2026-11-18). From what
     // the reading found Android saying, and preferences.
-    notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.notice(app, state.notificationSwitches),
+    notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.notice(app, state.notificationSwitches, state.overlayAllowed == true),
     batteryNotice = com.jemcik.jemrec.system.BatteryHealth.notice(app, state.batteryRestricted),
     usbDefaultNotice = com.jemcik.jemrec.system.UsbDefault.notice(app, state.usbDefaultFunctions, state.secureLock),
     usbDefaultDidNotStay = com.jemcik.jemrec.system.UsbDefault.didNotStay(app, state.usbDefaultFunctions),
@@ -153,6 +155,12 @@ private val SETTINGS: List<Read> = listOf(
     // notification service, so here, off the main thread; what the notice
     // says of it is decided as the reading lands (asSaved).
     read(com.jemcik.jemrec.calls.NotificationHealth::switches) { copy(notificationSwitches = it) },
+    // And whether it lets the button over calls show: a question to its app
+    // ops, so here too.
+    read({ CallButton.changes.get() to CallButton.allowed(it) }) { (changes, allowed) ->
+        // Asked for or taken back since it was read: that is what it says.
+        if (changes == CallButton.changes.get()) copy(overlayAllowed = allowed) else this
+    },
     // The Battery setting Restricted: a question to Android's activity
     // manager, so here; the notice is decided as the reading lands.
     read(com.jemcik.jemrec.system.BatteryHealth::read) { copy(batteryRestricted = it) },

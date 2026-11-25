@@ -505,6 +505,8 @@ class MainViewModel @JvmOverloads constructor(
 
     fun setAutomatic(automatic: Boolean) = settings.setAutomatic(automatic)
 
+    fun setCallButton(on: Boolean) = settings.setCallButton(on)
+
     fun setAfterCallNotice(on: Boolean) = settings.setAfterCallNotice(on)
 
     fun setLook(look: Look) = settings.setLook(look)

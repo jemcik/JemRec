@@ -235,6 +235,11 @@ class LogLinesTest {
             // (Wire.result): what the answering machine's test check reads.
             val result = { key: String -> listOf("\" $key=\" + $key") }
             mapOf(
+                // The debug op's answers: what the recorder said, what Android
+                // now says, and a button pressed.
+                "recorder true, allowed true" to listOf(": recorder \$answer, allowed \${"),
+                "recorder true, allowed false" to listOf(": recorder \$answer, allowed \${"),
+                "pressed Record" to listOf("\"pressed \$label on \$title\""),
                 // Our wake lock's tag, as the power dump quotes it.
                 "'jemrec:ear'" to listOf("LOCK_TAG = \"jemrec:ear\""),
                 // The service says each audio mode it hears (modeChanged).

@@ -184,6 +184,14 @@ through the real app and daemon, checking what each one leaves behind:
   opus-valid  a call's recording is a valid Ogg Opus stream by RFC 7845 (its
               page positions and last-page mark), and so is every recording
               in the folder after the pass over ones saved before 1.2
+  ask-button  Ask first's button over a call, "display over other apps"
+              allowed by the recorder: dragged and kept there, Record records
+              the call; its cross is Not now, after which Record on the call's
+              own notification still records; shown over a call answered on a
+              PIN-locked phone, not while it rings nor on the lock screen
+              itself. With the permission taken back the question is a banner,
+              which the power key makes a window over the call's screen: a
+              tap outside its dialog gives the call's screen back, unanswered
   notifications-off  notifications taken back after setup leave home and the
               recordings there with a notice; in Ask first the header says
               no call can be recorded (Android 13 and later); full-screen
@@ -4016,6 +4024,236 @@ def unlock_now():
     wait_for(lambda: usb_locked(False), 15, "Android to take the phone for unlocked")
 
 
+BUTTON_WINDOW = "JemRecButton"  # CallButtonWindow.TITLE
+
+
+def button_up():
+    """Ask first's button over the call (CallButtonWindow): its window's
+    bounds, or None with none drawn on the screen - Android keeps one hidden
+    by the lock screen, not drawn."""
+    window = re.search(rf"Window #\d+ Window\{{\w+ u0 {BUTTON_WINDOW}\}}:(.*?)(?=\n  Window #|\Z)",
+                       sh("dumpsys window windows"), re.S)
+    if not window or "isOnScreen=true" not in window.group(1) or "isVisible=true" not in window.group(1):
+        return None
+    # "mFrame" on Android 12, "frame" since.
+    at = re.search(r"(?:\bframe|mFrame)=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", window.group(1))
+    return tuple(int(v) for v in at.groups())
+
+
+def question_banners():
+    """How many times Ask first's question came up as a banner since the
+    event log was cleared, as SystemUI logs every one (HeadsUpManager's
+    sysui_heads_up_status, key and 1; the same on Android 12 to 17 and the
+    Honor). Not from a dump of the screen: that is the call's own window,
+    the banner up or not (2026-11-25, on all four AVDs)."""
+    return len(re.findall(rf"sysui_heads_up_status: \[0\|{re.escape(PKG)}\|3\|[^\]]*,1\]", sh("logcat -b events -d")))
+
+
+def question_posted():
+    """Whether the question is there at all, in the shade or over the call:
+    a record of now's (those gone are in the same dump, archived, but not as
+    one)."""
+    return re.search(rf"NotificationRecord\(.*pkg={PKG} .*id=3 ", sh("dumpsys notification --noredact")) is not None
+
+
+def tap_button(cross=False):
+    """Record on the button, or its cross: as tall as it is, the cross is the
+    last of it, Record the first."""
+    x1, y1, x2, y2 = wait_for(button_up, 10, "the button over the call")
+    tall = y2 - y1
+    sh(f"input tap {x2 - tall // 2 if cross else x1 + tall} {(y1 + y2) // 2}")
+
+
+def answer_locked():
+    """A call ringing on a locked phone answered with the call key, pressed
+    until telephony says so: a press before the call's screen is up does
+    nothing, as hang_up's. One press was not enough on the Android 16 AVD
+    (2026-11-24, usb_default_lock's and ask_button's, a run apart)."""
+    for _ in range(5):
+        sh("input keyevent KEYCODE_CALL")
+        try:
+            return wait_for(lambda: "mCallState=2" in sh("dumpsys telephony.registry | grep -m1 mCallState="), 4, "")
+        except TimeoutError:
+            pass
+    raise RuntimeError("the locked call would not be answered")
+
+
+def lock_screen():
+    """The phone woken and locked by its power key, whatever it was doing,
+    until Android says the lock screen is up. lock_now()'s word is the USB
+    service's, which once did not come within 15 s, for a phone asleep since
+    the call before (the Android 16 AVD, 2026-11-24; inferred)."""
+    sh("input keyevent KEYCODE_WAKEUP")
+    time.sleep(1)
+    sh("input keyevent KEYCODE_POWER")
+    wait_for(lambda: re.search(r"\bshowing=true", sh("dumpsys window policy")), 15, "the lock screen")
+
+
+def unlock_screen():
+    """The phone woken and its PIN typed, until the lock screen is gone; a
+    phone not locked is left as it is."""
+    sh("input keyevent KEYCODE_WAKEUP")
+    time.sleep(1)
+
+    def gone():
+        if not re.search(r"\bshowing=true", sh("dumpsys window policy")):
+            return True
+        sh("wm dismiss-keyguard")
+        time.sleep(1)
+        sh(f"input text {LOCK_PIN}")
+        sh("input keyevent KEYCODE_ENTER")
+        time.sleep(1)
+        return False
+    wait_for(gone, 20, "the lock screen gone")
+
+
+def in_front(activity):
+    """Whether [activity] is the one resumed: "topResumedActivity=" since
+    Android 13, "ResumedActivity: " on 12 (its AVD, 2026-11-24)."""
+    return re.search(rf"esumedActivity[=:].*{activity}", sh("dumpsys activity activities")) is not None
+
+
+def ask_button():
+    """Ask first's question and its ways to say Record (1.8,
+    tmp/ask-first-button/PLAN.md), asked for by a Galaxy A17's owner whose
+    phone's pop-ups go by themselves. The button over the call, "display over
+    other apps" allowed by the recorder: over the call's screen, dragged and
+    kept there, Record recording the call (exact); its cross a Not now, after
+    which Record on the call's own notification still records; over a call
+    answered on a PIN-locked phone, and not on the lock screen itself; the
+    question in the shade and no banner while it is up, unlocked and locked
+    (the Honor's owner, 2026-11-25: both were a clutter); not shown once the permission is taken back, the question then a banner that
+    stays, which the power key makes a window over the call's screen - a tap
+    outside its dialog gives the call's back. The PIN, the permission and the
+    mode put back after."""
+    lock_was_off = sh("locksettings get-disabled").strip() == "true"
+    said = []
+
+    def no_banner():
+        """The question waits in the shade, two seconds after it was asked:
+        a banner of the ordinary kind came with the button at first."""
+        time.sleep(2)
+        assert question_banners() == 0, "a banner over the call, the button up"
+        assert question_posted(), "no question in the shade, the button up"
+
+    def asked_out(button=True):
+        """A call placed and answered, asked about."""
+        sh("logcat -c")
+        sh("logcat -b events -c")
+        sh(f"am start -a android.intent.action.CALL -d tel:{STRANGER_OUT}")
+        wait_log(r"asking whether to record", 20, "Ask first to ask")
+        if button:
+            wait_for(button_up, 10, "the button over the call")
+            no_banner()
+        time.sleep(1)
+        adb("emu", "gsm", "accept", STRANGER_OUT)
+        time.sleep(2)
+
+    set_prefs(recording_mode="ON_DEMAND")
+    start_recorder()
+    try:
+        set_prefs(call_button_place=None)
+        got = diag("callbutton", "--ez", "on", "true")
+        assert "recorder true, allowed true" in got, got
+        sh("input keyevent KEYCODE_HOME")
+
+        asked_out()
+        x1, y1, x2, y2 = button_up()
+        sh(f"input swipe {(x1 + x2) // 2} {(y1 + y2) // 2} {(x1 + x2) // 2} {(y1 + y2) // 2 + 300} 600")
+        moved = wait_for(lambda: (button_up() or (0, y1))[1] - y1 > 200 and button_up(), 5, "the button to be dragged")
+        assert count(r"on-demand recording started") == 0, "a drag was taken for Record"
+        tap_button()
+        wait_log(r"monitor: on-demand recording started", 15, "the button's Record")
+        wait_for(lambda: button_up() is None, 10, "the button to go, the call being recorded")
+        time.sleep(4)
+        hang_up()
+        _, seconds, _ = saved()
+        assert seconds > 4, f"{seconds:.1f} s of a call recorded for more than 4"
+        said.append(f"dragged {moved[1] - y1} px and kept, Record recorded {seconds:.1f} s")
+
+        asked_out()
+        assert abs(button_up()[1] - moved[1]) < 4, f"the button not where it was left: {button_up()} for {moved}"
+        tap_button(cross=True)
+        wait_log(r"monitor: user declined to record this call", 10, "the cross to say Not now")
+        wait_for(lambda: button_up() is None, 10, "the button to go after Not now")
+        got = diag("pressaction", "--es", "title", "'Not recording this call'", "--es", "action", "Record")
+        assert "pressed Record" in got, got
+        wait_log(r"monitor: on-demand recording started", 15, "the call's own notification's Record")
+        time.sleep(4)
+        hang_up()
+        saved()
+        said.append("after Not now the call's notification's Record recorded")
+
+        sh("locksettings set-disabled false")
+        assert "Pin set" in sh(f"locksettings set-pin {LOCK_PIN}"), "the PIN was not set"
+        lock_screen()
+        sh("logcat -c")
+        sh("logcat -b events -c")
+        adb("emu", "gsm", "call", STRANGER_IN)
+        wait_log(r"callwatch: ringing", 15, "the call to ring")
+        time.sleep(3)
+        assert button_up() is None, "the button over a call nobody has answered"
+        answer_locked()
+        wait_for(button_up, 15, "the button over the locked call's screen")
+        no_banner()
+        sh("input keyevent KEYCODE_HOME")
+        wait_for(lambda: button_up() is None, 10, "the button hidden on the lock screen itself")
+        adb("emu", "gsm", "cancel", STRANGER_IN)
+        wait_for(phone_idle, 10, "the locked call to end")
+        wait_for(lambda: button_up() is None, 10, "the button to go with the call")
+        said.append("shown over a PIN-locked call's screen, hidden on the lock screen, and no banner with it")
+
+        # The permission taken back on Android's page: the question as it was.
+        sh(f"appops set {PKG} SYSTEM_ALERT_WINDOW deny")
+        sh("logcat -c")
+        sh("logcat -b events -c")
+        lock_screen()
+        adb("emu", "gsm", "call", STRANGER_IN)
+        wait_log(r"callwatch: ringing", 15, "the call to ring")
+        time.sleep(3)
+        answer_locked()
+        wait_log(r"asking whether to record", 15, "Ask first to ask without the button")
+        time.sleep(2)
+        assert button_up() is None, "the button shown with its permission taken back"
+        wait_for(lambda: in_front("InCallActivity"), 10, "the call's own screen in front")
+        wait_for(question_banners, 10, "the question a banner over it, without the button")
+        sh("input keyevent KEYCODE_SLEEP")
+        time.sleep(3)
+        sh("input keyevent KEYCODE_WAKEUP")
+        wait_for(lambda: in_front("RecordPromptActivity"), 10,
+                 "the question's window, the screen put off under its banner")
+        time.sleep(1)
+        width = int(re.search(r"(\d+)x\d+", sh("wm size")).group(1))
+        sh(f"input tap {width // 2} 300")
+        wait_for(lambda: in_front("InCallActivity"), 10, "the call's screen back, the question's dialog closed by a tap outside it")
+        assert count(r"user declined") == 0 and count(r"on-demand recording started") == 0, \
+            "a tap outside the dialog was taken for an answer"
+        said.append("with the permission taken back the question's window is a dialog a tap outside closes")
+        adb("emu", "gsm", "cancel", STRANGER_IN)
+        wait_for(phone_idle, 10, "the call to end")
+
+        # Allowed again by the recorder, over the denial, and taken back by it.
+        got = diag("callbutton", "--ez", "on", "true")
+        assert "recorder true, allowed true" in got, got
+        got = diag("callbutton", "--ez", "on", "false")
+        assert "recorder true, allowed false" in got, got
+        said.append("allowed again and taken back by the recorder")
+        return "; ".join(said)
+    finally:
+        quietly(no_call_left)
+        # Unlocked with its PIN before the PIN goes: cleared under the lock
+        # screen, the Android 12 AVD went on asking for it, and the three
+        # checks after this one that tap through Settings found its keypad
+        # (2026-11-24; each passed on a fresh boot).
+        quietly(unlock_screen)
+        quietly(sh, f"locksettings clear --old {LOCK_PIN}")
+        if lock_was_off:
+            quietly(sh, "locksettings set-disabled true")
+        quietly(diag, "callbutton", "--ez", "on", "false")
+        quietly(sh, f"appops set {PKG} SYSTEM_ALERT_WINDOW default")
+        quietly(set_prefs, recording_mode="AUTOMATIC", call_button=None, call_button_place=None)
+
+
 def usb_default_lock():
     """A screen lock with a data mode as the Default USB configuration (1.7,
     #131, tmp/issue-131/PLAN.md). With a PIN and no cable, AOSP's
@@ -4106,7 +4344,7 @@ def usb_default_lock():
             adb("emu", "gsm", "call", STRANGER_IN)
             wait_more(r"callwatch: ringing", rings, 15, "the call to ring")
             time.sleep(2)
-            sh("input keyevent KEYCODE_CALL")
+            answer_locked()
             wait_more(r"off-hook \(", answers, 15, "the call to be answered")
             time.sleep(3)
             if lock_during:
@@ -5818,7 +6056,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
           debugging_off, off_just_left, background, allow_this_wifi, wireless_between_starts, usb_mode,
-          usb_default_lock,
+          usb_default_lock, ask_button,
           refused_grant,
           listener_grant, keep_paired,
           telegram_builds, newest_version, opus_valid, notifications_off, folder_lost,

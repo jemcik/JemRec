@@ -869,6 +869,9 @@ object Setup {
         com.jemcik.jemrec.system.BatteryHealth.forgetAll(context)
         com.jemcik.jemrec.system.UsbDefault.forgetAll(context)
         com.jemcik.jemrec.calls.NotificationHealth.forget(context)
+        // Nor the button over calls, its permission taken back by the recorder
+        // if one was up (RecorderLifecycle.endForReset).
+        com.jemcik.jemrec.calls.CallButton.forget(context)
         // When JemRec is off back to its default, and Developer options back
         // if it hid them: setup's second step goes there.
         RecorderLifecycle.forgetDebugging(context)

@@ -69,6 +69,7 @@ class CallMonitorServiceTest {
     private val start = System.currentTimeMillis() - 60_000
 
     private val realWatch = CallMonitorService.watchFor
+    private val realButton = CallMonitorService.buttonFor
     private val realListen = CallMonitorService.listenToMode
     private val realCalls = LiveCalls.calls
     private val realHeld = LiveCalls.held
@@ -95,6 +96,7 @@ class CallMonitorServiceTest {
         com.jemcik.jemrec.recorder.DaemonLauncher.launchedAtMs = 0L
         CallMonitorService.recorderUpNow = realUpNow
         CallMonitorService.watchFor = realWatch
+        CallMonitorService.buttonFor = realButton
         CallMonitorService.listenToMode = realListen
         LiveCalls.calls = realCalls
         LiveCalls.end = realEnd
@@ -1762,10 +1764,12 @@ class CallMonitorServiceTest {
         assertEquals("jemrec.ask.v2", asking.channelId)
         assertEquals(listOf("Record", "Not now"), asking.buttons())
         val n = ongoing()
-        assertEquals("Call in progress", n.title())
-        assertEquals("JemRec is handling this call", n.text())
+        assertEquals("Not recording this call", n.title())
+        assertEquals("Tap Record to record it from now on", n.text())
         assertEquals("jemrec.monitor.v2", n.channelId)
-        assertTrue(n.buttons().isEmpty())
+        // The question's own ticket: swiped away, it leaves Record here.
+        assertEquals(listOf("Record"), n.buttons())
+        assertEquals(tap(asking, "Record").getStringExtra("ticket"), tap(n, "Record").getStringExtra("ticket"))
         assertTrue(n.flags and Notification.FLAG_ONGOING_EVENT != 0)
         assertEquals(Notification.FOREGROUND_SERVICE_IMMEDIATE, n.foregroundBehaviour())
         // A tap opens the app.
@@ -1849,8 +1853,8 @@ class CallMonitorServiceTest {
         wake("MESSAGE_STARTED", incoming = true) { putExtra("test", true) }
         val talk = tap(ongoing(), "Talk to them")
         wake("CALL_STARTED", "", incoming = true)
-        assertEquals("Call in progress", ongoing().title())
-        assertTrue(ongoing().buttons().isEmpty())
+        assertEquals("Not recording this call", ongoing().title())
+        assertEquals("the message's buttons gone", listOf("Record"), ongoing().buttons())
         assertNotNull(prompt())
         start(talk)
         assertTrue(logged("without this message's ticket, ignoring"))
@@ -1942,18 +1946,242 @@ class CallMonitorServiceTest {
         assertTrue(logged("monitor: user declined to record this call"))
         assertNull(prompt())
         assertFalse("the call is still up", stopped)
-        assertEquals("Call in progress", ongoing().title())
+        assertEquals("Not recording this call", ongoing().title())
         // One prompt, one answer.
         start(notNow)
         assertTrue(logged("without this prompt's ticket, ignoring"))
+    }
+
+    @Test fun recordStaysOnTheCallsNotificationAfterNotNow() {
+        val file = recfile(start, true)
+        withRecord(file) {
+            wake("CALL_STARTED", "", incoming = true)
+            val spent = tap(prompt()!!, "Record")
+            start(tap(prompt()!!, "Not now"))
+            val kept = tap(ongoing(), "Record")
+            assertEquals("com.jemcik.jemrec.RECORD_NOW", kept.action)
+            assertNotEquals("a ticket of its own", spent.getStringExtra("ticket"), kept.getStringExtra("ticket"))
+            // The question's is spent: what kept a copy of it starts nothing.
+            start(spent)
+            assertTrue(logged("without this prompt's ticket, ignoring"))
+            assertFalse(logged("monitor: on-demand recording started"))
+            start(kept)
+            awaitLog("monitor: on-demand recording started -> $file")
+            eventually("recording said") { ongoing().title() == "Recording call" }
+            assertTrue(ongoing().buttons().isEmpty())
+            // And its own ticket is spent too.
+            start(kept)
+            assertEquals(2, logs().count { it.endsWith("without this prompt's ticket, ignoring") })
+        }
+    }
+
+    // ---- the button over the call ------------------------------------------
+
+    /** The button over the call in the test's hands: shown if [shows], the
+     *  tickets it was shown with, and what it was told, in order. */
+    private class FakeButton(private val shows: Boolean = true) : com.jemcik.jemrec.calls.AskButton {
+        val tickets = mutableListOf<String>()
+        val told = java.util.concurrent.CopyOnWriteArrayList<com.jemcik.jemrec.calls.CallButton.Event>()
+        lateinit var answered: (String, Boolean) -> Unit
+        var closed = false
+
+        override fun show(ticket: String): Boolean {
+            if (shows) tickets += ticket
+            return shows
+        }
+
+        override fun on(event: com.jemcik.jemrec.calls.CallButton.Event) {
+            told += event
+        }
+
+        override fun close() {
+            closed = true
+        }
+    }
+
+    private fun fakeButton(shows: Boolean = true) = FakeButton(shows).also { button ->
+        CallMonitorService.buttonFor = { _, answered -> button.also { it.answered = answered } }
+    }
+
+    private val asked = com.jemcik.jemrec.calls.CallButton.Event.ASKED
+    private val record = com.jemcik.jemrec.calls.CallButton.Event.RECORD
+    private val taken = com.jemcik.jemrec.calls.CallButton.Event.TAKEN
+    private val failed = com.jemcik.jemrec.calls.CallButton.Event.FAILED
+    private val over = com.jemcik.jemrec.calls.CallButton.Event.OVER
+
+    @Test fun theButtonComesUpWithTheQuestionUnderItsTicket() {
+        val button = fakeButton()
+        wake("CALL_STARTED", "", incoming = true)
+        assertEquals(listOf(tap(prompt()!!, "Record").getStringExtra("ticket")), button.tickets)
+        assertFalse("show says it", asked in button.told)
+        // The banner only announces it, the button staying.
+        assertNull(prompt()!!.fullScreenIntent)
+    }
+
+    @Test fun withoutTheButtonTheQuestionStaysUpAsItDid() {
+        fakeButton(shows = false)
+        wake("CALL_STARTED", "", incoming = true)
+        assertNotNull(prompt()!!.fullScreenIntent)
+    }
+
+    @Test fun theButtonComesUpForNoCallThatIsNotAskedAbout() {
+        val button = fakeButton()
+        wake("CALL_STARTED", recfile(start, true), incoming = true)
+        wake("MESSAGE_STARTED", incoming = true)
+        assertEquals(emptyList<String>(), button.tickets)
+    }
+
+    @Test fun theButtonsRecordRecordsTheCall() {
+        val file = recfile(start, true)
+        val button = fakeButton()
+        withRecord(file) {
+            wake("CALL_STARTED", "", incoming = true)
+            button.answered(button.tickets.single(), true)
+            assertNull("the question is answered", prompt())
+            awaitLog("monitor: on-demand recording started -> $file")
+            eventually("the button told") { button.told == listOf(record, taken) }
+            eventually("recording said") { ongoing().title() == "Recording call" }
+            // Answered once.
+            button.answered(button.tickets.single(), true)
+            assertTrue(logged("the button without this prompt's ticket, ignoring"))
+        }
+    }
+
+    @Test fun theButtonsCrossIsNotNow() {
+        val button = fakeButton()
+        wake("CALL_STARTED", "", incoming = true)
+        button.answered(button.tickets.single(), false)
+        assertTrue(logged("monitor: user declined to record this call"))
+        assertNull(prompt())
+        assertEquals(listOf(over), button.told)
+        assertEquals(listOf("Record"), ongoing().buttons())
+    }
+
+    @Test fun aRecordFromTheQuestionIsToldToTheButtonToo() {
+        val button = fakeButton()
+        withRecord(null) {
+            wake("CALL_STARTED", "", incoming = true)
+            start(tap(prompt()!!, "Record"))
+            eventually("the button told") { button.told == listOf(record, failed) }
+        }
+    }
+
+    @Test fun theCallsEndTakesTheButtonDown() {
+        val button = fakeButton()
+        wake("CALL_STARTED", "", incoming = true)
+        wake("CALL_ENDED", "", incoming = true)
+        assertEquals(listOf(over), button.told)
+    }
+
+    @Test fun aCallEndedUnsaidTakesTheButtonDown() {
+        var callUp = true
+        fakeWatch(recorderUp = { true }, callUp = { callUp })
+        val button = fakeButton()
+        wake("CALL_STARTED", "", incoming = true)
+        callUp = false
+        awaitTrue("the button down") { over in button.told }
+    }
+
+    @Test fun aSecondCallIsAskedAboutWithTheButtonUnderItsOwnTicket() {
+        val button = fakeButton()
+        wake("CALL_STARTED", "", incoming = true)
+        wake("CALL_STARTED", "", incoming = true)
+        assertEquals(2, button.tickets.size)
+        assertNotEquals(button.tickets[0], button.tickets[1])
+        // The first's answers nothing now; the second's does.
+        button.answered(button.tickets[0], false)
+        assertFalse(logged("monitor: user declined to record this call"))
+        button.answered(button.tickets[1], false)
+        assertTrue(logged("monitor: user declined to record this call"))
+    }
+
+    @Test fun aRevivedPhoneCallAnsweredNotNowIsNotAskedWithTheButtonAgain() {
+        val button = fakeButton()
+        wake("CALL_STARTED", "", incoming = true)
+        button.answered(button.tickets.single(), false)
+        wake("CALL_STARTED", "", incoming = false) { putExtra("joined", true) }
+        assertEquals(1, button.tickets.size)
+    }
+
+    @Test fun jemRecSwitchedOffMidCallTakesTheQuestionAndItsTicketDown() {
+        fakeButton()
+        wake("CALL_STARTED", "", incoming = true)
+        assertNotNull(RecordPrompt.ticket(context))
+        CallMonitorService.stop(context)
+        assertNull(prompt())
+        assertNull(RecordPrompt.ticket(context))
+    }
+
+    @Test fun switchedOffWithTheServiceGoneTheQuestionGoesToo() {
+        // Its process ended, the question still in the shade.
+        controller.destroy()
+        RecordPrompt.show(context, incoming = true)
+        CallMonitorService.stop(context)
+        assertNull(prompt())
+        assertNull(RecordPrompt.ticket(context))
+    }
+
+    @Test fun theServiceGoingTakesTheButtonWithIt() {
+        val button = fakeButton()
+        wake("CALL_STARTED", "", incoming = true)
+        service.onDestroy()
+        assertTrue(button.closed)
+    }
+
+    @Test fun recordStaysThroughARecorderLostAndBackAfterNotNow() {
+        wake("CALL_STARTED", "", incoming = true)
+        start(tap(prompt()!!, "Not now"))
+        wake("CALL_STARTED", "", incoming = false) { putExtra("joined", true) }
+        assertNull("not asked again", prompt())
+        assertEquals(listOf("Record"), ongoing().buttons())
+        assertTrue(RecordPrompt.claim(context, tap(ongoing(), "Record").getStringExtra("ticket")))
+    }
+
+    @Test fun theCallsEndTakesRecordWithIt() {
+        wake("CALL_STARTED", "", incoming = true)
+        start(tap(prompt()!!, "Not now"))
+        val kept = tap(ongoing(), "Record")
+        wake("CALL_ENDED", "", incoming = true)
+        assertFalse(RecordPrompt.claim(context, kept.getStringExtra("ticket")))
+    }
+
+    @Test fun notNowForACallThisServiceNeverSawKeepsNoTicket() {
+        // The process killed while the question waited: nothing to put Record
+        // on, so no ticket is left live behind it.
+        RecordPrompt.show(context, incoming = true)
+        start(tap(prompt()!!, "Not now"))
+        assertNull(RecordPrompt.ticket(context))
+        assertTrue(stopped)
+    }
+
+    @Test fun aRecordThatDidNotTakeLeavesRecordToTapAgain() {
+        fakeWatch(recorderUp = { true }, callUp = { true })
+        context.getSystemService(android.media.AudioManager::class.java).mode = android.media.AudioManager.MODE_IN_CALL
+        withRecord(null) {
+            wake("CALL_STARTED", "", incoming = true)
+            start(tap(prompt()!!, "Record"))
+            awaitLog("monitor: on-demand start did not take (call over?)")
+            eventually("Record offered again") { ongoing().buttons() == listOf("Record") }
+            assertNull("not asked again", prompt())
+        }
+        val file = recfile(start, true)
+        withRecord(file) {
+            start(tap(ongoing(), "Record"))
+            awaitLog("monitor: on-demand recording started -> $file")
+        }
     }
 
     @Test fun recordThatTheRecorderCannotStartLeavesTheCallAsItWas() {
         wake("CALL_STARTED", "", incoming = true)
         start(tap(prompt()!!, "Record"))
         assertNull(prompt())
+        // Its ticket spent, its Record is gone from the call's own too.
+        assertTrue(ongoing().buttons().isEmpty())
         awaitLog("monitor: on-demand start did not take (call over?)")
-        assertEquals("Call in progress", ongoing().title())
+        // To be tapped again, to the call's end: a call this service holds,
+        // whatever the audio mode says - a waiting call ringing over it.
+        eventually("Record offered again") { ongoing().buttons() == listOf("Record") }
+        assertEquals("Not recording this call", ongoing().title())
         assertFalse(stopped)
     }
 
@@ -1967,6 +2195,7 @@ class CallMonitorServiceTest {
         // No call this service knows of, and nothing recording: it does not
         // stay up saying "Call in progress".
         eventually("the service stands down") { stopped }
+        assertNull("no ticket left live behind it", RecordPrompt.ticket(context))
     }
 
     /** The recorder's answer to Record, for [block]: [name], once [answer]
@@ -2286,10 +2515,9 @@ class CallMonitorServiceTest {
             // failure, two calls back, is not C's to show.
             wake("CALL_STARTED", "", incoming = true)
             assertNotNull(prompt())
-            assertEquals("Call in progress", ongoing().title())
-            assertEquals("JemRec is handling this call", ongoing().text())
+            assertEquals("Tap Record to record it from now on", ongoing().text())
             start(tap(prompt()!!, "Not now"))
-            assertEquals("Call in progress", ongoing().title())
+            assertEquals("Tap Record to record it from now on", ongoing().text())
             log.release()
             eventually("B's save") { logs().count { it == "monitor: recording handled" } == 2 }
         } finally {

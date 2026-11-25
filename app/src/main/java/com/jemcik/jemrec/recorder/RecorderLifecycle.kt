@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.jemcik.jemrec.adb.AdbIdentity
 import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.calls.CallButton
 import com.jemcik.jemrec.capture.CallMonitorService
 import com.jemcik.jemrec.capture.RecorderKeepAlive
 import com.jemcik.jemrec.capture.UsbDebuggingWatch
@@ -188,6 +189,10 @@ object RecorderLifecycle {
             // port's inferred). Under the lock, as a revive's session is.
             PortChange.openForReset(context)
             KeepPaired.forget(context)
+            // And "Display over other apps", by the recorder too - where it is
+            // allowed, not where the button is on: switched off with no
+            // recorder to take it back, it stays allowed.
+            if (CallButton.allowed(context)) DaemonClient.setOverlay(context, allow = false)
             // Over loopback, NOT over ADB. There is usually no ADB session by
             // this point - there does not need to be one for the app to work - so
             // the old `pkill` route silently did nothing and left the daemon

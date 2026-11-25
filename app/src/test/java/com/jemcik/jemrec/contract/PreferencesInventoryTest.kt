@@ -4,6 +4,7 @@ import com.jemcik.jemrec.Prefs
 import com.jemcik.jemrec.answering.AnswerDiagnostics
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.calls.CallButton
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.CoverageHistory
@@ -98,6 +99,7 @@ class PreferencesInventoryTest {
         assertTrue("recording on", RecorderSwitch.isOn(context))
         assertEquals(RecordingMode.AUTOMATIC, RecordingMode.of(context))
         assertTrue("exact call tracking on", CallTracking.enabled(context))
+        assertEquals(false, CallButton.enabled(context))
         assertEquals(CallRules.Contacts.ALL, CallRules.contacts(context))
         assertTrue("other numbers kept", CallRules.otherNumbers(context))
         assertEquals(false, AnsweringMachine.enabled(context))
@@ -147,7 +149,7 @@ class PreferencesInventoryTest {
          *  call_parts, lost_messages, name_starts, not_recorded_for and
          *  part_recordings (1.2), usb_default_functions,
          *  usb_default_dismissed, usb_default_told_words and usb_default_set_from
-         *  (1.7):
+         *  (1.7), call_button and call_button_place (1.8):
          *  preference keys, plus the few key-named constants that are file
          *  and extra names, which a rename breaks just the same. */
         val KEYS = listOf(
@@ -155,7 +157,7 @@ class PreferencesInventoryTest {
             "answer_delay_s", "answer_dnd_short", "answer_longest_s", "answer_mixer_", "answer_on", "answer_result_",
             "answer_route", "answer_routes_by_path", "answer_sim", "answer_sim_count", "answer_stage_one", "answer_test",
             "answer_volte_cleared", "auto_delete_after_days",
-            "auto_delete_last_run", "auto_delete_shorter_than", "background_kill_warned_ms", "battery_restricted_dismissed_words", "battery_restricted_told", "both_ears", "cable_stopped_adbd",
+            "auto_delete_last_run", "auto_delete_shorter_than", "background_kill_warned_ms", "battery_restricted_dismissed_words", "battery_restricted_told", "both_ears", "cable_stopped_adbd", "call_button", "call_button_place",
             "call_ledger", "call_parts", "call_tracking", "caller_banner_dismissed", "calls_covered_since", "coverage_history",
             "daemon_token", "debug_notification_snoozed", "debug_off_pending", "debug_switched_off",
             "emergency_call_at", "emergency_resumed_at", "file_names", "folder_lost_told", "heartbeat_port", "heartbeat_version", "hide_debug_notification",

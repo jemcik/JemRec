@@ -166,6 +166,22 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!--
+      Ask first's Record button over a call (CallButton). Held by an app op
+      nobody has until it is allowed: the user switches the button on in
+      Settings, and the recorder allows it for JemRec - the daemon's Overlay -
+      or Android's own page does, Display over other apps. Without it the
+      question is the notification it always was; nothing else is drawn with
+      it.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!--
+      Ask first's question felt in a phone call, where Android drops every
+      notification's vibration (RecordPrompt.vibrateInACall). Given at install.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
       The vendor screens that decide whether this app may start after a reboot.
 
       NOT a convenience: a phone that will not deliver BOOT_COMPLETED leaves the
@@ -228,10 +244,12 @@
         android:theme="@style/Theme.JemRec">
 
         <!--
-          The mid-call prompt's full-screen half. Opens for real only on a
-          locked screen; the rest of the time the system demotes it to a
-          banner, and that demotion is what makes the banner stay up for about
-          a minute instead of five seconds. See RecordPromptActivity.
+          The mid-call prompt's full-screen half. Opens for real only where
+          no banner can show, or as the screen is turned off under one; the
+          rest of the time the system demotes it to a banner, and that
+          demotion is what makes the banner stay. See RecordPromptActivity.
+          See-through: its dialog stands over the call's screen, which a tap
+          outside it gives back.
 
           excludeFromRecents and noHistory because it is a question, not a
           place: it should never be something the user swipes back to later and
@@ -249,6 +267,7 @@
             android:noHistory="true"
             android:launchMode="singleTop"
             android:taskAffinity="${applicationId}.prompt"
+            android:theme="@style/Theme.JemRec.Question"
             android:showOnLockScreen="true" />
 
         <!--

@@ -6,10 +6,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.util.Log
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.net.toUri
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.calls.CallButton
 import com.jemcik.jemrec.calls.CallLogLookup
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.CallTracking
@@ -22,6 +24,7 @@ import com.jemcik.jemrec.capture.RecordingMode
 import com.jemcik.jemrec.playback.BothEarsSetting
 import com.jemcik.jemrec.playback.PlayThrough
 import com.jemcik.jemrec.playback.PlayThroughSetting
+import com.jemcik.jemrec.recorder.DaemonClient
 import com.jemcik.jemrec.recordings.FileNames
 import com.jemcik.jemrec.recordings.QualitySetting
 import com.jemcik.jemrec.recordings.RecordingQuality
@@ -34,6 +37,8 @@ import com.jemcik.jemrec.ui.theme.Looks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -91,8 +96,13 @@ internal class SettingsActions(
         com.jemcik.jemrec.calls.NotificationHealth.dismiss(app, off)
         // The next one down at once, not at the next reading (review round
         // 11): preferences only, on what Android said last.
-        state.update { it.copy(notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.notice(app, it.notificationSwitches)) }
+        state.update { it.copy(notificationsOff = notificationsNotice(it)) }
     }
+
+    /** What home says of JemRec's notifications, on what Android said last
+     *  and the preferences as they are now. */
+    private fun notificationsNotice(state: UiState) =
+        com.jemcik.jemrec.calls.NotificationHealth.notice(app, state.notificationSwitches, state.overlayAllowed == true)
 
     fun dismissBatteryNotice() {
         com.jemcik.jemrec.system.BatteryHealth.dismiss(app)
@@ -163,7 +173,7 @@ internal class SettingsActions(
         state.update {
             it.copy(
                 automatic = automatic,
-                notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.notice(app, it.notificationSwitches),
+                notificationsOff = notificationsNotice(it),
                 batteryNotice = com.jemcik.jemrec.system.BatteryHealth.notice(app, it.batteryRestricted),
             )
         }
@@ -173,6 +183,61 @@ internal class SettingsActions(
         // it has to be told which the moment this changes.
         actions.run(Action.TELL_RECORDER) { CaptureDaemon.pushMode(app) }
     }
+
+    /**
+     * Ask first's button over calls, on or off (CallButton). On, the recorder
+     * allows JemRec to display over other apps, as the shell; where it does
+     * not - no recorder up, an older one, a phone that refuses the shell -
+     * Android's own page opens. Off takes it back the same way; with no
+     * recorder to, it stays allowed, which is said, and unused.
+     */
+    fun setCallButton(on: Boolean) {
+        CallButton.setEnabled(app, on)
+        CallButton.changes.incrementAndGet()
+        val flip = ++flips
+        state.update {
+            // Being asked for: not known till the recorder has answered, and
+            // not said to be off meanwhile - ten seconds at most.
+            val known = it.overlayAllowed.takeUnless { allowed -> on && allowed != true }
+            it.copy(callButton = on, overlayAllowed = known).let { now -> now.copy(notificationsOff = notificationsNotice(now)) }
+        }
+        actions.run(Action.CALL_BUTTON) {
+            // One at a time, and what is wanted read once it is its turn: two
+            // quick flips are two connections to the recorder, whose order is
+            // anyone's, and the last word is the preference's.
+            overlayTurns.withLock { matchOverlay(newest = { flip == flips }) }
+        }
+    }
+
+    /** "Display over other apps" as Ask first's button wants it now; said, or
+     *  Android's page opened, for the [newest] flip alone. */
+    private suspend fun matchOverlay(newest: () -> Boolean) {
+        val wanted = CallButton.enabled(app)
+        val answer = DaemonClient.setOverlay(app, wanted)
+        // What a reading found while the recorder was at it may be either.
+        CallButton.changes.incrementAndGet()
+        val allowed = withContext(Dispatchers.IO) { CallButton.allowed(app) }
+        if (answer != true) Log.i("JemRec", "settings: display over other apps - the recorder said $answer, Android reads $allowed")
+        if (!newest()) return
+        state.update { it.copy(overlayAllowed = allowed).let { now -> now.copy(notificationsOff = notificationsNotice(now)) } }
+        if (wanted && !allowed) {
+            // Said over Android's list, which names every app, not just
+            // JemRec: a snackbar would wait under it.
+            if (CallButton.openSettings(app)) {
+                Toast.makeText(app, "Choose JemRec and allow it", Toast.LENGTH_LONG).show()
+            } else {
+                log.tell("This phone has no page to allow it on")
+            }
+        }
+        if (!wanted && allowed) {
+            log.tell("Android still lets JemRec display over other apps. You can take that back in its settings.")
+        }
+    }
+
+    /** The switch's flips, on the main thread: the newest is the one whose
+     *  outcome is shown. */
+    private var flips = 0
+    private val overlayTurns = Mutex()
 
     /** Off the main thread: a question to Android's activity manager. */
     private fun refreshBatteryNotification() {

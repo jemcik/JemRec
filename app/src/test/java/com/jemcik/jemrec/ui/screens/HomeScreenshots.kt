@@ -493,6 +493,22 @@ class HomeScreenshots : ScreenTest() {
         compose.onNodeWithText("Not now").assertDoesNotExist()
     }
 
+    /** With Ask first's button over calls working, calls are asked about all
+     *  the same: said so, and it can be put away. */
+    @Test fun notificationsOffInAskFirstWithTheButtonCanBePutOff() {
+        home(
+            Fixtures.ready().copy(
+                automatic = false,
+                notificationsOff = com.jemcik.jemrec.calls.NotificationHealth.Off.ALL,
+                callButton = true,
+                overlayAllowed = true,
+            ),
+        )
+        compose.onNodeWithText("JemRec still asks with its button over calls", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("no call is recorded", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Not now").assertIsDisplayed()
+    }
+
     @Test fun callsWithoutPermission() {
         home(Fixtures.ready().copy(homeTab = HomeTab.CALLS, canReadCallLog = false, canReadContacts = false))
         compose.onNodeWithText("See every call here").assertIsDisplayed()
