@@ -43,7 +43,9 @@ class SaveJournalTest {
     private val context = RuntimeEnvironment.getApplication()
     private val fakes = SaverFakes(context)
 
-    private val t = 1_795_000_000_000L
+    /** An hour ago, on the second: inside the ledger's week by the machine's
+     *  clock, as RecordingSaverTest's. */
+    private val t = (System.currentTimeMillis() - 60 * 60_000L) / 1000 * 1000
     private val now = t + 10 * 60_000L
     private val file = "jemrec_rec_${t}_in.dat"
     private val name = FileNames.build(FileNames.Format.DATE, t, true, null)

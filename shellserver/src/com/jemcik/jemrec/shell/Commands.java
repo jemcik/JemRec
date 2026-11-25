@@ -248,6 +248,28 @@ final class Commands {
             Wire.reply(client.getOutputStream(), Wire.track(Tracking.trackingOn));
             return;
         }
+        if (command == Wire.COMMAND_SET_OVERLAY) {
+            int value = client.getInputStream().read();
+            boolean ok = Overlay.set(value, new Overlay.Op() {
+                @Override
+                public @Nullable String set(String mode) {
+                    String said = Shell.runQuietly("cmd", "appops", "set", Main.APP_PACKAGE, Overlay.NAME, mode);
+                    // Silent when it works, as Tracking's is.
+                    if (said != null && !said.isEmpty()) {
+                        Ln.w("overlay: Android said " + said.substring(0, Math.min(said.length(), 300)));
+                    }
+                    return said;
+                }
+
+                @Override
+                public @Nullable String get() {
+                    return Shell.runQuietly("cmd", "appops", "get", Main.APP_PACKAGE, Overlay.NAME);
+                }
+            });
+            Wire.reply(client.getOutputStream(), Wire.overlay(ok));
+            Ln.i("overlay: display over other apps asked (" + value + ") - " + (ok ? "as asked" : "not taken"));
+            return;
+        }
         if (command == Wire.COMMAND_SKIP) {
             int value = client.getInputStream().read();
             String what;

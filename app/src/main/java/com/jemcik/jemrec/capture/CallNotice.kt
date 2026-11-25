@@ -23,6 +23,9 @@ internal object CallNotice {
         val checkingRecorder: Boolean,
         /** Up only to post the background-kill warning. */
         val warningOnly: Boolean,
+        /** Ask first's ticket for the call up, while Record can still be
+         *  tapped (RecordPrompt.ticket): not answered, or answered Not now. */
+        val recordTicket: String? = null,
     )
 
     data class Notice(
@@ -32,6 +35,8 @@ internal object CallNotice {
         val deferred: Boolean,
         /** The ticket Talk to them and Hang up carry; no buttons without one. */
         val buttonTicket: String?,
+        /** The ticket Record carries; no Record without one. */
+        val recordTicket: String? = null,
     )
 
     enum class Stopped {
@@ -53,10 +58,14 @@ internal object CallNotice {
         // The background-kill warning's wake, no call and no cable watch: over
         // as soon as the warning is posted, so it waits, and is never seen.
         val warningWake = s.warningOnly && !s.checkingRecorder && !s.callUp && !s.recording && ticket == null
+        // Ask first, the call not recorded: Record here to its end, whatever
+        // became of the question - answered Not now, swiped away, or still up.
+        // Until 1.8 Not now was the last word on a call, and a user on One UI,
+        // where a banner goes by itself, found no way back to it.
+        val record = s.recordTicket?.takeIf { s.callUp && !s.recording && ticket == null }
         // This service only exists during a call, so the notification only
         // says what it is doing about THIS call. "Recording call" while it
-        // records; "Call in progress" in the gap before recording starts, or
-        // while the mid-call prompt waits for an answer in on-demand mode.
+        // records; "Call in progress" in the gap before recording starts.
         val (title, text) = when {
             warningWake -> "Checking JemRec" to "Making sure it keeps running"
             cableOnly -> "Checking the recorder" to "A USB cable went in or came out"
@@ -67,9 +76,10 @@ internal object CallNotice {
             s.recording && s.stopped == Stopped.FOR_GOOD ->
                 "Recording stopped" to "The rest of this call is not recorded"
             s.recording -> "Recording call" to "Saving this call"
+            record != null -> "Not recording this call" to "Tap Record to record it from now on"
             s.notRecording -> "Not recording this call" to "Tap to see why"
             else -> "Call in progress" to "JemRec is handling this call"
         }
-        return Notice(title, text, deferred = cableOnly || warningWake, buttonTicket = ticket)
+        return Notice(title, text, deferred = cableOnly || warningWake, buttonTicket = ticket, recordTicket = record)
     }
 }

@@ -34,6 +34,34 @@ final class Checks {
     }
 
     /**
+     * Whether `cmd appops get <package> SYSTEM_ALERT_WINDOW` says the app may
+     * display over other apps: the package's own line, "SYSTEM_ALERT_WINDOW:
+     * allow", with or without what follows it ("; time=..."). Where the uid
+     * has a mode of its own - not its default - its line comes too and is the
+     * one that counts (AppOpsService.checkOperation: a uid's mode before the
+     * package's). Lines as in [uidAllowed].
+     */
+    static boolean overlayAllowed(String said) {
+        boolean allowed = false;
+        for (String line : said.split("[|\n]")) {
+            String l = line.trim();
+            boolean uid = l.startsWith("Uid mode:");
+            String op = uid ? l.substring("Uid mode:".length()).trim() : l;
+            if (!op.startsWith(Overlay.NAME + ":")) {
+                continue;
+            }
+            String mode = op.substring(Overlay.NAME.length() + 1).trim().split("[;\\s]")[0];
+            if (uid && !mode.equals("default")) {
+                return mode.equals("allow");
+            }
+            if (!uid) {
+                allowed = mode.equals("allow");
+            }
+        }
+        return allowed;
+    }
+
+    /**
      * Whether [component] - "package/class", the class written out in full -
      * is among the notification listeners Android allows, as `settings get
      * secure enabled_notification_listeners` prints them: separated by ':',

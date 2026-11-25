@@ -46,10 +46,16 @@ internal fun recorderStatus(state: UiState): RecorderStatus = when {
 internal fun cannotAsk(state: UiState): Boolean =
     !state.automatic && (askFirstsNotificationsOff(state) || (state.batteryRestricted == true && !state.callTracking))
 
-/** Ask first's notifications off: all of JemRec's, or the question's. */
+/** Ask first's notifications off: all of JemRec's, or the question's - and
+ *  no button over calls to ask with in their place. */
 internal fun askFirstsNotificationsOff(state: UiState): Boolean =
-    state.notificationsOff == com.jemcik.jemrec.calls.NotificationHealth.Off.ALL ||
-        state.notificationsOff == com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST
+    !callButtonWorks(state) && (
+        state.notificationsOff == com.jemcik.jemrec.calls.NotificationHealth.Off.ALL ||
+            state.notificationsOff == com.jemcik.jemrec.calls.NotificationHealth.Off.ASK_FIRST
+        )
+
+/** Ask first's button over calls (CallButton), switched on and let show. */
+internal fun callButtonWorks(state: UiState): Boolean = state.callButton && state.overlayAllowed == true
 
 /**
  * The settings a header marks, one mark each, shown only while they are on.

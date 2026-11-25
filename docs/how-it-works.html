@@ -262,7 +262,9 @@
      a call that went unrecorded. Knowing when a call is answered takes one more
      permission, one Android does not let apps ask for: JemRec&rsquo;s recorder
      allows it, and turning off Exact call tracking in Settings takes it
-     back.</p>
+     back. And <em>Record button over calls</em>, off until you switch it on,
+     needs Android&rsquo;s <em>Display over other apps</em>, for its button
+     alone.</p>
   <p>Every permission, in the order F-Droid&rsquo;s listing page shows them,
      because a permission a call recorder does not explain is one its user has
      to guess at:</p>
@@ -279,7 +281,9 @@
     <tr><td><code>READ_EXTERNAL_STORAGE</code></td><td>Android 12 only, which has no <code>READ_MEDIA_AUDIO</code>: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those.</td></tr>
     <tr><td><code>READ_CALL_LOG</code>, <code>READ_CONTACTS</code></td><td>Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded.</td></tr>
     <tr><td><code>MANAGE_ONGOING_CALLS</code></td><td>For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking acts on a call in one case only: it hangs up the answering machine&rsquo;s call if the recorder is lost mid-message. The machine&rsquo;s answering is the recorder&rsquo;s, as the shell.</td></tr>
-    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Keeps Ask first's question on screen during a call until you answer it; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs.</td></tr>
+    <tr><td><code>USE_FULL_SCREEN_INTENT</code></td><td>Keeps Ask first's question on screen during a call until you answer it, on phones that show pop-ups as Android does; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs. Not used while the button over calls asks.</td></tr>
+    <tr><td><code>SYSTEM_ALERT_WINDOW</code></td><td>For Ask first's <em>Record button over calls</em>, and nothing else is drawn with it. Not held until you switch the button on: the recorder then allows it, as the shell, or Android's own page does (<em>Display over other apps</em>); switched off, the recorder takes it back, and where none is running JemRec says it is still allowed.</td></tr>
+    <tr><td><code>VIBRATE</code></td><td>So Ask first's question can be felt in a phone call, where Android drops every notification's own vibration - only if its notification vibrates in Android's settings. Given at install.</td></tr>
     <tr><td><code>WAKE_LOCK</code></td><td>So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down.</td></tr>
   </table>
 
@@ -296,12 +300,12 @@
      silence. JemRec answers it in about a second &mdash; Settings, Diagnostics,
      <strong>Self-test</strong> &mdash; by opening a real capture down the same
      path a call takes and telling you what came out.</p>
-  <p class="muted">Both sides of the call have been recorded on five phones,
+  <p class="muted">Both sides of the call have been recorded on six phones,
      across three very different Android builds: an Honor Magic&nbsp;8 Pro on
-     MagicOS&nbsp;10, a Samsung Galaxy&nbsp;S20, a Galaxy&nbsp;S23 and a
-     Galaxy&nbsp;M34 on One&nbsp;UI &mdash; the S23 and the M34 over Wi-Fi
-     Calling too &mdash; and a OnePlus on LineageOS&nbsp;23. Five is not a
-     compatibility list, which is what the self-test is for.</p>
+     MagicOS&nbsp;10 and 11, a Samsung Galaxy&nbsp;S20, a Galaxy&nbsp;S23, a
+     Galaxy&nbsp;M34 and a Galaxy&nbsp;A17 on One&nbsp;UI &mdash; the S23 and
+     the M34 over Wi-Fi Calling too &mdash; and a OnePlus on LineageOS&nbsp;23.
+     Six is not a compatibility list, which is what the self-test is for.</p>
   <p class="muted">OPPO, OnePlus and realme phones on their own systems
      (ColorOS, OxygenOS, realme UI) refuse JemRec the setting setup grants it
      until a switch of their own is set: <em>Disable system

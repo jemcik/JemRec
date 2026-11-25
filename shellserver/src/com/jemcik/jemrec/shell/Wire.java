@@ -221,6 +221,14 @@ final class Wire {
     static final int COMMAND_USB_DEFAULT = 'U';
 
     /**
+     * "Display over other apps" for the app's Record button over calls
+     * (Overlay): one byte, 1 to allow it, 0 to take it back. Replies OVERLAY
+     * ok once it reads as asked, or OVERLAY failed. An older recorder hangs up
+     * on it, and the app opens Android's own page.
+     */
+    static final int COMMAND_SET_OVERLAY = 'M';
+
+    /**
      * What this recorder does that an older one does not, said after its
      * build in the answer to a ping - words an older app skips. Two so far:
      * a LIST ends with how many it sent (LIST_END, Checks.listEnd); and
@@ -315,6 +323,11 @@ final class Wire {
     static final String USB_SETTING = "USB setting";
     static final String USB_BUSY = "USB busy";
     static final String USB_UNREADABLE = "USB unreadable";
+
+    /** COMMAND_SET_OVERLAY's answer: whether the op reads as asked. */
+    static String overlay(boolean ok) {
+        return "OVERLAY " + (ok ? "ok" : "failed");
+    }
 
     /** COMMAND_SET_QUALITY's answer: the rate the next recording starts with. */
     static String quality(int bps) {

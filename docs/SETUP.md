@@ -239,14 +239,38 @@ recorded from then on; recordings already made keep theirs.
 
 - **On**, the default: every call is recorded and you are not asked.
 - **Off**: when a call starts a notification appears with **Record** and **Not
-  now**. Nothing is captured until you tap Record, so the opening seconds of
-  that call are not saved. That is the honest cost of being asked, and it is
-  why the switch is on by default.
+  now**, and the phone vibrates, twice, shortly - unless that notification's
+  vibration is off in Android's settings. Nothing is captured until you tap
+  Record, so the opening seconds of that call are not saved. That is the honest
+  cost of being asked, and it is why the switch is on by default.
 
-The prompt stays on screen until you answer it, rather than the five seconds an
-ordinary notification gets - a minute, if JemRec's full-screen notifications
-are turned off in Android's settings - and if you miss it, it waits in the
-shade for the rest of the call.
+Android keeps the prompt on screen until you answer it, rather than the five
+seconds an ordinary notification gets - a minute, if JemRec's full-screen
+notifications are turned off in Android's settings - and if you miss it, it
+waits in the shade for the rest of the call; a tap on it opens it as a small
+window over the call. Some phones show pop-ups in a way of their own: One UI's
+*Brief* pop-up style may take it away in seconds. **Not now** answers the
+prompt, not the call: until the call ends, JemRec's own notification, **Not
+recording this call**, has **Record** - open it out in the shade, if it is
+folded. From Android 14 you can swipe that one away too, on an unlocked phone,
+and Record with it.
+
+**Record button over calls**, under Record every call while that is off, is a
+button on the call's screen, on a locked phone too, that stays until you answer
+it or the call ends: **Record**, or the cross for Not now. Drag it up or down
+to where it is not in the way; it is there at the next call. Tapped, it says
+**Starting**, then **Recording** once the recorder has answered, and goes. The
+prompt does not pop up then, and waits in the shade - but on a phone asleep as
+it asks, where it still opens. Off until you switch it on: it needs Android's
+*Display over other apps*, which the recorder allows for JemRec - or Android's
+own page opens, for you to choose JemRec in its list and allow it (greyed out
+there, from Android 15: allow restricted settings first, in JemRec's App info,
+the three-dot menu). Switched off, the recorder takes it back; with none
+running, JemRec says it is still allowed. Android may show a small note of its
+own, that JemRec is displaying over other apps, while the button is up. A
+Xiaomi has permissions of its own for this, under Other permissions in JemRec's
+App info - *Display pop-up windows while running in the background* and *Show
+on Lock screen* - which may hold the button back; not tried on one.
 
 ## Exact call tracking
 
@@ -803,7 +827,7 @@ The header is the honest indicator:
 | **Cannot record** · Tap to allow this Wi-Fi | You are on a Wi-Fi network Android has not allowed Wireless debugging on. Tap the line, tick **Always allow on this network** and tap **Allow**; the recorder starts a few seconds later. |
 | **Cannot record** · Tap to pair again | Wireless debugging turns JemRec away, as it does once its pairing is deleted — Android deletes it 7 days after it is made, unless Keep JemRec paired is on. JemRec goes to the pairing step by itself as soon as the home screen shows; the line is there for the moment before. |
 | **Cannot record** · Battery Restricted · tap to allow | Ask first, with JemRec's battery use set to Restricted and exact call tracking off: Android does not let JemRec put its question up, so no call is recorded. Tap the line for App info, and allow its background use on its battery page. |
-| **Cannot record** · Tap to turn on notifications | Ask first asks in a notification, and JemRec's notifications - or that one, Record this call? - are off in Android's settings, so no call is being recorded. Tap the line to turn them on. |
+| **Cannot record** · Tap to turn on notifications | Ask first asks in a notification, and JemRec's notifications - or that one, Record this call? - are off in Android's settings, so no call is being recorded. Tap the line to turn them on - or switch on Record button over calls, which asks without them. |
 | **Starting...** | Rebuilding the recorder. A few seconds. |
 | **Checking...** | JemRec has just opened and is looking at the recorder and your recordings. No mark is lit until it knows: a moment, or a few seconds with the recorder down or a folder you chose. |
 | **Off** · Tap the button to record calls | You turned the switch off. |
@@ -818,14 +842,15 @@ until you open JemRec, and calls are saved only then - every call with exact
 call tracking off - or in Ask first not recorded - these two while JemRec is
 on; in Ask first, when its question is set not to pop up, or its full-screen
 notifications are turned off so it stays on screen for a minute only - either
-way it waits in the notification shade, easy to miss mid-call; or when the
-folder you chose for recordings can no longer be reached - moved, deleted, its
-drive taken out, or its access taken back; or when a screen lock would stop the
-recorder (*A screen lock and the USB default*) - with the way to put it right:
-**Turn on**, **Open App info**, **Choose again**, or **Set to No data
-transfer**. **Not now** puts the notifications, battery and USB cards away
-until what they say changes - never one where no call is recorded: Ask first's
-question off, or the battery card in Ask first.
+way it waits in the notification shade, easy to miss mid-call - but not while
+Record button over calls asks in its place; or when the folder you chose for
+recordings can no longer be reached - moved, deleted, its drive taken out, or
+its access taken back; or when a screen lock would stop the recorder (*A screen
+lock and the USB default*) - with the way to put it right: **Turn on**, **Open
+App info**, **Choose again**, or **Set to No data transfer**. **Not now** puts
+the notifications, battery and USB cards away until what they say changes -
+never one where no call is recorded: Ask first's question off, or the battery
+card in Ask first.
 
 And when the app is closed, in notifications. Tapping one that reports a
 problem opens JemRec where the problem is shown; its button does the fix:
@@ -838,6 +863,7 @@ problem opens JemRec where the problem is shown; its button does the fix:
 | **A call was not recorded** | An answered call in your call log has no recording. Only in Record every call mode, and only with call log access. Tapped, the Calls tab shows the calls not recorded; **Self-test** checks the recorder. |
 | **Part of a call not saved** | The recorder was started again during a call, so the call was recorded in two parts, and one of them could not be saved; the notification says why. The other part is saved, and JemRec keeps trying the one left for a week; the notification goes once it is saved. |
 | **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. One that could not be saved is tried again, and the notification goes once it is. |
+| **Not recording this call**, during a call | Ask first: the call's own notification, until you tap **Record** on it, on the prompt or on the button over the call. It stays there after Not now. |
 | **Recording stopped**, during a call | The call's own notification, silently: the recording stopped. *Trying again* - its capture failed more often than the recorder may start it again at once, so it tries every ten seconds, or nothing reached the recording for five seconds - and it says **Recording call** again once it has recorded for five seconds; or *the rest of this call is not recorded* - its file could not be written. A message the answering machine is taking ends at either: it hangs up. And when the recorder itself ended, JemRec starts it again during the call - over Wi-Fi, or Start without Wi-Fi's port - and it records the rest of the call as a recording of its own, so the call has two (in Ask first, a phone call goes on as you answered; a messenger call is asked about again, as JemRec cannot tell it from the next call in that app); a message being taken then is hung up on too, where Android has told JemRec which call it is - else the caller hears silence until they hang up - and kept as a message, its greeting at its start. |
 | **Recording stopped early** | The recording of your last call ended well before the call did: its capture failed, or nothing reached it, and it never came back, its file could not be written - the phone full - or the recorder itself was ended. Phone and messenger calls alike; a recorder ended during a messenger call, a call waiting, or with call tracking off, cannot be told. One saved long after its call says which call, by its time. It is that call's one notification: it takes the place of the one after the call, with the same buttons, and stays until you clear it. A message cut short says so in the message's own notification. |
 | **Recording saved elsewhere** | JemRec can no longer reach the folder you chose, so a call was saved in the standard Recordings folder. Once; **Choose again** opens Android's folder picker. |
@@ -863,6 +889,8 @@ everything still works, with the time as each recording's headline.
 **Recording**
 
 - **Record every call** — record everything, or be asked each time.
+- **Record button over calls** — while Record every call is off: a button on
+  the call's screen to be asked with; see Choosing when to record.
 - **Whose calls to keep** — your contacts (all, all but some, only some, or
   none) and numbers not in your contacts. Needs Show who called.
 - **Answering machine** — off until you turn it on; see The answering machine.

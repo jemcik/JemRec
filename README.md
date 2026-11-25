@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-2776-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2866-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -176,7 +176,7 @@ screens.
 
 | | |
 | --- | --- |
-| **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record. About 12 MB an hour, or smaller or larger in Settings → Saving → Quality. A Quick Settings tile turns recording on and off, and a long press on it opens JemRec. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
+| **Record every call, or be asked** | Automatic mode records every call; ask-first records nothing until you tap Record - in a notification, or on a button over the call's screen that stays until you answer it or the call ends. About 12 MB an hour, or smaller or larger in Settings → Saving → Quality. A Quick Settings tile turns recording on and off, and a long press on it opens JemRec. → [more](docs/ARCHITECTURE.md#recording-and-being-asked) |
 | **Start at the answer** | Exact call tracking cuts the ringing, skips calls nobody answered, and splits call waiting into one recording per call. → [more](docs/ARCHITECTURE.md#exact-call-tracking) |
 | **Keep only the calls you want** | All your contacts, all but some, only some, or none - and other numbers on their own switch. → [more](docs/ARCHITECTURE.md#whose-calls-to-keep) |
 | **Messenger calls** | WhatsApp, Telegram, Viber, and Google Meet calls and meetings, both sides, each switched on separately, with the caller's name from the app's notification. Android 14+. → [more](docs/ARCHITECTURE.md#messenger-calls) |
@@ -240,7 +240,7 @@ menu they live in differs by make; JemRec names the right path for yours.
 OPPO, OnePlus and realme phones on their own systems (ColorOS, OxygenOS,
 realme UI) need one more switch there, and setup names that too.
 
-**Both sides of the call** have been recorded on five phones, across three very
+**Both sides of the call** have been recorded on six phones, across three very
 different Android builds:
 
 | Phone | Build |
@@ -249,9 +249,10 @@ different Android builds:
 | Samsung Galaxy S20 | One UI |
 | Samsung Galaxy S23 | One UI, Android 16 and 17 — over Wi-Fi Calling too, which it carries like a messenger call |
 | Samsung Galaxy M34 | One UI 8.5, Android 16 — over Wi-Fi Calling too, since 0.24, as its owner reported |
+| Samsung Galaxy A17 | One UI 8.5, Android 16 — as its owner reported |
 | OnePlus | LineageOS 23 |
 
-Five is not a compatibility list. The one thing nobody can promise for a phone
+Six is not a compatibility list. The one thing nobody can promise for a phone
 they have not held is its audio hardware: some hand over both sides of the call,
 some one, some silence. The **Self-test** answers it on yours in about a second:
 it opens a real capture over the same path a call takes and tells you what came
@@ -319,7 +320,9 @@ recorder does not explain is one its user has to guess at:
 | `READ_EXTERNAL_STORAGE` | Android 12 only, which has no `READ_MEDIA_AUDIO`: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
 | `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking acts on a call in one case only: it hangs up the answering machine's call if the recorder is lost mid-message. The machine's answering is the recorder's, as the shell. |
-| `USE_FULL_SCREEN_INTENT` | Keeps Ask first's question on screen during a call until you answer it; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs. |
+| `USE_FULL_SCREEN_INTENT` | Keeps Ask first's question on screen during a call until you answer it, on phones that show pop-ups as Android does; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs. Not used while the button over calls asks. |
+| `SYSTEM_ALERT_WINDOW` | For Ask first's *Record button over calls*, and nothing else is drawn with it. Not held until you switch the button on: the recorder then allows it, as the shell, or Android's own page does (*Display over other apps*); switched off, the recorder takes it back, and where none is running JemRec says it is still allowed. |
+| `VIBRATE` | So Ask first's question can be felt in a phone call, where Android drops every notification's own vibration - only if its notification vibrates in Android's settings. Given at install. |
 | `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen while you hold the phone to your ear to listen to a recording; the proximity sensor it goes by needs no permission, and is read only while JemRec plays a recording on its screen, while a call holds one back, and, once the phone is at your ear, until you take it down. |
 
 What is left out, and why, is in
@@ -378,6 +381,22 @@ its *Checks* tell you in a second whether yours does, and a *Test call*
 settles it for that kind of call: 2G, VoLTE and Wi-Fi Calling differ. Your
 microphone is muted while the greeting plays and the message is left, so the
 caller hears your greeting and nothing of your room.
+
+</details>
+
+<details>
+<summary><b>Ask first's question goes before I can tap it</b></summary>
+
+<br>
+
+How long a pop-up stays is the phone's: Android itself keeps this one until you
+answer it, but some phones show pop-ups in a way of their own - a Galaxy on One
+UI's *Brief* pop-up style may take it away in seconds. Switch on Settings →
+Recording → *Record button over calls*: a button on the call's screen, locked
+phone or not, that stays until you answer it or the call ends, in place of the
+pop-up. Drag it up or down to where it is not in the way. And until the call
+ends, JemRec's own notification in the shade has *Record* too - after *Not now*
+as well.
 
 </details>
 
@@ -611,7 +630,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 2776 tests, screenshots of the screens included
+    ./gradlew test              # 2866 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

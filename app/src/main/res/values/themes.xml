@@ -12,8 +12,10 @@
     </style>
 
     <!--
-      TurnOffQuestionActivity: only its dialog is drawn, over whatever was
-      open when the tile was tapped, so the window itself is see-through.
+      The activities that only ask: their dialog is all that is drawn, over
+      whatever was open - the tile's question (TurnOffQuestionActivity), Ask
+      first's over a call (RecordPromptActivity) - so the window itself is
+      see-through.
     -->
     <style name="Theme.JemRec.Question" parent="Theme.JemRec">
         <item name="android:windowIsTranslucent">true</item>

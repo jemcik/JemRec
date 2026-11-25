@@ -25,6 +25,7 @@ sourceSets {
             include("com/jemcik/jemrec/shell/Closing.java")
             include("com/jemcik/jemrec/shell/Handshake.java")
             include("com/jemcik/jemrec/shell/Hop.java")
+            include("com/jemcik/jemrec/shell/Overlay.java")
             include("com/jemcik/jemrec/shell/PolicyUse.java")
             include("com/jemcik/jemrec/shell/Quality.java")
             include("com/jemcik/jemrec/shell/RecordingLoss.java")

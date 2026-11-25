@@ -13,6 +13,7 @@ import com.jemcik.jemrec.diag.ops.ArmAdbOp
 import com.jemcik.jemrec.diag.ops.ArmTestOp
 import com.jemcik.jemrec.diag.ops.AudioCheckOp
 import com.jemcik.jemrec.diag.ops.BootstrapOp
+import com.jemcik.jemrec.diag.ops.CallButtonOp
 import com.jemcik.jemrec.diag.ops.CallReportOp
 import com.jemcik.jemrec.diag.ops.CheckOp
 import com.jemcik.jemrec.diag.ops.ConnectOp
@@ -38,6 +39,7 @@ import com.jemcik.jemrec.diag.ops.PcmHashOp
 import com.jemcik.jemrec.diag.ops.RepageOp
 import com.jemcik.jemrec.diag.ops.PortOp
 import com.jemcik.jemrec.diag.ops.PrefOp
+import com.jemcik.jemrec.diag.ops.PressActionOp
 import com.jemcik.jemrec.diag.ops.ProbeOp
 import com.jemcik.jemrec.diag.ops.RefuseGrantOp
 import com.jemcik.jemrec.diag.ops.ReviveLaterOp
@@ -143,6 +145,8 @@ class SpikeReceiver : BroadcastReceiver() {
                     "earpiece" -> EarpieceOp.run(appContext, intent)
                     "keeppaired" -> KeepPairedOp.run(appContext, intent)
                     "usbdefault" -> UsbDefaultOp.run(appContext, intent)
+                    "callbutton" -> CallButtonOp.run(appContext, intent)
+                    "pressaction" -> PressActionOp.run(appContext, intent)
                     "refusegrant" -> RefuseGrantOp.run(appContext, intent)
                     "disconnect" -> DisconnectOp.run(appContext, intent)
                     "grantlistener" -> GrantListenerOp.run(appContext, intent)

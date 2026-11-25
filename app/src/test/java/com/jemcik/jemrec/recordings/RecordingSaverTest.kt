@@ -62,8 +62,11 @@ class RecordingSaverTest {
     private val context = RuntimeEnvironment.getApplication()
     private val fakes = SaverFakes(context)
 
-    /** A call's start, on the second, and when it is saved. */
-    private val t = 1_795_000_000_000L
+    /** A call's start, on the second, and when it is saved. An hour ago by the
+     *  machine's clock, which is the one the ledger forgets by after a week
+     *  (CallLedger.KEEP_MS): pinned at 18 November 2026, two of these failed
+     *  from the 25th on, the first of a call's two entries already forgotten. */
+    private val t = (System.currentTimeMillis() - 60 * 60_000L) / 1000 * 1000
     private val now = t + 10 * 60_000L
 
     private val announced = mutableListOf<String>()

@@ -108,6 +108,10 @@ class StartFreshTest {
         // And Keep JemRec paired's put back, asked under the same lock.
         val putBackAt = AtomicLong()
         recorder.replies["J"] = "PAIRING ok"
+        // And "display over other apps", allowed for the button over calls -
+        // which was switched off with no recorder up, so still allowed.
+        org.robolectric.shadows.ShadowSettings.setCanDrawOverlays(true)
+        recorder.replies["M"] = "OVERLAY ok"
         recorder.stall = { key ->
             if (key == "P" && firstPing.compareAndSet(true, false)) {
                 Thread.sleep(1_500)
@@ -131,6 +135,10 @@ class StartFreshTest {
             assertTrue(recorder.heard.any { it.key == "J" && it.payload.contentEquals(byteArrayOf(0)) })
             assertTrue("put back at $putBackAt, answered at $answeredAt", putBackAt.get() > answeredAt.get())
             assertTrue("put back at $putBackAt, quit at $quitAt", putBackAt.get() < quitAt.get())
+            // "Display over other apps" taken back before the quit.
+            val keys = recorder.heard.map { it.key }
+            assertTrue(recorder.heard.any { it.key == "M" && it.payload.contentEquals(byteArrayOf(0)) })
+            assertTrue("$keys", keys.indexOf("M") in 0 until keys.lastIndexOf("Q"))
             assertFalse(AdbIdentity.exists(context))
             assertFalse("the guard's count forgotten", NetworkRevive.wirelessKeepsAdbd(context))
         } finally {

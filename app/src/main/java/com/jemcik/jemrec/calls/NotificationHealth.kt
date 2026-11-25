@@ -127,9 +127,9 @@ object NotificationHealth {
      * ([switches]): quick enough for the main thread, where a reading lands
      * and the mode is switched.
      */
-    fun notice(context: Context, switches: Switches?): Off? {
+    fun notice(context: Context, switches: Switches?, overlayAllowed: Boolean): Off? {
         switches ?: return null
-        val askFirst = RecordingMode.of(context) == RecordingMode.ON_DEMAND
+        val askFirst = asksInNotifications(context, overlayAllowed)
         // Off in either mode, read from the switches themselves: a dismissal
         // outlives a switch to Ask first and back, its cause unchanged - and
         // one covered by a bigger notice (all off; the question turned down)
@@ -148,6 +148,13 @@ object NotificationHealth {
         if (kept != dismissed) prefs.edit { if (kept.isEmpty()) remove(KEY_DISMISSED) else putString(KEY_DISMISSED, kept.joinToString(",")) }
         return offs(switches, askFirst).firstOrNull { !(dismissable(it, askFirst) && it.name in kept) }
     }
+
+    /** Ask first, and its notification all it asks with: with its button over
+     *  calls working (CallButton), the question's notification off or turned
+     *  down leaves no call unasked. [overlayAllowed] as the last reading
+     *  found it - Android's to answer, off the main thread. */
+    private fun asksInNotifications(context: Context, overlayAllowed: Boolean): Boolean =
+        RecordingMode.of(context) == RecordingMode.ON_DEMAND && !(CallButton.enabled(context) && overlayAllowed)
 
     private fun dismissed(context: Context): Set<String> =
         Prefs.of(context).getString(KEY_DISMISSED, null)?.split(',')?.filter { it.isNotEmpty() }?.toSet().orEmpty()

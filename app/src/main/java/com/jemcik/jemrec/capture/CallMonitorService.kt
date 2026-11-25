@@ -16,6 +16,9 @@ import android.media.AudioManager
 import androidx.annotation.VisibleForTesting
 import com.jemcik.jemrec.DeepLink
 import com.jemcik.jemrec.calls.AfterCall
+import com.jemcik.jemrec.calls.AskButton
+import com.jemcik.jemrec.calls.CallButton
+import com.jemcik.jemrec.calls.CallButtonWindow
 import com.jemcik.jemrec.calls.CallLedger
 import com.jemcik.jemrec.calls.RecordPrompt
 import com.jemcik.jemrec.recorder.BackgroundKill
@@ -440,6 +443,9 @@ class CallMonitorService : Service() {
             // rest of a call the user chose to record, and nothing more - the
             // daemon owns the recording, CALL_ENDED brings this service back to
             // save it, and the prompt's ticket lives in preferences, not here.
+            // Of a call Ask first asks about it costs the button over it and,
+            // after Not now, the Record on that notification: no recording, and
+            // no call recorded unasked.
 
             // THE DAEMON SAW A CALL. The route that lets the app be dormant: the
             // shell process wakes this service directly, which is not a broadcast
@@ -523,12 +529,7 @@ class CallMonitorService : Service() {
             // RecordPrompt.claim - so only the buttons of the prompt that is up
             // right now can answer it.
             ACTION_RECORD_NOW, ACTION_DECLINE -> {
-                if (!RecordPrompt.claim(this, intent.getStringExtra(EXTRA_TICKET))) {
-                    Log.w(TAG, "monitor: ${intent.action} without this prompt's ticket, ignoring")
-                    finishIfIdle()
-                    return
-                }
-                if (intent.action == ACTION_RECORD_NOW) recordNow() else decline()
+                answered(intent.getStringExtra(EXTRA_TICKET), record = intent.action == ACTION_RECORD_NOW, intent.action)
             }
 
             else -> {
@@ -540,6 +541,31 @@ class CallMonitorService : Service() {
                 finishIfIdle()
             }
         }
+    }
+
+    /** Record, or Not now, by [from] - under [ticket], which must be the one
+     *  live (RecordPrompt.claim). */
+    private fun answered(ticket: String?, record: Boolean, from: String?) {
+        if (!RecordPrompt.claim(this, ticket)) {
+            Log.w(TAG, "monitor: $from without this prompt's ticket, ignoring")
+            finishIfIdle()
+            return
+        }
+        if (record) recordNow() else decline()
+    }
+
+    /** Ask first's button over the call (CallButton). Its taps come to this
+     *  service as it is, in the process, and are answers as any other: the
+     *  ticket, under the lock a start's changes are made under. */
+    private val button: AskButton by lazy {
+        buttonFor(this) { ticket, record -> standDown.holding { answered(ticket, record, "the button") } }
+    }
+
+    /** Nothing left to ask of the call: the question and the button down,
+     *  with the ticket. */
+    private fun questionOver() {
+        RecordPrompt.dismiss(this)
+        button.on(CallButton.Event.OVER)
     }
 
     /** The daemon saw a USB cable go in or come out, seconds before adbd -
@@ -599,28 +625,36 @@ class CallMonitorService : Service() {
      */
     private fun recordNow() {
         RecordPrompt.dismiss(this)
+        button.on(CallButton.Event.RECORD)
         askAnswer = true
+        // Its Record gone with its ticket, which this answer spent.
+        if (callInProgress) startForegroundCompat()
         val ends = callEnds
         launchRecording {
             val name = startOnDemand(this@CallMonitorService)
+            button.on(if (name.isNullOrBlank()) CallButton.Event.FAILED else CallButton.Event.TAKEN)
             if (name.isNullOrBlank()) {
                 Log.w(TAG, "monitor: on-demand start did not take (call over?)")
                 // A call up all the same - the recorder down, which is why it
                 // did not take: the call is taken and watched, the recorder
                 // brought back, and its joined start records the rest on
                 // the answer kept (review round 11).
-                if (CaptureDaemon.callUp(this@CallMonitorService) &&
-                    ifTheCallIsUp(ends) {
-                        if (!callInProgress) {
-                            phoneOutAt = -1
-                            lastStartAtMs = System.currentTimeMillis()
-                        }
-                        callInProgress = true
+                val callUp = CaptureDaemon.callUp(this@CallMonitorService)
+                var held = false
+                ifTheCallIsUp(ends) {
+                    if (callUp && !callInProgress) {
+                        phoneOutAt = -1
+                        lastStartAtMs = System.currentTimeMillis()
                     }
-                ) {
-                    watchTheRecorder()
-                    startForegroundCompat()
+                    if (callUp) callInProgress = true
+                    // Not recorded after all: Record stays in reach of a call
+                    // this service holds, as after Not now - by its own word,
+                    // as a waiting call ringing has the mode out of a call.
+                    held = callInProgress
+                    if (held) RecordPrompt.keepRecord(this@CallMonitorService)
                 }
+                if (callUp && held) watchTheRecorder()
+                if (held) startForegroundCompat()
             } else {
                 Log.i(TAG, "monitor: on-demand recording started -> $name")
                 val up = ifTheCallIsUp(ends) {
@@ -666,16 +700,23 @@ class CallMonitorService : Service() {
         (callEnds == ends).also { up -> if (up) change() }
     }
 
-    /** The user tapped Not now: nothing was ever recorded, so nothing to do. */
+    /** The user tapped Not now: nothing was ever recorded, so nothing to do
+     *  but keep Record within reach - for a call this service holds: one it
+     *  does not has no notification of its own to put it on. */
     private fun decline() {
         Log.i(TAG, "monitor: user declined to record this call")
         askAnswer = false
-        RecordPrompt.dismiss(this)
+        questionOver()
+        if (callInProgress) {
+            RecordPrompt.keepRecord(this)
+            startForegroundCompat()
+        }
         finishIfIdle()
     }
 
     override fun onDestroy() {
         runCatching { getSystemService(AudioManager::class.java).removeOnModeChangedListener(modeChanged) }
+        button.close()
         running = false
         heldNow = emptySet()
         messageSince = 0L
@@ -814,7 +855,7 @@ class CallMonitorService : Service() {
             // all - the whole point of asking first.
             recordingNow = false
             Log.i(TAG, "monitor: off-hook (${if (incoming) "incoming" else "outgoing"}), asking whether to record")
-            RecordPrompt.show(this, incoming, app)
+            RecordPrompt.show(this, incoming, app, button::show)
         } else {
             // AUTOMATIC. The daemon is already recording this call to disk; this
             // just shows it. It never touches the audio.
@@ -846,7 +887,7 @@ class CallMonitorService : Service() {
             messageStartedAt = System.currentTimeMillis()
             messageCall = call
             testing = test
-            if (messageLostUnseen(callFiles.lastOrNull(), joined = true)) RecordPrompt.dismiss(this)
+            if (messageLostUnseen(callFiles.lastOrNull(), joined = true)) questionOver()
             messageCall = null
             testing = false
             startForegroundCompat()
@@ -1083,7 +1124,7 @@ class CallMonitorService : Service() {
         // Ended by the mode, the watch still looking: done with it.
         if (endedAt != null) watch?.cancel()
         // Not a prompt a start posted since (review round 11).
-        if (callStarts == starts) RecordPrompt.dismiss(this)
+        if (callStarts == starts) questionOver()
         // An alert said silently in the call is heard now (RecorderHealth).
         RecorderHealth.callOver(this)
         // In front still, as the call's service: no network waited for by
@@ -1220,7 +1261,7 @@ class CallMonitorService : Service() {
         messageCall = null
         askAnswer = null
         // If a start-of-call prompt is still up, the chance to answer it is gone.
-        RecordPrompt.dismiss(this)
+        questionOver()
         // What a recorder lost mid-call had recorded is a file of its own:
         // saved now the call is over, as this one is (the reconcile leaves
         // it all alone while a call is up). And the keep-alive kicked for
@@ -1403,6 +1444,7 @@ class CallMonitorService : Service() {
                 testing = testing,
                 checkingRecorder = checkingRecorder,
                 warningOnly = warningOnly,
+                recordTicket = RecordPrompt.ticket(this),
             ),
         )
         val builder = Notification.Builder(this, CHANNEL_ID)
@@ -1418,6 +1460,7 @@ class CallMonitorService : Service() {
             builder.addAction(messageAction("Talk to them", ACTION_TALK, ticket))
                 .addAction(messageAction("Hang up", ACTION_HANG_UP, ticket))
         }
+        notice.recordTicket?.let { builder.addAction(RecordPrompt.keptRecord(this, it)) }
         val notification: Notification = builder
             // IMMEDIATE, or Android 12+ sits on a foreground service's
             // notification for ten seconds before showing it - a deferral meant
@@ -1649,6 +1692,10 @@ class CallMonitorService : Service() {
         /** How long a call stays out of its mode before it is over. */
         private const val OUT_CONFIRM_MS = 1_500L
 
+        /** Ask first's button over the call: its window, or the tests' own. */
+        @VisibleForTesting
+        internal var buttonFor: (Context, (ticket: String, record: Boolean) -> Unit) -> AskButton = ::CallButtonWindow
+
         /** The watch on the recorder for a call (RecorderWatch): asked of
          *  Android and the recorder here; the tests' own, or none. */
         @VisibleForTesting
@@ -1697,9 +1744,14 @@ class CallMonitorService : Service() {
          * background, except under Battery Restricted; refused there, the
          * stop is stopService after all. Until 1.2 the start went whether
          * the service ran or not, and made one not running - its notice
-         * posted - only to stop it.
+         * posted - only to stop it. Ask first's question goes with it, and
+         * its ticket: JemRec switched off mid-call hears no end of that call
+         * to take them down (the recorder's endWakes), and a ticket is live
+         * only until the call is over - whether the service runs or not, as
+         * the question outlives its process.
          */
         fun stop(context: Context) {
+            RecordPrompt.dismiss(context)
             if (!running) return
             val stop = Intent(context, CallMonitorService::class.java)
                 .setAction(ACTION_STOP)

@@ -164,6 +164,12 @@ data class UiState(
     val usingDefaultFolder: Boolean = true,
     /** True when every call is recorded without asking. */
     val automatic: Boolean = true,
+    /** Ask first's button over calls, switched on (CallButton.enabled). */
+    val callButton: Boolean = false,
+    /** Android lets JemRec display over other apps, as the last reading found
+     *  it: the button cannot show without. Null while not known: before the
+     *  first reading, and while the recorder is asked to allow it. */
+    val overlayAllowed: Boolean? = null,
     /** Whether the user chose to hide Android's debugging notification. */
     val debugNotificationHidden: Boolean = false,
     /** Whether a notification with Play, Share and Delete follows each call. */

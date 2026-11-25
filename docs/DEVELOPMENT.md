@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2776 JVM tests, no device needed - 2354 for the app and 422 for the daemon:
+2866 JVM tests, no device needed - 2440 for the app and 426 for the daemon:
 
     ./gradlew test
 
@@ -504,7 +504,17 @@ setting none and the recorder brought back by the USB-state watch the tap
 queues; then two locks and unlocks that keep it, a call while locked and one
 locked 3 s in, each saved whole (`exact`); the PIN, the lock screen's switch
 and the default put back after, each in an adb call of its own, as a USB
-change can end the shell that runs it.
+change can end the shell that runs it. Then Ask first's button over the call
+(1.8, `ask_button`): its permission allowed by the recorder; over a call's
+screen, dragged and kept where it was left, its *Record* recording the call; its
+cross a *Not now*, after which *Record* on the call's own notification still
+records (the debug op pressaction sends that button's own PendingIntent:
+uiautomator does not see the shade's silent part); over a call answered on a
+PIN-locked phone, and not while it rings or on the lock screen itself; the
+question in the shade and no banner while it is up, unlocked and locked; its
+permission taken back, the question a banner again, which the power key makes a
+window over the call's screen, and a tap outside its dialog gives the call's
+back, unanswered; and switched off, the permission taken back by the recorder.
 Then setup's last step on a phone that refuses its grant, as an OPPO, OnePlus
 or realme does until *Disable system optimization* is on (issues #61, #64;
 the debug build answers with #64's refusal, as an emulator grants): told that

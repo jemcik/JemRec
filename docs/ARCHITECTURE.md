@@ -23,6 +23,7 @@ this one is - or to check that it does what it says.
   [Wireless debugging, only to start](#wireless-debugging-only-to-start) ·
   [stopped in the background](#stopped-in-the-background)
 - The features: [recording and being asked](#recording-and-being-asked) ·
+  [the button over calls](#the-button-over-calls) ·
   [quality and size](#quality-and-size) ·
   [exact call tracking](#exact-call-tracking) ·
   [whose calls to keep](#whose-calls-to-keep) · [file names](#file-names) ·
@@ -1388,7 +1389,36 @@ The release check `battery_restricted` keeps each of these so.
 Automatic mode records every call from the moment it goes off-hook. Ask-first
 mode records **nothing** until you tap Record on the start-of-call notification,
 so a declined call is never written to disk — the setting means what it says,
-and the cost is the few seconds before the tap.
+and the cost is the few seconds before the tap. Until the call ends, the call's
+own notification has Record as well, since 1.8: *Not now* answers the question,
+not the call, and a banner swiped away or gone by itself is no answer at all.
+Its Record carries a ticket of its own (`RecordPrompt.keepRecord`), as the one
+the question carried is spent by *Not now* - what kept a copy of that
+notification no longer starts one (GHSA-hf4v-7hwh-hx7w). A Record that did not
+take, the recorder down, leaves it there too, to be tapped again. From Android
+14 the user can swipe the call's own notification away as well, on an unlocked
+phone ("Changes to how users experience non-dismissible notifications",
+Android 14's behaviour changes), and Record with it; it is not put back against
+them. JemRec switched off mid-call takes the question and its ticket down
+(`CallMonitorService.stop`): no end of that call comes to do it. Any app can
+end the service of a call being asked about (`stopService`, the service being
+exported): the button goes with it, and after *Not now* that Record - no
+recording, and no call recorded unasked.
+
+The question vibrates, with no sound. That is JemRec's own vibration, since 1.8
+(`RecordPrompt.vibrateInACall`): Android drops every notification's while
+telephony is not idle (`NotificationAttentionHelper.disableNotificationEffects`,
+"callState"). On the Honor (MagicOS 11, Android 17) a question posted 0.3 s
+after an answer left nothing of JemRec's in the vibrator's log, which lists
+other apps' notifications outside a call (2026-11-24). It is as the question's
+channel has it, and a notification's vibration to Android, so silent mode, the
+notifications' vibration strength and Do Not Disturb hold. A messenger's call
+may go through Telecom, as Google Meet's do, and telephony is then off-hook as
+in a phone call ([Google Meet](#google-meet-and-other-apps-calls-through-telecom));
+where it does not, Android vibrates for the channel too - not for a question
+with [the button](#the-button-over-calls) up - and the later takes over from
+the other (read, not measured). A tap on the question opens its
+window (`RecordPromptActivity`), and leaves the question in the shade.
 
 Recordings are Opus in an Ogg container, in the phone's standard
 `Recordings/JemRec` folder, where any file manager or music app can open them.
@@ -1419,6 +1449,90 @@ A Quick Settings tile turns recording on and off without opening the app. It
 is the same switch as the one in the app's header. A long press on it opens
 JemRec, not App info: the main activity takes `ACTION_QS_TILE_PREFERENCES`, as
 Android's Quick Settings tiles guide says (asked for in issue #37).
+
+## The button over calls
+
+Ask first's question is a notification, and how long one stays in front is the
+phone's. On stock Android it stays until it is answered, the full-screen intent
+behind it holding it ([notifications off](#after-the-call-and-when-something-is-wrong));
+on the Android 16 emulator in a call it was up at 75 s (2026-11-24). A user of a
+Galaxy A17 (Android 16, One UI 8.5) found it "too small", gone too fast, and
+hard to get back to. Not measured there: One UI's *Brief* pop-up style is the
+likely reason, and whether a full-screen intent holds one is written nowhere.
+ShizuCallRecorder met the same on a Xiaomi (its issue #68, July 2026), and
+answered it as Cube ACR does, with a button over the call.
+
+*Record button over calls* (`CallButton`), off until switched on, shown in
+Settings only in Ask first, is that: a window of JemRec's own,
+`TYPE_APPLICATION_OVERLAY`, as small as what it draws (`CallButtonWindow`). It
+takes no focus, so the call's screen keeps its keys and Back, and every touch
+outside it reaches what is under it. `FLAG_SHOW_WHEN_LOCKED` puts it over a
+call's screen on a locked phone; the lock screen itself hides it
+(`DisplayPolicy.shouldBeHiddenByKeyguard`), and so do screens that hide such
+windows, Android's permission questions among them. Checked on the Android 12,
+13, 16 and 17 emulators, shrunk build, unlocked and locked with a PIN
+(`ask_button`, 2026-11-24). Android posts a note of its own, "displaying over
+other apps", at its lowest importance while it is up.
+
+- **The permission.** "Display over other apps" (`SYSTEM_ALERT_WINDOW`) is an
+  app op nobody has until it is allowed. The switch has the recorder allow it,
+  as the shell (the daemon's `Overlay`, as `Tracking` does exact call
+  tracking's): Android's own page is, from Android 11, a list of every app to
+  find this one in, and from Android 15 turns away an app whose installer it
+  does not trust - a downloaded APK always, a store where the phone lists its
+  own - until its restricted settings are allowed as well (AOSP
+  `EnhancedConfirmationService.isPackageEcmGuarded`). Where the recorder does not - none
+  up, an older one, a phone that refuses the shell - that page opens. Off takes
+  it back; with no recorder to, it stays allowed and unused, and JemRec says so.
+  Taken back on Android's page, it is never allowed again but by the switch,
+  which stays on and says the button is not shown, until it is switched off -
+  and which stays in Settings while it is on in Record every call too, its
+  permission still held. Start fresh has the recorder take it back, if one is up.
+- **What it says.** *Record* and a cross, which is *Not now*; *Starting* from a
+  Record until the recorder answers, *Recording* for three seconds from then,
+  and gone - while it is up, whichever of the button, the question and the
+  call's notification was tapped. A Record that did not take takes it down, and
+  leaves Record in the notification. Switched off in Settings mid-call it goes
+  at once: the permission taken back is at its default, and Android hides a
+  window already up only where it is refused (`WindowState.updateAppOpsState`).
+  A second call's question puts it up for that call, and the first's answer does
+  not change it (`CallButton.next`).
+- **One path.** Its taps carry the question's ticket to the same place the
+  question's buttons go. A touch that passes through another app's window over
+  it is not taken (`filterTouchesWhenObscured`).
+- **Where.** At the right edge, a third of the way down until it is dragged, and
+  then where it was left, as a share of the room there is, so it stays on a
+  screen that turns, folds or splits. Mid-height, the first choice, covered the
+  Speaker key of Android 12's phone app.
+- **The question with it** has no banner and no full-screen intent: it vibrates,
+  and waits in the shade with its *Record* and *Not now*. A banner of the
+  ordinary few seconds came too at first; the two at once cluttered the call's
+  screen (the Honor, 2026-11-25). It is on the one channel, posted as the child
+  of a group whose summary is to do the alerting (`GROUP_ALERT_SUMMARY`), with
+  no summary there - what AndroidX's `setSilent` does, and ShizuCallRecorder by
+  it while it records - of which SystemUI shows no heads-up (AOSP,
+  `NotificationInterruptStateProviderImpl.canAlertCommon` on 12 to 14,
+  `CommonVisualInterruptionSuppressors` on 15 and 16). Not one on the Android
+  12, 13, 16 and 17 emulators, unlocked and locked with a PIN (`ask_button`,
+  shrunk build, 2026-11-25), nor on the Honor in real calls (debug build, the
+  same day). A phone whose own SystemUI does not mind it shows the short banner.
+  But for a phone asleep as it is asked - a call taken on a headset, the phone
+  in a pocket - where the lock screen hides the button until something is over
+  it: there the question's window opens, as it does without the button, and the
+  button with it.
+  On a lock screen lit and in front the question is in that screen's list (read,
+  not produced: it takes the call's own screen not being there), and the button
+  is there once the call's is.
+- **Notifications off** do not stop Ask first while the button works: home and
+  the header do not say it cannot ask.
+
+The question's window opens over a call at a tap on the question and, without
+the button, in one case seen: the power key with its banner up, which SystemUI turns into its full-screen
+intent as the phone goes to sleep (`maybeEscalateHeadsUp`). On the Android 16
+emulator in a locked call (2026-11-24) it filled the screen, the hang-up key
+under it. Since 1.8 it is a dialog over the call's screen, and a tap outside it
+closes it and answers nothing; it closes by itself once its question is answered
+elsewhere or the call is over.
 
 ## Quality and size
 
@@ -2882,8 +2996,8 @@ the code, not measured: their intents had no CLEAR_TOP, and only the media
 notification's had SINGLE_TOP - and two answering machine screens could then
 arm a test, or play the greeting into a take, unseen by each other. The
 record prompt's full-screen window (opened while the phone sleeps or its lock
-screen is in front, and over a locked call only where no heads-up can show:
-*Notifications off*, in
+screen is in front, and over a locked call where no heads-up can show or the
+power key is pressed under one: *Notifications off*, in
 [after the call](#after-the-call-and-when-something-is-wrong), has the
 measurement) has a task of its own: in
 JemRec's, its NEW_TASK and CLEAR_TASK cleared that task, and the window in
@@ -3502,8 +3616,9 @@ by `ProblemNotificationTest` and, for its callers, `ProblemButtonsTest`).
 
 **Notifications off.** Home says what is off and what it costs: all of
 JemRec's, *Record this call?* in Ask first - then no call is recorded, and the
-header says *Cannot record* with *Tap to turn on notifications* - or *Recording
-problems*. And in Ask first, its question turned down - below *Urgent*, the
+header says *Cannot record* with *Tap to turn on notifications*, unless
+[the button over calls](#the-button-over-calls) asks in its place - or
+*Recording problems*. And in Ask first, its question turned down - below *Urgent*, the
 only importance that "appears as a heads-up notification" (Android's
 Notification channels), so it waits in the shade, missed mid-call - or, from
 Android 14, its full-screen notifications turned off - given at install, an
@@ -3517,7 +3632,10 @@ while the phone sleeps or its lock screen is in front - not over a call's own
 screen in the calls measured that day, locked and unlocked, where it came as
 a heads-up - and, from SystemUI's FullScreenIntentDecisionProvider, over a
 locked call's screen only where no heads-up can show (Do Not Disturb set not
-to pop notifications; read, not measured), so its length is all it costs. Its *Turn on* asks Android's question again, or opens
+to pop notifications; read, not measured) - and, measured since, where the
+power key puts the screen off under its banner
+([the button over calls](#the-button-over-calls)) - so its length is all it
+costs. Its *Turn on* asks Android's question again, or opens
 the setting - the question's channel, or full-screen notifications' own page.
 The two that leave calls unrecorded cannot be put away with *Not now*; the
 question turned down or brief still asks, in the shade, and can. One put away
@@ -3592,7 +3710,9 @@ permission a call recorder does not explain is one its user has to guess at:
 | `READ_EXTERNAL_STORAGE` | Android 12 only, which has no `READ_MEDIA_AUDIO`: the same, to list recordings made before a reinstall. It covers photos and videos too; JemRec reads only its own folder. Refusing it only hides those. |
 | `READ_CALL_LOG`, `READ_CONTACTS` | Optional. The only way to know who a call was with: to label a recording, to name a file after the caller or their number, to keep or leave out a call by who it was with, and, for the call log, to notice a call that went unrecorded. |
 | `MANAGE_ONGOING_CALLS` | For exact call tracking. Not one an app can ask for: the daemon allows it, as the shell, while the switch is on. Android then tells JemRec when each call is answered and ends. Tracking acts on a call in one case only: it hangs up the answering machine's call if the recorder is lost mid-message. The machine's answering is the recorder's, as the shell. |
-| `USE_FULL_SCREEN_INTENT` | Keeps Ask first's question on screen during a call until you answer it; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs. |
+| `USE_FULL_SCREEN_INTENT` | Keeps Ask first's question on screen during a call until you answer it, on phones that show pop-ups as Android does; without it, a minute. Given at install; if you turn it off in Android's settings, the question still waits in the shade, and in Ask first home says what it costs. Not used while the button over calls asks. |
+| `SYSTEM_ALERT_WINDOW` | For Ask first's *Record button over calls*, and nothing else is drawn with it. Not held until you switch the button on: the recorder then allows it, as the shell, or Android's own page does (*Display over other apps*); switched off, the recorder takes it back, and where none is running JemRec says it is still allowed. |
+| `VIBRATE` | So Ask first's question can be felt in a phone call, where Android drops every notification's own vibration - only if its notification vibrates in Android's settings. Given at install. |
 | `WAKE_LOCK` | So the keep-alive job can finish its few seconds of work, and so a phone with its screen off stays awake while it brings the recorder back after a USB cable, a minute and a half at most. WorkManager declares it too. And for the lock a phone app holds in a call, which darkens the screen at the ear ([playing at your ear](#playing-at-your-ear)); the proximity sensor it goes by needs no permission. |
 
 No request to any server either. *Newest version*, in Settings' About,

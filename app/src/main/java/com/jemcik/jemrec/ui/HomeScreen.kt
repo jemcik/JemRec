@@ -249,6 +249,7 @@ fun HomeScreen(
                 NotificationsOffCard(
                     off,
                     askFirst = !state.automatic,
+                    button = callButtonWorks(state),
                     onTurnOn = turnOnNotifications,
                     onNotNow = { vm.dismissNotificationsOff(off) },
                 )
@@ -579,15 +580,26 @@ private fun placeInList(name: String, cards: Int, tip: Boolean, days: List<Pair<
 /** What is off, what that costs, and the way to turn it back on - or put the
  *  notice off, where that leaves no call unrecorded (NotificationHealth). */
 @Composable
-private fun NotificationsOffCard(off: NotificationHealth.Off, askFirst: Boolean, onTurnOn: () -> Unit, onNotNow: () -> Unit) {
+private fun NotificationsOffCard(
+    off: NotificationHealth.Off,
+    askFirst: Boolean,
+    button: Boolean,
+    onTurnOn: () -> Unit,
+    onNotNow: () -> Unit,
+) {
     val (title, text) = when (off) {
-        NotificationHealth.Off.ALL -> "Notifications are off" to if (askFirst) {
-            "Ask first asks whether to record each call in a notification, so while " +
-                "JemRec's notifications are off, no call is recorded. Nor can it tell " +
-                "you when something stops it recording."
-        } else {
-            "JemRec still records your calls, but cannot tell you anything: not that a " +
-                "call was recorded, and not when something stops it recording."
+        NotificationHealth.Off.ALL -> "Notifications are off" to when {
+            askFirst && !button ->
+                "Ask first asks whether to record each call in a notification, so while " +
+                    "JemRec's notifications are off, no call is recorded. Nor can it tell " +
+                    "you when something stops it recording."
+            askFirst ->
+                "JemRec still asks with its button over calls, but cannot tell you " +
+                    "anything: not that a call was recorded, and not when something stops " +
+                    "it recording."
+            else ->
+                "JemRec still records your calls, but cannot tell you anything: not that a " +
+                    "call was recorded, and not when something stops it recording."
         }
         NotificationHealth.Off.ASK_FIRST -> "Ask first cannot ask" to
             "Its question, \"Record this call?\", comes as a notification, and that " +
@@ -611,7 +623,7 @@ private fun NotificationsOffCard(off: NotificationHealth.Off, askFirst: Boolean,
         text = text,
         action = "Turn on",
         onAction = onTurnOn,
-        onNotNow = if (NotificationHealth.dismissable(off, askFirst)) onNotNow else null,
+        onNotNow = if (NotificationHealth.dismissable(off, askFirst && !button)) onNotNow else null,
     )
 }
 

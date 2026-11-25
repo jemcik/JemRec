@@ -104,6 +104,10 @@ internal enum class Action(val label: String, val whenBusy: WhenBusy, val outliv
      *  greyed, so a tap during an opening's check waits its turn. */
     USB_DEFAULT_NONE("set the USB default", WhenBusy.QUEUED, outlivesTheScreen = true),
 
+    /** Ask first's button over calls, Settings' switch, which is not greyed:
+     *  its permission, through the recorder or Android's page. */
+    CALL_BUTTON("the button over calls", WhenBusy.BYPASSES),
+
     /** Delete all for good, said yes to in its dialog. */
     DELETE_FOR_GOOD("delete for good", WhenBusy.QUEUED, outlivesTheScreen = true),
 

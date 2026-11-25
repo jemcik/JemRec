@@ -124,6 +124,27 @@ public class ChecksTest {
     }
 
     @Test
+    public void displayingOverOtherAppsIsThePackagesLineUnlessTheUidHasOne() {
+        // As `cmd appops get <package> SYSTEM_ALERT_WINDOW` printed it on the
+        // Android 12 and 16 emulators (2026-11-24), allowed and not.
+        assertTrue(Checks.overlayAllowed("SYSTEM_ALERT_WINDOW: allow; rejectTime=+1s957ms ago"));
+        assertTrue(Checks.overlayAllowed("SYSTEM_ALERT_WINDOW: allow; time=+2m1s305ms ago; rejectTime=+1s850ms ago; duration=+9s636ms"));
+        assertTrue(Checks.overlayAllowed("SYSTEM_ALERT_WINDOW: allow"));
+        assertFalse(Checks.overlayAllowed("SYSTEM_ALERT_WINDOW: default; rejectTime=+1s ago"));
+        assertFalse(Checks.overlayAllowed("SYSTEM_ALERT_WINDOW: deny"));
+        assertFalse(Checks.overlayAllowed("No operations. | Default mode: default"));
+        assertFalse(Checks.overlayAllowed(""));
+        // Another op's allow is not this one's, nor a word that starts with it.
+        assertFalse(Checks.overlayAllowed("MANAGE_ONGOING_CALLS: allow"));
+        assertFalse(Checks.overlayAllowed("SYSTEM_ALERT_WINDOW: allowed"));
+        // A uid's own mode counts before the package's, whichever comes first.
+        assertFalse(Checks.overlayAllowed("Uid mode: SYSTEM_ALERT_WINDOW: ignore | SYSTEM_ALERT_WINDOW: allow"));
+        assertTrue(Checks.overlayAllowed("SYSTEM_ALERT_WINDOW: default\nUid mode: SYSTEM_ALERT_WINDOW: allow"));
+        // A uid left at its default has no say.
+        assertTrue(Checks.overlayAllowed("Uid mode: SYSTEM_ALERT_WINDOW: default | SYSTEM_ALERT_WINDOW: allow"));
+    }
+
+    @Test
     public void thePairingTimeoutIsRecordedOnlyWhenItIsOn() {
         // As `settings get global adb_allowed_connection_time` prints it:
         // "null" where nobody set it (the Honor, 2026-11-15), or a number.

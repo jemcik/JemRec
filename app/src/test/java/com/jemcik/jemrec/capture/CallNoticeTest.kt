@@ -63,6 +63,22 @@ class CallNoticeTest {
         assertEquals(recording, CallNotice.of(idle.copy(recording = true, notRecording = true)))
     }
 
+    @Test fun aCallNotRecordedInAskFirstSaysSoAndOffersRecord() {
+        val asking = idle.copy(callUp = true, recordTicket = "r")
+        assertEquals(
+            Notice("Not recording this call", "Tap Record to record it from now on", false, null, "r"),
+            CallNotice.of(asking),
+        )
+        // Recorded, or a message taken: nothing to offer, whatever ticket is live.
+        assertEquals(recording, CallNotice.of(asking.copy(recording = true)))
+        assertEquals(message, CallNotice.of(asking.copy(messageTicket = "t")))
+        // No call up, a ticket left behind: none offered.
+        assertEquals(call, CallNotice.of(idle.copy(recordTicket = "r")))
+        assertEquals(notRecording, CallNotice.of(idle.copy(recordTicket = "r", notRecording = true)))
+        // The recorder lost with the call not recorded: still not recorded.
+        assertEquals("r", CallNotice.of(asking.copy(stopped = CallNotice.Stopped.TRYING)).recordTicket)
+    }
+
     @Test fun theChecksAreTheirOwnOnlyWithNothingElseUp() {
         val ups = listOf(idle.copy(callUp = true), idle.copy(recording = true), idle.copy(messageTicket = "t"))
         ups.forEach { up ->

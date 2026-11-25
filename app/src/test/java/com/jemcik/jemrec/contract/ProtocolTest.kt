@@ -105,6 +105,10 @@ class ProtocolTest {
         assertNull(CaptureDaemon.parseUsbDefaultReply("USB default -4"))
         assertNull(CaptureDaemon.parseUsbDefaultReply("USB default MTP"))
         assertNull(CaptureDaemon.parseUsbDefaultReply(null))
+        assertEquals(true, CaptureDaemon.parseOverlayReply(example("M", "OVERLAY ok")))
+        assertEquals(false, CaptureDaemon.parseOverlayReply(example("M", "OVERLAY failed")))
+        assertNull(CaptureDaemon.parseOverlayReply("OVERLAY maybe"))
+        assertNull(CaptureDaemon.parseOverlayReply(null))
 
         val sims = CaptureDaemon.parseSims(example("XP", "SIMS"))
         assertEquals("1", sims!!.defaultId)
