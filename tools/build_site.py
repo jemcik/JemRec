@@ -1744,6 +1744,12 @@ SETUP = [
         "Type the six digits and send them.",
     ]),
     ("p", "You do not need the port number. JemRec finds that itself."),
+    ("p", "**If it stays on *Finish connecting***, JemRec is paired but has not "
+          "found the port Wireless debugging listens on. The card says what it "
+          "found: if nothing answers, turn Wireless debugging off and on in "
+          "Settings — JemRec connects while you are there; if Wireless debugging "
+          "turns JemRec away, tap **Pair again**. **Copy a report** on the card "
+          "is for an issue on GitHub."),
     ("p", "Then watch that same notification. It says what is happening, and if "
           "a debugging switch turned itself off it says which one — turn it back "
           "on and the app connects by itself. There is no need to pair again or "
@@ -3519,8 +3525,10 @@ PRIVACY_POINTS = [
      "No account, no server, no analytics, and nothing is collected about you. "
      "<em>Copy a report</em> in Diagnostics puts how the last call was recorded "
      "on the clipboard, with no number, name or sound in it, only when you tap "
-     "it. <em>Newest version</em> in Settings opens GitHub in your browser when "
-     "you tap it; JemRec itself asks no server anything."),
+     "it; in setup it puts how JemRec&rsquo;s last connects to the phone went, "
+     "ports and Android&rsquo;s own words only. <em>Newest version</em> in "
+     "Settings opens GitHub in your browser when you tap it; JemRec itself asks "
+     "no server anything."),
     ("person", "Calls and contacts only if you allow them",
      "To name callers, keep calls by who they were with, and notice a call that "
      "went unrecorded. Everything works without them."),
@@ -3673,6 +3681,19 @@ FAQ = [
      "as they were, once you let it read them (it asks): each recording "
      "carries its own marks &mdash; a message, kept, who a messenger call was "
      "with &mdash; inside the file."),
+    ("Setup stays on Finish connecting",
+     "JemRec is paired, and now has to find the port Wireless debugging listens "
+     "on &mdash; a new one each time it is switched on. Android announces it "
+     "over mDNS, and sometimes gives the port from before Wireless debugging was "
+     "last switched off and on, or none at all. Since 1.9 JemRec then looks for "
+     "it among the phone&rsquo;s own local ports, which takes a second or a "
+     "few, and sends each one it finds listening a short adb hello; nothing "
+     "leaves the phone. If the card says nothing answers for Wireless "
+     "debugging, turn it off and on again in Settings; JemRec connects while you "
+     "are there. If it says Wireless debugging turns JemRec away, tap "
+     "<strong>Pair again</strong>. Still stuck? Tap <em>Copy a report</em> on the "
+     "card and paste it into "
+     "<a href=\"https://github.com/jemcik/JemRec/issues/new?template=bug.yml\">an issue</a>."),
     ("Setup says Android would not let JemRec change debugging settings",
      "Your phone refuses JemRec the one setting setup grants it until a switch "
      "of the phone&rsquo;s own is set, and the card names it. On an OPPO, OnePlus "
@@ -3967,7 +3988,7 @@ INDEX_BODY = f"""
        that came out wrong is worth
        <a href="{REPO}/issues/new?template=bug.yml">an issue</a>,
        with <em>Copy a report</em> from Diagnostics, tapped before the next
-       call.</p>
+       call; stuck in setup, with the <em>Copy a report</em> on its card.</p>
   </div>
   <div>
     {"".join(f"<details><summary>{q}</summary><div><p>{a}</p></div></details>" for q, a in FAQ)}
@@ -4305,6 +4326,12 @@ PRIVACY_DATA = [
      "no names, no sound. Kept by the recorder until the next call replaces it, "
      "and deleted with it when you uninstall. <em>Copy a report</em> in "
      "Diagnostics puts it on the clipboard, only when you tap it."),
+    ("Setup&rsquo;s connects", "the app&rsquo;s memory", "until the app&rsquo;s process ends", "each connect to Wireless debugging",
+     "How JemRec&rsquo;s last five connects to the phone&rsquo;s own Wireless "
+     "debugging went: the ports it tried and what Android answered. No numbers, "
+     "no names, no addresses. In the app&rsquo;s memory only, gone when its "
+     "process ends; <em>Copy a report</em> on setup&rsquo;s cards puts them on "
+     "the clipboard, only when you tap it."),
     ("Android&rsquo;s pairing timeout", "the recorder", "until it is put back", "only if you keep JemRec paired",
      "Only once <em>Keep JemRec paired</em> turns Android&rsquo;s pairing "
      "timeout off: how long Android kept a pairing before, a number, so that "

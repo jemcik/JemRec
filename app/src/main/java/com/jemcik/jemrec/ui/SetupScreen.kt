@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.setup.PairingNotification
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
@@ -605,12 +606,16 @@ private fun ConnectionCard(state: UiState, vm: MainViewModel) {
         ) {
             Text("Finish connecting",
                 style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Already paired - JemRec only needs to reach this phone " +
-                    "once. You will not pair again.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (state.usbDebugging == GlobalSettings.Reading.OFF || !state.wirelessDebuggingOn) {
+            // Not over a Pair again: the pairing was turned away.
+            val bothOn = state.usbDebugging != GlobalSettings.Reading.OFF && state.wirelessDebuggingOn
+            if (!(bothOn && state.connectOutcome == AdbTransport.ConnectOutcome.REFUSED)) {
+                Text(
+                    "Already paired - JemRec only needs to reach this phone " +
+                        "once. You will not pair again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (!bothOn) {
                 val skin = DeviceSkin.current()
                 Steps(
                     developerOptionsStep(skin, mayBeOff = state.developerOptionsHidden),
@@ -634,26 +639,97 @@ private fun ConnectionCard(state: UiState, vm: MainViewModel) {
                 ) { Text("Open settings") }
             } else {
                 // Both switches on but the session did not open - rarer.
-                // Keep trying in the background for a while rather than
-                // taking a single shot.
-                Text(
-                    if (state.usbDebugging == GlobalSettings.Reading.UNKNOWN) {
-                        "Wireless debugging is on, but JemRec could not reach " +
-                            "this phone just now. Check that USB debugging is on " +
-                            "too, then tap Try again."
-                    } else {
-                        "Both switches are on, but JemRec could not reach this " +
-                            "phone just now. Tap Try again."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                FilledTonalButton(
-                    onClick = { haptics.tap(); vm.reconnect() },
-                    enabled = !state.busy,
-                ) { Text("Try again") }
+                // What the last connect found decides the words (#140):
+                // adbd turned JemRec's key away, or nothing on this phone
+                // answered as Wireless debugging - the look and the loopback
+                // probe both found no adbd (AdbdFinder).
+                val usbHidden = state.usbDebugging == GlobalSettings.Reading.UNKNOWN
+                when (state.connectOutcome) {
+                    AdbTransport.ConnectOutcome.REFUSED -> {
+                        Text(
+                            "Wireless debugging answers, but turns JemRec away, as it " +
+                                "does once a pairing is deleted. Pair again; nothing " +
+                                "else is lost.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Button(
+                                onClick = { haptics.tap(); vm.pairAgain() },
+                                enabled = !state.busy,
+                            ) { Text("Pair again") }
+                            CopySetupReport(vm)
+                        }
+                    }
+                    AdbTransport.ConnectOutcome.NOT_FOUND -> {
+                        Text(
+                            (if (usbHidden) "Wireless debugging is on" else "Both switches are on") +
+                                ", but nothing on this phone answers for Wireless " +
+                                "debugging. In Settings, turn Wireless debugging off and " +
+                                "on again" + (if (usbHidden) ", and check that USB debugging is on" else "") +
+                                " - JemRec connects while you are there - then come back.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            // As the card's other Open settings: the connect
+                            // starts first, and lands while the user is there.
+                            Button(
+                                onClick = {
+                                    haptics.tap()
+                                    vm.reconnect()
+                                    Setup.openSettings(context)
+                                },
+                            ) { Text("Open settings") }
+                            CopySetupReport(vm)
+                        }
+                    }
+                    else -> {
+                        // Keep trying in the background for a while rather
+                        // than taking a single shot.
+                        Text(
+                            if (usbHidden) {
+                                "Wireless debugging is on, but JemRec could not reach " +
+                                    "this phone just now. Check that USB debugging is on " +
+                                    "too, then tap Try again."
+                            } else {
+                                "Both switches are on, but JemRec could not reach this " +
+                                    "phone just now. Tap Try again."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            FilledTonalButton(
+                                onClick = { haptics.tap(); vm.reconnect() },
+                                enabled = !state.busy,
+                            ) { Text("Try again") }
+                            CopySetupReport(vm)
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+/**
+ * Copy a report, on the setup cards that say something went wrong - Finish
+ * connecting, and Almost done's failure: a user stuck in setup could reach
+ * no report at all until 1.9 (#140, whose report came empty). Not on the
+ * pairing card, every user's busiest, whose failures the notification says.
+ * One composable, so the cards say it the same way.
+ */
+@Composable
+private fun CopySetupReport(vm: MainViewModel) {
+    val haptics = LocalHapticFeedback.current
+    TextButton(onClick = { haptics.tap(); vm.copySetupReport() }) { Text("Copy a report") }
 }
 
 @Composable
@@ -697,6 +773,7 @@ private fun FinishingCard(state: UiState, vm: MainViewModel) {
                     TextButton(
                         onClick = { haptics.tap(); Setup.openSettings(context) },
                     ) { Text("Open settings") }
+                    CopySetupReport(vm)
                 }
             }
         }

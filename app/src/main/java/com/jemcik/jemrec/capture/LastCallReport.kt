@@ -1,10 +1,10 @@
 package com.jemcik.jemrec.capture
 
 import android.content.Context
-import android.os.Build
 import com.jemcik.jemrec.answering.AnsweringMachine
 import com.jemcik.jemrec.calls.CallTracking
 import com.jemcik.jemrec.calls.VoipApps
+import com.jemcik.jemrec.system.ThisPhone
 
 /**
  * Copy a report, on Diagnostics: this phone, the settings that decide how a
@@ -20,8 +20,8 @@ object LastCallReport {
 
     fun text(context: Context, appVersion: String, recorder: String?): String = text(
         appVersion = appVersion,
-        phone = "${Build.MANUFACTURER} ${Build.MODEL}",
-        android = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), build ${Build.DISPLAY}",
+        phone = ThisPhone.phone,
+        android = ThisPhone.android,
         messengerApps = VoipApps.enabled(context).sorted(),
         tracking = CallTracking.enabled(context),
         answering = AnsweringMachine.enabled(context),
@@ -40,7 +40,7 @@ object LastCallReport {
         recorder: String?,
     ): String = buildString {
         appendLine("JemRec $appVersion - call report")
-        appendLine("Phone: $phone, $android")
+        appendLine(ThisPhone.line(phone, android))
         appendLine(
             "Settings: messenger calls " + (messengerApps.joinToString(", ").ifEmpty { "off" }) +
                 "; exact call tracking " + (if (tracking) "on" else "off") +

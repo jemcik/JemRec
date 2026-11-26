@@ -1,6 +1,7 @@
 package com.jemcik.jemrec.ui
 
 import android.content.IntentSender
+import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.calls.CallHistory
 import com.jemcik.jemrec.calls.CallRules
 import com.jemcik.jemrec.calls.VoipApps
@@ -63,6 +64,10 @@ data class UiState(
     val selfTestShown: Long = 0L,
     /** Setup's last step failed, and why: shown with a Try again. */
     val finishFailed: String? = null,
+    /** How setup's last connect went (AdbTransport.lastConnect), for the
+     *  Finish connecting card to say which: nothing answers on the phone, or
+     *  Wireless debugging turns JemRec away (#140). NONE until one says. */
+    val connectOutcome: AdbTransport.ConnectOutcome = AdbTransport.ConnectOutcome.NONE,
     val busy: Boolean = false,
     val connected: Boolean = false,
     val daemonRunning: Boolean = false,

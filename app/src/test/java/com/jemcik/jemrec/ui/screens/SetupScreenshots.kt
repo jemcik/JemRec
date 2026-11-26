@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
+import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.setup.SetupStep
 import com.jemcik.jemrec.system.AutoStart
@@ -203,7 +204,26 @@ class SetupScreenshots : ScreenTest() {
     @Test fun connectionStepWithBothOn() {
         step(Fixtures.ready().copy(step = SetupStep.NEEDS_CONNECTION))
         compose.onNodeWithText("Both switches are on", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Copy a report").assertIsDisplayed()
         snap("setup-connection-both-on")
+    }
+
+    /** Nothing answered as Wireless debugging, the probe included (#140):
+     *  switch it off and on, from Settings. */
+    @Test fun connectionStepWhereNothingAnswers() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_CONNECTION, connectOutcome = AdbTransport.ConnectOutcome.NOT_FOUND))
+        compose.onNodeWithText("nothing on this phone answers", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Open settings").assertIsDisplayed()
+        compose.onAllNodes(hasText("Try again")).assertCountEquals(0)
+        snap("setup-connection-not-found")
+    }
+
+    /** adbd answered, and turned JemRec's key away: pair again. */
+    @Test fun connectionStepWhereThePairingIsTurnedAway() {
+        step(Fixtures.ready().copy(step = SetupStep.NEEDS_CONNECTION, connectOutcome = AdbTransport.ConnectOutcome.REFUSED))
+        compose.onNodeWithText("turns JemRec away", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Pair again").assertIsDisplayed()
+        snap("setup-connection-refused")
     }
 
     /** The last step as it runs - inside the check, so busy - with nothing

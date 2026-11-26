@@ -24,7 +24,7 @@ body:
     id: report
     attributes:
       label: Copy a report
-      description: Settings → Diagnostics → Copy a report, tapped before your next call, pasted here. It names your phone and JemRec's settings, and no numbers or people. For the answering machine, use the Copy a report on its own screen.
+      description: Settings → Diagnostics → Copy a report, tapped before your next call, pasted here. It names your phone and JemRec's settings, and no numbers or people. For the answering machine, use the Copy a report on its own screen; stuck in setup, the one on its card.
       render: text
   - type: input
     id: phone

@@ -168,6 +168,12 @@ anywhere so it is already waiting.
 
 You do not need the port number. JemRec finds that itself.
 
+**If it stays on *Finish connecting***, JemRec is paired but has not found the
+port Wireless debugging listens on. The card says what it found: if nothing
+answers, turn Wireless debugging off and on in Settings — JemRec connects while
+you are there; if Wireless debugging turns JemRec away, tap **Pair again**.
+**Copy a report** on the card is for an issue on GitHub.
+
 Then watch that same notification. It says what is happening, and if a
 debugging switch turned itself off it says which one — turn it back on and the
 app connects by itself. There is no need to pair again or to fetch a new code.

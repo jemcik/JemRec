@@ -4,12 +4,18 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
+import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.system.GlobalSettings
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import io.github.muntashirakon.adb.AdbStream
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -178,52 +184,195 @@ object AdbTransport {
 
     /**
      * Find adbd without being told where it is, in the order that degrades
-     * best: mDNS first (correct whenever there is a network), then the fixed
-     * legacy port (correct whenever someone has pinned it, including with Wi-Fi
-     * off), and only then give up.
+     * best: Wireless debugging's port (AdbdFinder: mDNS, each port checked by
+     * adbd's own answer, then the loopback probe), then the fixed legacy port
+     * (correct whenever someone has pinned it, including with Wi-Fi off), and
+     * only then give up. Each try is kept ([attempts]) for the setup report.
      */
     suspend fun autoConnect(context: Context, timeoutMs: Long = 5_000): Result<Unit> =
         withContext(Dispatchers.IO) {
             lastConnect = ConnectOutcome.NONE
-            runCatching {
-                val mgr = manager(context)
+            val app = context.applicationContext
+            var found: AdbdFinder.Found? = null
+            var failure: String? = null
+            var legacy: String? = null
+            var tries = 0
+            var usedPort = 0
+            // This call's own outcome, kept apart from lastConnect, which a
+            // connect running at the same time sets too: the attempt's line
+            // said NONE for one that had failed (the Android 13 AVD, 2026-11-26).
+            var outcome = ConnectOutcome.NONE
+            val result = runCatching {
+                val mgr = manager(app)
                 if (mgr.isConnected) {
                     Log.i(TAG, "autoConnect: already connected")
-                    lastConnect = ConnectOutcome.CONNECTED
+                    outcome = ConnectOutcome.CONNECTED
                     return@runCatching
                 }
                 forgetShell()
 
-                val discovered = discoverPort(context, AdbMdns.SERVICE_TYPE_TLS_CONNECT, timeoutMs)
-                if (discovered != null) {
-                    Log.i(TAG, "autoConnect: mDNS found connect port $discovered")
+                val job = coroutineContext.job
+                val where = AdbdFinder(LiveFinderWorld(app, job)).find(timeoutMs).also { found = it }
+                val port = where.port
+                if (port != null) {
                     // See connect() above: false is ambiguous, isConnected is
-                    // not. A throw here is adbd turning us away at the TLS
-                    // handshake - which is what a forgotten pairing looks like.
-                    val accepted = runCatching { mgr.connect(LOOPBACK, discovered) }
-                        .onFailure { Log.w(TAG, "autoConnect: port $discovered refused us - ${it.message}") }
-                        .getOrDefault(false) || mgr.isConnected
+                    // not. adbd answered on this port as adbd, so a failure
+                    // that stays is adbd turning this key away at the TLS
+                    // handshake - which is what a forgotten pairing looks
+                    // like - not a port it left (before 1.9 an old port mDNS
+                    // gave was counted as a refusal too).
+                    //
+                    // A quick failure is tried again: adbd names a connection
+                    // host-<fd> and turns a new one away while a connection of
+                    // that name, just closed, is still listed
+                    // (validate_transport_list, EALREADY) - AdbdCheck's own,
+                    // closed a moment before, whose fd the new one reuses.
+                    // adbd's trace on the Android 13 AVD under load,
+                    // 2026-11-26: "socket transport host-90 is already in
+                    // transport_list and fails to register", 8 and 4 failed
+                    // connects in 20. A slow failure - no answer - is not
+                    // tried again.
+                    var accepted = false
+                    while (true) {
+                        tries++
+                        val began = SystemClock.elapsedRealtime()
+                        accepted = runCatching { mgr.connect(LOOPBACK, port) }
+                            .onFailure { failure = causeOf(it) }
+                            .getOrDefault(false) || mgr.isConnected
+                        val quick = SystemClock.elapsedRealtime() - began < QUICK_FAILURE_MS
+                        if (accepted || !quick || tries >= CONNECT_TRIES || !job.isActive) break
+                        delay(AGAIN_MS)
+                    }
                     if (accepted) {
-                        lastConnect = ConnectOutcome.CONNECTED
-                        connectedPort = discovered
+                        outcome = ConnectOutcome.CONNECTED
+                        connectedPort = port
+                        usedPort = port
                         return@runCatching
                     }
-                    Log.w(TAG, "autoConnect: mDNS port $discovered did not accept us")
-                    lastConnect = ConnectOutcome.REFUSED
+                    if (failure == null) failure = "no answer in ${CONNECT_TIMEOUT_S} s"
+                    outcome = ConnectOutcome.REFUSED
+                    usedPort = port
                 } else {
-                    Log.i(TAG, "autoConnect: no mDNS advertisement (Wi-Fi off, Wireless debugging off, or not allowed on this Wi-Fi)")
-                    lastConnect = ConnectOutcome.NOT_FOUND
+                    outcome = ConnectOutcome.NOT_FOUND
                 }
 
-                Log.i(TAG, "autoConnect: trying fixed port $LEGACY_TCP_PORT")
-                val ok = mgr.connect(LOOPBACK, LEGACY_TCP_PORT)
-                check(ok || mgr.isConnected) {
-                    "no adbd found by mDNS, and nothing listening on $LEGACY_TCP_PORT"
+                val ok = runCatching { mgr.connect(LOOPBACK, LEGACY_TCP_PORT) }
+                    .onFailure { legacy = causeOf(it) }
+                    .getOrThrow()
+                if (!ok && !mgr.isConnected) {
+                    legacy = "not accepted"
+                    error("no adbd found by mDNS, and nothing listening on $LEGACY_TCP_PORT")
                 }
-                lastConnect = ConnectOutcome.CONNECTED
+                outcome = ConnectOutcome.CONNECTED
                 connectedPort = LEGACY_TCP_PORT
+                usedPort = LEGACY_TCP_PORT
             }
+            lastConnect = outcome
+            if (outcome != ConnectOutcome.CONNECTED || found != null) {
+                val attempt = Attempt(
+                    atMs = System.currentTimeMillis(),
+                    outcome = outcome,
+                    found = found,
+                    port = usedPort,
+                    failure = failure,
+                    legacy = legacy,
+                    tries = tries,
+                )
+                remember(attempt)
+                // A failure at W, as the runs' logs are read for (review round 1).
+                if (outcome == ConnectOutcome.CONNECTED) {
+                    Log.i(TAG, "autoConnect: ${attempt.line()}")
+                } else {
+                    Log.w(TAG, "autoConnect: ${attempt.line()}")
+                }
+            }
+            result
         }
+
+    /**
+     * One [autoConnect] as it went, for a log line and the setup report.
+     * Ports and Android's own error words only: nothing personal (no
+     * address, no network name, no service name - adbd's names it after the
+     * phone's serial number).
+     */
+    internal data class Attempt(
+        val atMs: Long,
+        val outcome: ConnectOutcome,
+        val found: AdbdFinder.Found?,
+        /** The port connected on, or adbd's port that refused; 0 for none. */
+        val port: Int,
+        /** Why adbd's port did not take the connect. */
+        val failure: String?,
+        /** Why port 5555 did not either, where it was tried. */
+        val legacy: String?,
+        /** Connects made on adbd's port: more than one where a quick failure
+         *  was tried again. */
+        val tries: Int = 1,
+    ) {
+        fun line(): String = buildString {
+            append(outcome.name)
+            if (port > 0) append(" on ").append(port)
+            if (tries > 1) append(" (").append(tries).append(" tries)")
+            found?.let { append("; ").append(it.summary()) }
+            failure?.let { append("; adbd: ").append(it) }
+            legacy?.let { append("; port ").append(LEGACY_TCP_PORT).append(": ").append(it) }
+        }
+    }
+
+    private val recent = ArrayDeque<Attempt>()
+
+    private fun remember(attempt: Attempt) = synchronized(recent) {
+        recent.addFirst(attempt)
+        while (recent.size > KEPT_ATTEMPTS) recent.removeLast()
+    }
+
+    /** The last [KEPT_ATTEMPTS] of [autoConnect], newest first. */
+    internal fun attempts(): List<Attempt> = synchronized(recent) { recent.toList() }
+
+    private const val KEPT_ATTEMPTS = 5
+
+    /** JemAdbConnectionManager's connect timeout. */
+    private const val CONNECT_TIMEOUT_S = 10
+
+    /** A connect turned away by adbd's name clash fails within milliseconds;
+     *  one that takes longer is something else, and is not tried again. */
+    private const val QUICK_FAILURE_MS = 2_000L
+    private const val CONNECT_TRIES = 3
+    private const val AGAIN_MS = 500L
+
+    /**
+     * What a failed connect says, with libadb's wrapping taken off: a socket
+     * it could not open comes back as `new IOException().initCause(it)`, no
+     * message of its own (AdbConnection.java, libadb 3.1.1), which left the
+     * log saying "refused us - null" whatever happened (#140).
+     */
+    internal fun causeOf(t: Throwable): String {
+        var root = t
+        while (root.message == null && root.cause != null && root.cause !== root) root = root.cause!!
+        return "${root.javaClass.simpleName}: ${root.message ?: "no detail"}"
+    }
+
+    /** The phone, for [AdbdFinder]; [job] is the caller's, whose end stops
+     *  the look and the probe (a screen closed mid-connect). */
+    private class LiveFinderWorld(private val context: Context, private val job: Job) : AdbdFinder.World {
+        override fun look(): AdbdFinder.Look = MdnsLook(context)
+        override fun check(port: Int) = AdbdCheck.check(port)
+
+        /** No server to find: Wireless debugging read off (unread, it may
+         *  be on), or no Wi-Fi - Android runs it only on a Wi-Fi network and
+         *  switches it off when the Wi-Fi goes (AdbDebuggingManager,
+         *  getCurrentWifiApInfo and its network receiver, android15-release). */
+        override fun noProbe(): String? = when {
+            GlobalSettings.read(context, GlobalSettings.ADB_WIFI_ENABLED) == GlobalSettings.Reading.OFF ->
+                "Wireless debugging is off"
+            !NetworkRevive.onWifi(context) -> "no Wi-Fi"
+            else -> null
+        }
+
+        override fun probe() = LoopbackProbe(cancelled = ::cancelled).run()
+        override fun now() = SystemClock.elapsedRealtime()
+        override fun cancelled() = !job.isActive
+    }
 
     /**
      * The shell kept from a connection before this one goes with it. A new
@@ -332,18 +481,23 @@ object AdbTransport {
      * A discovery that resolves nothing ([MdnsHold]): NsdService takes one
      * resolve at a time from an app and turns a second away
      * (FAILURE_ALREADY_ACTIVE, android12-release), and the connect's own look
-     * (AdbMdns) resolves what it finds - a hold that resolved too could take
+     * (MdnsLook) resolves what it finds - a hold that resolved too could take
      * the connect's resolve from it (review round 1). Android 14 moved
      * NsdService to an mDNS stack of its own, and the 16 and 17 AVDs kept
      * finding adbd with nobody browsing: null there, as on the versions
      * before 12, which JemRec does not run on.
+     *
+     * Since 1.9 a lost announcement no longer fails the start - the loopback
+     * probe finds adbd without one (AdbdFinder) - and the hold keeps the
+     * quicker answer. Its type is the service's full one, as NsdManager takes
+     * it; until 1.9 it was libadb's bare name, adb-tls-connect.
      */
     fun holdMdns(context: Context): AutoCloseable? {
         if (!holdsMdns(Build.VERSION.SDK_INT)) return null
         val nsd = context.applicationContext.getSystemService(NsdManager::class.java) ?: return null
         val hold = MdnsHold(nsd)
         return runCatching {
-            nsd.discoverServices(AdbMdns.SERVICE_TYPE_TLS_CONNECT, NsdManager.PROTOCOL_DNS_SD, hold)
+            nsd.discoverServices(MdnsLook.SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, hold)
             hold
         }.onFailure { Log.w(TAG, "mdns: could not hold a request open - ${it.message}") }.getOrNull()
     }

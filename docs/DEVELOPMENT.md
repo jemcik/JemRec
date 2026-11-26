@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2883 JVM tests, no device needed - 2457 for the app and 426 for the daemon:
+2919 JVM tests, no device needed - 2493 for the app and 426 for the daemon:
 
     ./gradlew test
 
@@ -490,7 +490,16 @@ the revive switches it on, the recorder is back and switches it off within
 15 s, and keeps its process 10 s after; on Android 12 and 13 after 15 s with
 nobody browsing mDNS, past NsdService's stop of `mdnsd`. Then switched on
 from the shell, as a user's for a computer: a revive uses it and leaves it
-on. Then a USB mode changed (1.6): JemRec's process ended, `svc usb
+on. Then mDNS silent (1.9, #140): a look over Wireless debugging, then mDNS
+dropped on the AVD (UDP 5353 going out, IPv4 and IPv6) and Wireless
+debugging switched off and on, with port 5555 shut to the app: the connect
+setup and Try again make lands on `adbd`'s new port, found by the loopback
+probe, and a start - Wireless debugging switched on by the revive, another
+new port - brings the recorder back. What phones met by chance, an old port
+from Android's cache or no announcement at all, made certain: on the Android
+16 AVD the cache gave the old port in one run and the live one in the next
+(2026-11-26), and checks that waited for it passed on 1.8.1.
+Then a USB mode changed (1.6): JemRec's process ended, `svc usb
 setFunctions` to a function the last USB_STATE did not name - Android's own
 kill, adbd and the recorder with it - and the recorder back within 40 s by
 JemRec's run of the cable's watch, woken by the broadcast, and Wireless

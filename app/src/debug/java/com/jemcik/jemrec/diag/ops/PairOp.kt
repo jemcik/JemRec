@@ -10,12 +10,12 @@ internal object PairOp : DiagOp {
     override suspend fun run(appContext: Context, intent: Intent) {
         val code = intent.getStringExtra("code").orEmpty()
         // Discover the pairing port here rather than being told
-        // it. `adb mdns services` on a host keeps serving
-        // recently-seen entries after the service is gone, and
-        // a stale port produces ECONNREFUSED that reads exactly
-        // like a loopback problem. The phone's own NsdManager
-        // sees only what is live, and this is the path the real
-        // pairing wizard will take anyway.
+        // it: this is the path the real pairing wizard takes. Not
+        // that the phone's own NsdManager sees only what is live -
+        // it can serve the connect service's old port from its cache
+        // (#140, tmp/issue-140/PLAN.md) - but for the pairing
+        // service four dialogs in a row on the Android 16 AVD were
+        // each found on their own new port (2026-11-26).
         val given = intent.getIntExtra("port", -1)
         val port = if (given > 0) given else AdbTransport.discoverPort(
             appContext, AdbMdns.SERVICE_TYPE_TLS_PAIRING, timeoutMs = 15_000,

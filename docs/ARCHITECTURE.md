@@ -21,6 +21,7 @@ this one is - or to check that it does what it says.
   [after a restart](#after-a-restart) ·
   [coming back without you](#coming-back-without-you) ·
   [Wireless debugging, only to start](#wireless-debugging-only-to-start) ·
+  [finding Wireless debugging's port](#finding-wireless-debuggings-port) ·
   [stopped in the background](#stopped-in-the-background)
 - The features: [recording and being asked](#recording-and-being-asked) ·
   [the button over calls](#the-button-over-calls) ·
@@ -488,7 +489,9 @@ port of a connection 45 seconds earlier, each turned away within 2 ms, and as
 two refusals in a row mean a lost pairing, the header said Pair again - whose
 tap forgets a pairing that works. A refusal with the switch read off is now
 taken for nothing advertised (`RecorderHealth.meant`), and the header asks to
-allow the Wi-Fi.
+allow the Wi-Fi. Since 1.9 such a port is checked by `adbd`'s own answer
+first and never counted as a refusal ([Finding Wireless debugging's
+port](#finding-wireless-debuggings-port)).
 Measured on the Android 12 emulator, 2026-10-28, with port 5555 blocked for
 the app so that nothing but Wireless debugging could start the recorder:
 before, with JemRec open, each revive asked again over it (and, by the code,
@@ -1184,7 +1187,10 @@ revive, 9.95-10.03, 9.92-10.01 and 10.28-10.33 s. The four seconds a revive
 gives `adbd` after a switch-on (`ADBD_SETTLE_MS`) stay: without them mDNS
 hands out the port of the last switch-on - a new one each time - and on the
 Android 16 emulator two of five connects got nowhere in 25 s; after them,
-all fifteen switch-ons on 16 and 17 connected at once. Nothing else changed
+all fifteen switch-ons on 16 and 17 connected at once. Since 1.9 an old port
+no longer fails a connect ([Finding Wireless debugging's
+port](#finding-wireless-debuggings-port)); the four seconds stay for `adbd`
+to come up, not measured shorter. Nothing else changed
 that was measured. No notification is posted for Wireless debugging being on:
 on the Honor, with a computer's cable in (off the cable not read), "Wireless
 debugging connected" only while a start's session is open, as in AOSP (`showAdbConnectedNotification`: "Show when at least one
@@ -1236,6 +1242,135 @@ nothing either way, and its USB mode change killed the recorder with Wireless
 debugging on too, which 1.6 brings back ([A USB mode
 changed](#a-usb-mode-changed-with-the-cable-in)); and whether a banking app
 that looks at Wireless debugging alone now opens.
+
+## Finding Wireless debugging's port
+
+`adbd`'s Wireless debugging server takes a new port at every switch-on (its
+TLS server binds port 0, `daemon/adb_wifi.cpp`), and JemRec learns it over
+mDNS as `_adb-tls-connect._tcp`. Until 1.9 it took the first port a look
+gave, through libadb's `AdbMdns`, and a look that gave none - or one `adbd`
+had left - failed every connect while `adbd` listened. Issue #140: a
+Motorola edge 50 neo on Android 15 paired, then stayed on *Finish
+connecting* for good. The investigation, with every measurement:
+`tmp/issue-140/PLAN.md` (not in the repository; its findings are here).
+
+**Why mDNS gives no port that answers.** Two ways, measured or read:
+
+- *An old port from Android's cache.* NsdService answers a look from its
+  cache within milliseconds, and a resolve takes the first answer and ends
+  (`NsdService.java`, android15-release); a newer port for the same name
+  reaches a look only as an update, which a discovery's listener never
+  hears. After Wireless debugging went off and on, measured 2026-11-26 with
+  JemRec's own connect: on the Honor (Android 17) one look got the cache's
+  answer and failed, and 2.5 s into it the cache took an update - the next
+  look connected; on the Android 15 emulator the old port came back for 40 s
+  of looks; on the Android 16 emulator for all of five minutes. A start
+  switches Wireless debugging on, so every start since 1.5 meets it, and so
+  does setup, which looks the moment the switch reads on, before pairing.
+- *No announcement at all.* `adbd` registers the service once per
+  switch-on, through the native `mdnsd` on the Android 15 emulator (on the
+  Honor system_server's own advertiser did it), and does not try again: on a
+  Moto G05 on Android 15, in another app built like JemRec
+  (thisisankit27/VoiceMail-Android PR #12, 2026-11-23), the registration
+  failed with -65563 because `mdnsd` was not running yet after a boot.
+
+Which of the two #140's phone met is not known; its reporter was asked.
+Pairing being found says nothing about either: the pairing service is
+registered by system_server through NsdManager (`AdbDebuggingManager.java`),
+the connect service by `adbd`.
+
+**Since 1.9** (`AdbdFinder`, `MdnsLook`, `AdbdCheck`, `LoopbackProbe`):
+
+- Every port a look gives is checked by `adbd`'s own answer: a CONNECT, as
+  adb opens a connection, which the TLS server answers with STLS before
+  anything else (`adb.cpp` `handle_new_connection`). A port that merely
+  accepts is no proof - on loopback a connect can land on its own socket
+  (TCP's self-connect), which showed as "open" ports that changed from run
+  to run. The look is JemRec's own (`MdnsLook`): it drops nothing, resolves
+  one at a time (NsdService turns a second resolve away,
+  `FAILURE_ALREADY_ACTIVE`), and is stopped even when closed before its
+  discovery started.
+- The caller's look time is the deadline for finding `adbd`, which may
+  need all of it: *Allow this Wi-Fi* gives the user 20 s to answer
+  Android's question before `adbd` starts its server at all. A port that is
+  not `adbd`'s brings the probe forward to half a second after it; a probe
+  that finds nothing is made again every 3 s while there is time, the last
+  at the deadline, the switch read again each time (Android sets it back off
+  while its question is up, `AdbDebuggingManager` 12 to 16), and mDNS is
+  heard meanwhile. A first cut of 1.9 ended the look half a
+  second after an old port, and so ended that wait 4.5 s in, the question
+  still on screen (review round 1).
+- The pairing notification's service starts a try only where a whole one -
+  look, probe, connect and port 5555, 26 s - fits before its deadline, so its
+  last try cannot run past Android's cap on the service.
+- With no port that answers, the loopback probe asks every port of the
+  range the kernel picks from, 32768-60999 - the app cannot read
+  `ip_local_port_range` (EACCES on the Honor and both emulators), so it is
+  Linux's default - 32 at once, 200 ms each, until `adbd` answers, within
+  10 s. Measured as the app's uid, 2026-11-26: the whole range in 1.2 s on
+  the Honor, 2.5-3.5 s on the emulators, `adbd` found in every run. Each
+  listener in the range gets one CONNECT, 31 bytes, and is let go. A closed
+  port is asked first: one that times out instead of refusing means the
+  uid's loopback is dropped (Doze, power saving, a restricted app -
+  `bpf_progs/netd.c` applies those to loopback), and no sweep is made. With
+  Wireless debugging read off, or no Wi-Fi - Android runs it only on a Wi-Fi
+  network and switches it off when the Wi-Fi goes (`AdbDebuggingManager`) -
+  nothing is probed: there is no server. A caller that goes, a screen closed
+  mid-connect, stops the look and the probe at their next turn. JVM tests that
+  run the real connect do it off Wi-Fi: on Wi-Fi the probe would sweep the
+  test machine's own ports - in a first run it sent its hello to Gradle's
+  worker, which logged "Did not receive connection preamble".
+- A connect that fails within a moment of `adbd` answering the check is made
+  again, half a second later, up to three times: `adbd` names a connection
+  after its socket's number (`host-90`) and turns a new one away while a
+  connection of that name, just closed, is still listed
+  (`validate_transport_list`, `adb_wifi.cpp`) - the check's own, whose
+  number the new one reuses. Measured on the Android 13 emulator under load,
+  2026-11-26: 8 and 4 connects in 20 failed so, `adbd`'s own trace saying
+  "socket transport host-90 is already in transport_list and fails to
+  register"; with the second try, none in 20, four of them on it. The 1.9
+  release run met it twice on 13 before this.
+- REFUSED now means `adbd` answered as `adbd` and turned JemRec's key away
+  at TLS, every try - a lost pairing. Before, a port `adbd` had left counted as a
+  refusal too; `RecorderHealth.meant` still treats a refusal with the switch
+  off as nothing advertised.
+- Each connect is kept in memory, the last five, ports and Android's words
+  only, and logged in one line (`AdbTransport.Attempt`). libadb wraps a
+  socket it could not open in an exception with no message, which left the
+  log saying "refused us - null" whatever happened; the cause is read now.
+- Setup's *Finish connecting* says which: nothing on the phone answers for
+  Wireless debugging - switch it off and on, from Settings, where the connect
+  runs - or Wireless debugging turns JemRec away - Pair again, the header's
+  path ([Keeping the pairing](#keeping-the-pairing)). That card and a failed
+  last step have *Copy a report*: this phone, the step, the switches and the
+  last connects (not the pairing card, every user's busiest, whose failures
+  the pairing notification says). Until 1.9 nothing in setup could give one -
+  Settings opens only once setup is done - and #140's came empty.
+- The Android 12 and 13 hold (`holdMdns`) looked for `adb-tls-connect`,
+  libadb's bare name, where NsdManager takes `_adb-tls-connect._tcp`, and so
+  never held: 1.8.1's emulator runs logged "mdns: the held request did not
+  start (0)" on the 12 and 13 emulators. It uses the full type now. And a
+  revive's off and on after nothing found, on 12 and 13, now answers a
+  switch read on with no server answering - the probe finds a server that
+  only lost its announcement.
+
+**The emulators.** No release emulator checks a paired key: they are
+userdebug builds, and `adbd` there takes any key (`ro.adb.secure` 0 on the
+Android 15 emulator; the checks never pair, and their Wireless debugging
+connects pass). libadb's bind test never ran on them either (it binds
+10.0.2.2 there), so an old port was taken and refused where a phone would
+have dropped it. Nor does the cache keep an old port on demand there: on the
+Android 16 emulator it gave the old port in one run and the live one in the
+next (2026-11-26), and checks that waited for it passed on 1.8.1. So
+`mdns_silent` makes it certain: after a look, mDNS is dropped on the
+emulator (UDP 5353 going out) and Wireless debugging switched off and on,
+with port 5555 shut; setup's connect must land on the new port by the probe,
+and a start must bring the recorder back.
+
+Not measured: the Motorola itself; Android 14, which no emulator here runs;
+how long other phones' caches keep an old port; a vendor daemon sharing
+`adbd`'s port, as `hdbd` on a HONOR 70 does for another app (wangzan101/Mika
+#123), which the CONNECT would not take for `adbd`.
 
 ## Stopped in the background
 

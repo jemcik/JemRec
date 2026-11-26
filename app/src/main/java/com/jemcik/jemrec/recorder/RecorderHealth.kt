@@ -226,7 +226,10 @@ internal object RecorderHealth {
      * port of a connection 45 s earlier, each turned away within 2 ms, and
      * the header said Pair again - whose tap forgets a pairing that works -
      * where it should have asked to allow the Wi-Fi. Unread (UNKNOWN), a
-     * refusal is taken as it comes.
+     * refusal is taken as it comes. Since 1.9 such a port is checked by
+     * adbd's own answer before any connect and is never a refusal
+     * (AdbdFinder); this stays for a server that goes as the switch goes off
+     * between the check and the connect.
      */
     internal fun meant(found: AdbTransport.ConnectOutcome, wireless: GlobalSettings.Reading): AdbTransport.ConnectOutcome =
         if (found == AdbTransport.ConnectOutcome.REFUSED && wireless == GlobalSettings.Reading.OFF) {

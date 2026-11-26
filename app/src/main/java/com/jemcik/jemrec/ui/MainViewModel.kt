@@ -226,6 +226,13 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
+    /** Copy a report, on setup's cards that can fail (SetupReport). Read
+     *  from memory and the screen's state: nothing to wait for. */
+    fun copySetupReport() {
+        val app = getApplication<Application>()
+        reportToClipboard(app, "JemRec setup report", SetupReport.text(app, appVersion(app), _state.value))
+    }
+
     /** Diagnostics scrolled to the self-test's result; not again on returning. */
     fun selfTestSeen() = _state.update { it.copy(selfTestShown = 0L) }
 
