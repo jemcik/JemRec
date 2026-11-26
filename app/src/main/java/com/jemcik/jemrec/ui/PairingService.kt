@@ -59,6 +59,9 @@ import kotlinx.coroutines.launch
 class PairingService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** The run's last words on the card, read by a second start too. */
+    @Volatile
     private var lastText: String? = null
 
     @Volatile
@@ -67,23 +70,37 @@ class PairingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Foreground FIRST, inside the window the system allows for it, under
-        // the pairing notification itself - one card for the whole of pairing.
-        promote(PairingNotification.build(this, "Pairing…", withReply = false))
-
-        if (running) {
-            // A second tap on Enter code while the first is in flight would
-            // pair twice. The first run's card already says what is happening.
-            return START_NOT_STICKY
-        }
-
         val code = pairingCodeFrom(
             intent?.let { RemoteInput.getResultsFromIntent(it) }
                 ?.getCharSequence(PairingNotification.KEY_CODE),
         )
+        // A second tap on Enter code while the first is in flight would pair
+        // twice. The first run's card already says what is happening.
+        val second = running
 
+        // Foreground FIRST, inside the window the system allows for it, under
+        // the pairing notification itself - one card for the whole of pairing.
+        //
+        // In the words the card is to keep. Android shows a foreground
+        // service's notification from a queue, and a notify() does not wait
+        // for that queue: until 1.8.1 a code that is not six digits was
+        // answered with "Pairing…" here and its own words by notify() at once,
+        // and "Pairing…" came out of the queue last, and stayed, with no field
+        // to type in - 27 of 100 codes on the Android 17 AVD and 3 of 100 on
+        // 13 beside it, 71 of 150 on 13 under load (shrunk 1.8, 2026-11-25).
+        promote(
+            when {
+                second -> PairingNotification.build(this, lastText ?: PAIRING, withReply = false)
+                code == null -> PairingNotification.build(this, NOT_SIX_DIGITS, withReply = true)
+                else -> PairingNotification.build(this, PAIRING, withReply = false)
+            },
+        )
+        if (second) return START_NOT_STICKY
         if (code == null) {
-            finishWith("That was not six digits. Try again.", withReply = true)
+            // Again, by notify(): Android drops the foreground's post without
+            // a word under Battery Restricted (ActiveServices, "not allowed
+            // due to bg restriction"). The same words, whichever is last.
+            finishWith(NOT_SIX_DIGITS, withReply = true)
             return START_NOT_STICKY
         }
 
@@ -243,11 +260,16 @@ class PairingService : Service() {
 
     /**
      * Leave a final message on the card and stop - DETACHED, so the message
-     * outlives the service instead of vanishing with it.
+     * outlives the service instead of vanishing with it. Posted first:
+     * leaving the foreground may make Android queue the card it holds once
+     * more (ActiveServices, "if it's been deferred, force to visibility" -
+     * any card it has not marked as shown, which it does only for one it held
+     * back), and the message must be that one. Media3's order too, after a
+     * play button that kept the wrong state (androidx/media #192).
      */
     private fun finishWith(text: String, withReply: Boolean) {
-        stopForeground(STOP_FOREGROUND_DETACH)
         PairingNotification.show(this, text, withReply)
+        stopForeground(STOP_FOREGROUND_DETACH)
         stopSelf()
     }
 
@@ -301,6 +323,12 @@ class PairingService : Service() {
 
     internal companion object {
         private const val TAG = "JemRec"
+
+        /** The card's words while the code is tried. */
+        internal const val PAIRING = "Pairing…"
+
+        /** The card's words for a code there is no use in trying. */
+        internal const val NOT_SIX_DIGITS = "That was not six digits. Try again."
 
         /** The steps run takes: the real ones, except in a test. */
         @Volatile internal var steps: Steps = RealSteps

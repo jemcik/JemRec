@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2866 JVM tests, no device needed - 2440 for the app and 426 for the daemon:
+2883 JVM tests, no device needed - 2457 for the app and 426 for the daemon:
 
     ./gradlew test
 
@@ -533,6 +533,10 @@ back. That the off keeps a pairing was measured by hand on the Android 17
 AVD (2026-11-15): with the timeout at two minutes JemRec's key left `dumpsys
 adb` a second after JemRec had connected, and at 0 it stayed. The AVDs let
 any key in, so there the loss shows only in that list.
+Then a pairing code that is not six digits, twenty times (`pairing_card`): the
+card ends on what was wrong each time, with the field for the next code, and
+its service ends; the service started by root with no code, and no pairing
+tried.
 Then Telegram's other builds (issue #93): stand-ins named
 `org.telegram.messenger.web` and `.beta` - apps with no code, built by the
 script with the SDK's aapt2 and signed with the debug key - visible to JemRec

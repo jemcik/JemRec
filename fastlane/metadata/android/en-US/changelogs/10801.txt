@@ -1,0 +1,1 @@
+1.8.1: a pairing code that is not six digits no longer leaves the pairing card stuck on "Pairing…": it says what was wrong and takes the next code. And the call's notification ends on what is so: "Recording stopped" no longer stays there after the recording has gone on, nor a button that no longer does anything.

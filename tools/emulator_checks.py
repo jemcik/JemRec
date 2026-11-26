@@ -167,6 +167,9 @@ through the real app and daemon, checking what each one leaves behind:
   keep-paired  Keep JemRec paired turns Android's pairing timeout off,
               keeps the old value in the recorder's own file and puts it
               back from there; a timeout off by hand is left alone
+  pairing-card  a pairing code that is not six digits, twenty times running:
+              the pairing card ends on what was wrong, with the field for
+              the next code, and not on "Pairing…"
   start-without-wifi  on Wi-Fi, a revive has adbd open its classic port,
               5555; with Wi-Fi off, Turn all debugging off and back on has
               the recorder started over that port; switched off, the port is
@@ -3532,6 +3535,53 @@ def keep_paired():
     return f"timeout off and put back to {before}; an off by hand left alone"
 
 
+PAIRING_CARD = 2  # PairingNotification.NOTIFICATION_ID
+
+
+def pairing_card():
+    """A pairing code that is not six digits, twenty times: the pairing card
+    ends on what was wrong, with the field for the next code, and its service
+    ends (PairingService). The service is started by root with no code, which
+    is what a code of another length comes to there; the script types none.
+    No pairing is tried and none is touched. Android shows a foreground
+    service's card from a queue, which a notify() does not wait for: until
+    1.8.1 "Pairing…" came out of it last and stayed, with no field, 27 of 100
+    on the Android 17 AVD and 3 of 100 on 13 beside it, 71 of 150 on 13 under
+    load (shrunk 1.8, 2026-11-25). The card is left up between the codes, as a
+    user's is, and each one's update waited for."""
+    said = "That was not six digits. Try again."
+    rounds = 20
+
+    def card():
+        record = rf"NotificationRecord\([^\n]*pkg={re.escape(PKG)} [^\n]* id={PAIRING_CARD} tag=null"
+        found = re.search(rf"{record}.*?(?=NotificationRecord\(|\Z)", sh("dumpsys notification --noredact"), re.S)
+        return found.group(0) if found else ""
+
+    def updated():
+        at = re.search(r"mUpdateTimeMs=(\d+)", card())
+        return int(at.group(1)) if at else 0
+
+    quietly(diag, "clearnotes")
+    try:
+        for i in range(1, rounds + 1):
+            before = updated()
+            su(f"am start-foreground-service -n {PKG}/.ui.PairingService")
+            wait_for(lambda: updated() > before, 5, f"the pairing card after code {i}")
+            # Long enough for the queue to have shown all it holds.
+            time.sleep(1)
+            words = re.search(r"android\.text=String \((.*?)\)\n", card())
+            assert words and words.group(1) == said, f"code {i}: the card says {words and words.group(1)!r}"
+            assert '"Enter code"' in card(), f"code {i}: no field for the next code"
+        wait_for(lambda: "PairingService" not in sh(f"dumpsys activity services {PKG}"), 5, "the service to end")
+        # By name on newer Androids, a hexadecimal number on 12 and 13.
+        flags = re.search(r"flags=(\S+)", card()).group(1)
+        still = int(flags, 16) & 0x40 if flags.startswith("0x") else "FOREGROUND_SERVICE" in flags
+        assert not still, f"the card is still a foreground service's: {flags}"
+    finally:
+        quietly(diag, "clearnotes")
+    return f"{rounds} codes of no six digits: the card said so each time, with the field"
+
+
 def listener_grant():
     """Notification access for the app's listener, granted by the recorder
     (Wire.COMMAND_ALLOW_LISTENER), as Settings' Show who called and Hide the
@@ -6058,7 +6108,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           debugging_off, off_just_left, background, allow_this_wifi, wireless_between_starts, usb_mode,
           usb_default_lock, ask_button,
           refused_grant,
-          listener_grant, keep_paired,
+          listener_grant, keep_paired, pairing_card,
           telegram_builds, newest_version, opus_valid, notifications_off, folder_lost,
           killed_mid_save, early_end, doze,
           # Late, these three: they turn the emulator's Wi-Fi off and on, and
