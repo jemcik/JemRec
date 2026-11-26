@@ -377,7 +377,7 @@ class WirelessBetweenStartsTest {
             ) + started,
             phone.did,
         )
-        assertTrue("revive: nothing advertised, mDNS may have stopped; switching off and on once on this Wi-Fi" in phone.log)
+        assertTrue("revive: nothing found, adbd running; switching off and on once on this Wi-Fi" in phone.log)
         assertTrue(phone.wireless)
         assertFalse(phone.jemRecs)
 

@@ -2,6 +2,7 @@ package com.jemcik.jemrec.ui
 
 import android.app.Application
 import android.util.Log
+import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.capture.CaptureDaemon
 import com.jemcik.jemrec.capture.DebugNotificationCleaner
 import com.jemcik.jemrec.recorder.DebugSwitchesOff
@@ -270,6 +271,7 @@ internal class RecorderAndSetup(
         state.update {
             it.copy(
                 step = step,
+                connectOutcome = AdbTransport.lastConnect,
                 pairingLost = it.pairingLost && step != SetupStep.READY,
                 backgroundLabel = background?.label,
                 backgroundInstruction = background?.instruction,
@@ -439,7 +441,8 @@ internal class RecorderAndSetup(
      * whatever the screen is doing - a resume's check holds busy for seconds
      * - and goes to Settings at once, so a connect dropped there never ran
      * while the user was in Settings. One at a time: a tap while one waits
-     * or runs adds nothing, each looking for up to 36 s.
+     * or runs adds nothing, each six looks of 6 s, with their probes
+     * (AdbdFinder).
      */
     fun reconnect() {
         if (!reconnecting.compareAndSet(false, true)) return

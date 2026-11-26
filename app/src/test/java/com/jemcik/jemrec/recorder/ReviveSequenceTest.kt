@@ -232,7 +232,7 @@ class ReviveSequenceTest {
             ) + started,
             phone.did,
         )
-        assertTrue("revive: nothing advertised, adbd unreadable; switching off and on once on this Wi-Fi" in phone.log)
+        assertTrue("revive: nothing found, adbd unreadable; switching off and on once on this Wi-Fi" in phone.log)
 
         // Once on this connection.
         phone.did.clear()

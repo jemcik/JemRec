@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-2883-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2919-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -270,7 +270,9 @@ Honor - so the answering machine's settings hold its own checks and a test call.
   capturing - calls, and your answering-machine greeting.
 - **Nothing leaves the phone**, and nothing is collected about you. *Copy a
   report* in Diagnostics puts how the last call was recorded on the clipboard,
-  with no number, name or sound in it, only when you tap it. *Newest version*
+  with no number, name or sound in it, only when you tap it; in setup it puts
+  how JemRec's last connects to the phone went, ports and Android's own words
+  only. *Newest version*
   in Settings opens GitHub in your browser when you tap it; JemRec itself asks
   no server anything.
 - **Calls and contacts only if you allow them** - to name callers, keep calls
@@ -527,6 +529,24 @@ marks - a message, kept, who a messenger call was with - inside the file.
 </details>
 
 <details>
+<summary><b>Setup stays on Finish connecting</b></summary>
+
+<br>
+
+JemRec is paired, and now has to find the port Wireless debugging listens on
+- a new one each time it is switched on. Android announces it over mDNS, and
+sometimes gives the port from before Wireless debugging was last switched off
+and on, or none at all. Since 1.9 JemRec then looks for it among the phone's
+own local ports, which takes a second or a few, and sends each one it finds
+listening a short adb hello; nothing leaves the phone. If the card says
+nothing answers for Wireless debugging, turn it off and on again in Settings;
+JemRec connects while you are there. If it says Wireless debugging turns
+JemRec away, tap *Pair again*. Still stuck? Tap *Copy a report* on the card and
+paste it into [an issue](https://github.com/jemcik/JemRec/issues/new?template=bug.yml).
+
+</details>
+
+<details>
 <summary><b>Setup says Android would not let JemRec change debugging settings</b></summary>
 
 <br>
@@ -616,7 +636,8 @@ above.
 Something else? Ask in [Discussions](https://github.com/jemcik/JemRec/discussions),
 where ideas go too. A call that came out wrong is worth
 [an issue](https://github.com/jemcik/JemRec/issues/new?template=bug.yml),
-with *Copy a report* from Diagnostics, tapped before the next call.
+with *Copy a report* from Diagnostics, tapped before the next call; stuck in
+setup, with the *Copy a report* on its card.
 
 ## Support JemRec
 
@@ -630,7 +651,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 2883 tests, screenshots of the screens included
+    ./gradlew test              # 2919 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

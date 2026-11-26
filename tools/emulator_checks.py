@@ -3868,6 +3868,110 @@ def allow_this_wifi():
             print(f"     (the recorder could not be started again afterwards: {e})")
 
 
+def _tls_ports():
+    """adbd's Wireless debugging ports as the kernel lists adbd's own
+    listeners (not 5555): one while it is on, none while it is off. Another
+    process's listener is not counted (review round 1)."""
+    return sorted({int(p) for line in su("ss -ltnp").splitlines() if '"adbd"' in line
+                   for p in re.findall(r"(?:\*|\[::\]):(\d+)\s", line) if int(p) != 5555})
+
+
+def _look_over_wireless_debugging():
+    """Wireless debugging on, the app's own connect over it (the debug op
+    connect: AdbTransport.autoConnect) and its session closed: what a start
+    or setup's check leaves in Android's mDNS cache. Port 5555 must be shut
+    to the app already, or the connect could land there."""
+    sh("settings put global adb_wifi_enabled 1")
+    wait_for(lambda: global_setting("adb_wifi_enabled") == "1", 10, "Wireless debugging on")
+    _answer_questions(allow=True)
+    wait_for(_tls_ports, 15, "adbd's Wireless debugging port")
+    # start_recorder's session on 5555 stays open, and with it the connect
+    # would say "already connected" and look for nothing (review round 1).
+    diag("disconnect")
+    said = diag("connect")
+    assert "diag[connect] connected" in said, f"the look before did not connect: {said}"
+    diag("disconnect")
+
+
+_MDNS_DROP = "OUTPUT -p udp --dport 5353 -j DROP"
+
+
+def _mdns_off(dropped):
+    """mDNS on the AVD dropped: UDP 5353 going out, IPv4 and IPv6 - adbd's
+    announcements and Android's own queries alike, a multicast looped back
+    to the phone itself included (it passes OUTPUT first). Each table is
+    noted in [dropped] as its rule goes in, so the cleanup takes back exactly
+    those (review round 1)."""
+    for tables in ("iptables", "ip6tables"):
+        su(f"{tables} -I {_MDNS_DROP}")
+        dropped.append(tables)
+
+
+def _mdns_on(dropped):
+    for tables in dropped:
+        quietly(su, f"{tables} -D {_MDNS_DROP}")
+
+
+def mdns_silent():
+    """Wireless debugging's port found with no mDNS answer to be had (1.9,
+    #140): a look over Wireless debugging first, which leaves its port in
+    Android's mDNS cache; then mDNS dropped on the AVD and Wireless debugging
+    switched off and on - a new port nobody announces - with port 5555 shut
+    to the app. Setup's connect, and Try again's, must land on adbd's new
+    port, found by the loopback probe (the app's own line says so); then the
+    recorder killed with Wireless debugging off, and the start - which
+    switches it on, another new port - must have it back.
+
+    What a phone met by chance (an old port from NsdService's cache, or adbd's
+    announcement lost: tmp/issue-140/PLAN.md), made certain: on the Android 16
+    AVD the cache gave the old port in one run and the live one in the next
+    (2026-11-26), so a check that waited for it could pass on 1.8.1."""
+    assert _wifi_allowed(), "the AVD's Wi-Fi is not allowed for Wireless debugging (set_up's allow_wifi)"
+    start_recorder()
+    uid = re.search(r"(?:userId|appId)=(\d+)", sh(f"dumpsys package {PKG}")).group(1)
+    rule = f"OUTPUT -p tcp --dport 5555 -m owner --uid-owner {uid} -j REJECT"
+    su(f"iptables -I {rule}")
+    dropped = []
+    try:
+        _look_over_wireless_debugging()
+        _mdns_off(dropped)
+        before = _tls_ports()
+        sh("settings put global adb_wifi_enabled 0")
+        wait_for(lambda: not _tls_ports(), 15, "adbd's Wireless debugging port closed")
+        sh("settings put global adb_wifi_enabled 1")
+        wait_for(lambda: global_setting("adb_wifi_enabled") == "1", 10, "Wireless debugging on again")
+        _answer_questions(allow=True)
+        now = wait_for(_tls_ports, 15, "adbd's new Wireless debugging port")
+        assert now != before, f"adbd kept its port {before}: nothing to test"
+        said = diag("connect")
+        line = next((l for l in log().splitlines() if "autoConnect: " in l), "")
+        assert "diag[connect] connected" in said, f"setup's connect found nothing with mDNS silent: {line or said}"
+        got = re.search(r"autoConnect: CONNECTED on (\d+)", line)
+        assert got and int(got.group(1)) in now, f"connected on the wrong port, adbd is on {now}: {line}"
+        assert "found by the probe" in line, f"with mDNS silent, found otherwise: {line}"
+        diag("disconnect")
+
+        # The start: Wireless debugging off, as JemRec leaves it, and the
+        # recorder killed; the revive switches it on - a port nobody
+        # announces - and must find it all the same.
+        sh("settings put global adb_wifi_enabled 0")
+        wait_for(lambda: global_setting("adb_wifi_enabled") == "0", 10, "Wireless debugging off")
+        log_before = revive_log()
+        sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
+        wait_for(lambda: daemon_pid() is None, 10, "the recorder gone")
+        diag("check", wait=120)
+        text = revive_since(log_before)
+        assert "revive: recorder up (connect CONNECTED)" in text, \
+            "the recorder did not come back with mDNS silent: " + " | ".join(text.splitlines()[-4:])
+        return f"setup's connect on adbd's new port {got.group(1)} by the probe; the start brought the recorder back"
+    finally:
+        _mdns_on(dropped)
+        quietly(diag, "disconnect")
+        quietly(su, f"iptables -D {rule}")
+        quietly(sh, "settings put global adb_wifi_enabled 0")
+        start_recorder_after()
+
+
 def wireless_between_starts():
     """Wireless debugging on only while JemRec starts its recorder (1.5,
     tmp/wd-off-between-starts/PLAN.md): port 5555 shut to the app, so that
@@ -6105,7 +6209,7 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           background_playback, both_ears, raise_to_listen, seek_preroll, one_window, process_death,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
-          debugging_off, off_just_left, background, allow_this_wifi, wireless_between_starts, usb_mode,
+          debugging_off, off_just_left, background, allow_this_wifi, wireless_between_starts, mdns_silent, usb_mode,
           usb_default_lock, ask_button,
           refused_grant,
           listener_grant, keep_paired, pairing_card,

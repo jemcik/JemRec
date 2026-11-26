@@ -240,6 +240,11 @@ class LogLinesTest {
                 "recorder true, allowed true" to listOf(": recorder \$answer, allowed \${"),
                 "recorder true, allowed false" to listOf(": recorder \$answer, allowed \${"),
                 "pressed Record" to listOf("\"pressed \$label on \$title\""),
+                // A connect's one line (AdbTransport.Attempt.line): its
+                // outcome's name, then the port (mdns_silent).
+                "autoConnect: CONNECTED on" to listOf("\"autoConnect: \${attempt.line()}\"", "CONNECTED,", "append(\" on \")"),
+                // The debug op connect's answer, as the receiver logs it.
+                "diag[connect] connected" to listOf("\"diag[\$op] \$it\"", "{ \"connected\" }"),
                 // Our wake lock's tag, as the power dump quotes it.
                 "'jemrec:ear'" to listOf("LOCK_TAG = \"jemrec:ear\""),
                 // The service says each audio mode it hears (modeChanged).

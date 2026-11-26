@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import com.jemcik.jemrec.adb.AdbTransport
+import com.jemcik.jemrec.adb.LoopbackProbe
 import com.jemcik.jemrec.setup.PairingNotification
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.system.GlobalSettings
@@ -196,11 +197,15 @@ class PairingService : Service() {
     /**
      * Watch both switches and connect the moment both are on.
      *
-     * Returns false only at the deadline. A connect attempt that fails just goes
+     * Returns false at the deadline, or where no whole try fits before it -
+     * so the user has 124 s of the 150. A connect attempt that fails just goes
      * round again, because the usual reason is that a switch dropped during it -
      * and the next reading says which one, in the card, where the user is
      * looking. The deadline sits under shortService's cap so the normal ending
-     * is this method's, not the system's.
+     * is this method's, not the system's - and no try starts that could run
+     * past it ([timeForATry]): since 1.9 a try can probe for adbd's port too,
+     * and one begun just before the deadline could end past the cap (review
+     * round 1, #140).
      */
     internal suspend fun waitAndConnect(app: Context): Boolean {
         val deadline = SystemClock.elapsedRealtime() + WAIT_MS
@@ -237,7 +242,8 @@ class PairingService : Service() {
                             "Paired. Connecting…"
                         }
                     )
-                    if (AdbTransport.autoConnect(app, timeoutMs = 5_000).isSuccess) return true
+                    if (!timeForATry(SystemClock.elapsedRealtime(), deadline)) return false
+                    if (AdbTransport.autoConnect(app, timeoutMs = LOOK_MS).isSuccess) return true
                 }
             }
             delay(POLL_MS)
@@ -336,6 +342,18 @@ class PairingService : Service() {
         /** Under shortService's three-minute cap, with margin. */
         private const val WAIT_MS = 150_000L
         private const val POLL_MS = 1_000L
+
+        /** A try's look for adbd (AdbTransport.autoConnect). */
+        private const val LOOK_MS = 5_000L
+
+        /** One try at its longest: its look, a probe begun at the look's end
+         *  (LoopbackProbe.BUDGET_MS), libadb's connect (10 s), and a second
+         *  for the check that straddles the look's end and port 5555's
+         *  refusal (review round 2). */
+        internal const val TRY_MS = LOOK_MS + LoopbackProbe.BUDGET_MS + 10_000L + 1_000L
+
+        /** Whether a whole try fits before [deadline]. */
+        internal fun timeForATry(now: Long, deadline: Long): Boolean = deadline - now >= TRY_MS
     }
 }
 

@@ -1,0 +1,1 @@
+1.9: setup no longer stays on Finish connecting when Android gives Wireless debugging's old port, or none: JemRec finds the port on the phone itself, and the recorder's starts do the same. The card says what it found - turn Wireless debugging off and on, or pair again - and setup's cards now have a Copy a report.

@@ -225,8 +225,8 @@ object Revive {
                     cycleAfterNotFound(adbd, step, wirelessOn, onWifi, switchedOnHere, request, w.mdnsStops())
                 ) {
                     w.note(
-                        "revive: nothing advertised, " +
-                            "${if (adbd == AdbdState.State.UNKNOWN) "adbd unreadable" else "mDNS may have stopped"}; " +
+                        "revive: nothing found, " +
+                            "${if (adbd == AdbdState.State.UNKNOWN) "adbd unreadable" else "adbd running"}; " +
                             "switching off and on once on this Wi-Fi",
                     )
                     if (switchOffAndOn(w, onWifi, answerAwaited = false, wasOn = wirelessOn)) {
@@ -583,6 +583,13 @@ object Revive {
      * the user's, or JemRec's whose off was missed - is announced afresh by
      * one off and on (review round 1). Only after a revive that left the
      * switch as it was.
+     *
+     * Since 1.9, where the loopback probe ran, nothing found means it found
+     * no server either (AdbdFinder): a lost announcement alone no longer gets
+     * here - the probe finds adbd without one - but a switch read on with no
+     * server answering does, and an off and on starts it again. Where it did
+     * not run (loopback dropped for the app, the switch read off) nothing
+     * changed.
      */
     internal fun cycleAfterNotFound(
         adbd: AdbdState.State,
