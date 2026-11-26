@@ -39,7 +39,8 @@ this one is - or to check that it does what it says.
   [keeping and deleting](#keeping-deleting-and-cleaning-up) ·
   [marks inside the recording](#marks-inside-the-recording) ·
   [notifications](#after-the-call-and-when-something-is-wrong) ·
-  [the last call's report](#the-last-calls-report)
+  [the last call's report](#the-last-calls-report) ·
+  [a notification's last words](#a-notifications-last-words)
 - The phone: [permissions](#what-it-does-not-ask-for) ·
   [when the phone refuses the grant](#when-the-phone-refuses-the-grant) ·
   [what stays switched on](#what-stays-switched-on) ·
@@ -3686,6 +3687,68 @@ only if you copy it and paste it somewhere. Android 13 and later confirm a copy
 themselves; on 12 the app says *Report copied*, as Android's guidance asks
 ("Copy and paste", developer.android.com) - which the answering machine's
 *Copy a report* had not said until then.
+
+## A notification's last words
+
+Three of JemRec's notifications are a foreground service's own: the call's, the
+pairing card, and playback's, which is Media3's to post. Android shows such a
+notification from a queue, not in the call that hands it over, and until 1.8.1
+what JemRec said last in the first two could be lost there.
+
+**The queue** (`ServiceRecord.postNotification`, read in AOSP on Android 12,
+13, 14, 15, 16 and 17, 2026-11-25: the same in all). `startForeground` keeps
+the notification for the service and queues its showing on the activity
+manager's handler. Having shown it, the handler writes it back over the one
+kept - "save it for amending next time" - without the lock the rest is under.
+A plain `notify()` goes past that queue.
+
+**The call's.** A wake of the recorder's that changes what the notification
+says posts twice, about a millisecond apart: as it comes, which Android is owed
+after a `startForegroundService` before anything can stop the service, and once
+what it says is done. Written back between the second's being kept and its
+being queued, the first is shown again and the second never, and nothing puts
+that right before the next post. Measured on the shrunk 1.8, Android 13
+emulator, 2026-11-25: the check `stall_told` went wrong 3 times of 30, "Recording stopped"
+staying over a call being recorded again; such wakes one after another,
+1 of 780. Since 1.8.1 a post less than half a second after the one before
+is followed by one more, alone, half a second after the last of them, saying
+what is so by then (`CallMonitorService.again`); the recorder's end of the call
+drops one still to come, or "Call in progress" would be up while the call is
+saved. It puts right a loss of JemRec's own too: the posts come from the main
+thread and the jobs', each reading the state and then posting, so an older
+reading could be posted last (read in the code, not produced).
+
+Left aside: one post a wake, with the state already changed - it needs the same
+rule, as Record's two posts, two wakes in a row and the threads remain, and the
+post Android is owed would move next to the stops; the second post held back
+until it is alone - "Recording call" would come half a second into every call;
+reading back what Android shows and posting only if it is wrong
+(`getActiveNotifications`) - the same wait, more code, and the buttons to
+compare; `notify()` for the one more - one that comes once the service has gone
+would leave a notification nobody takes down, where Android drops a
+`startForeground` of a service it no longer has. Three posts a wake stay under
+Android's limit of five updates a second on average: 3.4 for wakes a second
+apart on 12 to 14, 3.7 on 15 to 17, by its own estimator (`RateEstimator`; a
+long row of them less than 0.8 s apart would pass it, and a call has a handful).
+
+**The pairing card.** A code that is not six digits was answered with
+"Pairing…" by `startForeground` and then, at once, out of the foreground and
+the last words by `notify()`. Leaving the foreground queues the kept card once
+more (`setServiceForegroundInnerLocked`, "if it's been deferred, force to
+visibility" - any card Android has not marked as shown, and it marks only those
+it held back), so "Pairing…" came out of the queue twice, after the words, and
+stayed, with no field to type in: on the shrunk 1.8, 27 of 100 such codes on
+the Android 17 emulator and 3 of 100 on the 13 beside it, and 71 of 150 on the
+13 under load (2026-11-25). A pairing failing later left the foreground in the
+same order, with the first "Pairing…" long shown (read, not produced). Since
+1.8.1 the code is read before the card is posted, so a wrong one's words are
+the only ones the card is given - by the foreground, and by `notify()` too, as
+under Battery Restricted Android drops the foreground's post without a word; a
+second code while one is tried leaves the card to the pairing under way; and
+a failure is posted before the foreground is left, as Media3 does after its
+play button kept the wrong state ([androidx/media
+#192](https://github.com/androidx/media/issues/192), fixed in e1d12fc,
+2023-02-10).
 
 ## What it does not ask for
 

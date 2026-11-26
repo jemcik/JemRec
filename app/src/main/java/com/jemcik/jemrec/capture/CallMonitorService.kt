@@ -9,8 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import android.media.AudioManager
 import androidx.annotation.VisibleForTesting
@@ -45,6 +48,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Date
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The app's presence during a call: a foreground service that exists for the
@@ -716,6 +720,7 @@ class CallMonitorService : Service() {
 
     override fun onDestroy() {
         runCatching { getSystemService(AudioManager::class.java).removeOnModeChangedListener(modeChanged) }
+        main.removeCallbacks(again)
         button.close()
         running = false
         heldNow = emptySet()
@@ -1260,6 +1265,9 @@ class CallMonitorService : Service() {
         messageTicket = null
         messageCall = null
         askAnswer = null
+        // What it says is the call's: not posted again for one that is over,
+        // "Call in progress" for as long as its save takes.
+        main.removeCallbacks(again)
         // If a start-of-call prompt is still up, the chance to answer it is gone.
         questionOver()
         // What a recorder lost mid-call had recorded is a file of its own:
@@ -1484,6 +1492,9 @@ class CallMonitorService : Service() {
             )
             .build()
 
+        // Taken before the post: one that waits for Android's lock is no less
+        // close to the one before, and the wait is when the first is lost.
+        val from = SystemClock.uptimeMillis()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             // SPECIAL_USE, not MICROPHONE. The microphone type demands
             // RECORD_AUDIO, and this process never opens an audio device - the
@@ -1496,6 +1507,43 @@ class CallMonitorService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        if (from - postedAt.getAndSet(SystemClock.uptimeMillis()) < QUICK_MS) {
+            main.removeCallbacks(again)
+            main.postDelayed(again, QUICK_MS)
+        }
+    }
+
+    private val main = Handler(Looper.getMainLooper())
+
+    /** When the notification was last posted (uptime): before the first
+     *  post, long ago. */
+    private val postedAt = AtomicLong(-QUICK_MS)
+
+    /**
+     * The notification once more, alone, [QUICK_MS] after the last of two
+     * posts closer together than that: of two, the second may be lost.
+     *
+     * Android posts a foreground service's notification from a queue, and
+     * once it has, writes it back over the one it holds for the service, with
+     * no lock (ServiceRecord.postNotification, "save it for amending next
+     * time", Android 12 to 17, read 2026-11-25). Written back as a second
+     * startForeground hands over its own, that second one posts the first
+     * again, and nothing puts it right: "Recording stopped" stayed over a
+     * call being recorded. A wake that changes what is said is such a pair,
+     * about 1 ms apart - onStartCommand's post and the change's own. Measured
+     * on the shrunk 1.8, Android 13 AVD, 2026-11-25: the check stall_told
+     * wrong 3 times of 30; such wakes one after another 1 of 780.
+     *
+     * And two posts of ours may cross: a job's thread reads the state, posts
+     * after the main thread has posted a newer one. This one reads the state
+     * as it is by then, and puts that right too.
+     *
+     * One post more, rather than the second of a pair held back until it is
+     * alone: "Recording call" would come half a second into every call.
+     */
+    private val again = Runnable {
+        runCatching { startForegroundCompat() }
+            .onFailure { Log.i(TAG, "monitor: not posted again: ${it.javaClass.simpleName}") }
     }
 
     private fun messageAction(label: String, action: String, ticket: String): Notification.Action =
@@ -1578,6 +1626,12 @@ class CallMonitorService : Service() {
         private val LEGACY_CHANNEL_IDS =
             listOf("jemrec.monitor", "jemrec.ask", "jemrec.pairing")
         private const val NOTIFICATION_ID = 1
+
+        /** Posts closer together than this are a pair, and the one more comes
+         *  this long after ([again]): alone, long past a queue that shows a
+         *  post in milliseconds, and before anybody has read the first. */
+        @VisibleForTesting
+        internal const val QUICK_MS = 500L
         const val ACTION_STOP = "com.jemcik.jemrec.STOP_MONITOR"
 
         /** The mid-call prompt's buttons, when automatic recording is off. */
