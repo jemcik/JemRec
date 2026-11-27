@@ -542,6 +542,28 @@ unless debugging is switched on again by hand. That is why it is a switch of
 its own, off by default, and why its summary says the port is open whichever
 way it is set.
 
+**A port JemRec did not open.** A computer's `adb tcpip 5555`, or Tasker's ADB
+Wifi (its guide sets it up that way), sets the same property. JemRec leaves
+that port alone with the switch off, since it is not JemRec's to close. But
+the port is just as open to every network, and JemRec uses it: off Wi-Fi a
+revive connects on it, turning off with *Turn all debugging off* asks
+nothing, and On comes back anywhere. Since 1.10 the switch's line says so ("Debugging port
+5555 is open to any network the phone joins. A computer or another app opened
+it..."), as *When JemRec is off*, the header and the question already did,
+since all of them go by the property.
+Before 1.10 it gave the plain off text, as if the port were shut. Found
+while answering discussion #144, and measured on the Honor, 2026-11-26: after
+`adb tcpip 5555`, *When JemRec is off* said "Back on: anywhere" while
+Settings said "Opens debugging port 5555".
+One test runs every combination of switch, port, whose, debugging off and a
+failed open or close through the functions behind all five places, each
+Settings line sorted by what it says of the port (`SettingsSummaryTest
+.everyPlaceThatSaysThePortAgrees`). Others close only their own port too:
+CallVault leaves "armed by another app" ports, and the Shizuku fork that
+closes any port it finds open has an open request not to kill a user's
+`adb tcpip` (thedjchi/Shizuku#237, 2026-07-07). AOSP's Settings app shows
+nothing for this port.
+
 **What it does not do.** After a reboot the first start still needs Wi-Fi: the
 property is gone, and the one property that would outlive a reboot,
 `persist.adb.tcp.port`, takes root (Shizuku-Next's own code says a stock
@@ -4127,7 +4149,7 @@ by the record button or the Quick Settings tile (`DebugSwitchesOff`):
 | --- | --- | --- |
 | Keep debugging on (the default) | nothing else | instantly, anywhere |
 | Hide Developer options | Developer options | instantly, anywhere |
-| Turn all debugging off | Developer options, USB debugging | needs Wi-Fi - or *Start without Wi-Fi* - about 15 s; no answering machine until then |
+| Turn all debugging off | Developer options, USB debugging | needs Wi-Fi - or port 5555 open (*Start without Wi-Fi*'s, or a computer's) - about 15 s; no answering machine until then |
 
 Wireless debugging is in neither since 1.5: it is off already while JemRec
 runs ([Wireless debugging, only to start](#wireless-debugging-only-to-start)),
@@ -4162,8 +4184,8 @@ revive that has to switch Wireless debugging off and on having taken 12 to 16
 seconds. That is why the third says what it costs on its own line, and why,
 away from Wi-Fi, turning off with it asks first - the only off that does
 (`TurnOffAwayFromWifiDialog`, the same dialog in the app and, through a
-see-through activity, from the tile). With *Start without Wi-Fi*'s port open
-it asks nothing, and its line says *anywhere*: On comes back over the port
+see-through activity, from the tile). With port 5555 open - *Start without
+Wi-Fi*'s, or one a computer or another app opened - it asks nothing, and its line says *anywhere*: On comes back over the port
 (see [Starting without Wi-Fi](#starting-without-wi-fi)).
 
 **What goes off, and what comes back.** The app writes Developer options off

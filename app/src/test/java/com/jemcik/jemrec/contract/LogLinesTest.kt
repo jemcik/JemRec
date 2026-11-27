@@ -266,6 +266,9 @@ class LogLinesTest {
                     "Ln.i(\"wake: \" + action + \" (\" + recfile + \") -> exit 0\"",
                     "ACTION_CALL_ENDED = \"com.jemcik.jemrec.CALL_ENDED\"",
                 ),
+                // port_opened_elsewhere: no close asked of adbd for a port JemRec
+                // did not open (PortChange.changePort).
+                "closing port" to listOf("\"revive: \${if (open) \"opening\" else \"closing\"} port \$port, adbd said \""),
                 "on attempt 3" to listOf("\" on attempt \" + attempt", "WAKE_ATTEMPTS = 3"),
                 // And with its file's name, which early_end reads the mark in.
                 "wake: com.jemcik.jemrec.CALL_ENDED (jemrec_rec_" to listOf(

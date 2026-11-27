@@ -814,6 +814,15 @@ internal fun rulesSentence(state: UiState): RulesSummary {
  * point of that choice for a bank. First of all, switched off with a close
  * that did not take (StartWithoutWifi.closeFailedThisBoot), in red: the port
  * stays open until a restart, which no other text would say.
+ *
+ * Switched off with a port JemRec did not open - a computer's `adb tcpip`,
+ * or Tasker's ADB Wifi, which its guide sets up that way - it says that port
+ * too, the port's state first as the other lines do. JemRec leaves it to
+ * whoever opened it (StartWithoutWifi.portStep), but it is open to every
+ * network all the same, and JemRec starts over it with no Wi-Fi (Revive:
+ * overPort). Before 1.10 this said the plain off text, as if the port were
+ * shut, while When JemRec is off said "Back on: anywhere" for the same port
+ * (the Honor, 2026-11-26, discussion #144).
  */
 internal fun startWithoutWifiSummary(state: UiState): String = when {
     !state.startWithoutWifi && state.portSet && state.portOurs && state.portCloseFailed ->
@@ -826,6 +835,10 @@ internal fun startWithoutWifiSummary(state: UiState): String = when {
         "Debugging port 5555 is closed while debugging is off. It opens with debugging, then closes once JemRec is on a Wi-Fi that allows Wireless debugging"
     !state.startWithoutWifi && state.portSet && state.portOurs ->
         "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts"
+    !state.startWithoutWifi && state.portSet && state.debuggingOff ->
+        "Debugging port 5555 is closed while debugging is off. A computer or another app opened it: it opens with debugging until a restart, so JemRec turns back on with or without Wi-Fi"
+    !state.startWithoutWifi && state.portSet ->
+        "Debugging port 5555 is open to any network the phone joins. A computer or another app opened it: it stays open until a restart, and JemRec starts over it with no Wi-Fi"
     !state.startWithoutWifi ->
         "Turn JemRec back on with no Wi-Fi. Opens debugging port 5555 to any network the phone joins"
     state.portSet && state.debuggingOff ->

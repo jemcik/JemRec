@@ -285,6 +285,30 @@ class SettingsScreenshots : ScreenTest() {
         snap("when-off-start-without-wifi")
     }
 
+    // Start without Wi-Fi off, and port 5555 open all the same - a computer's
+    // `adb tcpip`, or Tasker's ADB Wifi: the switch's line names it, as When
+    // JemRec is off does. The whole overview, for the Debugging group.
+    @Config(qualifiers = "+h2400dp")
+    @Test fun portOpenedElsewhere() {
+        settings(Fixtures.ready().copy(startWithoutWifi = false, portSet = true, portOurs = false))
+        snap("settings-port-opened-elsewhere")
+    }
+
+    // The two lines said in red (startWithoutWifiFailed), drawn nowhere else
+    // and never seen on a phone: switched on and adbd would not open the
+    // port, or switched off and it would not close JemRec's own.
+    @Config(qualifiers = "+h2400dp")
+    @Test fun portNotOpened() {
+        settings(Fixtures.ready().copy(startWithoutWifi = true, portSet = false, portFailed = true))
+        snap("settings-port-not-opened")
+    }
+
+    @Config(qualifiers = "+h2400dp")
+    @Test fun portNotClosed() {
+        settings(Fixtures.ready().copy(startWithoutWifi = false, portSet = true, portOurs = true, portCloseFailed = true))
+        snap("settings-port-not-closed")
+    }
+
     @Config(qualifiers = "+h1500dp")
     @Test fun whenOffLargeText() {
         settings(Fixtures.ready().copy(screen = Screen.WHEN_OFF, offMode = OffMode.ALL_DEBUGGING_OFF), fontScale = 2f)

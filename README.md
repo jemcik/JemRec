@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-2938-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2943-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -581,8 +581,9 @@ you open the bank:
 - **Turn all debugging off**: USB debugging goes off too, and the recorder with
   it. Turning JemRec back on then needs Wi-Fi and takes about 15 seconds, and
   the answering machine is off until then. Away from Wi-Fi, JemRec asks first -
-  unless **Start without Wi-Fi** is on (Settings → Debugging): then it comes
-  back anywhere, on mobile data or none, until the phone restarts.
+  unless **Start without Wi-Fi** is on (Settings → Debugging), or a computer
+  or another app opened debugging port 5555: then it comes back anywhere, on
+  mobile data or none, until the phone restarts.
 
 Try the first; if your bank still refuses, the second. Wireless debugging is
 off already while JemRec runs - JemRec switches it on only for the seconds it
@@ -651,7 +652,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 2938 tests, screenshots of the screens included
+    ./gradlew test              # 2943 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

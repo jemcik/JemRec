@@ -285,6 +285,7 @@ import contextlib
 import datetime
 import fcntl
 import hashlib
+import html
 import os
 import re
 import shlex
@@ -2697,7 +2698,13 @@ def tap_until(label, shown, timeout, what):
     A tap can be lost: on the Android 17 AVD, the gear tapped at the first
     dump that showed it, ~3 s after `am start`, opened nothing six times in
     six, and one dump later ten in ten (2026-10-25); and a tap on a list
-    still moving after a swipe only stops it."""
+    still moving after a swipe only stops it.
+
+    Timed out, it says what was on screen then: the report's own screen is
+    read after the check's cleanup has moved it on. On the Android 13 AVD,
+    2026-11-27, an "Application Error" window of Android's Bluetooth, which
+    had crashed in a loop, sat over JemRec and took every tap on the gear,
+    and the report said only "the Settings gear" over the launcher."""
     end = time.time() + timeout
     while time.time() < end:
         if tap(label):
@@ -2706,7 +2713,18 @@ def tap_until(label, shown, timeout, what):
             except TimeoutError:
                 continue
         time.sleep(0.5)
-    raise TimeoutError(what)
+    raise TimeoutError(f"{what}; on screen then: {_screen_words()}")
+
+
+def _screen_words(limit=300):
+    """The screen's words in one line, for a failure's message: one line, so
+    run() still adds the call lines after it (what_happened)."""
+    try:
+        words = [w for n in re.findall(r"<node [^>]*>", ui()) for w in labels(n) if w.strip()]
+    except Exception as e:  # what failed is the tap, not this
+        return f"(not read: {e})"
+    said = " | ".join(" ".join(html.unescape(w).split()) for w in words) or "(nothing)"
+    return said if len(said) <= limit else said[:limit] + " ..."
 
 
 def scroll_to(label):
@@ -6240,6 +6258,103 @@ def start_without_wifi():
     return first + "port opened on Wi-Fi; with Wi-Fi off, all debugging off and back on over 5555; closed when switched off"
 
 
+def port_opened_elsewhere():
+    """1.10: Start without Wi-Fi off, and port 5555 opened by someone else - a
+    computer's `adb tcpip 5555`, the way Tasker's ADB Wifi guide sets it up.
+    JemRec leaves that port alone, since it is not JemRec's to close
+    (StartWithoutWifi.portStep), and Settings' line under the switch says it
+    is open. Before 1.10 the line said the plain off text, as if the port were
+    shut, while When JemRec is off said "Back on: anywhere" (the Honor,
+    2026-11-26). Then the computer's `adb usb` closes it, and the plain line
+    comes back. The property is what is read, as in start_without_wifi: an
+    emulator's adbd listens on 5555 whatever it says.
+
+    The line is read first on the screen left open across the change. The
+    recorder coming back after adbd's restart refreshes it (CaptureDaemon
+    .changed), so it should follow there, but that is reported, not required:
+    the screens read again on every resume, and that is what the second,
+    reopened read covers."""
+    port = lambda: sh("getprop service.adb.tcp.port").strip()
+    theirs = "A computer or another app opened it"
+    plain = "Turn JemRec back on with no Wi-Fi"
+
+    def close_port(what):
+        adb("usb", timeout=30)
+        adb("wait-for-device", timeout=60)
+        wait_for(lambda: adb_ready() and port() != "5555", 30, what)
+
+    def open_settings():
+        sh("input keyevent KEYCODE_WAKEUP")
+        sh("wm dismiss-keyguard")
+        sh(f"am force-stop {PKG}")
+        sh(f"am start -n {PKG}/.MainActivity")
+        tap_until("Settings", "Back", 30, "the Settings gear")
+
+    def line():
+        """Which of the two the switch's line says. Scrolled to the row below
+        it, so all of its lines are on screen."""
+        scroll_to("Hide the debugging notification")
+        dump = ui()
+        return "theirs" if theirs in dump else "plain" if plain in dump else None
+
+    # An earlier check's port, or an earlier run's, closed as a computer would -
+    # and JemRec's notes of it forgotten. start_without_wifi can pass with its
+    # port left open (the revive came over it), so JemRec still counts the
+    # port opened this boot as its own: a port set again after `adb usb` would
+    # be taken for JemRec's, said as such and closed (review round 1, 1.10;
+    # 2 of 34 passes of start_without_wifi ended that way). That a computer's
+    # `adb usb` then `adb tcpip` in one boot is taken for JemRec's port is a
+    # known limit (tmp/release-1.10/PLAN.md, out of scope), not checked here.
+    # The switch off first: left on (a cleanup that failed), the revive after
+    # the close's adbd restart would open the port again (review round 2).
+    set_prefs(start_without_wifi=False, off_mode="KEEP_DEBUGGING", port_opened_boot=None,
+              port_failed_boot=None, port_close_failed_boot=None)
+    if port() == "5555":
+        close_port("an earlier port closed")
+    start_recorder()
+    log_before = revive_log()
+    followed = False
+    try:
+        open_settings()
+        assert wait_for(line, 15, "Start without Wi-Fi's line") == "plain", "the line said a closed port is open"
+
+        adb("tcpip", "5555", timeout=30)
+        adb("wait-for-device", timeout=60)
+        wait_for(lambda: adb_ready() and port() == "5555", 30, "the port set by adb tcpip")
+        # adbd's restart takes the recorder; a revive brings it back, and must
+        # leave the port: nothing of JemRec's to close.
+        diag_cut_off("check")
+        wait_for(lambda: adb_ready() and recorder_answers(), 90, "the recorder back after adbd's restart")
+        followed = _quietly(lambda: wait_for(lambda: line() == "theirs", 20, "")) is not False
+        assert port() == "5555", "the port someone else opened was closed"
+        assert "closing port" not in revive_since(log_before), "JemRec asked adbd to close a port it did not open"
+
+        open_settings()
+        said = wait_for(line, 15, "Start without Wi-Fi's line, reopened")
+        assert said == "theirs", f"reopened, the line said the {said} text for a port a computer opened"
+        # When JemRec is off, which said so before 1.10 already - reached
+        # afresh: the row may be scrolled away above the line just read.
+        open_settings_row("When JemRec is off", lambda: "Back on:" in ui(), "When JemRec is off")
+        scroll_to("Turn all debugging off")
+        assert "anywhere, about 15 s" in ui(), "When JemRec is off no longer says Back on: anywhere"
+
+        close_port("the port closed by adb usb")
+        start_recorder()
+        open_settings()
+        said = wait_for(line, 15, "Start without Wi-Fi's line, closed again")
+        assert said == "plain", f"closed again, the line said the {said} text"
+    finally:
+        if quietly(port) == "5555":
+            quietly(close_port, "the port closed afterwards")
+        quietly(set_prefs, off_mode=None)
+        if not quietly(recorder_answers):
+            start_recorder_after()
+        quietly(sh, f"am force-stop {PKG}")
+    return ("adb tcpip 5555 with the switch off: JemRec left it, Settings said so "
+            f"({'on the open screen, and reopened' if followed else 'reopened; the open screen kept the old line'}), "
+            "When JemRec is off said anywhere; adb usb: the plain line again")
+
+
 def background():
     """The daemon watches `dumpsys activity exit-info` for this phone killing
     JemRec in the background, and wakes the app to warn when it sees a new one
@@ -6331,9 +6446,12 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           killed_mid_save, early_end, doze,
           # Late, these three: they turn the emulator's Wi-Fi off and on, and
           # a simulated Wi-Fi that does not come back would fail every check
-          # after them - so the three after them start the recorder themselves.
+          # after them - so the checks after them start the recorder themselves.
           stopped_early, wifi_back, start_without_wifi,
-          # And after them, this one. Put here when wifi_back, two checks
+          # After it: it closes any port start_without_wifi left open, and has
+          # JemRec forget it opened one.
+          port_opened_elsewhere,
+          # And after them, this one. Put here when wifi_back, then two checks
           # after it, saw a kick's 30 s retry come after 5 minutes on the
           # Android 16 and 17 AVDs (2026-11-17) and passed run alone - put
           # down then to the restricted standby bucket's aftermath, not shown.
