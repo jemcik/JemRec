@@ -5,8 +5,6 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.ShortBuffer
 
 /**
@@ -44,15 +42,30 @@ internal object PcmDecoder {
     }
 
     /**
+     * Called before each packet is read from the file, and before each chunk
+     * goes to onPcm: null in a shipped build. The debug build sets both to
+     * hold the decode up while the checks stop the app (tools/
+     * emulator_checks.py, decoder_pause): where either sat between taking a
+     * codec's buffer and handing it back, a release of the codec under it
+     * crashed the process (CodecBuffers.kt).
+     */
+    @Volatile
+    var beforeRead: (() -> Unit)? = null
+
+    @Volatile
+    var beforePcm: (() -> Unit)? = null
+
+    /**
      * Decode the first audio track of [uri] - or the part of it from [fromUs]
      * (where the file can start, just before) to [untilUs]. [onFormat] gets
      * its sample rate and channels - from the file first, then again if the
      * decoder says otherwise; [onPcm] each chunk, interleaved, with when in
-     * the recording it starts, and says whether to go on. With [join], Opus
-     * packets go to the decoder several to a packet (OpusPackets): the same
-     * sound, in fewer trips to the decoder's process. Returns at the end,
-     * when told to stop, or when a decoder that has taken the end of the
-     * input goes quiet. Throws what Android throws for a file it cannot read.
+     * the recording it starts, and says whether to go on - the chunk is ours,
+     * good until the next ([PcmCopy]). With [join], Opus packets go to the
+     * decoder several to a packet (OpusPackets): the same sound, in fewer
+     * trips to the decoder's process. Returns at the end, when told to stop,
+     * or when a decoder that has taken the end of the input goes quiet.
+     * Throws what Android throws for a file it cannot read.
      */
     fun decode(
         context: Context,
@@ -81,12 +94,14 @@ internal object PcmDecoder {
             dec.start()
             val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             onFormat(format.getInteger(MediaFormat.KEY_SAMPLE_RATE), channels)
+            val packets = FilePackets(extractor)
             // More than two channels are several streams to a packet, framed
             // otherwise: those go as they come.
-            val input = if (join && mime == OPUS && channels <= 2) Joining(extractor, untilUs) else Plain(extractor, untilUs)
+            val input = if (join && mime == OPUS && channels <= 2) Joining(packets, untilUs) else Plain(packets, untilUs)
+            val feeder = Feeder(input, MediaCodecInput(dec, 0))
+            val copy = PcmCopy()
 
             val info = MediaCodec.BufferInfo()
-            var inputDone = false
             // A decoder that has taken the end of the input and then goes
             // quiet must not hold this loop for ever.
             var idleAfterInput = 0
@@ -95,25 +110,12 @@ internal object PcmDecoder {
             // packet and waited on for that packet's sound, it stood idle in
             // between. Only when neither side has anything does this wait.
             decoding@ while (idleAfterInput < 500) {
-                var worked = false
-                while (!inputDone) {
-                    val idx = dec.dequeueInputBuffer(0)
-                    if (idx < 0) break
-                    val buffer = dec.getInputBuffer(idx)!!
-                    val atUs = input.next(buffer)
-                    if (atUs < 0) {
-                        dec.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                        inputDone = true
-                    } else {
-                        dec.queueInputBuffer(idx, 0, buffer.position(), atUs, 0)
-                    }
-                    worked = true
-                }
+                var worked = feeder.feed()
                 while (true) {
                     val out = dec.dequeueOutputBuffer(info, if (worked) 0 else TIMEOUT_US)
                     when {
                         out == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                            if (inputDone && !worked) idleAfterInput++
+                            if (feeder.done && !worked) idleAfterInput++
                             break
                         }
                         out == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
@@ -125,14 +127,12 @@ internal object PcmDecoder {
                             worked = true
                         }
                         out >= 0 -> {
-                            var goOn = true
-                            if (info.size > 0) {
-                                val pcm = dec.getOutputBuffer(out)!!
-                                pcm.position(info.offset)
-                                pcm.limit(info.offset + info.size)
-                                goOn = onPcm(pcm.order(ByteOrder.nativeOrder()).asShortBuffer(), info.presentationTimeUs)
-                            }
+                            // Copied out and given back before anything
+                            // reads it.
+                            val pcm = if (info.size > 0) copy.of(info.offset, info.size) { dec.getOutputBuffer(out)!! } else null
                             dec.releaseOutputBuffer(out, false)
+                            if (pcm != null) beforePcm?.invoke()
+                            val goOn = pcm == null || onPcm(pcm, info.presentationTimeUs)
                             if (!goOn || info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break@decoding
                             worked = true
                         }
@@ -146,98 +146,6 @@ internal object PcmDecoder {
             runCatching { decoder?.stop() }
             runCatching { decoder?.release() }
             runCatching { extractor.release() }
-        }
-    }
-
-    /** What goes into the decoder's input buffers. */
-    private interface Input {
-        /** Fill [buffer] - its position left at the end of what was put - and
-         *  say when in the recording that starts; -1 at the end. */
-        fun next(buffer: ByteBuffer): Long
-    }
-
-    /** The file's packets, one to a buffer, as they are. */
-    private class Plain(private val extractor: MediaExtractor, private val untilUs: Long) : Input {
-        override fun next(buffer: ByteBuffer): Long {
-            val atUs = extractor.sampleTime
-            if (atUs < 0 || atUs >= untilUs) return -1
-            val size = extractor.readSampleData(buffer, 0)
-            if (size < 0) return -1
-            buffer.position(size)
-            extractor.advance()
-            return atUs
-        }
-    }
-
-    /**
-     * The file's Opus packets, joined while they may share one (OpusPackets):
-     * read back to back into one array, with their sizes, and written into
-     * the decoder's buffer from there.
-     */
-    private class Joining(private val extractor: MediaExtractor, private val untilUs: Long) : Input {
-        private val read = ByteBuffer.allocate(64 * 1024)
-        private val sizes = IntArray(OpusPackets.MAX_FRAMES)
-        /** A packet read ahead that did not fit the one before, moved to the
-         *  start of [read]: its size, or 0, and when it starts. */
-        private var held = 0
-        private var heldAtUs = 0L
-
-        /** The next packet, read in at [at]: its size, or -1 at the end - or
-         *  where there is no room for it after the others, to be read first
-         *  the next time. */
-        private fun readAt(at: Int): Int {
-            val atUs = extractor.sampleTime
-            if (atUs < 0 || atUs >= untilUs) return -1
-            if (at > 0 && extractor.sampleSize > read.capacity() - at) return -1
-            val size = extractor.readSampleData(read, at)
-            if (size < 0) return -1
-            extractor.advance()
-            return size
-        }
-
-        override fun next(buffer: ByteBuffer): Long {
-            val atUs: Long
-            if (held > 0) {
-                sizes[0] = held
-                atUs = heldAtUs
-                held = 0
-            } else {
-                atUs = extractor.sampleTime
-                val size = readAt(0)
-                if (size < 0) return -1
-                sizes[0] = size
-            }
-            val packets = read.array()
-            val firstToc = packets[0].toInt()
-            var count = 1
-            var end = sizes[0]
-            var units = OpusPackets.frameUnits(firstToc)
-            // What joinInto may write, kept as it goes: 2, and a byte more
-            // than each packet.
-            var joined = 2 + sizes[0] + 1
-            var heldAt = 0
-            if (OpusPackets.joinable(firstToc, sizes[0])) {
-                while (true) {
-                    val nextAtUs = extractor.sampleTime
-                    val size = readAt(end)
-                    if (size < 0) break
-                    val toc = packets[end].toInt()
-                    if (!OpusPackets.fits(firstToc, count, units, toc, size) || joined + size + 1 > buffer.capacity()) {
-                        held = size
-                        heldAtUs = nextAtUs
-                        heldAt = end
-                        break
-                    }
-                    sizes[count++] = size
-                    end += size
-                    units += OpusPackets.frameUnits(toc)
-                    joined += size + 1
-                }
-            }
-            buffer.clear()
-            OpusPackets.joinInto(packets, sizes, count, buffer)
-            if (held > 0) System.arraycopy(packets, heldAt, packets, 0, held)
-            return atUs
         }
     }
 }

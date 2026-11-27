@@ -16,8 +16,10 @@ import com.jemcik.jemrec.diag.ops.BootstrapOp
 import com.jemcik.jemrec.diag.ops.CallButtonOp
 import com.jemcik.jemrec.diag.ops.CallReportOp
 import com.jemcik.jemrec.diag.ops.CheckOp
+import com.jemcik.jemrec.diag.ops.CodecRoomOp
 import com.jemcik.jemrec.diag.ops.ConnectOp
 import com.jemcik.jemrec.diag.ops.DaemonOp
+import com.jemcik.jemrec.diag.ops.DecoderPauseOp
 import com.jemcik.jemrec.diag.ops.DemoOp
 import com.jemcik.jemrec.diag.ops.DisconnectOp
 import com.jemcik.jemrec.diag.ops.ExecOp
@@ -30,6 +32,7 @@ import com.jemcik.jemrec.diag.ops.HideSettingsOp
 import com.jemcik.jemrec.diag.ops.HoldSaveOp
 import com.jemcik.jemrec.diag.ops.ClearNotesOp
 import com.jemcik.jemrec.diag.ops.SeekCheckOp
+import com.jemcik.jemrec.diag.ops.M4aHashOp
 import com.jemcik.jemrec.diag.ops.MonitorOp
 import com.jemcik.jemrec.diag.ops.MonitorStopOp
 import com.jemcik.jemrec.diag.ops.PairNotifOp
@@ -173,6 +176,9 @@ class SpikeReceiver : BroadcastReceiver() {
                     "holdsave" -> HoldSaveOp.run(appContext, intent)
                     "clearnotes" -> ClearNotesOp.run(appContext, intent)
                     "seekcheck" -> SeekCheckOp.run(appContext, intent)
+                    "decoderpause" -> DecoderPauseOp.run(appContext, intent)
+                    "codecroom" -> CodecRoomOp.run(appContext, intent)
+                    "m4ahash" -> M4aHashOp.run(appContext, intent)
                     else -> report(appContext, "?", "unknown op '$op'")
                 }
             } catch (t: Throwable) {

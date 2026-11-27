@@ -122,6 +122,7 @@ internal object SeekCheckOp : DiagOp {
                 val writer = OpusOggWriter(out.fd, head)
                 val info = MediaCodec.BufferInfo()
                 val frames = SECONDS * RATE
+                val noise = ShortArray(960 * 2)
                 var fed = 0
                 var inputDone = false
                 var outputDone = false
@@ -129,13 +130,15 @@ internal object SeekCheckOp : DiagOp {
                     if (!inputDone) {
                         val index = encoder.dequeueInputBuffer(10_000)
                         if (index >= 0) {
-                            val buffer = checkNotNull(encoder.getInputBuffer(index)).order(ByteOrder.LITTLE_ENDIAN)
                             val chunk = minOf(960, frames - fed)
                             if (chunk <= 0) {
                                 encoder.queueInputBuffer(index, 0, 0, fed * 1_000_000L / RATE, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                                 inputDone = true
                             } else {
-                                repeat(chunk * 2) { buffer.putShort((random.nextGaussian() * 4_000).toInt().coerceIn(-32_000, 32_000).toShort()) }
+                                // Drawn first, then put in one copy: the encoder's
+                                // buffer held for that alone (audio/CodecBuffers.kt).
+                                repeat(chunk * 2) { noise[it] = (random.nextGaussian() * 4_000).toInt().coerceIn(-32_000, 32_000).toShort() }
+                                checkNotNull(encoder.getInputBuffer(index)).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(noise, 0, chunk * 2)
                                 encoder.queueInputBuffer(index, 0, chunk * 4, fed * 1_000_000L / RATE, 0)
                                 fed += chunk
                             }

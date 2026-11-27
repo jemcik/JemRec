@@ -36,7 +36,10 @@ import java.nio.ByteOrder
  * user does, one earbud included. The original keeps the sides apart.
  *
  * All of it runs through Android's own MediaCodec - no libraries, nothing
- * bundled - the same building blocks the recorder already uses.
+ * bundled - the same building blocks the recorder already uses. Each codec
+ * buffer is held for one copy only, as PcmDecoder's are (CodecBuffers.kt):
+ * the file read, the mix, the waits for the encoder and the muxer's all work
+ * on our own copies.
  */
 object Transcoder {
 
@@ -102,6 +105,10 @@ object Transcoder {
             var muxerStarted = false
             var encoderDone = false
             val encInfo = MediaCodec.BufferInfo()
+            // An encoded frame, copied out of the encoder for the muxer:
+            // MediaMuxer keeps the buffer it is given until its writer's
+            // thread has taken it (MediaAdapter::pushBuffer waits, AOSP 12).
+            var frame = ByteBuffer.allocateDirect(0)
 
             // How long, in microseconds, a run of interleaved 16-bit PCM lasts -
             // used to date each chunk fed to the encoder.
@@ -129,46 +136,46 @@ object Transcoder {
                             if (encInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
                                 encInfo.size = 0
                             }
-                            if (encInfo.size > 0 && muxerStarted) {
+                            val write = encInfo.size > 0 && muxerStarted
+                            if (write) {
+                                // Room first: a buffer taken is held for the copy alone.
+                                if (frame.capacity() < encInfo.size) frame = ByteBuffer.allocateDirect(encInfo.size)
                                 val buf = enc.getOutputBuffer(idx)!!
                                 buf.position(encInfo.offset)
                                 buf.limit(encInfo.offset + encInfo.size)
-                                mux.writeSampleData(muxTrack, buf, encInfo)
+                                frame.clear()
+                                frame.put(buf)
+                                frame.flip()
                             }
                             val eos = encInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                             enc.releaseOutputBuffer(idx, false)
+                            if (write) {
+                                encInfo.set(0, encInfo.size, encInfo.presentationTimeUs, encInfo.flags)
+                                mux.writeSampleData(muxTrack, frame, encInfo)
+                            }
                             if (eos) { encoderDone = true; return }
                         }
                     }
                 }
             }
 
-            // Feed a block of PCM to the encoder, splitting it across as many
-            // input buffers as it takes - a decoder buffer can be larger than an
-            // encoder buffer - and draining the encoder whenever no input slot is
-            // free, so the two can never deadlock waiting on each other. Split
-            // on whole frames, so a mix never takes one frame's right for the
-            // next one's left; mixed in the encoder's buffer, as a decoder's
-            // output buffer is read-only (MediaCodec.getOutputBuffer).
-            val frameBytes = channels * 2
-            fun feedEncoderPcm(pcm: ByteBuffer, size: Int, basePts: Long) {
+            // Feed a block of PCM - our copy of the decoder's - to the
+            // encoder, splitting it across as many input buffers as it takes
+            // - a decoder buffer can be larger than an encoder buffer - and
+            // draining the encoder whenever no input slot is free, so the two
+            // can never deadlock waiting on each other. Split on whole frames,
+            // as when each piece was mixed on its own.
+            fun feedEncoderPcm(samples: ShortArray, count: Int, basePts: Long) {
                 var consumed = 0
-                while (consumed < size) {
+                while (consumed < count) {
                     val idx = enc.dequeueInputBuffer(TIMEOUT_US)
                     if (idx < 0) { drainEncoder(); continue }
                     val dst = enc.getInputBuffer(idx)!!
                     dst.clear()
-                    val whole = dst.remaining() / frameBytes * frameBytes
-                    val chunk = minOf(size - consumed, if (whole > 0) whole else dst.remaining())
-                    val savedLimit = pcm.limit()
-                    pcm.limit(pcm.position() + chunk)
-                    dst.put(pcm)
-                    pcm.limit(savedLimit)
-                    if (bothEars) {
-                        BothEars.mix(dst.duplicate().order(ByteOrder.nativeOrder()).apply { position(0); limit(chunk) }.asShortBuffer(), channels)
-                    }
-                    enc.queueInputBuffer(idx, 0, chunk, basePts + bytesToUs(consumed), 0)
-                    consumed += chunk
+                    val n = encoderPiece(dst.remaining(), channels, count - consumed)
+                    dst.order(ByteOrder.nativeOrder()).asShortBuffer().put(samples, consumed, n)
+                    enc.queueInputBuffer(idx, 0, n * 2, basePts + bytesToUs(consumed * 2), 0)
+                    consumed += n
                 }
             }
 
@@ -184,38 +191,29 @@ object Transcoder {
             }
 
             val decInfo = MediaCodec.BufferInfo()
-            var extractorDone = false
             var decoderDone = false
+            // The file's packets, one to a buffer, each read before the
+            // buffer is taken; one buffer a pump, as long as one is free in
+            // 10 ms.
+            val feeder = Feeder(Plain(FilePackets(extractor), Long.MAX_VALUE), MediaCodecInput(dec, TIMEOUT_US))
+            val copy = PcmCopy()
 
             while (!encoderDone && !shouldCancel()) {
                 // Ogg pages -> decoder.
-                if (!extractorDone) {
-                    val idx = dec.dequeueInputBuffer(TIMEOUT_US)
-                    if (idx >= 0) {
-                        val buf = dec.getInputBuffer(idx)!!
-                        val size = extractor.readSampleData(buf, 0)
-                        if (size < 0) {
-                            dec.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            extractorDone = true
-                        } else {
-                            dec.queueInputBuffer(idx, 0, size, extractor.sampleTime, 0)
-                            extractor.advance()
-                        }
-                    }
-                }
+                if (!feeder.done) feeder.feed(most = 1)
 
-                // Decoded PCM -> encoder.
+                // Decoded PCM -> encoder: copied out, the decoder's buffer
+                // given back, then mixed and fed from the copy.
                 if (!decoderDone) {
                     val idx = dec.dequeueOutputBuffer(decInfo, TIMEOUT_US)
                     if (idx >= 0) {
                         val eos = decInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                        if (decInfo.size > 0) {
-                            val pcm = dec.getOutputBuffer(idx)!!
-                            pcm.position(decInfo.offset)
-                            pcm.limit(decInfo.offset + decInfo.size)
-                            feedEncoderPcm(pcm, decInfo.size, decInfo.presentationTimeUs)
-                        }
+                        val pcm = if (decInfo.size > 0) copy.of(decInfo.offset, decInfo.size) { dec.getOutputBuffer(idx)!! } else null
                         dec.releaseOutputBuffer(idx, false)
+                        if (pcm != null) {
+                            if (bothEars) BothEars.mix(pcm, channels)
+                            feedEncoderPcm(pcm.array(), pcm.remaining(), decInfo.presentationTimeUs)
+                        }
                         if (eos) {
                             decoderDone = true
                             signalEncoderEos(decInfo.presentationTimeUs)

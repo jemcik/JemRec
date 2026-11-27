@@ -28,6 +28,7 @@ plugins {
 val pure = listOf(
     "Formats",
     "audio/AudioStream",
+    "audio/CodecBuffers",
     "audio/OggPages",
     "audio/OpusHead",
     "audio/OpusPackets",
@@ -50,6 +51,7 @@ val pure = listOf(
 val pureTests = listOf(
     "FormatsTest",
     "audio/AudioStreamTest",
+    "audio/CodecBuffersTest",
     "audio/OggPagesTest",
     "audio/OpusHeadTest",
     "audio/OpusPacketsTest",

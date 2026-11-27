@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2919 JVM tests, no device needed - 2493 for the app and 426 for the daemon:
+2938 JVM tests, no device needed - 2512 for the app and 426 for the daemon:
 
     ./gradlew test
 
@@ -277,7 +277,14 @@ the 17 AVD showed JemRec 0.9 for eight days that way, until 2026-10-28 (every
 run installed the current build first, so the results were for it).
 
 Any crash of the app during a check fails that check, whatever else it found,
-and so does an "isn't responding" of its own (Android's DropBox keeps both).
+and so does an "isn't responding" of its own (Android's DropBox keeps both), a
+native crash of the app (DropBox's `data_app_native_crash`), and a native crash
+of the recorder, read from the emulator's tombstones by its command line:
+DropBox keeps the recorder's on Android 12 but not on 17, whose UWB HAL crashes
+every few seconds and leaves that tag's entries "contents lost". Native crashes
+were not counted until 1.9.1: the app died of SIGSEGV in two full runs on the
+12 AVD that passed, found afterwards in DropBox (2026-11-25), and in a run on
+the 13 AVD on 2026-11-21, found in its tombstones five days later.
 
 A check that fails is run again, with the others that failed, on the same
 emulator shut down and booted cold again by the script itself; it fails only
@@ -401,7 +408,12 @@ ended mid-call and brought back by the call's own watch, both parts saved as
 one call and told once, and a call ended while its recorder is down ended
 from the audio mode (1.5 s out), what the recorder left saved as a part
 (`messenger_recorder_lost`, Android 14 and later). Then a call's waveform, kept as it is
-saved; three Quality choices made in Settings, each the rate the recorder
+saved; the list working out its waveforms with the app stopped 4 s mid-decode,
+its decoders' reads and output held from then - on Android 12 and 13 until Android's codec
+watchdog has taken a decoder away five times, 40 stops at most - the app living
+through each and, opened afresh, working its first waveforms out again
+(`decoder_pause`: with 1.9's decoder planted, the app died at the first firing
+on the 12 AVD, 2026-11-26); three Quality choices made in Settings, each the rate the recorder
 starts the next call at, the file's first audio page holding one packet and
 no other page longer than a second, every checksum good and its last
 position its length, the file's own rate within a fifth over the choice and

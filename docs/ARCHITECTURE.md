@@ -48,7 +48,8 @@ this one is - or to check that it does what it says.
   [keeping the pairing](#keeping-the-pairing) ·
   [off, and debugging with it](#off-and-debugging-with-it)
 - The code: [errors and cancellation](#errors-and-cancellation) ·
-  [where coroutines run](#where-coroutines-run)
+  [where coroutines run](#where-coroutines-run) ·
+  [a decoder taken away](#a-decoder-taken-away)
 
 ## The fact and the obstacle
 
@@ -4300,6 +4301,95 @@ What runs in a scope that is never cancelled is waited for by its tests,
 which share the process: a screen test that left an outliving answer
 running had it run on into the tests after it (2026-11-14).
 
+## A decoder taken away
+
+On Android 12 and 13, Android can take a codec away from the app in the middle
+of its work and free the buffers the app is holding. JemRec decodes recordings
+with Android's own decoder - for the waveforms, the silence check after a call
+and Share's .m4a - and until 1.9.1 a thread writing into a decoder's buffer at
+that moment wrote into memory that was gone: the process died of SIGSEGV. Now
+a codec's buffer is held for one copy into it or out of it, and nothing else.
+
+**What takes it away.** A watchdog in the app's own process (`CCodecWatchdog`)
+looks at each codec 3.3 s after its last message, and on 12 and 13 releases
+one whose queued work has waited 3 s (AOSP `CCodec.cpp`,
+`initiateReleaseIfStuck`). MediaCodec then frees every buffer the app holds
+(`returnBuffersToCodec`, 12 to 17); the `ByteBuffer` from `getInputBuffer` is
+a bare pointer into one, and nothing tells the thread writing to it. Work
+counts as done when the codec's word for it reaches the app, so the app's
+process stopped 3 s or more mid-decode sets it off: stopped 4 s on the 12
+emulator, it fired in 6 of 10 (2026-11-25). Android 14 took the test out
+(Gerrit 2587766); 12 and 13 keep it, in a library no module update replaces
+(`/system/lib64/libsfplugin_ccodec.so`, the tombstone's map: inferred from
+where it lives). Its clock stops while the phone sleeps, so sleep is no
+trigger; a stopped or frozen process is. Stock Android freezes a cached app
+after 10 minutes on 12 and 13, and JemRec decodes with its screen up, in the
+call's foreground service or in a job, none of them cached - only the player's
+waveform or a Share's conversion can run on after the screen goes. So on a
+phone it takes one of those and a vendor's freezer that acts sooner than
+Android's, or a debugger. JemRec's issues hold no report of it.
+
+**Where it was met.** Twice on the 12 emulator, in full runs of the release
+checks (2026-11-25), and once on 13 (2026-11-21), found in its tombstones only
+on 2026-11-26 - each in the list's waveforms, right after the watchdog's line.
+On 12 an emulator snapshot stood in for the stop (a frame of 13.9 s in the
+tombstone). The waveform's input read the file - by the code, up to six
+packets to join and a seventh that did not fit - between taking the decoder's
+buffer and handing it back, and the first byte written after the release
+crashed the process. The runs passed: the checks counted crashes and "isn't
+responding"s, not native crashes.
+
+**Now.** Whatever reads the file or works on the sound does it in the app's
+own memory. A free buffer's index is taken and its size read, the next chunk
+read and joined in the app's own array up to that size - as 1.9 joined - and
+only then the buffer taken again, the chunk put in with one copy and the
+buffer queued (`Feeder`, in `CodecBuffers.kt`): MediaCodec hands an index's
+buffer out anew, the one before no longer to be used (`getInputBuffer`'s
+documentation), and with an index alone in hand nothing of the codec's is
+written - a codec released meanwhile throws when the buffer is asked for. Each
+chunk of output is copied out at once, and the buffer given back before
+anything reads it (`PcmCopy`). Share's conversion mixes both sides on its own
+copy, and copies each encoded frame out before the muxer, which keeps a buffer
+until its writer's thread has taken it (`MediaAdapter::pushBuffer`). A release
+now gives an exception, handled as a file that could not be decoded: the
+waveform comes at its next turn, the silence check says nothing for that call,
+or Share says it could not prepare the recording. The samples, the levels, the
+silence check's numbers and Share's AAC frames are the same as 1.9's, byte for
+byte (40 recordings, and five shared both ways, on the 12 and 17 emulators,
+2026-11-26).
+
+**What is left.** A release landing inside one copy of a few KB: from the
+watchdog's line to MediaCodec's error, which frees the buffers, took 9 and 22
+ms in the two crashes; a copy takes microseconds. Media3, which plays the
+recordings, fills its codec's buffers from memory the same way and narrows the
+rest with a lock (androidx/media c57f96c). The one way to leave nothing is
+MediaCodec's block model, whose memory the app holds itself; it works only in
+async mode, a rewrite of every decode loop for those microseconds.
+
+**Checked.** The release check `decoder_pause` stops the app for 4 s while the
+list works out its waveforms, and holds its decoders' reads, and each chunk
+before it goes on, from then (the debug build's hold), until on 12 and 13 the
+watchdog has fired five times, 40 stops at most (three stops on 14 to 17,
+which have no such test): a thread of 1.9's parks there with a buffer out,
+where the release lands, and the new code's holds none. Whether a stop fires
+it is the codec's timing - 4 of 20 stops to 7 of 10 on the 12 emulator - so
+the check counts firings, not stops. With 1.9's decoder planted, 6 firings of
+13 killed the app, the check's at the first; with the new code none of its 10
+did, on 12 and 13. Stopping the codec's own process as well, or alone, fired
+the watchdog once in 16 stops (inferred: handing a codec its input is a call
+into that process, which waits); killing it, with 1.9's thread parked in a
+buffer, crashed nothing in 10 - by those 10, the codec's death leaves what the
+app holds mapped, where the watchdog's release unmaps it. The checks count
+native crashes too: the app's from DropBox's `data_app_native_crash`; the
+recorder's, which is no app to Android, from its tombstones, by their command
+line - DropBox's `SYSTEM_TOMBSTONE` has them on 12 but not on 17, where the
+emulator's UWB HAL crashes every few seconds and that tag's entries are left
+"contents lost" (2026-11-26). Planted, a SIGSEGV of the app or of the recorder
+passed 1.9's checks on 12 and 17 and fails them now.
+
+The recorder's own encoder holds its buffers the same way, and is left so: it
+runs as the shell user, and Android's freezer acts on apps only; no trigger is
+known for it on a phone.
 ---
 
 Everything else that would have gone in a document is in the code, beside the
