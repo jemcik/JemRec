@@ -252,6 +252,13 @@ class DemoProvider : ContentProvider() {
             com.jemcik.jemrec.system.GlobalSettings.actAsHidden = true
             Log.i("JemRec", "diag: acting as if Android hid adb_enabled and development_settings_enabled")
         }
+        // Each decoder read held up while files/decoder-pause is there, for
+        // the emulator checks (decoder_pause). Set with the `decoderpause`
+        // diag op.
+        if (DiagPrefs.of(context).getBoolean(com.jemcik.jemrec.diag.ops.DecoderPauseOp.KEY, false)) {
+            com.jemcik.jemrec.diag.ops.DecoderPauseOp.install(context, true)
+            Log.i("JemRec", "diag: decoder reads held while files/decoder-pause is there")
+        }
         // Act as if the phone had an earpiece, on an emulator, which has
         // none. Set with the `earpiece` diag op.
         if (DiagPrefs.of(context).getBoolean(EARPIECE_KEY, false)) {

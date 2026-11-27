@@ -264,7 +264,8 @@ emulator shut down and booted again from nothing, as --avds boots it: the
 emulator's own call network, Wi-Fi and timing give way now and then under
 load, with nothing wrong in JemRec. It counts as failed only if it fails both
 times, and the first failure stays in the output - but one during which JemRec
-crashed or stopped responding fails the run whatever its retry does (CRASHED):
+crashed or stopped responding - the app, natively too, or its recorder -
+fails the run whatever its retry does (CRASHED):
 a retry is for the emulator's bad moments, not the app's. Setting JemRec up, before
 any check, is tried once more the same way. An emulator that ends - crashed,
 or ended by its own hang detector - stops the pass: the check under way and
@@ -561,6 +562,9 @@ def set_up(apk):
     # install, which stages the APK on /data, would fail at every boot
     # (review round 9).
     su("rm -f /data/local/tmp/jemrec-fill")
+    # And decoder_pause's flag: left, the debug build's hold, which stays on
+    # across restarts while the check runs, would slow every decode.
+    su(f"rm -f {APP_DIR}/files/decoder-pause")
     # And stall_told's audio server held stopped: every recording in the run
     # after it would block (review round 12).
     quietly(su, "p=$(pidof audioserver) && kill -CONT $p")
@@ -1774,6 +1778,116 @@ def waveform():
     assert len(levels) == 800, f"{len(levels)} levels read"
     return f"{name}: 800 levels kept"
 
+
+DECODER_FLAG = f"{APP_DIR}/files/decoder-pause"
+# decoder_pause: the watchdog's firings to see, and the stops to try, on 12
+# and 13.
+DECODER_FIRINGS = 5
+DECODER_ROUNDS = 40
+
+
+def decoder_pause():
+    """JemRec lives through Android taking a decoder away mid-read. On
+    Android 12 and 13 a watchdog in the app's own process releases a codec
+    whose queued work has waited 3 s, and frees the buffers the app holds
+    (CodecBuffers.kt). 1.9 read the file with a decoder's buffer out, and a
+    release landing there killed the process natively: twice in full runs on
+    the 12 AVD, a snapshot's pause standing in for the stop (2026-11-25).
+    Here the list works out its waveforms, and with a decode under way the
+    app is stopped 4 s, its decoders' reads held from then until a second
+    after it is let go (the debug build's decoderpause): a thread of 1.9's
+    that reads on parks with the decoder's buffer out, where the release
+    lands, and the new code's holds none. The process must live, and opened
+    afresh the list must work out its first waveforms again - those the
+    stops broke into. Whether a stop sets
+    the watchdog off is the codec's timing - 4 of 20 to 7 of 10 on the 12
+    AVD - so on 12 and 13 it goes on until the watchdog has fired
+    DECODER_FIRINGS times, DECODER_ROUNDS at most, and fewer than 3 is
+    nothing tested; 14 to 17 have no such watchdog, and three stops show
+    they do no harm. With 1.9's decoder planted, 6 firings of 13 killed the
+    app on the 12 AVD; the new code's, none of 10 on 12 and 13 (2026-11-26)."""
+    # A stop lands on the decode after the list's first waveform: two at
+    # least, and a third to spare. An AVD whose recordings were wiped gets
+    # them made.
+    for _ in range(3 - len(sh(f"ls {RECORDINGS}/ 2>/dev/null").split())):
+        dial(STRANGER_OUT, ring_s=2, talk_s=10)
+        saved()
+    cache = f"{APP_DIR}/cache/waveforms-v2"
+    kept = lambda: su(f"ls {cache} 2>/dev/null | grep -c '[.]lvl$'").strip()
+    watched = int(sh("getprop ro.build.version.sdk").strip()) <= 33
+
+    def opened_afresh(want=None):
+        """The list opened from nothing kept: the first ten waveforms it
+        writes - the ones a stop breaks into, the list going from its top -
+        or, given [want], those again. An AVD keeps thousands of the checks'
+        recordings (2,532 on the 12 AVD), more than a fill-in works out in
+        minutes."""
+        sh(f"am force-stop {PKG}")
+        su(f"rm -rf {cache}")
+        sh(f"am start -n {PKG}/.MainActivity")
+        end, last, since = time.time() + 60, -1, time.time()
+        while time.time() < end:
+            if want is None:
+                first = set(su(f"ls -tr {cache} 2>/dev/null | grep '[.]lvl$' | head -10").split())
+                if len(first) >= 10:
+                    return first
+                # Fewer recordings than ten: all of them, once none come.
+                if len(first) != last:
+                    last, since = len(first), time.time()
+                elif first and time.time() - since > 5:
+                    return first
+            elif want <= set(su(f"ls {cache} 2>/dev/null").split()):
+                return want
+            time.sleep(1)
+        if want is None and first:
+            return first
+        missing = sorted(want - set(su(f"ls {cache} 2>/dev/null").split())) if want else []
+        raise AssertionError(f"opened afresh, the list did not work out " +
+                             (f"{len(missing)} of its first {len(want)} waveforms again in 60 s" if want else "a waveform in 60 s"))
+
+    before = opened_afresh()
+    fired = rounds = 0
+    diag("decoderpause", "--ez", "on", "true")
+    try:
+        while rounds < (DECODER_ROUNDS if watched else 3) and fired < DECODER_FIRINGS:
+            rounds += 1
+            sh(f"am force-stop {PKG}")
+            su(f"rm -rf {cache} {DECODER_FLAG}")
+            sh("logcat -c")
+            sh(f"am start -n {PKG}/.MainActivity")
+            # Its first waveform kept: the next one's decode under way, at
+            # the decoder's own speed - work queued as it goes, which the
+            # watchdog needs (held reads from the start left none).
+            wait_for(lambda: kept() not in ("", "0"), 15, f"round {rounds}: the list's first waveform", step=0.1)
+            pid = sh(f"pidof {PKG}").strip()
+            assert pid, f"round {rounds}: the app did not start"
+            # The hold made once the app is stopped: made first, the
+            # decoder's thread stopped queueing at once, its work was done
+            # by the stop, and the watchdog never fired (0 of 10, the 12
+            # AVD, 2026-11-26).
+            su(f"kill -STOP {pid}; touch {DECODER_FLAG}")
+            time.sleep(4)
+            su(f"kill -CONT {pid}")
+            time.sleep(1)
+            su(f"rm -f {DECODER_FLAG}")
+            # A thread of 1.9's wrote as the hold ended; a crash's dump takes
+            # a moment, and a force-stop in the middle of it could lose it.
+            end = time.time() + 3
+            while time.time() < end and sh(f"pidof {PKG}").strip() == pid:
+                time.sleep(0.25)
+            # This process's queued-work release only: a missed deadline
+            # (a codec call not back in 1.5 s) is no test of the buffers.
+            fired += "previous call to queue exceeded timeout" in sh(f"logcat -d --pid={pid} -s CCodec:V")
+            assert sh(f"pidof {PKG}").strip() == pid, \
+                f"round {rounds}: the app's process died ({fired} watchdog firings in {rounds} rounds)"
+    finally:
+        quietly(su, f"rm -f {DECODER_FLAG}")
+        quietly(diag, "decoderpause", "--ez", "on", "false")
+    # The ones a release broke worked out again by a new process.
+    opened_afresh(before)
+    if watched:
+        assert fired >= 3, f"the watchdog fired {fired} times in {rounds} stops: too few to have tested it"
+    return f"{rounds} stops, the watchdog fired in {fired}, the app lived; its first {len(before)} waveforms again after"
 
 def ogg_pages(data):
     """[data]'s Ogg pages as (header type, position, packets ended on it,
@@ -6205,7 +6319,7 @@ def self_test():
 CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_id, number_names, self_test,
           answering, greeting_hangup, message_recorder_lost, answer_rules, answer_during_voip,
           answer_after_emergency, answer_takeover_ask_first, test_call_wifi, greeting_moves, app_call, mode_switch, app_call_in_front,
-          messenger_recorder_lost, waveform, quality,
+          messenger_recorder_lost, waveform, decoder_pause, quality,
           background_playback, both_ears, raise_to_listen, seek_preroll, one_window, process_death,
           recently_deleted, recently_deleted_folder, name_taken, looks, reinstall, cable, usb_debugging, adbd_stopped,
           hide_developer_options,
@@ -6319,9 +6433,22 @@ def app_crashes():
     Android files both for an app it did not ship under data_app_<kind>
     (ActivityManagerService.addErrorToDropBox). Entries, not a count: DropBox
     prunes its oldest, and a count taken across that hid a new one (review
-    round 9)."""
+    round 9).
+
+    Native crashes too, the app's and the recorder's. The app's go under
+    data_app_native_crash, with the same Process: line: it died of SIGSEGV in
+    two full runs on the Android 12 AVD that passed, 2026-11-25, and once on
+    13, 2026-11-21, a codec released under its decoder (CodecBuffers.kt). The
+    recorder is no app to Android: its crash goes only to a tombstone, and
+    DropBox's SYSTEM_TOMBSTONE has it on 12 but not on 17, whose UWB HAL
+    crashes every few seconds and leaves the tag's entries "contents lost"
+    (measured with kill -SEGV, 2026-11-26). So the recorder's are read from
+    the tombstones themselves, by their Cmdline, each by its Timestamp line.
+    Tombstones are kept 50 at a time: on 17 that flood turns them over in
+    about four minutes, so a check longer than that can lose one of the
+    recorder's from its start."""
     entries = set()
-    for kind in ("crash", "anr"):
+    for kind in ("crash", "anr", "native_crash"):
         try:
             said = adb("shell", f"dumpsys dropbox --print data_app_{kind}", timeout=30)
         except subprocess.TimeoutExpired:
@@ -6348,6 +6475,20 @@ def app_crashes():
             # than a crash missed in silence.
             print(f"     (DropBox's {kind} entries not read: {ours} of the app, {found} placed)")
             return None
+    try:
+        # The first lines only: Cmdline and Timestamp come before the
+        # stacks, and the rest of a tombstone runs to hundreds of KB.
+        # Each file read once: on 17 the UWB HAL's crashes turn them over
+        # every few seconds, and read twice one could change between.
+        said = su("for f in /data/tombstones/tombstone_[0-9][0-9]; do "
+                  "h=$(head -n 20 \"$f\" 2>/dev/null); "
+                  "case \"$h\" in *'Cmdline: '*com.jemcik.jemrec.shell.Main*) "
+                  "printf '%s\\n' \"$h\" | grep -m1 '^Timestamp:';; esac; done")
+    except subprocess.TimeoutExpired:
+        return None
+    for line in said.splitlines():
+        if line.startswith("Timestamp:"):
+            entries.add(("recorder_native_crash", line.split(":", 1)[1].strip(), 1))
     return entries
 
 
@@ -6884,7 +7025,7 @@ def run(checks, only):
             after = app_crashes()
             seen = after
             assert crashes is None or after is None or not (after - crashes), \
-                f"the app crashed or stopped responding during it: {sorted(after - crashes)}: {result}"
+                f"JemRec crashed or stopped responding during it: {sorted(after - crashes)}: {result}"
             print(f"PASS {check.__name__:11} {result}")
         except Exception as e:  # report every check, whatever one does
             failed.append(check.__name__)
