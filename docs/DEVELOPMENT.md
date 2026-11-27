@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2938 JVM tests, no device needed - 2512 for the app and 426 for the daemon:
+2943 JVM tests, no device needed - 2517 for the app and 426 for the daemon:
 
     ./gradlew test
 
@@ -585,10 +585,15 @@ first, and load it if adb never comes back - taken before any change of window,
 as saving one stops the emulator for seconds (`usb_debugging` pressed Home and
 then saved: JemRec's window took its focus event late, an "isn't responding" on
 the Android 12 AVD, 2026-11-18).
+After start_without_wifi, a port 5555 someone else opened (1.10): with the switch off,
+the host's `adb tcpip 5555`; JemRec's revive leaves it open, the switch's line
+says a computer or another app opened it - on the screen left open across
+the change, which is reported, and reopened, which is required - and When
+JemRec is off says Back on: anywhere; after `adb usb` the plain line is back.
 And, run before those Wi-Fi checks (they come late - stopped_early, wifi_back,
 start_without_wifi: they turn the emulator's Wi-Fi off and on, and only
-battery_restricted, audio_server_restart and stall_told, which start the
-recorder themselves, run after them), the daemon's watch for the phone
+port_opened_elsewhere, battery_restricted, audio_server_restart and
+stall_told, which start the recorder themselves, run after them), the daemon's watch for the phone
 stopping JemRec in the background:
 that it runs and reads the device's own exit records; and on Android 15 and
 later, that the app reads its own start record - a Force stop, then an open,
