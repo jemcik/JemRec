@@ -4,7 +4,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.NetworkInfo
 import android.provider.Settings
+import com.jemcik.jemrec.adb.AdbTransport
 import com.jemcik.jemrec.capture.CaptureDaemon
+import com.jemcik.jemrec.system.SystemProperty
 import com.jemcik.jemrec.recorder.StartWithoutWifi.PortStep
 import com.jemcik.jemrec.setup.Setup
 import com.jemcik.jemrec.system.GlobalSettings
@@ -13,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -49,6 +52,13 @@ class StartWithoutWifiStateTest {
         StartWithoutWifi.forget(context, stillOpen = false)
         RecorderSwitch.set(context, true)
         StartWithoutWifi.setEnabled(context, true)
+    }
+
+    /** JemRec's own number picked, and asked of adbd this boot: what a
+     *  revive's arm leaves (PortChange.changePort). */
+    private fun armed() {
+        StartWithoutWifi.ensureOwnPort(context) { false }
+        StartWithoutWifi.noteArmed(context)
     }
 
     @Test fun switchedOnOnWifiThePortIsOpened() {
@@ -133,7 +143,7 @@ class StartWithoutWifiStateTest {
 
     @Test fun aPropertyThatCannotBeReadFallsBackOnThisBootsOpen() {
         assertFalse(StartWithoutWifi.ready(context))
-        StartWithoutWifi.noteOpened(context, opened = true)
+        armed()
         assertTrue(StartWithoutWifi.ready(context))
         // ...and is not opened again at every revive, each one a restart of
         // the recorder.
@@ -148,7 +158,7 @@ class StartWithoutWifiStateTest {
         // which no property read here can show: with adbd running (USB
         // debugging on), the port answering is what says it - else turning
         // all debugging off away from Wi-Fi would go ahead unasked.
-        StartWithoutWifi.noteOpened(context, opened = true)
+        armed()
         assertTrue(StartWithoutWifi.readyForUser(context) { true })
         assertFalse(StartWithoutWifi.readyForUser(context) { false })
         // adbd stopped (all debugging off): nothing answers anyway, and this
@@ -162,11 +172,144 @@ class StartWithoutWifiStateTest {
     }
 
     @Test fun aResetThatCouldNotCloseItKeepsItJemRecsToClose() {
-        StartWithoutWifi.noteOpened(context, opened = true)
+        armed()
         StartWithoutWifi.forget(context, stillOpen = true)
         assertFalse(StartWithoutWifi.enabled(context))
         assertEquals(PortStep.CLOSE, CaptureDaemon.portChangeDue(context, onWifi = true))
         StartWithoutWifi.forget(context, stillOpen = false)
         assertNull(CaptureDaemon.portChangeDue(context, onWifi = true))
+    }
+
+    @Test fun theNumberIsPickedOnceAndKept() {
+        assertNull(StartWithoutWifi.ownPort(context))
+        val picked = StartWithoutWifi.ensureOwnPort(context) { false }
+        assertTrue(picked in StartWithoutWifi.OWN_PORTS)
+        // Asked again - something answering on it now or not - the same one.
+        assertEquals(picked, StartWithoutWifi.ensureOwnPort(context) { true })
+        // Start fresh keeps it: no secret, and the port it names may be open.
+        StartWithoutWifi.forget(context, stillOpen = false)
+        assertEquals(picked, StartWithoutWifi.ownPort(context))
+        // Switched off with no port of JemRec's this boot: nothing to close.
+        StartWithoutWifi.setEnabled(context, false)
+        assertNull(CaptureDaemon.portChangeDue(context, onWifi = true))
+    }
+
+    @Test fun a5555That110OpenedThisBootIsStillJemRecsToClose() {
+        // Updated from 1.10 with its port open: its note, written by 1.10
+        // and read since 1.11, until the restart that clears the port.
+        com.jemcik.jemrec.Prefs.of(context).edit().putInt("port_opened_boot", 7).commit()
+        assertTrue(StartWithoutWifi.ready(context))
+        StartWithoutWifi.setEnabled(context, false)
+        assertEquals(PortStep.CLOSE, CaptureDaemon.portChangeDue(context, onWifi = true))
+        // Closed: forgotten with JemRec's own.
+        StartWithoutWifi.noteClosed(context)
+        assertFalse(StartWithoutWifi.ready(context))
+        assertNull(CaptureDaemon.portChangeDue(context, onWifi = true))
+        // An earlier boot's says nothing.
+        com.jemcik.jemrec.Prefs.of(context).edit().putInt("port_opened_boot", 6).commit()
+        assertFalse(StartWithoutWifi.ready(context))
+    }
+
+    @Test fun anOpenThatFailedLeavesNoPortOfJemRecs() {
+        // The property reads empty after every restart until the first open -
+        // "cannot be read" - so a note of the ask left behind would count as
+        // an open port: revives off Wi-Fi starting over nothing, a switch-off
+        // restarting adbd to close nothing (review round 1 of 1.11).
+        armed()
+        assertTrue(StartWithoutWifi.ready(context))
+        StartWithoutWifi.noteOpenFailed(context)
+        assertFalse(StartWithoutWifi.ready(context))
+        assertFalse(StartWithoutWifi.readyForUser(context) { true })
+        assertTrue(StartWithoutWifi.failedThisBoot(context))
+        // Not asked again this boot, and nothing to close when switched off.
+        assertNull(CaptureDaemon.portChangeDue(context, onWifi = true))
+        StartWithoutWifi.setEnabled(context, false)
+        assertNull(CaptureDaemon.portChangeDue(context, onWifi = true))
+    }
+
+    @Test fun aNewOpenForgetsACloseThatDidNotTake() {
+        // A close slow past its wait is noted as failed, and the port closes
+        // after all. Switched on again, JemRec opens its port anew - and the
+        // old note must not keep that one from being closed when switched off
+        // (review round 2 of 1.11).
+        armed()
+        StartWithoutWifi.noteCloseFailed(context)
+        assertTrue(StartWithoutWifi.closeFailedThisBoot(context))
+        StartWithoutWifi.noteArmed(context)
+        assertFalse(StartWithoutWifi.closeFailedThisBoot(context))
+        StartWithoutWifi.setEnabled(context, false)
+        assertEquals(PortStep.CLOSE, CaptureDaemon.portChangeDue(context, onWifi = true))
+    }
+
+    @After fun getpropAsItWas() {
+        StartWithoutWifi.readProperty = SystemProperty::read
+    }
+
+    /** The phone's properties, as getprop prints them; unlisted, empty. */
+    private fun properties(vararg values: Pair<String, String>) {
+        val map = values.toMap()
+        StartWithoutWifi.readProperty = { map[it] ?: "" }
+    }
+
+    @Test fun theClassicPortsAreReadFromThePhonesProperties() {
+        // A phone, no port set (empty after every restart, or "0"): none.
+        properties("ro.kernel.qemu" to "0")
+        assertEquals(emptyList<Int>(), PortChange.classicPorts(context))
+        properties("service.adb.tcp.port" to "0")
+        assertEquals(emptyList<Int>(), PortChange.classicPorts(context))
+        // A port set: that one alone.
+        properties("service.adb.tcp.port" to "62817")
+        assertEquals(listOf(62817), PortChange.classicPorts(context))
+        // persist.adb.tcp.port, adbd's own fallback while the other is empty.
+        properties("persist.adb.tcp.port" to "5555")
+        assertEquals(listOf(5555), PortChange.classicPorts(context))
+        // An emulator, no port set: 5555, its adbd's default.
+        properties("ro.kernel.qemu" to "1")
+        assertEquals(listOf(5555), PortChange.classicPorts(context))
+        properties("ro.boot.qemu" to "1", "service.adb.tcp.port" to "0")
+        assertEquals(listOf(5555), PortChange.classicPorts(context))
+    }
+
+    @Test fun setupsConnectsDialByTheSameRule() {
+        // autoConnect's default, which setup's, the pairing's and the
+        // screen's connects take: no 5555 on a guess (review round 3).
+        properties()
+        assertEquals(emptyList<Int>(), AdbTransport.classicPortsFor(context, null))
+        properties("service.adb.tcp.port" to "62817")
+        assertEquals(listOf(62817), AdbTransport.classicPortsFor(context, null))
+        // A caller's own list is its own.
+        assertEquals(listOf(4242), AdbTransport.classicPortsFor(context, listOf(4242)))
+    }
+
+    @Test fun aGetpropThatDidNotAnswerIsNotTakenForAPhone() {
+        // No answer at all: not "not an emulator" for the rest of the
+        // process - asked again (review round 3 of 1.11).
+        StartWithoutWifi.readProperty = { null }
+        assertFalse(StartWithoutWifi.adbdOnDefaultPort())
+        StartWithoutWifi.readProperty = { if (it == "ro.kernel.qemu") "1" else "" }
+        assertTrue(StartWithoutWifi.adbdOnDefaultPort())
+    }
+
+    @Test fun oneGetpropThatDidNotAnswerKeepsNoNo() {
+        // The Android 12+ AVD images: ro.kernel.qemu empty, ro.boot.qemu 1.
+        // A loaded one whose second read misses its time says "no" this once,
+        // and the next read asks again (review round 4 of 1.11). The
+        // answers change under one seam, which keeps what was cached.
+        var answers = mapOf("ro.kernel.qemu" to "", "ro.boot.qemu" to null)
+        StartWithoutWifi.readProperty = { answers[it] }
+        assertFalse(StartWithoutWifi.adbdOnDefaultPort())
+        answers = mapOf("ro.kernel.qemu" to "", "ro.boot.qemu" to "1")
+        assertTrue(StartWithoutWifi.adbdOnDefaultPort())
+        // A "yes" is kept: an emulator stays one.
+        answers = mapOf("ro.kernel.qemu" to null, "ro.boot.qemu" to null)
+        assertTrue(StartWithoutWifi.adbdOnDefaultPort())
+    }
+
+    @Test fun aPhoneWhoseTwoPropertiesAnsweredIsKeptAsOne() {
+        var answers = mapOf("ro.kernel.qemu" to "", "ro.boot.qemu" to "")
+        StartWithoutWifi.readProperty = { answers[it] }
+        assertFalse(StartWithoutWifi.adbdOnDefaultPort())
+        answers = mapOf("ro.kernel.qemu" to "1", "ro.boot.qemu" to "1")
+        assertFalse(StartWithoutWifi.adbdOnDefaultPort())
     }
 }

@@ -53,23 +53,24 @@ class ReviveCancelTest {
         assertTrue(phone.wireless)
     }
 
-    @Test fun aReviveCancelledAfterAdbdRestartedOnThePortStillNotesItAsJemRecs() = runTest {
-        // Start without Wi-Fi switched on: adbd restarted on 5555, then a
-        // second before the port is read back and noted.
+    @Test fun aReviveCancelledAfterAdbdRestartedOnThePortHasItNotedAsJemRecs() = runTest {
+        // Start without Wi-Fi switched on: adbd restarted on JemRec's port,
+        // then cancelled before the port is read back. Noted before the ask
+        // (StartWithoutWifi.noteArmed) - and the number says it in any case.
         val phone = FakePhone().apply {
             step = PortStep.OPEN
             connects += listOf(ConnectOutcome.CONNECTED, ConnectOutcome.CONNECTED)
         }
         val revive = revive(phone)
         advanceTimeBy(500)
-        assertEquals(listOf("probe", "autoConnect 5000", "restart tcpip:5555", "close"), phone.did)
+        assertEquals(listOf("probe", "autoConnect 5000", "note armed", "restart tcpip:62817", "close"), phone.did)
 
         revive.cancel()
         revive.join()
 
-        // Noted, so switching it off - or Start fresh - closes it again.
+        // The revive goes on to the start all the same.
         assertEquals(
-            listOf("probe", "autoConnect 5000", "restart tcpip:5555", "close", "note opened true", "connect 5555") + started,
+            listOf("probe", "autoConnect 5000", "note armed", "restart tcpip:62817", "close", "connect 62817") + started,
             phone.did,
         )
     }

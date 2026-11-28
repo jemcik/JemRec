@@ -635,7 +635,7 @@ JemRec off, from the record button or the tile:
 |---|---|---|
 | **Keep debugging on** (the default) | nothing else | instantly, anywhere |
 | **Hide Developer options** | Developer options | instantly, anywhere |
-| **Turn all debugging off** | Developer options, USB debugging | needs Wi-Fi - or port 5555 open (Start without Wi-Fi's, or a computer's) - about 15 seconds; no answering machine until then |
+| **Turn all debugging off** | Developer options, USB debugging | needs Wi-Fi - or a debugging port open (Start without Wi-Fi's, or a computer's) - about 15 seconds; no answering machine until then |
 
 Wireless debugging is off already while JemRec runs: JemRec switches it on only
 for the few seconds it takes to start its recorder. If you switched it on
@@ -644,8 +644,8 @@ yourself, either choice switches it off too.
 Try **Hide Developer options** first: USB debugging stays on, so the recorder
 keeps running and JemRec is back the moment you turn it on. If your bank still
 refuses, **Turn all debugging off** - which stops the recorder too, so away
-from Wi-Fi JemRec asks before it does, unless debugging port 5555 is open. With
-**Start without Wi-Fi** on, the first leaves debugging port 5555 open while
+from Wi-Fi JemRec asks before it does, unless a debugging port is open. With
+**Start without Wi-Fi** on, the first leaves its debugging port open while
 JemRec is off, which a bank may look for too; the second closes it. Turning
 JemRec back on puts back what it switched off. A new choice applies the next
 time you turn JemRec off.
@@ -654,10 +654,14 @@ time you turn JemRec off.
 
 Starting the recorder takes Wireless debugging, and Android allows that only on
 a Wi-Fi network the phone has joined - not on its own hotspot, not on mobile
-data. **Settings → Start without Wi-Fi** opens a second way in: debugging port
-5555, which works with no network at all. With it on, turning JemRec back on
-after **Turn all debugging off** works anywhere, and so does every restart of
-the recorder - after a cable from a computer, say - until the phone restarts.
+data. **Settings → Start without Wi-Fi** opens a second way in: a debugging
+port of JemRec's own, which works with no network at all. Its number is picked
+once for your phone, between 61000 and 65535, and Settings shows it once the
+port is open - not the 5555 a computer's `adb tcpip` opens, so that JemRec can
+tell its own port from one someone else opened. With it on, turning JemRec back
+on after **Turn all debugging off** works anywhere, and so does every restart
+of the recorder - after a cable from a computer, say - until the phone
+restarts.
 
 JemRec opens the port the next time it starts the recorder on Wi-Fi; switched
 on while on Wi-Fi, that is at once - after a call in progress, and, if When
@@ -669,9 +673,11 @@ phone restart closes the port, and the first start after it needs Wi-Fi once,
 as before. Switching it off closes the port the same way, the next time it
 can - the port JemRec opened, that is. One a computer or another app opened
 (`adb tcpip`) is theirs: it stays open until the phone restarts, JemRec starts
-over it all the same, and the switch's line says so.
+over it all the same, and the switch's line names it. With the switch on,
+JemRec then uses that port as it is rather than open its own: the phone listens
+on one such port at a time, and opening JemRec's would close theirs.
 
-**What it costs:** port 5555 is open on every network the phone joins - a
+**What it costs:** the port is open on every network the phone joins - a
 hotel's Wi-Fi too - whenever USB debugging is on: while JemRec is on, and while
 it is off unless **Turn all debugging off** goes with it. **Hide Developer
 options** keeps USB debugging on, so with it the port stays open while JemRec
@@ -841,7 +847,7 @@ The header is the honest indicator:
 | **Starting...** | Rebuilding the recorder. A few seconds. |
 | **Checking...** | JemRec has just opened and is looking at the recorder and your recordings. No mark is lit until it knows: a moment, or a few seconds with the recorder down or a folder you chose. |
 | **Off** · Tap the button to record calls | You turned the switch off. |
-| **Off** · Debugging off · turn on over Wi-Fi | You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi, unless debugging port 5555 has been opened (by Start without Wi-Fi, or by a computer or another app); then the line is the plain one above. |
+| **Off** · Debugging off · turn on over Wi-Fi | You turned the switch off with When JemRec is off set to Turn all debugging off. Turning it on needs Wi-Fi, unless a debugging port has been opened (by Start without Wi-Fi, or by a computer or another app); then the line is the plain one above. |
 
 In Memo's words; Deck and Multitrack word the header their own way.
 
@@ -874,7 +880,7 @@ problem opens JemRec where the problem is shown; its button does the fix:
 | **Part of a call not saved** | The recorder was started again during a call, so the call was recorded in two parts, and one of them could not be saved; the notification says why. The other part is saved, and JemRec keeps trying the one left for a week; the notification goes once it is saved. |
 | **Call not recorded** | A call was recorded but could not be saved, or no call audio came through - or the answering machine answered and could not play your greeting, so it hung up. The notification says which; for the greeting, run the answering machine's test call. One that could not be saved is tried again, and the notification goes once it is. |
 | **Not recording this call**, during a call | Ask first: the call's own notification, until you tap **Record** on it, on the prompt or on the button over the call. It stays there after Not now. |
-| **Recording stopped**, during a call | The call's own notification, silently: the recording stopped. *Trying again* - its capture failed more often than the recorder may start it again at once, so it tries every ten seconds, or nothing reached the recording for five seconds - and it says **Recording call** again once it has recorded for five seconds; or *the rest of this call is not recorded* - its file could not be written. A message the answering machine is taking ends at either: it hangs up. And when the recorder itself ended, JemRec starts it again during the call - over Wi-Fi, or debugging port 5555 when it is open - and it records the rest of the call as a recording of its own, so the call has two (in Ask first, a phone call goes on as you answered; a messenger call is asked about again, as JemRec cannot tell it from the next call in that app); a message being taken then is hung up on too, where Android has told JemRec which call it is - else the caller hears silence until they hang up - and kept as a message, its greeting at its start. |
+| **Recording stopped**, during a call | The call's own notification, silently: the recording stopped. *Trying again* - its capture failed more often than the recorder may start it again at once, so it tries every ten seconds, or nothing reached the recording for five seconds - and it says **Recording call** again once it has recorded for five seconds; or *the rest of this call is not recorded* - its file could not be written. A message the answering machine is taking ends at either: it hangs up. And when the recorder itself ended, JemRec starts it again during the call - over Wi-Fi, or a debugging port when one is open - and it records the rest of the call as a recording of its own, so the call has two (in Ask first, a phone call goes on as you answered; a messenger call is asked about again, as JemRec cannot tell it from the next call in that app); a message being taken then is hung up on too, where Android has told JemRec which call it is - else the caller hears silence until they hang up - and kept as a message, its greeting at its start. |
 | **Recording stopped early** | The recording of your last call ended well before the call did: its capture failed, or nothing reached it, and it never came back, its file could not be written - the phone full - or the recorder itself was ended. Phone and messenger calls alike; a recorder ended during a messenger call, a call waiting, or with call tracking off, cannot be told. One saved long after its call says which call, by its time. It is that call's one notification: it takes the place of the one after the call, with the same buttons, and stays until you clear it. A message cut short says so in the message's own notification. |
 | **Recording saved elsewhere** | JemRec can no longer reach the folder you chose, so a call was saved in the standard Recordings folder. Once; **Choose again** opens Android's folder picker. |
 | **Battery use is Restricted** | JemRec's battery use is set to Restricted, so Android lets nothing of it run in the background; the notification says what that costs. Once, while it lasts and JemRec is on, its words kept to what it costs now; gone once it is lifted or JemRec is turned off. Tapped, JemRec's card says the same; **Open App info** and allow its background use on its battery page. |
@@ -955,10 +961,11 @@ everything still works, with the time as each recording's headline.
 
 - **When JemRec is off** — what else goes off when you turn JemRec off:
   nothing, Developer options, or all debugging; see Off, and debugging with it.
-- **Start without Wi-Fi** — opens debugging port 5555, so that the recorder can
-  start with no Wi-Fi until the phone restarts; it says whether the port is
-  open - also when a computer or another app opened it - and that it is open to
-  every network the phone joins. See Start without Wi-Fi.
+- **Start without Wi-Fi** — opens a debugging port of JemRec's own, so that the
+  recorder can start with no Wi-Fi until the phone restarts; it names the port
+  that is open, by its number - also when a computer or another app opened it -
+  and says it is open to every network the phone joins. See Start without
+  Wi-Fi.
 - **Hide the debugging notification** — the answer to the question in step 1,
   changeable. USB debugging stays on either way while JemRec is on, and
   Wireless debugging is on only while JemRec starts its recorder; this is only

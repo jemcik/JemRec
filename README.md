@@ -18,7 +18,7 @@ the phone sets itself up.
 [![Android](https://img.shields.io/badge/Android-12%2B%20(API%2031)-3DDC84)](#phones-and-android-versions)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)](https://developer.android.com/jetpack/compose)
-[![Tests](https://img.shields.io/badge/tests-2943-success)](docs/DEVELOPMENT.md#tests)
+[![Tests](https://img.shields.io/badge/tests-2981-success)](docs/DEVELOPMENT.md#tests)
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memo/home-dark.png"><img src="docs/screenshots/memo/home.png" width="26%" alt="Memo: the recordings list"></picture>
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deck/home-dark.png"><img src="docs/screenshots/deck/home.png" width="26%" alt="Deck: the recordings list"></picture>
@@ -293,7 +293,7 @@ Honor - so the answering machine's settings hold its own checks and a test call.
   you allowed over a cable neither - until you turn it off in Settings; Start
   fresh and uninstalling put Android's timeout back - the recorder does it,
   so only while it runs. With *Start
-  without Wi-Fi* on, debugging port 5555 is open as well, to every network the
+  without Wi-Fi* on, its debugging port is open as well, to every network the
   phone joins, and announced there by the phone's serial number: a computer
   that reaches it, or an app on the phone, can ask to debug the phone, and the
   phone asks you - allow only one you expect.
@@ -428,8 +428,8 @@ second recording. And if When JemRec is off is set to *Turn all debugging off*,
 turning JemRec back on needs Wi-Fi too.
 
 **Settings → Start without Wi-Fi** takes the Wi-Fi away from all of that
-until the phone restarts: it opens debugging port 5555, which the recorder can
-be started over with no network at all. After a restart, the first start
+until the phone restarts: it opens a debugging port of its own, numbered once
+for your phone, which the recorder can be started over with no network at all. After a restart, the first start
 needs Wi-Fi once, as before. The cost is the open port, on every network the
 phone joins whenever USB debugging is on - unless *Turn all debugging off*
 goes with JemRec; see [Starting without
@@ -582,14 +582,14 @@ you open the bank:
   it. Turning JemRec back on then needs Wi-Fi and takes about 15 seconds, and
   the answering machine is off until then. Away from Wi-Fi, JemRec asks first -
   unless **Start without Wi-Fi** is on (Settings → Debugging), or a computer
-  or another app opened debugging port 5555: then it comes back anywhere, on
+  or another app opened a debugging port: then it comes back anywhere, on
   mobile data or none, until the phone restarts.
 
 Try the first; if your bank still refuses, the second. Wireless debugging is
 off already while JemRec runs - JemRec switches it on only for the seconds it
 takes to start the recorder - and if you switched it on yourself, either
 choice switches it off too. With **Start without
-Wi-Fi** on, the first leaves debugging port 5555 open while JemRec is off, which
+Wi-Fi** on, the first leaves its debugging port open while JemRec is off, which
 a bank may look for too; the second closes it. Turning JemRec back on puts back
 what it switched off. Measured on an Honor (Android 17): with
 Developer options and Wireless debugging off, the recorder ran on through Wi-Fi
@@ -607,7 +607,7 @@ second choice, or neither worked, say so in [issue #37](https://github.com/jemci
 Android forgets a debugging pairing 7 days after it is made, however often
 JemRec connects over Wireless debugging: those connections never renew it.
 (Ones made in adb's older way do - over a cable, or to *Start without
-Wi-Fi*'s port 5555 - by Android's source; not measured.) The recorder keeps
+Wi-Fi*'s port - by Android's source; not measured.) The recorder keeps
 recording, but the next time it has to start - after a restart, say - the phone
 turns JemRec away, and JemRec opens its pairing step and says why. Turn on
 *Keep JemRec paired* in Settings (setup asks about it) and Android keeps the
@@ -652,7 +652,7 @@ Build with **JDK 21** (exactly - the daemon's bytes depend on it) and an Android
 SDK with platforms 37 and 36 and build-tools 36.0.0:
 
     ./gradlew assembleDebug     # build
-    ./gradlew test              # 2943 tests, screenshots of the screens included
+    ./gradlew test              # 2981 tests, screenshots of the screens included
 
 | | |
 | --- | --- |

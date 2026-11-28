@@ -227,7 +227,6 @@ class LogLinesTest {
             val machineSays = "\"calltrack: answering machine - not answering: \${decision.why}\""
             val cable = listOf("\"cable: \${what ?: \"changed\"}; watching the recorder\"", "\"plugged in\" : \"unplugged\"")
             val swapped = "Ln.i(\"recording: \" + why + \" (audio mode \" + mode + \"); \""
-            val port = listOf("const val PORT = AdbTransport.LEGACY_TCP_PORT", "const val LEGACY_TCP_PORT = 5555")
             val keepalive = listOf("\"keepalive: \${if (forWifi) \"Wi-Fi run\" else \"run\"} (attempt \${runAttemptCount + 1})\"")
             val grant = "\"setup: grant -> \$outcome ("
             val greetingOn = "Ln.i(\"answer: the greeting on route \" + route + \" (\""
@@ -269,6 +268,32 @@ class LogLinesTest {
                 // port_opened_elsewhere: no close asked of adbd for a port JemRec
                 // did not open (PortChange.changePort).
                 "closing port" to listOf("\"revive: \${if (open) \"opening\" else \"closing\"} port \$port, adbd said \""),
+                // port_other_used: no ask for JemRec's own number over a port
+                // someone else opened (PortChange.changePort).
+                "opening port" to listOf("\"revive: \${if (open) \"opening\" else \"closing\"} port \$port, adbd said \""),
+                // port_number_own and port_other_used: Settings' line names the
+                // port by its number, its first word made a capital
+                // (startWithoutWifiSummary, portWords).
+                "port 5555" to listOf("number?.let { \"debugging port \$it\" }"),
+                "Debugging port" to listOf(
+                    "number?.let { \"debugging port \$it\" }",
+                    "port.replaceFirstChar { it.uppercase() }",
+                ),
+                // session_proof: a connect on the classic door let go
+                // (AdbTransport.connect's check, ConnectOp's report), and the
+                // proof's own line with its time (AdbTransport.prove).
+                "connect failed: the session on" to listOf(
+                    "\"connect failed: \${it.message}\"",
+                    "error(\"the session on \$port \$why\")",
+                ),
+                "connect: the session on" to listOf(
+                    "\"connect: \$where \$NOT_SHELL (\$ms ms); let go\"",
+                    "\"the session on \$port\"",
+                ),
+                "did not show itself as the phone's shell (" to listOf(
+                    "NOT_SHELL = \"did not show itself as the phone's shell\"",
+                    "\$NOT_SHELL (\$ms ms)",
+                ),
                 "on attempt 3" to listOf("\" on attempt \" + attempt", "WAKE_ATTEMPTS = 3"),
                 // And with its file's name, which early_end reads the mark in.
                 "wake: com.jemcik.jemrec.CALL_ENDED (jemrec_rec_" to listOf(
@@ -364,10 +389,6 @@ class LogLinesTest {
                 "setup: grant -> GRANTED" to listOf(grant, "Outcome.GRANTED"),
                 "keepalive: Wi-Fi run" to keepalive,
                 "keepalive: run (attempt" to keepalive,
-                "revive: port 5555 opened" to
-                    listOf("\"revive: port \$port \${if (opened) \"opened\" else ") + port,
-                "revive: connecting on port 5555, no Wi-Fi" to
-                    listOf("\"revive: connecting on port \${StartWithoutWifi.PORT}, no Wi-Fi\"") + port,
                 "backgroundkill: on open" to listOf("\"backgroundkill: \$where; \"", "checkOwnRecords(app, \"on open\")"),
                 "started stopped true" to
                     listOf("\"started stopped \${if (fromDaemon) \"not read (the recorder judged)\" else leftStopped}; \""),

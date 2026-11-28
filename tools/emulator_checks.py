@@ -287,10 +287,12 @@ import fcntl
 import hashlib
 import html
 import os
+import random
 import re
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -312,10 +314,26 @@ UA_DIALLED = "0501234567"  # a Ukrainian mobile number, as dialled there
 USB_GUARD = "jemrec_usb_guard"  # the snapshot usb_debugging comes back to
 
 serial = "emulator-5554"
+# The emulator's own serial, for its console (`adb emu`): [serial] is a tcp
+# one while a check follows adbd to a port other than 5555 (follow_port).
+home_serial = serial
 
 
 def adb(*args, check=False, text=True, input=None, timeout=120):
-    r = subprocess.run(["adb", "-s", serial, *args], capture_output=True, text=text, input=input, timeout=timeout)
+    if args and args[0] == "emu":
+        target = home_serial
+    else:
+        if _door:
+            # While adb follows adbd to another port (follow_port), the way a
+            # command would take can be gone: with Start without Wi-Fi on, a
+            # revive may move adbd at any moment. One did just after the
+            # Allow tap; the check's next read ran on the emulator's own
+            # transport, gone, until its time was up, and the cleanup's logcat
+            # hung its full 120 s (the Android 12 AVD, 2026-11-28). Every
+            # command goes by whichever way answers now.
+            wait_for(reach, 30, "adb to the emulator, by either way")
+        target = serial
+    r = subprocess.run(["adb", "-s", target, *args], capture_output=True, text=text, input=input, timeout=timeout)
     if check and r.returncode != 0:
         raise RuntimeError(f"adb {' '.join(args)}: {r.stderr or r.stdout}")
     return r.stdout if text else r.stdout
@@ -346,9 +364,11 @@ def wait_log(pattern, timeout, what):
 # --- refusing anything but an emulator ------------------------------------------
 
 def only_an_emulator():
+    # The serial given: a door followed (follow_left_open) is that emulator's
+    # own, forwarded by its console.
     qemu = sh("getprop ro.kernel.qemu").strip() or sh("getprop ro.boot.qemu").strip()
-    if not serial.startswith("emulator-") or qemu != "1":
-        sys.exit(f"{serial} is not an emulator - these checks place calls; refusing.")
+    if not home_serial.startswith("emulator-") or qemu != "1":
+        sys.exit(f"{home_serial} is not an emulator - these checks place calls; refusing.")
 
 
 # Every wait capped, as adb's are: a build that hangs would otherwise hold
@@ -450,11 +470,145 @@ def recorder_answers():
 
 def adb_ready():
     """This adb's connection to the emulator, which every adbd restart or
-    stop takes away for a moment or longer."""
+    stop takes away for a moment or longer - by whichever way answers, while
+    a check follows adbd to another port (follow_port)."""
+    if _door:
+        return reach()
     try:
         return adb("get-state", timeout=5).strip() == "device"
     except subprocess.TimeoutExpired:
         return False
+
+
+# adbd's classic door on a number other than 5555 - Start without Wi-Fi's own
+# since 1.11 (StartWithoutWifi), or another app's: adbd then listens on that
+# number alone (AOSP daemon/main.cpp), and the emulator's own adb transport,
+# its 5555, goes offline until adbd is back on 5555. The emulator's console
+# forwards a free port of the Mac's to the number, and adb connects there.
+# Measured on the Android 16 AVD, 2026-11-27: `adb tcpip 23456` took
+# emulator-5554 offline; `emu redir add tcp:23456:23456` and `adb connect
+# 127.0.0.1:23456` reached it; `adb usb` brought emulator-5554 back.
+_door = None
+
+
+def own_port_for_check():
+    """JemRec's own port in a check, in the range StartWithoutWifi picks it
+    from (61000-65535): this AVD's own number, the same at every run, so a
+    boot after a run cut short can follow adbd to it (follow_left_open). Set
+    by the check (set_prefs own_port) rather than read: once adbd is on it,
+    nothing on the Mac can ask the emulator which it is."""
+    name = avd or avd_name()
+    return 61_000 + int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big") % 4_536
+
+
+def other_port_than(own):
+    """A number in the same range that is not [own]: someone else's port.
+    Opened by a computer's `adb tcpip`, it does not last past a boot."""
+    while (other := random.randint(61_000, 65_535)) == own:
+        pass
+    return other
+
+
+# Whether this run found adbd on its AVD's own number at the start
+# (follow_left_open), for set_up to close it once the switch is off.
+_left_open = False
+
+
+def follow_left_open():
+    """A run cut short in a port check leaves Start without Wi-Fi on with
+    this AVD's number set: the boot's first revive opens it, adbd listens
+    there alone, and the emulator's own transport is gone before set_up can
+    switch it off. Before, that AVD was lost to every run until it was
+    booted with --wipe (review round 1 of 1.11). The number is this AVD's
+    own (own_port_for_check), so it is followed here, at the start and after
+    every cold boot; set_up closes it once the switch is off
+    (close_left_open). A port opened only after this looks is not covered:
+    set_up fails, and its retry boots again and looks again."""
+    global _left_open
+    if not home_serial.startswith("emulator-"):
+        return  # only an emulator's console forwards a port; only_an_emulator says the rest
+    try:
+        wait_for(lambda: _state(home_serial) == "device", 20, "", step=1)
+        return
+    except TimeoutError:
+        pass
+    number = own_port_for_check()
+    print(f"{home_serial}: its own adb transport is gone: following adbd to this AVD's number, {number}, "
+          f"which a run cut short left open")
+    follow_port(number)
+    _left_open = True
+    wait_for(adb_ready, 60, f"adb to the emulator on {number}: none on its own transport or there - "
+                            f"boot it with --wipe")
+
+
+def close_left_open():
+    """The port follow_left_open found closed, as a computer's `adb usb`
+    does, and adb back on the emulator's own transport for the checks."""
+    global _left_open
+    adb("usb", timeout=30)
+    wait_for(lambda: _state(home_serial) == "device" and reach(), 60,
+             "the emulator's own adb transport back after adb usb")
+    unfollow_port()
+    _left_open = False
+    print(f"{home_serial}: the port left open closed, Start without Wi-Fi off; adb back on its own transport")
+
+
+def follow_port(*numbers):
+    """From now on, adb reaches the emulator on adbd's port - any of
+    [numbers] - whenever its own transport is gone (adb_ready, reach): a free
+    port of the Mac's forwarded to each by the emulator's console. More than
+    one where a check guards against adbd moving to another: following only
+    the one meant, a regression lost the AVD, and the cleanup with it (review
+    round 1 of 1.11). Until unfollow_port()."""
+    global _door
+    unfollow_port()
+    doors = []
+    for number in numbers:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            host = s.getsockname()[1]
+        said = adb("emu", "redir", "add", f"tcp:{host}:{number}", timeout=15)
+        if "OK" not in said:
+            raise RuntimeError(f"the emulator's console would not forward {host} to {number}: {said.strip()}")
+        doors.append((number, f"127.0.0.1:{host}", host))
+        _door = doors
+
+
+def unfollow_port():
+    """The doors gone, and adb back on the emulator's own transport."""
+    global _door, serial
+    for _, away, host in _door or []:
+        quietly(subprocess.run, ["adb", "disconnect", away], capture_output=True, timeout=15)
+        quietly(adb, "emu", "redir", "del", f"tcp:{host}", timeout=15)
+    _door = None
+    serial = home_serial
+
+
+def _state(target):
+    try:
+        return subprocess.run(["adb", "-s", target, "get-state"], capture_output=True, text=True,
+                              timeout=5).stdout.strip()
+    except subprocess.TimeoutExpired:
+        return ""
+
+
+def reach():
+    """[serial] pointed at whichever way to the emulator answers now: its own
+    transport (adbd on 5555), or the door followed. True if one does."""
+    global serial
+    if _state(home_serial) == "device":
+        serial = home_serial
+        return True
+    for _, away, _ in _door or []:
+        if _state(away) != "device":
+            try:
+                subprocess.run(["adb", "connect", away], capture_output=True, timeout=10)
+            except subprocess.TimeoutExpired:
+                continue
+        if _state(away) == "device":
+            serial = away
+            return True
+    return False
 
 
 def connect_app():
@@ -569,6 +723,17 @@ def set_up(apk):
     # And stall_told's audio server held stopped: every recording in the run
     # after it would block (review round 12).
     quietly(su, "p=$(pidof audioserver) && kill -CONT $p")
+    # And the PIN of a lock check cut short (ask_button,
+    # usb_default_lock): kept across cold boots, it leaves the user locked
+    # after each one - no contacts provider, so set_up failed at add_contact
+    # on the Android 12 AVD, run after run, after a run stopped mid-check
+    # (2026-11-28). Cleared with the checks' own PIN and the lock screen put
+    # back off, as the checks leave it; the user unlocks only at the next
+    # boot, which the failed setup's retry makes.
+    if "RUNNING_LOCKED" in sh("dumpsys user | grep -m1 'State:'"):
+        quietly(sh, f"locksettings clear --old {LOCK_PIN}")
+        quietly(sh, "locksettings set-disabled true")
+        raise RuntimeError("the user was locked: a PIN left by a check cut short, cleared - boot again")
     print(f"installing {apk}")
     adb("install", "-r", apk, check=True)
     for permission in ("READ_CALL_LOG", "READ_CONTACTS", "POST_NOTIFICATIONS"):
@@ -597,6 +762,10 @@ def set_up(apk):
     # 16 AVD's next boot, whose first revive opened the port before
     # start_without_wifi was watching (2026-10-28).
     set_prefs(start_without_wifi=False)
+    # And a port a run cut short left open at this boot, closed now the
+    # switch is off (follow_left_open).
+    if _left_open:
+        close_left_open()
     # And the screenshots' invented calls off (tools/shoot.py, DemoRecordings):
     # left on, the waveforms are the invented ones and nothing is kept - the
     # waveform check failed on the Android 12 and 13 AVDs, 2026-10-23.
@@ -641,11 +810,24 @@ def set_up(apk):
 
 
 def add_contact(name, number):
-    """A contact, if this emulator has none with the number yet."""
-    if number in sh("content query --uri content://com.android.contacts/data/phones --projection data1"):
+    """A contact, if this emulator has none with the number yet. The
+    contacts provider is waited for, and so is the raw contact the insert
+    makes: on the Android 12 AVD booted next to another (2026-11-28), set_up
+    found none listed right after the insert, twice running, the provider
+    having said "user not unlocked" at boot - read so, not shown."""
+    def phones():
+        out = sh("content query --uri content://com.android.contacts/data/phones --projection data1")
+        return out if "Error while accessing provider" not in out and "Exception" not in out else ""
+
+    if number in wait_for(phones, 120, "the contacts provider to answer", step=2):
         return
-    sh("content insert --uri content://com.android.contacts/raw_contacts --bind account_type:n: --bind account_name:n:")
-    raw = max(int(x) for x in re.findall(r"_id=(\d+)", sh("content query --uri content://com.android.contacts/raw_contacts --projection _id")))
+
+    def raw_contact():
+        sh("content insert --uri content://com.android.contacts/raw_contacts --bind account_type:n: --bind account_name:n:")
+        ids = re.findall(r"_id=(\d+)", sh("content query --uri content://com.android.contacts/raw_contacts --projection _id"))
+        return max(int(x) for x in ids) if ids else None
+
+    raw = wait_for(raw_contact, 60, "the contacts provider to take a raw contact", step=3)
     sh(f"content insert --uri content://com.android.contacts/data --bind raw_contact_id:i:{raw} "
        f"--bind mimetype:s:vnd.android.cursor.item/name --bind data1:s:{name}")
     sh(f"content insert --uri content://com.android.contacts/data --bind raw_contact_id:i:{raw} "
@@ -3466,7 +3648,7 @@ def _answer_questions(allow):
     raise RuntimeError("Android's Wi-Fi question would not go")
 
 
-def _refused_wifi_left_alone(port):
+def _refused_wifi_left_alone(port, own):
     """On a Wi-Fi Android has not allowed Wireless debugging on, with the
     switch on and the recorder up: the revive for the port asks once at most,
     and after Cancel no keep-alive asks again or opens the port - Android 12
@@ -3484,7 +3666,7 @@ def _refused_wifi_left_alone(port):
         diag("check", wait=120)
         time.sleep(2)
         assert not _questions(), "asked again after Cancel"
-        assert port() != "5555", "opened the port on a Wi-Fi Android refused"
+        assert port() != str(own), "opened the port on a Wi-Fi Android refused"
     sh("settings put global adb_wifi_enabled 1")
     wait_for(_questions, 15, "Android's question, to allow this Wi-Fi")
     _answer_questions(allow=True)
@@ -6125,21 +6307,25 @@ def wifi_back():
 
 
 def start_without_wifi():
-    """Start without Wi-Fi: on Wi-Fi, a revive has adbd open its classic port,
-    5555 (`tcpip:5555`, which sets service.adb.tcp.port - the property is what
-    is checked, since an emulator's adbd listens on 5555 whatever it says).
+    """Start without Wi-Fi: on Wi-Fi, a revive has adbd open its classic door
+    on JemRec's own number (`tcpip:N`, which sets service.adb.tcp.port - the
+    property is what is checked). Since 1.11 the number is JemRec's own,
+    picked once for the phone, not 5555; here it is set by the check
+    (own_port_for_check), and adb follows adbd to it (follow_port): on N,
+    adbd listens on N alone and the emulator's own transport is gone.
     Then, with Wi-Fi off, Turn all debugging off and back on (TurnOnLater, as
     in debugging_off) has the recorder started over that port; before 0.25
     that revive stopped at "not on Wi-Fi". Last, the switch off closes the
     port again on the next revive on Wi-Fi - over Wireless debugging only:
-    where the revive comes over 5555 itself, closing it would cut the only
-    line on a phone, so the port must be left open, and that is checked
-    instead. And first, where Android has not allowed Wireless debugging on
-    the AVD's Wi-Fi - on Android 12 always, its allowance taken back first
-    (_forget_wifi_allowed) - that a revive for the port alone does not ask
-    again once the question was cancelled, and leaves the port; then the
-    Wi-Fi is allowed for the rest. Guarded by the snapshot as debugging_off
-    is.
+    where the revive comes over the port itself, closing it would cut the
+    only line on a phone, so the port must be left open, and that is checked
+    instead (and then closed here, as a computer's `adb usb` would, for the
+    checks after). And first, where Android has not allowed Wireless
+    debugging on the AVD's Wi-Fi - on Android 12 always, its allowance taken
+    back first (_forget_wifi_allowed) - that a revive for the port alone does
+    not ask again once the question was cancelled, and leaves the port; then
+    the Wi-Fi is allowed for the rest. Guarded by the snapshot as
+    debugging_off is.
 
     Each revive here is the debug op "check", sent and not waited on: a
     kick to the keep-alive is not taken while it waits out a retry (as for
@@ -6147,8 +6333,12 @@ def start_without_wifi():
     any wait for the op's reply (diag_cut_off)."""
     if int(sh("getprop ro.build.version.sdk").strip()) < 33:
         _forget_wifi_allowed()
+    own = own_port_for_check()
     log_before = revive_log()
-    port = lambda: sh("getprop service.adb.tcp.port").strip()
+
+    def port():
+        wait_for(adb_ready, 30, "adb to the emulator, by either way")
+        return sh("getprop service.adb.tcp.port").strip()
 
     # Before the switch goes on: from then, any revive - the keep-alive's own
     # included - may open it, and rightly. One open already is an earlier
@@ -6156,10 +6346,9 @@ def start_without_wifi():
     # be lost with the guest's unwritten cache, and set_up's first revive
     # then opened the port before set_up switched it off (the 12 AVD,
     # 2026-10-28). Closed from here, as a computer's `adb usb` does.
-    if port() == "5555":
+    if port() not in ("", "0"):
         adb("usb", timeout=30)
-        adb("wait-for-device", timeout=60)
-        wait_for(lambda: adb_ready() and port() != "5555", 30, "an earlier run's port closed")
+        wait_for(lambda: adb_ready() and port() in ("", "0"), 60, "an earlier run's port closed")
     # Started before the switch goes on, and after any close above (adbd's
     # restart took the recorder). Opened with the switch on, JemRec has its
     # keep-alive open the port, restarting adbd under start_recorder's own
@@ -6167,95 +6356,107 @@ def start_without_wifi():
     # 4 s in, and took the bootstrap's broadcast with it (the 13, 16 and 17
     # AVDs, 2026-11-22). The port is opened below, by a revive asked for.
     start_recorder()
-    set_prefs(off_mode="ALL_DEBUGGING_OFF", start_without_wifi=True)
+    set_prefs(own_port=own, own_port_armed_boot=None, port_opened_boot=None, port_failed_boot=None,
+              port_close_failed_boot=None)
+    follow_port(own)
     try:
-        sh("settings put global development_settings_enabled 1")
-        # A revive on Wi-Fi opens the port - once Wi-Fi is joined, so one is
-        # asked for until it has, as for the close below. On a freshly booted
-        # Android 12 AVD, 2026-10-28, the revives three minutes after boot
-        # returned without opening it: Android had mobile data as its default
-        # network, and the app then took the joined Wi-Fi for none - fixed
-        # since (NetworkRevive.onWifi); the retries stay for a slow revive.
-        wait_wifi_connected()
-        # Asked of Android's list, not the switch: since 1.5 Wireless
-        # debugging is off between starts on an allowed Wi-Fi too.
-        refused = not _wifi_allowed()
-        if refused:
-            _refused_wifi_left_alone(port)
-
-        def opened():
-            diag_cut_off("check")
-            # adbd restarts for it, taking this adb connection a moment.
-            return wait_for(lambda: adb_ready() and port() == "5555", 30, "")
-
-        wait_for(lambda: _quietly(opened), 90, "adbd's classic port set", step=0)
-        wait_for(recorder_answers, 60, "the recorder back after adbd's restart")
-        # Not adbd's own answer, which its restart can cut off (on the Honor
-        # and the 17 AVD, 2026-10-28): the property read back after it.
-        assert "revive: port 5555 opened" in revive_since(log_before), \
-            "the app never opened the port"
-        before = daemon_pid()
-        wifi_on(False)
-        wait_wifi_off()
-        if "OK" not in adb("emu", "avd", "snapshot", "save", USB_GUARD):
-            raise RuntimeError("no snapshot to come back to; not switching debugging off")
+        set_prefs(off_mode="ALL_DEBUGGING_OFF", start_without_wifi=True)
         try:
-            diag_cut_off("switch", "--ez", "on", "false", "--ei", "back_after_s", "30")
-            time.sleep(5)
+            sh("settings put global development_settings_enabled 1")
+            # A revive on Wi-Fi opens the port - once Wi-Fi is joined, so one is
+            # asked for until it has, as for the close below. On a freshly booted
+            # Android 12 AVD, 2026-10-28, the revives three minutes after boot
+            # returned without opening it: Android had mobile data as its default
+            # network, and the app then took the joined Wi-Fi for none - fixed
+            # since (NetworkRevive.onWifi); the retries stay for a slow revive.
+            wait_wifi_connected()
+            # Asked of Android's list, not the switch: since 1.5 Wireless
+            # debugging is off between starts on an allowed Wi-Fi too.
+            refused = not _wifi_allowed()
+            if refused:
+                _refused_wifi_left_alone(port, own)
 
+            def opened():
+                diag_cut_off("check")
+                # adbd restarts for it, onto JemRec's number: adb follows.
+                return wait_for(lambda: adb_ready() and port() == str(own), 30, "")
+
+            wait_for(lambda: _quietly(opened), 90, "adbd's classic door on JemRec's number", step=0)
+            wait_for(recorder_answers, 60, "the recorder back after adbd's restart")
+            # Not adbd's own answer, which its restart can cut off (on the Honor
+            # and the 17 AVD, 2026-10-28): the property read back after it.
+            assert f"revive: port {own} opened" in revive_since(log_before), \
+                "the app never opened the port"
+            before = daemon_pid()
+            wifi_on(False)
+            wait_wifi_off()
+            if "OK" not in adb("emu", "avd", "snapshot", "save", USB_GUARD):
+                raise RuntimeError("no snapshot to come back to; not switching debugging off")
             try:
-                wait_for(lambda: adb_ready() and global_setting("adb_enabled") == "1", TURN_ON_LATER_S, "")
-            except TimeoutError:
-                back_from_snapshot("debugging never came back on")
+                diag_cut_off("switch", "--ez", "on", "false", "--ei", "back_after_s", "30")
+                time.sleep(5)
+
+                try:
+                    wait_for(lambda: adb_ready() and global_setting("adb_enabled") == "1", TURN_ON_LATER_S, "")
+                except TimeoutError:
+                    back_from_snapshot("debugging never came back on")
+            finally:
+                adb("emu", "avd", "snapshot", "delete", USB_GUARD)
+            after = wait_for(daemon_pid, 60, "a recorder process")
+            wait_for(recorder_answers, 30, "the recorder answering")
+            text = revive_since(log_before)
+            assert f"revive: connecting on port {own}, no Wi-Fi" in text, "the On did not come back over the port"
+            assert after != before, "the same recorder: it never went"
+            assert "Wi-Fi is disabled" in sh("dumpsys wifi | grep -m1 'Wi-Fi is'"), "Wi-Fi came back on during the check"
+            assert port() == str(own), "the port did not outlive debugging going off and on"
         finally:
-            adb("emu", "avd", "snapshot", "delete", USB_GUARD)
-        after = wait_for(daemon_pid, 60, "a recorder process")
-        wait_for(recorder_answers, 30, "the recorder answering")
-        text = revive_since(log_before)
-        assert "revive: connecting on port 5555, no Wi-Fi" in text, "the On did not come back over the port"
-        assert after != before, "the same recorder: it never went"
-        assert "Wi-Fi is disabled" in sh("dumpsys wifi | grep -m1 'Wi-Fi is'"), "Wi-Fi came back on during the check"
-        assert port() == "5555", "the port did not outlive debugging going off and on"
+            # Not in place of whatever failed the check: with adb gone, these
+            # would raise and hide it (as hide_developer_options guards its own).
+            try:
+                wifi_on(True)
+                quietly(set_prefs, off_mode=None, start_without_wifi=False)
+            except Exception as e:
+                print(f"     (Wi-Fi or the switch could not be put back afterwards: {e})")
+        # Switched off, the port it opened is closed at the next revive on Wi-Fi,
+        # or left open where that revive came over the port itself. Wi-Fi
+        # "connected" can come a moment before Android lists the network a revive
+        # looks for, and then that revive rightly leaves the port for a later one
+        # - so a revive is asked for again until one has decided.
+        wait_wifi_connected(what="Wi-Fi connected again")
+        log_close = revive_log()
+
+        def decided():
+            if not adb_ready():
+                return False
+            if port() == "0":
+                return "closed"
+            return "left" if "left open: connected over it" in revive_since(log_close) else False
+
+        def settled():
+            diag_cut_off("check")
+            return wait_for(decided, 30, "")
+
+        outcome = wait_for(lambda: _quietly(settled), 90, "the port closed, or left over its own connection", step=0)
+        wait_for(recorder_answers, 60, "the recorder up after the switch went off")
+        # That revive switched Wireless debugging on, on the Wi-Fi joined again,
+        # and the recorder off once it was up (1.5).
+        wait_for(lambda: adb_ready() and global_setting("adb_wifi_enabled") == "0", 30,
+                 "Wireless debugging off again after the last start")
+        first = ("on a Wi-Fi not allowed, asked no more after Cancel and left the port; allowed, "
+                 if refused else "")
+        if outcome == "left":
+            assert port() == str(own), "left open, yet the port is gone"
+            return (first + f"port {own} opened on Wi-Fi; with Wi-Fi off, all debugging off and back on over it; "
+                    "switched off, left open: the revive came over it (no Wireless debugging on this AVD's Wi-Fi)")
+        return (first + f"port {own} opened on Wi-Fi; with Wi-Fi off, all debugging off and back on over it; "
+                "closed when switched off")
     finally:
-        # Not in place of whatever failed the check: with adb gone, these
-        # would raise and hide it (as hide_developer_options guards its own).
-        try:
-            wifi_on(True)
-            quietly(set_prefs, off_mode=None, start_without_wifi=False)
-        except Exception as e:
-            print(f"     (Wi-Fi or the switch could not be put back afterwards: {e})")
-    # Switched off, the port it opened is closed at the next revive on Wi-Fi,
-    # or left open where that revive came over the port itself. Wi-Fi
-    # "connected" can come a moment before Android lists the network a revive
-    # looks for, and then that revive rightly leaves the port for a later one
-    # - so a revive is asked for again until one has decided.
-    wait_wifi_connected(what="Wi-Fi connected again")
-    log_close = revive_log()
-
-    def decided():
-        if not adb_ready():
-            return False
-        if port() == "0":
-            return "closed"
-        return "left" if "left open: connected over it" in revive_since(log_close) else False
-
-    def settled():
-        diag_cut_off("check")
-        return wait_for(decided, 30, "")
-
-    outcome = wait_for(lambda: _quietly(settled), 90, "the port closed, or left over its own connection", step=0)
-    wait_for(recorder_answers, 60, "the recorder up after the switch went off")
-    # That revive switched Wireless debugging on, on the Wi-Fi joined again,
-    # and the recorder off once it was up (1.5).
-    wait_for(lambda: adb_ready() and global_setting("adb_wifi_enabled") == "0", 30,
-             "Wireless debugging off again after the last start")
-    first = ("on a Wi-Fi not allowed, asked no more after Cancel and left the port; allowed, "
-             if refused else "")
-    if outcome == "left":
-        assert port() == "5555", "left open, yet the port is gone"
-        return (first + "port opened on Wi-Fi; with Wi-Fi off, all debugging off and back on over 5555; switched "
-                "off, left open: the revive came over 5555 itself (no Wireless debugging on this AVD's Wi-Fi)")
-    return first + "port opened on Wi-Fi; with Wi-Fi off, all debugging off and back on over 5555; closed when switched off"
+        # Never left on JemRec's number for the checks after: their adb is the
+        # emulator's own transport, on 5555.
+        if quietly(port) not in ("", "0", None):
+            quietly(adb, "usb", timeout=30)
+            quietly(wait_for, lambda: _state(home_serial) == "device", 60, "the emulator's own adb back")
+        unfollow_port()
 
 
 def port_opened_elsewhere():
@@ -6298,17 +6499,14 @@ def port_opened_elsewhere():
         return "theirs" if theirs in dump else "plain" if plain in dump else None
 
     # An earlier check's port, or an earlier run's, closed as a computer would -
-    # and JemRec's notes of it forgotten. start_without_wifi can pass with its
-    # port left open (the revive came over it), so JemRec still counts the
-    # port opened this boot as its own: a port set again after `adb usb` would
-    # be taken for JemRec's, said as such and closed (review round 1, 1.10;
-    # 2 of 34 passes of start_without_wifi ended that way). That a computer's
-    # `adb usb` then `adb tcpip` in one boot is taken for JemRec's port is a
-    # known limit (tmp/release-1.10/PLAN.md, out of scope), not checked here.
-    # The switch off first: left on (a cleanup that failed), the revive after
-    # the close's adbd restart would open the port again (review round 2).
+    # and JemRec's notes of it forgotten: a 5555 that 1.10 opened this boot
+    # (port_opened_boot) still counts as JemRec's until a restart. Since 1.11
+    # JemRec's own port is told by its number, and a computer's `adb usb` then
+    # `adb tcpip 5555` after it is checked in port_number_own. The switch off
+    # first: left on (a cleanup that failed), the revive after the close's
+    # adbd restart would open the port again (review round 2 of 1.10).
     set_prefs(start_without_wifi=False, off_mode="KEEP_DEBUGGING", port_opened_boot=None,
-              port_failed_boot=None, port_close_failed_boot=None)
+              own_port_armed_boot=None, port_failed_boot=None, port_close_failed_boot=None)
     if port() == "5555":
         close_port("an earlier port closed")
     start_recorder()
@@ -6353,6 +6551,222 @@ def port_opened_elsewhere():
     return ("adb tcpip 5555 with the switch off: JemRec left it, Settings said so "
             f"({'on the open screen, and reopened' if followed else 'reopened; the open screen kept the old line'}), "
             "When JemRec is off said anywhere; adb usb: the plain line again")
+
+
+def _start_without_wifi_line():
+    """Settings opened afresh, and what it shows down to the row below Start
+    without Wi-Fi, so that all of the switch's line is on screen."""
+    sh("input keyevent KEYCODE_WAKEUP")
+    sh("wm dismiss-keyguard")
+    sh(f"am force-stop {PKG}")
+    sh(f"am start -n {PKG}/.MainActivity")
+    tap_until("Settings", "Back", 30, "the Settings gear")
+    scroll_to("Hide the debugging notification")
+    return " ".join(html.unescape(t) for t in re.findall(r'text="([^"]*)"', ui()))
+
+
+def _port_checked_cleanly(port):
+    """Every port closed and every note of one forgotten, for a port check's
+    start - by `adb usb`, as a computer closes one."""
+    set_prefs(start_without_wifi=False, off_mode="KEEP_DEBUGGING", own_port_armed_boot=None,
+              port_opened_boot=None, port_failed_boot=None, port_close_failed_boot=None)
+    if port() not in ("", "0"):
+        adb("usb", timeout=30)
+        wait_for(lambda: adb_ready() and port() in ("", "0"), 60, "an earlier port closed")
+
+
+def _port_put_back(port):
+    """A port check's cleanup: the port closed, adb back on the emulator's own
+    transport, the switch off, the recorder up."""
+    if quietly(port) not in ("", "0", None):
+        quietly(adb, "usb", timeout=30)
+        quietly(wait_for, lambda: _state(home_serial) == "device", 60, "the emulator's own adb back")
+    unfollow_port()
+    quietly(wifi_on, True)
+    quietly(set_prefs, start_without_wifi=False, off_mode=None)
+    if not quietly(recorder_answers):
+        start_recorder_after()
+    quietly(sh, f"am force-stop {PKG}")
+
+
+def _revived_until_up(what):
+    """Revives asked for, each sent without waiting on its reply (adbd may be
+    restarting), until the recorder answers."""
+    def back():
+        diag_cut_off("check")
+        return wait_for(lambda: adb_ready() and recorder_answers(), 30, "")
+
+    wait_for(lambda: _quietly(back), 150, what, step=0)
+
+
+def port_number_own():
+    """1.11: whose port it is, told by its number. Start without Wi-Fi on, a
+    revive opens JemRec's own number N. Then, away from Wi-Fi - where the
+    switch turned off cannot close N yet - a computer's `adb usb` and
+    `adb tcpip 5555`, back to back. 1.10 kept a note per boot instead, took
+    that 5555 for its own, said so, and closed it at the next revive on Wi-Fi
+    (its review round 1). Now, back on Wi-Fi, JemRec leaves 5555, and
+    Settings says a computer or another app opened it. The number is set by
+    the check (own_port_for_check), adb following adbd to it (follow_port)."""
+    own = own_port_for_check()
+    theirs = "A computer or another app opened it"
+
+    def port():
+        wait_for(adb_ready, 30, "adb to the emulator, by either way")
+        return sh("getprop service.adb.tcp.port").strip()
+
+    _port_checked_cleanly(port)
+    set_prefs(own_port=own)
+    start_recorder()
+    allow_wifi()
+    follow_port(own)
+    try:
+        log_before = revive_log()
+        set_prefs(start_without_wifi=True)
+
+        def opened():
+            diag_cut_off("check")
+            return wait_for(lambda: adb_ready() and port() == str(own), 30, "")
+
+        wait_for(lambda: _quietly(opened), 90, "adbd on JemRec's own number", step=0)
+        wait_for(recorder_answers, 60, "the recorder back after adbd's restart")
+        assert f"revive: port {own} opened" in revive_since(log_before), "the app never opened its port"
+
+        # Away from Wi-Fi, switched off: nothing can be closed until Wi-Fi.
+        wifi_on(False)
+        wait_wifi_off()
+        set_prefs(start_without_wifi=False)
+        log_computer = revive_log()
+        # A computer's `adb usb` then `adb tcpip 5555`, back to back.
+        adb("usb", timeout=30)
+        wait_for(lambda: _state(home_serial) == "device", 60, "the emulator's own adb back after adb usb")
+        reach()
+        adb("tcpip", "5555", timeout=30)
+        wait_for(lambda: adb_ready() and port() == "5555", 60, "the port set by adb tcpip 5555")
+
+        # Back on Wi-Fi, where a port of JemRec's would be closed. No cable on
+        # an emulator to have the recorder looked at after adbd's restarts
+        # (CableWatch, on a phone): revives asked for until it is back, then
+        # two more on Wi-Fi with it up, where a close would be made. Sent
+        # without waiting for a reply: a close restarts adbd under the wait.
+        wifi_on(True)
+        wait_wifi_connected(what="Wi-Fi connected again")
+        _revived_until_up("the recorder back after adbd's restarts")
+        for _ in range(2):
+            diag_cut_off("check")
+            time.sleep(10)
+        wait_for(lambda: adb_ready() and recorder_answers(), 60, "the recorder up after the revives on Wi-Fi")
+        assert port() == "5555", "JemRec closed the port a computer opened"
+        assert "closing port" not in revive_since(log_computer), "JemRec asked adbd to close a port it did not open"
+        said = _start_without_wifi_line()
+        assert theirs in said and "port 5555" in said, f"Settings did not say whose port 5555 is: {said[:300]}"
+        return (f"JemRec's port {own} opened; away from Wi-Fi, switched off, a computer's adb usb and adb tcpip 5555 "
+                "back to back; on Wi-Fi again JemRec left 5555, and Settings said a computer or another app opened it")
+    finally:
+        _port_put_back(port)
+
+
+def port_other_used():
+    """1.11: a port someone else opened is used, not moved. Tasker's ADB Wifi
+    on a number of its own - here a computer's `adb tcpip P` - and then Start
+    without Wi-Fi switched on: before 1.11 JemRec asked adbd for 5555 at once
+    and moved the port, Tasker's gone; adbd listens on one at a time. Now
+    JemRec leaves P, Settings names P as someone else's, and with Wi-Fi off the
+    recorder starts over P."""
+    own = own_port_for_check()
+    other = other_port_than(own)
+
+    def port():
+        wait_for(adb_ready, 30, "adb to the emulator, by either way")
+        return sh("getprop service.adb.tcp.port").strip()
+
+    _port_checked_cleanly(port)
+    set_prefs(own_port=own)
+    start_recorder()
+    allow_wifi()
+    # JemRec's own number too: moved there by a regression, the AVD stays in
+    # reach, the assertion below says why, and the cleanup closes it.
+    follow_port(other, own)
+    try:
+        adb("tcpip", str(other), timeout=30)
+        wait_for(lambda: adb_ready() and port() == str(other), 60, f"the port set by adb tcpip {other}")
+        # No cable on an emulator to have the recorder looked at after adbd's
+        # restart (CableWatch, on a phone): revives asked for.
+        _revived_until_up("the recorder back after adbd's restart")
+        log_before = revive_log()
+        set_prefs(start_without_wifi=True)
+        # Revives on Wi-Fi, where JemRec's own would be opened - sent without
+        # waiting for a reply: an open restarts adbd under the wait.
+        for _ in range(2):
+            diag_cut_off("check")
+            time.sleep(10)
+        wait_for(lambda: adb_ready() and recorder_answers(), 60, "the recorder up after the revives on Wi-Fi")
+        assert port() == str(other), "JemRec moved a port someone else opened"
+        assert "opening port" not in revive_since(log_before), "JemRec asked adbd for its own port over another's"
+        said = _start_without_wifi_line()
+        assert f"Debugging port {other} is open" in said and "A computer or another app opened it" in said, \
+            f"Settings did not name the port in use: {said[:300]}"
+        # Away from Wi-Fi, the recorder lost: back over P.
+        wifi_on(False)
+        wait_wifi_off()
+        log_off = revive_log()
+        sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
+        wait_for(lambda: not recorder_answers(), 15, "the recorder gone")
+        diag("check", wait=120)
+        wait_for(recorder_answers, 60, "the recorder back over the port, no Wi-Fi")
+        assert f"revive: connecting on port {other}, no Wi-Fi" in revive_since(log_off), \
+            "the revive did not go over the port someone else opened"
+        return (f"a computer's port {other} set first; switched on, JemRec left it and Settings named it; "
+                "with Wi-Fi off the recorder came back over it")
+    finally:
+        _port_put_back(port)
+
+
+def session_proof():
+    """1.11: every adb session JemRec makes shows it is the phone's shell
+    before anything goes over it (AdbTransport.prove, ShellProof): it reads
+    back a value JemRec has just written to its own external files folder,
+    which the phone's shell can read. The debug build's stand-in
+    (diag standin) answers as a session that is not the shell would: with it
+    on, a revive does not start the recorder, and its log says why. A connect
+    on the classic door - every start off Wi-Fi, and the reconnect after the
+    port changes - is let go the same way, and so is a session that answers
+    nothing, once the proof's time is up. With the stand-in off, the next
+    revive starts the recorder."""
+    start_recorder()
+    log_before = revive_log()
+    diag("standin", "--es", "as", "wrong")
+    # The session start_recorder made was proved when it was made, and a
+    # revive goes on using it: dropped, so that the next one is new (the
+    # Android 16 AVD, 2026-11-27, restarted the recorder over the old one).
+    diag("disconnect")
+    # The classic door adbd listens on: the port set, or an emulator's 5555.
+    set_port = sh("getprop service.adb.tcp.port").strip()
+    door = int(set_port) if set_port.isdigit() and int(set_port) > 0 else 5555
+    try:
+        sh("pkill -f '[c]om.jemcik.jemrec.shell.Main'")
+        wait_for(lambda: not recorder_answers(), 15, "the recorder gone")
+        diag("check", wait=120)
+        time.sleep(3)
+        assert not recorder_answers(), "the recorder was started over a session that did not show itself as the shell"
+        assert "did not show itself as the phone's shell" in revive_since(log_before), \
+            "the revive did not say why it started nothing"
+        said = diag("connect", "--ei", "port", str(door))
+        assert f"connect failed: the session on {door} did not show itself as the phone's shell" in said, said
+        # One that answers nothing: let go when the proof's time is up
+        # (AdbTransport.PROOF_MS, 10 s), and the line says how long it took.
+        diag("standin", "--es", "as", "silent")
+        said = diag("connect", "--ei", "port", str(door), wait=60)
+        assert "did not show itself as the phone's shell" in said, said
+        took = re.search(rf"connect: the session on {door} did not show itself as the phone's shell \((\d+) ms\)", log())
+        assert took and int(took.group(1)) >= 10_000, f"the silent session's proof: {took.group(0) if took else 'no line'}"
+    finally:
+        quietly(diag, "standin", "--es", "as", "none")
+    diag("check", wait=120)
+    wait_for(recorder_answers, 60, "the recorder back once sessions show themselves as the shell again")
+    return (f"with the debug stand-in, a revive started nothing and said why; a connect on {door} was let go, "
+            f"one answering wrong at once and one silent after {int(took.group(1)) / 1000:.1f} s; without it, "
+            "the next revive started the recorder")
 
 
 def background():
@@ -6448,9 +6862,12 @@ CHECKS = [ringing, ringing_gap, unanswered, incoming, rules, succession, caller_
           # a simulated Wi-Fi that does not come back would fail every check
           # after them - so the checks after them start the recorder themselves.
           stopped_early, wifi_back, start_without_wifi,
-          # After it: it closes any port start_without_wifi left open, and has
-          # JemRec forget it opened one.
-          port_opened_elsewhere,
+          # After it, each closing any port and forgetting JemRec's notes
+          # first: a computer's 5555, then JemRec's own number and a
+          # computer's 5555 after it, then another's number used (1.11).
+          port_opened_elsewhere, port_number_own, port_other_used,
+          # Every session shown to be the phone's shell before use (1.11).
+          session_proof,
           # And after them, this one. Put here when wifi_back, then two checks
           # after it, saw a kick's 30 s retry come after 5 minutes on the
           # Android 16 and 17 AVDs (2026-11-17) and passed run alone - put
@@ -6860,13 +7277,20 @@ def avd_name():
 def cold_boot():
     """This emulator shut down and booted again from nothing, on its own port
     - or, crashed, booted again."""
+    global _left_open
+    # A door followed goes with the emulator: adb back on its own serial,
+    # which names the emulator and its port (a set_up that failed while
+    # following one, follow_left_open).
+    unfollow_port()
+    _left_open = False
     name = avd or avd_name()
     if not name:
         raise RuntimeError("the emulator did not say which AVD it is")
     emulator_binary()  # before shutting it down: none to boot it again with
-    shut_down(serial, name)
-    boot(name, int(serial.removeprefix("emulator-")))
+    shut_down(home_serial, name)
+    boot(name, int(home_serial.removeprefix("emulator-")))
     note_avd()
+    follow_left_open()
 
 
 def emulator_gone():
@@ -7173,7 +7597,7 @@ def run(checks, only):
 
 
 def main():
-    global serial, avd
+    global serial, avd, home_serial
     # Each line as it is printed, into a log file too: Python holds output
     # going to a file until it exits, and a run of an hour showed nothing of
     # where it was (2026-11-17).
@@ -7193,6 +7617,10 @@ def main():
         passed_on = (["--only", args.only] if args.only else []) + (["--no-retry"] if args.no_retry else [])
         sys.exit(check_avds(args.avds.split(","), args.apk or build_shrunk(), passed_on, wipe=args.wipe))
     serial = args.serial
+    home_serial = serial
+    # Before anything asks the emulator's shell: adbd may be on a port a run
+    # cut short left open.
+    follow_left_open()
     only_an_emulator()
     avd = avd_name()
     note_avd()
@@ -7202,7 +7630,7 @@ def main():
     watch_for_dialogs()
     apk = args.apk or build_shrunk()
     sdk = sh("getprop ro.build.version.sdk").strip()
-    print(f"{serial}: Android API {sdk}")
+    print(f"{home_serial}: Android API {sdk}")
     try:
         set_up(apk)
     except Exception as e:

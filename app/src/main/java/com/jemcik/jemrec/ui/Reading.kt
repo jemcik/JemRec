@@ -184,7 +184,9 @@ private val SETTINGS: List<Read> = listOf(
     // Android's pairing timeout, for Keep JemRec paired: a settings query.
     read(KeepPaired::timeoutMs) { copy(pairingKept = it == 0L, pairingDays = KeepPaired.days(it)) },
     read(StartWithoutWifi::readyForUser) { copy(portSet = it) },
-    read(StartWithoutWifi::openedThisBoot) { copy(portOurs = it) },
+    read({ StartWithoutWifi.isOurs(it) }) { copy(portOurs = it) },
+    read(StartWithoutWifi::portNumber) { copy(portNumber = it) },
+    read(StartWithoutWifi::ownPort) { copy(ownPort = it) },
     read(StartWithoutWifi::failedThisBoot) { copy(portFailed = it) },
     read(StartWithoutWifi::closeFailedThisBoot) { copy(portCloseFailed = it) },
     read({ CallLogLookup.anythingLeftToOffer(it) && !CallLogLookup.bannerDismissed(it) }) { copy(offerCallLog = it) },

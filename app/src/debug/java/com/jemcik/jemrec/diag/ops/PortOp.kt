@@ -21,7 +21,8 @@ internal object PortOp : DiagOp {
             appContext, "port",
             "switch=${sw.enabled(appContext)} configured=$configured " +
                 "(getprop ${"%.1f".format(java.util.Locale.ROOT, readMs)} ms) " +
-                "answers=${sw.answers()} opened=${sw.openedThisBoot(appContext)} " +
+                "own=${sw.ownPort(appContext)} answers=${configured?.takeIf { it > 0 }?.let(sw::answers)} " +
+                "ours=${sw.isOurs(appContext)} armed=${sw.armedThisBoot(appContext)} " +
                 "failed=${sw.failedThisBoot(appContext)} step=${sw.step(appContext)} " +
                 "due now=${CaptureDaemon.portChangeDue(appContext)}",
         )

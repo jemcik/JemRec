@@ -68,8 +68,26 @@ internal class FakePhone : ReviveWorld {
 
     var step = StartWithoutWifi.PortStep.LEAVE
     var ready = false
-    var set: Boolean? = false
+
+    /** service.adb.tcp.port: 0 for none, null for a property that cannot be
+     *  read. */
+    var configured: Int? = 0
+
+    /** JemRec's own number, once picked: [OWN_PORT] at the first arm. */
+    var own: Int? = null
+
+    /** The port set answers: adbd up on it. */
     var answers = false
+
+    /** JemRec asked adbd for its port this boot (StartWithoutWifi.noteArmed). */
+    var armed = false
+
+    /** adbd listens on 5555 with no port set: an emulator. */
+    var emulator = false
+
+    /** adbd keeps the port it is asked for: false for one whose `tcpip:`
+     *  leaves the property as it was. */
+    var keepsPort = true
 
     override var connected = false
     override var connectedPort = 0
@@ -251,10 +269,19 @@ internal class FakePhone : ReviveWorld {
 
     override fun portStep() = step
     override fun portReady() = ready
-    override fun portSet() = set
-    override fun portAnswers() = answers
-    override fun noteOpened(opened: Boolean) {
-        did += "note opened $opened"
+    override fun configuredPort() = configured
+    override fun classicPorts() =
+        PortChange.classicPorts(configured, persist = null, own = own, asked = armed, legacy = false, defaultPort = emulator)
+    override fun portAnswers(port: Int) = answers && (configured == port || configured == null)
+    override fun ownPort() = own
+    override fun ensureOwnPort() = own ?: OWN_PORT.also { own = it }
+    override fun noteArmed() {
+        did += "note armed"
+        armed = true
+    }
+    override fun noteOpenFailed() {
+        did += "note open failed"
+        armed = false
     }
     override fun noteClosed() {
         did += "note closed"
@@ -274,10 +301,10 @@ internal class FakePhone : ReviveWorld {
     override suspend fun restartAdbd(service: String): Result<String> {
         did += "restart $service"
         // init starts it again with the property as asked, the port with it.
-        set = service.startsWith("tcpip:")
-        answers = set == true
+        if (keepsPort || !service.startsWith("tcpip:")) configured = service.removePrefix("tcpip:").toIntOrNull() ?: 0
+        answers = configured != 0
         connected = false
-        return Result.success("restarting in TCP mode port: 5555")
+        return Result.success(if (configured != 0) "restarting in TCP mode port: $configured" else "restarting in USB mode")
     }
     override suspend fun close() {
         did += "close"
@@ -296,5 +323,8 @@ internal class FakePhone : ReviveWorld {
     companion object {
         /** A port Wireless debugging advertises; any but 5555. */
         const val WIRELESS_PORT = 37_211
+
+        /** JemRec's own number, as StartWithoutWifi would pick one. */
+        const val OWN_PORT = 62_817
     }
 }

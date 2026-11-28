@@ -200,7 +200,8 @@ class MainViewModelRecorderTest {
         // JemRec's port, the switch going off, and no revive able to close it:
         // here no Wi-Fi, on the Honor a connect that had only the port itself.
         Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
-        StartWithoutWifi.noteOpened(context, true)
+        StartWithoutWifi.ensureOwnPort(context) { false }
+        StartWithoutWifi.noteArmed(context)
         vm.setStartWithoutWifi(false)
         fun revives() = TestPhone.reviveLog(context).count { it == "revive: start" }
         until("the second revive") { revives() == 2 }

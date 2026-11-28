@@ -316,7 +316,8 @@ class RecorderKeepAliveWorkTest {
     @Test fun aKickAsksForNoNetworkOnlyWhereThePortAloneCanBeHad() {
         com.jemcik.jemrec.recorder.StartWithoutWifi.setEnabled(context, true)
         android.provider.Settings.Global.putInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT, 7)
-        com.jemcik.jemrec.recorder.StartWithoutWifi.noteOpened(context, true)
+        com.jemcik.jemrec.recorder.StartWithoutWifi.ensureOwnPort(context) { false }
+        com.jemcik.jemrec.recorder.StartWithoutWifi.noteArmed(context)
         try {
             // A Wi-Fi as a phone's: not restricted, trusted - what the
             // request asks of any (the test phone starts with none).

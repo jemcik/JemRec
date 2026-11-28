@@ -1,0 +1,1 @@
+1.11: Start without Wi-Fi opens a debugging port of JemRec's own, a number picked once for your phone, instead of 5555. JemRec now tells its port from one a computer or another app opened (adb tcpip, Tasker's ADB Wifi): it never closes or moves theirs, and with the switch on it starts over theirs with no Wi-Fi. Settings names the open port by its number.

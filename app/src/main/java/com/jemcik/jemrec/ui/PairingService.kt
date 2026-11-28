@@ -198,7 +198,7 @@ class PairingService : Service() {
      * Watch both switches and connect the moment both are on.
      *
      * Returns false at the deadline, or where no whole try fits before it -
-     * so the user has 124 s of the 150. A connect attempt that fails just goes
+     * so the user has 114 s of the 150. A connect attempt that fails just goes
      * round again, because the usual reason is that a switch dropped during it -
      * and the next reading says which one, in the card, where the user is
      * looking. The deadline sits under shortService's cap so the normal ending
@@ -347,10 +347,13 @@ class PairingService : Service() {
         private const val LOOK_MS = 5_000L
 
         /** One try at its longest: its look, a probe begun at the look's end
-         *  (LoopbackProbe.BUDGET_MS), libadb's connect (10 s), and a second
-         *  for the check that straddles the look's end and port 5555's
-         *  refusal (review round 2). */
-        internal const val TRY_MS = LOOK_MS + LoopbackProbe.BUDGET_MS + 10_000L + 1_000L
+         *  (LoopbackProbe.BUDGET_MS), libadb's connect (10 s), the session's
+         *  proof that it is the phone's shell (AdbTransport.PROOF_MS, since
+         *  1.11), and a second for the check that straddles the look's end
+         *  and a classic port's refusal (review round 2; since 1.11 a classic
+         *  port is tried only where adbd's properties name one:
+         *  PortChange.classicPorts). */
+        internal const val TRY_MS = LOOK_MS + LoopbackProbe.BUDGET_MS + 10_000L + AdbTransport.PROOF_MS + 1_000L
 
         /** Whether a whole try fits before [deadline]. */
         internal fun timeForATry(now: Long, deadline: Long): Boolean = deadline - now >= TRY_MS

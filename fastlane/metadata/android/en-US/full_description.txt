@@ -14,7 +14,7 @@ In a short ADB session the app starts a shell-privileged daemon that writes each
 
 <b>Setup</b> takes two things by hand, once: turn on Developer options, then USB and Wireless debugging (one more switch on ColorOS, OxygenOS, realme UI), and type the pairing code into JemRec's notification. The pairing survives reboots, and Android's 7-day limit if you let it; the recorder restarts on the next Wi-Fi if the phone lets JemRec run on its own - setup asks.
 
-<b>What stays on.</b> USB debugging, turned back on if it goes off: the recorder needs it. Wireless debugging is on only while JemRec starts the recorder; then a paired computer can connect on Wi-Fi. For banking apps, turning JemRec off can also hide Developer options, or turn all debugging off. Uninstall JemRec to turn debugging off for good. Start without Wi-Fi, off by default, opens port 5555 to all networks, to start JemRec with no Wi-Fi until a reboot.
+<b>What stays on.</b> USB debugging, turned back on if it goes off: the recorder needs it. Wireless debugging is on only while JemRec starts the recorder; then a paired computer can connect on Wi-Fi. For banking apps, turning JemRec off can also hide Developer options or turn all debugging off. Uninstall JemRec to turn debugging off for good. Start without Wi-Fi, off by default, opens a debugging port to all networks to start JemRec with no Wi-Fi until reboot.
 
 <b>Requirements.</b> Android 12 or newer, and a phone whose audio hardware hands over the voice-call source. Both sides recorded on Honor Magic 8 Pro, Galaxy S20, S23, M34, A17 and OnePlus on LineageOS. Settings → Diagnostics has a self-test for yours.
 

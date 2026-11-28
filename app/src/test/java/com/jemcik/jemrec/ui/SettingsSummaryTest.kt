@@ -16,6 +16,11 @@ import org.junit.Test
  *  so a wrong one is a wrong answer at a glance. */
 class SettingsSummaryTest {
 
+    private companion object {
+        /** JemRec's own port number, as picked on one phone (StartWithoutWifi). */
+        const val OWN = 62_817
+    }
+
     private val allowed = UiState(canReadCallLog = true, canReadContacts = true)
     private fun chosen(vararg names: String) = names.map { CallRules.Chosen(it, it, null) }
 
@@ -77,19 +82,28 @@ class SettingsSummaryTest {
         // The cost is the summary, whichever way it is set.
         val off = UiState(startWithoutWifi = false)
         val waiting = UiState(startWithoutWifi = true)
-        val open = waiting.copy(portSet = true)
-        listOf(off, waiting, open).forEach { assertTrue("5555" in startWithoutWifiSummary(it)) }
+        val open = waiting.copy(portSet = true, portOurs = true, portNumber = OWN)
+        listOf(off, waiting, open).forEach { assertTrue("ebugging port" in startWithoutWifiSummary(it)) }
         assertTrue("any network" in startWithoutWifiSummary(off))
         assertTrue("any network" in startWithoutWifiSummary(open))
         // Open until a reboot, which only Wi-Fi undoes once.
         assertTrue("After a restart, JemRec needs Wi-Fi once" in startWithoutWifiSummary(open))
         assertTrue("next time JemRec starts on Wi-Fi" in startWithoutWifiSummary(waiting))
+        // Before a port exists, no number to name (1.11: JemRec's own is
+        // picked at its first open).
+        assertFalse(Regex("[0-9]").containsMatchIn(startWithoutWifiSummary(off)))
+        assertFalse(Regex("[0-9]").containsMatchIn(startWithoutWifiSummary(waiting)))
     }
 
     @Test fun startWithoutWifiSaysWhenThePhoneWouldNotOpenIt() {
-        val failed = UiState(startWithoutWifi = true, portFailed = true)
-        assertEquals("This phone would not open port 5555. JemRec asks again after a restart", startWithoutWifiSummary(failed))
+        val failed = UiState(startWithoutWifi = true, portFailed = true, ownPort = OWN)
+        assertEquals("This phone would not open debugging port $OWN. JemRec asks again after a restart", startWithoutWifiSummary(failed))
         assertTrue(startWithoutWifiFailed(failed))
+        // No number picked to name (a restored backup, say): the port itself.
+        assertEquals(
+            "This phone would not open the debugging port. JemRec asks again after a restart",
+            startWithoutWifiSummary(failed.copy(ownPort = null)),
+        )
         // Switched off, a failure from earlier this boot is not news.
         assertFalse("would not" in startWithoutWifiSummary(failed.copy(startWithoutWifi = false)))
         assertFalse(startWithoutWifiFailed(failed.copy(startWithoutWifi = false)))
@@ -98,8 +112,8 @@ class SettingsSummaryTest {
     @Test fun anOpenPortOutranksAnEarlierFailure() {
         // An adbd slow to come back was taken for a failure, then the port
         // was there after all: the switch must not deny it, in red.
-        val open = UiState(startWithoutWifi = true, portFailed = true, portSet = true)
-        assertTrue(startWithoutWifiSummary(open).startsWith("Debugging port 5555 is open"))
+        val open = UiState(startWithoutWifi = true, portFailed = true, portSet = true, portOurs = true, portNumber = OWN)
+        assertTrue(startWithoutWifiSummary(open).startsWith("Debugging port $OWN is open"))
         assertFalse(startWithoutWifiFailed(open))
     }
 
@@ -108,9 +122,9 @@ class SettingsSummaryTest {
         // Android refuses it on, where the revive comes over the port itself -
         // and for JemRec back on if its off took debugging; until then the
         // port is open.
-        val closing = UiState(startWithoutWifi = false, portSet = true, portOurs = true)
+        val closing = UiState(startWithoutWifi = false, portSet = true, portOurs = true, portNumber = OWN)
         assertEquals(
-            "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts",
+            "Debugging port $OWN is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts",
             startWithoutWifiSummary(closing),
         )
     }
@@ -121,7 +135,7 @@ class SettingsSummaryTest {
         // 1.10 this said the plain off text - "Opens debugging port 5555" as if
         // shut - while When JemRec is off said "Back on: anywhere" (the Honor,
         // 2026-11-26, discussion #144).
-        val theirs = UiState(startWithoutWifi = false, portSet = true, portOurs = false)
+        val theirs = UiState(startWithoutWifi = false, portSet = true, portOurs = false, portNumber = 5555)
         assertEquals(
             "Debugging port 5555 is open to any network the phone joins. A computer or another app opened it: it stays open until a restart, and JemRec starts over it with no Wi-Fi",
             startWithoutWifiSummary(theirs),
@@ -137,76 +151,112 @@ class SettingsSummaryTest {
             assertFalse(startWithoutWifiFailed(it))
         }
         // Gone again (`adb usb`, a restart): the off text.
-        assertTrue(startWithoutWifiSummary(theirs.copy(portSet = false)).startsWith("Turn JemRec back on"))
+        assertTrue(startWithoutWifiSummary(theirs.copy(portSet = false, portNumber = null)).startsWith("Turn JemRec back on"))
+    }
+
+    @Test fun switchedOnAPortSomeoneElseOpenedIsSaidAndUsed() {
+        // 1.11: switched on with Tasker's port open on its own number, JemRec
+        // starts over that one and leaves it - adbd listens on one at a time,
+        // and opening JemRec's would take Tasker's away. The line says whose
+        // it is, as it does with the switch off.
+        val tasker = UiState(startWithoutWifi = true, portSet = true, portOurs = false, portNumber = 6_000)
+        assertEquals(
+            "Debugging port 6000 is open to any network the phone joins. A computer or another app opened it: it stays open until a restart, and JemRec starts over it with no Wi-Fi",
+            startWithoutWifiSummary(tasker),
+        )
+        assertFalse(startWithoutWifiFailed(tasker.copy(portFailed = true)))
+        assertTrue(whenOffFooter(tasker).any { it.startsWith("Debugging port 6000 stays open until the phone restarts") })
     }
 
     /**
      * The port as all five places that go by it say it: Settings' line, When
      * JemRec is off's Back on and footer, the header's "turn on over Wi-Fi",
      * and the question before turning off away from Wi-Fi. Whether adbd will
-     * be on 5555 ([UiState.portSet]) is one fact, and each must agree with it
-     * for every state - JemRec's port or not, the switch on or off, debugging
-     * off or on, a failed open or close. Settings alone said "shut" for a port
-     * someone else opened from 0.25 to 1.9, beside a screen that said
-     * "anywhere" for it.
+     * be on a port ([UiState.portSet]) is one fact, and each must agree with
+     * it for every state - JemRec's port or not, the switch on or off,
+     * debugging off or on, a failed open or close. Settings alone said "shut"
+     * for a port someone else opened from 0.25 to 1.9, beside a screen that
+     * said "anywhere" for it. Since 1.11 each names the port by its number
+     * ([UiState.portNumber]) - JemRec's own, a computer's 5555, Tasker's
+     * own - and each names the same one.
      */
     @Test fun everyPlaceThatSaysThePortAgrees() {
         // Every line Settings can say, each with what it says of the port:
         // open now, shut while debugging is off but opening with it, or none
         // there. A new line fails here until it is put in one of the three.
-        val open = setOf(
-            "This phone would not close debugging port 5555. It stays open until the phone restarts",
-            "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts",
-            "Debugging port 5555 is open to any network the phone joins. A computer or another app opened it: it stays open until a restart, and JemRec starts over it with no Wi-Fi",
-            "Debugging port 5555 is open to any network the phone joins. After a restart, JemRec needs Wi-Fi once",
+        fun open(n: Int) = setOf(
+            "This phone would not close debugging port $n. It stays open until the phone restarts",
+            "Debugging port $n is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts",
+            "Debugging port $n is open to any network the phone joins. A computer or another app opened it: it stays open until a restart, and JemRec starts over it with no Wi-Fi",
+            "Debugging port $n is open to any network the phone joins. After a restart, JemRec needs Wi-Fi once",
         )
-        val withDebugging = setOf(
-            "This phone would not close debugging port 5555. Shut while debugging is off, it opens with it until the phone restarts",
-            "Debugging port 5555 is closed while debugging is off. It opens with debugging, then closes once JemRec is on a Wi-Fi that allows Wireless debugging",
-            "Debugging port 5555 is closed while debugging is off. A computer or another app opened it: it opens with debugging until a restart, so JemRec turns back on with or without Wi-Fi",
-            "Debugging port 5555 is closed while debugging is off. Turning JemRec on opens it again, with or without Wi-Fi",
+        fun withDebugging(n: Int) = setOf(
+            "This phone would not close debugging port $n. Shut while debugging is off, it opens with it until the phone restarts",
+            "Debugging port $n is closed while debugging is off. It opens with debugging, then closes once JemRec is on a Wi-Fi that allows Wireless debugging",
+            "Debugging port $n is closed while debugging is off. A computer or another app opened it: it opens with debugging until a restart, so JemRec turns back on with or without Wi-Fi",
+            "Debugging port $n is closed while debugging is off. Turning JemRec on opens it again, with or without Wi-Fi",
         )
         val none = setOf(
-            "Turn JemRec back on with no Wi-Fi. Opens debugging port 5555 to any network the phone joins",
-            "This phone would not open port 5555. JemRec asks again after a restart",
-            "Opens debugging port 5555 the next time JemRec starts on Wi-Fi",
+            "Turn JemRec back on with no Wi-Fi. Opens a debugging port to any network the phone joins",
+            "This phone would not open debugging port $OWN. JemRec asks again after a restart",
+            "This phone would not open the debugging port. JemRec asks again after a restart",
+            "Opens a debugging port the next time JemRec starts on Wi-Fi",
         )
+        // JemRec's own, a computer's `adb tcpip`, Tasker's ADB Wifi.
+        val numbers = listOf(OWN, 5555, 6_000)
         val bools = listOf(false, true)
         val seen = mutableSetOf<String>()
-        for (switch in bools) for (set in bools) for (ours in bools) for (off in bools) for (failed in bools) for (closeFailed in bools) {
-            val state = UiState(
-                startWithoutWifi = switch, portSet = set, portOurs = ours, debuggingOff = off,
-                portFailed = failed, portCloseFailed = closeFailed,
-            )
-            val said = "switch=$switch set=$set ours=$ours debuggingOff=$off failed=$failed closeFailed=$closeFailed"
-            val settings = startWithoutWifiSummary(state)
-            seen += settings
-            val expected = when {
-                !set -> none
-                off -> withDebugging
-                else -> open
+        for (number in numbers) for (own in listOf(null, OWN)) for (switch in bools) for (set in bools) for (ours in bools) {
+            for (off in bools) for (failed in bools) for (closeFailed in bools) {
+                val state = UiState(
+                    startWithoutWifi = switch, portSet = set, portOurs = ours, debuggingOff = off,
+                    portFailed = failed, portCloseFailed = closeFailed, portNumber = number.takeIf { set }, ownPort = own,
+                )
+                val said = "port=$number own=$own switch=$switch set=$set ours=$ours debuggingOff=$off " +
+                    "failed=$failed closeFailed=$closeFailed"
+                val settings = startWithoutWifiSummary(state)
+                seen += settings
+                val expected = when {
+                    !set -> none
+                    off -> withDebugging(number)
+                    else -> open(number)
+                }
+                assertTrue("Settings: \"$settings\" | $said", settings in expected)
+                assertEquals(
+                    "Back on | $said", set,
+                    offModeLines(OffMode.ALL_DEBUGGING_OFF, set).toMap().getValue("Back on:").startsWith("anywhere"),
+                )
+                // The footer names the open port, by the number Settings
+                // names: the switch off, or someone else's with it on. Switched
+                // on with JemRec's, it says what the switch costs.
+                val footer = whenOffFooter(state)
+                assertEquals(
+                    "footer | $said", set && (!switch || !ours),
+                    footer.any { "port $number stays open until the phone restarts" in it },
+                )
+                if (switch && set && ours) {
+                    assertTrue("footer | $said", footer.any { "With Start without Wi-Fi on, debugging port $number stays open" in it })
+                }
+                // No other number anywhere: one port, named the same.
+                (footer + settings).forEach { line ->
+                    Regex("port ([0-9]+)").findAll(line).forEach {
+                        assertTrue("another number | $said | $line", it.groupValues[1].toInt() in setOfNotNull(number.takeIf { set }, own))
+                    }
+                }
+                assertEquals("header | $said", off && !set, onNeedsWifi(state))
+                assertEquals("Off question | $said", !set, OffMode.ALL_DEBUGGING_OFF.asksFirst(onWifi = false) { set })
             }
-            assertTrue("Settings: \"$settings\" | $said", settings in expected)
-            assertEquals(
-                "Back on | $said", set,
-                offModeLines(OffMode.ALL_DEBUGGING_OFF, set).toMap().getValue("Back on:").startsWith("anywhere"),
-            )
-            // The footer names the open port with the switch off; switched
-            // on, it says what the switch costs whatever the port is now.
-            if (!switch) assertEquals("footer | $said", set, whenOffFooter(state).any { "5555 stays open until the phone restarts" in it })
-            assertEquals("header | $said", off && !set, onNeedsWifi(state))
-            assertEquals("Off question | $said", !set, OffMode.ALL_DEBUGGING_OFF.asksFirst(onWifi = false) { set })
         }
         // Every line reached by some state: none listed above for nothing.
-        assertEquals(open + withDebugging + none, seen)
+        assertEquals(numbers.flatMap { open(it) + withDebugging(it) }.toSet() + none, seen)
     }
 
     @Test fun aCloseThatDidNotTakeIsSaidInRed() {
         // Switched off, JemRec's port still set after it asked to close it:
         // open until a restart, and nothing in the off text would say so.
-        val stuck = UiState(startWithoutWifi = false, portSet = true, portOurs = true, portCloseFailed = true)
+        val stuck = UiState(startWithoutWifi = false, portSet = true, portOurs = true, portCloseFailed = true, portNumber = OWN)
         assertEquals(
-            "This phone would not close debugging port 5555. It stays open until the phone restarts",
+            "This phone would not close debugging port $OWN. It stays open until the phone restarts",
             startWithoutWifiSummary(stuck),
         )
         assertTrue(startWithoutWifiFailed(stuck))
@@ -215,11 +265,11 @@ class SettingsSummaryTest {
         assertFalse(startWithoutWifiFailed(stuck.copy(portSet = false)))
         assertFalse(startWithoutWifiFailed(stuck.copy(portOurs = false)))
         // Switched on again, the port it kept is simply open...
-        assertTrue(startWithoutWifiSummary(stuck.copy(startWithoutWifi = true)).startsWith("Debugging port 5555 is open"))
+        assertTrue(startWithoutWifiSummary(stuck.copy(startWithoutWifi = true)).startsWith("Debugging port $OWN is open"))
         assertFalse(startWithoutWifiFailed(stuck.copy(startWithoutWifi = true)))
         // ...and, gone meanwhile (a computer's `adb usb`), not blamed on an
         // open that was never tried.
-        val reopening = stuck.copy(startWithoutWifi = true, portSet = false)
+        val reopening = stuck.copy(startWithoutWifi = true, portSet = false, portNumber = null)
         assertFalse("would not" in startWithoutWifiSummary(reopening))
         assertFalse(startWithoutWifiFailed(reopening))
     }
@@ -235,20 +285,21 @@ class SettingsSummaryTest {
         // A port open with the switch off - a computer's, or a close that did
         // not take: Back on says anywhere above, so no pointer to the switch,
         // and the open port said as for the switch.
-        val open = whenOffFooter(UiState(startWithoutWifi = false, portSet = true))
+        val open = whenOffFooter(UiState(startWithoutWifi = false, portSet = true, portNumber = 5555))
         assertTrue(offModeLines(OffMode.ALL_DEBUGGING_OFF, portSet = true).toMap().getValue("Back on:").startsWith("anywhere"))
         assertTrue(open.any { staysOpen in it } && open.none { pointer in it })
         // Never "is open": with all debugging off nothing listens.
-        assertTrue((on + open).none { "5555 is open" in it })
+        assertTrue((on + open).none { " is open" in it })
     }
 
     @Test fun withAllDebuggingOffThePortIsSaidClosed() {
-        // adbd is stopped then, so nothing listens on 5555 - what that choice
-        // is for. Switched on, and switched off with JemRec's port to close.
-        val on = UiState(startWithoutWifi = true, portSet = true, debuggingOff = true)
-        val closing = UiState(startWithoutWifi = false, portSet = true, portOurs = true, debuggingOff = true)
+        // adbd is stopped then, so nothing listens on the port - what that
+        // choice is for. Switched on, and switched off with JemRec's port to
+        // close.
+        val on = UiState(startWithoutWifi = true, portSet = true, portOurs = true, debuggingOff = true, portNumber = OWN)
+        val closing = UiState(startWithoutWifi = false, portSet = true, portOurs = true, debuggingOff = true, portNumber = OWN)
         listOf(on, closing).forEach {
-            assertTrue(startWithoutWifiSummary(it).startsWith("Debugging port 5555 is closed while debugging is off"))
+            assertTrue(startWithoutWifiSummary(it).startsWith("Debugging port $OWN is closed while debugging is off"))
             assertFalse(startWithoutWifiFailed(it))
         }
         assertTrue("with or without Wi-Fi" in startWithoutWifiSummary(on))

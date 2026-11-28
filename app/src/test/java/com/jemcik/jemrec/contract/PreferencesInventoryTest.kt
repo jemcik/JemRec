@@ -162,7 +162,7 @@ class PreferencesInventoryTest {
             "daemon_token", "debug_notification_snoozed", "debug_off_pending", "debug_switched_off",
             "emergency_call_at", "emergency_resumed_at", "file_names", "folder_lost_told", "heartbeat_port", "heartbeat_version", "hide_debug_notification",
             "keep_paired_asked", "keep_paired_refused", "keep_paired_wish", "kept_recordings", "light_dark", "link_token", "look", "lost_messages", "message_recordings", "missed_seen_until",
-            "name_callers", "name_directions", "name_starts", "names", "not_recorded_for", "notifications_off_dismissed", "off_mode", "old_pages_done_in", "pairing_code", "port_close_failed_boot",
+            "name_callers", "name_directions", "name_starts", "names", "not_recorded_for", "notifications_off_dismissed", "off_mode", "old_pages_done_in", "own_port", "own_port_armed_boot", "pairing_code", "port_close_failed_boot",
             "part_recordings", "port_failed_boot", "port_opened_boot", "prompt_ticket", "play_through", "qs_tile_added", "recorder_down_alerted",
             "recorder_down_cause", "recorder_down_since", "recorder_enabled", "recording_mode", "recording_quality",
             "recordings_tree_uri", "rules_chosen", "rules_contacts", "rules_other_numbers", "save_failing", "save_journal", "save_write_failed",

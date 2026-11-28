@@ -233,6 +233,12 @@ data class UiState(
     /** Switched off, and asking adbd to close JemRec's port left it set
      *  (StartWithoutWifi.closeFailedThisBoot). */
     val portCloseFailed: Boolean = false,
+    /** The number adbd's port is on, as the lines name it
+     *  (StartWithoutWifi.portNumber): JemRec's own or anyone's; null for
+     *  none. And JemRec's own number, once one was picked
+     *  (StartWithoutWifi.ownPort): the one "would not open" names. */
+    val portNumber: Int? = null,
+    val ownPort: Int? = null,
     /** The question before turning off with all debugging, away from Wi-Fi,
      *  is on screen (TurnOffAwayFromWifiDialog). */
     val askingToTurnOff: Boolean = false,
