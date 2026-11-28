@@ -94,7 +94,7 @@ cannot. Dependabot proposes their updates, keeping both.
 
 ## Tests
 
-2943 JVM tests, no device needed - 2517 for the app and 426 for the daemon:
+2981 JVM tests, no device needed - 2555 for the app and 426 for the daemon:
 
     ./gradlew test
 
@@ -571,11 +571,20 @@ the recorder back within 45 s, before that try - 10 s on the Android 17 AVD,
 where the build before had none, the kick's wait taking Wi-Fi's place
 (2026-10-31).
 Then Start without Wi-Fi: on Wi-Fi a revive has adbd
-open its classic port, 5555 (the property is what is checked: an emulator's
-adbd listens there anyway); with Wi-Fi off, Turn all debugging off and back
-on has the recorder started over that port; switched off, the port is closed
-again on Wi-Fi over Wireless debugging - or, where the revive came over 5555
-itself, left open, as it must be. And first, where the AVD's Wi-Fi has not
+open its classic port on JemRec's own number (since 1.11; the property is what
+is checked, and the number is set by the check, as nothing on the Mac can ask
+the emulator once adbd has left 5555); with Wi-Fi off, Turn all debugging off
+and back on has the recorder started over that port; switched off, the port is
+closed again on Wi-Fi over Wireless debugging - or, where the revive came over
+the port itself, left open, as it must be, and closed by the check for the
+checks after. On a number other than 5555 adbd listens on that number alone,
+and the Mac's adb loses the emulator, whose own transport is its 5555: the
+check follows adbd through a port of the Mac's that the emulator's console
+forwards to the number (`follow_port`; measured on the Android 16 AVD,
+2026-11-27). While it follows, every adb command goes by whichever way
+answers at that moment: once the switch is on, a revive may move adbd at any
+time (one did just after the Allow tap on the Android 12 AVD, 2026-11-28).
+And first, where the AVD's Wi-Fi has not
 been allowed for Wireless debugging - on Android 12 always, the check taking
 its allowance back first, as root with system_server stopped - that once the
 question is cancelled no revive for the port asks again or opens it; then
@@ -590,9 +599,32 @@ the host's `adb tcpip 5555`; JemRec's revive leaves it open, the switch's line
 says a computer or another app opened it - on the screen left open across
 the change, which is reported, and reopened, which is required - and When
 JemRec is off says Back on: anywhere; after `adb usb` the plain line is back.
+Then whose port it is, told by its number (1.11): JemRec's own opened, then,
+away from Wi-Fi with the switch off, the host's `adb usb` and `adb tcpip 5555`
+back to back - back on Wi-Fi JemRec leaves 5555 and Settings names it as a
+computer's or another app's (1.10 took it for its own and closed it); and a
+port someone else opened on a number of its own, set before the switch goes
+on - JemRec leaves it, Settings names it, and with Wi-Fi off the recorder
+comes back over it. An emulator has no cable to have the recorder looked at
+after adbd's restarts, as a phone's cable watch does, so these ask for
+revives themselves. And every adb session shown to be the phone's shell before
+use (1.11): with the debug build's stand-in on, a revive starts nothing and
+its log says the session did not show itself as the phone's shell, and a
+connect on the classic port is let go, one answering wrong at once and one
+silent once the proof's 10 s are up; with it off, the next revive starts the
+recorder. A run cut short inside one of these can leave the switch
+on with JemRec's number set: the next cold boot opens that port before the
+checks begin, and the emulator's own adb transport is gone. The number is
+the AVD's own, the same at every run, so the run follows adbd to it and
+set_up closes it once the switch is off; an AVD reached neither way is
+booted with `--wipe`.
+One cut short in a lock check (ask_button, usb_default_lock) leaves its PIN,
+and the user locked after every cold boot: set_up clears it and fails, and
+its retry boots unlocked.
 And, run before those Wi-Fi checks (they come late - stopped_early, wifi_back,
 start_without_wifi: they turn the emulator's Wi-Fi off and on, and only
-port_opened_elsewhere, battery_restricted, audio_server_restart and
+port_opened_elsewhere, port_number_own, port_other_used, session_proof, battery_restricted,
+audio_server_restart and
 stall_told, which start the recorder themselves, run after them), the daemon's watch for the phone
 stopping JemRec in the background:
 that it runs and reads the device's own exit records; and on Android 15 and

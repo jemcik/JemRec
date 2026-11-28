@@ -201,9 +201,10 @@ class WirelessBetweenStartsTest {
         val phone = FakePhone().apply {
             wireless = false
             ready = true
-            set = true
+            own = FakePhone.OWN_PORT
+            configured = FakePhone.OWN_PORT
             answers = true
-            autoPort = StartWithoutWifi.PORT
+            autoPort = FakePhone.OWN_PORT
             connects += ConnectOutcome.CONNECTED
         }
 
@@ -241,7 +242,7 @@ class WirelessBetweenStartsTest {
         assertEquals(
             listOf(
                 "probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000",
-                "restart tcpip:5555", "close", "note opened true", "connect 5555",
+                "note armed", "restart tcpip:62817", "close", "connect 62817",
             ) + startedAndOff,
             phone.did,
         )
@@ -435,6 +436,8 @@ class WirelessBetweenStartsTest {
             holdsMdns = true
             wifi = false
             ready = true
+            own = FakePhone.OWN_PORT
+            configured = FakePhone.OWN_PORT
             answers = true
             connects += ConnectOutcome.CONNECTED
         }

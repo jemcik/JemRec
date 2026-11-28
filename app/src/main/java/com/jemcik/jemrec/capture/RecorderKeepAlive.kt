@@ -294,7 +294,7 @@ class RecorderKeepAlive(
          * needs one anyway, none where it may not. Wireless debugging works
          * only on a joined Wi-Fi, so asking costs a revive over it nothing:
          * with no network it could not have succeeded. With Start without
-         * Wi-Fi on, a revive goes over adbd's port 5555 with no network at
+         * Wi-Fi on, a revive goes over adbd's TCP port with no network at
          * all - no Wi-Fi and mobile data off, as a traveller has it, while
          * calls still come - and a run that waited for a network never came
          * there (reviews, 2026-11-18). The trade, said: such a run in the

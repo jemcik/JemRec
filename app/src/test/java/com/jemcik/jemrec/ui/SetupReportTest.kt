@@ -26,7 +26,7 @@ class SetupReportTest {
         ),
         port = 0,
         failure = null,
-        legacy = "ConnectException: failed to connect to /127.0.0.1 (port 5555): ECONNREFUSED",
+        classic = listOf(AdbTransport.ClassicTry(5_555, "ConnectException: failed to connect to /127.0.0.1 (port 5555): ECONNREFUSED")),
     )
 
     private fun report(attempts: List<AdbTransport.Attempt>, finishFailed: String? = null) = SetupReport.text(

@@ -77,8 +77,10 @@ fun WhenOffScreen(state: UiState, vm: MainViewModel, modifier: Modifier = Modifi
  * (StartWithoutWifi). Said with the switch on, and with it off while the port
  * is open all the same - a computer's `adb tcpip`, or a close that did not
  * take - where pointing at the switch would contradict the lines above,
- * which say Back on: anywhere. The choice applies at the next off: On puts
- * back what the last off switched off, whatever this says by then.
+ * which say Back on: anywhere; someone else's port the same way with the
+ * switch on, as it is not the switch's. Named by its number, as Settings
+ * names it. The choice applies at the next off: On puts back what the last
+ * off switched off, whatever this says by then.
  */
 internal fun whenOffFooter(state: UiState): List<String> = listOfNotNull(
     "Some banking apps won't open while Developer options or debugging is on. Try " +
@@ -88,14 +90,15 @@ internal fun whenOffFooter(state: UiState): List<String> = listOfNotNull(
         "the few seconds it takes to start its recorder. If you switch it on " +
         "yourself, the last two choices switch it off too.",
     when {
-        state.startWithoutWifi ->
-            "With Start without Wi-Fi on, debugging port 5555 stays open while " +
-                "JemRec is off, unless Turn all debugging off goes with it."
         // Not "is open": with all debugging off adbd is stopped, and nothing
-        // listens until On (as the Settings summary says).
-        state.portSet ->
-            "Debugging port 5555 stays open until the phone restarts - while JemRec " +
-                "is off too, unless Turn all debugging off goes with it."
+        // listens until On (as the Settings summary says). Someone else's
+        // port first: open until a restart whatever the switch says.
+        state.portSet && (!state.portOurs || !state.startWithoutWifi) ->
+            "${portWords(state.portNumber).replaceFirstChar { it.uppercase() }} stays open until the phone " +
+                "restarts - while JemRec is off too, unless Turn all debugging off goes with it."
+        state.startWithoutWifi ->
+            "With Start without Wi-Fi on, ${state.portNumber?.let { portWords(it) } ?: "JemRec's debugging port"} " +
+                "stays open while JemRec is off, unless Turn all debugging off goes with it."
         else ->
             "To turn back on away from Wi-Fi after Turn all debugging off, switch on " +
                 "Start without Wi-Fi in Settings, under Debugging."

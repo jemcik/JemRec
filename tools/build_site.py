@@ -2205,7 +2205,7 @@ SETUP = [
         ["**Hide Developer options**", "Developer options",
          "instantly, anywhere"],
         ["**Turn all debugging off**", "Developer options, USB debugging",
-         "needs Wi-Fi - or port 5555 open (Start without Wi-Fi's, or a "
+         "needs Wi-Fi - or a debugging port open (Start without Wi-Fi's, or a "
          "computer's) - about 15 "
          "seconds; no answering machine until then"],
     ])),
@@ -2216,8 +2216,8 @@ SETUP = [
           "recorder keeps running and JemRec is back the moment you turn it on. "
           "If your bank still refuses, **Turn all debugging off** - which stops "
           "the recorder too, so away from Wi-Fi JemRec asks before it does, "
-          "unless debugging port 5555 is open. "
-          "With **Start without Wi-Fi** on, the first leaves debugging port 5555 "
+          "unless a debugging port is open. "
+          "With **Start without Wi-Fi** on, the first leaves its debugging port "
           "open while JemRec is off, which a bank may look for too; the second "
           "closes it. Turning JemRec back on puts back what it switched off. A "
           "new choice applies the next time you turn JemRec off."),
@@ -2226,7 +2226,11 @@ SETUP = [
     ("p", "Starting the recorder takes Wireless debugging, and Android allows that "
           "only on a Wi-Fi network the phone has joined - not on its own hotspot, "
           "not on mobile data. **Settings → Start without Wi-Fi** opens a second "
-          "way in: debugging port 5555, which works with no network at all. With "
+          "way in: a debugging port of JemRec's own, which works with no network "
+          "at all. Its number is picked once for your phone, between 61000 and "
+          "65535, and Settings shows it once the port is open - not the 5555 a "
+          "computer's `adb tcpip` opens, so that JemRec can tell its own port "
+          "from one someone else opened. With "
           "it on, turning JemRec back on after **Turn all debugging off** works "
           "anywhere, and so does every restart of the recorder - after a cable "
           "from a computer, say - until the phone restarts."),
@@ -2241,8 +2245,11 @@ SETUP = [
           "Switching it off closes the port the same way, the next time it can - "
           "the port JemRec opened, that is. One a computer or another app opened "
           "(`adb tcpip`) is theirs: it stays open until the phone restarts, "
-          "JemRec starts over it all the same, and the switch's line says so."),
-    ("p", "**What it costs:** port 5555 is open on every network the phone joins "
+          "JemRec starts over it all the same, and the switch's line names it. "
+          "With the switch on, JemRec then uses that port as it is rather than "
+          "open its own: the phone listens on one such port at a time, and "
+          "opening JemRec's would close theirs."),
+    ("p", "**What it costs:** the port is open on every network the phone joins "
           "- a hotel's Wi-Fi too - whenever USB debugging is on: while JemRec is "
           "on, and while it is off unless **Turn all debugging off** goes with it. "
           "**Hide Developer options** keeps USB debugging on, so with it the port "
@@ -2426,7 +2433,7 @@ SETUP = [
         ("OFF", "SWITCH_ON", "You turned the switch off."),
         ("OFF", "SWITCH_ON_OVER_WIFI", "You turned the switch off with When JemRec "
          "is off set to Turn all debugging off. Turning it on needs Wi-Fi, "
-         "unless debugging port 5555 has been opened (by Start without Wi-Fi, "
+         "unless a debugging port has been opened (by Start without Wi-Fi, "
          "or by a computer or another app); then the line is the plain one "
          "above."),
     ]),
@@ -2495,7 +2502,7 @@ SETUP = [
          "seconds; or *the rest of this call is not recorded* - its file could not "
          "be written. A message the answering machine is taking ends at either: "
          "it hangs up. And when the recorder itself ended, JemRec starts it again "
-         "during the call - over Wi-Fi, or debugging port 5555 when it is open "
+         "during the call - over Wi-Fi, or a debugging port when one is open "
          "- and it "
          "records the rest of the call as a recording of its own, so the call has "
          "two (in Ask first, a phone call goes on as you answered; a messenger "
@@ -2627,11 +2634,11 @@ SETUP = [
         "**When JemRec is off** — what else goes off when you turn JemRec off: "
         "nothing, Developer options, or all debugging; "
         "see Off, and debugging with it.",
-        "**Start without Wi-Fi** — opens debugging port 5555, so that the "
-        "recorder can start with no Wi-Fi until the phone restarts; it says "
-        "whether the port is open - also when a computer or another app opened "
-        "it - and that it is open to every network the phone joins. See Start "
-        "without Wi-Fi.",
+        "**Start without Wi-Fi** — opens a debugging port of JemRec's own, so "
+        "that the recorder can start with no Wi-Fi until the phone restarts; it "
+        "names the port that is open, by its number - also when a computer or "
+        "another app opened it - and says it is open to every network the phone "
+        "joins. See Start without Wi-Fi.",
         "**Hide the debugging notification** — the answer to the question in "
         "step 1, changeable. USB debugging stays on either way while JemRec is "
         "on, and Wireless debugging is on only while JemRec starts its recorder; "
@@ -3550,8 +3557,8 @@ PRIVACY_POINTS = [
      "While Wireless debugging is on, a computer you have paired can connect "
      "over the same Wi-Fi, so now and then check <em>Wireless debugging &rarr; "
      "Paired devices</em> &mdash; with <em>Keep JemRec paired</em> on, Android forgets "
-     "none by itself. With <em>Start without Wi-Fi</em> on, port 5555 is open "
-     "too, to every network the phone joins, and announced there by the "
+     "none by itself. With <em>Start without Wi-Fi</em> on, its debugging port "
+     "is open too, to every network the phone joins, and announced there by the "
      "phone&rsquo;s serial number."),
     ("adb", "Your Default USB configuration only at your tap",
      "Developer options&rsquo; <em>Default USB configuration</em> changes only "
@@ -3627,7 +3634,7 @@ FAQ = [
      "a second recording. And if When JemRec is off is set to <em>Turn all debugging "
      "off</em>, turning JemRec back on needs Wi-Fi too. Settings &rarr; "
      "<em>Start without Wi-Fi</em> takes the Wi-Fi away from all of that until "
-     "the phone restarts: it opens debugging port 5555, which the recorder can "
+     "the phone restarts: it opens a debugging port of its own, which the recorder can "
      "be started over with no network at all. After a restart, the first start "
      "needs Wi-Fi once, as before. The cost is the open port, on every network "
      "the phone joins whenever USB debugging is on &mdash; unless <em>Turn all "
@@ -3729,14 +3736,14 @@ FAQ = [
      "needs Wi-Fi and takes about 15 seconds, the answering machine is off until "
      "then, and away from Wi-Fi JemRec asks first &mdash; unless <em>Start "
      "without Wi-Fi</em> is on (Settings &rarr; Debugging), or a computer or "
-     "another app opened debugging port 5555: then it comes back "
+     "another app opened a debugging port: then it comes back "
      "anywhere, on mobile data or none, until the phone restarts. Try the "
      "first; if your bank "
      "still refuses, the second. Wireless debugging is off already while JemRec "
      "runs &mdash; JemRec switches it on only for the seconds it takes to start "
      "the recorder &mdash; and if you switched it on yourself, either choice "
      "switches it off too. With <em>Start without Wi-Fi</em> on, the first "
-     "leaves debugging port 5555 open while JemRec is off, which a bank may look "
+     "leaves its debugging port open while JemRec is off, which a bank may look "
      "for too; the second closes it. Turning JemRec back on puts back what it "
      "switched off. Our own banks open with debugging on, so we could not test "
      "one that refuses &mdash; if yours needed the second choice, or neither "
@@ -3746,7 +3753,7 @@ FAQ = [
      "Android forgets a debugging pairing 7 days after it is made, however "
      "often JemRec connects over Wireless debugging: those connections never "
      "renew it (ones in adb&rsquo;s older way do, over a cable or to "
-     "<em>Start without Wi-Fi</em>&rsquo;s port 5555, by Android&rsquo;s "
+     "<em>Start without Wi-Fi</em>&rsquo;s port, by Android&rsquo;s "
      "source). The recorder keeps recording, but the next time "
      "it has to start &mdash; after a restart, say &mdash; the phone turns "
      "JemRec away, and JemRec opens its pairing step and says why. Turn on "
@@ -4199,8 +4206,9 @@ HOW_BODY = f"""
   <p><em>Start without Wi-Fi</em>, off until you switch it on, takes that Wi-Fi
      away until the phone restarts. Android allows Wireless debugging only on a
      Wi-Fi network the phone has joined, but adbd has another way in, its
-     classic port, 5555, which listens with no network at all; JemRec asks adbd
-     to open it, once each boot, over Wireless debugging. The cost is that the
+     classic port, which listens with no network at all; JemRec asks adbd to
+     open it on a number of its own, picked once for the phone, once each boot,
+     over Wireless debugging. The cost is that the
      port is open on every network the phone joins whenever USB debugging is
      on &mdash; while JemRec is on, and while it is off unless all debugging goes
      with it &mdash; and announced there by the phone&rsquo;s serial number: a
@@ -4437,7 +4445,8 @@ PRIVACY_DATA = [
      "save, how to name files, whose calls to keep, which messengers&rsquo; "
      "calls to record, the auto-delete rules, the answering machine&rsquo;s, "
      "what turning JemRec off switches off besides, whether Start without "
-     "Wi-Fi is on, the recordings&rsquo; quality, whether both sides play in "
+     "Wi-Fi is on and the number of its debugging port, the recordings&rsquo; "
+     "quality, whether both sides play in "
      "both ears, which recordings you marked to keep (by file name), which "
      "folders JemRec has gone through to mend recordings made before 1.2 "
      "(the folder&rsquo;s address Android gave JemRec), whether JemRec "
@@ -4448,7 +4457,7 @@ PRIVACY_DATA = [
      "is back, and "
      "random tokens the app uses to talk to its own recorder and to its own "
      "notifications. And a few notes for the phone&rsquo;s current boot and "
-     "Wi-Fi: whether JemRec opened debugging port 5555, or could not open or "
+     "Wi-Fi: whether JemRec opened its debugging port, or could not open or "
      "close it, whether it switched Wireless debugging on, or off and on, "
      "there, and whether Android refused Wireless debugging on the Wi-Fi "
      "the phone is on - kept as the number Android gives that connection, "
@@ -4515,7 +4524,8 @@ PRIVACY_BODY = f"""
      port needs none, and the others none once that port is open and the
      phone has no network.</p>
   <p><em>Start without Wi-Fi</em>, off until you switch it on, has the
-     phone&rsquo;s own debugging service listen on port 5555 as well, so that the
+     phone&rsquo;s own debugging service listen on a port of JemRec&rsquo;s own
+     as well, its number picked once for the phone, so that the
      app can reach it at <code>127.0.0.1</code> with no Wi-Fi. The app still
      connects only to the phone itself, but whenever USB debugging is on
      &mdash; while JemRec is on, and while it is off unless <em>Turn all debugging

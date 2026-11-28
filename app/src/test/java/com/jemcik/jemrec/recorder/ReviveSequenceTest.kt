@@ -98,11 +98,11 @@ class ReviveSequenceTest {
         assertEquals(
             listOf(
                 "probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000",
-                "restart tcpip:5555", "close", "note opened true", "connect 5555",
+                "note armed", "restart tcpip:62817", "close", "connect 62817",
             ) + startedAndOff,
             phone.did,
         )
-        assertTrue("revive: port 5555 opened" in phone.log)
+        assertTrue("revive: port 62817 opened" in phone.log)
     }
 
     @Test fun aCallThatComesWhileItWaitsForAnAllowLeavesThePortForLater() = runTest {
@@ -131,7 +131,7 @@ class ReviveSequenceTest {
         assertTrue(up)
         assertEquals(0, portChange)
         assertEquals(listOf("probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000") + started, phone.did)
-        assertTrue("revive: port 5555 left as it is: a call came" in phone.log)
+        assertTrue("revive: the port left as it is: a call came" in phone.log)
         assertTrue("revive: Wireless debugging left on: a call is up; asked at the next look" in phone.log)
         assertTrue(phone.wireless)
         assertTrue(phone.jemRecs)
@@ -162,7 +162,7 @@ class ReviveSequenceTest {
         assertTrue(up)
         assertEquals(0, portChange)
         assertEquals(listOf("probe", wifiOn, "note switched on", "note jemrecs", "autoConnect 5000") + startedAndOff, phone.did)
-        assertTrue("revive: port 5555 left as it is: the switch moved" in phone.log)
+        assertTrue("revive: the port left as it is: the switch or the port moved" in phone.log)
     }
 
     @Test fun aRoutineReviveSwitchesOffAndOnOncePerConnection() = runTest {
@@ -268,20 +268,24 @@ class ReviveSequenceTest {
     @Test fun aCloseOfThePortIsNotMadeOverTheConnectionThatCameOverIt() = runTest {
         val phone = FakePhone().apply {
             step = PortStep.CLOSE
-            autoPort = 5555
+            // JemRec's own port, set, and the connect fell back on it.
+            own = FakePhone.OWN_PORT
+            configured = FakePhone.OWN_PORT
+            autoPort = FakePhone.OWN_PORT
             connects += ConnectOutcome.CONNECTED
         }
 
         assertTrue(revive(phone).first)
 
         assertEquals(listOf("probe", "autoConnect 5000") + started, phone.did)
-        assertTrue("revive: port 5555 left open: connected over it, no Wireless debugging here" in phone.log)
+        assertTrue("revive: port 62817 left open: connected over it, no Wireless debugging here" in phone.log)
     }
 
     @Test fun aCloseOverWirelessDebuggingIsMadeAndReadBack() = runTest {
         val phone = FakePhone().apply {
             step = PortStep.CLOSE
-            set = true
+            own = FakePhone.OWN_PORT
+            configured = FakePhone.OWN_PORT
             connects += listOf(ConnectOutcome.CONNECTED, ConnectOutcome.CONNECTED)
         }
         var portChange = 0
@@ -293,13 +297,15 @@ class ReviveSequenceTest {
             listOf("probe", "autoConnect 5000", "restart usb:", "close", "note closed", "autoConnect 5000") + started,
             phone.did,
         )
-        assertTrue("revive: port 5555 closed" in phone.log)
+        assertTrue("revive: port 62817 closed" in phone.log)
     }
 
     @Test fun offWifiWithThePortOpenItConnectsOverIt() = runTest {
         val phone = FakePhone().apply {
             wifi = false
             ready = true
+            own = FakePhone.OWN_PORT
+            configured = FakePhone.OWN_PORT
             answers = true
             connects += listOf(ConnectOutcome.REFUSED, ConnectOutcome.REFUSED, ConnectOutcome.CONNECTED)
         }
@@ -307,9 +313,9 @@ class ReviveSequenceTest {
         assertEquals(true to ConnectOutcome.CONNECTED, revive(phone))
 
         // Three tries a second apart; Wireless debugging left as it is.
-        assertEquals(listOf("probe", "connect 5555", "connect 5555", "connect 5555") + started, phone.did)
+        assertEquals(listOf("probe", "connect 62817", "connect 62817", "connect 62817") + started, phone.did)
         assertEquals(2_000L, ms())
-        assertTrue("revive: connecting on port 5555, no Wi-Fi" in phone.log)
+        assertTrue("revive: connecting on port 62817, no Wi-Fi" in phone.log)
     }
 
     @Test fun offWifiWithoutThePortItStopsBeforeAnything() = runTest {
@@ -357,5 +363,107 @@ class ReviveSequenceTest {
         assertEquals(false to ConnectOutcome.CONNECTED, revive(phone))
         assertEquals(listOf("probe", "autoConnect 5000", "start"), phone.did)
         assertEquals("revive: start failed: daemon did not start listening", phone.log.last())
+    }
+
+    @Test fun anOpenAdbdDoesNotKeepIsNotedAndNotAskedForAgain() = runTest {
+        val phone = FakePhone().apply {
+            step = PortStep.OPEN
+            keepsPort = false
+            connects += listOf(ConnectOutcome.CONNECTED, ConnectOutcome.CONNECTED)
+        }
+
+        assertTrue(revive(phone).first)
+
+        // Asked for JemRec's number, noted before the ask; the property never
+        // said it, and that is noted for the rest of this boot.
+        assertEquals(
+            listOf("probe", "autoConnect 5000", "note armed", "restart tcpip:62817", "close", "note open failed", "autoConnect 5000") +
+                started,
+            phone.did,
+        )
+        assertTrue("revive: port 62817 not opened; not asked again this boot" in phone.log)
+    }
+
+    @Test fun offWifiItStartsOverAPortSomeoneElseOpened() = runTest {
+        // Tasker's ADB Wifi on its own number, or a computer's 5555: JemRec's
+        // number picked long ago, but not the one set.
+        val phone = FakePhone().apply {
+            wifi = false
+            ready = true
+            own = FakePhone.OWN_PORT
+            configured = 6_000
+            answers = true
+            connects += ConnectOutcome.CONNECTED
+        }
+
+        assertEquals(true to ConnectOutcome.CONNECTED, revive(phone))
+
+        assertEquals(listOf("probe", "connect 6000") + started, phone.did)
+        assertTrue("revive: connecting on port 6000, no Wi-Fi" in phone.log)
+    }
+
+    @Test fun offWifiThePortSetRefusingItNoOtherIsTried() = runTest {
+        // adbd listens on the port set alone, and only a port adbd's own
+        // properties name is dialled (PortChange.classicPorts). Three tries on
+        // the port set, a second apart, and no more.
+        val phone = FakePhone().apply {
+            wifi = false
+            ready = true
+            own = FakePhone.OWN_PORT
+            configured = FakePhone.OWN_PORT
+            answers = true
+            connects += listOf(ConnectOutcome.REFUSED, ConnectOutcome.REFUSED, ConnectOutcome.REFUSED, ConnectOutcome.CONNECTED)
+        }
+
+        assertEquals(false, revive(phone).first)
+
+        assertEquals(listOf("probe", "connect 62817", "connect 62817", "connect 62817"), phone.did)
+    }
+
+    @Test fun offWifiEveryPortTriedSaysItsOwnFailure() = runTest {
+        // The property unread: JemRec's number, asked for this boot, then
+        // 5555 (here the emulator's). Both turned away, each its own way:
+        // the note names both, not 5555's alone (review round 1 of 1.11).
+        val phone = FakePhone().apply {
+            wifi = false
+            ready = true
+            own = FakePhone.OWN_PORT
+            configured = null
+            armed = true
+            emulator = true
+            answers = true
+            connects += listOf(ConnectOutcome.REFUSED, ConnectOutcome.REFUSED, ConnectOutcome.REFUSED, ConnectOutcome.NOT_FOUND)
+        }
+
+        assertEquals(false, revive(phone).first)
+
+        assertEquals(listOf("probe", "connect 62817", "connect 62817", "connect 62817", "connect 5555"), phone.did)
+        assertTrue(
+            phone.log.toString(),
+            "revive: no ADB session (NOT_FOUND): port 62817: IOException: no adbd (REFUSED); " +
+                "port 5555: IOException: no adbd (NOT_FOUND)" in phone.log,
+        )
+        // One port: its failure as it came.
+        val one = FakePhone().apply { answers = true; configured = null }
+        assertEquals("no adbd (NOT_FOUND)", PortChange.connectOnPort(one, listOf(5_555)).exceptionOrNull()?.message)
+        // Connected on the second: no failure.
+        val second = FakePhone().apply {
+            answers = true
+            configured = null
+            connects += listOf(ConnectOutcome.REFUSED, ConnectOutcome.REFUSED, ConnectOutcome.REFUSED, ConnectOutcome.CONNECTED)
+        }
+        assertTrue(PortChange.connectOnPort(second, listOf(FakePhone.OWN_PORT, 5_555)).isSuccess)
+    }
+
+    /** AdbTransport.connect's own words kept; libadb's under its wrapping. */
+    @Test fun aConnectsFailureInWords() {
+        assertEquals(
+            "connect refused by adbd at 127.0.0.1:5555",
+            PortChange.wordsOf(IllegalStateException("connect refused by adbd at 127.0.0.1:5555")),
+        )
+        assertEquals(
+            "ConnectException: ECONNREFUSED",
+            PortChange.wordsOf(java.io.IOException().initCause(java.net.ConnectException("ECONNREFUSED"))),
+        )
     }
 }

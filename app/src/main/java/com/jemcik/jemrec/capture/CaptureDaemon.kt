@@ -77,8 +77,11 @@ object CaptureDaemon {
         context: Context,
         onWifi: Boolean = NetworkRevive.onWifi(context),
     ): StartWithoutWifi.PortStep? = PortChange.portChangeDue(context, onWifi)
-    internal fun portChangeOver(change: StartWithoutWifi.PortStep?, connectedPort: Int): StartWithoutWifi.PortStep? =
-        PortChange.portChangeOver(change, connectedPort)
+    internal fun portChangeOver(
+        change: StartWithoutWifi.PortStep?,
+        connectedPort: Int,
+        classic: List<Int>,
+    ): StartWithoutWifi.PortStep? = PortChange.portChangeOver(change, connectedPort, classic)
     internal fun wirelessDebuggingStep(
         cableStoppedAdbd: Boolean,
         on: Boolean,

@@ -414,19 +414,75 @@ one (read in AOSP's source, and measured on the Honor, 2026-09-09). So after a
 reboot, or after *Turn all debugging off*, nothing could start the recorder
 until there was Wi-Fi - and someone travelling often has none (issue #37).
 
-`adbd` has a second door, the one `adb tcpip` opens: its `tcpip:5555` service
-sets `service.adb.tcp.port` and restarts `adbd`, and from then on every start
-of `adbd` listens on port 5555 too - on every interface, loopback included,
-Wi-Fi or not - until a reboot clears the property. Only `init`, `adbd` and
-`system_server` may set it (AOSP's sepolicy), so the shell cannot, but any adb
-client can ask `adbd` to. Settings → *Start without Wi-Fi*
-(`StartWithoutWifi`), off until switched on, has JemRec ask, once each boot,
-over Wireless debugging; after that the recorder can be started over
-`127.0.0.1:5555` with no network at all. Apps may read the property
-(`get_prop(appdomain, adbd_config_prop)`), which is how JemRec knows the port
-will be there while `adbd` is stopped and nothing can answer on it.
+`adbd` has a second door, the one `adb tcpip` opens: its `tcpip:N` service
+sets `service.adb.tcp.port` to N and restarts `adbd`, and from then on every
+start of `adbd` listens on port N - on every interface, loopback included,
+Wi-Fi or not - until a reboot clears the property; `usb:` sets it to 0
+(AOSP's `daemon/restart_service.cpp` and `daemon/main.cpp`, main, read
+2026-11-27). Only `init`, `adbd` and `system_server` may set it (AOSP's
+sepolicy), so the shell cannot, but any adb client can ask `adbd` to.
+Settings → *Start without Wi-Fi* (`StartWithoutWifi`), off until switched on,
+has JemRec ask, once each boot, over Wireless debugging; after that the
+recorder can be started over `127.0.0.1:N` with no network at all. Apps may
+read the property (`get_prop(appdomain, adbd_config_prop)`), which is how
+JemRec knows the port will be there while `adbd` is stopped and nothing can
+answer on it.
 
-Measured on the Honor (MagicOS 11, Android 17), 2026-10-28, off the cable:
+**Which number.** Since 1.11 N is JemRec's own: picked at random once, at the
+first open, between 61000 and 65535, and kept until the app's data is cleared
+(Start fresh keeps it). That is in IANA's dynamic range, where no service is
+assigned (RFC 6335, section 6): a number among the registered ports could be
+one a phone already runs - Syncthing listens on 22000 - and then JemRec's port
+could never open (review round 3 of 1.11). It is also above the phones'
+ephemeral range (`ip_local_port_range` 32768-60999 on the Honor and the
+Android 16 emulator, 2026-11-27), so no outgoing connection can be holding the
+number, and above the Honor's 71 reserved ports (5060, 7275, and 69 between
+40002 and 50061); and, where one of twenty tries is free, it is not one
+something answers on as it is picked. Before 1.11 it was 5555 - the number a computer's `adb tcpip` and
+Tasker's ADB Wifi open too - so the number said nothing of whose port it was,
+and JemRec kept a note per boot instead. 1.10's review found that note wrong
+two ways: written only after the property read back, it was lost with an app
+killed in between, leaving JemRec's own port open until a restart; and never
+forgotten, it took a computer's `adb usb` then `adb tcpip 5555` in the same
+boot for JemRec's, and closed it. Now the number says it
+(`StartWithoutWifi.isOurs`): the property naming JemRec's number is JemRec's,
+whatever the notes say; any other is someone else's, left as it is - a 5555
+that 1.10 opened this boot excepted, still JemRec's to close until the
+restart clears it. With the switch on, a port someone else set is used, not
+moved: `adbd` listens on one TCP port at a time, so opening JemRec's would close
+theirs (before 1.11 the switch's revive asked for 5555 and moved such a port
+- read from the code, not measured). A note is still written, before the ask, for a property that cannot
+be read, and dropped again with an ask the property never answered: the
+property reads empty after every restart until the first open, and a note left
+behind counted as an open port there (review round 1 of 1.11). Once a number
+is picked, a revive with the switch off reads the property to see whether
+JemRec's port is set, where before only a boot with JemRec's note did. Others pick a
+number of their own the same way: CallVault at random in 47000-59999 per
+install, inside the ephemeral range (`AppPreferences.getLoopbackAdbPort`,
+2026-11-15), Stellar in 1000-9999, among registered ports, with a list of known
+ones left out
+(`StellarSettings`, 2026-10-18); thedjchi's Shizuku uses 5555 by default and,
+its TCP mode switched off, closes the port whoever opened it
+(`AdbStarter.stopTcp`, 2026-07-14). Measured
+2026-11-27, `adb tcpip 23456` from a computer: on the Honor, the S20 (One UI
+5.1, Android 13) and the OnePlus (LineageOS 23.2, Android 16) the property
+read 23456, `adbd` listened on 23456 alone and took a key there (on the Honor
+JemRec's own, connected at once, as on 5555), and `adb usb` gave back 0. On the Android 16
+emulator the computer's own adb then loses the emulator, whose transport is
+its 5555; the emulator checks reach it again through the emulator console's
+port forward (`follow_port`). Its limits: a number something else holds
+leaves `adbd` unable to listen on it, so the start with no Wi-Fi fails as it
+would with 5555 held (on Wi-Fi it starts over Wireless debugging once the
+connects on the port have failed - three, a second apart, each up to 10
+seconds; not seen, and the range makes it rare); a computer's `adb tcpip` on JemRec's own number would be
+taken for JemRec's; JemRec's port open while its data is cleared or it is
+reinstalled reads as someone else's after, and stays open until a restart, as
+1.10's 5555 did; and a `getprop` that does not answer within its 2 seconds,
+twice in one revive with the switch on, reads as no port set, so JemRec opens
+its own over someone else's - as 1.10 did with 5555.
+
+Measured on the Honor (MagicOS 11, Android 17), 2026-10-28, off the cable,
+on 5555 (the port before 1.11):
 
 - With the port open and Wi-Fi off, *Turn all debugging off* from the tile
   stopped `adbd` and the recorder; On from the tile, 38 seconds later,
@@ -463,11 +519,11 @@ Wireless debugging's advertisement with it, for over 9 seconds on the same phone
 and a revive that can connect only over the port does not close it. Switched on
 while the recorder runs, the next revive - the switch's own, at once on Wi-Fi -
 opens it and restarts the recorder; switched off, the next revive on Wi-Fi
-closes it (`usb:`), but only a port JemRec opened this boot: one a computer
-opened with `adb tcpip` is the computer's - and never over the port itself: on
-a Wi-Fi Android has not allowed Wireless debugging on, a revive's connection
-falls back on 5555, and closing it would leave nothing to start the recorder
-over until another Wi-Fi. On such a Wi-Fi, switching Wireless debugging on
+closes it (`usb:`), but only JemRec's own number: one a computer or another
+app opened is theirs - and never over the port itself: on a Wi-Fi Android has
+not allowed Wireless debugging on, a revive's connection falls back on the
+port, and closing it would leave nothing to start the recorder over until
+another Wi-Fi. On such a Wi-Fi, switching Wireless debugging on
 for a change has Android ask "Allow wireless debugging on this network?", as
 it does for any revive there. Android 17 leaves the switch on after Cancel and
 does not ask again; Android 12 keeps it off while it asks and after Cancel, so
@@ -507,7 +563,7 @@ question up, Allow had the recorder back 6 seconds later, and the alert went
 with it. And the switch
 flipped by hand after a refusal noted in the background asked at once, and
 Allow had the port open 14 seconds after the flip. An ask after which the property
-does not say 5555 is not repeated until the next boot, and the switch says so -
+does not say JemRec's number is not repeated until the next boot, and the switch says so -
 as for a close after which it still does, which leaves the port JemRec's to
 show, open until a restart (an ask lost on a connection that had just died);
 a slow `adbd` is not taken for that, and where the property cannot be read,
@@ -517,9 +573,41 @@ Wireless debugging back on where `adbd`'s restart left it off: on the Honor,
 fresh closes it, over the port itself, under the recorder's lock, read back
 as a revive's close is. Off Wi-Fi with the port open, every revive - the
 keep-alive, a cable from a computer, On after *Turn all debugging off* -
-connects on it rather than standing down.
+connects on it rather than standing down - on the port the property names,
+JemRec's or anyone's. Every connect of JemRec's, setup's included, dials only a
+port `adbd`'s own properties name (`PortChange.classicPorts`): with a port set,
+that one and no other, as `adbd` then listens nowhere else (AOSP
+`daemon/main.cpp`); where it reads empty - as after every restart until
+something sets it, which JemRec cannot tell from a property it may not read -
+the one `persist.adb.tcp.port` names, which `adbd` falls back on then (set by
+some ROMs and rooted phones, which the fallback on 5555 before 1.11 reached
+when it was 5555), the one JemRec asked for this boot, and 5555 only on an
+emulator, where `adbd` listens there by default, having no USB; with "0", 5555
+only on an emulator. CallVault keeps the same rule (`LoopbackPorts`).
 
-**What it costs.** Port 5555 is open on every network the phone joins - home,
+**Every session shows it is the shell.** Since 1.11 a new adb session - the
+revive's, setup's, the pairing's, Start fresh's, over the classic port or
+Wireless debugging - is used only once it has read back, with `cat`, a fresh
+random value JemRec has just written to its own external files folder: a
+folder this phone's shell can read (Android 11 and up), the same one the
+recorder's jar is handed over through (`ShellProof`,
+`AdbTransport.prove`). Until then the session counts as not connected for
+every caller, and nothing queued behind the proof runs on it. One that gives
+back anything else, or nothing within 10 s, is closed before anything else
+can use it: a connect that failed, never a key turned away, so no lost pairing
+is read into it. The proof opens the session's shell - about 400 ms of
+settling, 0.42 s for the whole proof as a rule and 0.48 s at most, over 297
+proofs in the release checks on the Android 12, 13, 16 and 17 emulators
+(2026-11-28), its time on its log line - which the recorder's start then goes
+on to use.
+With no external files folder there is no proof, and no start either; nor
+where the phone's storage is too full for the value's file to be written,
+which also holds back the switch's close of the port and Start fresh's until
+there is room, or until a restart closes the port. An emulator check uses the
+debug build's stand-in (`diag standin`) to fail it on purpose: answering
+wrong, and answering nothing.
+
+**What it costs.** The port is open on every network the phone joins - home,
 a hotel's Wi-Fi, mobile data - whenever `adbd` runs, which is whenever USB
 debugging is on: while JemRec is on, and while it is off unless *Turn all
 debugging off* goes with it. *Hide Developer options*, the first choice for a
@@ -532,8 +620,11 @@ put the question on screen; Wireless debugging, which takes pairing, never asked
 about unknown keys. And `adbd` announces the port on every network the phone
 joins, over mDNS, as `_adb._tcp` named after the phone's serial number
 (`daemon/mdns.cpp`): measured on the Honor, 2026-10-28, a Mac on its network saw
-`adb-<serial>` offered on 5555 while the port was open, and no more once it was
-closed. Wireless debugging announces that name too, but only on a Wi-Fi it is
+`adb-<serial>` offered on 5555 (the port then) while it was open, and no more
+once it was closed. A number of JemRec's own is not adb's default, 5555
+(AOSP's `DEFAULT_ADB_LOCAL_TRANSPORT_PORT`), the first a search for open
+debugging ports would try - inferred, not measured - but the announcement names
+it all the same. Wireless debugging announces that name too, but only on a Wi-Fi it is
 allowed on; the port's announcement goes out on a hotel's as well, which makes
 the phone easy to find there. With all
 debugging off, `adbd` is stopped and nothing listens. Uninstalling leaves the property
@@ -543,8 +634,9 @@ its own, off by default, and why its summary says the port is open whichever
 way it is set.
 
 **A port JemRec did not open.** A computer's `adb tcpip 5555`, or Tasker's ADB
-Wifi (its guide sets it up that way), sets the same property. JemRec leaves
-that port alone with the switch off, since it is not JemRec's to close. But
+Wifi (its guide sets it up that way, on 5555 or a number of its own), sets the
+same property. JemRec leaves that port alone, with the switch off or on, since
+it is not JemRec's to close or move. But
 the port is just as open to every network, and JemRec uses it: off Wi-Fi a
 revive connects on it, turning off with *Turn all debugging off* asks
 nothing, and On comes back anywhere. Since 1.10 the switch's line says so ("Debugging port
@@ -555,10 +647,12 @@ Before 1.10 it gave the plain off text, as if the port were shut. Found
 while answering discussion #144, and measured on the Honor, 2026-11-26: after
 `adb tcpip 5555`, *When JemRec is off* said "Back on: anywhere" while
 Settings said "Opens debugging port 5555".
+Since 1.11 every line names the port by its number, JemRec's own or anyone's.
 One test runs every combination of switch, port, whose, debugging off and a
 failed open or close through the functions behind all five places, each
-Settings line sorted by what it says of the port (`SettingsSummaryTest
-.everyPlaceThatSaysThePortAgrees`). Others close only their own port too:
+Settings line sorted by what it says of the port, for JemRec's number, a
+computer's 5555 and Tasker's own, and each place naming the same one
+(`SettingsSummaryTest.everyPlaceThatSaysThePortAgrees`). Others close only their own port too:
 CallVault leaves "armed by another app" ports, and the Shizuku fork that
 closes any port it finds open has an open request not to kill a user's
 `adb tcpip` (thedjchi/Shizuku#237, 2026-07-07). AOSP's Settings app shows
@@ -739,7 +833,7 @@ when NsdService starts it ("Failed to start: Service already running"), and
 every app's search fails after (`DNSServiceBrowse -65540`); the run's three
 revives over Wireless debugging found nothing (the 13 emulator, 2026-11-22).
 A phone's `adbd` announces itself as it starts only with a port to announce:
-Start without Wi-Fi's 5555, which a revive then uses, or Wireless debugging
+Start without Wi-Fi's port, which a revive then uses, or Wireless debugging
 already on - and the S20 (Android 13), on 1.4 with Wireless debugging on, was
 found again after its `adbd` restarted ([Unplugged from a
 computer](#unplugged-from-a-computer)). Not measured: an Android 12 or 13
@@ -4028,8 +4122,8 @@ authorised before can open an ADB shell on it over a cable; while Wireless
 debugging is on - a start's seconds, or while you have it on - a computer that
 has been paired with it can do the same from the same Wi-Fi. An unpaired
 computer cannot. Check *Wireless debugging → Paired devices* now and then and
-remove anything you do not recognise. With *Start without Wi-Fi* on, port 5555
-is open too, on every network the phone joins; a computer that reaches it, or
+remove anything you do not recognise. With *Start without Wi-Fi* on, its
+debugging port is open too, on every network the phone joins; a computer that reaches it, or
 an app on the phone, can ask to debug the phone, and only a yes on the phone
 lets it (see [Starting without Wi-Fi](#starting-without-wi-fi)).
 
@@ -4085,7 +4179,7 @@ exited (read from the code).
 
 Android forgets a debugging pairing a week after it is made. Each paired key
 has a time, set when it pairs and by each connection signed in adb's older way,
-over USB or to port 5555 (adbd tells Android of those, and Android notes the
+over USB or to `adbd`'s TCP port (adbd tells Android of those, and Android notes the
 time) - never by a connection over Wireless debugging - and a key older than
 `adb_allowed_connection_time` (7 days where nobody set it) is deleted the next
 time Android writes its list of keys: when a computer's cable goes in or out,
@@ -4099,8 +4193,9 @@ counts its users, and writes the list only as the first starts
 (`startAdbDebuggingThread`, read 2026-11-21). USB debugging switched back on
 with Wireless debugging off - after the Honor's Developer options, say - is
 debugging starting, which does; the daily check would within the day anyway.
-JemRec connects over Wireless debugging - to port 5555 only with Start
-without Wi-Fi, whose revives would renew it (read, not measured) - so its
+JemRec connects over Wireless debugging - to `adbd`'s classic port only where
+one is set, Start without Wi-Fi's or one a computer or another app opened, whose
+connects would renew it (read, not measured) - so its
 pairing ends a week after setup, however often it connects. The recorder runs
 on - once up it needs no ADB - but the next time it has to be started, after a
 restart or a cable out on the Honor, the phone turns JemRec away, and home goes
@@ -4149,7 +4244,7 @@ by the record button or the Quick Settings tile (`DebugSwitchesOff`):
 | --- | --- | --- |
 | Keep debugging on (the default) | nothing else | instantly, anywhere |
 | Hide Developer options | Developer options | instantly, anywhere |
-| Turn all debugging off | Developer options, USB debugging | needs Wi-Fi - or port 5555 open (*Start without Wi-Fi*'s, or a computer's) - about 15 s; no answering machine until then |
+| Turn all debugging off | Developer options, USB debugging | needs Wi-Fi - or a debugging port open (*Start without Wi-Fi*'s, or a computer's) - about 15 s; no answering machine until then |
 
 Wireless debugging is in neither since 1.5: it is off already while JemRec
 runs ([Wireless debugging, only to start](#wireless-debugging-only-to-start)),
@@ -4184,8 +4279,8 @@ revive that has to switch Wireless debugging off and on having taken 12 to 16
 seconds. That is why the third says what it costs on its own line, and why,
 away from Wi-Fi, turning off with it asks first - the only off that does
 (`TurnOffAwayFromWifiDialog`, the same dialog in the app and, through a
-see-through activity, from the tile). With port 5555 open - *Start without
-Wi-Fi*'s, or one a computer or another app opened - it asks nothing, and its line says *anywhere*: On comes back over the port
+see-through activity, from the tile). With a debugging port open - *Start
+without Wi-Fi*'s, or one a computer or another app opened - it asks nothing, and its line says *anywhere*: On comes back over the port
 (see [Starting without Wi-Fi](#starting-without-wi-fi)).
 
 **What goes off, and what comes back.** The app writes Developer options off

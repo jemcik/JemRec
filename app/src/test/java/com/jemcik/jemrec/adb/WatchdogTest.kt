@@ -45,6 +45,34 @@ class WatchdogTest {
         assertTrue("let go only by the stand-in's own limit", (System.nanoTime() - cancelledAt) / 1_000_000 < 1_000)
     }
 
+    /** Its caller cancelled while the command runs, the command ending in
+     *  time: `watched` still throws the caller's cancel once the command is
+     *  back - what a runCatching around it catches unless it is passed on
+     *  (AdbTransport.runOnShell, review round 5 of 1.11; kotlinx.coroutines
+     *  #1814). A proof read that as a session not the shell, and closed it. */
+    @Test fun aCancelledCallerGetsItsCancelWhenTheCommandIsBack() = runBlocking {
+        val inCommand = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        var thrown: Throwable? = null
+        val caller = launch(Dispatchers.IO) {
+            try {
+                watched(5_000, onTimeout = {}) {
+                    inCommand.countDown()
+                    release.await(5, TimeUnit.SECONDS)
+                    "the value"
+                }
+            } catch (t: Throwable) {
+                thrown = t
+                throw t
+            }
+        }
+        assertTrue(inCommand.await(5, TimeUnit.SECONDS))
+        caller.cancel()
+        release.countDown()
+        caller.join()
+        assertTrue("a cancel, not the command's answer: $thrown", thrown is kotlinx.coroutines.CancellationException)
+    }
+
     /** A command still running when its time is up is let go. */
     @Test fun aCommandStillRunningAtItsTimeIsLetGo() = runBlocking {
         val blocking = CountDownLatch(1)

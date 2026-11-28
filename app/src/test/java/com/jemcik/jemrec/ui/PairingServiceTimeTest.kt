@@ -13,8 +13,8 @@ import org.junit.Test
 class PairingServiceTimeTest {
 
     @Test fun aTryStartsOnlyWhereAWholeOneFits() {
-        assertEquals("look, probe budget, libadb's connect, a second more", 26_000L, PairingService.TRY_MS)
-        assertTrue(PairingService.timeForATry(now = 100_000, deadline = 126_000))
-        assertFalse(PairingService.timeForATry(now = 100_001, deadline = 126_000))
+        assertEquals("look, probe budget, libadb's connect, the proof, a second more", 36_000L, PairingService.TRY_MS)
+        assertTrue(PairingService.timeForATry(now = 100_000, deadline = 136_000))
+        assertFalse(PairingService.timeForATry(now = 100_001, deadline = 136_000))
     }
 }

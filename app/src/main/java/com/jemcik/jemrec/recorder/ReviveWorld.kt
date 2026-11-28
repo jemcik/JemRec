@@ -88,9 +88,23 @@ internal interface ReviveWorld {
     // Start without Wi-Fi's port (StartWithoutWifi).
     fun portStep(): StartWithoutWifi.PortStep
     fun portReady(): Boolean
-    fun portSet(): Boolean?
-    fun portAnswers(): Boolean
-    fun noteOpened(opened: Boolean)
+
+    /** service.adb.tcp.port: the port adbd is set to, 0 for none, null when
+     *  it cannot be read (StartWithoutWifi.configuredPort). */
+    fun configuredPort(): Int?
+
+    /** A port is set, anyone's; null when it cannot be told. */
+    fun portSet(): Boolean? = configuredPort()?.let { it > 0 }
+
+    /** The classic ports to connect over (PortChange.classicPorts). */
+    fun classicPorts(): List<Int>
+    fun portAnswers(port: Int): Boolean
+
+    /** JemRec's own number, if one was picked; and one, picked now if not. */
+    fun ownPort(): Int?
+    fun ensureOwnPort(): Int
+    fun noteArmed()
+    fun noteOpenFailed()
     fun noteClosed()
     fun noteCloseFailed()
 
@@ -143,16 +157,21 @@ internal interface ReviveWorld {
         override fun switchedOff() = DebugSwitchesOff.switchedOff(context).isNotEmpty()
         override fun portStep() = StartWithoutWifi.step(context)
         override fun portReady() = StartWithoutWifi.ready(context)
-        override fun portSet() = StartWithoutWifi.portSet()
-        override fun portAnswers() = StartWithoutWifi.answers()
-        override fun noteOpened(opened: Boolean) = StartWithoutWifi.noteOpened(context, opened)
+        override fun configuredPort() = StartWithoutWifi.configuredPort()
+        override fun classicPorts() = PortChange.classicPorts(context)
+        override fun portAnswers(port: Int) = StartWithoutWifi.answers(port)
+        override fun ownPort() = StartWithoutWifi.ownPort(context)
+        override fun ensureOwnPort() = StartWithoutWifi.ensureOwnPort(context)
+        override fun noteArmed() = StartWithoutWifi.noteArmed(context)
+        override fun noteOpenFailed() = StartWithoutWifi.noteOpenFailed(context)
         override fun noteClosed() = StartWithoutWifi.noteClosed(context)
         override fun noteCloseFailed() = StartWithoutWifi.noteCloseFailed(context)
         override val connected get() = AdbTransport.isConnected
         override val connectedPort get() = AdbTransport.connectedPort
         override val lastConnect get() = AdbTransport.lastConnect
         override suspend fun connect(port: Int) = AdbTransport.connect(context, AdbTransport.LOOPBACK, port)
-        override suspend fun autoConnect(timeoutMs: Long) = AdbTransport.autoConnect(context, timeoutMs = timeoutMs)
+        override suspend fun autoConnect(timeoutMs: Long) =
+            AdbTransport.autoConnect(context, timeoutMs = timeoutMs, classicPorts = classicPorts())
         override suspend fun restartAdbd(service: String) = AdbTransport.restartAdbd(service)
         override suspend fun close() = AdbTransport.close()
     }

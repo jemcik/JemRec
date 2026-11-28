@@ -815,39 +815,53 @@ internal fun rulesSentence(state: UiState): RulesSummary {
  * that did not take (StartWithoutWifi.closeFailedThisBoot), in red: the port
  * stays open until a restart, which no other text would say.
  *
- * Switched off with a port JemRec did not open - a computer's `adb tcpip`,
- * or Tasker's ADB Wifi, which its guide sets up that way - it says that port
- * too, the port's state first as the other lines do. JemRec leaves it to
- * whoever opened it (StartWithoutWifi.portStep), but it is open to every
- * network all the same, and JemRec starts over it with no Wi-Fi (Revive:
- * overPort). Before 1.10 this said the plain off text, as if the port were
- * shut, while When JemRec is off said "Back on: anywhere" for the same port
- * (the Honor, 2026-11-26, discussion #144).
+ * A port JemRec did not open - a computer's `adb tcpip`, or Tasker's ADB
+ * Wifi, which its guide sets up that way - is said too, the switch on or off,
+ * the port's state first as the other lines do. JemRec leaves it to whoever
+ * opened it (StartWithoutWifi.portStep), but it is open to every network all
+ * the same, and JemRec starts over it with no Wi-Fi (Revive: overPort).
+ * Before 1.10 this said the plain off text, as if the port were shut, while
+ * When JemRec is off said "Back on: anywhere" for the same port (the Honor,
+ * 2026-11-26, discussion #144).
+ *
+ * Every line names the port's own number ([UiState.portNumber]): since 1.11
+ * JemRec's is one picked for this phone, not 5555, and someone else's can be
+ * any. Before a port exists, no number: "a debugging port".
  */
-internal fun startWithoutWifiSummary(state: UiState): String = when {
-    !state.startWithoutWifi && state.portSet && state.portOurs && state.portCloseFailed ->
-        if (state.debuggingOff) {
-            "This phone would not close debugging port 5555. Shut while debugging is off, it opens with it until the phone restarts"
-        } else {
-            "This phone would not close debugging port 5555. It stays open until the phone restarts"
-        }
-    !state.startWithoutWifi && state.portSet && state.portOurs && state.debuggingOff ->
-        "Debugging port 5555 is closed while debugging is off. It opens with debugging, then closes once JemRec is on a Wi-Fi that allows Wireless debugging"
-    !state.startWithoutWifi && state.portSet && state.portOurs ->
-        "Debugging port 5555 is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts"
-    !state.startWithoutWifi && state.portSet && state.debuggingOff ->
-        "Debugging port 5555 is closed while debugging is off. A computer or another app opened it: it opens with debugging until a restart, so JemRec turns back on with or without Wi-Fi"
-    !state.startWithoutWifi && state.portSet ->
-        "Debugging port 5555 is open to any network the phone joins. A computer or another app opened it: it stays open until a restart, and JemRec starts over it with no Wi-Fi"
-    !state.startWithoutWifi ->
-        "Turn JemRec back on with no Wi-Fi. Opens debugging port 5555 to any network the phone joins"
-    state.portSet && state.debuggingOff ->
-        "Debugging port 5555 is closed while debugging is off. Turning JemRec on opens it again, with or without Wi-Fi"
-    state.portSet ->
-        "Debugging port 5555 is open to any network the phone joins. After a restart, JemRec needs Wi-Fi once"
-    state.portFailed -> "This phone would not open port 5555. JemRec asks again after a restart"
-    else -> "Opens debugging port 5555 the next time JemRec starts on Wi-Fi"
+internal fun startWithoutWifiSummary(state: UiState): String {
+    val port = portWords(state.portNumber)
+    val portFirst = port.replaceFirstChar { it.uppercase() }
+    val theirs = state.portSet && !state.portOurs
+    return when {
+        !state.startWithoutWifi && state.portSet && state.portOurs && state.portCloseFailed ->
+            if (state.debuggingOff) {
+                "This phone would not close $port. Shut while debugging is off, it opens with it until the phone restarts"
+            } else {
+                "This phone would not close $port. It stays open until the phone restarts"
+            }
+        !state.startWithoutWifi && state.portSet && state.portOurs && state.debuggingOff ->
+            "$portFirst is closed while debugging is off. It opens with debugging, then closes once JemRec is on a Wi-Fi that allows Wireless debugging"
+        !state.startWithoutWifi && state.portSet && state.portOurs ->
+            "$portFirst is still open. It closes the next time JemRec is on a Wi-Fi that allows Wireless debugging, or the phone restarts"
+        theirs && state.debuggingOff ->
+            "$portFirst is closed while debugging is off. A computer or another app opened it: it opens with debugging until a restart, so JemRec turns back on with or without Wi-Fi"
+        theirs ->
+            "$portFirst is open to any network the phone joins. A computer or another app opened it: it stays open until a restart, and JemRec starts over it with no Wi-Fi"
+        !state.startWithoutWifi ->
+            "Turn JemRec back on with no Wi-Fi. Opens a debugging port to any network the phone joins"
+        state.portSet && state.debuggingOff ->
+            "$portFirst is closed while debugging is off. Turning JemRec on opens it again, with or without Wi-Fi"
+        state.portSet ->
+            "$portFirst is open to any network the phone joins. After a restart, JemRec needs Wi-Fi once"
+        state.portFailed ->
+            "This phone would not open ${portWords(state.ownPort)}. JemRec asks again after a restart"
+        else -> "Opens a debugging port the next time JemRec starts on Wi-Fi"
+    }
 }
+
+/** A port as the lines name it: by its number, or - none known - "the
+ *  debugging port". */
+internal fun portWords(number: Int?): String = number?.let { "debugging port $it" } ?: "the debugging port"
 
 /** The summaries said as an error: switched on and the port not opened, or
  *  switched off and JemRec's port not closed. */

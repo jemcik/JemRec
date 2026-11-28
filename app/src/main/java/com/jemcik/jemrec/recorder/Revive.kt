@@ -133,8 +133,11 @@ object Revive {
         // Nothing below can work off Wi-Fi - see NetworkRevive.onWifi - unless
         // adbd listens on its classic port (StartWithoutWifi), which it does
         // with no network at all. Otherwise the Wi-Fi watcher brings us back
-        // here the moment there is some.
-        val overPort = !onWifi && w.portReady()
+        // here the moment there is some. Over whichever port adbd is set to,
+        // JemRec's or anyone's - one there is to dial (PortChange.classicPorts:
+        // only a port adbd's own properties name).
+        val classic = if (!onWifi && w.portReady()) w.classicPorts() else emptyList()
+        val overPort = classic.isNotEmpty()
         if (!onWifi && !overPort) {
             Log.i(TAG, "daemon: not on Wi-Fi, nothing to revive over yet")
             w.note("revive: not on Wi-Fi")
@@ -215,11 +218,11 @@ object Revive {
             }
 
             if (!w.connected) {
-                w.note(if (overPort) "revive: connecting on port ${StartWithoutWifi.PORT}, no Wi-Fi" else "revive: connecting")
+                w.note(if (overPort) "revive: connecting on port ${classic.first()}, no Wi-Fi" else "revive: connecting")
                 // Asked to allow this Wi-Fi: Android's question is on screen, and
                 // the connect waits for the answer.
                 val lookMs = if (request == Request.ALLOW_WIFI) ALLOW_WAIT_MS else CONNECT_MS
-                var connected = if (overPort) PortChange.connectOnPort(w) else w.autoConnect(lookMs)
+                var connected = if (overPort) PortChange.connectOnPort(w, classic) else w.autoConnect(lookMs)
                 found.connect = w.lastConnect
                 if (connected.isFailure && found.connect == AdbTransport.ConnectOutcome.NOT_FOUND &&
                     cycleAfterNotFound(adbd, step, wirelessOn, onWifi, switchedOnHere, request, w.mdnsStops())
@@ -245,20 +248,20 @@ object Revive {
                     return running != null
                 }
             }
-            val change = PortChange.portChangeOver(portChange, w.connectedPort)
+            val change = PortChange.portChangeOver(portChange, w.connectedPort, w.classicPorts())
             when {
                 // Asked again: a connect can be half a minute after portChangeDue
                 // asked - adbd's four seconds, Allow's twenty, the look for adbd -
                 // and adbd's restart would take the recorder from a call that came
                 // meanwhile. The change is left for the next revive.
                 change != null && w.inCall() ->
-                    w.note("revive: port ${StartWithoutWifi.PORT} left as it is: a call came")
+                    w.note("revive: the port left as it is: a call came")
                 // Nor a change the switch no longer asks for. Flipped back before
                 // the port moved, nothing is due, and the flip's own revive, queued
                 // behind this one, would only undo it, the recorder restarted
                 // twice for nothing.
                 change != null && w.portStep() != change ->
-                    w.note("revive: port ${StartWithoutWifi.PORT} left as it is: the switch moved")
+                    w.note("revive: the port left as it is: the switch or the port moved")
                 change != null -> {
                     onPortChange?.invoke()
                     PortChange.changePort(w, open = change == StartWithoutWifi.PortStep.OPEN)
@@ -267,7 +270,7 @@ object Revive {
                     found.connect = w.lastConnect
                 }
                 portChange != null ->
-                    w.note("revive: port ${StartWithoutWifi.PORT} left open: connected over it, no Wireless debugging here")
+                    w.note("revive: port ${w.connectedPort} left open: connected over it, no Wireless debugging here")
             }
         } finally {
             held?.close()

@@ -35,6 +35,11 @@ import org.robolectric.annotation.GraphicsMode
 @ConscryptMode(ConscryptMode.Mode.OFF)
 @Config(sdk = [36], qualifiers = ScreenTest.PHONE)
 class SettingsScreenshots : ScreenTest() {
+    private companion object {
+        /** JemRec's own port number, as picked on one phone (StartWithoutWifi). */
+        const val OWN_PORT = 62_817
+    }
+
 
     private fun settings(state: UiState, fontScale: Float = 1f, look: LookChoice = LookChoice()) {
         val shown = state.copy(screen = state.screen.takeIf { it != Screen.HOME } ?: Screen.SETTINGS)
@@ -280,6 +285,8 @@ class SettingsScreenshots : ScreenTest() {
                 offMode = OffMode.ALL_DEBUGGING_OFF,
                 startWithoutWifi = true,
                 portSet = true,
+                portOurs = true,
+                portNumber = OWN_PORT,
             ),
         )
         snap("when-off-start-without-wifi")
@@ -290,8 +297,23 @@ class SettingsScreenshots : ScreenTest() {
     // JemRec is off does. The whole overview, for the Debugging group.
     @Config(qualifiers = "+h2400dp")
     @Test fun portOpenedElsewhere() {
-        settings(Fixtures.ready().copy(startWithoutWifi = false, portSet = true, portOurs = false))
+        settings(Fixtures.ready().copy(startWithoutWifi = false, portSet = true, portOurs = false, portNumber = 5555))
         snap("settings-port-opened-elsewhere")
+    }
+
+    // 1.11: switched on, JemRec's own port open, by its number.
+    @Config(qualifiers = "+h2400dp")
+    @Test fun portOwnOpen() {
+        settings(Fixtures.ready().copy(startWithoutWifi = true, portSet = true, portOurs = true, portNumber = OWN_PORT, ownPort = OWN_PORT))
+        snap("settings-port-own-open")
+    }
+
+    // 1.11: switched on with Tasker's port open on its own number: used as it
+    // is, and said whose it is.
+    @Config(qualifiers = "+h2400dp")
+    @Test fun portOtherUsed() {
+        settings(Fixtures.ready().copy(startWithoutWifi = true, portSet = true, portOurs = false, portNumber = 6_000, ownPort = OWN_PORT))
+        snap("settings-port-other-used")
     }
 
     // The two lines said in red (startWithoutWifiFailed), drawn nowhere else
@@ -299,13 +321,15 @@ class SettingsScreenshots : ScreenTest() {
     // port, or switched off and it would not close JemRec's own.
     @Config(qualifiers = "+h2400dp")
     @Test fun portNotOpened() {
-        settings(Fixtures.ready().copy(startWithoutWifi = true, portSet = false, portFailed = true))
+        settings(Fixtures.ready().copy(startWithoutWifi = true, portSet = false, portFailed = true, ownPort = OWN_PORT))
         snap("settings-port-not-opened")
     }
 
     @Config(qualifiers = "+h2400dp")
     @Test fun portNotClosed() {
-        settings(Fixtures.ready().copy(startWithoutWifi = false, portSet = true, portOurs = true, portCloseFailed = true))
+        settings(
+            Fixtures.ready().copy(startWithoutWifi = false, portSet = true, portOurs = true, portCloseFailed = true, portNumber = OWN_PORT),
+        )
         snap("settings-port-not-closed")
     }
 

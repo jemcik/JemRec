@@ -14,7 +14,8 @@ internal object ConnectOp : DiagOp {
         }
         report(
             appContext, "connect",
-            result.fold({ "connected" }, { "connect failed: ${it.message}" }),
+            result.fold({ "connected" }, { "connect failed: ${it.message}" }) +
+                " (the last proof: ${AdbTransport.lastProofMs} ms)",
         )
     }
 }

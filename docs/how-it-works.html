@@ -244,8 +244,9 @@
   <p><em>Start without Wi-Fi</em>, off until you switch it on, takes that Wi-Fi
      away until the phone restarts. Android allows Wireless debugging only on a
      Wi-Fi network the phone has joined, but adbd has another way in, its
-     classic port, 5555, which listens with no network at all; JemRec asks adbd
-     to open it, once each boot, over Wireless debugging. The cost is that the
+     classic port, which listens with no network at all; JemRec asks adbd to
+     open it on a number of its own, picked once for the phone, once each boot,
+     over Wireless debugging. The cost is that the
      port is open on every network the phone joins whenever USB debugging is
      on &mdash; while JemRec is on, and while it is off unless all debugging goes
      with it &mdash; and announced there by the phone&rsquo;s serial number: a

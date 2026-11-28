@@ -7,14 +7,17 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import com.jemcik.jemrec.recorder.NetworkRevive
+import com.jemcik.jemrec.recorder.PortChange
 import com.jemcik.jemrec.system.GlobalSettings
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
+import io.github.muntashirakon.adb.AdbConnection
 import io.github.muntashirakon.adb.AdbStream
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -25,6 +28,7 @@ import java.security.cert.Certificate
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Concrete [AbsAdbConnectionManager] bound to this app's persisted identity.
@@ -72,8 +76,9 @@ private class JemAdbConnectionManager(context: Context) : AbsAdbConnectionManage
  * The unsolved half is DISCOVERY, not connection. The port above is ephemeral
  * and is advertised over mDNS, which needs a live network interface. With Wi-Fi
  * off there is nothing to browse, so the port has to be either remembered or
- * pinned. Pinning is what Start without Wi-Fi does: adbd's classic port, 5555,
- * which listens with or without a network (StartWithoutWifi).
+ * pinned. Pinning is what Start without Wi-Fi does: adbd's classic door, on a
+ * number of JemRec's own since 1.11 (5555 before), which listens with or
+ * without a network (StartWithoutWifi).
  */
 object AdbTransport {
 
@@ -83,10 +88,12 @@ object AdbTransport {
     const val LOOPBACK = "127.0.0.1"
 
     /**
-     * The legacy fixed ADB-over-TCP port. Only reachable if something has set
-     * `service.adb.tcp.port` - Start without Wi-Fi, or a computer's `adb
-     * tcpip`; tried as a last resort because when it IS set it is stable
-     * across Wi-Fi state, which no mDNS-discovered port is.
+     * adbd's classic ADB-over-TCP port, the one a computer's `adb tcpip`
+     * opens and what Start without Wi-Fi opened before 1.11, when it took a
+     * number of its own (StartWithoutWifi). Only reachable if something has
+     * set `service.adb.tcp.port` - or on an emulator, which listens on it
+     * with none set; tried as a last resort because when it IS set it is
+     * stable across Wi-Fi state, which no mDNS-discovered port is.
      */
     const val LEGACY_TCP_PORT = 5555
 
@@ -98,8 +105,8 @@ object AdbTransport {
 
     /** The one reused shell, and the lock that stops two commands interleaving
      *  on it. A shared stream with a sentinel protocol is only correct while
-     *  exactly one caller is writing to it. Volatile: a connect drops it
-     *  (forgetShell) outside the lock that exec reads it under. */
+     *  exactly one caller is writing to it. Volatile: disconnect and close
+     *  drop it outside the lock that exec reads it under. */
     @Volatile
     private var shell: ShellSession? = null
     private val mutex = Mutex()
@@ -119,18 +126,66 @@ object AdbTransport {
         private set
 
     /**
-     * The port the live connection was made on, 0 for none. On 5555 it came
-     * over Start without Wi-Fi's port - autoConnect's last resort, where
-     * Wireless debugging cannot be had - and closing that port would take the
-     * only way back to the recorder with it (CaptureDaemon.portChangeOver).
+     * The port the live connection was made on, 0 for none. On adbd's
+     * classic door - Start without Wi-Fi's port, or anyone's; autoConnect's
+     * last resort, where Wireless debugging cannot be had - closing that
+     * port would take the only way back to the recorder with it
+     * (CaptureDaemon.portChangeOver). The port the connect that made the
+     * session asked for ([made]), read from the session shown: before 1.11
+     * every connect that found one up set the port it had asked for, which
+     * two connects at once could make another session's (review round 5).
+     */
+    val connectedPort: Int
+        get() = made?.takeIf { it.first === live() }?.second ?: 0
+
+    /** The session libadb made last, and the port the connect that made it
+     *  asked for. */
+    @Volatile
+    private var made: Pair<AdbConnection, Int>? = null
+
+    /**
+     * libadb's connect, once, with the session it made noted against [port]
+     * ([made]). It gives true only to the call that made one and false at
+     * once to a call that finds one up - but false too where its 10 s ran
+     * out and the session it stored finishes after (AbsAdbConnectionManager
+     * .connect stores the new AdbConnection first; AdbConnection
+     * .waitForConnection; javap, 3.1.1). So a session that is not the one
+     * there before is this call's, unless the call that made it says so -
+     * which a true always does, last (review round 6 of 1.11).
+     */
+    private fun libadbConnect(mgr: AbsAdbConnectionManager, host: String, port: Int): Boolean {
+        val before = mgr.adbConnection
+        var ok = false
+        try {
+            ok = mgr.connect(host, port)
+            return ok
+        } finally {
+            mgr.adbConnection?.let { conn ->
+                if (ok || (conn !== before && made?.first !== conn)) made = conn to port
+            }
+        }
+    }
+
+    /**
+     * The session that showed itself as this phone's shell (ShellProof), or
+     * null: the only one anything is run over. libadb makes a new
+     * AdbConnection for every connect it makes (AbsAdbConnectionManager
+     * .connect, libadb 3.1.1, read with javap), so which object it is says
+     * whether it was shown. One whose proof is under way counts as not
+     * connected for every caller, and nothing is run over it: before, a
+     * command queued behind the proof ran on the session it was proving
+     * (review round 4 of 1.11).
      */
     @Volatile
-    var connectedPort: Int = 0
-        private set
+    private var shown: AdbConnection? = null
 
+    /** [shown], while it is up. */
+    private fun live(): AdbConnection? = shown?.takeIf { it.isConnected && it.isConnectionEstablished }
+
+    /** A session up that has shown itself as the phone's shell. */
     val isConnected: Boolean
         get() = try {
-            (manager?.isConnected == true).also { lastKnownConnected = it }
+            (live() != null).also { lastKnownConnected = it }
         } catch (t: Throwable) {
             lastKnownConnected = false
             false
@@ -169,33 +224,137 @@ object AdbTransport {
         withContext(Dispatchers.IO) {
             runCatching {
                 val mgr = manager(context)
-                if (mgr.isConnected) {
+                val app = context.applicationContext
+                // One libadb holds already: shown, or shown now (prove), on
+                // whichever port it was made.
+                if (mgr.isConnected && prove(app, mgr, 0) == null) {
                     Log.i(TAG, "connect: already connected")
                     return@runCatching
                 }
                 Log.i(TAG, "connect: $host:$port")
-                forgetShell()
-                val ok = mgr.connect(host, port)
+                val ok = libadbConnect(mgr, host, port)
                 check(ok || mgr.isConnected) { "connect refused by adbd at $host:$port" }
-                connectedPort = port
+                prove(app, mgr, port)?.let { why -> error("the session on $port $why") }
                 Log.i(TAG, "connect: established")
             }
         }
 
+    /** A cancel is passed on, not kept as a failed command or look:
+     *  runCatching catches it too (kotlinx.coroutines #1814), and the
+     *  caller's scope is gone (review round 5 of 1.11). connect() needs
+     *  none: nothing follows its runCatching, and withContext throws the
+     *  cancel on its way out. */
+    internal fun passOnCancel(result: Result<*>) {
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+    }
+
+    /** Said of a session that did not show itself as this phone's shell. */
+    internal const val NOT_SHELL = "did not show itself as the phone's shell"
+
+    /** Said of a session that went down between its connect and its proof:
+     *  adbd restarted, or the cable or a USB mode change took it - or, one
+     *  found up, another caller's failed proof closed it. */
+    internal const val GONE = "was gone before its proof"
+
+    /**
+     * A proof's own wait: the shell opened (its 400 ms settle) and one `cat`,
+     * 0.4 s a connect on the Android 16 AVD (2026-11-27). Ten seconds, as a
+     * phone busy at boot is slower, and the first command on a session had
+     * exec's 15 s before 1.11; each proof's time is on its log line.
+     */
+    internal const val PROOF_MS = 10_000L
+
+    /** Debug builds only: act as a session that is not the phone's shell,
+     *  running this in place of the proof's `cat` - one that answers wrong,
+     *  or one that does not answer in time (diag standin). Nothing in the
+     *  release build sets it. */
+    @Volatile
+    internal var standIn: String? = null
+
+    /** How long the last proof took, ms; -1 before any. For the debug
+     *  build's connect op: the Honor's logcat is not readable. */
+    @Volatile
+    internal var lastProofMs: Long = -1
+        private set
+
+    /**
+     * The session libadb has just made, or the one it holds, shows it is
+     * this phone's shell before anything goes over it (ShellProof) - or it is
+     * let go and not used. Every new session: the revive's, setup's, the
+     * pairing's, Start fresh's. One shell round trip, under exec's lock: no
+     * command waits behind it to run on a session not yet shown ([shown]),
+     * and one that fails is closed before the lock goes - that session
+     * alone, not another caller's. Null when it is shown; else why not
+     * ([NOT_SHELL], or [GONE] where there was none up to prove). A caller
+     * cancelled meanwhile gets its cancel, and the session is left as it
+     * is, for the next caller to prove (review round 5).
+     */
+    private suspend fun prove(app: Context, mgr: AbsAdbConnectionManager, port: Int): String? {
+        // Shown already: nothing to wait on the lock for, which a command
+        // can hold for its 15 s ([shown] is set under it, once proved).
+        mgr.adbConnection?.let { if (it === live()) return null }
+        return mutex.withLock { proveLocked(app, mgr, port) }
+    }
+
+    private suspend fun proveLocked(app: Context, mgr: AbsAdbConnectionManager, port: Int): String? {
+        val where = if (port > 0) "the session on $port" else "the session"
+        val conn = mgr.adbConnection?.takeIf { it.isConnected && it.isConnectionEstablished }
+        if (conn == null) {
+            // A session found up a moment before is gone too where another
+            // caller's proof failed and closed it; this caller then connects
+            // afresh, nothing to tell. Its own connect's is told.
+            if (port > 0) Log.w(TAG, "connect: $where $GONE")
+            return GONE
+        }
+        if (conn === shown) return null
+        val began = SystemClock.elapsedRealtime()
+        val ok = ShellProof.proved(app.getExternalFilesDir(null), run = { command ->
+            runOnShell(conn, standIn ?: command, PROOF_MS).getOrNull()
+        })
+        val ms = SystemClock.elapsedRealtime() - began
+        lastProofMs = ms
+        return if (ok) {
+            shown = conn
+            Log.i(TAG, "connect: $where is the phone's shell ($ms ms)")
+            null
+        } else {
+            Log.w(TAG, "connect: $where $NOT_SHELL ($ms ms); let go")
+            if (shell?.connection === conn) forgetShell()
+            runCatching { conn.close() }
+            NOT_SHELL
+        }
+    }
+
+    /** The classic ports a connect may dial: [given], or the rule
+     *  (PortChange.classicPorts) - only ports adbd's own properties name. */
+    internal fun classicPortsFor(context: Context, given: List<Int>?): List<Int> =
+        given ?: PortChange.classicPorts(context)
+
     /**
      * Find adbd without being told where it is, in the order that degrades
      * best: Wireless debugging's port (AdbdFinder: mDNS, each port checked by
-     * adbd's own answer, then the loopback probe), then the fixed legacy port
-     * (correct whenever someone has pinned it, including with Wi-Fi off), and
-     * only then give up. Each try is kept ([attempts]) for the setup report.
+     * adbd's own answer, then the loopback probe), then adbd's classic port
+     * (correct whenever someone has pinned it, including with Wi-Fi off) -
+     * [classicPorts], in turn - only ones adbd's own properties name
+     * ([classicPortsFor], every caller's: none on a phone with no port set),
+     * read off the main thread - and only then give up. Each try is kept ([attempts]) for the setup report.
      */
-    suspend fun autoConnect(context: Context, timeoutMs: Long = 5_000): Result<Unit> =
+    suspend fun autoConnect(
+        context: Context,
+        timeoutMs: Long = 5_000,
+        classicPorts: List<Int>? = null,
+    ): Result<Unit> =
         withContext(Dispatchers.IO) {
             lastConnect = ConnectOutcome.NONE
             val app = context.applicationContext
             var found: AdbdFinder.Found? = null
             var failure: String? = null
-            var legacy: String? = null
+            // Each classic port that did not take the connect, and why.
+            val classicFailed = mutableListOf<ClassicTry>()
+            // Here, on IO: a default argument is worked out on the caller's
+            // thread, and the screen's looks call from the main one, where a
+            // getprop may not run (review round 3 of 1.11).
+            val dial = classicPortsFor(app, classicPorts)
             var tries = 0
             var usedPort = 0
             // This call's own outcome, kept apart from lastConnect, which a
@@ -204,15 +363,18 @@ object AdbTransport {
             var outcome = ConnectOutcome.NONE
             val result = runCatching {
                 val mgr = manager(app)
-                if (mgr.isConnected) {
+                if (mgr.isConnected && prove(app, mgr, 0) == null) {
                     Log.i(TAG, "autoConnect: already connected")
                     outcome = ConnectOutcome.CONNECTED
                     return@runCatching
                 }
-                forgetShell()
 
                 val job = coroutineContext.job
                 val where = AdbdFinder(LiveFinderWorld(app, job)).find(timeoutMs).also { found = it }
+                // The finder notices a cancel and gives no port, as for none
+                // found: thrown here, the look ends - no classic port dialled
+                // for a caller that is gone (review round 6 of 1.11).
+                job.ensureActive()
                 val port = where.port
                 if (port != null) {
                     // See connect() above: false is ambiguous, isConnected is
@@ -221,52 +383,75 @@ object AdbTransport {
                     // handshake - which is what a forgotten pairing looks
                     // like - not a port it left (before 1.9 an old port mDNS
                     // gave was counted as a refusal too).
-                    //
-                    // A quick failure is tried again: adbd names a connection
-                    // host-<fd> and turns a new one away while a connection of
-                    // that name, just closed, is still listed
-                    // (validate_transport_list, EALREADY) - AdbdCheck's own,
-                    // closed a moment before, whose fd the new one reuses.
-                    // adbd's trace on the Android 13 AVD under load,
-                    // 2026-11-26: "socket transport host-90 is already in
-                    // transport_list and fails to register", 8 and 4 failed
-                    // connects in 20. A slow failure - no answer - is not
-                    // tried again.
-                    var accepted = false
-                    while (true) {
-                        tries++
-                        val began = SystemClock.elapsedRealtime()
-                        accepted = runCatching { mgr.connect(LOOPBACK, port) }
-                            .onFailure { failure = causeOf(it) }
-                            .getOrDefault(false) || mgr.isConnected
-                        val quick = SystemClock.elapsedRealtime() - began < QUICK_FAILURE_MS
-                        if (accepted || !quick || tries >= CONNECT_TRIES || !job.isActive) break
-                        delay(AGAIN_MS)
-                    }
-                    if (accepted) {
+                    val tried = connectTrying(mgr, port, job)
+                    tries = tried.tries
+                    tried.thrown?.let { failure = causeOf(it) }
+                    val accepted = tried.accepted
+                    job.ensureActive()
+                    val unproved = if (accepted) prove(app, mgr, port) else null
+                    if (accepted && unproved == null) {
                         outcome = ConnectOutcome.CONNECTED
-                        connectedPort = port
                         usedPort = port
                         return@runCatching
                     }
-                    if (failure == null) failure = "no answer in ${CONNECT_TIMEOUT_S} s"
-                    outcome = ConnectOutcome.REFUSED
+                    if (accepted) {
+                        // Taken, but not shown to be the phone's shell: let go,
+                        // and no refusal - nothing turned this key away, so no
+                        // lost pairing is to be read into it.
+                        failure = unproved
+                        outcome = ConnectOutcome.NOT_FOUND
+                    } else {
+                        if (failure == null) failure = "no answer in ${CONNECT_TIMEOUT_S} s"
+                        outcome = ConnectOutcome.REFUSED
+                    }
                     usedPort = port
                 } else {
                     outcome = ConnectOutcome.NOT_FOUND
                 }
 
-                val ok = runCatching { mgr.connect(LOOPBACK, LEGACY_TCP_PORT) }
-                    .onFailure { legacy = causeOf(it) }
-                    .getOrThrow()
-                if (!ok && !mgr.isConnected) {
-                    legacy = "not accepted"
-                    error("no adbd found by mDNS, and nothing listening on $LEGACY_TCP_PORT")
+                // Each in turn, and each one's failure kept: its exception's
+                // words, the proof's, or "not accepted" where the connect
+                // said no. Before, only the last port's was said (review
+                // round 1 of 1.11).
+                var classic: Int? = null
+                var thrown: Throwable? = null
+                for (port in dial) {
+                    // Tried again the same way: a classic port dialled the
+                    // moment a failed proof closed the session before it is
+                    // turned away by the same name clash (the Android 12
+                    // AVD, 2026-11-28: "Connection failed" 3 ms after).
+                    val tried = connectTrying(mgr, port, job)
+                    tried.thrown?.let { thrown = it }
+                    val unproved = if (tried.accepted) prove(app, mgr, port) else null
+                    if (tried.accepted && unproved == null) {
+                        classic = port
+                        break
+                    }
+                    classicFailed += ClassicTry(port, unproved ?: tried.thrown?.let(::causeOf) ?: NOT_ACCEPTED)
                 }
+                if (classic == null) {
+                    // What Wireless debugging's port did first, as the revive
+                    // notes it: on a phone with no port set, all there is to
+                    // say (review round 4 of 1.11) - and then every classic
+                    // port's own failure.
+                    val wireless = when {
+                        usedPort == 0 -> "no adbd found by mDNS"
+                        failure == NOT_SHELL || failure == GONE -> "the session on $usedPort $failure"
+                        else -> "adbd on $usedPort did not take the connect ($failure)"
+                    }
+                    if (dial.isEmpty()) error("$wireless, and no classic port set")
+                    val words = "$wireless, and ${classicWords(classicFailed)}"
+                    thrown?.let { throw IllegalStateException(words, it) }
+                    error(words)
+                }
+                classicFailed.clear()
                 outcome = ConnectOutcome.CONNECTED
-                connectedPort = LEGACY_TCP_PORT
-                usedPort = LEGACY_TCP_PORT
+                usedPort = classic
             }
+            // Before anything is kept of it: a look a closed screen cancelled
+            // says nothing about adbd - thrown or only noticed.
+            passOnCancel(result)
+            coroutineContext.ensureActive()
             lastConnect = outcome
             if (outcome != ConnectOutcome.CONNECTED || found != null) {
                 val attempt = Attempt(
@@ -275,7 +460,7 @@ object AdbTransport {
                     found = found,
                     port = usedPort,
                     failure = failure,
-                    legacy = legacy,
+                    classic = classicFailed.toList(),
                     tries = tries,
                 )
                 remember(attempt)
@@ -288,6 +473,49 @@ object AdbTransport {
             }
             result
         }
+
+    /** A connect on [port] as [connectTrying] made it. */
+    private class Tried(val accepted: Boolean, val tries: Int, val thrown: Throwable?)
+
+    /**
+     * libadb's connect on [port], a quick failure tried again: adbd names a
+     * connection host-<fd> and turns a new one away while a connection of
+     * that name, just closed, is still listed (validate_transport_list,
+     * EALREADY) - AdbdCheck's own, closed a moment before, whose fd the new
+     * one reuses, or a session a failed proof has just closed. adbd's trace
+     * on the Android 13 AVD under load, 2026-11-26: "socket transport
+     * host-90 is already in transport_list and fails to register", 8 and 4
+     * failed connects in 20. Wireless debugging's port and each classic
+     * one, the same way ([againAfter]). [Tried.thrown] is the last failure
+     * thrown, if any.
+     */
+    private suspend fun connectTrying(mgr: AbsAdbConnectionManager, port: Int, job: Job): Tried {
+        var tries = 0
+        var thrown: Throwable? = null
+        while (true) {
+            tries++
+            val began = SystemClock.elapsedRealtime()
+            val attempt = runCatching { libadbConnect(mgr, LOOPBACK, port) }
+            attempt.exceptionOrNull()?.let { thrown = it }
+            val accepted = attempt.getOrDefault(false) || mgr.isConnected
+            val again = againAfter(attempt.exceptionOrNull(), SystemClock.elapsedRealtime() - began)
+            if (accepted || !again || tries >= CONNECT_TRIES || !job.isActive) return Tried(accepted, tries, thrown)
+            delay(AGAIN_MS)
+        }
+    }
+
+    /**
+     * Whether a connect that failed in [tookMs] is tried again: a quick one
+     * that got as far as adbd - the name clash above, adbd closing the
+     * connection it had taken - but not a socket refused, where nothing
+     * listens on the port, which a retry half a second later does not
+     * change: on the emulators with 5555 shut, each look tried it three
+     * times, a second longer (2026-11-28). A slow failure - no answer - is
+     * not tried again either.
+     */
+    internal fun againAfter(failure: Throwable?, tookMs: Long): Boolean =
+        tookMs < QUICK_FAILURE_MS && generateSequence(failure) { it.cause?.takeIf { cause -> cause !== it } }
+            .none { it is java.net.ConnectException }
 
     /**
      * One [autoConnect] as it went, for a log line and the setup report.
@@ -303,8 +531,9 @@ object AdbTransport {
         val port: Int,
         /** Why adbd's port did not take the connect. */
         val failure: String?,
-        /** Why port 5555 did not either, where it was tried. */
-        val legacy: String?,
+        /** Why adbd's classic ports did not either, where they were tried:
+         *  each of them, in turn. */
+        val classic: List<ClassicTry> = emptyList(),
         /** Connects made on adbd's port: more than one where a quick failure
          *  was tried again. */
         val tries: Int = 1,
@@ -315,8 +544,25 @@ object AdbTransport {
             if (tries > 1) append(" (").append(tries).append(" tries)")
             found?.let { append("; ").append(it.summary()) }
             failure?.let { append("; adbd: ").append(it) }
-            legacy?.let { append("; port ").append(LEGACY_TCP_PORT).append(": ").append(it) }
+            if (classic.isNotEmpty()) append("; ").append(classicWords(classic))
         }
+    }
+
+    /** A classic port tried, and why it did not take the connect. */
+    internal data class ClassicTry(val port: Int, val why: String)
+
+    /** Said of a classic port whose connect gave no session and no error. */
+    internal const val NOT_ACCEPTED = "not accepted"
+
+    /**
+     * [tried] in one line, every port in turn - the revive's note, the
+     * setup report and PortChange.connectOnPort's failure say the same: a
+     * phone whose port property cannot be read is dialled on JemRec's own
+     * number and then on 5555, and the note named only 5555's failure
+     * (review round 1 of 1.11).
+     */
+    internal fun classicWords(tried: List<ClassicTry>): String = tried.joinToString("; ") { (port, why) ->
+        if (why == NOT_SHELL || why == GONE) "the session on $port $why" else "port $port: $why"
     }
 
     private val recent = ArrayDeque<Attempt>()
@@ -375,13 +621,16 @@ object AdbTransport {
     }
 
     /**
-     * The shell kept from a connection before this one goes with it. A new
-     * connection is made only when the last one has died - adbd restarted,
-     * stopped with USB debugging - and the kept shell is a stream of the dead
-     * one: the first command after the reconnect wrote to it and failed
-     * "Stream closed". Measured on the Honor, 2026-10-27: the recorder's
-     * start after Turn all debugging off and on failed at copying the jar,
-     * and the next try, with the shell then dropped, started it.
+     * The kept shell closed and dropped - by runOnShell, under exec's lock,
+     * when it is a stream of another connection than the one a command runs
+     * on. A new connection is made only when the last one has died - adbd
+     * restarted, stopped with USB debugging - and the kept shell is a stream
+     * of the dead one: the first command after the reconnect wrote to it and
+     * failed "Stream closed". Measured on the Honor, 2026-10-27: the
+     * recorder's start after Turn all debugging off and on failed at copying
+     * the jar, and the next try, with the shell then dropped, started it.
+     * Until 1.11 a connect dropped it before connecting, outside the lock,
+     * where it could close another caller's shell mid-command.
      */
     private fun forgetShell() {
         runCatching { shell?.close() }
@@ -401,22 +650,23 @@ object AdbTransport {
      */
     suspend fun restartAdbd(service: String, timeoutMs: Long = 5_000): Result<String> =
         withContext(Dispatchers.IO) {
-            val mgr = manager
-            if (mgr == null || !mgr.isConnected) {
-                return@withContext Result.failure(IllegalStateException("ADB is not connected"))
-            }
+            if (live() == null) return@withContext notConnected()
             mutex.withLock {
+                // Under the lock: the session shown, still up (prove).
+                val conn = live() ?: return@withLock notConnected()
                 forgetShell()
                 // A stream that never answers is let go by closing the whole
                 // connection, as exec's is (watched); it is about to die anyway.
-                watched(timeoutMs, onTimeout = { runCatching { mgr.close() } }) {
+                watched(timeoutMs, onTimeout = { runCatching { conn.close() } }) {
                     runCatching {
                         Log.i(TAG, "restartAdbd: $service")
-                        mgr.openStream(service).openInputStream().bufferedReader().readLine().orEmpty().trim()
+                        conn.open(service).openInputStream().bufferedReader().readLine().orEmpty().trim()
                     }
                 }
             }
         }
+
+    private fun notConnected(): Result<String> = Result.failure(IllegalStateException("ADB is not connected"))
 
     /**
      * How the last autoConnect went, for the recorder-down alert (see
@@ -548,53 +798,62 @@ object AdbTransport {
      */
     suspend fun exec(command: String, timeoutMs: Long = 15_000): Result<String> =
         withContext(Dispatchers.IO) {
-            // isConnected, not merely "a manager object exists". Opening a
-            // stream on a manager whose connection has died does not throw - it
-            // hands back a stream that yields nothing, so every command
-            // silently "succeeds" with no output.
-            val mgr = manager
-            if (mgr == null || !mgr.isConnected) {
-                return@withContext Result.failure(IllegalStateException("ADB is not connected"))
-            }
-
+            // A session shown and up, not merely "a manager object exists".
+            // Opening a stream on a manager whose connection has died does not
+            // throw - it hands back a stream that yields nothing, so every
+            // command silently "succeeds" with no output.
+            if (live() == null) return@withContext notConnected()
             mutex.withLock {
-                runCatching {
-                    // Watching from before the stream is opened: opening one
-                    // can hang too, and then only closing the whole
-                    // connection lets it go.
-                    // Its caller cancelled or not (watched).
-                    var session: ShellSession? = shell
-                    watched(timeoutMs, onTimeout = {
-                        // The command's first word only: the daemon's launch
-                        // line carries its token.
-                        Log.w(TAG, "exec: '${command.substringBefore(' ')} ...' timed out after ${timeoutMs}ms")
-                        session?.let { runCatching { it.close() } } ?: runCatching { mgr.close() }
+                // Again under the lock: a proof that failed while this waited
+                // has closed its session (prove).
+                val conn = live() ?: return@withLock notConnected()
+                runOnShell(conn, command, timeoutMs)
+            }
+        }
+
+    /** One command on [conn]'s kept shell, exec's lock held: exec's, and the
+     *  proof's own before [conn] is shown (prove). */
+    private suspend fun runOnShell(conn: AdbConnection, command: String, timeoutMs: Long): Result<String> =
+        runOnShellCatching(conn, command, timeoutMs).also(::passOnCancel)
+
+    private suspend fun runOnShellCatching(conn: AdbConnection, command: String, timeoutMs: Long): Result<String> =
+        runCatching {
+            // A shell of an earlier connection is that connection's, gone.
+            if (shell?.connection !== conn) forgetShell()
+            // Watching from before the stream is opened: opening one
+            // can hang too, and then only closing the whole
+            // connection lets it go.
+            // Its caller cancelled or not (watched).
+            var session: ShellSession? = shell
+            watched(timeoutMs, onTimeout = {
+                // The command's first word only: the daemon's launch
+                // line carries its token.
+                Log.w(TAG, "exec: '${command.substringBefore(' ')} ...' timed out after ${timeoutMs}ms")
+                session?.let { runCatching { it.close() } } ?: runCatching { conn.close() }
+                shell = null
+            }) {
+                // A stream that cannot be opened on a connection that
+                // says it is up is adbd refusing them (ShellSession):
+                // the connection is closed, so the next autoConnect
+                // makes a fresh one. Before 0.31 the watchdog did it,
+                // fifteen seconds later and as a "timed out".
+                val open = session ?: runCatching { ShellSession(conn, conn.open(SHELL_SERVICE)) }
+                    .getOrElse { t ->
+                        runCatching { conn.close() }
                         shell = null
-                    }) {
-                        // A stream that cannot be opened on a connection that
-                        // says it is up is adbd refusing them (ShellSession):
-                        // the connection is closed, so the next autoConnect
-                        // makes a fresh one. Before 0.31 the watchdog did it,
-                        // fifteen seconds later and as a "timed out".
-                        val open = session ?: runCatching { ShellSession(mgr.openStream(SHELL_SERVICE)) }
-                            .getOrElse { t ->
-                                runCatching { mgr.close() }
-                                shell = null
-                                throw t
-                            }
-                            .also { shell = it }
-                        session = open
-                        try {
-                            open.run(command)
-                        } catch (t: Throwable) {
-                            // A desynchronised session stays desynchronised, and a
-                            // half-read one would mis-attribute the next command's
-                            // output. Drop it; the next call opens a fresh one.
-                            runCatching { open.close() }
-                            shell = null
-                            throw t
-                        }
+                        throw t
                     }
+                    .also { shell = it }
+                session = open
+                try {
+                    open.run(command)
+                } catch (t: Throwable) {
+                    // A desynchronised session stays desynchronised, and a
+                    // half-read one would mis-attribute the next command's
+                    // output. Drop it; the next call opens a fresh one.
+                    runCatching { open.close() }
+                    shell = null
+                    throw t
                 }
             }
         }
@@ -628,7 +887,7 @@ object AdbTransport {
      * write the command, then echo a marker, and read until the marker comes
      * back. It is random per session so no command's own output can collide.
      */
-    private class ShellSession(private val stream: AdbStream) {
+    private class ShellSession(val connection: AdbConnection, private val stream: AdbStream) {
         private val marker = "__jemrec_" + java.util.UUID.randomUUID().toString().take(12) + "__"
         private val out = stream.openOutputStream()
         private val reader = stream.openInputStream().bufferedReader()
@@ -727,8 +986,9 @@ object AdbTransport {
     suspend fun disconnect() = withContext(Dispatchers.IO) {
         runCatching { shell?.close() }
         shell = null
+        shown = null
         runCatching { manager?.disconnect() }
-        connectedPort = 0
+        made = null
         Unit
     }
 
@@ -739,8 +999,9 @@ object AdbTransport {
         shell = null
         runCatching { manager?.close() }
         manager = null
+        shown = null
+        made = null
         lastKnownConnected = false
-        connectedPort = 0
         Unit
     }
 }
